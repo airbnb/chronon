@@ -8,7 +8,6 @@ import ai.zipline.spark._
 import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession}
-import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType}
 import org.junit.Assert._
 

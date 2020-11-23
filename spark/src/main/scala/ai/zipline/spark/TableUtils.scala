@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
 import ai.zipline.api.Config.{Constants, PartitionSpec}
+import ai.zipline.api.QueryUtils
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
@@ -14,6 +15,11 @@ case class TableUtils(sparkSession: SparkSession) {
         p(0) -> p(1)
       }
       .toMap
+  }
+
+  def sql(query: String): DataFrame = {
+    println(s"Running spark sql: \n$query\n ----End of Query----")
+    sparkSession.sql(query)
   }
 
   def partitions(tableName: String): Seq[String] = {
@@ -59,22 +65,21 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       rePartitioned.write.mode(saveMode).partitionBy(partitionColumns: _*).saveAsTable(tableName)
     }
-    //    logger.info(s"Finished Writing to: $tableName")
   }
 
   // logic for resuming computation from a previous job
   // applicable to join, joinPart, groupBy, daily_cache
-  def fillableRange(inputTables: Seq[String], // startPartition can be inferred from inputTable
-                    outputTable: String,
-                    startPartition: String,
-                    endPartition: String): PartitionRange = {
+  // TODO: Log each step - to make it easy to follow the range inference logic
+  def fillableRange(outputTable: String,
+                    partitionRange: PartitionRange,
+                    inputTables: Seq[String] = Seq.empty[String]): PartitionRange = {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
     val resumePartition = firstUnavailablePartition(outputTable)
-    val effectiveStart = (inputStart ++ resumePartition ++ Option(startPartition))
+    val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
-    val result = PartitionRange(effectiveStart.orNull, endPartition)
+    val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
     assert(result.valid, s"Invalid partition range for left side: $result")
     result
   }

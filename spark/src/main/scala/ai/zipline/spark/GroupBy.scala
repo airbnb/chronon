@@ -4,11 +4,12 @@ import java.util
 
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
-import ai.zipline.api.Config.{Aggregation, Constants}
+import ai.zipline.api.Config.DataModel.{Entities, Events}
+import ai.zipline.api.Config.{Aggregation, Constants, DataSource, Window, GroupBy => GroupByConf}
+import ai.zipline.api.QueryUtils
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.unix_timestamp
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
 
@@ -22,13 +23,16 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   protected[spark] lazy val windowAggregator: RowAggregator =
     new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack))
 
-  def snapshotEntities: DataFrame = {
-    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
-    val partitionTsColumnName = "partition_ts"
-    val inputDfWithPartitionDs = inputDf.attachPartitionTimestamp(partitionTsColumnName)
-    val partitionTsIndex = inputDfWithPartitionDs.schema.fieldIndex(partitionTsColumnName)
+  def preAggregated: DataFrame = inputDf
 
-    val outputRdd = inputDfWithPartitionDs.rdd
+  def snapshotEntities: DataFrame = {
+
+    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
+    val partitionTs = "ds_ts"
+    val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
+    val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
+
+    val outputRdd = inputWithPartitionTs.rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(
         seqOp = {
@@ -67,7 +71,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   // generate aggregates within the Sawtooth of the time points
   def temporalEvents(queriesDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
-    val (minQueryTs, maxQueryTs) = queriesDf.timeRange
+    val TimeRange(minQueryTs, maxQueryTs) = queriesDf.timeRange
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
@@ -106,9 +110,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
     val eventsByHeadStart = inputDf
       .filter(s"${Constants.TimeColumn} between $minHeadStart and $maxQueryTs")
       .rdd
-      .groupBy { (row: Row) =>
-        keyGen(row) -> headStart(row.getLong(tsIndex))
-      }
+      .groupBy { (row: Row) => keyGen(row) -> headStart(row.getLong(tsIndex)) }
 
     val outputRdd = queriesByHeadStarts
       .leftOuterJoin(headStartsWithIrs)
@@ -118,14 +120,8 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
               ((queries: Array[Long], headStartIrOpt: Option[Array[Any]]), eventsOpt: Option[Iterable[Row]])) =>
           val inputsIt: Iterator[ArrayRow] =
             eventsOpt.map(_.map(Conversions.toMooliRow(_, tsIndex)).toIterator).orNull
-          val irs = sawtoothAggregator.cumulateUnsorted(
-            inputsIt,
-            queries,
-            headStartIrOpt.orNull
-          )
-          queries.indices.map { i =>
-            (keys.data :+ queries(i), irs(i))
-          }
+          val irs = sawtoothAggregator.cumulateUnsorted(inputsIt, queries, headStartIrOpt.orNull)
+          queries.indices.map { i => (keys.data :+ queries(i), irs(i)) }
       }
     toDataFrame(outputRdd, Constants.TimeColumn)
   }
@@ -146,8 +142,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
             hopsAggregator.update(ir, Conversions.toMooliRow(input, tsIndex))
         },
         combOp = {
-          case (ir1: HopsAggregator.IrMapType, ir2: HopsAggregator.IrMapType) =>
-            hopsAggregator.merge(ir1, ir2)
+          case (ir1: HopsAggregator.IrMapType, ir2: HopsAggregator.IrMapType) => hopsAggregator.merge(ir1, ir2)
         }
       )
       .mapValues {
@@ -181,7 +176,85 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
     val keySchema: Array[StructField] = keyIndices.map(inputDf.schema)
     val valueSchema: Array[StructField] = Conversions.fromMooliSchema(valueMooliSchema).fields
     val additionalKeySchema =
-      StructField(additionalKey, additionKeyType.getOrElse(inputDf.typeOf(additionalKey).dataType))
+      StructField(additionalKey, additionKeyType.getOrElse(inputDf.typeOf(additionalKey)))
     StructType((keySchema :+ additionalKeySchema) ++ valueSchema)
+  }
+}
+
+// TODO: truncate queryRange for caching
+object GroupBy {
+
+  def from(groupByConf: GroupByConf, queryRange: PartitionRange, tableUtils: TableUtils): GroupBy = {
+    val inputDf = groupByConf.sources
+      .flatMap {
+        renderDataSourceQuery(_, queryRange, groupByConf.maxWindow)
+      }
+      .map { query =>
+        val df = tableUtils.sql(query)
+        println("======= GroupBy input Schema =======")
+        println(df.schema.pretty)
+        df
+      }
+      .reduce { (df1, df2) =>
+        // align the columns by name - when one source has select * the ordering might not be aligned
+        val columns1 = df1.schema.fields.map(_.name)
+        df1.union(df2.selectExpr(columns1: _*))
+      }
+
+    assert(
+      !groupByConf.needsTimestamp || inputDf.schema.names.contains(Constants.TimeColumn),
+      "Time columns doesn't exists, but you either have a windowed aggregation or a time based aggregations like: " +
+        "first, last, firstK, lastK"
+    )
+    println("====== GroupBy input data sample ======")
+    inputDf.show()
+    println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
+    println("====== End input data sample =======")
+
+    new GroupBy(groupByConf.aggregations, groupByConf.keys, inputDf)
+  }
+
+  def renderDataSourceQuery(dataSource: DataSource,
+                            queryRange: PartitionRange,
+                            window: Option[Window]): Option[String] = {
+    val PartitionRange(queryStart, queryEnd) = queryRange
+    val scanStart = dataSource.dataModel match {
+      case Entities => queryStart
+      case Events   => window.map(Constants.Partition.minus(queryStart, _)).orNull
+    }
+
+    val partitionMillisMinus =
+      s"(unix_timestamp(${Constants.PartitionColumn},'${Constants.Partition.format}') * 1000) - 1"
+    val columnAliases = dataSource.dataModel match {
+      case Entities =>
+        Map(Constants.TimeColumn -> Option(dataSource.timeExpression).getOrElse(partitionMillisMinus),
+            Constants.PartitionColumn -> null)
+      case Events =>
+        Map(Constants.TimeColumn -> dataSource.timeExpression, Constants.PartitionColumn -> null)
+    }
+
+    val sourceRange = PartitionRange(dataSource.startPartition, dataSource.endPartition)
+    val queryableDataRange = PartitionRange(scanStart, queryEnd)
+    val intersectedRange: Option[PartitionRange] = sourceRange.intersect(queryableDataRange)
+
+    println(s"""
+         |Rendering source query:
+         |   query range: $queryRange
+         |   query window: $window
+         |   source table: ${dataSource.table}
+         |   source data range: $sourceRange
+         |   source data model: ${dataSource.dataModel}
+         |   queryable data range: $queryableDataRange
+         |   intersected/effective scan range: $intersectedRange 
+         |""".stripMargin)
+
+    intersectedRange.map { effectiveRange =>
+      QueryUtils.build(
+        dataSource.selects,
+        dataSource.table,
+        Option(dataSource.wheres).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
+        columnAliases
+      )
+    }
   }
 }

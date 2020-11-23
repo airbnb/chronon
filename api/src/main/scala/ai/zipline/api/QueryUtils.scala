@@ -19,20 +19,23 @@ object QueryUtils {
         } else { selects }
     }
 
-  def build(selects: Seq[String], from: String, wheres: Seq[String], fillIfAbsent: Map[String, String]): String = {
-    val finalSelects = addColumns(Option(selects).getOrElse(Seq("*")), fillIfAbsent)
+  def build(selects: Seq[String],
+            from: String,
+            wheres: Seq[String],
+            fillIfAbsent: Map[String, String] = Map.empty[String, String]): String = {
+    val finalSelects = Option(selects).filter(_.nonEmpty).map(addColumns(_, fillIfAbsent)).getOrElse(Seq("*"))
     val whereClause = Option(wheres)
       .filter(_.nonEmpty)
       .map { w =>
         s"""WHERE
-           |  $w
+           |  ${w.mkString(" AND ")}
            |""".stripMargin
       }
       .getOrElse("")
 
     s"""
        |SELECT
-       |  ${finalSelects.mkString("\n  ")}
+       |  ${finalSelects.mkString(",\n  ")}
        |FROM $from
        |$whereClause
        |""".stripMargin

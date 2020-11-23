@@ -44,17 +44,20 @@ object Config {
   // stuff that is common to join, groupBy and staging query
   case class MetaData(name: String,
                       team: String,
-                      dependencies: Seq[String],
+                      dependencies: Seq[String] = Seq.empty[String],
                       // conf can't change once marked online
                       // we will fail re-generation of the conf at the site of creation
                       online: Boolean = false,
                       // triggers alerts when SLAs are breached
                       // library changes are released to staging copies when possible
-                      production: Boolean = false)
+                      production: Boolean = false) {
+    val cleanName: String = name.replaceAll("[^a-zA-Z0-9_]", "_")
+  }
 
   object Constants {
     val TimeColumn: String = "ts"
     val PartitionColumn: String = "ds"
+    val TimePartitionColumn: String = "ts_ds"
     val ReversalColumn: String = "is_before"
     val MutationTimeColumn: String = "mutation_ts"
     val Partition: PartitionSpec =
@@ -73,6 +76,7 @@ object Config {
   import ai.zipline.api.Config.AggregationType._
 
   // one per output column - so single window
+  // not exposed to users
   case class AggregationPart(`type`: AggregationType,
                              inputColumn: String,
                              window: Window = Window.Infinity,
@@ -90,10 +94,10 @@ object Config {
 
     private def opSuffix =
       `type` match {
-        case LastK   => s"last_${getInt("k")}"
-        case FirstK  => s"first_${getInt("k")}"
-        case TopK    => s"top_${getInt("k")}"
-        case BottomK => s"bottom_${getInt("k")}"
+        case LastK   => s"last${getInt("k")}"
+        case FirstK  => s"first${getInt("k")}"
+        case TopK    => s"top${getInt("k")}"
+        case BottomK => s"bottom${getInt("k")}"
         case other   => other.toString.toLowerCase
       }
 
@@ -101,7 +105,7 @@ object Config {
   }
   case class Aggregation(`type`: AggregationType,
                          inputColumn: String,
-                         windows: Seq[Window],
+                         windows: Seq[Window] = null,
                          private val args: Map[String, String] = Map.empty[String, String]) {
 
     def unpack: Seq[AggregationPart] =
@@ -119,12 +123,12 @@ object Config {
   }
 
   case class DataSource(selects: Seq[String],
-                        wheres: Seq[String],
                         table: String,
                         dataModel: DataModel,
-                        topic: String,
-                        mutationTable: String,
                         startPartition: String,
+                        wheres: Seq[String] = null,
+                        topic: String = null,
+                        mutationTable: String = null,
                         endPartition: String = null,
                         timeExpression: String = Constants.TimeColumn,
                         mutationTimeExpression: String = Constants.MutationTimeColumn,
@@ -136,22 +140,22 @@ object Config {
                      aggregations: Seq[Aggregation],
                      metadata: MetaData)
 
+  // when the datasource has topic and left side is events, the join will be temporally accurate
+  // otherwise the join will always be snapshot accurate
   case class JoinPart(groupBy: GroupBy,
-                      accuracy: Accuracy.Accuracy,
                       // what columns in the should map to what columns in the
                       keyRenaming: Map[String, String],
-                      // GroupBy names can get large - use this if you want to replace those
                       // Sometimes you want to join to the same feature_set multiple times
                       // In those cases you can use the prefix to distinguish
-                      prefix: String)
+                      prefix: String = null)
 
-  case class Join(query: String,
+  case class Join(query: String = null,
                   table: String,
                   dataModel: DataModel,
                   startPartition: String,
                   joinParts: Seq[JoinPart],
                   metadata: MetaData,
-                  timeExpression: String = Constants.TimeColumn)
+                  timeExpression: String = Constants.TimeColumn) {}
 
   // TODO: Add support
   case class Staging(query: String, startPartition: String, metadata: MetaData, partitionSpec: PartitionSpec)

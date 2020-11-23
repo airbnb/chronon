@@ -1,6 +1,7 @@
 package ai.zipline.spark
 import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Config.Constants
+import ai.zipline.api.Config.{Constants, Window}
+import ai.zipline.api.QueryUtils
 import ai.zipline.spark.Extensions._
 
 sealed trait DataRange {
@@ -12,6 +13,10 @@ case class TimeRange(start: Long, end: Long) extends DataRange {
       .iterate(TsUtils.round(start, Constants.Partition.spanMillis))(_ + Constants.Partition.spanMillis)
       .takeWhile(_ <= end)
       .toArray
+  }
+
+  def toPartitionRange: PartitionRange = {
+    PartitionRange(Constants.Partition.of(start), Constants.Partition.of(end))
   }
 }
 // start and end can be null - signifies unbounded-ness
@@ -43,4 +48,27 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .map(Constants.Partition.epochMillis)
       .toArray
   }
+
+  def whereClauses: Seq[String] = {
+    val startClause = Option(start).map(s"${Constants.PartitionColumn} >= '" + _ + "'")
+    val endClause = Option(end).map(s"${Constants.PartitionColumn} <= '" + _ + "'")
+    (startClause ++ endClause).toSeq
+  }
+
+  def substituteMacros(template: String): String = {
+    val substitutions = Seq(Constants.StartPartitionMacro -> Option(start), Constants.EndPartitionMacro -> Option(end))
+    substitutions.foldLeft(template) {
+      case (q, (target, Some(replacement))) => q.replaceAllLiterally(target, replacement)
+      case (q, (_, None))                   => q
+    }
+  }
+
+  def scanQuery(table: String): String = QueryUtils.build(selects = null, from = table, wheres = whereClauses)
+
+  def length: Int =
+    Stream
+      .iterate(start)(Constants.Partition.after)
+      .takeWhile(_ <= end)
+      .length
+
 }
