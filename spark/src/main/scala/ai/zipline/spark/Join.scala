@@ -66,17 +66,16 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
          })
       }
 
-    println("====== keys ======= ")
     val keys = replacedKeys :+ additionalKey
-    println(keys.mkString(", "))
-
-    joinableLeft.show()
+    println("Internal Join keys: " + keys.mkString(", "))
+    println("Left sample Schema:")
     println(joinableLeft.schema.pretty)
-    println("====== ^ left sample data ========")
-
-    joinableRight.show()
+    println("Right sample Schema:")
     println(joinableRight.schema.pretty)
-    println("====== ^ right sample data ========")
+    println("Left sample data:")
+    joinableLeft.show()
+    println("Right sample data:")
+    joinableRight.show()
 
     joinableLeft.join(joinableRight, keys, "left_outer")
   }
@@ -88,11 +87,11 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     }
 
     println(s"""
-         |===== JoinPart Info ======
-         |part name: ${joinPart.groupBy.metadata.name}, 
-         |left type: ${joinConf.dataModel}, 
-         |right type: ${joinPart.groupBy.dataModel}, 
-         |accuracy: ${joinPart.groupBy.accuracy}
+         |JoinPart Info:
+         |  part name : ${joinPart.groupBy.metadata.name}, 
+         |  left type : ${joinConf.dataModel}, 
+         |  right type: ${joinPart.groupBy.dataModel}, 
+         |  accuracy  : ${joinPart.groupBy.accuracy}
          |""".stripMargin)
 
     (joinConf.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.accuracy) match {
@@ -135,8 +134,9 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       case (left, joinPart) =>
         // TODO: implement versioning and join part caching here
         val right = computeJoinPart(joinPart)
+        println("==== JoinPart result - right side - unrenamed ====")
         right.show()
-        println("==== JoinPart result - right side only ====")
+
         joinWithLeft(left, right, joinPart)
     }
   }

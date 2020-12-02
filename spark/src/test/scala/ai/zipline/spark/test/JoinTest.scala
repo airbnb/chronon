@@ -15,10 +15,11 @@ import ai.zipline.api.Config.{
   Join => JoinConf
 }
 import ai.zipline.spark.Extensions._
-import ai.zipline.spark.{Join, TableUtils}
+import ai.zipline.spark.{Comparison, Join, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
+// main test path for query generation - including the date scan logic
 class JoinTest extends TestCase {
   lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest")
 
@@ -64,16 +65,20 @@ class JoinTest extends TestCase {
       aggregations = Seq(
         Aggregation(`type` = AggregationType.Sum,
                     inputColumn = "amount_dollars",
-                    windows = Seq(Window(180, TimeUnit.Days), null))),
+                    windows = Seq(Window(30, TimeUnit.Days), null))),
       metadata = MetaData(name = "user_transactions", team = "unit_test")
     )
     val queriesSchema = List(
-      DataGen.Column("user_name", StringType, 10),
+      DataGen.Column("user", StringType, 10),
       DataGen.Column(Constants.TimeColumn, LongType, 180)
     )
 
     val queryTable = s"$namespace.queries"
-    DataGen.events(spark, queriesSchema, 10000).withTimestampBasedPartition(Constants.PartitionColumn).save(queryTable)
+    DataGen
+      .events(spark, queriesSchema, 10000)
+      .withColumnRenamed("user", "user_name") // to test zipline renaming logic
+      .withTimestampBasedPartition(Constants.PartitionColumn)
+      .save(queryTable)
 
     val start = Constants.Partition.minus(today, Window(60, TimeUnit.Days))
     val end = Constants.Partition.minus(today, Window(30, TimeUnit.Days))
@@ -87,7 +92,33 @@ class JoinTest extends TestCase {
 
     val runner1 = new Join(joinConf, end, namespace, TableUtils(spark))
 
-    runner1.computeJoin.show()
+    val computed = runner1.computeJoin.dropDuplicates("user_name", "ds", "amount_dollars_sum")
+
+    val expected = spark.sql(s"""
+        |WITH 
+        |   queries AS (SELECT user_name, from_unixtime(ts/1000, 'yyyy-MM-dd') as ts_ds, ts from $queryTable),
+        |   transactions AS (SELECT user, ts, ds, 0 as amount_dollars from $rupeeTable 
+        |                    UNION 
+        |                    SELECT user, ts, ds, amount_dollars from $dollarTable)
+        | SELECT queries.user_name, 
+        |        queries.ts_ds,
+        |        queries.ts,
+        |        queries.ts_ds as ds,
+        |        SUM(IF(transactions.ts  >= (unix_timestamp(queries.ts_ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS amount_dollars_sum_30d,
+        |        SUM(amount_dollars) AS amount_dollars_sum
+        | FROM queries join transactions
+        | ON queries.user_name = transactions.user
+        | AND queries.ts_ds = transactions.ds
+        | GROUP BY queries.user_name, queries.ts_ds, queries.ts
+        |""".stripMargin)
+
+    computed.show()
+    expected.show()
+    val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts_ds", "ts"))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
     assert(true)
   }
 

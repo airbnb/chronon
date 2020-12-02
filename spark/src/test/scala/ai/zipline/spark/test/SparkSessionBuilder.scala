@@ -25,7 +25,6 @@ object SparkSessionBuilder {
       .appName(name)
       .getOrCreate()
 
-    spark.sparkContext.setLogLevel("WARN")
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     spark
   }

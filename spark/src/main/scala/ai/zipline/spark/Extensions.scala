@@ -61,7 +61,7 @@ object Extensions {
       val padding = schemaTuples.map(_._1.length).max
       schemaTuples
         .map {
-          case (typ, name) => s"${typ.padTo(padding, ' ')} : $name"
+          case (typ, name) => s"  ${typ.padTo(padding, ' ')} : $name"
         }
         .mkString("\n")
     }
