@@ -23,6 +23,8 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       tableUtils.sql(leftUnfilledRange.scanQuery(joinConf.table))
     }
 
+  private lazy val leftTimeRange = leftDf.timeRange
+
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val replacedKeys = joinPart.groupBy.keys.toArray
 
@@ -77,6 +79,9 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     println("Right sample data:")
     joinableRight.show()
 
+    println("Right count: " + joinableRight.count())
+    println("Left count: " + joinableLeft.count())
+
     joinableLeft.join(joinableRight, keys, "left_outer")
   }
 
@@ -110,17 +115,17 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
             case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
           }
         GroupBy
-          .from(joinPart.groupBy, leftDf.timeRange.toPartitionRange, tableUtils)
+          .from(joinPart.groupBy, leftTimeRange.toPartitionRange, tableUtils)
           .temporalEvents(renamedLeft)
       }
       case (Events, Events, Snapshot) => {
-        val leftTimePartitionRange = leftDf.timeRange.toPartitionRange
+        val leftTimePartitionRange = leftTimeRange.toPartitionRange
         GroupBy
           .from(joinPart.groupBy, leftTimePartitionRange, tableUtils)
           .snapshotEvents(leftTimePartitionRange)
       }
       case (Events, Entities, Snapshot) => {
-        val PartitionRange(start, end) = leftDf.timeRange.toPartitionRange
+        val PartitionRange(start, end) = leftTimeRange.toPartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
         GroupBy.from(joinPart.groupBy, rightRange, tableUtils).snapshotEntities
       }

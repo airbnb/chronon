@@ -12,14 +12,14 @@ object Comparison {
     val joined = prefixedExpectedDf.join(
       prefixedOutputDf,
       usingColumns = keys,
-      joinType = "full"
+      joinType = "full_outer"
     )
 
     var finalDf = joined
     val comparisonColumns =
       a.schema.fieldNames.toSet.diff(keys.toSet).toList.sorted
     finalDf = finalDf.filter(
-      s"${comparisonColumns.map { col => s"a_$col <> b_$col" }.mkString(" or ")}"
+      s"${comparisonColumns.map { col => s"coalesce(a_$col, 0) <> coalesce(b_$col, 0)" }.mkString(" or ")}"
     )
     val colOrder = keys ++ comparisonColumns.flatMap { col =>
       List(s"a_$col", s"b_$col")
@@ -28,9 +28,7 @@ object Comparison {
     finalDf
   }
 
-  private def prefixColumnName(df: DataFrame,
-                               prefix: String,
-                               excludeColumns: List[String]): DataFrame = {
+  private def prefixColumnName(df: DataFrame, prefix: String, excludeColumns: List[String]): DataFrame = {
     val renamedColumns = df.columns.map(c => {
       if (excludeColumns.contains(c))
         df(c).as(c)

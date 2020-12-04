@@ -18,10 +18,11 @@ import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
+import org.junit.Assert._
 
 // main test path for query generation - including the date scan logic
 class JoinTest extends TestCase {
-  lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest")
+  lazy val spark: SparkSession = SparkSessionBuilder.buildLocal("JoinTest")
 
   def testEventsEntitiesSnapshot: Unit = {
     val dollarTransactions = List(
@@ -45,16 +46,17 @@ class JoinTest extends TestCase {
     val monthAgo = Constants.Partition.minus(today, Window(30, TimeUnit.Days))
     val yearAgo = Constants.Partition.minus(today, Window(365, TimeUnit.Days))
 
+    val dayAndMonthBefore = Constants.Partition.before(monthAgo)
     val dollarSource = DataSource(
-      selects = null,
+      selects = Seq("user", "1 as amount_dollars"),
       table = dollarTable,
       dataModel = Entities,
       startPartition = yearAgo,
-      endPartition = Constants.Partition.before(monthAgo)
+      endPartition = dayAndMonthBefore
     )
 
     val rupeeSource =
-      DataSource(selects = Seq("user", "amount_rupees/70 as amount_dollars"),
+      DataSource(selects = Seq("user", "1 as amount_dollars"),
                  table = rupeeTable,
                  dataModel = Entities,
                  startPartition = monthAgo)
@@ -92,34 +94,53 @@ class JoinTest extends TestCase {
 
     val runner1 = new Join(joinConf, end, namespace, TableUtils(spark))
 
-    val computed = runner1.computeJoin.dropDuplicates("user_name", "ds", "amount_dollars_sum")
+    val computed = runner1.computeJoin
+    println(s"join start = $start")
 
     val expected = spark.sql(s"""
         |WITH 
-        |   queries AS (SELECT user_name, from_unixtime(ts/1000, 'yyyy-MM-dd') as ts_ds, ts from $queryTable),
-        |   transactions AS (SELECT user, ts, ds, 0 as amount_dollars from $rupeeTable 
-        |                    UNION 
-        |                    SELECT user, ts, ds, amount_dollars from $dollarTable)
-        | SELECT queries.user_name, 
-        |        queries.ts_ds,
+        |   queries AS (SELECT user_name, ts, ds from $queryTable where ds >= '$start' and ds <= '$end'),
+        |   grouped_transactions AS (
+        |      SELECT user, 
+        |             ds, 
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS amount_dollars_sum_30d,
+        |             SUM(amount_dollars) AS amount_dollars_sum
+        |      FROM 
+        |         (SELECT user, ts, ds, 1 as amount_dollars from $rupeeTable
+        |          WHERE ds >= '${monthAgo}'
+        |          UNION 
+        |          SELECT user, ts, ds, 1 as amount_dollars from $dollarTable
+        |          WHERE ds >= '${yearAgo}' and ds <= '${dayAndMonthBefore}') as transactions
+        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |      GROUP BY user, ds)
+        | SELECT queries.user_name,
         |        queries.ts,
-        |        queries.ts_ds as ds,
-        |        SUM(IF(transactions.ts  >= (unix_timestamp(queries.ts_ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS amount_dollars_sum_30d,
-        |        SUM(amount_dollars) AS amount_dollars_sum
-        | FROM queries join transactions
-        | ON queries.user_name = transactions.user
-        | AND queries.ts_ds = transactions.ds
-        | GROUP BY queries.user_name, queries.ts_ds, queries.ts
+        |        queries.ds,
+        |        grouped_transactions.ds as ts_ds,
+        |        grouped_transactions.amount_dollars_sum,
+        |        grouped_transactions.amount_dollars_sum_30d
+        | FROM queries left outer join grouped_transactions
+        | ON queries.user_name = grouped_transactions.user
+        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
         |""".stripMargin)
-
+    val queries = spark.sql(
+      s"SELECT user_name, from_unixtime(ts/1000, 'yyyy-MM-dd') as ts_ds, ts, ds from $queryTable where ds >= '$start'")
+    println("showing left queries")
+    queries.show()
+    println("showing join result")
     computed.show()
+    println("showing query result")
     expected.show()
-    val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts_ds", "ts"))
+    val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts_ds", "ts", "ds"))
     if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"Queries count: ${queries.count()}")
+      println(s"diff result rows")
       diff.show()
-      println("diff result rows")
     }
-    assert(true)
+    assertEquals(diff.count(), 0)
   }
 
   def entitiesEntities: Unit = {

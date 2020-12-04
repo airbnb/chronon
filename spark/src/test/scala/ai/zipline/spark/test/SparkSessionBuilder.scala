@@ -10,7 +10,7 @@ object SparkSessionBuilder {
 
   val namespace = "test_namespace"
 
-  def build(name: String): SparkSession = {
+  def buildLocal(name: String): SparkSession = {
     val warehouseDir = new File("spark-warehouse")
     val metastore_db = new File("metastore_db")
     cleanUp(warehouseDir)
@@ -26,6 +26,7 @@ object SparkSessionBuilder {
       .getOrCreate()
 
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    spark.sparkContext.setLogLevel("ERROR")
     spark
   }
 

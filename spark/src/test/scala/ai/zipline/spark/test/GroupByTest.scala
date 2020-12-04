@@ -13,7 +13,7 @@ import org.junit.Assert._
 
 class GroupByTest extends TestCase {
 
-  lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest")
+  lazy val spark: SparkSession = SparkSessionBuilder.buildLocal("GroupByTest")
 
   def testSnapshotEntities: Unit = {
     val schema = List(
