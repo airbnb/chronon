@@ -97,7 +97,7 @@ class GroupByTest extends TestCase {
       DataGen.Column("session_length", IntType, 10000)
     )
 
-    val eventDf = DataGen.events(spark, eventSchema, 1000000)
+    val eventDf = DataGen.events(spark, eventSchema, 100000)
 
     val querySchema = List(DataGen.Column("user", StringType, 10), DataGen.Column(Constants.TimeColumn, LongType, 180))
 
