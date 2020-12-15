@@ -19,6 +19,8 @@ object QueryUtils {
         } else { selects }
     }
 
+  // when the value in fillIfAbsent for a key is null, we expect the column with the same name as the key
+  // to be present in the table that the generated query runs on.
   def build(selects: Seq[String],
             from: String,
             wheres: Seq[String],
@@ -27,17 +29,14 @@ object QueryUtils {
     val whereClause = Option(wheres)
       .filter(_.nonEmpty)
       .map { w =>
-        s"""WHERE
-           |  ${w.mkString(" AND ")}
-           |""".stripMargin
+        s"""
+           |WHERE
+           |  ${w.mkString(" AND ")}""".stripMargin
       }
       .getOrElse("")
 
-    s"""
-       |SELECT
+    s"""SELECT
        |  ${finalSelects.mkString(",\n  ")}
-       |FROM $from
-       |$whereClause
-       |""".stripMargin
+       |FROM $from $whereClause""".stripMargin
   }
 }

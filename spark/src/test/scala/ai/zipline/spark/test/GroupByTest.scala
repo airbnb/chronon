@@ -49,14 +49,13 @@ class GroupByTest extends TestCase {
 
   def testSnapshotEvents: Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10),
-      DataGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      DataGen.Column("user", StringType, 10), // ts = last 100 days
       DataGen.Column("session_length", IntType, 2)
     )
 
     val outputDates = DataGen.genPartitions(10)
 
-    val df = DataGen.events(spark, schema, 100000)
+    val df = DataGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
@@ -93,15 +92,14 @@ class GroupByTest extends TestCase {
   def testTemporalEvents: Unit = {
     val eventSchema = List(
       DataGen.Column("user", StringType, 10),
-      DataGen.Column(Constants.TimeColumn, LongType, 180),
       DataGen.Column("session_length", IntType, 10000)
     )
 
-    val eventDf = DataGen.events(spark, eventSchema, 100000)
+    val eventDf = DataGen.events(spark, eventSchema, count = 100000, partitions = 180)
 
-    val querySchema = List(DataGen.Column("user", StringType, 10), DataGen.Column(Constants.TimeColumn, LongType, 180))
+    val querySchema = List(DataGen.Column("user", StringType, 10))
 
-    val queryDf = DataGen.events(spark, querySchema, 10000)
+    val queryDf = DataGen.events(spark, querySchema, count = 10000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
       Aggregation(AggregationType.Average,

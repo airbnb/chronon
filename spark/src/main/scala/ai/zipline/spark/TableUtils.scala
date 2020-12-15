@@ -1,12 +1,12 @@
 package ai.zipline.spark
 
-import ai.zipline.api.Config.{Constants, PartitionSpec}
-import ai.zipline.api.QueryUtils
+import ai.zipline.api.Config.Constants
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 case class TableUtils(sparkSession: SparkSession) {
 
+  sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
     pstring
@@ -19,7 +19,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def sql(query: String): DataFrame = {
-    println(s"Running spark sql: \n$query\n ----End of Query----")
+    println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
     sparkSession.sql(query)
   }
 
@@ -54,7 +54,9 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       df
     }
+
     // this does a full re-shuffle
+    // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
     val rePartitioned: DataFrame = dfRearranged.repartition(
       numPartitions * filesPerPartition,
       partitionColumns.map(df.col): _*

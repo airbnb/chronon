@@ -1,6 +1,6 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{DataType, IntType, LongType, StringType}
+import ai.zipline.aggregator.base.{DataType, DoubleType, IntType, LongType, StringType}
 import ai.zipline.api.Config.{Constants, TimeUnit, Window}
 import ai.zipline.spark.Conversions
 import ai.zipline.spark.Extensions._
@@ -23,7 +23,8 @@ object DataGen {
             case Constants.PartitionColumn => new PartitionStream(cardinality)
             case _                         => new StringStream(cardinality, name)
           }
-        case IntType => new IntStream(cardinality)
+        case IntType    => new IntStream(cardinality)
+        case DoubleType => new DoubleStream(cardinality)
         case LongType =>
           name match {
             case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.Days))
@@ -36,7 +37,7 @@ object DataGen {
   }
 
   //  The main api: that generates dataframes given certain properties of data
-  def events(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
+  def gen(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
     val schema = columns.map(_.schema)
     val generators = columns.map(_.gen)
     val sparkSchema = Conversions.fromMooliSchema(schema.toArray)
@@ -47,9 +48,14 @@ object DataGen {
     spark.createDataFrame(data, sparkSchema)
   }
 
+  //  The main api: that generates dataframes given certain properties of data
+  def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
+    gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
+  }
+
   //  Generates Entity data
   def entities(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
-    events(spark, columns :+ Column(Constants.PartitionColumn, StringType, partitions), count)
+    gen(spark, columns :+ Column(Constants.PartitionColumn, StringType, partitions), count)
   }
 
   def genPartitions(count: Int): Array[String] = {
@@ -61,14 +67,21 @@ object DataGen {
   }
 
   private type JLong = java.lang.Long
+  private type JDouble = java.lang.Double
 
   // utility classes to generate random data
   private abstract class CStream[+T: ClassTag] {
     def next(): T
+
+    // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
+    protected def rollDouble(max: JDouble, min: JDouble = 0, nullRate: Double = 0.1): JDouble = {
+      if (math.random() < nullRate) null
+      else min + ((max - min) * math.random())
+    }
+
     // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
     protected def roll(max: JLong, min: JLong = 0, nullRate: Double = 0.1): JLong = {
-      if (math.random() < nullRate) null
-      else min + ((max - min) * math.random()).toLong
+      rollDouble(max.toDouble, min.toDouble, nullRate).toLong
     }
   }
 
@@ -104,6 +117,11 @@ object DataGen {
   private class LongStream(max: Int = 10000) extends CStream[JLong] {
     override def next(): JLong =
       Option(roll(max, 1)).map(java.lang.Long.valueOf(_)).orNull
+  }
+
+  private class DoubleStream(max: Double = 10000) extends CStream[JDouble] {
+    override def next(): JDouble =
+      Option(rollDouble(max, 1)).map(java.lang.Double.valueOf(_)).orNull
   }
 
   private class ZippedStream(streams: CStream[Any]*) extends CStream[GenericRow] {

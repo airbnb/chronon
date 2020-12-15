@@ -6,10 +6,11 @@ import java.time.{Instant, ZoneOffset}
 import java.util.{Locale, TimeZone}
 
 import ai.zipline.api.Config.Accuracy.{Accuracy, Snapshot, Temporal}
-import ai.zipline.api.Config.AggregationType.{LastK, FirstK, Last, First}
+import ai.zipline.api.Config.AggregationType.{First, FirstK, Last, LastK}
 import ai.zipline.api.Config.DataModel.DataModel
-import ai.zipline.api.Config.{Constants, PartitionSpec, Window, GroupBy => GroupByConf}
+import ai.zipline.api.Config.{Aggregation, Constants, PartitionSpec, Window, GroupBy => GroupByConf}
 import ai.zipline.api.QueryUtils
+import ai.zipline.spark.Comparison.prefixColumnName
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{from_unixtime, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
@@ -102,7 +103,8 @@ object Extensions {
       }
     }
 
-    //  partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
+    // partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
+    // use sparingly/in tests.
     def save(tableName: String): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    Seq(Constants.PartitionColumn),
@@ -115,11 +117,45 @@ object Extensions {
       TableUtils(df.sparkSession).insertPartitions(df, Seq(Constants.PartitionColumn), tableName, partitionRange.length)
     }
 
+    def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
+      columns.foldLeft(df) { (renamedDf, key) =>
+        renamedDf.withColumnRenamed(key, s"${prefix}_$key")
+      }
+    }
+
+    def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {
+      val prefixedLeft = df.prefixColumnNames("left", keys)
+      val prefixedRight = right.prefixColumnNames("right", keys)
+      val joinExpr = keys
+        .map(key => prefixedLeft(s"left_$key") <=> prefixedRight(s"right_$key"))
+        .reduce((col1, col2) => col1.and(col2))
+      val joined = prefixedLeft.join(
+        prefixedRight,
+        joinExpr,
+        joinType = joinType
+      )
+      keys.foldLeft(joined) { (renamedJoin, key) =>
+        renamedJoin.withColumnRenamed(s"left_$key", key).drop(s"right_$key")
+      }
+    }
+
     def withTimestampBasedPartition(columnName: String): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
 
     def withPartitionBasedTimestamp(colName: String): DataFrame =
       df.withColumn(colName, unix_timestamp(df.col(Constants.PartitionColumn), Constants.Partition.format) * 1000)
+  }
+
+  implicit class AggregationsOps(aggregations: Seq[Aggregation]) {
+    def hasWindows = aggregations.exists(_.windows != null)
+    def needsTimestamp: Boolean = {
+      val hasWindows = aggregations.exists(_.windows != null)
+      val hasTimedAggregations = aggregations.exists(_.`type` match {
+        case LastK | FirstK | Last | First => true
+        case _                             => false
+      })
+      hasWindows || hasTimedAggregations
+    }
   }
 
   implicit class GroupByOps(groupByConf: GroupByConf) {
@@ -129,15 +165,6 @@ object Extensions {
       else if (aggs.exists(_.windows == null)) None // agg without windows
       else if (aggs.flatMap(_.windows).exists(_ == null)) None // one of the windows is null - meaning unwindowed
       else Some(aggs.flatMap(_.windows).maxBy(_.millis)) // no null windows
-    }
-
-    def needsTimestamp: Boolean = {
-      val hasWindows = groupByConf.aggregations.exists(_.windows != null)
-      val hasTimedAggregations = groupByConf.aggregations.exists(_.`type` match {
-        case LastK | FirstK | Last | First => true
-        case _                             => false
-      })
-      hasWindows || hasTimedAggregations
     }
 
     def dataModel: DataModel = {

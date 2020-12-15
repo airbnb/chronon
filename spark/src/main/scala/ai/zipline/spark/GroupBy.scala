@@ -16,7 +16,7 @@ import org.apache.spark.sql.{DataFrame, Row}
 class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: DataFrame, finalize: Boolean = true)
     extends Serializable {
 
-  protected[spark] val tsIndex: Int = inputDf.schema.fieldIndex(Constants.TimeColumn)
+  protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   private val ziplineSchema = Conversions.toMooliSchema(inputDf.schema)
   private val valueMooliSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
   @transient
@@ -28,18 +28,28 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   def snapshotEntities: DataFrame = {
 
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
-    val partitionTs = "ds_ts"
-    val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
-    val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
 
-    val outputRdd = inputWithPartitionTs.rdd
+    val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
+      val partitionTs = "ds_ts"
+      val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
+      val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
+      val updateFunc = (ir: Array[Any], row: Row) => {
+        windowAggregator.updateWindowed(ir, Conversions.toMooliRow(row, tsIndex), row.getLong(partitionTsIndex))
+        ir
+      }
+      inputWithPartitionTs -> updateFunc
+    } else {
+      val updateFunc = (ir: Array[Any], row: Row) => {
+        windowAggregator.update(ir, Conversions.toMooliRow(row, tsIndex))
+        ir
+      }
+      inputDf -> updateFunc
+    }
+
+    val outputRdd = preppedInputDf.rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(
-        seqOp = {
-          case (ir, row) =>
-            windowAggregator.updateWindowed(ir, Conversions.toMooliRow(row, tsIndex), row.getLong(partitionTsIndex))
-            ir
-        },
+        seqOp = irUpdateFunc,
         combOp = {
           case (ir1, ir2) =>
             windowAggregator.merge(ir1, ir2)
@@ -187,7 +197,7 @@ object GroupBy {
   def from(groupByConf: GroupByConf, queryRange: PartitionRange, tableUtils: TableUtils): GroupBy = {
     val inputDf = groupByConf.sources
       .flatMap {
-        renderDataSourceQuery(_, queryRange, groupByConf.maxWindow)
+        renderDataSourceQuery(_, groupByConf.keys, queryRange, groupByConf.maxWindow)
       }
       .map { query =>
         val df = tableUtils.sql(query)
@@ -202,9 +212,10 @@ object GroupBy {
       }
 
     assert(
-      !groupByConf.needsTimestamp || inputDf.schema.names.contains(Constants.TimeColumn),
-      "Time columns doesn't exists, but you either have a windowed aggregation or a time based aggregations like: " +
-        "first, last, firstK, lastK"
+      !groupByConf.aggregations.needsTimestamp || inputDf.schema.names.contains(Constants.TimeColumn),
+      "Time column, \"ts\" doesn't exists, but you either have a windowed aggregation or a time based aggregations like: " +
+        "first, last, firstK, lastK. \n" +
+        "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
     println("====== GroupBy input data sample ======")
     inputDf.show()
@@ -215,22 +226,13 @@ object GroupBy {
   }
 
   def renderDataSourceQuery(dataSource: DataSource,
+                            keys: Seq[String],
                             queryRange: PartitionRange,
                             window: Option[Window]): Option[String] = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val scanStart = dataSource.dataModel match {
       case Entities => queryStart
       case Events   => window.map(Constants.Partition.minus(queryStart, _)).orNull
-    }
-
-    val partitionMillisMinus =
-      s"(unix_timestamp(${Constants.PartitionColumn},'${Constants.Partition.format}') * 1000) - 1"
-    val columnAliases = dataSource.dataModel match {
-      case Entities =>
-        Map(Constants.TimeColumn -> Option(dataSource.timeExpression).getOrElse(partitionMillisMinus),
-            Constants.PartitionColumn -> null)
-      case Events =>
-        Map(Constants.TimeColumn -> dataSource.timeExpression, Constants.PartitionColumn -> null)
     }
 
     val sourceRange = PartitionRange(dataSource.startPartition, dataSource.endPartition)
@@ -248,12 +250,19 @@ object GroupBy {
          |   intersected/effective scan range: $intersectedRange 
          |""".stripMargin)
 
+    val metaColumns = dataSource.dataModel match {
+      case Entities =>
+        Map(Constants.PartitionColumn -> null) ++ Option(dataSource.timeExpression).map(Constants.TimeColumn -> _)
+      case Events =>
+        Map(Constants.TimeColumn -> dataSource.timeExpression, Constants.PartitionColumn -> null)
+    }
+
     intersectedRange.map { effectiveRange =>
       QueryUtils.build(
         dataSource.selects,
         dataSource.table,
         Option(dataSource.wheres).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
-        columnAliases
+        metaColumns ++ keys.map(_ -> null)
       )
     }
   }

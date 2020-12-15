@@ -4,7 +4,6 @@ import ai.zipline.api.Config.DataModel._
 import ai.zipline.api.Config.{Constants, JoinPart, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.from_unixtime
 
 class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
 
@@ -69,20 +68,21 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       }
 
     val keys = replacedKeys :+ additionalKey
-    println("Internal Join keys: " + keys.mkString(", "))
-    println("Left sample Schema:")
-    println(joinableLeft.schema.pretty)
-    println("Right sample Schema:")
-    println(joinableRight.schema.pretty)
-    println("Left sample data:")
-    joinableLeft.show()
-    println("Right sample data:")
-    joinableRight.show()
 
-    println("Right count: " + joinableRight.count())
-    println("Left count: " + joinableLeft.count())
-
-    joinableLeft.join(joinableRight, keys, "left_outer")
+//    println("Internal Join keys: " + keys.mkString(", "))
+//    println("Left sample Schema:")
+//    println(joinableLeft.schema.pretty)
+//    println("Right sample Schema:")
+//    println(joinableRight.schema.pretty)
+//    println("Left sample data:")
+//    joinableLeft.show()
+//    println("Right sample data:")
+//    joinableRight.show()
+//    println("Right count: " + joinableRight.count())
+//    println("Left count: " + joinableLeft.count())
+    val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
+//    println(s"Left join result count: ${result.count()}")
+    result
   }
 
   def computeJoinPart(joinPart: JoinPart): DataFrame = {
@@ -135,14 +135,12 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
   }
 
   val computeJoin: DataFrame = {
+    println(s"left df count: ${leftDf.count()}")
     joinConf.joinParts.foldLeft(leftDf) {
       case (left, joinPart) =>
-        // TODO: implement versioning and join part caching here
-        val right = computeJoinPart(joinPart)
-        println("==== JoinPart result - right side - unrenamed ====")
-        right.show()
-
-        joinWithLeft(left, right, joinPart)
+        // TODO: implement versioning
+        // TODO: Cache join parts
+        joinWithLeft(left, computeJoinPart(joinPart), joinPart)
     }
   }
 }

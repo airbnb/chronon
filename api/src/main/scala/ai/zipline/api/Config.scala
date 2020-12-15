@@ -130,7 +130,7 @@ object Config {
                         topic: String = null,
                         mutationTable: String = null,
                         endPartition: String = null,
-                        timeExpression: String = Constants.TimeColumn,
+                        timeExpression: String = null,
                         mutationTimeExpression: String = Constants.MutationTimeColumn,
                         reversalExpression: String = Constants.ReversalColumn)
 
@@ -144,7 +144,7 @@ object Config {
   // otherwise the join will always be snapshot accurate
   case class JoinPart(groupBy: GroupBy,
                       // what columns in the should map to what columns in the
-                      keyRenaming: Map[String, String],
+                      keyRenaming: Map[String, String] = null,
                       // Sometimes you want to join to the same feature_set multiple times
                       // In those cases you can use the prefix to distinguish
                       prefix: String = null)
