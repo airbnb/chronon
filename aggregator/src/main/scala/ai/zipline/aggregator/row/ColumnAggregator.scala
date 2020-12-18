@@ -156,6 +156,7 @@ object ColumnAggregator {
     def mismatchException =
       throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.`type`}")
     aggregationPart.`type` match {
+      case AggregationType.Count => fromSimple(new Count, columnIndices)
       case AggregationType.Sum =>
         inputType match {
           case IntType    => fromSimple(new Sum[Long], columnIndices, toLong[Int])

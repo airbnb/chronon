@@ -58,7 +58,7 @@ case class PartitionRange(start: String, end: String) extends DataRange {
   def substituteMacros(template: String): String = {
     val substitutions = Seq(Constants.StartPartitionMacro -> Option(start), Constants.EndPartitionMacro -> Option(end))
     substitutions.foldLeft(template) {
-      case (q, (target, Some(replacement))) => q.replaceAllLiterally(target, replacement)
+      case (q, (target, Some(replacement))) => q.replaceAllLiterally(target, s"'$replacement'")
       case (q, (_, None))                   => q
     }
   }

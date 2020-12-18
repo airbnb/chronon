@@ -7,6 +7,7 @@ import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
+import org.apache.spark.sql.functions.from_unixtime
 
 import scala.reflect.ClassTag
 import scala.util.Random
@@ -50,7 +51,10 @@ object DataGen {
 
   //  The main api: that generates dataframes given certain properties of data
   def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
-    gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
+    val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
+    generated.withColumn(
+      Constants.PartitionColumn,
+      from_unixtime((generated.col(Constants.TimeColumn) / 1000) + 86400, Constants.Partition.format))
   }
 
   //  Generates Entity data

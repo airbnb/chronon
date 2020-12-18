@@ -24,7 +24,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
   private lazy val leftTimeRange = leftDf.timeRange
 
-  def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
+  def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, additionalKey: String, joinPart: JoinPart): DataFrame = {
     val replacedKeys = joinPart.groupBy.keys.toArray
 
     // apply key-renaming to key columns
@@ -52,43 +52,33 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       }
       .getOrElse(keyRenamedRight)
 
-    val (joinableLeft, joinableRight, additionalKey) =
-      if (joinConf.dataModel == Events && !leftDf.schema.names.contains(Constants.TimePartitionColumn)) {
-        val left = leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
-        val right = renamedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
-        (left, right, Constants.TimePartitionColumn)
-      } else {
-        // for all other cases, the additional key is simply based on accuracy
-        (leftDf,
-         renamedRight,
-         (joinConf.dataModel, joinPart.groupBy.accuracy) match {
-           case (Events, Temporal) => Constants.TimeColumn
-           case _                  => Constants.PartitionColumn
-         })
-      }
-
     val keys = replacedKeys :+ additionalKey
+    val joinableLeft = if (additionalKey == Constants.TimePartitionColumn) {
+      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
+    } else {
+      leftDf
+    }
 
-//    println("Internal Join keys: " + keys.mkString(", "))
-//    println("Left sample Schema:")
-//    println(joinableLeft.schema.pretty)
-//    println("Right sample Schema:")
-//    println(joinableRight.schema.pretty)
-//    println("Left sample data:")
+    println("Internal Join keys: " + keys.mkString(", "))
+    println("Left Schema:")
+    println(joinableLeft.schema.pretty)
+    println("Right Schema:")
+    println(renamedRight.schema.pretty)
+    println()
 //    joinableLeft.show()
 //    println("Right sample data:")
 //    joinableRight.show()
 //    println("Right count: " + joinableRight.count())
 //    println("Left count: " + joinableLeft.count())
-    val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
+    val result = joinableLeft.nullSafeJoin(renamedRight, keys, "left")
 //    println(s"Left join result count: ${result.count()}")
-    result
+    result.drop(Constants.TimePartitionColumn)
   }
 
-  def computeJoinPart(joinPart: JoinPart): DataFrame = {
-    // no-agg case
+  def computeJoinPart(joinPart: JoinPart): (DataFrame, String) = {
+    // no-agg case - additional key, besides the user specified key, is simply the ds
     if (joinPart.groupBy.aggregations == null) {
-      return GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).preAggregated
+      return GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).preAggregated -> Constants.PartitionColumn
     }
 
     println(s"""
@@ -96,19 +86,19 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
          |  part name : ${joinPart.groupBy.metadata.name}, 
          |  left type : ${joinConf.dataModel}, 
          |  right type: ${joinPart.groupBy.dataModel}, 
-         |  accuracy  : ${joinPart.groupBy.accuracy}
+         |  accuracy  : ${joinPart.accuracy}
          |""".stripMargin)
 
-    (joinConf.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.accuracy) match {
+    (joinConf.dataModel, joinPart.groupBy.dataModel, joinPart.accuracy) match {
       case (Entities, Events, _) => {
         GroupBy
           .from(joinPart.groupBy, leftUnfilledRange, tableUtils)
-          .snapshotEvents(leftUnfilledRange)
+          .snapshotEvents(leftUnfilledRange) -> Constants.PartitionColumn
       }
       case (Entities, Entities, _) => {
-        GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).snapshotEntities
+        GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).snapshotEntities -> Constants.PartitionColumn
       }
-      case (Events, Events, Temporal) => {
+      case (Events, Events, null | Temporal) => {
         lazy val renamedLeft = Option(joinPart.keyRenaming)
           .getOrElse(Map.empty)
           .foldLeft(leftDf) {
@@ -116,18 +106,22 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
           }
         GroupBy
           .from(joinPart.groupBy, leftTimeRange.toPartitionRange, tableUtils)
-          .temporalEvents(renamedLeft)
+          .temporalEvents(renamedLeft) -> Constants.TimeColumn
       }
       case (Events, Events, Snapshot) => {
         val leftTimePartitionRange = leftTimeRange.toPartitionRange
         GroupBy
           .from(joinPart.groupBy, leftTimePartitionRange, tableUtils)
           .snapshotEvents(leftTimePartitionRange)
+          .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
       }
-      case (Events, Entities, Snapshot) => {
+      case (Events, Entities, null | Snapshot) => {
         val PartitionRange(start, end) = leftTimeRange.toPartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
-        GroupBy.from(joinPart.groupBy, rightRange, tableUtils).snapshotEntities
+        GroupBy
+          .from(joinPart.groupBy, rightRange, tableUtils)
+          .snapshotEntities
+          .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
       }
       case (Events, Entities, Temporal) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
@@ -138,9 +132,10 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     println(s"left df count: ${leftDf.count()}")
     joinConf.joinParts.foldLeft(leftDf) {
       case (left, joinPart) =>
+        val (rightDf, additionalKey) = computeJoinPart(joinPart)
         // TODO: implement versioning
         // TODO: Cache join parts
-        joinWithLeft(left, computeJoinPart(joinPart), joinPart)
+        joinWithLeft(left, rightDf, additionalKey, joinPart)
     }
   }
 }

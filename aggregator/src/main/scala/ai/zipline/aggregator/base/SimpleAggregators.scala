@@ -28,6 +28,24 @@ class Sum[I: Numeric] extends SimpleAggregator[I, Long, Long] {
   override def isDeletable: Boolean = true
 }
 
+class Count extends SimpleAggregator[Any, Long, Long] {
+  override def outputType: DataType = LongType
+
+  override def irType: DataType = LongType
+
+  override def prepare(input: Any): Long = 1
+
+  override def update(ir: Long, input: Any): Long = ir + 1
+
+  override def merge(ir1: Long, ir2: Long): Long = ir1 + ir2
+
+  override def finalize(ir: Long): Long = ir
+
+  override def delete(ir: Long, input: Any): Long = ir - 1
+
+  override def isDeletable: Boolean = true
+}
+
 class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def outputType: DataType = DoubleType
 
@@ -76,24 +94,20 @@ trait CpcFriendly[Input] {
 }
 
 object CpcFriendly {
-  implicit val stringIsCpcFriendly: CpcFriendly[String] = {
-    (sketch: CpcSketch, input: String) =>
-      sketch.update(input)
+  implicit val stringIsCpcFriendly: CpcFriendly[String] = { (sketch: CpcSketch, input: String) =>
+    sketch.update(input)
   }
 
-  implicit val longIsCpcFriendly: CpcFriendly[Long] = {
-    (sketch: CpcSketch, input: Long) =>
-      sketch.update(input)
+  implicit val longIsCpcFriendly: CpcFriendly[Long] = { (sketch: CpcSketch, input: Long) =>
+    sketch.update(input)
   }
 
-  implicit val doubleIsCpcFriendly: CpcFriendly[Double] = {
-    (sketch: CpcSketch, input: Double) =>
-      sketch.update(input)
+  implicit val doubleIsCpcFriendly: CpcFriendly[Double] = { (sketch: CpcSketch, input: Double) =>
+    sketch.update(input)
   }
 
-  implicit val BinaryIsCpcFriendly: CpcFriendly[Array[Byte]] = {
-    (sketch: CpcSketch, input: Array[Byte]) =>
-      sketch.update(input)
+  implicit val BinaryIsCpcFriendly: CpcFriendly[Array[Byte]] = { (sketch: CpcSketch, input: Array[Byte]) =>
+    sketch.update(input)
   }
 }
 
@@ -209,5 +223,4 @@ class OrderByLimit[I: ClassTag](
 class TopK[T: Ordering: ClassTag](inputType: DataType, k: Int)
     extends OrderByLimit[T](inputType, k, Ordering[T].reverse)
 
-class BottomK[T: Ordering: ClassTag](inputType: DataType, k: Int)
-    extends OrderByLimit[T](inputType, k, Ordering[T])
+class BottomK[T: Ordering: ClassTag](inputType: DataType, k: Int) extends OrderByLimit[T](inputType, k, Ordering[T])

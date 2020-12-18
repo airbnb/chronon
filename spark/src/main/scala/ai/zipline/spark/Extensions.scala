@@ -96,13 +96,6 @@ object Extensions {
 
     def typeOf(col: String): DataType = df.schema(df.schema.fieldIndex(col)).dataType
 
-    def matchColumns(cols: Seq[String], other: DataFrame): Unit = {
-      cols.foreach { col =>
-        assert(df.typeOf(col) == other.typeOf(col),
-               s"Mismatching column types of $col, ${df.typeOf(col)} vs. ${other.typeOf(col)}")
-      }
-    }
-
     // partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
     // use sparingly/in tests.
     def save(tableName: String): Unit = {
@@ -123,7 +116,24 @@ object Extensions {
       }
     }
 
+    def validateJoinKeys(right: DataFrame, keys: Seq[String]): Unit = {
+      keys.foreach { key =>
+        val leftFields = df.schema.fieldNames
+        val rightFields = right.schema.fieldNames
+        assert(leftFields.contains(key),
+               s"left side of the join doesn't contain the key $key, available keys are [${leftFields.mkString(", ")}]")
+        assert(
+          rightFields.contains(key),
+          s"right side of the join doesn't contain the key $key, available columns are [${rightFields.mkString(", ")}]")
+        val leftDataType = df.schema(leftFields.indexOf(key)).dataType
+        val rightDataType = right.schema(rightFields.indexOf(key)).dataType
+        assert(leftDataType == rightDataType,
+               s"Join key, '$key', has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
+      }
+    }
+
     def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {
+      validateJoinKeys(right, keys)
       val prefixedLeft = df.prefixColumnNames("left", keys)
       val prefixedRight = right.prefixColumnNames("right", keys)
       val joinExpr = keys
@@ -144,6 +154,14 @@ object Extensions {
 
     def withPartitionBasedTimestamp(colName: String): DataFrame =
       df.withColumn(colName, unix_timestamp(df.col(Constants.PartitionColumn), Constants.Partition.format) * 1000)
+
+    def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
+      cols.foldLeft(df) { (dfNew, col) =>
+        val renamed = dfNew
+          .withColumn(s"${col}_str", from_unixtime(df(col) / 1000, "yyyy-MM-dd HH:mm:ss"))
+        if (dropOriginal) renamed.drop(col) else renamed
+      }
+    }
   }
 
   implicit class AggregationsOps(aggregations: Seq[Aggregation]) {

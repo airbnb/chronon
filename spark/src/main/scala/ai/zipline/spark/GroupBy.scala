@@ -80,20 +80,18 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
   def temporalEvents(queriesDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
-
     val TimeRange(minQueryTs, maxQueryTs) = queriesDf.timeRange
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
-    queriesDf.matchColumns(keyColumns, inputDf)
+    queriesDf.validateJoinKeys(inputDf, keyColumns)
 
-    val keyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
-
+    val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
     val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
     val queriesByHeadStarts = queriesDf.rdd
       .map { row =>
         val ts = row.getLong(queryTsIndex)
-        ((keyGen(row), headStart(ts)), ts)
+        ((queriesKeyGen(row), headStart(ts)), ts)
       }
       .groupByKey()
       .mapValues { queryTimesItr =>
@@ -116,11 +114,12 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
           headStartsArray.indices.map { i => (keys, headStartsArray(i)) -> headStartIrs(i) }
       }
 
+    val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
     val minHeadStart = headStart(minQueryTs)
     val eventsByHeadStart = inputDf
       .filter(s"${Constants.TimeColumn} between $minHeadStart and $maxQueryTs")
       .rdd
-      .groupBy { (row: Row) => keyGen(row) -> headStart(row.getLong(tsIndex)) }
+      .groupBy { (row: Row) => inputKeyGen(row) -> headStart(row.getLong(tsIndex)) }
 
     val outputRdd = queriesByHeadStarts
       .leftOuterJoin(headStartsWithIrs)
@@ -201,7 +200,7 @@ object GroupBy {
       }
       .map { query =>
         val df = tableUtils.sql(query)
-        println("======= GroupBy input Schema =======")
+        println(s"----[GroupBy data source schema: ${groupByConf.metadata.name}]----")
         println(df.schema.pretty)
         df
       }
@@ -217,10 +216,10 @@ object GroupBy {
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
-    println("====== GroupBy input data sample ======")
+    println(s"\n----[GroupBy input data sample: ${groupByConf.metadata.name}]----")
     inputDf.show()
     println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
-    println("====== End input data sample =======")
+    println("----[End input data sample]----")
 
     new GroupBy(groupByConf.aggregations, groupByConf.keys, inputDf)
   }

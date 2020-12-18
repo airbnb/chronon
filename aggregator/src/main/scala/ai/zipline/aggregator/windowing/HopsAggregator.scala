@@ -5,7 +5,7 @@ import java.util
 import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.aggregator.windowing.HopsAggregator._
-import ai.zipline.api.Config.Aggregation
+import ai.zipline.api.Config.{Aggregation, Window}
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution
 // we use minQueryTs to construct only the relevant hops for a given hop size.
@@ -19,13 +19,15 @@ class HopsAggregator(minQueryTs: Long,
 
   @transient lazy val rowAggregator =
     new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
-  @transient lazy val hopSizes: Array[Long] = resolution.hopSizes
-  @transient lazy val leftBoundaries: Array[Long] = {
+  val hopSizes: Array[Long] = resolution.hopSizes
+  val leftBoundaries: Array[Long] = {
+    println(s"aggregations: $aggregations")
+
     // Use the max window for a given tail hop to determine
     // from where(leftBoundary) a particular hops size is relevant
     val hopSizeToMaxWindow =
       aggregations
-        .flatMap(_.windows)
+        .flatMap { agg => Option(agg.windows).getOrElse(Seq(Window.Infinity)) }
         .groupBy(resolution.calculateTailHop)
         .mapValues(_.map(_.millis).max)
 

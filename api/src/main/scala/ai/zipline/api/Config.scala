@@ -143,14 +143,16 @@ object Config {
   // when the datasource has topic and left side is events, the join will be temporally accurate
   // otherwise the join will always be snapshot accurate
   case class JoinPart(groupBy: GroupBy,
-                      // what columns in the should map to what columns in the
+                      // what columns in the left side should map to what columns on the right side
                       keyRenaming: Map[String, String] = null,
+                      //
+                      accuracy: Accuracy = null,
                       // Sometimes you want to join to the same feature_set multiple times
                       // In those cases you can use the prefix to distinguish
                       prefix: String = null)
 
   case class Join(query: String = null,
-                  table: String,
+                  table: String = null,
                   dataModel: DataModel,
                   startPartition: String,
                   joinParts: Seq[JoinPart],
