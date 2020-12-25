@@ -19,10 +19,10 @@ object SparkSessionBuilder {
       .builder()
       .master("local[*]")
       .config("spark.sql.session.timeZone", "UTC")
-      .config("spark.eventLog.enabled", "false")
       .appName(name)
       .getOrCreate()
 
+    spark.sparkContext.setLogLevel("ERROR")
     spark
   }
 
