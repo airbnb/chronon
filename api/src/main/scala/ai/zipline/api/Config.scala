@@ -16,7 +16,10 @@ object Config {
   }
 
   case class Window(length: Int, unit: TimeUnit) extends Serializable {
-    val toSuffix: String =
+    val str: String =
+      if (length == Int.MaxValue) "unbounded" else s"$length${unit.str}"
+
+    val suffix: String =
       if (length == Int.MaxValue) "" else s"_$length${unit.str}"
 
     val millis: Long = length.toLong * unit.millis
@@ -26,7 +29,23 @@ object Config {
     val Infinity: Window = Window(Int.MaxValue, TimeUnit.Days)
     val Hour: Window = Window(1, TimeUnit.Hours)
     val Day: Window = Window(1, TimeUnit.Days)
-    val FiveMinutes: Long = 5 * 60 * 1000L
+    private val SecondMillis: Long = 1000
+    private val Minute: Long = 60 * SecondMillis
+    val FiveMinutes: Long = 5 * Minute
+
+    def millisToString(millis: Long): String = {
+      if (millis % Day.millis == 0) {
+        Window((millis / Day.millis).toInt, TimeUnit.Days).str
+      } else if (millis % Hour.millis == 0) {
+        Window((millis / Hour.millis).toInt, TimeUnit.Hours).str
+      } else if (millis % Minute == 0) {
+        s"${millis / Minute}mins"
+      } else if (millis % SecondMillis == 0) {
+        s"${millis / SecondMillis}secs"
+      } else {
+        s"${millis}ms"
+      }
+    }
   }
 
   object DataModel extends Enumeration {
@@ -101,7 +120,7 @@ object Config {
         case other   => other.toString.toLowerCase
       }
 
-    def outputColumnName = s"${inputColumn}_$opSuffix${window.toSuffix}"
+    def outputColumnName = s"${inputColumn}_$opSuffix${window.suffix}"
   }
   case class Aggregation(`type`: AggregationType,
                          inputColumn: String,

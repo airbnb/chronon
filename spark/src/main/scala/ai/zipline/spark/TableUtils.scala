@@ -83,7 +83,14 @@ case class TableUtils(sparkSession: SparkSession) {
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
-    assert(result.valid, s"Invalid partition range for left side: $result")
+    assert(
+      result.valid,
+      s"""Invalid partition range for staged fill: $result 
+         |This usually means that the range being requesting to fill already exists.
+         |Data is found until - ${effectiveStart.orNull} [exclusive].
+         |Output table: $outputTable
+         |Input tables: [${inputTables.mkString(", ")}]""".stripMargin
+    )
     result
   }
 }

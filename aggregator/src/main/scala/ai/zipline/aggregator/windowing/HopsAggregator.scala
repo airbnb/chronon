@@ -1,5 +1,7 @@
 package ai.zipline.aggregator.windowing
 
+import java.util.Date
+import java.text.SimpleDateFormat
 import java.util
 
 import ai.zipline.aggregator.base.DataType
@@ -20,21 +22,50 @@ class HopsAggregator(minQueryTs: Long,
   @transient lazy val rowAggregator =
     new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
   val hopSizes: Array[Long] = resolution.hopSizes
-  val leftBoundaries: Array[Long] = {
+  val leftBoundaries: Array[Option[Long]] = {
     println(s"aggregations: $aggregations")
+
+    val allWindows = aggregations
+      .flatMap { agg => Option(agg.windows).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
+      .map { window =>
+        Option(window).getOrElse(Window.Infinity)
+      } // agg.windows(i) = Null => one of the windows is "unwindowed"
 
     // Use the max window for a given tail hop to determine
     // from where(leftBoundary) a particular hops size is relevant
     val hopSizeToMaxWindow =
-      aggregations
-        .flatMap { agg => Option(agg.windows).getOrElse(Seq(Window.Infinity)) }
+      allWindows
         .groupBy(resolution.calculateTailHop)
         .mapValues(_.map(_.millis).max)
 
-    val result = resolution.hopSizes.map { hop =>
-      TsUtils.round(minQueryTs, hop) - hopSizeToMaxWindow.getOrElse(hop, 0L)
-    }
-    println(s"Left bounds = ${result.map(_.toString).mkString(",")} , minQueryTs = $minQueryTs")
+    val maxHopSize = resolution.calculateTailHop(allWindows.maxBy(_.millis))
+    val result: Array[Option[Long]] = resolution.hopSizes.indices.map { hopIndex =>
+      val hopSize = resolution.hopSizes(hopIndex)
+      val windowBasedLeftBoundary = hopSizeToMaxWindow.get(hopSize).map(TsUtils.round(minQueryTs, hopSize) - _)
+      val largerWindowBasedLeftBoundary = if (hopIndex == 0) { // largest window already
+        None
+      } else { // smaller hop is only used to construct windows' head with larger hopsize.
+        val previousHopSize = resolution.hopSizes(hopIndex - 1)
+        Some(TsUtils.round(minQueryTs, previousHopSize))
+      }
+      val lowerLeftBoundary =
+        (windowBasedLeftBoundary ++ largerWindowBasedLeftBoundary).reduceOption(Ordering[Long].min)
+
+      if (hopSize > maxHopSize) {
+        None
+      } else {
+        lowerLeftBoundary
+      }
+    }.toArray
+
+    val readableHopSizes = resolution.hopSizes.map(Window.millisToString)
+    val readableLeftBounds = result.map(_.map(TsUtils.toStr).getOrElse("unused"))
+    val readableHopsToBoundsMap = readableHopSizes
+      .zip(readableLeftBounds)
+      .map { case (hop, left) => s"$hop->$left" }
+      .mkString(", ")
+    println(s"""Left bounds: $readableHopsToBoundsMap 
+         |minQueryTs = ${TsUtils.toStr(minQueryTs)}""".stripMargin)
     result
   }
 
@@ -50,7 +81,7 @@ class HopsAggregator(minQueryTs: Long,
   // used to collect hops of various sizes in a single pass of input rows
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
-      if (row.ts >= leftBoundaries(i)) { // left inclusive
+      if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
         val hopStart = TsUtils.round(row.ts, hopSizes(i))
         val hopIr = hopMaps(i).computeIfAbsent(hopStart, buildHop)
         rowAggregator.update(hopIr, row)

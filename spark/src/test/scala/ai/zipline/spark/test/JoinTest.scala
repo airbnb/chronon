@@ -1,6 +1,6 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{DoubleType, IntType, LongType, StringType}
+import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.api.Config.DataModel.{Entities, Events}
 import ai.zipline.api.Config.{
   Accuracy,
@@ -18,9 +18,7 @@ import ai.zipline.api.Config.{
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, TableUtils}
 import junit.framework.TestCase
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.{from_unixtime, to_date}
-import org.apache.spark.sql.types.TimestampType
+import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
 
 // main test path for query generation - including the date scan logic
@@ -40,13 +38,13 @@ class JoinTest extends TestCase {
   def testEventsEntitiesSnapshot: Unit = {
 
     val dollarTransactions = List(
-      DataGen.Column("user", StringType, 1000),
+      DataGen.Column("user", StringType, 100),
       DataGen.Column("ts", LongType, 200),
       DataGen.Column("amount_dollars", LongType, 1000)
     )
 
     val rupeeTransactions = List(
-      DataGen.Column("user", StringType, 1000),
+      DataGen.Column("user", StringType, 100),
       DataGen.Column("ts", LongType, 200),
       DataGen.Column("amount_rupees", LongType, 70000)
     )
@@ -80,7 +78,7 @@ class JoinTest extends TestCase {
       metadata = MetaData(name = "user_transactions", team = "unit_test")
     )
     val queriesSchema = List(
-      DataGen.Column("user", StringType, 10)
+      DataGen.Column("user", StringType, 100)
     )
 
     val queryTable = s"$namespace.queries"
@@ -123,22 +121,20 @@ class JoinTest extends TestCase {
         | SELECT queries.user_name,
         |        queries.ts,
         |        queries.ds,
-        |        grouped_transactions.ds as ts_ds,
         |        grouped_transactions.amount_dollars_sum,
         |        grouped_transactions.amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
         |""".stripMargin)
-    val queries = tableUtils.sql(
-      s"SELECT user_name, from_unixtime(ts/1000, 'yyyy-MM-dd') as ts_ds, ts, ds from $queryTable where ds >= '$start'")
+    val queries = tableUtils.sql(s"SELECT user_name, ts, ds from $queryTable where ds >= '$start'")
     println("showing left queries")
     queries.show()
     println("showing join result")
     computed.show()
     println("showing query result")
     expected.show()
-    val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts_ds", "ts", "ds"))
+    val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
@@ -177,7 +173,7 @@ class JoinTest extends TestCase {
 
     val heightSchema = List(
       DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 1000),
+      DataGen.Column("country", StringType, 100),
       DataGen.Column("height", LongType, 200)
     )
     val heightTable = s"$namespace.heights"
@@ -196,7 +192,7 @@ class JoinTest extends TestCase {
     )
 
     // left side
-    val countrySchema = List(DataGen.Column("country", StringType, 1000))
+    val countrySchema = List(DataGen.Column("country", StringType, 100))
     val countryTable = s"$namespace.countries"
     DataGen.entities(spark, countrySchema, 1000000, partitions = 400).save(countryTable)
 
@@ -263,7 +259,7 @@ class JoinTest extends TestCase {
   def testEventsEventsSnapshot: Unit = {
     val viewsSchema = List(
       DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 1000),
+      DataGen.Column("item", StringType, 100),
       DataGen.Column("time_spent_ms", LongType, 5000)
     )
 
@@ -288,7 +284,7 @@ class JoinTest extends TestCase {
     )
 
     // left side
-    val itemQueries = List(DataGen.Column("item", StringType, 1000))
+    val itemQueries = List(DataGen.Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     DataGen
       .events(spark, itemQueries, 10000, partitions = 100)
@@ -302,7 +298,7 @@ class JoinTest extends TestCase {
       dataModel = Events,
       startPartition = start,
       joinParts = Seq(JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.Snapshot)),
-      metadata = MetaData(name = "country_features", team = "test")
+      metadata = MetaData(name = "item_snapshot_features", team = "test")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
@@ -340,7 +336,7 @@ class JoinTest extends TestCase {
   def testEventsEventsTemporal: Unit = {
     val viewsSchema = List(
       DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 1000),
+      DataGen.Column("item", StringType, 100),
       DataGen.Column("time_spent_ms", LongType, 5000)
     )
 
@@ -357,15 +353,15 @@ class JoinTest extends TestCase {
       sources = Seq(viewsSource),
       keys = Seq("item"),
       aggregations = Seq(
-        Aggregation(`type` = AggregationType.Average, inputColumn = "time_spent_ms")
-//        Aggregation(`type` = AggregationType.Min, inputColumn = "ts"),
-//        Aggregation(`type` = AggregationType.Max, inputColumn = "ts")
+        Aggregation(`type` = AggregationType.Average, inputColumn = "time_spent_ms"),
+        Aggregation(`type` = AggregationType.Min, inputColumn = "ts"),
+        Aggregation(`type` = AggregationType.Max, inputColumn = "ts")
       ),
       metadata = MetaData(name = "item_views", team = "unit_test")
     )
 
     // left side
-    val itemQueries = List(DataGen.Column("item", StringType, 1000))
+    val itemQueries = List(DataGen.Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     DataGen
       .events(spark, itemQueries, 10000, partitions = 100)
@@ -379,7 +375,7 @@ class JoinTest extends TestCase {
       dataModel = Events,
       startPartition = start,
       joinParts = Seq(JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.Temporal)),
-      metadata = MetaData(name = "country_features", team = "test")
+      metadata = MetaData(name = "item_temporal_features  ", team = "test")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
@@ -392,6 +388,8 @@ class JoinTest extends TestCase {
                                      | SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_max,
                                      |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average 
                                      | FROM queries left outer join $viewsTable
                                      |  ON queries.item = $viewsTable.item
@@ -406,7 +404,7 @@ class JoinTest extends TestCase {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff
-        .replaceWithReadableTime(Seq("ts"), dropOriginal = false)
+        .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = true)
         .show()
     }
     assertEquals(diff.count(), 0)

@@ -11,7 +11,7 @@ import ai.zipline.api.Config.DataModel.DataModel
 import ai.zipline.api.Config.{Aggregation, Constants, PartitionSpec, Window, GroupBy => GroupByConf}
 import ai.zipline.api.QueryUtils
 import ai.zipline.spark.Comparison.prefixColumnName
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.{from_unixtime, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 
@@ -65,6 +65,11 @@ object Extensions {
           case (typ, name) => s"  ${typ.padTo(padding, ' ')} : $name"
         }
         .mkString("\n")
+    }
+  }
+  implicit class SparkSessionOps(sparkSession: SparkSession) {
+    def disableLogSpam: Unit = {
+      sparkSession.sparkContext.setLogLevel("ERROR")
     }
   }
 

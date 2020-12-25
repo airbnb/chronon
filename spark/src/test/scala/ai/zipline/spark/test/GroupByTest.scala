@@ -7,8 +7,8 @@ import ai.zipline.api.Config.{GroupBy => _, _}
 import ai.zipline.spark._
 import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType}
+import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 
 class GroupByTest extends TestCase {
@@ -73,12 +73,12 @@ class GroupByTest extends TestCase {
     val expectedDf = df.sqlContext.sql(s"""
                                           |select user, 
                                           |       $datesViewName.ds, 
-                                          |       MAX(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - 86400*10) * 1000, ts, null)) AS ts_max_10d,
+                                          |       MAX(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, ts, null)) AS ts_max_10d,
                                           |       MAX(ts) as ts_max,
-                                          |       SUM(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
+                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
-                                          |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 
-                                          |group by user, ds
+                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 
+                                          |group by user, $datesViewName.ds
                                           |""".stripMargin)
 
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", Constants.PartitionColumn))

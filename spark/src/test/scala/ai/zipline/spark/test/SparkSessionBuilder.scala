@@ -26,13 +26,11 @@ object SparkSessionBuilder {
     spark
   }
 
-  /**
-    * delete obsolete directory
-    */
   def cleanUp(file: File): Unit = {
     if (file.exists() && file.isDirectory) {
       val directory = new Directory(file)
       directory.deleteRecursively()
     }
   }
+
 }
