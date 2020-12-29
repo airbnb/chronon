@@ -106,7 +106,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
           }
         GroupBy
           .from(joinPart.groupBy, leftTimeRange.toPartitionRange, tableUtils)
-          .temporalEvents(renamedLeft) -> Constants.TimeColumn
+          .temporalEvents(renamedLeft, Some(leftTimeRange)) -> Constants.TimeColumn
       }
       case (Events, Events, Snapshot) => {
         val leftTimePartitionRange = leftTimeRange.toPartitionRange

@@ -23,8 +23,6 @@ class HopsAggregator(minQueryTs: Long,
     new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
   val hopSizes: Array[Long] = resolution.hopSizes
   val leftBoundaries: Array[Option[Long]] = {
-    println(s"aggregations: $aggregations")
-
     val allWindows = aggregations
       .flatMap { agg => Option(agg.windows).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
       .map { window =>
@@ -41,20 +39,20 @@ class HopsAggregator(minQueryTs: Long,
     val maxHopSize = resolution.calculateTailHop(allWindows.maxBy(_.millis))
     val result: Array[Option[Long]] = resolution.hopSizes.indices.map { hopIndex =>
       val hopSize = resolution.hopSizes(hopIndex)
+      // for windows with this hop as the tail hop size
       val windowBasedLeftBoundary = hopSizeToMaxWindow.get(hopSize).map(TsUtils.round(minQueryTs, hopSize) - _)
+      // for windows larger with tail hop larger than this hop
       val largerWindowBasedLeftBoundary = if (hopIndex == 0) { // largest window already
         None
       } else { // smaller hop is only used to construct windows' head with larger hopsize.
         val previousHopSize = resolution.hopSizes(hopIndex - 1)
         Some(TsUtils.round(minQueryTs, previousHopSize))
       }
-      val lowerLeftBoundary =
-        (windowBasedLeftBoundary ++ largerWindowBasedLeftBoundary).reduceOption(Ordering[Long].min)
 
-      if (hopSize > maxHopSize) {
+      if (hopSize > maxHopSize) { // this hop size is not relevant
         None
       } else {
-        lowerLeftBoundary
+        (windowBasedLeftBoundary ++ largerWindowBasedLeftBoundary).reduceOption(Ordering[Long].min)
       }
     }.toArray
 

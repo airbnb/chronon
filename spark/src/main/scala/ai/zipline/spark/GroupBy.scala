@@ -79,8 +79,10 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
-  def temporalEvents(queriesDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
-    val TimeRange(minQueryTs, maxQueryTs) = queriesDf.timeRange
+  def temporalEvents(queriesDf: DataFrame,
+                     queryTimeRange: Option[TimeRange] = None,
+                     resolution: Resolution = FiveMinuteResolution): DataFrame = {
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
