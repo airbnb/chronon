@@ -73,7 +73,7 @@ case class TableUtils(sparkSession: SparkSession) {
   // logic for resuming computation from a previous job
   // applicable to join, joinPart, groupBy, daily_cache
   // TODO: Log each step - to make it easy to follow the range inference logic
-  def fillableRange(outputTable: String,
+  def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
                     inputTables: Seq[String] = Seq.empty[String]): PartitionRange = {
     val inputStart = inputTables

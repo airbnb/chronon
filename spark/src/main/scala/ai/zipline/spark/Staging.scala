@@ -6,7 +6,7 @@ import org.apache.spark.sql.DataFrame
 // resume functionality common to stagingQuery, joinPart/groupBy, join
 case class Staging(outputTable: String, tableUtils: TableUtils, expectedRange: PartitionRange) {
   def fill(fillFunction: PartitionRange => DataFrame, inputTables: Seq[String]): DataFrame = {
-    val fillableRange = tableUtils.fillableRange(outputTable, expectedRange, inputTables)
+    val fillableRange = tableUtils.unfilledRange(outputTable, expectedRange, inputTables)
     val increment = fillFunction(fillableRange)
     increment.save(outputTable, fillableRange)
     if (fillableRange == expectedRange) {

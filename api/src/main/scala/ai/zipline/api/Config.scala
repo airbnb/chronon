@@ -2,7 +2,7 @@ package ai.zipline.api
 
 import java.io.{File, PrintWriter}
 
-import com.sksamuel.avro4s.{AvroSchema, SchemaFor}
+import com.sksamuel.avro4s.{AvroInputStream, AvroSchema, Decoder, SchemaFor}
 
 import scala.io.Source
 import scala.reflect.runtime.universe.{TypeTag, typeOf}
@@ -181,6 +181,7 @@ object Config {
   // TODO: Add support
   case class Staging(query: String, startPartition: String, metadata: MetaData, partitionSpec: PartitionSpec)
 
+  // TODO: Convert avsc files to python files using https://github.com/srserves85/avro-to-python
   def writeSchema[T: SchemaFor: TypeTag](folderPath: String): Unit = {
     val typeName = typeOf[T].typeSymbol.name.toString
     val outputPath = s"$folderPath/$typeName.avsc"
@@ -192,7 +193,16 @@ object Config {
     println(s"Wrote Schema for $typeName to $outputPath with content:")
     Source.fromFile(outputPath).foreach { x => print(x) }
     println()
+  }
 
+  def parseFile[T: Decoder: SchemaFor: TypeTag](filePath: String): T = {
+    val typeName = typeOf[T].typeSymbol.name.toString
+    println(s"Parsing $typeName from file $filePath - expecting avro json serialization")
+    val schema = AvroSchema[T]
+    val inputStream = AvroInputStream.json[T].from(filePath).build(schema)
+    val objs = inputStream.iterator.toList
+    inputStream.close()
+    objs.head
   }
 
   def main(args: Array[String]): Unit = {

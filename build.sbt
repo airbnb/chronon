@@ -33,7 +33,10 @@ lazy val spark = project
   .settings(
     mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
     // assemblySettings,
-    libraryDependencies ++= Seq("org.apache.spark" %% "spark-sql" % "2.4.4")
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-sql" % "2.4.4",
+      "org.rogach" %% "scallop" % "4.0.1"
+    )
   )
 
 //lazy val assemblySettings = Seq(

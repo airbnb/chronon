@@ -1,15 +1,18 @@
 package ai.zipline.spark
+import ai.zipline.api.Config
 import ai.zipline.api.Config.Accuracy._
 import ai.zipline.api.Config.DataModel._
 import ai.zipline.api.Config.{Constants, JoinPart, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
+import scala.io.Source
+
 class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
 
   private val outputTable = s"$namespace.${joinConf.metadata.cleanName}"
 
-  private lazy val leftUnfilledRange: PartitionRange = tableUtils.fillableRange(
+  private lazy val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
     outputTable,
     PartitionRange(joinConf.startPartition, endPartition),
     Option(joinConf.table).toSeq)
@@ -24,7 +27,10 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
   private lazy val leftTimeRange = leftDf.timeRange
 
-  def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, additionalKey: String, joinPart: JoinPart): DataFrame = {
+  private def joinWithLeft(leftDf: DataFrame,
+                           rightDf: DataFrame,
+                           additionalKey: String,
+                           joinPart: JoinPart): DataFrame = {
     val replacedKeys = joinPart.groupBy.keys.toArray
 
     // apply key-renaming to key columns
@@ -59,10 +65,11 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       leftDf
     }
 
-    println("Internal Join keys: " + keys.mkString(", "))
+    val partName = joinPart.groupBy.metadata.name
+    println(s"Join keys for $partName: " + keys.mkString(", "))
     println("Left Schema:")
     println(joinableLeft.schema.pretty)
-    println("Right Schema:")
+    println(s"Right Schema for $partName:")
     println(renamedRight.schema.pretty)
     println()
 //    joinableLeft.show()
@@ -72,10 +79,11 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 //    println("Left count: " + joinableLeft.count())
     val result = joinableLeft.nullSafeJoin(renamedRight, keys, "left")
 //    println(s"Left join result count: ${result.count()}")
+    // drop intermediate join key (used for right snapshot events case)
     result.drop(Constants.TimePartitionColumn)
   }
 
-  def computeJoinPart(joinPart: JoinPart): (DataFrame, String) = {
+  private def computeJoinPart(joinPart: JoinPart): (DataFrame, String) = {
     // no-agg case - additional key, besides the user specified key, is simply the ds
     if (joinPart.groupBy.aggregations == null) {
       return GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).preAggregated -> Constants.PartitionColumn
@@ -128,7 +136,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     }
   }
 
-  val computeJoin: DataFrame = {
+  def computeJoin: DataFrame = {
     println(s"left df count: ${leftDf.count()}")
     joinConf.joinParts.foldLeft(leftDf) {
       case (left, joinPart) =>
@@ -137,5 +145,28 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
         // TODO: Cache join parts
         joinWithLeft(left, rightDf, additionalKey, joinPart)
     }
+  }
+
+  def commitOutput: Unit = {
+    computeJoin.save(outputTable, leftUnfilledRange)
+  }
+}
+
+object Join extends App {
+  // don't leak scallop stuff into the larger scope
+  import org.rogach.scallop._
+  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+    val confPath = opt[String](required = true)
+    val endDate = opt[String](required = true)
+    val namespace = opt[String](required = true)
+    verify()
+  }
+
+  override def main(args: Array[String]): Unit = {
+    // args = conf path, end date, output namespace
+    val parsedArgs = new ParsedArgs(args)
+    println(s"Parsed Args: $parsedArgs")
+    val join = new Join(Config.parseFile(parsedArgs.confPath), parsedArgs.endDate, parsedArgs.namespace)
+    join.commitOutput
   }
 }
