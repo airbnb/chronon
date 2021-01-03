@@ -17,13 +17,14 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     PartitionRange(joinConf.startPartition, endPartition),
     Option(joinConf.table).toSeq)
 
-  private val leftDf: DataFrame =
-    if (joinConf.query != null) {
+  private val leftDf: DataFrame = {
+    if (joinConf.stagingQuery != null) {
       Staging(s"${outputTable}_left", tableUtils, leftUnfilledRange)
-        .query(joinConf.query, Option(joinConf.table).toSeq)
+        .query(joinConf.stagingQuery, Option(joinConf.table).toSeq)
     } else {
-      tableUtils.sql(leftUnfilledRange.scanQuery(joinConf.table))
+      tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.table, joinConf.scanQuery))
     }
+  }
 
   private lazy val leftTimeRange = leftDf.timeRange
 
@@ -166,7 +167,13 @@ object Join extends App {
     // args = conf path, end date, output namespace
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")
-    val join = new Join(Config.parseFile(parsedArgs.confPath), parsedArgs.endDate, parsedArgs.namespace)
+    val joinConf = Config.parseFile[JoinConf](parsedArgs.confPath())
+    val join = new Join(
+      joinConf,
+      parsedArgs.endDate(),
+      parsedArgs.namespace(),
+      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metadata.name}", local = false))
+    )
     join.commitOutput
   }
 }

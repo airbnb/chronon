@@ -10,27 +10,30 @@ import ai.zipline.api.Config.{
   DataSource,
   JoinPart,
   MetaData,
+  ScanQuery,
   TimeUnit,
   Window,
   GroupBy => GroupByConf,
   Join => JoinConf
 }
 import ai.zipline.spark.Extensions._
-import ai.zipline.spark.{Comparison, Join, TableUtils}
+import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
 
 // main test path for query generation - including the date scan logic
 class JoinTest extends TestCase {
-  val spark: SparkSession = SparkSessionBuilder.buildLocal("JoinTest")
+  // clean warehouse dirs from past runs - or the tests will be polluted
+  SparkSessionBuilder.cleanData()
+  val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
   val today = Constants.Partition.at(System.currentTimeMillis())
   val monthAgo = Constants.Partition.minus(today, Window(30, TimeUnit.Days))
   val yearAgo = Constants.Partition.minus(today, Window(365, TimeUnit.Days))
   val dayAndMonthBefore = Constants.Partition.before(monthAgo)
 
-  val namespace = "test_namespace"
+  val namespace = "test_namespace_jointest"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   val tableUtils = TableUtils(spark)
@@ -55,18 +58,18 @@ class JoinTest extends TestCase {
     DataGen.entities(spark, rupeeTransactions, 100000, partitions = 30).save(rupeeTable)
 
     val dollarSource = DataSource(
-      selects = Seq("ts", "amount_dollars"),
+      scanQuery =
+        ScanQuery(selects = Seq("ts", "amount_dollars"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
       table = dollarTable,
-      dataModel = Entities,
-      startPartition = yearAgo,
-      endPartition = dayAndMonthBefore
+      dataModel = Entities
     )
 
     val rupeeSource =
-      DataSource(selects = Seq("ts", "CAST(amount_rupees/70 as long) as amount_dollars"),
-                 table = rupeeTable,
-                 dataModel = Entities,
-                 startPartition = monthAgo)
+      DataSource(
+        scanQuery =
+          ScanQuery(selects = Seq("ts", "CAST(amount_rupees/70 as long) as amount_dollars"), startPartition = monthAgo),
+        table = rupeeTable,
+        dataModel = Entities)
 
     val groupBy = GroupByConf(
       sources = Seq(dollarSource, rupeeSource),
@@ -158,11 +161,9 @@ class JoinTest extends TestCase {
     DataGen.entities(spark, weightSchema, 1000000, partitions = 400).save(weightTable)
 
     val weightSource = DataSource(
-      selects = Seq("weight"),
+      scanQuery = ScanQuery(selects = Seq("weight"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
       table = weightTable,
-      dataModel = Entities,
-      startPartition = yearAgo,
-      endPartition = dayAndMonthBefore
+      dataModel = Entities
     )
     val weightGroupBy = GroupByConf(
       sources = Seq(weightSource),
@@ -179,11 +180,11 @@ class JoinTest extends TestCase {
     val heightTable = s"$namespace.heights"
     DataGen.entities(spark, heightSchema, 1000000, partitions = 400).save(heightTable)
     val heightSource = DataSource(
-      selects = Seq("height"),
+      scanQuery = ScanQuery(selects = Seq("height"), startPartition = monthAgo),
       table = heightTable,
-      dataModel = Entities,
-      startPartition = monthAgo
+      dataModel = Entities
     )
+
     val heightGroupBy = GroupByConf(
       sources = Seq(heightSource),
       keys = Seq("country"),
@@ -267,10 +268,9 @@ class JoinTest extends TestCase {
     DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
 
     val viewsSource = DataSource(
-      selects = Seq("time_spent_ms"),
+      scanQuery = ScanQuery(selects = Seq("time_spent_ms"), startPartition = yearAgo),
       table = viewsTable,
-      dataModel = Events,
-      startPartition = yearAgo
+      dataModel = Events
     )
     val viewsGroupBy = GroupByConf(
       sources = Seq(viewsSource),
@@ -293,7 +293,7 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(100, TimeUnit.Days))
 
     val joinConf = JoinConf(
-      query =
+      stagingQuery =
         s"SELECT * FROM $itemQueriesTable WHERE ds >= ${Constants.StartPartitionMacro} AND ds <= ${Constants.EndPartitionMacro}",
       dataModel = Events,
       startPartition = start,
@@ -344,10 +344,9 @@ class JoinTest extends TestCase {
     DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
 
     val viewsSource = DataSource(
-      selects = Seq("time_spent_ms"),
+      scanQuery = ScanQuery(selects = Seq("time_spent_ms"), startPartition = yearAgo),
       table = viewsTable,
-      dataModel = Events,
-      startPartition = yearAgo
+      dataModel = Events
     )
     val viewsGroupBy = GroupByConf(
       sources = Seq(viewsSource),
@@ -370,7 +369,7 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(100, TimeUnit.Days))
 
     val joinConf = JoinConf(
-      query =
+      stagingQuery =
         s"SELECT * FROM $itemQueriesTable WHERE ds >= ${Constants.StartPartitionMacro} AND ds <= ${Constants.EndPartitionMacro}",
       dataModel = Events,
       startPartition = start,

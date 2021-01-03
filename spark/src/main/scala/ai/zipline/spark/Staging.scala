@@ -12,7 +12,7 @@ case class Staging(outputTable: String, tableUtils: TableUtils, expectedRange: P
     if (fillableRange == expectedRange) {
       increment
     } else {
-      tableUtils.sql(expectedRange.scanQuery(outputTable))
+      tableUtils.sql(expectedRange.genScanQuery(outputTable, null))
     }
   }
 

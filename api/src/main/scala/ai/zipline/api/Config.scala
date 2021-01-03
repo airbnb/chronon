@@ -141,15 +141,17 @@ object Config {
 
   }
 
-  case class DataSource(selects: Seq[String],
+  case class ScanQuery(selects: Seq[String] = null,
+                       wheres: Seq[String] = null, // joined by an 'AND' qualifier
+                       startPartition: String = null,
+                       endPartition: String = null,
+                       timeExpression: String = null)
+
+  case class DataSource(scanQuery: ScanQuery,
                         table: String,
                         dataModel: DataModel,
-                        startPartition: String,
-                        wheres: Seq[String] = null,
                         topic: String = null,
                         mutationTable: String = null,
-                        endPartition: String = null,
-                        timeExpression: String = null,
                         mutationTimeExpression: String = Constants.MutationTimeColumn,
                         reversalExpression: String = Constants.ReversalColumn)
 
@@ -170,7 +172,9 @@ object Config {
                       // In those cases you can use the prefix to distinguish
                       prefix: String = null)
 
-  case class Join(query: String = null,
+  // if the staging query is specified, input table need
+  case class Join(stagingQuery: String = null,
+                  scanQuery: ScanQuery = null,
                   table: String = null,
                   dataModel: DataModel,
                   startPartition: String,

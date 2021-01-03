@@ -1,6 +1,6 @@
 package ai.zipline.spark
 import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Config.{Constants, Window}
+import ai.zipline.api.Config.{Constants, ScanQuery, Window}
 import ai.zipline.api.QueryUtils
 import ai.zipline.spark.Extensions._
 
@@ -63,7 +63,12 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     }
   }
 
-  def scanQuery(table: String): String = QueryUtils.build(selects = null, from = table, wheres = whereClauses)
+  def genScanQuery(table: String, scanQuery: ScanQuery): String = {
+    val scanQueryOpt = Option(scanQuery)
+    QueryUtils.build(selects = scanQueryOpt.map(_.selects).orNull,
+                     from = table,
+                     wheres = whereClauses ++ scanQueryOpt.map(_.wheres).getOrElse(Seq.empty))
+  }
 
   def length: Int =
     Stream

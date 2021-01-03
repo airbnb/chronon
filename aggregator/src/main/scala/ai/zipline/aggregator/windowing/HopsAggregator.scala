@@ -48,7 +48,6 @@ class HopsAggregator(minQueryTs: Long,
         val previousHopSize = resolution.hopSizes(hopIndex - 1)
         Some(TsUtils.round(minQueryTs, previousHopSize))
       }
-
       if (hopSize > maxHopSize) { // this hop size is not relevant
         None
       } else {

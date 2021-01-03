@@ -90,6 +90,9 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
 
     val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
     val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
+    // group the data to collect all the timestamps by key and headStart
+    // key, headStart -> timestamps in [headStart, nextHeadStart)
+    // nextHeadStart = headStart + minHopSize
     val queriesByHeadStarts = queriesDf.rdd
       .map { row =>
         val ts = row.getLong(queryTsIndex)
@@ -105,6 +108,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
     val sawtoothAggregator =
       new SawtoothAggregator(aggregations, ziplineSchema, resolution)
 
+    // create the IRs up to minHop accuracy
     val headStartsWithIrs = queriesByHeadStarts.keys
       .groupByKey()
       .leftOuterJoin(hopsRdd)
@@ -123,6 +127,8 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
       .rdd
       .groupBy { (row: Row) => inputKeyGen(row) -> headStart(row.getLong(tsIndex)) }
 
+    // three-way join
+    // queries by headStart, events by headStart, IR values as of headStart.
     val outputRdd = queriesByHeadStarts
       .leftOuterJoin(headStartsWithIrs)
       .leftOuterJoin(eventsByHeadStart)
@@ -137,6 +143,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
     toDataFrame(outputRdd, Constants.TimeColumn)
   }
 
+  // convert raw data into IRs, collected by hopSizes
   def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
       new HopsAggregator(minQueryTs, aggregations, ziplineSchema, resolution)
@@ -214,7 +221,7 @@ object GroupBy {
 
     assert(
       !groupByConf.aggregations.needsTimestamp || inputDf.schema.names.contains(Constants.TimeColumn),
-      "Time column, \"ts\" doesn't exists, but you either have a windowed aggregation or a time based aggregations like: " +
+      "Time column, \"ts\" doesn't exists, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
@@ -236,7 +243,7 @@ object GroupBy {
       case Events   => window.map(Constants.Partition.minus(queryStart, _)).orNull
     }
 
-    val sourceRange = PartitionRange(dataSource.startPartition, dataSource.endPartition)
+    val sourceRange = PartitionRange(dataSource.scanQuery.startPartition, dataSource.scanQuery.endPartition)
     val queryableDataRange = PartitionRange(scanStart, queryEnd)
     val intersectedRange: Option[PartitionRange] = sourceRange.intersect(queryableDataRange)
 
@@ -253,16 +260,17 @@ object GroupBy {
 
     val metaColumns = dataSource.dataModel match {
       case Entities =>
-        Map(Constants.PartitionColumn -> null) ++ Option(dataSource.timeExpression).map(Constants.TimeColumn -> _)
+        Map(Constants.PartitionColumn -> null) ++ Option(dataSource.scanQuery.timeExpression)
+          .map(Constants.TimeColumn -> _)
       case Events =>
-        Map(Constants.TimeColumn -> dataSource.timeExpression, Constants.PartitionColumn -> null)
+        Map(Constants.TimeColumn -> dataSource.scanQuery.timeExpression, Constants.PartitionColumn -> null)
     }
 
     intersectedRange.map { effectiveRange =>
       QueryUtils.build(
-        dataSource.selects,
+        dataSource.scanQuery.selects,
         dataSource.table,
-        Option(dataSource.wheres).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
+        Option(dataSource.scanQuery.wheres).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
         metaColumns ++ keys.map(_ -> null)
       )
     }
