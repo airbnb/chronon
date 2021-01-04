@@ -141,14 +141,14 @@ object Config {
 
   }
 
-  case class ScanQuery(selects: Seq[String] = null,
+  case class ScanQuery(table: String,
+                       selects: Seq[String] = null,
                        wheres: Seq[String] = null, // joined by an 'AND' qualifier
                        startPartition: String = null,
                        endPartition: String = null,
                        timeExpression: String = null)
 
   case class DataSource(scanQuery: ScanQuery,
-                        table: String,
                         dataModel: DataModel,
                         topic: String = null,
                         mutationTable: String = null,
@@ -172,12 +172,8 @@ object Config {
                       // In those cases you can use the prefix to distinguish
                       prefix: String = null)
 
-  // if the staging query is specified, input table need
-  case class Join(stagingQuery: String = null,
-                  scanQuery: ScanQuery = null,
-                  table: String = null,
+  case class Join(scanQuery: ScanQuery,
                   dataModel: DataModel,
-                  startPartition: String,
                   joinParts: Seq[JoinPart],
                   metadata: MetaData,
                   timeExpression: String = Constants.TimeColumn) {}

@@ -58,18 +58,20 @@ class JoinTest extends TestCase {
     DataGen.entities(spark, rupeeTransactions, 100000, partitions = 30).save(rupeeTable)
 
     val dollarSource = DataSource(
-      scanQuery =
-        ScanQuery(selects = Seq("ts", "amount_dollars"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
-      table = dollarTable,
+      scanQuery = ScanQuery(table = dollarTable,
+                            selects = Seq("ts", "amount_dollars"),
+                            startPartition = yearAgo,
+                            endPartition = dayAndMonthBefore),
       dataModel = Entities
     )
 
     val rupeeSource =
       DataSource(
-        scanQuery =
-          ScanQuery(selects = Seq("ts", "CAST(amount_rupees/70 as long) as amount_dollars"), startPartition = monthAgo),
-        table = rupeeTable,
-        dataModel = Entities)
+        scanQuery = ScanQuery(table = rupeeTable,
+                              selects = Seq("ts", "CAST(amount_rupees/70 as long) as amount_dollars"),
+                              startPartition = monthAgo),
+        dataModel = Entities
+      )
 
     val groupBy = GroupByConf(
       sources = Seq(dollarSource, rupeeSource),
@@ -93,9 +95,11 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(60, TimeUnit.Days))
     val end = Constants.Partition.minus(today, Window(30, TimeUnit.Days))
     val joinConf = JoinConf(
-      table = queryTable,
+      scanQuery = ScanQuery(
+        table = queryTable,
+        startPartition = start
+      ),
       dataModel = Events,
-      startPartition = start,
       joinParts = Seq(JoinPart(groupBy = groupBy, keyRenaming = Map("user_name" -> "user"))),
       metadata = MetaData(name = "user_transaction_features", team = "test")
     )
@@ -161,10 +165,13 @@ class JoinTest extends TestCase {
     DataGen.entities(spark, weightSchema, 1000000, partitions = 400).save(weightTable)
 
     val weightSource = DataSource(
-      scanQuery = ScanQuery(selects = Seq("weight"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
-      table = weightTable,
+      scanQuery = ScanQuery(table = weightTable,
+                            selects = Seq("weight"),
+                            startPartition = yearAgo,
+                            endPartition = dayAndMonthBefore),
       dataModel = Entities
     )
+
     val weightGroupBy = GroupByConf(
       sources = Seq(weightSource),
       keys = Seq("country"),
@@ -180,8 +187,7 @@ class JoinTest extends TestCase {
     val heightTable = s"$namespace.heights"
     DataGen.entities(spark, heightSchema, 1000000, partitions = 400).save(heightTable)
     val heightSource = DataSource(
-      scanQuery = ScanQuery(selects = Seq("height"), startPartition = monthAgo),
-      table = heightTable,
+      scanQuery = ScanQuery(table = heightTable, selects = Seq("height"), startPartition = monthAgo),
       dataModel = Entities
     )
 
@@ -200,9 +206,11 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(60, TimeUnit.Days))
     val end = Constants.Partition.minus(today, Window(15, TimeUnit.Days))
     val joinConf = JoinConf(
-      table = countryTable,
+      scanQuery = ScanQuery(
+        table = countryTable,
+        startPartition = start
+      ),
       dataModel = Entities,
-      startPartition = start,
       joinParts = Seq(JoinPart(groupBy = weightGroupBy), JoinPart(groupBy = heightGroupBy)),
       metadata = MetaData(name = "country_features", team = "test")
     )
@@ -268,8 +276,7 @@ class JoinTest extends TestCase {
     DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
 
     val viewsSource = DataSource(
-      scanQuery = ScanQuery(selects = Seq("time_spent_ms"), startPartition = yearAgo),
-      table = viewsTable,
+      scanQuery = ScanQuery(table = viewsTable, selects = Seq("time_spent_ms"), startPartition = yearAgo),
       dataModel = Events
     )
     val viewsGroupBy = GroupByConf(
@@ -293,10 +300,11 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(100, TimeUnit.Days))
 
     val joinConf = JoinConf(
-      stagingQuery =
-        s"SELECT * FROM $itemQueriesTable WHERE ds >= ${Constants.StartPartitionMacro} AND ds <= ${Constants.EndPartitionMacro}",
+      scanQuery = ScanQuery(
+        table = itemQueriesTable,
+        startPartition = start
+      ),
       dataModel = Events,
-      startPartition = start,
       joinParts = Seq(JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.Snapshot)),
       metadata = MetaData(name = "item_snapshot_features", team = "test")
     )
@@ -344,8 +352,7 @@ class JoinTest extends TestCase {
     DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
 
     val viewsSource = DataSource(
-      scanQuery = ScanQuery(selects = Seq("time_spent_ms"), startPartition = yearAgo),
-      table = viewsTable,
+      scanQuery = ScanQuery(table = viewsTable, selects = Seq("time_spent_ms"), startPartition = yearAgo),
       dataModel = Events
     )
     val viewsGroupBy = GroupByConf(
@@ -369,10 +376,11 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, Window(100, TimeUnit.Days))
 
     val joinConf = JoinConf(
-      stagingQuery =
-        s"SELECT * FROM $itemQueriesTable WHERE ds >= ${Constants.StartPartitionMacro} AND ds <= ${Constants.EndPartitionMacro}",
+      scanQuery = ScanQuery(
+        table = itemQueriesTable,
+        startPartition = start
+      ),
       dataModel = Events,
-      startPartition = start,
       joinParts = Seq(JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.Temporal)),
       metadata = MetaData(name = "item_temporal_features  ", team = "test")
     )

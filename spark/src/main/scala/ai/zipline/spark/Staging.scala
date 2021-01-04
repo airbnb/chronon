@@ -1,5 +1,6 @@
 package ai.zipline.spark
 
+import ai.zipline.api.Config.ScanQuery
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
@@ -12,7 +13,7 @@ case class Staging(outputTable: String, tableUtils: TableUtils, expectedRange: P
     if (fillableRange == expectedRange) {
       increment
     } else {
-      tableUtils.sql(expectedRange.genScanQuery(outputTable, null))
+      tableUtils.sql(expectedRange.genScanQuery(ScanQuery(outputTable)))
     }
   }
 

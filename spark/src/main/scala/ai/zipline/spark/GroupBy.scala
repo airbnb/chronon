@@ -251,7 +251,7 @@ object GroupBy {
          |Rendering source query:
          |   query range: $queryRange
          |   query window: $window
-         |   source table: ${dataSource.table}
+         |   source table: ${dataSource.scanQuery.table}
          |   source data range: $sourceRange
          |   source data model: ${dataSource.dataModel}
          |   queryable data range: $queryableDataRange
@@ -269,7 +269,7 @@ object GroupBy {
     intersectedRange.map { effectiveRange =>
       QueryUtils.build(
         dataSource.scanQuery.selects,
-        dataSource.table,
+        dataSource.scanQuery.table,
         Option(dataSource.scanQuery.wheres).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
         metaColumns ++ keys.map(_ -> null)
       )

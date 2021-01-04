@@ -14,17 +14,10 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
   private lazy val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
     outputTable,
-    PartitionRange(joinConf.startPartition, endPartition),
-    Option(joinConf.table).toSeq)
+    PartitionRange(joinConf.scanQuery.startPartition, endPartition),
+    Option(joinConf.scanQuery.table).toSeq)
 
-  private val leftDf: DataFrame = {
-    if (joinConf.stagingQuery != null) {
-      Staging(s"${outputTable}_left", tableUtils, leftUnfilledRange)
-        .query(joinConf.stagingQuery, Option(joinConf.table).toSeq)
-    } else {
-      tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.table, joinConf.scanQuery))
-    }
-  }
+  private val leftDf: DataFrame = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.scanQuery))
 
   private lazy val leftTimeRange = leftDf.timeRange
 
