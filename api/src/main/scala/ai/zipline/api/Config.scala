@@ -166,7 +166,10 @@ object Config {
   case class JoinPart(groupBy: GroupBy,
                       // what columns in the left side should map to what columns on the right side
                       keyRenaming: Map[String, String] = null,
-                      //
+                      // accuracy defaulted based on context
+                      // left entities => accuracy has to be "snapshot" or null
+                      // left events, right entities => default/null accuracy is inferred as "snapshot"
+                      // left events, right events => default/null accuracy is inferred as "temporal"
                       accuracy: Accuracy = null,
                       // Sometimes you want to join to the same feature_set multiple times
                       // In those cases you can use the prefix to distinguish
