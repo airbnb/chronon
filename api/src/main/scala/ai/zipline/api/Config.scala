@@ -4,7 +4,7 @@ import java.io.{File, PrintWriter}
 
 import com.sksamuel.avro4s.{AvroInputStream, AvroSchema, Decoder, SchemaFor}
 
-import scala.io.Source
+import scala.io.{Source => FileSource}
 import scala.reflect.runtime.universe.{TypeTag, typeOf}
 
 object Config {
@@ -87,16 +87,16 @@ object Config {
 
   case class PartitionSpec(format: String, spanMillis: Long)
 
-  object AggregationType extends Enumeration {
-    type AggregationType = Value
+  object Operation extends Enumeration {
+    type Operation = Value
     val Sum, Average, Count, ApproxDistinctCount, First, Last, Min, Max, FirstK, LastK, TopK, BottomK = Value
   }
 
-  import ai.zipline.api.Config.AggregationType._
+  import ai.zipline.api.Config.Operation._
 
   // one per output column - so single window
   // not exposed to users
-  case class AggregationPart(`type`: AggregationType,
+  case class AggregationPart(operation: Operation,
                              inputColumn: String,
                              window: Window = Window.Infinity,
                              private val args: Map[String, String] = Map.empty[String, String])
@@ -106,13 +106,13 @@ object Config {
       val argOpt = args.get(arg)
       require(
         argOpt.isDefined,
-        s"$arg needs to be specified in the constructor json for ${`type`} type"
+        s"$arg needs to be specified in the constructor json for ${operation} type"
       )
       argOpt.get.toInt
     }
 
     private def opSuffix =
-      `type` match {
+      operation match {
         case LastK   => s"last${getInt("k")}"
         case FirstK  => s"first${getInt("k")}"
         case TopK    => s"top${getInt("k")}"
@@ -122,7 +122,7 @@ object Config {
 
     def outputColumnName = s"${inputColumn}_$opSuffix${window.suffix}"
   }
-  case class Aggregation(`type`: AggregationType,
+  case class Aggregation(operation: Operation,
                          inputColumn: String,
                          windows: Seq[Window] = null,
                          private val args: Map[String, String] = Map.empty[String, String]) {
@@ -132,12 +132,12 @@ object Config {
         .getOrElse(Seq(Window.Infinity))
         .map { window =>
           Option(window) match {
-            case Some(window) => AggregationPart(`type`, inputColumn, window, args)
-            case None         => AggregationPart(`type`, inputColumn, Window.Infinity, args)
+            case Some(window) => AggregationPart(operation, inputColumn, window, args)
+            case None         => AggregationPart(operation, inputColumn, Window.Infinity, args)
           }
         }
 
-    def unWindowed: AggregationPart = AggregationPart(`type`, inputColumn, Window.Infinity, args)
+    def unWindowed: AggregationPart = AggregationPart(operation, inputColumn, Window.Infinity, args)
 
   }
 
@@ -194,7 +194,7 @@ object Config {
     writer.write(contents)
     writer.close()
     println(s"Wrote Schema for $typeName to $outputPath with content:")
-    Source.fromFile(outputPath).foreach { x => print(x) }
+    FileSource.fromFile(outputPath).foreach { x => print(x) }
     println()
   }
 

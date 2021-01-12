@@ -2,7 +2,7 @@ package ai.zipline.aggregator.test
 
 import java.util
 
-import ai.zipline.api.Config.{Aggregation, AggregationType, TimeUnit, Window}
+import ai.zipline.api.Config.{Aggregation, Operation, TimeUnit, Window}
 import ai.zipline.aggregator.base.{DataType, LongType}
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.test.TestDataUtils.{genNums, genTimestamps}
@@ -72,7 +72,7 @@ class SawtoothAggregatorTest extends TestCase {
     )
 
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(AggregationType.Average,
+      Aggregation(Operation.Average,
                   "num",
                   Seq(Window(1, TimeUnit.Days), Window(1, TimeUnit.Hours), Window(30, TimeUnit.Days))))
     timer.publish("setup")
@@ -211,7 +211,7 @@ class SawtoothAggregatorTest extends TestCase {
     )
 
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(AggregationType.Average,
+      Aggregation(Operation.Average,
                   "num",
                   Seq(
                     Window(1, TimeUnit.Days),

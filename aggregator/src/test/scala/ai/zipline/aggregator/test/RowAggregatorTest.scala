@@ -4,7 +4,7 @@ import java.util
 
 import ai.zipline.aggregator.base.{FloatType, IntType, LongType, StringType}
 import ai.zipline.aggregator.row.{Row, RowAggregator}
-import ai.zipline.api.Config.{AggregationPart, AggregationType}
+import ai.zipline.api.Config.{AggregationPart, Operation}
 import junit.framework.TestCase
 
 import scala.collection.JavaConverters._
@@ -50,17 +50,17 @@ class RowAggregatorTest extends TestCase {
     )
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
-      AggregationPart(AggregationType.Average, "views") -> 19.0 / 3,
-      AggregationPart(AggregationType.Sum, "rating") -> 15.0,
-      AggregationPart(AggregationType.Last, "title") -> "B",
-      AggregationPart(AggregationType.LastK, "title", args = Map("k" -> "2")) -> List("B", "A").asJava,
-      AggregationPart(AggregationType.FirstK, "title", args = Map("k" -> "2")) -> List("A", "B").asJava,
-      AggregationPart(AggregationType.First, "title") -> "A",
-      AggregationPart(AggregationType.TopK, "title", args = Map("k" -> "2")) -> List("D", "B").asJava,
-      AggregationPart(AggregationType.BottomK, "title", args = Map("k" -> "2")) -> List("A", "A").asJava,
-      AggregationPart(AggregationType.Max, "title") -> "D",
-      AggregationPart(AggregationType.Min, "title") -> "A",
-      AggregationPart(AggregationType.ApproxDistinctCount, "title") -> 3L
+      AggregationPart(Operation.Average, "views") -> 19.0 / 3,
+      AggregationPart(Operation.Sum, "rating") -> 15.0,
+      AggregationPart(Operation.Last, "title") -> "B",
+      AggregationPart(Operation.LastK, "title", args = Map("k" -> "2")) -> List("B", "A").asJava,
+      AggregationPart(Operation.FirstK, "title", args = Map("k" -> "2")) -> List("A", "B").asJava,
+      AggregationPart(Operation.First, "title") -> "A",
+      AggregationPart(Operation.TopK, "title", args = Map("k" -> "2")) -> List("D", "B").asJava,
+      AggregationPart(Operation.BottomK, "title", args = Map("k" -> "2")) -> List("A", "A").asJava,
+      AggregationPart(Operation.Max, "title") -> "D",
+      AggregationPart(Operation.Min, "title") -> "A",
+      AggregationPart(Operation.ApproxDistinctCount, "title") -> 3L
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip

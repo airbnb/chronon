@@ -5,7 +5,7 @@ import ai.zipline.api.Config.DataModel.{Entities, Events}
 import ai.zipline.api.Config.{
   Accuracy,
   Aggregation,
-  AggregationType,
+  Operation,
   Constants,
   DataSource,
   JoinPart,
@@ -77,7 +77,7 @@ class JoinTest extends TestCase {
       sources = Seq(dollarSource, rupeeSource),
       keys = Seq("user"),
       aggregations = Seq(
-        Aggregation(`type` = AggregationType.Sum,
+        Aggregation(operation = Operation.Sum,
                     inputColumn = "amount_dollars",
                     windows = Seq(Window(30, TimeUnit.Days), null))),
       metadata = MetaData(name = "user_transactions", team = "unit_test")
@@ -175,7 +175,7 @@ class JoinTest extends TestCase {
     val weightGroupBy = GroupByConf(
       sources = Seq(weightSource),
       keys = Seq("country"),
-      aggregations = Seq(Aggregation(`type` = AggregationType.Average, inputColumn = "weight")),
+      aggregations = Seq(Aggregation(operation = Operation.Average, inputColumn = "weight")),
       metadata = MetaData(name = "country_weights", team = "unit_test")
     )
 
@@ -194,7 +194,7 @@ class JoinTest extends TestCase {
     val heightGroupBy = GroupByConf(
       sources = Seq(heightSource),
       keys = Seq("country"),
-      aggregations = Seq(Aggregation(`type` = AggregationType.Average, inputColumn = "height")),
+      aggregations = Seq(Aggregation(operation = Operation.Average, inputColumn = "height")),
       metadata = MetaData(name = "country_heights", team = "unit_test")
     )
 
@@ -283,9 +283,9 @@ class JoinTest extends TestCase {
       sources = Seq(viewsSource),
       keys = Seq("item"),
       aggregations = Seq(
-        Aggregation(`type` = AggregationType.Count, inputColumn = "time_spent_ms"),
-        Aggregation(`type` = AggregationType.Min, inputColumn = "ts"),
-        Aggregation(`type` = AggregationType.Max, inputColumn = "ts")
+        Aggregation(operation = Operation.Count, inputColumn = "time_spent_ms"),
+        Aggregation(operation = Operation.Min, inputColumn = "ts"),
+        Aggregation(operation = Operation.Max, inputColumn = "ts")
       ),
       metadata = MetaData(name = "item_views", team = "unit_test")
     )
@@ -359,9 +359,9 @@ class JoinTest extends TestCase {
       sources = Seq(viewsSource),
       keys = Seq("item"),
       aggregations = Seq(
-        Aggregation(`type` = AggregationType.Average, inputColumn = "time_spent_ms"),
-        Aggregation(`type` = AggregationType.Min, inputColumn = "ts"),
-        Aggregation(`type` = AggregationType.Max, inputColumn = "ts")
+        Aggregation(operation = Operation.Average, inputColumn = "time_spent_ms"),
+        Aggregation(operation = Operation.Min, inputColumn = "ts"),
+        Aggregation(operation = Operation.Max, inputColumn = "ts")
       ),
       metadata = MetaData(name = "item_views", team = "unit_test")
     )

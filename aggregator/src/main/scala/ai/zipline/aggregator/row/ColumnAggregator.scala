@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.row
 
 import ai.zipline.aggregator.base._
-import ai.zipline.api.Config.{AggregationPart, AggregationType}
+import ai.zipline.api.Config.{AggregationPart, Operation}
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -154,10 +154,10 @@ object ColumnAggregator {
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices): ColumnAggregator = {
     def mismatchException =
-      throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.`type`}")
-    aggregationPart.`type` match {
-      case AggregationType.Count => fromSimple(new Count, columnIndices)
-      case AggregationType.Sum =>
+      throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.operation}")
+    aggregationPart.operation match {
+      case Operation.Count => fromSimple(new Count, columnIndices)
+      case Operation.Sum =>
         inputType match {
           case IntType    => fromSimple(new Sum[Long], columnIndices, toLong[Int])
           case LongType   => fromSimple(new Sum[Long], columnIndices)
@@ -166,7 +166,7 @@ object ColumnAggregator {
           case FloatType  => fromSimple(new Sum[Double], columnIndices, toDouble[Float])
           case _          => mismatchException
         }
-      case AggregationType.ApproxDistinctCount =>
+      case Operation.ApproxDistinctCount =>
         inputType match {
           case IntType    => fromSimple(new ApproxDistinctCount[Long], columnIndices, toLong[Int])
           case LongType   => fromSimple(new ApproxDistinctCount[Long], columnIndices)
@@ -177,7 +177,7 @@ object ColumnAggregator {
           case BinaryType => fromSimple(new ApproxDistinctCount[Array[Byte]], columnIndices)
           case _          => mismatchException
         }
-      case AggregationType.Average =>
+      case Operation.Average =>
         inputType match {
           case IntType    => fromSimple(new Average, columnIndices, toDouble[Int])
           case LongType   => fromSimple(new Average, columnIndices, toDouble[Long])
@@ -186,7 +186,7 @@ object ColumnAggregator {
           case FloatType  => fromSimple(new Average, columnIndices, toDouble[Float])
           case _          => mismatchException
         }
-      case AggregationType.Min =>
+      case Operation.Min =>
         inputType match {
           case IntType    => fromSimple(new Min[Int](inputType), columnIndices)
           case LongType   => fromSimple(new Min[Long](inputType), columnIndices)
@@ -196,7 +196,7 @@ object ColumnAggregator {
           case StringType => fromSimple(new Min[String](inputType), columnIndices)
           case _          => mismatchException
         }
-      case AggregationType.Max =>
+      case Operation.Max =>
         inputType match {
           case IntType    => fromSimple(new Max[Int](inputType), columnIndices)
           case LongType   => fromSimple(new Max[Long](inputType), columnIndices)
@@ -206,7 +206,7 @@ object ColumnAggregator {
           case StringType => fromSimple(new Max[String](inputType), columnIndices)
           case _          => mismatchException
         }
-      case AggregationType.TopK =>
+      case Operation.TopK =>
         val k = aggregationPart.getInt("k")
         inputType match {
           case IntType    => fromSimple(new TopK[Int](inputType, k), columnIndices)
@@ -217,7 +217,7 @@ object ColumnAggregator {
           case StringType => fromSimple(new TopK[String](inputType, k), columnIndices)
           case _          => mismatchException
         }
-      case AggregationType.BottomK =>
+      case Operation.BottomK =>
         val k = aggregationPart.getInt("k")
         inputType match {
           case IntType    => fromSimple(new BottomK[Int](inputType, k), columnIndices)
@@ -228,10 +228,10 @@ object ColumnAggregator {
           case StringType => fromSimple(new BottomK[String](inputType, k), columnIndices)
           case _          => mismatchException
         }
-      case AggregationType.First  => fromTimed(new First(inputType), columnIndices)
-      case AggregationType.Last   => fromTimed(new Last(inputType), columnIndices)
-      case AggregationType.FirstK => fromTimed(new FirstK(inputType, aggregationPart.getInt("k")), columnIndices)
-      case AggregationType.LastK  => fromTimed(new LastK(inputType, aggregationPart.getInt("k")), columnIndices)
+      case Operation.First  => fromTimed(new First(inputType), columnIndices)
+      case Operation.Last   => fromTimed(new Last(inputType), columnIndices)
+      case Operation.FirstK => fromTimed(new FirstK(inputType, aggregationPart.getInt("k")), columnIndices)
+      case Operation.LastK  => fromTimed(new LastK(inputType, aggregationPart.getInt("k")), columnIndices)
     }
   }
 }

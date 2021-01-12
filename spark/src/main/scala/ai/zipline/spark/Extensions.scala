@@ -6,7 +6,7 @@ import java.time.{Instant, ZoneOffset}
 import java.util.{Locale, TimeZone}
 
 import ai.zipline.api.Config.Accuracy.{Accuracy, Snapshot, Temporal}
-import ai.zipline.api.Config.AggregationType.{First, FirstK, Last, LastK}
+import ai.zipline.api.Config.Operation.{First, FirstK, Last, LastK}
 import ai.zipline.api.Config.DataModel.DataModel
 import ai.zipline.api.Config.{Aggregation, Constants, PartitionSpec, Window, GroupBy => GroupByConf}
 import ai.zipline.api.QueryUtils
@@ -173,7 +173,7 @@ object Extensions {
     def hasWindows = aggregations.exists(_.windows != null)
     def needsTimestamp: Boolean = {
       val hasWindows = aggregations.exists(_.windows != null)
-      val hasTimedAggregations = aggregations.exists(_.`type` match {
+      val hasTimedAggregations = aggregations.exists(_.operation match {
         case LastK | FirstK | Last | First => true
         case _                             => false
       })

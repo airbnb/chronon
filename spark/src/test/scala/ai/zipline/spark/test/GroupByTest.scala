@@ -25,7 +25,7 @@ class GroupByTest extends TestCase {
     val viewName = "test_group_by_entities"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(AggregationType.Average, "session_length", Seq(Window(10, TimeUnit.Days), Window.Infinity)))
+      Aggregation(Operation.Average, "session_length", Seq(Window(10, TimeUnit.Days), Window.Infinity)))
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEntities
@@ -59,8 +59,8 @@ class GroupByTest extends TestCase {
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(AggregationType.Max, "ts", Seq(Window(10, TimeUnit.Days), Window.Infinity)),
-      Aggregation(AggregationType.Sum, "session_length", Seq(Window(10, TimeUnit.Days)))
+      Aggregation(Operation.Max, "ts", Seq(Window(10, TimeUnit.Days), Window.Infinity)),
+      Aggregation(Operation.Sum, "session_length", Seq(Window(10, TimeUnit.Days)))
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
@@ -102,7 +102,7 @@ class GroupByTest extends TestCase {
     val queryDf = DataGen.events(spark, querySchema, count = 10000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(AggregationType.Average,
+      Aggregation(Operation.Average,
                   "session_length",
                   Seq(Window(1, TimeUnit.Days), Window(1, TimeUnit.Hours), Window(30, TimeUnit.Days))))
 
