@@ -42,7 +42,7 @@ class ArrayRow(val row: Row, val tsIndex: Int) extends MRow {
 }
 
 object Conversions {
-  def fromMooliRow(
+  def fromZiplineRow(
       values: Array[Any],
       ziplineSchema: Array[(String, MDataType)]
   ): Array[Any] = {
@@ -50,7 +50,7 @@ object Conversions {
     val result = new Array[Any](values.length)
     for (i <- values.indices) {
       val columnType = ziplineSchema(i)._2
-      val convertedColumn = fromMooliColumn(values(i), columnType)
+      val convertedColumn = fromZiplineColumn(values(i), columnType)
       result.update(i, convertedColumn)
     }
     result
@@ -59,7 +59,7 @@ object Conversions {
   // won't handle arbitrary nesting
   // lists are util.ArrayList in both spark and zipline
   // structs in zipline are Array[Any], but in spark they are Row/GenericRow types
-  def fromMooliColumn(value: Any, dataType: MDataType): Any = {
+  def fromZiplineColumn(value: Any, dataType: MDataType): Any = {
     if (value == null) return null
     dataType match {
       case ListType(MStructType(_, _)) => //Irs of LastK, FirstK
@@ -77,9 +77,9 @@ object Conversions {
     }
   }
 
-  def toMooliRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
+  def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
 
-  def toMooliType(dataType: DataType): MDataType =
+  def toZiplineType(dataType: DataType): MDataType =
     dataType match {
       case IntegerType               => IntType
       case LongType                  => MLongType
@@ -90,20 +90,20 @@ object Conversions {
       case StringType                => MStringType
       case BinaryType                => MBinaryType
       case BooleanType               => MBooleanType
-      case ArrayType(elementType, _) => ListType(toMooliType(elementType))
+      case ArrayType(elementType, _) => ListType(toZiplineType(elementType))
       case MapType(keyType, valueType, _) =>
-        MMapType(toMooliType(keyType), toMooliType(valueType))
+        MMapType(toZiplineType(keyType), toZiplineType(valueType))
       case StructType(fields) =>
         MStructType(
           null,
           fields.map { field =>
-            MStructField(field.name, toMooliType(field.dataType))
+            MStructField(field.name, toZiplineType(field.dataType))
           }.toList
         )
       case other => UnknownType(other)
     }
 
-  def fromMooliType(mType: MDataType): DataType =
+  def fromZiplineType(mType: MDataType): DataType =
     mType match {
       case IntType               => IntegerType
       case MLongType             => LongType
@@ -114,24 +114,24 @@ object Conversions {
       case MStringType           => StringType
       case MBinaryType           => BinaryType
       case MBooleanType          => BooleanType
-      case ListType(elementType) => ArrayType(fromMooliType(elementType))
+      case ListType(elementType) => ArrayType(fromZiplineType(elementType))
       case MMapType(keyType, valueType) =>
-        MapType(fromMooliType(keyType), fromMooliType(valueType))
+        MapType(fromZiplineType(keyType), fromZiplineType(valueType))
       case MStructType(_, fields) =>
         StructType(fields.map { field =>
-          StructField(field.name, fromMooliType(field.fieldType))
+          StructField(field.name, fromZiplineType(field.fieldType))
         })
       case UnknownType(other) => other.asInstanceOf[DataType]
     }
 
-  def toMooliSchema(schema: StructType): Array[(String, MDataType)] =
+  def toZiplineSchema(schema: StructType): Array[(String, MDataType)] =
     schema.fields.map { field =>
-      (field.name, toMooliType(field.dataType))
+      (field.name, toZiplineType(field.dataType))
     }
 
-  def fromMooliSchema(schema: Array[(String, MDataType)]): StructType =
+  def fromZiplineSchema(schema: Array[(String, MDataType)]): StructType =
     StructType(schema.map {
       case (name, mType) =>
-        StructField(name, fromMooliType(mType))
+        StructField(name, fromZiplineType(mType))
     })
 }

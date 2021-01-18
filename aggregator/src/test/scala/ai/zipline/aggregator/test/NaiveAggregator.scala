@@ -1,6 +1,7 @@
 package ai.zipline.aggregator.test
 
-import ai.zipline.api.Config.Window
+import ai.zipline.api.Window
+import ai.zipline.api.Extensions._
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.aggregator.windowing.TsUtils
 

@@ -7,7 +7,9 @@ import java.util
 import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.aggregator.windowing.HopsAggregator._
-import ai.zipline.api.Config.{Aggregation, Window}
+import ai.zipline.api.{Aggregation, Window}
+import ai.zipline.api.Extensions._
+import scala.collection.JavaConverters._
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution
 // we use minQueryTs to construct only the relevant hops for a given hop size.
@@ -24,9 +26,9 @@ class HopsAggregator(minQueryTs: Long,
   val hopSizes: Array[Long] = resolution.hopSizes
   val leftBoundaries: Array[Option[Long]] = {
     val allWindows = aggregations
-      .flatMap { agg => Option(agg.windows).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
+      .flatMap { agg => Option(agg.windows).map(_.asScala).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
       .map { window =>
-        Option(window).getOrElse(Window.Infinity)
+        Option(window).getOrElse(WindowUtils.Unbounded)
       } // agg.windows(i) = Null => one of the windows is "unwindowed"
 
     // Use the max window for a given tail hop to determine
@@ -55,7 +57,7 @@ class HopsAggregator(minQueryTs: Long,
       }
     }.toArray
 
-    val readableHopSizes = resolution.hopSizes.map(Window.millisToString)
+    val readableHopSizes = resolution.hopSizes.map(WindowUtils.millisToString)
     val readableLeftBounds = result.map(_.map(TsUtils.toStr).getOrElse("unused"))
     val readableHopsToBoundsMap = readableHopSizes
       .zip(readableLeftBounds)

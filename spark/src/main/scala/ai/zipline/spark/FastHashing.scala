@@ -1,9 +1,9 @@
 package ai.zipline.spark
 
+import ai.zipline.spark.Extensions._
 import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
-import Extensions._
 
 // TODO: drop data and hashInt, iff we see OOMs on executors for small IRs and large keys
 // That is the only case where key size would be a problem

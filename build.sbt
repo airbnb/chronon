@@ -16,11 +16,17 @@ lazy val api = project
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "src" / "main" / "thrift" / "api.thrift"
       val outputThrift = (Compile / sourceManaged).value
+      s"echo ${outputThrift.getPath}" !;
+      s"echo ${inputThrift.getPath}" !;
       s"rm -rf ${outputThrift.getPath}" !;
       s"mkdir -p ${outputThrift.getPath}" !;
       // "thrift --gen java -out api/src/main/java api/src/main/thrift/api.thrift"
       s"thrift --gen java -out ${outputThrift.getPath} ${inputThrift.getPath}" !;
-      (outputThrift ** "*.scala").get()
+      val files = (outputThrift ** "*.java").get()
+      println("thrift generated the following files: ")
+      files.map(_.getPath).foreach { path => println(s"    $path") }
+      println("End of generated files list")
+      files
     }.taskValue,
     libraryDependencies ++= Seq(
       // lower version due to jackson conflict with spark

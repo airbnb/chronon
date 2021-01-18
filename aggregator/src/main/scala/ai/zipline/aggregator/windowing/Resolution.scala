@@ -1,6 +1,7 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.api.Config.{TimeUnit, Window}
+import ai.zipline.api.{TimeUnit, Window}
+import ai.zipline.api.Extensions._
 
 trait Resolution extends Serializable {
   // For a given window what is the resolution of the tail
@@ -17,20 +18,20 @@ trait Resolution extends Serializable {
 object FiveMinuteResolution extends Resolution {
   def calculateTailHop(window: Window): Long =
     window.millis match {
-      case x if x >= Window(12, TimeUnit.Days).millis  => Window.Day.millis
-      case x if x >= Window(12, TimeUnit.Hours).millis => Window.Hour.millis
-      case _                                           => Window.FiveMinutes
+      case x if x >= new Window(12, TimeUnit.DAYS).millis  => WindowUtils.Day.millis
+      case x if x >= new Window(12, TimeUnit.HOURS).millis => WindowUtils.Hour.millis
+      case _                                               => WindowUtils.FiveMinutes
     }
 
   val hopSizes: Array[Long] =
-    Array(Window.Day.millis, Window.Hour.millis, Window.FiveMinutes)
+    Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
 }
 
 object DailyResolution extends Resolution {
 
   def calculateTailHop(window: Window): Long =
-    window.unit match {
-      case TimeUnit.Days => Window.Day.millis
+    window.timeUnit match {
+      case TimeUnit.DAYS => WindowUtils.Day.millis
       case _ =>
         throw new IllegalArgumentException(
           s"Invalid request for window $window for daily aggregation. " +
@@ -38,5 +39,5 @@ object DailyResolution extends Resolution {
         )
     }
 
-  val hopSizes: Array[Long] = Array(Window.Day.millis)
+  val hopSizes: Array[Long] = Array(WindowUtils.Day.millis)
 }

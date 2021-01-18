@@ -1,13 +1,13 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{DataType, DoubleType, IntType, LongType, StringType}
-import ai.zipline.api.Config.{Constants, TimeUnit, Window}
+import ai.zipline.aggregator.base._
+import ai.zipline.api.Extensions._
+import ai.zipline.api.{Constants, TimeUnit, Window}
 import ai.zipline.spark.Conversions
-import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.from_unixtime
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import scala.reflect.ClassTag
 import scala.util.Random
@@ -28,7 +28,7 @@ object DataGen {
         case DoubleType => new DoubleStream(cardinality)
         case LongType =>
           name match {
-            case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.Days))
+            case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
             case _                    => new LongStream(cardinality)
           }
         case otherType => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
@@ -41,7 +41,7 @@ object DataGen {
   def gen(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
     val schema = columns.map(_.schema)
     val generators = columns.map(_.gen)
-    val sparkSchema = Conversions.fromMooliSchema(schema.toArray)
+    val sparkSchema = Conversions.fromZiplineSchema(schema.toArray)
     val zippedStream = new ZippedStream(generators: _*)
     val data: RDD[Row] = spark.sparkContext.parallelize((0 until count).map { _ =>
       zippedStream.next()
@@ -95,7 +95,7 @@ object DataGen {
   }
 
   private class StringStream(count: Int, prefix: String, absenceRatio: Double = 0.2) extends CStream[String] {
-    val keyCount = (count * (1 - absenceRatio)).toInt
+    val keyCount: Int = (count * (1 - absenceRatio)).toInt
     val keys: Array[String] = {
       val fullKeySet = (1 until (count + 1)).map(i => s"$prefix$i")
       Random.shuffle(fullKeySet).take(keyCount).toArray

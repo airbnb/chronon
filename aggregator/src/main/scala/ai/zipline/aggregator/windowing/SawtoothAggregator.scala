@@ -4,7 +4,8 @@ import java.util
 
 import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
-import ai.zipline.api.Config.{Aggregation, AggregationPart}
+import ai.zipline.api.{Aggregation, AggregationPart}
+import ai.zipline.api.Extensions._
 
 // Head Sliding, Tail Hopping Window - windowed counters will look the edge of sawtooth
 // The hops on the tail are computed automatically to guarantee <10% variance

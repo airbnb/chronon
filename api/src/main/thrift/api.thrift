@@ -6,8 +6,8 @@ namespace java ai.zipline.api
 // thrift --gen py -out . path/to/bighead/thrift/schemas/zipline_api.thrift;  popd
 // TODO integrate thrit generation step into sbt
 struct Query {
-    1: optional map<string, string> select
-    2: optional string where
+    1: optional map<string, string> selects
+    2: optional list<string> wheres
     3: optional string startPartition
     4: optional string endPartition
     5: optional string timeColumn
@@ -77,9 +77,6 @@ enum Operation {
 
 // integers map to milliseconds in the timeunit
 enum TimeUnit {
-    MILLISECONDS = 1
-    SECONDS = 1000
-    MINUTES = 60000
     HOURS = 3600000
     DAYS = 86400000
 }
@@ -89,17 +86,26 @@ struct Window {
     2: TimeUnit timeUnit
 }
 
-//Feature
+// maps to multiple output fields - one per window definition
 struct Aggregation {
     1: optional string inputColumn
     2: optional Operation operation
-    3: optional map<string, string> argsJson
+    3: optional map<string, string> argMap
     4: optional list<Window> windows
 }
 
+// used internally not exposed - maps 1:1 with a field in the output
+struct AggregationPart {
+    1: optional string inputColumn
+    2: optional Operation operation
+    3: optional map<string, string> argMap
+    4: optional Window window
+}
+
+
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
-    1: optional MetaData metadata
+    1: optional MetaData metaData
     // CONDITION: all sources select the same columns
     // source[i].select.keys() == source[0].select.keys()
     2: optional list<Source> sources
@@ -116,11 +122,17 @@ struct AggregationSelector {
   2: optional list<Window> windows
 }
 
+enum Accuracy {
+    TEMPORAL = 1,
+    SNAPSHOT = 2
+}
+
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
     3: optional list<AggregationSelector> selectors
     4: optional string prefix
+    5: optional Accuracy accuracy
 }
 
 struct MetaData {

@@ -1,23 +1,23 @@
 package ai.zipline.spark
-import ai.zipline.api.Config
-import ai.zipline.api.Config.Accuracy._
-import ai.zipline.api.Config.DataModel._
-import ai.zipline.api.Config.{Constants, JoinPart, Join => JoinConf}
+import ai.zipline.api.DataModel.{Entities, Events}
+import ai.zipline.api.Extensions._
+import ai.zipline.api.{Accuracy, Constants, JoinPart, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
-import scala.io.Source
+import scala.collection.JavaConverters._
 
 class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
 
-  private val outputTable = s"$namespace.${joinConf.metadata.cleanName}"
+  private val outputTable = s"$namespace.${joinConf.metaData.cleanName}"
 
   private lazy val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
     outputTable,
-    PartitionRange(joinConf.scanQuery.startPartition, endPartition),
-    Option(joinConf.scanQuery.table).toSeq)
+    PartitionRange(joinConf.left.query.startPartition, endPartition),
+    Option(joinConf.left.table).toSeq)
 
-  private val leftDf: DataFrame = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.scanQuery))
+  private val leftDf: DataFrame =
+    tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
 
   private lazy val leftTimeRange = leftDf.timeRange
 
@@ -25,16 +25,16 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
                            rightDf: DataFrame,
                            additionalKey: String,
                            joinPart: JoinPart): DataFrame = {
-    val replacedKeys = joinPart.groupBy.keys.toArray
+    val replacedKeys = joinPart.groupBy.keyColumns.asScala.toArray
 
     // apply key-renaming to key columns
-    val keyRenamedRight = Option(joinPart.keyRenaming)
+    val keyRenamedRight = Option(joinPart.keyMapping)
+      .map(_.asScala)
       .getOrElse(Map.empty)
       .foldLeft(rightDf) {
-        case (right, (leftKey, rightKey)) => {
+        case (right, (leftKey, rightKey)) =>
           replacedKeys.update(replacedKeys.indexOf(rightKey), leftKey)
           right.withColumnRenamed(rightKey, leftKey)
-        }
       }
 
     // append prefixes to non key columns
@@ -59,7 +59,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       leftDf
     }
 
-    val partName = joinPart.groupBy.metadata.name
+    val partName = joinPart.groupBy.metaData.name
     println(s"Join keys for $partName: " + keys.mkString(", "))
     println("Left Schema:")
     println(joinableLeft.schema.pretty)
@@ -85,23 +85,23 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
     println(s"""
          |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metadata.name}, 
-         |  left type : ${joinConf.dataModel}, 
+         |  part name : ${joinPart.groupBy.metaData.name}, 
+         |  left type : ${joinConf.left.dataModel}, 
          |  right type: ${joinPart.groupBy.dataModel}, 
          |  accuracy  : ${joinPart.accuracy}
          |""".stripMargin)
 
-    (joinConf.dataModel, joinPart.groupBy.dataModel, joinPart.accuracy) match {
-      case (Entities, Events, _) => {
+    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.accuracy) match {
+      case (Entities, Events, _) =>
         GroupBy
           .from(joinPart.groupBy, leftUnfilledRange, tableUtils)
           .snapshotEvents(leftUnfilledRange) -> Constants.PartitionColumn
-      }
-      case (Entities, Entities, _) => {
+
+      case (Entities, Entities, _) =>
         GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).snapshotEntities -> Constants.PartitionColumn
-      }
-      case (Events, Events, null | Temporal) => {
-        lazy val renamedLeft = Option(joinPart.keyRenaming)
+
+      case (Events, Events, null | Accuracy.TEMPORAL) =>
+        lazy val renamedLeft = Option(joinPart.keyMapping.asScala)
           .getOrElse(Map.empty)
           .foldLeft(leftDf) {
             case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
@@ -109,30 +109,30 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
         GroupBy
           .from(joinPart.groupBy, leftTimeRange.toPartitionRange, tableUtils)
           .temporalEvents(renamedLeft, Some(leftTimeRange)) -> Constants.TimeColumn
-      }
-      case (Events, Events, Snapshot) => {
+
+      case (Events, Events, Accuracy.SNAPSHOT) =>
         val leftTimePartitionRange = leftTimeRange.toPartitionRange
         GroupBy
           .from(joinPart.groupBy, leftTimePartitionRange, tableUtils)
           .snapshotEvents(leftTimePartitionRange)
           .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
-      }
-      case (Events, Entities, null | Snapshot) => {
+
+      case (Events, Entities, null | Accuracy.SNAPSHOT) =>
         val PartitionRange(start, end) = leftTimeRange.toPartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
         GroupBy
           .from(joinPart.groupBy, rightRange, tableUtils)
           .snapshotEntities
           .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
-      }
-      case (Events, Entities, Temporal) =>
+
+      case (Events, Entities, Accuracy.TEMPORAL) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }
   }
 
   def computeJoin: DataFrame = {
     println(s"left df count: ${leftDf.count()}")
-    joinConf.joinParts.foldLeft(leftDf) {
+    joinConf.joinParts.asScala.foldLeft(leftDf) {
       case (left, joinPart) =>
         val (rightDf, additionalKey) = computeJoinPart(joinPart)
         // TODO: implement versioning
@@ -141,32 +141,32 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     }
   }
 
-  def commitOutput: Unit = {
+  def commitOutput(): Unit = {
     computeJoin.save(outputTable, leftUnfilledRange)
   }
 }
 
 object Join extends App {
   // don't leak scallop stuff into the larger scope
-  import org.rogach.scallop._
-  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath = opt[String](required = true)
-    val endDate = opt[String](required = true)
-    val namespace = opt[String](required = true)
-    verify()
-  }
+//  import org.rogach.scallop._
+//  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+//    val confPath = opt[String](required = true)
+//    val endDate = opt[String](required = true)
+//    val namespace = opt[String](required = true)
+//    verify()
+//  }
 
-  override def main(args: Array[String]): Unit = {
-    // args = conf path, end date, output namespace
-    val parsedArgs = new ParsedArgs(args)
-    println(s"Parsed Args: $parsedArgs")
-    val joinConf = Config.parseFile[JoinConf](parsedArgs.confPath())
-    val join = new Join(
-      joinConf,
-      parsedArgs.endDate(),
-      parsedArgs.namespace(),
-      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metadata.name}", local = false))
-    )
-    join.commitOutput
-  }
+//  override def main(args: Array[String]): Unit = {
+//    // args = conf path, end date, output namespace
+//    val parsedArgs = new ParsedArgs(args)
+//    println(s"Parsed Args: $parsedArgs")
+//    val joinConf = Config.parseFile[JoinConf](parsedArgs.confPath())
+//    val join = new Join(
+//      joinConf,
+//      parsedArgs.endDate(),
+//      parsedArgs.namespace(),
+//      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metadata.name}", local = false))
+//    )
+//    join.commitOutput
+//  }
 }

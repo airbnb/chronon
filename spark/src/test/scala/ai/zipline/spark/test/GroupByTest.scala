@@ -3,7 +3,8 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.NaiveAggregator
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
-import ai.zipline.api.Config.{GroupBy => _, _}
+import ai.zipline.api.Extensions._
+import ai.zipline.api.{GroupBy => _, _}
 import ai.zipline.spark._
 import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
@@ -15,7 +16,7 @@ class GroupByTest extends TestCase {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
 
-  def testSnapshotEntities: Unit = {
+  def testSnapshotEntities(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10),
       DataGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
@@ -25,7 +26,8 @@ class GroupByTest extends TestCase {
     val viewName = "test_group_by_entities"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(Operation.Average, "session_length", Seq(Window(10, TimeUnit.Days), Window.Infinity)))
+      Builders
+        .Aggregation(Operation.AVERAGE, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)))
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEntities
@@ -47,7 +49,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
-  def testSnapshotEvents: Unit = {
+  def testSnapshotEvents(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10), // ts = last 100 days
       DataGen.Column("session_length", IntType, 2)
@@ -59,8 +61,8 @@ class GroupByTest extends TestCase {
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(Operation.Max, "ts", Seq(Window(10, TimeUnit.Days), Window.Infinity)),
-      Aggregation(Operation.Sum, "session_length", Seq(Window(10, TimeUnit.Days)))
+      Builders.Aggregation(Operation.MAX, "ts", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
@@ -89,7 +91,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
-  def testTemporalEvents: Unit = {
+  def testTemporalEvents(): Unit = {
     val eventSchema = List(
       DataGen.Column("user", StringType, 10),
       DataGen.Column("session_length", IntType, 10000)
@@ -102,9 +104,10 @@ class GroupByTest extends TestCase {
     val queryDf = DataGen.events(spark, querySchema, count = 10000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
-      Aggregation(Operation.Average,
-                  "session_length",
-                  Seq(Window(1, TimeUnit.Days), Window(1, TimeUnit.Hours), Window(30, TimeUnit.Days))))
+      Builders.Aggregation(
+        Operation.AVERAGE,
+        "session_length",
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))))
 
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
@@ -124,7 +127,7 @@ class GroupByTest extends TestCase {
     val eventsByKey: RDD[(KeyWithHash, Iterator[ArrayRow])] = eventDf.rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
-        rowIter.map(Conversions.toMooliRow(_, groupBy.tsIndex)).toIterator
+        rowIter.map(Conversions.toZiplineRow(_, groupBy.tsIndex)).toIterator
       }
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray

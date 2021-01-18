@@ -1,7 +1,6 @@
 package ai.zipline.spark
 
-import ai.zipline.api.Config.Constants
-import ai.zipline.spark.Extensions._
+import ai.zipline.api.Constants
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 case class TableUtils(sparkSession: SparkSession) {

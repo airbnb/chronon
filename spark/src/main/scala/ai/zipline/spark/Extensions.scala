@@ -1,56 +1,11 @@
 package ai.zipline.spark
 
-import java.text.SimpleDateFormat
-import java.time.format.DateTimeFormatter
-import java.time.{Instant, ZoneOffset}
-import java.util.{Locale, TimeZone}
-
-import ai.zipline.api.Config.Accuracy.{Accuracy, Snapshot, Temporal}
-import ai.zipline.api.Config.Operation.{First, FirstK, Last, LastK}
-import ai.zipline.api.Config.DataModel.DataModel
-import ai.zipline.api.Config.{Aggregation, Constants, PartitionSpec, Window, GroupBy => GroupByConf}
-import ai.zipline.api.QueryUtils
-import ai.zipline.spark.Comparison.prefixColumnName
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import ai.zipline.api._
 import org.apache.spark.sql.functions.{from_unixtime, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object Extensions {
-  implicit class PartitionOps(partitionSpec: PartitionSpec) {
-    private val partitionFormatter = DateTimeFormatter
-      .ofPattern(partitionSpec.format, Locale.US)
-      .withZone(ZoneOffset.UTC)
-    val sdf = new SimpleDateFormat(partitionSpec.format)
-    sdf.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    def epochMillis(partition: String): Long = {
-      sdf.parse(partition).getTime
-    }
-
-    def of(millis: Long): String = {
-      // [ASSUMPTION] Event partitions are start inclusive end exclusive
-      // For example, for daily partitions of event data:
-      //   Event timestamp at midnight of the day before of the event is included
-      //   Event timestamp at midnight of the day of partition is excluded
-      val roundedMillis =
-        math.ceil((millis + 1).toDouble / partitionSpec.spanMillis.toDouble).toLong * partitionSpec.spanMillis
-      partitionFormatter.format(Instant.ofEpochMilli(roundedMillis))
-    }
-
-    def at(millis: Long): String = partitionFormatter.format(Instant.ofEpochMilli(millis))
-
-    def before(s: String): String = {
-      partitionFormatter.format(Instant.ofEpochMilli(epochMillis(s) - partitionSpec.spanMillis))
-    }
-
-    def minus(s: String, window: Window): String = of(epochMillis(s) - window.millis)
-
-    def after(s: String): String = {
-      partitionFormatter.format(Instant.ofEpochMilli(epochMillis(s) + partitionSpec.spanMillis))
-    }
-
-    def before(millis: Long): String = of(millis - partitionSpec.spanMillis)
-  }
 
   implicit class StructTypeOps(schema: StructType) {
     def pretty: String = {
@@ -68,7 +23,7 @@ object Extensions {
     }
   }
   implicit class SparkSessionOps(sparkSession: SparkSession) {
-    def disableLogSpam: Unit = {
+    def disableLogSpam(): Unit = {
       sparkSession.sparkContext.setLogLevel("ERROR")
     }
   }
@@ -90,7 +45,7 @@ object Extensions {
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
       val minMaxDf: DataFrame = df.sqlContext
-        .sql(s"select min(${columnName}), max(${columnName}) from $viewName")
+        .sql(s"select min($columnName), max($columnName) from $viewName")
       assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
       val minMaxRow = minMaxDf.collect()(0)
       df.sparkSession.catalog.dropTempView(viewName)
@@ -169,40 +124,4 @@ object Extensions {
     }
   }
 
-  implicit class AggregationsOps(aggregations: Seq[Aggregation]) {
-    def hasWindows = aggregations.exists(_.windows != null)
-    def needsTimestamp: Boolean = {
-      val hasWindows = aggregations.exists(_.windows != null)
-      val hasTimedAggregations = aggregations.exists(_.operation match {
-        case LastK | FirstK | Last | First => true
-        case _                             => false
-      })
-      hasWindows || hasTimedAggregations
-    }
-  }
-
-  implicit class GroupByOps(groupByConf: GroupByConf) {
-    def maxWindow: Option[Window] = {
-      val aggs = groupByConf.aggregations
-      if (aggs == null) None // no-agg
-      else if (aggs.exists(_.windows == null)) None // agg without windows
-      else if (aggs.flatMap(_.windows).exists(_ == null)) None // one of the windows is null - meaning unwindowed
-      else Some(aggs.flatMap(_.windows).maxBy(_.millis)) // no null windows
-    }
-
-    def dataModel: DataModel = {
-      val models = groupByConf.sources.map(_.dataModel)
-      assert(models.forall(_ != null),
-             s"dataModel needs to be specified for all sources in the groupBy: ${groupByConf.metadata.name}")
-      assert(models.distinct.length == 1,
-             s"All source of the groupBy: ${groupByConf.metadata.name} " +
-               s"should be of the same type. Either 'Events' or 'Entities'")
-      models.head
-    }
-
-    def accuracy: Accuracy = {
-      val validTopics = groupByConf.sources.map(_.topic).filter(_ != null)
-      if (validTopics.length > 0) Temporal else Snapshot
-    }
-  }
 }

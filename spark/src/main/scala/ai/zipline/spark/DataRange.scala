@@ -1,8 +1,9 @@
 package ai.zipline.spark
 import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Config.{Constants, ScanQuery, Window}
-import ai.zipline.api.QueryUtils
-import ai.zipline.spark.Extensions._
+import ai.zipline.api.Extensions._
+import ai.zipline.api.{Constants, Query, QueryUtils}
+
+import scala.collection.JavaConverters._
 
 sealed trait DataRange {
   def toTimePoints: Array[Long]
@@ -63,10 +64,11 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     }
   }
 
-  def genScanQuery(scanQuery: ScanQuery): String = {
-    val scanQueryOpt = Option(scanQuery)
-    val wheres = whereClauses ++ scanQueryOpt.flatMap(query => Option(query.wheres)).getOrElse(Seq.empty[String])
-    QueryUtils.build(selects = scanQueryOpt.map(_.selects).orNull, from = scanQuery.table, wheres = wheres)
+  def genScanQuery(query: Query, table: String): String = {
+    val queryOpt = Option(query)
+    val wheres =
+      whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
+    QueryUtils.build(selects = queryOpt.map(_.selectAliased).orNull, from = table, wheres = wheres)
   }
 
   def length: Int =
