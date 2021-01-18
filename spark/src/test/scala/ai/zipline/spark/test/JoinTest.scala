@@ -40,8 +40,8 @@ class JoinTest extends TestCase {
 
     val dollarTable = s"$namespace.dollar_transactions"
     val rupeeTable = s"$namespace.rupee_transactions"
-    DataGen.entities(spark, dollarTransactions, 1000000, partitions = 400).save(dollarTable)
-    DataGen.entities(spark, rupeeTransactions, 100000, partitions = 30).save(rupeeTable)
+    DataGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable)
+    DataGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("ts", "amount_dollars"),
@@ -63,7 +63,7 @@ class JoinTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
-                             windows = Seq(new Window(30, TimeUnit.DAYS), null))),
+                             windows = Seq(new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_transactions")
     )
     val queriesSchema = List(
@@ -72,7 +72,7 @@ class JoinTest extends TestCase {
 
     val queryTable = s"$namespace.queries"
     DataGen
-      .events(spark, queriesSchema, 10000, partitions = 180)
+      .events(spark, queriesSchema, 1000, partitions = 180)
       .withColumnRenamed("user", "user_name") // to test zipline renaming logic
       .save(queryTable)
 
@@ -108,7 +108,6 @@ class JoinTest extends TestCase {
         | SELECT queries.user_name,
         |        queries.ts,
         |        queries.ds,
-        |        grouped_transactions.amount_dollars_sum,
         |        grouped_transactions.amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
@@ -138,11 +137,11 @@ class JoinTest extends TestCase {
     // right side
     val weightSchema = List(
       DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 1000),
+      DataGen.Column("country", StringType, 100),
       DataGen.Column("weight", DoubleType, 500)
     )
     val weightTable = s"$namespace.weights"
-    DataGen.entities(spark, weightSchema, 1000000, partitions = 400).save(weightTable)
+    DataGen.entities(spark, weightSchema, 10000, partitions = 400).save(weightTable)
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
@@ -164,7 +163,7 @@ class JoinTest extends TestCase {
       DataGen.Column("height", LongType, 200)
     )
     val heightTable = s"$namespace.heights"
-    DataGen.entities(spark, heightSchema, 1000000, partitions = 400).save(heightTable)
+    DataGen.entities(spark, heightSchema, 10000, partitions = 400).save(heightTable)
     val heightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
       snapshotTable = heightTable
@@ -180,7 +179,7 @@ class JoinTest extends TestCase {
     // left side
     val countrySchema = List(DataGen.Column("country", StringType, 100))
     val countryTable = s"$namespace.countries"
-    DataGen.entities(spark, countrySchema, 1000000, partitions = 400).save(countryTable)
+    DataGen.entities(spark, countrySchema, 10000, partitions = 400).save(countryTable)
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
@@ -348,11 +347,7 @@ class JoinTest extends TestCase {
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(
-        ,
-        startPartition = start
-      ),
-        table = itemQueriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
       metaData = Builders.MetaData(name = "test.item_temporal_features  ")
     )

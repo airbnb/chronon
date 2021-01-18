@@ -2,7 +2,7 @@ package ai.zipline.aggregator.test
 
 import java.util
 
-import ai.zipline.api.{Aggregation, Extensions, Operation, TimeUnit, Window}
+import ai.zipline.api.{Aggregation, Builders, Extensions, Operation, TimeUnit, Window}
 import ai.zipline.aggregator.base.{DataType, LongType}
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.test.TestDataUtils.{genNums, genTimestamps}
@@ -74,7 +74,7 @@ class SawtoothAggregatorTest extends TestCase {
     )
 
     val aggregations: Seq[Aggregation] = Seq(
-      Extensions.Aggregation(
+      Builders.Aggregation(
         Operation.AVERAGE,
         "num",
         Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))))
@@ -197,9 +197,9 @@ class SawtoothAggregatorTest extends TestCase {
 
   def testRealTimeAccuracy(): Unit = {
     val timer = new Timer
-    val queries = genTimestamps(1, 10000, new Window(1, TimeUnit.DAYS)).sorted
+    val queries = genTimestamps(1, 1000, new Window(1, TimeUnit.DAYS)).sorted
     val events = {
-      val eventCount = 100000
+      val eventCount = 10000
       val eventTimes = genTimestamps(1, eventCount, new Window(180, TimeUnit.DAYS))
       // max is 1M to avoid overflow when summing
       val eventValues = genNums(0, 1000, eventCount)
@@ -214,13 +214,13 @@ class SawtoothAggregatorTest extends TestCase {
     )
 
     val aggregations: Seq[Aggregation] = Seq(
-      Extensions.Aggregation(Operation.AVERAGE,
-                             "num",
-                             Seq(
-                               new Window(1, TimeUnit.DAYS),
-                               new Window(1, TimeUnit.HOURS),
-                               new Window(30, TimeUnit.DAYS)
-                             )))
+      Builders.Aggregation(Operation.AVERAGE,
+                           "num",
+                           Seq(
+                             new Window(1, TimeUnit.DAYS),
+                             new Window(1, TimeUnit.HOURS),
+                             new Window(30, TimeUnit.DAYS)
+                           )))
     timer.publish("setup")
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
     timer.publish("sawtoothAggregate")
