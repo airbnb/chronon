@@ -1,5 +1,7 @@
 import sbt.Keys._
 
+import scala.reflect.io.Path
+
 ThisBuild / organization := "ai.zipline"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "2.12.10"
@@ -9,30 +11,17 @@ lazy val root = (project in file("."))
   .settings(
     name := "zipline"
   )
-import scala.sys.process._
 
 lazy val api = project
   .settings(
     sourceGenerators in Compile += Def.task {
-      val inputThrift = baseDirectory.value / "src" / "main" / "thrift" / "api.thrift"
-      val outputThrift = (Compile / sourceManaged).value
-      s"echo ${outputThrift.getPath}" !;
-      s"echo ${inputThrift.getPath}" !;
-      s"rm -rf ${outputThrift.getPath}" !;
-      s"mkdir -p ${outputThrift.getPath}" !;
-      // "thrift --gen java -out api/src/main/java api/src/main/thrift/api.thrift"
-      s"thrift --gen java -out ${outputThrift.getPath} ${inputThrift.getPath}" !;
-      val files = (outputThrift ** "*.java").get()
-      println("thrift generated the following files: ")
-      files.map(_.getPath).foreach { path => println(s"    $path") }
-      println("End of generated files list")
-      files
+      val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
+      val outputJava = (Compile / sourceManaged).value
+      val outputPython = baseDirectory.value / "gen-python"
+      Thrift.gen(inputThrift.getPath, outputPython.getPath, "py")
+      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    libraryDependencies ++= Seq(
-      // lower version due to jackson conflict with spark
-      "com.sksamuel.avro4s" %% "avro4s-core" % "2.0.0",
-      "org.apache.thrift" % "libthrift" % "0.13.0"
-    )
+    libraryDependencies ++= Seq("org.apache.thrift" % "libthrift" % "0.13.0")
   )
 
 lazy val aggregator = project
