@@ -8,4 +8,5 @@
 .idea/
 .eclipse
 **/.vscode/
+**/__pycache__/
 api/py/ai/zipline/api/
