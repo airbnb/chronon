@@ -1,7 +1,7 @@
 package ai.zipline.spark
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Accuracy, Constants, JoinPart, Join => JoinConf}
+import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
@@ -147,26 +147,27 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 }
 
 object Join extends App {
-  // don't leak scallop stuff into the larger scope
-//  import org.rogach.scallop._
-//  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-//    val confPath = opt[String](required = true)
-//    val endDate = opt[String](required = true)
-//    val namespace = opt[String](required = true)
-//    verify()
-//  }
 
-//  override def main(args: Array[String]): Unit = {
-//    // args = conf path, end date, output namespace
-//    val parsedArgs = new ParsedArgs(args)
-//    println(s"Parsed Args: $parsedArgs")
-//    val joinConf = Config.parseFile[JoinConf](parsedArgs.confPath())
-//    val join = new Join(
-//      joinConf,
-//      parsedArgs.endDate(),
-//      parsedArgs.namespace(),
-//      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metadata.name}", local = false))
-//    )
-//    join.commitOutput
-//  }
+  import org.rogach.scallop._
+  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+    val confPath = opt[String](required = true)
+    val endDate = opt[String](required = true)
+    val namespace = opt[String](required = true)
+    verify()
+  }
+
+  override def main(args: Array[String]): Unit = {
+    // args = conf path, end date, output namespace
+    val parsedArgs = new ParsedArgs(args)
+    println(s"Parsed Args: $parsedArgs")
+    val joinConf =
+      ThriftJsonDecoder.fromJsonFile[JoinConf](parsedArgs.confPath(), check = true, clazz = classOf[JoinConf])
+    val join = new Join(
+      joinConf,
+      parsedArgs.endDate(),
+      parsedArgs.namespace(),
+      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
+    )
+    join.commitOutput
+  }
 }

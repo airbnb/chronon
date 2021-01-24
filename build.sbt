@@ -17,7 +17,12 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    libraryDependencies ++= Seq("org.apache.thrift" % "libthrift" % "0.13.0")
+    libraryDependencies ++= Seq(
+      "org.apache.thrift" % "libthrift" % "0.13.0",
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.7.1",
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
+      "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
+    )
   )
 
 lazy val aggregator = project
