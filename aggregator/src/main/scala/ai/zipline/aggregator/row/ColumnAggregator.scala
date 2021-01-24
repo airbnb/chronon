@@ -40,6 +40,9 @@ abstract class BaseColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input
 
   override def merge(ir1: Any, ir2: Any): Any = {
     if (ir2 == null) return ir1
+    // we need to clone here because the contract is to only mutate ir1
+    // ir2 can it self be expected to mutate later - and hence has to retain it's value
+    // this is a critical assumption of the rest of the code
     if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
     agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
   }
@@ -81,6 +84,7 @@ object ColumnAggregator {
   private def cast[T](any: Any): T = any.asInstanceOf[T]
 
   // does null checks and up casts types to feed into typed aggregators
+  // by the time we call underlying aggregators there should be no nulls left to handle
   def fromSimple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                     columnIndices: ColumnIndices,
                                     toTypedInput: Any => Input = (cast[Input] _)): ColumnAggregator =
@@ -106,13 +110,20 @@ object ColumnAggregator {
         if (inputVal == null) return
         val previousVal = ir(columnIndices.output)
         if (previousVal == null) {
-          ir.update(columnIndices.output, agg.prepare(toTypedInput(inputVal)))
+          // we don't have `empty()` method or a `inverse(input)` method,
+          // we only have `prepare(input)` and `delete(ir, input)`
+          // so we call `prepare(input)` followed by two `deletes(ir, input)`
+          val input = toTypedInput(inputVal)
+          val irOfOneInput = agg.prepare(input)
+          val irOfZeroInputs = agg.delete(irOfOneInput, input)
+          val irOfMinusOneInput = agg.delete(irOfZeroInputs, input)
+          ir.update(columnIndices.output, irOfMinusOneInput)
           return
         }
         val previous = previousVal.asInstanceOf[IR]
         val input = toTypedInput(inputVal)
-        val updated = agg.delete(previous, input)
-        ir.update(columnIndices.output, updated)
+        val deleted = agg.delete(previous, input)
+        ir.update(columnIndices.output, deleted)
       }
 
       override def isDeletable: Boolean = agg.isDeletable
@@ -165,6 +176,17 @@ object ColumnAggregator {
           case ShortType  => fromSimple(new Sum[Long], columnIndices, toLong[Short])
           case DoubleType => fromSimple(new Sum[Double], columnIndices)
           case FloatType  => fromSimple(new Sum[Double], columnIndices, toDouble[Float])
+          case _          => mismatchException
+        }
+      case Operation.UNIQUE_COUNT =>
+        inputType match {
+          case IntType    => fromSimple(new UniqueCount[Int](inputType), columnIndices)
+          case LongType   => fromSimple(new UniqueCount[Long](inputType), columnIndices)
+          case ShortType  => fromSimple(new UniqueCount[Short](inputType), columnIndices)
+          case DoubleType => fromSimple(new UniqueCount[Double](inputType), columnIndices)
+          case FloatType  => fromSimple(new UniqueCount[Float](inputType), columnIndices)
+          case StringType => fromSimple(new UniqueCount[String](inputType), columnIndices)
+          case BinaryType => fromSimple(new UniqueCount[Array[Byte]](inputType), columnIndices)
           case _          => mismatchException
         }
       case Operation.APPROX_UNIQUE_COUNT =>

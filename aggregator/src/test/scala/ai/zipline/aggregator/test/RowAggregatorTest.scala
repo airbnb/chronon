@@ -61,7 +61,8 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").asJava,
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
-      Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L
+      Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
+      Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip
@@ -94,7 +95,7 @@ class RowAggregatorTest extends TestCase {
     val finalized = rowAggregator.finalize(forDeletion)
 
     assert(expectedVals.zip(finalized).forall {
-      case (expected: Any, actual: Any) => expected == actual
+      case (expected: Any, actual: Any) => { expected == actual }
     })
   }
 }

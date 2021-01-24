@@ -8,17 +8,13 @@ ThisBuild / scalaVersion := "2.12.10"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark)
-  .settings(
-    name := "zipline"
-  )
+  .settings(name := "zipline")
 
 lazy val api = project
   .settings(
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
-      val outputPython = baseDirectory.value / "gen-python"
-      Thrift.gen(inputThrift.getPath, outputPython.getPath, "py")
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
     libraryDependencies ++= Seq("org.apache.thrift" % "libthrift" % "0.13.0")

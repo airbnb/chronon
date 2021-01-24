@@ -1,10 +1,9 @@
-namespace py ai.zipline.api
+namespace py api
 namespace java ai.zipline.api
 
-// to manually generate py defs
-// cd path/to/bighead/zipline/python/zipline/schema
-// thrift --gen py -out . path/to/bighead/thrift/schemas/zipline_api.thrift;  popd
-// TODO integrate thrit generation step into sbt
+// cd /path/to/zipline
+// thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+
 struct Query {
     1: optional map<string, string> selects
     2: optional list<string> wheres
@@ -56,23 +55,24 @@ enum Operation {
     LAST = 3
     TOP = 4
     BOTTOM = 5
-    APPROX_UNIQUE_COUNT = 6
+    UNIQUE_COUNT = 6
+    APPROX_UNIQUE_COUNT = 7
 
     // Deletable operations - Abelian Groups
     // Once an aggregate is created from a group of elements,
     // deletion of any particular element can be done freely.
-    COUNT = 7
-    SUM = 8
-    AVERAGE = 9
-    VARIANCE = 10  // TODO
-    SKEW = 11     // TODO
-    KURTOSIS = 12  // TODO
-    APPROX_PERCENTILE = 13 // TODO
+    COUNT = 8
+    SUM = 9
+    AVERAGE = 10
+    VARIANCE = 11  // TODO
+    SKEW = 12     // TODO
+    KURTOSIS = 13  // TODO
+    APPROX_PERCENTILE = 14 // TODO
 
-    LAST_K = 14
-    FIRST_K = 15,
-    TOP_K = 16,
-    BOTTOM_K = 17
+    LAST_K = 15
+    FIRST_K = 16,
+    TOP_K = 17,
+    BOTTOM_K = 18
 }
 
 // integers map to milliseconds in the timeunit

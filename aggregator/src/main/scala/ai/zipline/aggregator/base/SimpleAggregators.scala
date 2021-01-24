@@ -46,6 +46,42 @@ class Count extends SimpleAggregator[Any, Long, Long] {
   override def isDeletable: Boolean = true
 }
 
+class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.ArrayList[T], Long] {
+  override def outputType: DataType = LongType
+
+  override def irType: DataType = ListType(inputType)
+
+  override def prepare(input: T): util.ArrayList[T] = {
+    val result = new util.ArrayList[T]()
+    result.add(input)
+    result
+  }
+
+  override def update(ir: util.ArrayList[T], input: T): util.ArrayList[T] = {
+    if (!ir.contains(input)) {
+      ir.add(input)
+    }
+    ir
+  }
+
+  override def merge(ir1: util.ArrayList[T], ir2: util.ArrayList[T]): util.ArrayList[T] = {
+    val it = ir2.iterator()
+    while (it.hasNext) {
+      val elem = it.next
+      update(ir1, elem)
+    }
+    ir1
+  }
+
+  override def finalize(ir: util.ArrayList[T]): Long = ir.size()
+
+  override def clone(ir: util.ArrayList[T]): util.ArrayList[T] = {
+    val cloned = new util.ArrayList[T](ir.size())
+    cloned.addAll(ir)
+    cloned
+  }
+}
+
 class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def outputType: DataType = DoubleType
 
