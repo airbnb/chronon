@@ -7,3 +7,5 @@
 *.iml
 .idea/
 .eclipse
+**/.vscode/
+api/py/ai/zipline/api/
