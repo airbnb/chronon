@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import List, Union, Optional
+from typing import List, Union
 
 import ai.zipline.api.ttypes as api
 import json
@@ -7,7 +7,6 @@ import shutil
 import os
 import tempfile
 import subprocess
-from ai.zipline.repo.serializer import thrift_simple_json
 
 
 def edit_distance(str1, str2):

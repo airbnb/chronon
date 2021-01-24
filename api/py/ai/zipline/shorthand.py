@@ -41,7 +41,7 @@ def parse_window(window_str: str) -> api.Window:
     return api.Window(length=length, timeUnit=unit_value)
 
 
-OpWithArgs = [Tuple[api.Operation, Dict[str, str]]]
+OpWithArgs = Tuple[api.Operation, Dict[str, str]]
 OpWithOptionalArgs = Union[api.Operation, OpWithArgs]
 
 
@@ -55,7 +55,7 @@ def _normalize_to_tuple(v):
 @dataclass
 class Agg:
     column: str
-    expression: str
+    expression: str = None
     op: OpWithOptionalArgs = None
     ops: List[OpWithOptionalArgs] = None
     window: str = None
@@ -73,14 +73,14 @@ class Agg:
         assert (self.window is None) or (self.windows is None), "should not set both window and windows in Agg"
         aggregations = []
         for op in self._all_ops():
-            windows = self._all_windows_groups()
+            windows = self._all_window_groups()
             if None in windows:
                 agg = api.Aggregation(inputColumn=self.column, operation=op[0], argMap=op[1], windows=None)
-                aggregations.extend(agg)
-            pure_windows = [window for window in windows if window is not None]
+                aggregations.append(agg)
+            pure_windows = [parse_window(window) for window in windows if window is not None]
             if len(pure_windows) > 0:
                 agg = api.Aggregation(inputColumn=self.column, operation=op[0], argMap=op[1], windows=pure_windows)
-                aggregations.extend(agg)
+                aggregations.append(agg)
         return aggregations
 
 
@@ -109,9 +109,9 @@ def GroupBy(table: str,
         final_selects = {agg.column: agg.expression for agg in aggs}
         aggregations = [col_agg for agg in aggs for col_agg in agg.unpack()]
 
-    key_selects = {tup[0]: tup[1] for tup in map(keys, _normalize_to_tuple)}
+    key_selects = {tup[0]: tup[1] for tup in map(_normalize_to_tuple, keys)}
     common_cols = set(final_selects.keys()).intersection(key_selects.keys())
-    assert len(common_cols) != 0, "columns in agg cannot overlap with columns in keys"
+    assert len(common_cols) == 0, "columns in agg cannot overlap with columns in keys"
     final_selects.update(key_selects)
     query = api.Query(
         selects=selects,

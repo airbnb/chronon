@@ -81,7 +81,7 @@ def thrift_simple_json_protected(obj, obj_type) -> str:
     thrift_obj = json.loads(serialized, cls=ThriftJSONDecoder, thrift_class=obj_type)
     actual = thrift_simple_json(thrift_obj)
     differ = JsonDiffer()
-    diff = differ.diff(thrift_obj, actual)
+    diff = differ.diff(serialized, actual)
     assert len(diff) == 0, f"""Serialization can't be reversed
 diff: \n{diff}
 """
