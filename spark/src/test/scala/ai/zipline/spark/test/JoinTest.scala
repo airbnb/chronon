@@ -141,7 +141,7 @@ class JoinTest extends TestCase {
       DataGen.Column("weight", DoubleType, 500)
     )
     val weightTable = s"$namespace.weights"
-    DataGen.entities(spark, weightSchema, 10000, partitions = 400).save(weightTable)
+    DataGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
@@ -163,7 +163,7 @@ class JoinTest extends TestCase {
       DataGen.Column("height", LongType, 200)
     )
     val heightTable = s"$namespace.heights"
-    DataGen.entities(spark, heightSchema, 10000, partitions = 400).save(heightTable)
+    DataGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
     val heightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
       snapshotTable = heightTable
@@ -179,7 +179,7 @@ class JoinTest extends TestCase {
     // left side
     val countrySchema = List(DataGen.Column("country", StringType, 100))
     val countryTable = s"$namespace.countries"
-    DataGen.entities(spark, countrySchema, 10000, partitions = 400).save(countryTable)
+    DataGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
@@ -247,7 +247,7 @@ class JoinTest extends TestCase {
     )
 
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
+    DataGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
 
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
@@ -269,7 +269,7 @@ class JoinTest extends TestCase {
     val itemQueries = List(DataGen.Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     DataGen
-      .events(spark, itemQueries, 10000, partitions = 100)
+      .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))

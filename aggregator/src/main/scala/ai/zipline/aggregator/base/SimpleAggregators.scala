@@ -130,20 +130,19 @@ trait CpcFriendly[Input] {
 }
 
 object CpcFriendly {
-  implicit val stringIsCpcFriendly: CpcFriendly[String] = { (sketch: CpcSketch, input: String) =>
-    sketch.update(input)
+  implicit val stringIsCpcFriendly: CpcFriendly[String] = new CpcFriendly[String] {
+    override def update(sketch: CpcSketch, input: String): Unit = sketch.update(input)
   }
 
-  implicit val longIsCpcFriendly: CpcFriendly[Long] = { (sketch: CpcSketch, input: Long) =>
-    sketch.update(input)
+  implicit val longIsCpcFriendly: CpcFriendly[Long] = new CpcFriendly[Long] {
+    override def update(sketch: CpcSketch, input: Long): Unit = sketch.update(input)
+  }
+  implicit val doubleIsCpcFriendly: CpcFriendly[Double] = new CpcFriendly[Double] {
+    override def update(sketch: CpcSketch, input: Double): Unit = sketch.update(input)
   }
 
-  implicit val doubleIsCpcFriendly: CpcFriendly[Double] = { (sketch: CpcSketch, input: Double) =>
-    sketch.update(input)
-  }
-
-  implicit val BinaryIsCpcFriendly: CpcFriendly[Array[Byte]] = { (sketch: CpcSketch, input: Array[Byte]) =>
-    sketch.update(input)
+  implicit val BinaryIsCpcFriendly: CpcFriendly[Array[Byte]] = new CpcFriendly[Array[Byte]] {
+    override def update(sketch: CpcSketch, input: Array[Byte]): Unit = sketch.update(input)
   }
 }
 

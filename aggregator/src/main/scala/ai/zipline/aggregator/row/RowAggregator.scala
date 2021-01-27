@@ -14,8 +14,9 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   val columnAggregators: Array[ColumnAggregator] = {
     aggregationParts.zipWithIndex.map {
       case (spec: AggregationPart, aggregatorIndex: Int) =>
-        val ((_, inputType), inputIndex) =
+        val ((_, inputType), inputIndex) = {
           inputSchema.zipWithIndex.find(_._1._1 == spec.inputColumn).get
+        }
         ColumnAggregator.construct(
           inputType,
           spec,

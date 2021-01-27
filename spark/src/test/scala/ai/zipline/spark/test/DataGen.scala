@@ -79,13 +79,15 @@ object DataGen {
 
     // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
     protected def rollDouble(max: JDouble, min: JDouble = 0, nullRate: Double = 0.1): JDouble = {
-      if (math.random() < nullRate) null
-      else min + ((max - min) * math.random())
+      val dice: Double = math.random
+      if (dice < nullRate) null
+      else min + ((max - min) * dice)
     }
 
     // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
     protected def roll(max: JLong, min: JLong = 0, nullRate: Double = 0.1): JLong = {
-      rollDouble(max.toDouble, min.toDouble, nullRate).toLong
+      val roll = rollDouble(max.toDouble, min.toDouble, nullRate)
+      if (roll == null) null else roll.toLong
     }
   }
 

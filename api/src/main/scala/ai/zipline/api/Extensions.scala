@@ -14,7 +14,11 @@ object Extensions {
         case TimeUnit.DAYS  => "d"
       }
 
-    def millis: Long = timeUnit.getValue
+    def millis: Long =
+      timeUnit match {
+        case TimeUnit.HOURS => 3600 * 1000
+        case TimeUnit.DAYS  => 24 * 3600 * 1000
+      }
   }
 
   implicit class WindowOps(window: Window) {
@@ -84,7 +88,8 @@ object Extensions {
   implicit class AggregationOps(aggregation: Aggregation) {
 
     def unpack: Seq[AggregationPart] =
-      Option(aggregation.windows.asScala)
+      Option(aggregation.windows)
+        .map(_.asScala)
         .getOrElse(Seq(WindowUtils.Unbounded))
         .map { window =>
           Option(window) match {
@@ -136,16 +141,6 @@ object Extensions {
 
     def topic: String = {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
-    }
-  }
-
-  implicit class QueryOps(query: Query) {
-    def selectAliased: Seq[String] = {
-      Option(query.getSelects)
-        .map(_.asScala.map {
-          case (alias: String, expression: String) => s"$expression as `$alias`"
-        }.toSeq)
-        .orNull
     }
   }
 

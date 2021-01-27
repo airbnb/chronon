@@ -53,32 +53,30 @@ enum Operation {
     MAX = 1
     FIRST = 2
     LAST = 3
-    TOP = 4
-    BOTTOM = 5
-    UNIQUE_COUNT = 6
-    APPROX_UNIQUE_COUNT = 7
+    UNIQUE_COUNT = 4
+    APPROX_UNIQUE_COUNT = 5
 
     // Deletable operations - Abelian Groups
     // Once an aggregate is created from a group of elements,
     // deletion of any particular element can be done freely.
-    COUNT = 8
-    SUM = 9
-    AVERAGE = 10
-    VARIANCE = 11  // TODO
-    SKEW = 12     // TODO
-    KURTOSIS = 13  // TODO
-    APPROX_PERCENTILE = 14 // TODO
+    COUNT = 6
+    SUM = 7
+    AVERAGE = 8
+    VARIANCE = 9  // TODO
+    SKEW = 10     // TODO
+    KURTOSIS = 11  // TODO
+    APPROX_PERCENTILE = 12 // TODO
 
-    LAST_K = 15
-    FIRST_K = 16,
-    TOP_K = 17,
-    BOTTOM_K = 18
+    LAST_K = 13
+    FIRST_K = 14,
+    TOP_K = 15,
+    BOTTOM_K = 16
 }
 
 // integers map to milliseconds in the timeunit
 enum TimeUnit {
-    HOURS = 3600000
-    DAYS = 86400000
+    HOURS = 0
+    DAYS = 1
 }
 
 struct Window {

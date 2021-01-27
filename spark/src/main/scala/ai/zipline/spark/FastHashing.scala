@@ -86,8 +86,9 @@ object FastHashing {
     { row: Row =>
       val hasher = Hashing.murmur3_128().newHasher()
       for (i <- hashFunctions.indices) {
-        if (row.get(i) != null)
+        if (!row.isNullAt(keyIndices(i))) {
           hashFunctions(i)(hasher, row)
+        }
       }
       val hashCode = hasher.hash()
       KeyWithHash(keyIndices.map(row.get), hashCode.asBytes(), hashCode.asInt())

@@ -16,8 +16,12 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     PartitionRange(joinConf.left.query.startPartition, endPartition),
     Option(joinConf.left.table).toSeq)
 
-  private val leftDf: DataFrame =
-    tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
+  private val leftDf: DataFrame = {
+    val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
+    println("Left schema: ")
+    println(df.schema.pretty)
+    df
+  }
 
   private lazy val leftTimeRange = leftDf.timeRange
 
@@ -71,6 +75,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 //    joinableRight.show()
 //    println("Right count: " + joinableRight.count())
 //    println("Left count: " + joinableLeft.count())
+    joinableLeft.validateJoinKeys(renamedRight, keys)
     val result = joinableLeft.nullSafeJoin(renamedRight, keys, "left")
 //    println(s"Left join result count: ${result.count()}")
     // drop intermediate join key (used for right snapshot events case)
@@ -101,7 +106,8 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
         GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).snapshotEntities -> Constants.PartitionColumn
 
       case (Events, Events, null | Accuracy.TEMPORAL) =>
-        lazy val renamedLeft = Option(joinPart.keyMapping.asScala)
+        lazy val renamedLeft = Option(joinPart.keyMapping)
+          .map(_.asScala)
           .getOrElse(Map.empty)
           .foldLeft(leftDf) {
             case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
@@ -131,7 +137,6 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
   }
 
   def computeJoin: DataFrame = {
-    println(s"left df count: ${leftDf.count()}")
     joinConf.joinParts.asScala.foldLeft(leftDf) {
       case (left, joinPart) =>
         val (rightDf, additionalKey) = computeJoinPart(joinPart)
@@ -146,17 +151,18 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
   }
 }
 
-object Join extends App {
+import org.rogach.scallop._
+class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+  val confPath = opt[String](required = true)
+  val endDate = opt[String](required = true)
+  val namespace = opt[String](required = true)
+  verify()
+}
 
-  import org.rogach.scallop._
-  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath = opt[String](required = true)
-    val endDate = opt[String](required = true)
-    val namespace = opt[String](required = true)
-    verify()
-  }
+object Join {
 
-  override def main(args: Array[String]): Unit = {
+  // TODO: make joins a subcommand of a larger driver that does multiple other things
+  def main(args: Array[String]): Unit = {
     // args = conf path, end date, output namespace
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")

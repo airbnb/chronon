@@ -10,8 +10,6 @@ MIN = api.Operation.MIN
 MAX = api.Operation.MAX
 FIRST = api.Operation.FIRST
 LAST = api.Operation.LAST
-TOP = api.Operation.TOP
-BOTTOM = api.Operation.BOTTOM
 APPROX_UNIQUE_COUNT = api.Operation.APPROX_UNIQUE_COUNT
 UNIQUE_COUNT = api.Operation.UNIQUE_COUNT
 COUNT = api.Operation.COUNT
@@ -89,8 +87,10 @@ class DataModel(Enum):
     EVENTS = 2
 
 
+# ditch the name and generate json using compiler.py
 # single source aggregations are the most common, and can be easier to express
-def GroupBy(table: str,
+def GroupBy(name: str,
+            table: str,
             model: DataModel,
             keys: List[Union[str, Tuple[str, str]]],
             start_partition: str,
@@ -106,7 +106,7 @@ def GroupBy(table: str,
     final_selects = selects
     aggregations = None
     if aggs is not None:
-        final_selects = {agg.column: agg.expression for agg in aggs}
+        final_selects = {agg.column: agg.expression if agg.expression else agg.column for agg in aggs}
         aggregations = [col_agg for agg in aggs for col_agg in agg.unpack()]
 
     key_selects = {tup[0]: tup[1] for tup in map(_normalize_to_tuple, keys)}
@@ -114,7 +114,7 @@ def GroupBy(table: str,
     assert len(common_cols) == 0, "columns in agg cannot overlap with columns in keys"
     final_selects.update(key_selects)
     query = api.Query(
-        selects=selects,
+        selects=final_selects,
         wheres=wheres,
         startPartition=start_partition,
         timeColumn=ts)
@@ -132,7 +132,7 @@ def GroupBy(table: str,
                                                    query=query))
 
     return api.GroupBy(
-        metaData=api.MetaData(production=production, online=online),
+        metaData=api.MetaData(name=name, production=production, online=online),
         sources=[source],
         keyColumns=key_selects.keys(),
         aggregations=aggregations

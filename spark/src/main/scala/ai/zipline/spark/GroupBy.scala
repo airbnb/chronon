@@ -249,6 +249,14 @@ object GroupBy {
     val queryableDataRange = PartitionRange(scanStart, queryEnd)
     val intersectedRange: Option[PartitionRange] = sourceRange.intersect(queryableDataRange)
 
+    val metaColumns = source.dataModel match {
+      case Entities =>
+        Map(Constants.PartitionColumn -> null) ++ Option(source.query.timeColumn)
+          .map(Constants.TimeColumn -> _)
+      case Events =>
+        Map(Constants.TimeColumn -> source.query.timeColumn, Constants.PartitionColumn -> null)
+    }
+
     println(s"""
          |Rendering source query:
          |   query range: $queryRange
@@ -258,21 +266,14 @@ object GroupBy {
          |   source data model: ${source.dataModel}
          |   queryable data range: $queryableDataRange
          |   intersected/effective scan range: $intersectedRange 
+         |   metaColumns: $metaColumns
          |""".stripMargin)
-
-    val metaColumns = source.dataModel match {
-      case Entities =>
-        Map(Constants.PartitionColumn -> null) ++ Option(source.query.timeColumn)
-          .map(Constants.TimeColumn -> _)
-      case Events =>
-        Map(Constants.TimeColumn -> source.query.timeColumn, Constants.PartitionColumn -> null)
-    }
 
     intersectedRange.map { effectiveRange =>
       QueryUtils.build(
-        source.query.selectAliased,
+        Option(source.query.selects).map(_.asScala.toMap).orNull,
         source.table,
-        Option(source.query.getWheres.asScala).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
+        Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
         metaColumns ++ keys.map(_ -> null)
       )
     }

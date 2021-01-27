@@ -4,7 +4,7 @@ import scala.reflect.io.Path
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / version := "0.1.0-SNAPSHOT"
-ThisBuild / scalaVersion := "2.12.10"
+ThisBuild / scalaVersion := "2.11.12"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark)
@@ -39,12 +39,34 @@ lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
-    // assemblySettings,
+    assemblyJarName in assembly := "zipline-spark.jar",
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "2.4.4",
+      "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided",
+      "org.apache.spark" %% "spark-hive" % "2.4.4" % "provided",
+      "org.apache.spark" %% "spark-core" % "2.4.4" % "provided",
       "org.rogach" %% "scallop" % "4.0.1"
     )
   )
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b
+//assemblyMergeStrategy in assembly := {
+//  case PathList("org", "aopalliance", xs @ _*)      => MergeStrategy.last
+//  case PathList("javax", "inject", xs @ _*)         => MergeStrategy.last
+//  case PathList("javax", "servlet", xs @ _*)        => MergeStrategy.last
+//  case PathList("javax", "activation", xs @ _*)     => MergeStrategy.last
+//  case PathList("org", "apache", xs @ _*)           => MergeStrategy.last
+//  case PathList("com", "google", xs @ _*)           => MergeStrategy.last
+//  case PathList("com", "esotericsoftware", xs @ _*) => MergeStrategy.last
+//  case PathList("com", "codahale", xs @ _*)         => MergeStrategy.last
+//  case PathList("com", "yammer", xs @ _*)           => MergeStrategy.last
+//  case "about.html"                                 => MergeStrategy.rename
+//  case "META-INF/ECLIPSEF.RSA"                      => MergeStrategy.last
+//  case "META-INF/mailcap"                           => MergeStrategy.last
+//  case "META-INF/mimetypes.default"                 => MergeStrategy.last
+//  case "plugin.properties"                          => MergeStrategy.last
+//  case "log4j.properties"                           => MergeStrategy.last
+//  case x =>
+//    val oldStrategy = (assemblyMergeStrategy in assembly).value
+//    oldStrategy(x)
+//}

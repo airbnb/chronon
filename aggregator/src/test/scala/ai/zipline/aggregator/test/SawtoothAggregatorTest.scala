@@ -59,7 +59,7 @@ class SawtoothAggregatorTest extends TestCase {
     val queries =
       genTimestamps(5 * 60 * 1000, 1000, new Window(30, TimeUnit.DAYS)).sorted
     val events = {
-      val eventCount = 100000
+      val eventCount = 1000
       val eventTimes = genTimestamps(1, eventCount, new Window(180, TimeUnit.DAYS))
       // max is 1M to avoid overflow when summing
       val eventValues = genNums(0, 1000, eventCount)

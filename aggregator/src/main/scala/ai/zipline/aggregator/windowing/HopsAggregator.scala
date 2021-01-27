@@ -71,10 +71,13 @@ class HopsAggregator(minQueryTs: Long,
   def init(): IrMapType =
     Array.fill(hopSizes.length)(new java.util.HashMap[Long, Array[Any]])
 
-  private def buildHop(ts: Long): Array[Any] = {
-    val v = new Array[Any](rowAggregator.length + 1)
-    v.update(rowAggregator.length, ts)
-    v
+  @transient
+  private lazy val javaBuildHop = new java.util.function.Function[Long, Array[Any]] {
+    override def apply(ts: Long): Array[Any] = {
+      val v = new Array[Any](rowAggregator.length + 1)
+      v.update(rowAggregator.length, ts)
+      v
+    }
   }
 
   // used to collect hops of various sizes in a single pass of input rows
@@ -82,7 +85,7 @@ class HopsAggregator(minQueryTs: Long,
     for (i <- hopSizes.indices) {
       if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
         val hopStart = TsUtils.round(row.ts, hopSizes(i))
-        val hopIr = hopMaps(i).computeIfAbsent(hopStart, buildHop)
+        val hopIr = hopMaps(i).computeIfAbsent(hopStart, javaBuildHop)
         rowAggregator.update(hopIr, row)
       }
     }
@@ -113,10 +116,11 @@ class HopsAggregator(minQueryTs: Long,
   }
 
   // order by hopStart
-  @transient lazy val arrayOrdering: Ordering[Array[Any]] =
-    (x: Array[Any], y: Array[Any]) =>
+  @transient lazy val arrayOrdering: Ordering[Array[Any]] = new Ordering[Array[Any]] {
+    override def compare(x: Array[Any], y: Array[Any]): Int =
       Ordering[Long]
         .compare(x.last.asInstanceOf[Long], y.last.asInstanceOf[Long])
+  }
 
   def toTimeSortedArray(hopMaps: IrMapType): OutputArrayType =
     hopMaps.map { m =>

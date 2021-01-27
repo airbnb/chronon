@@ -97,11 +97,11 @@ class GroupByTest extends TestCase {
       DataGen.Column("session_length", IntType, 10000)
     )
 
-    val eventDf = DataGen.events(spark, eventSchema, count = 100000, partitions = 180)
+    val eventDf = DataGen.events(spark, eventSchema, count = 10000, partitions = 180)
 
     val querySchema = List(DataGen.Column("user", StringType, 10))
 
-    val queryDf = DataGen.events(spark, querySchema, count = 10000, partitions = 180)
+    val queryDf = DataGen.events(spark, querySchema, count = 1000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(
