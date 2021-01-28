@@ -7,16 +7,21 @@ import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
-import org.junit.{AfterClass, BeforeClass}
+import org.junit.{AfterClass, BeforeClass, Test}
 
-// main test path for query generation - including the date scan logic
-class JoinTest extends TestCase {
-  // clean warehouse dirs from past runs - or the tests will be polluted
+// clean needs to be a static method
+object JoinTest {
   @BeforeClass
   @AfterClass
-  def beforeStartClean(): Unit = {
+  def clean(): Unit = {
     SparkSessionBuilder.cleanData()
   }
+}
+
+// DO NO extend Junit.TestCase
+// for the @BeforeClass and @AfterClass to run
+class JoinTest {
+
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
   val today = Constants.Partition.at(System.currentTimeMillis())
@@ -29,6 +34,7 @@ class JoinTest extends TestCase {
 
   val tableUtils = TableUtils(spark)
 
+  @Test
   def testEventsEntitiesSnapshot(): Unit = {
 
     val dollarTransactions = List(
@@ -137,6 +143,7 @@ class JoinTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testEntitiesEntities(): Unit = {
     // untimned/unwindowed entities on right
     // right side
@@ -244,6 +251,7 @@ class JoinTest extends TestCase {
 
   }
 
+  @Test
   def testEventsEventsSnapshot(): Unit = {
     val viewsSchema = List(
       DataGen.Column("user", StringType, 10000),
@@ -317,6 +325,7 @@ class JoinTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testEventsEventsTemporal(): Unit = {
     val viewsSchema = List(
       DataGen.Column("user", StringType, 10000),
