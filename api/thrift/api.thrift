@@ -121,8 +121,8 @@ struct AggregationSelector {
 }
 
 enum Accuracy {
-    TEMPORAL = 1,
-    SNAPSHOT = 2
+    TEMPORAL = 0,
+    SNAPSHOT = 1
 }
 
 struct JoinPart {
@@ -139,6 +139,7 @@ struct MetaData {
     3: optional bool production
     4: optional string customJson
     5: optional list<string> dependencies
+    6: optional map<string, string> tableProperties
 }
 
 
