@@ -7,12 +7,13 @@ import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
-import org.junit.BeforeClass
+import org.junit.{AfterClass, BeforeClass}
 
 // main test path for query generation - including the date scan logic
 class JoinTest extends TestCase {
   // clean warehouse dirs from past runs - or the tests will be polluted
   @BeforeClass
+  @AfterClass
   def beforeStartClean(): Unit = {
     SparkSessionBuilder.cleanData()
   }
