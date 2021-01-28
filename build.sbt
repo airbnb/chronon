@@ -1,7 +1,5 @@
 import sbt.Keys._
 
-import scala.reflect.io.Path
-
 ThisBuild / organization := "ai.zipline"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "2.11.12"
@@ -44,7 +42,8 @@ lazy val spark = project
       "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided",
       "org.apache.spark" %% "spark-hive" % "2.4.4" % "provided",
       "org.apache.spark" %% "spark-core" % "2.4.4" % "provided",
-      "org.rogach" %% "scallop" % "4.0.1"
+      "org.rogach" %% "scallop" % "4.0.1",
+      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
     )
   )
 

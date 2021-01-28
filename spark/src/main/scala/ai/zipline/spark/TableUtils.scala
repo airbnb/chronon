@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
 import ai.zipline.api.Constants
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 case class TableUtils(sparkSession: SparkSession) {
@@ -19,7 +20,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def sql(query: String): DataFrame = {
     println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
-    sparkSession.sql(query)
+    val df = sparkSession.sql(query)
+    df
   }
 
   def partitions(tableName: String): Seq[String] = {
@@ -43,8 +45,10 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String],
                        tableName: String,
                        numPartitions: Int,
+                       tableProperties: Map[String, String] = null,
                        filesPerPartition: Int = 10,
-                       saveMode: SaveMode = SaveMode.Overwrite): Unit = {
+                       saveMode: SaveMode = SaveMode.Overwrite,
+                       fileFormat: String = "PARQUET"): Unit = {
 
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
@@ -61,12 +65,63 @@ case class TableUtils(sparkSession: SparkSession) {
       partitionColumns.map(df.col): _*
     )
 
-    // write out
-    if (df.sparkSession.catalog.tableExists(tableName)) {
-      rePartitioned.write.mode(saveMode).insertInto(tableName)
+    println(s"Trying to find table $tableName")
+    if (!sparkSession.catalog.tableExists(tableName)) {
+      println(s"Couldn't find $tableName, creating it.")
+      sql(createTableSql(tableName, rePartitioned.schema, partitionColumns, tableProperties, fileFormat))
     } else {
-      rePartitioned.write.mode(saveMode).partitionBy(partitionColumns: _*).saveAsTable(tableName)
+      println(s"Found table $tableName")
+      if (tableProperties != null && tableProperties.nonEmpty) {
+        sql(alterTablePropertiesSql(df.sparkSession, tableName, tableProperties))
+      }
     }
+
+    rePartitioned.write.mode(saveMode).insertInto(tableName)
+  }
+
+  private def createTableSql(tableName: String,
+                             schema: StructType,
+                             partitionColumns: Seq[String],
+                             tableProperties: Map[String, String],
+                             fileFormat: String): String = {
+    val fieldDefinitions = schema
+      .filterNot(field => partitionColumns.contains(field.name))
+      .map(field => s"${field.name} ${field.dataType.catalogString}")
+    val createFragment =
+      s"""CREATE TABLE $tableName (
+         |    ${fieldDefinitions.mkString(",\n    ")}
+         |)""".stripMargin
+    val partitionFragment = if (partitionColumns != null && partitionColumns.nonEmpty) {
+      val partitionDefinitions = schema
+        .filter(field => partitionColumns.contains(field.name))
+        .map(field => s"${field.name} ${field.dataType.catalogString}")
+      s"""PARTITIONED BY (
+         |    ${partitionDefinitions.mkString(",\n    ")}
+         |)""".stripMargin
+    } else {
+      ""
+    }
+    val propertiesFragment = if (tableProperties != null && tableProperties.nonEmpty) {
+      s"""TBLPROPERTIES (
+         |    ${tableProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |)""".stripMargin
+    } else {
+      ""
+    }
+    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
+  }
+
+  private def alterTablePropertiesSql(session: SparkSession,
+                                      tableName: String,
+                                      properties: Map[String, String]): String = {
+    // Only SQL api exists for setting TBLPROPERTIES
+    val propertiesString = properties
+      .map {
+        case (key, value) =>
+          s"'$key' = '$value'"
+      }
+      .mkString(", ")
+    s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
   }
 
   // logic for resuming computation from a previous job

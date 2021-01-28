@@ -7,11 +7,15 @@ import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
+import org.junit.BeforeClass
 
 // main test path for query generation - including the date scan logic
 class JoinTest extends TestCase {
   // clean warehouse dirs from past runs - or the tests will be polluted
-  SparkSessionBuilder.cleanData()
+  @BeforeClass
+  def beforeStartClean(): Unit = {
+    SparkSessionBuilder.cleanData()
+  }
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
   val today = Constants.Partition.at(System.currentTimeMillis())

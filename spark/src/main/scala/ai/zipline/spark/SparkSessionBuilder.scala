@@ -5,10 +5,18 @@ import java.io.File
 import org.apache.spark.sql.SparkSession
 
 import scala.reflect.io.Directory
+import java.util.logging.{Level, Logger}
 
 object SparkSessionBuilder {
 
+  val warehouseDir = new File("spark-warehouse")
+  val metastoreDb = new File("metastore_db")
+
   def build(name: String, local: Boolean): SparkSession = {
+    if (local) {
+      //required to run spark locally with hive support enabled - for sbt test
+      System.setSecurityManager(null)
+    }
 
     val baseBuilder = SparkSession
       .builder()
@@ -16,6 +24,13 @@ object SparkSessionBuilder {
       .config("spark.sql.session.timeZone", "UTC")
       //otherwise overwrite will delete ALL partitions, not just the ones it touches
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+      .config("hive.exec.dynamic.partition", "true")
+      .config("hive.exec.dynamic.partition.mode", "nonstrict")
+      // Otherwise files left from deleting the table with the same name result in test failures
+      .config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
+      .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
+      .config("spark.sql.catalogImplementation", "hive")
+      .enableHiveSupport()
 
     val builder = if (local) {
       baseBuilder
@@ -23,11 +38,12 @@ object SparkSessionBuilder {
         .master("local[*]")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
-      baseBuilder.enableHiveSupport()
+      baseBuilder
     }
     val spark = builder.getOrCreate()
     // disable log spam
     spark.sparkContext.setLogLevel("ERROR")
+    Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
 
@@ -40,9 +56,6 @@ object SparkSessionBuilder {
 
   // remove the old warehouse folders
   def cleanData(): Unit = {
-    println("Cleaning left over spark data directories")
-    val warehouseDir = new File("spark-warehouse")
-    val metastoreDb = new File("metastore_db")
     cleanUp(warehouseDir)
     cleanUp(metastoreDb)
   }

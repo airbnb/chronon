@@ -146,8 +146,19 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     }
   }
 
-  def commitOutput(): Unit = {
-    computeJoin.save(outputTable, leftUnfilledRange)
+  def commitOutput(tableProps: String): Unit = {
+    var propMap: Map[String, String] = null
+    if (tableProps != null) {
+      propMap = tableProps
+        .split(',')
+        .map { propVal =>
+          val arr = propVal.split('=')
+          arr(0) -> arr(1)
+        }
+        .toMap
+      println(s"Output table will have following properties:\n  $propMap")
+    }
+    computeJoin.save(outputTable, leftUnfilledRange, propMap)
   }
 }
 
@@ -156,6 +167,7 @@ class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
   val confPath = opt[String](required = true)
   val endDate = opt[String](required = true)
   val namespace = opt[String](required = true)
+  val tblProps = opt[String](required = false)
   verify()
 }
 
@@ -174,6 +186,6 @@ object Join {
       parsedArgs.namespace(),
       TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
     )
-    join.commitOutput
+    join.commitOutput(parsedArgs.tblProps.toOption.orNull)
   }
 }

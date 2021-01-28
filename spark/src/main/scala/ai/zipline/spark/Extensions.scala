@@ -22,6 +22,7 @@ object Extensions {
         .mkString("\n")
     }
   }
+
   implicit class SparkSessionOps(sparkSession: SparkSession) {
     def disableLogSpam(): Unit = {
       sparkSession.sparkContext.setLogLevel("ERROR")
@@ -66,8 +67,12 @@ object Extensions {
     }
 
     //  partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
-    def save(tableName: String, partitionRange: PartitionRange): Unit = {
-      TableUtils(df.sparkSession).insertPartitions(df, Seq(Constants.PartitionColumn), tableName, partitionRange.length)
+    def save(tableName: String, partitionRange: PartitionRange, tableProperties: Map[String, String] = null): Unit = {
+      TableUtils(df.sparkSession).insertPartitions(df,
+                                                   Seq(Constants.PartitionColumn),
+                                                   tableName,
+                                                   partitionRange.length,
+                                                   tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
