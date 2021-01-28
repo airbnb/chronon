@@ -158,7 +158,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
         .toMap
       println(s"Output table will have following properties:\n  $propMap")
     }
-    computeJoin.save(outputTable, leftUnfilledRange, propMap)
+    computeJoin.savePartitionCounted(outputTable, leftUnfilledRange, propMap)
   }
 }
 

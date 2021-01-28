@@ -8,7 +8,7 @@ case class Staging(outputTable: String, tableUtils: TableUtils, expectedRange: P
   def fill(fillFunction: PartitionRange => DataFrame, inputTables: Seq[String]): DataFrame = {
     val fillableRange = tableUtils.unfilledRange(outputTable, expectedRange, inputTables)
     val increment = fillFunction(fillableRange)
-    increment.save(outputTable, fillableRange)
+    increment.savePartitionCounted(outputTable, fillableRange)
     if (fillableRange == expectedRange) {
       increment
     } else {

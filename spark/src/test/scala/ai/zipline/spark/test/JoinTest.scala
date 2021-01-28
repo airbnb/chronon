@@ -18,8 +18,8 @@ object JoinTest {
   }
 }
 
-// DO NO extend Junit.TestCase
-// for the @BeforeClass and @AfterClass to run
+// !!!DO NOT extend Junit.TestCase!!!
+// Or the @BeforeClass and @AfterClass annotations fail to run
 class JoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
@@ -51,7 +51,7 @@ class JoinTest {
 
     val dollarTable = s"$namespace.dollar_transactions"
     val rupeeTable = s"$namespace.rupee_transactions"
-    DataGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable)
+    DataGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable, Map("tblProp1" -> "1"))
     DataGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
@@ -334,7 +334,7 @@ class JoinTest {
     )
 
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable)
+    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
 
     val viewsSource = Builders.Source.events(
       table = viewsTable,

@@ -59,15 +59,18 @@ object Extensions {
 
     // partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
     // use sparingly/in tests.
-    def save(tableName: String): Unit = {
+    def save(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    Seq(Constants.PartitionColumn),
                                                    tableName,
-                                                   df.partitionRange.length)
+                                                   df.partitionRange.length,
+                                                   tableProperties)
     }
 
     //  partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
-    def save(tableName: String, partitionRange: PartitionRange, tableProperties: Map[String, String] = null): Unit = {
+    def savePartitionCounted(tableName: String,
+                             partitionRange: PartitionRange,
+                             tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    Seq(Constants.PartitionColumn),
                                                    tableName,
