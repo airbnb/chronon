@@ -24,6 +24,8 @@ object SparkSessionBuilder {
       .config("spark.sql.session.timeZone", "UTC")
       //otherwise overwrite will delete ALL partitions, not just the ones it touches
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       // Otherwise files left from deleting the table with the same name result in test failures

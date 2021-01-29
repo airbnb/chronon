@@ -41,10 +41,12 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result
-    val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices)
+    val arena: Array[Array[Entry]] = Array.fill(hops.length)(Array.fill[Entry](windowedAggregator.length)(null))
+    val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
     for (i <- endTimes.indices) {
       for (col <- windowedAggregator.indices) {
         result(i).update(col, genIr(cache, col, endTimes(i)))
+        cache.reset()
       }
     }
     result
@@ -115,14 +117,22 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   }
 }
 
+private class Entry(var startIndex: Int, var endIndex: Int, var ir: Any) {}
+
 private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayType,
                                        windowAggregator: RowAggregator,
-                                       hopIrIndices: Array[Int]) {
+                                       hopIrIndices: Array[Int],
+                                       // arena is the memory buffer where cache entries live
+                                       arena: Array[Array[Entry]]) {
 
-  case class Entry(startIndex: Int, endIndex: Int, ir: Any)
-
-  // entries per hop x windowed columns
-  val cache: Array[Array[Entry]] = Array.fill(hopsArrays.length)(Array.fill[Entry](windowAggregator.length)(null))
+  // without the reset method, recreating the arena would add to GC presure
+  def reset(): Unit = {
+    for (i <- arena.indices) {
+      for (j <- arena(i).indices) {
+        arena(i).update(j, null)
+      }
+    }
+  }
 
   @inline
   private def ts(hop: Array[Any]): Long = hop.last.asInstanceOf[Long]
@@ -132,7 +142,7 @@ private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayTyp
   // much as possible instead of
   def merge(hopIndex: Int, col: Int, start: Long, end: Long): Any = {
     val hops = hopsArrays(hopIndex)
-    val cached: Entry = cache(hopIndex)(col)
+    val cached: Entry = arena(hopIndex)(col)
     val agg = windowAggregator(col)
     val baseCol = hopIrIndices(col)
 
@@ -154,9 +164,14 @@ private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayTyp
       endIdx += 1
     }
 
-    if (cached == null || cached.startIndex != startIdx || cached.endIndex != endIdx) {
-      val newEntry = Entry(startIdx, endIdx, ir)
-      cache(hopIndex).update(col, newEntry)
+    if (cached == null) {
+      val newEntry = new Entry(startIdx, endIdx, ir)
+      arena(hopIndex).update(col, newEntry)
+    } else if (cached.startIndex != startIdx || cached.endIndex != endIdx) {
+      // reusing the entry object to reduce GC pressure
+      cached.startIndex = startIdx
+      cached.endIndex = endIdx
+      cached.ir = ir
     }
 
     ir

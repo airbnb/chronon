@@ -1,10 +1,9 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
-import ai.zipline.api._
+import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
-import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
 import org.junit.{AfterClass, BeforeClass, Test}
@@ -347,6 +346,8 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
+        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views")
     )
@@ -378,7 +379,7 @@ class JoinTest {
                                      |        queries.ds,
                                      |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_min,
                                      |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_max,
-                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average 
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average
                                      | FROM queries left outer join $viewsTable
                                      |  ON queries.item = $viewsTable.item
                                      | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
