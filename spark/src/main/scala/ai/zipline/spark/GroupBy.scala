@@ -227,10 +227,9 @@ object GroupBy {
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
-    println(s"\n----[GroupBy input data sample: ${groupByConf.metaData.name}]----")
-    inputDf.show()
+    println(s"\n----[GroupBy input data schema: ${groupByConf.metaData.name}]----")
     println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
-    println("----[End input data sample]----")
+    println("----[End input data schema]----")
 
     new GroupBy(groupByConf.getAggregations.asScala, groupByConf.getKeyColumns.asScala, inputDf)
   }

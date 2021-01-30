@@ -20,7 +20,39 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
 }
 
 class ZiplineKryoRegistrator extends KryoRegistrator {
+  // registering classes tells kryo to not send schema on the wire
+  // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {
+    kryo.setWarnUnregisteredClasses(true)
+    val names = Seq(
+      "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
+      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
+      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableBlockLocation",
+      "org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage",
+      "org.apache.spark.sql.execution.datasources.ExecutedWriteSummary",
+      "org.apache.spark.sql.execution.datasources.BasicWriteTaskStats",
+      "org.apache.spark.sql.execution.datasources.WriteTaskResult",
+      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex",
+      "org.apache.spark.sql.types.Metadata",
+      "ai.zipline.spark.KeyWithHash",
+      "java.util.HashMap",
+      "java.util.ArrayList",
+      "org.apache.spark.sql.Row",
+      "org.apache.spark.sql.catalyst.InternalRow",
+      "org.apache.spark.sql.catalyst.expressions.GenericRow",
+      "org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema",
+      "org.apache.spark.sql.types.StructField",
+      "org.apache.spark.sql.types.StructType",
+      "org.apache.spark.sql.types.LongType$", // dollar stands for case objects
+      "org.apache.spark.sql.types.StringType",
+      "org.apache.spark.sql.types.StringType$",
+      "org.apache.spark.sql.types.IntegerType$"
+    )
+    names.foreach { name =>
+      kryo.register(Class.forName(name))
+      kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+    }
+
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
   }
 }

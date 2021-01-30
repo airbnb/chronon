@@ -151,7 +151,8 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
                                      leftUnfilledRange,
                                      Option(joinConf.metaData.tableProperties)
                                        .map(_.asScala.toMap)
-                                       .orNull)
+                                       .orNull,
+                                     joinConf.metaData.outputFilesPerPartition)
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
   }
 }

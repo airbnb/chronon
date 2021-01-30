@@ -70,12 +70,14 @@ object Extensions {
     //  partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
     def savePartitionCounted(tableName: String,
                              partitionRange: PartitionRange,
-                             tableProperties: Map[String, String] = null): Unit = {
+                             tableProperties: Map[String, String] = null,
+                             filesPerPartition: Int): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    Seq(Constants.PartitionColumn),
                                                    tableName,
                                                    partitionRange.length,
-                                                   tableProperties)
+                                                   tableProperties,
+                                                   filesPerPartition)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {

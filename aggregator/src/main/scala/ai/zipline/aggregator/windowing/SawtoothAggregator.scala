@@ -41,7 +41,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result
-    val arena: Array[Array[Entry]] = Array.fill(hops.length)(Array.fill[Entry](windowedAggregator.length)(null))
+    val arena = Array.fill(hops.length)(Array.fill[Entry](windowedAggregator.length)(null))
     val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
     for (i <- endTimes.indices) {
       for (col <- windowedAggregator.indices) {
