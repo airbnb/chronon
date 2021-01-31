@@ -2,6 +2,7 @@ package ai.zipline.spark
 
 import java.util
 
+import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
@@ -10,7 +11,7 @@ import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, Group
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
 
 import scala.collection.JavaConverters._
@@ -59,7 +60,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
         }
       )
       .map { case (keyWithHash, ir) => keyWithHash.data -> ir }
-    toDataFrame(outputRdd, Constants.PartitionColumn, Some(StringType))
+    toDataFrame(outputRdd, Seq((Constants.PartitionColumn, StringType)))
   }
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
   // At this time, we hardcode the resolution to Daily, but it is straight forward to support
@@ -76,11 +77,12 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
             (keys.data :+ Constants.Partition.at(endTimes(i)), irs(i))
           }
       }
-    toDataFrame(outputRdd, Constants.PartitionColumn, Some(StringType))
+    toDataFrame(outputRdd, Seq((Constants.PartitionColumn, StringType)))
   }
 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
+  // we expect queries to contain the partition column
   def temporalEvents(queriesDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
@@ -92,18 +94,21 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
 
     val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
     val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
+    val partitionIndex = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
+
     // group the data to collect all the timestamps by key and headStart
     // key, headStart -> timestamps in [headStart, nextHeadStart)
     // nextHeadStart = headStart + minHopSize
     val queriesByHeadStarts = queriesDf.rdd
       .map { row =>
         val ts = row.getLong(queryTsIndex)
-        ((queriesKeyGen(row), headStart(ts)), ts)
+        val partition = row.getString(partitionIndex)
+        ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
       .mapValues { queryTimesItr =>
-        val sorted = queryTimesItr.toArray.distinct
-        util.Arrays.sort(sorted)
+        val sorted = queryTimesItr.toArray
+        util.Arrays.sort(sorted, TimeTuple)
         sorted
       }
 
@@ -136,13 +141,16 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
       .leftOuterJoin(eventsByHeadStart)
       .flatMap {
         case ((keys: KeyWithHash, _: Long),
-              ((queries: Array[Long], headStartIrOpt: Option[Array[Any]]), eventsOpt: Option[Iterable[Row]])) =>
-          val inputsIt: Iterator[ArrayRow] =
+              ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
+               eventsOpt: Option[Iterable[Row]])) =>
+          val inputsIt: Iterator[ArrayRow] = {
             eventsOpt.map(_.map(Conversions.toZiplineRow(_, tsIndex)).toIterator).orNull
+          }
+          val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulateUnsorted(inputsIt, queries, headStartIrOpt.orNull)
-          queries.indices.map { i => (keys.data :+ queries(i), irs(i)) }
+          queries.indices.map { i => (keys.data ++ queriesWithPartition(i).toArray, irs(i)) }
       }
-    toDataFrame(outputRdd, Constants.TimeColumn)
+    toDataFrame(outputRdd, Seq((Constants.TimeColumn, LongType), (Constants.PartitionColumn, StringType)))
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -171,10 +179,9 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   }
 
   protected[spark] def toDataFrame(aggregateRdd: RDD[(Array[Any], Array[Any])],
-                                   additionalKey: String,
-                                   additionalKeyType: Option[DataType] = None): DataFrame = {
+                                   additionalFields: Seq[(String, DataType)]): DataFrame = {
     val flattened = aggregateRdd.map { case (keys, ir) => makeRow(keys, ir) }
-    inputDf.sparkSession.createDataFrame(flattened, outputSchema(additionalKey, additionalKeyType))
+    inputDf.sparkSession.createDataFrame(flattened, outputSchema(additionalFields))
   }
 
   private def sparkify(ir: Array[Any]): Array[Any] =
@@ -191,13 +198,13 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
     new GenericRow(result)
   }
 
-  protected[spark] def outputSchema(additionalKey: String, additionKeyType: Option[DataType]): StructType = {
+  protected[spark] def outputSchema(additionalFields: Seq[(String, DataType)]): StructType = {
     val keyIndices = keyColumns.map(inputDf.schema.fieldIndex).toArray
     val keySchema: Array[StructField] = keyIndices.map(inputDf.schema)
     val valueSchema: Array[StructField] = Conversions.fromZiplineSchema(valueZiplineSchema).fields
-    val additionalKeySchema =
-      StructField(additionalKey, additionKeyType.getOrElse(inputDf.typeOf(additionalKey)))
-    StructType((keySchema :+ additionalKeySchema) ++ valueSchema)
+    val additionalSchema =
+      additionalFields.map(field => StructField(field._1, field._2))
+    StructType((keySchema ++ additionalSchema) ++ valueSchema)
   }
 }
 

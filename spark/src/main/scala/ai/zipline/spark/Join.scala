@@ -3,7 +3,7 @@ import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SaveMode}
 
 import scala.collection.JavaConverters._
 
@@ -23,13 +23,18 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     df
   }
 
-  private lazy val leftTimeRange = leftDf.timeRange
-
-  private def joinWithLeft(leftDf: DataFrame,
-                           rightDf: DataFrame,
-                           additionalKey: String,
-                           joinPart: JoinPart): DataFrame = {
+  private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val replacedKeys = joinPart.groupBy.keyColumns.asScala.toArray
+
+    val additionalKeys: Seq[String] = {
+      if (joinConf.left.dataModel == Entities) {
+        Seq(Constants.PartitionColumn)
+      } else if (accuracy(joinPart) == Accuracy.TEMPORAL) {
+        Seq(Constants.TimeColumn, Constants.PartitionColumn)
+      } else {
+        Seq(Constants.TimePartitionColumn)
+      }
+    }
 
     // apply key-renaming to key columns
     val keyRenamedRight = Option(joinPart.keyMapping)
@@ -56,11 +61,13 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       }
       .getOrElse(keyRenamedRight)
 
-    val keys = replacedKeys :+ additionalKey
-    val joinableLeft = if (additionalKey == Constants.TimePartitionColumn) {
-      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
+    val keys = replacedKeys ++ additionalKeys
+    val (joinableLeft, joinableRight) = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
+      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn) -> renamedRight.withColumnRenamed(
+        Constants.PartitionColumn,
+        Constants.TimePartitionColumn)
     } else {
-      leftDf
+      (leftDf, renamedRight)
     }
 
     val partName = joinPart.groupBy.metaData.name
@@ -68,24 +75,26 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     println("Left Schema:")
     println(joinableLeft.schema.pretty)
     println(s"Right Schema for $partName:")
-    println(renamedRight.schema.pretty)
+    println(joinableRight.schema.pretty)
     println()
-//    joinableLeft.show()
-//    println("Right sample data:")
-//    joinableRight.show()
-//    println("Right count: " + joinableRight.count())
-//    println("Left count: " + joinableLeft.count())
-    joinableLeft.validateJoinKeys(renamedRight, keys)
-    val result = joinableLeft.nullSafeJoin(renamedRight, keys, "left")
+    joinableLeft.validateJoinKeys(joinableRight, keys)
+    val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
 //    println(s"Left join result count: ${result.count()}")
     // drop intermediate join key (used for right snapshot events case)
     result.drop(Constants.TimePartitionColumn)
   }
 
-  private def computeJoinPart(joinPart: JoinPart): (DataFrame, String) = {
+  private def computeJoinPart(joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
     // no-agg case - additional key, besides the user specified key, is simply the ds
     if (joinPart.groupBy.aggregations == null) {
-      return GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).preAggregated -> Constants.PartitionColumn
+      return GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils).preAggregated
+    }
+    lazy val unfilledTimeRange = {
+      val whereClauses = unfilledRange.whereClauses.mkString(" AND ")
+      println(s"filtering left df using query $whereClauses")
+      val timeRange = leftDf.filter(unfilledRange.whereClauses.mkString(" AND ")).timeRange
+      println(s"right unfilled time range: $timeRange")
+      timeRange
     }
 
     println(s"""
@@ -93,19 +102,20 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
          |  part name : ${joinPart.groupBy.metaData.name}, 
          |  left type : ${joinConf.left.dataModel}, 
          |  right type: ${joinPart.groupBy.dataModel}, 
-         |  accuracy  : ${joinPart.accuracy}
+         |  accuracy  : ${joinPart.accuracy},
+         |  right unfilled range: $unfilledRange
          |""".stripMargin)
 
-    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.accuracy) match {
+    (joinConf.left.dataModel, joinPart.groupBy.dataModel, accuracy(joinPart)) match {
       case (Entities, Events, _) =>
         GroupBy
-          .from(joinPart.groupBy, leftUnfilledRange, tableUtils)
-          .snapshotEvents(leftUnfilledRange) -> Constants.PartitionColumn
+          .from(joinPart.groupBy, unfilledRange, tableUtils)
+          .snapshotEvents(unfilledRange)
 
       case (Entities, Entities, _) =>
-        GroupBy.from(joinPart.groupBy, leftUnfilledRange, tableUtils).snapshotEntities -> Constants.PartitionColumn
+        GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils).snapshotEntities
 
-      case (Events, Events, null | Accuracy.TEMPORAL) =>
+      case (Events, Events, Accuracy.TEMPORAL) =>
         lazy val renamedLeft = Option(joinPart.keyMapping)
           .map(_.asScala)
           .getOrElse(Map.empty)
@@ -113,46 +123,62 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
             case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
           }
         GroupBy
-          .from(joinPart.groupBy, leftTimeRange.toPartitionRange, tableUtils)
-          .temporalEvents(renamedLeft, Some(leftTimeRange)) -> Constants.TimeColumn
+          .from(joinPart.groupBy, unfilledTimeRange.toPartitionRange, tableUtils)
+          .temporalEvents(renamedLeft, Some(unfilledTimeRange))
 
       case (Events, Events, Accuracy.SNAPSHOT) =>
-        val leftTimePartitionRange = leftTimeRange.toPartitionRange
+        val leftTimePartitionRange = unfilledTimeRange.toPartitionRange
         GroupBy
           .from(joinPart.groupBy, leftTimePartitionRange, tableUtils)
           .snapshotEvents(leftTimePartitionRange)
-          .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
 
-      case (Events, Entities, null | Accuracy.SNAPSHOT) =>
-        val PartitionRange(start, end) = leftTimeRange.toPartitionRange
+      case (Events, Entities, Accuracy.SNAPSHOT) =>
+        val PartitionRange(start, end) = unfilledTimeRange.toPartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
         GroupBy
           .from(joinPart.groupBy, rightRange, tableUtils)
           .snapshotEntities
-          .withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn) -> Constants.TimePartitionColumn
 
       case (Events, Entities, Accuracy.TEMPORAL) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }
   }
 
+  private def accuracy(joinPart: JoinPart): Accuracy =
+    if (joinConf.left.dataModel == Events && joinPart.accuracy == null) {
+      if (joinPart.groupBy.dataModel == Events) {
+        Accuracy.TEMPORAL
+      } else {
+        Accuracy.SNAPSHOT
+      }
+    } else {
+      // doesn't matter for entities
+      joinPart.accuracy
+    }
+
   def computeJoin: DataFrame = {
     joinConf.joinParts.asScala.foldLeft(leftDf) {
       case (left, joinPart) =>
-        val (rightDf, additionalKey) = computeJoinPart(joinPart)
-        // TODO: implement versioning
-        // TODO: Cache join parts
-        joinWithLeft(left, rightDf, additionalKey, joinPart)
+        val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
+
+        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftUnfilledRange)
+
+        if (rightUnfilledRange.valid) {
+          val rightDf = computeJoinPart(joinPart, rightUnfilledRange)
+          rightDf.save(joinPartTableName, tableProps)
+        }
+
+        val rightDf = tableUtils.sql(leftUnfilledRange.genScanQuery(query = null, joinPartTableName))
+        joinWithLeft(left, rightDf, joinPart)
     }
   }
 
+  val tableProps = Option(joinConf.metaData.tableProperties)
+    .map(_.asScala.toMap)
+    .orNull
+
   def commitOutput: Unit = {
-    computeJoin.savePartitionCounted(outputTable,
-                                     leftUnfilledRange,
-                                     Option(joinConf.metaData.tableProperties)
-                                       .map(_.asScala.toMap)
-                                       .orNull,
-                                     joinConf.metaData.outputFilesPerPartition)
+    computeJoin.save(outputTable, tableProps)
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
   }
 }

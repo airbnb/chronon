@@ -8,7 +8,7 @@ import ai.zipline.api.{GroupBy => _, _}
 import ai.zipline.spark._
 import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType, LongType => SparkLongType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 
@@ -142,7 +142,7 @@ class GroupByTest extends TestCase {
             (key.data :+ query, ir)
         }
     }
-    val naiveDf = groupBy.toDataFrame(naiveRdd, Constants.TimeColumn)
+    val naiveDf = groupBy.toDataFrame(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))
 
     val diff = Comparison.sideBySide(naiveDf, resultDf, List("user", Constants.TimeColumn))
     if (diff.count() > 0) {

@@ -140,9 +140,6 @@ struct MetaData {
     4: optional string customJson
     5: optional list<string> dependencies
     6: optional map<string, string> tableProperties
-    // lower number leads to bad parallelism
-    // higher number leads to too many small files - which kills namenode
-    7: optional i32 outputFilesPerPartition = 1000
 }
 
 

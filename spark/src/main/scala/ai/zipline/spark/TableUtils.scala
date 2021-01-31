@@ -42,14 +42,13 @@ case class TableUtils(sparkSession: SparkSession) {
       .reduceOption(Ordering[String].min)
 
   def insertPartitions(df: DataFrame,
-                       partitionColumns: Seq[String],
                        tableName: String,
-                       numPartitions: Int,
                        tableProperties: Map[String, String] = null,
-                       filesPerPartition: Int = 10,
+                       partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
-
+    df.persist()
+    val rowCount = df.count()
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -58,25 +57,27 @@ case class TableUtils(sparkSession: SparkSession) {
       df
     }
 
-    // this does a full re-shuffle
-    // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
-    val rePartitioned: DataFrame = dfRearranged.repartition(
-      numPartitions * filesPerPartition,
-      partitionColumns.map(df.col): _*
-    )
-
     println(s"Trying to find table $tableName")
     if (!sparkSession.catalog.tableExists(tableName)) {
       println(s"Couldn't find $tableName, creating it.")
-      sql(createTableSql(tableName, rePartitioned.schema, partitionColumns, tableProperties, fileFormat))
+      sql(createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat))
     } else {
       println(s"Found table $tableName")
       if (tableProperties != null && tableProperties.nonEmpty) {
-        sql(alterTablePropertiesSql(df.sparkSession, tableName, tableProperties))
+        sql(alterTablePropertiesSql(tableName, tableProperties))
       }
     }
 
-    rePartitioned.write.mode(saveMode).insertInto(tableName)
+    if (rowCount > 0) {
+      // this does a full re-shuffle
+      // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
+      val rePartitioned: DataFrame = dfRearranged.repartition(
+        math.ceil(rowCount.toDouble / 1000000.0).toInt, // million records per partition
+        partitionColumns.map(df.col): _*
+      )
+      rePartitioned.write.mode(saveMode).insertInto(tableName)
+    }
+    df.unpersist()
   }
 
   private def createTableSql(tableName: String,
@@ -111,9 +112,7 @@ case class TableUtils(sparkSession: SparkSession) {
     Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
   }
 
-  private def alterTablePropertiesSql(session: SparkSession,
-                                      tableName: String,
-                                      properties: Map[String, String]): String = {
+  private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
     // Only SQL api exists for setting TBLPROPERTIES
     val propertiesString = properties
       .map {
