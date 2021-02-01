@@ -49,6 +49,11 @@ case class TableUtils(sparkSession: SparkSession) {
                        fileFormat: String = "PARQUET"): Unit = {
     df.persist()
     val rowCount = df.count()
+    println(s"$rowCount rows requested to be written into table $tableName")
+
+    val rddPartitionCount = math.ceil(rowCount / 1000000.0).toInt
+    println(s"repartitioning data for table $tableName into $rowCount rdd partitions")
+
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -57,12 +62,9 @@ case class TableUtils(sparkSession: SparkSession) {
       df
     }
 
-    println(s"Trying to find table $tableName")
     if (!sparkSession.catalog.tableExists(tableName)) {
-      println(s"Couldn't find $tableName, creating it.")
       sql(createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat))
     } else {
-      println(s"Found table $tableName")
       if (tableProperties != null && tableProperties.nonEmpty) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
@@ -72,7 +74,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // this does a full re-shuffle
       // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
       val rePartitioned: DataFrame = dfRearranged.repartition(
-        math.ceil(rowCount.toDouble / 1000000.0).toInt, // million records per partition
+        rddPartitionCount,
         partitionColumns.map(df.col): _*
       )
       rePartitioned.write.mode(saveMode).insertInto(tableName)

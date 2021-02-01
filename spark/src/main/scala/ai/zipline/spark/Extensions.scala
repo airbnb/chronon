@@ -85,6 +85,10 @@ object Extensions {
       }
     }
 
+    def removeNulls(cols: Seq[String]): DataFrame = {
+      df.filter(cols.map(_ + " != null").mkString(" AND "))
+    }
+
     def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {
       validateJoinKeys(right, keys)
       val prefixedLeft = df.prefixColumnNames("left", keys)

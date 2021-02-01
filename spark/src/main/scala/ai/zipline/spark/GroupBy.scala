@@ -83,9 +83,10 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
   // we expect queries to contain the partition column
-  def temporalEvents(queriesDf: DataFrame,
+  def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
+    val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
     val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
@@ -127,6 +128,7 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
           headStartsArray.indices.map { i => (keys, headStartsArray(i)) -> headStartIrs(i) }
       }
 
+    // this can be fused into hop generation
     val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
     val minHeadStart = headStart(minQueryTs)
     val eventsByHeadStart = inputDf
@@ -154,6 +156,10 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   }
 
   // convert raw data into IRs, collected by hopSizes
+  // TODO cache this into a table: interface below
+  // Class HopsCacher(keySchema, irSchema, resolution) extends RddCacher[(KeyWithHash, HopsOutput)]
+  //  buildTableRow((keyWithHash, hopsOutput)) -> GenericRowWithSchema
+  //  buildRddRow(GenericRowWithSchema) -> (keyWithHash, hopsOutput)
   def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
       new HopsAggregator(minQueryTs, aggregations, ziplineSchema, resolution)
@@ -238,7 +244,9 @@ object GroupBy {
     println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
     println("----[End input data schema]----")
 
-    new GroupBy(groupByConf.getAggregations.asScala, groupByConf.getKeyColumns.asScala, inputDf)
+    new GroupBy(groupByConf.getAggregations.asScala,
+                groupByConf.getKeyColumns.asScala,
+                inputDf.removeNulls(groupByConf.keyColumns.asScala))
   }
 
   def renderDataSourceQuery(source: Source,

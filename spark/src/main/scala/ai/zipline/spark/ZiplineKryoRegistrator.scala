@@ -23,7 +23,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
   // registering classes tells kryo to not send schema on the wire
   // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {
-    kryo.setWarnUnregisteredClasses(true)
+    //kryo.setWarnUnregisteredClasses(true)
     val names = Seq(
       "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",

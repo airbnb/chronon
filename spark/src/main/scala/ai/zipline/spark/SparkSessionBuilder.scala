@@ -26,6 +26,8 @@ object SparkSessionBuilder {
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
+      .config("spark.kryoserializer.buffer.max.mb", "2000")
+      .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       // Otherwise files left from deleting the table with the same name result in test failures
