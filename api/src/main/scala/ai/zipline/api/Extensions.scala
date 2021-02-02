@@ -114,15 +114,14 @@ object Extensions {
   }
 
   implicit class AggregationsOps(aggregations: Seq[Aggregation]) {
-    def hasWindows: Boolean = aggregations.exists(_.windows != null)
-    def needsTimestamp: Boolean = {
-      val hasWindows = aggregations.exists(_.windows != null)
-      val hasTimedAggregations = aggregations.exists(_.operation match {
+    def hasTimedAggregations: Boolean =
+      aggregations.exists(_.operation match {
         case LAST_K | FIRST_K | LAST | FIRST => true
         case _                               => false
       })
-      hasWindows || hasTimedAggregations
-    }
+
+    def hasWindows: Boolean = aggregations.exists(_.windows != null)
+    def needsTimestamp: Boolean = hasWindows || hasTimedAggregations
   }
 
   implicit class SourceOps(source: Source) {
@@ -146,7 +145,7 @@ object Extensions {
 
   implicit class GroupByOps(groupBy: GroupBy) {
     def maxWindow: Option[Window] = {
-      val aggs = groupBy.aggregations.asScala
+      val aggs = Option(groupBy.aggregations).map(_.asScala).orNull
       if (aggs == null) None // no-agg
       else if (aggs.exists(_.windows == null)) None // agg without windows
       else if (aggs.flatMap(_.windows.asScala).contains(null))
@@ -165,6 +164,28 @@ object Extensions {
     def accuracy: Accuracy = {
       val validTopics = groupBy.sources.asScala.map(_.topic).filter(_ != null)
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
+    }
+  }
+
+  implicit class JoinOps(join: Join) {
+    def skewFilter(replacementMap: Option[Map[String, String]] = None, joiner: String = " OR "): Option[String] = {
+      Option(join.skewKeys).map { jmap =>
+        val result = jmap.asScala
+          .map {
+            case (leftKey, values) =>
+              val replacedKey = replacementMap
+                .map { _.getOrElse(leftKey, leftKey) }
+                .getOrElse(leftKey)
+              s"$replacedKey NOT IN (${values.asScala.mkString(", ")})"
+          }
+          .mkString(joiner)
+        println(s"Generated join part skew filter:\n    $result")
+        result
+      }
+    }
+
+    def partSkewFilter(joinPart: JoinPart): Option[String] = {
+      skewFilter(Option(joinPart.keyMapping).map(_.asScala.toMap))
     }
   }
 }

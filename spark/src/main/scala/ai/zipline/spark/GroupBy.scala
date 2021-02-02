@@ -16,12 +16,16 @@ import org.apache.spark.sql.{DataFrame, Row}
 
 import scala.collection.JavaConverters._
 
-class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: DataFrame, finalize: Boolean = true)
+class GroupBy(aggregations: Seq[Aggregation],
+              keyColumns: Seq[String],
+              inputDf: DataFrame,
+              skewFilter: Option[String] = None,
+              finalize: Boolean = true)
     extends Serializable {
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   private val ziplineSchema = Conversions.toZiplineSchema(inputDf.schema)
-  private val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+  private lazy val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
     new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack))
@@ -86,7 +90,11 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
   def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
-    val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
+
+    val queriesDf = skewFilter
+      .map { queriesUnfilteredDf.filter }
+      .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
+
     val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
@@ -217,7 +225,10 @@ class GroupBy(aggregations: Seq[Aggregation], keyColumns: Seq[String], inputDf: 
 // TODO: truncate queryRange for caching
 object GroupBy {
 
-  def from(groupByConf: GroupByConf, queryRange: PartitionRange, tableUtils: TableUtils): GroupBy = {
+  def from(groupByConf: GroupByConf,
+           queryRange: PartitionRange,
+           tableUtils: TableUtils,
+           skewFilter: Option[String] = None): GroupBy = {
     val inputDf = groupByConf.sources.asScala
       .flatMap {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
@@ -235,7 +246,8 @@ object GroupBy {
       }
 
     assert(
-      !groupByConf.getAggregations.asScala.needsTimestamp || inputDf.schema.names.contains(Constants.TimeColumn),
+      !Option(groupByConf.getAggregations).map(_.asScala.needsTimestamp).getOrElse(false) || inputDf.schema.names
+        .contains(Constants.TimeColumn),
       "Time column, \"ts\" doesn't exists, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
@@ -244,9 +256,11 @@ object GroupBy {
     println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
     println("----[End input data schema]----")
 
-    new GroupBy(groupByConf.getAggregations.asScala,
-                groupByConf.getKeyColumns.asScala,
-                inputDf.removeNulls(groupByConf.keyColumns.asScala))
+    val keyColumns = groupByConf.getKeyColumns.asScala
+    val filteredInput = skewFilter
+      .map { inputDf.filter }
+      .getOrElse(inputDf.removeNulls(keyColumns))
+    new GroupBy(groupByConf.getAggregations.asScala, keyColumns, filteredInput)
   }
 
   def renderDataSourceQuery(source: Source,

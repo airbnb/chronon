@@ -5,6 +5,8 @@ import org.apache.spark.sql.functions.{from_unixtime, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
+import scala.collection.JavaConverters._
+
 object Extensions {
 
   implicit class StructTypeOps(schema: StructType) {
@@ -20,12 +22,6 @@ object Extensions {
           case (typ, name) => s"  ${typ.padTo(padding, ' ')} : $name"
         }
         .mkString("\n")
-    }
-  }
-
-  implicit class SparkSessionOps(sparkSession: SparkSession) {
-    def disableLogSpam(): Unit = {
-      sparkSession.sparkContext.setLogLevel("ERROR")
     }
   }
 
@@ -86,6 +82,7 @@ object Extensions {
     }
 
     def removeNulls(cols: Seq[String]): DataFrame = {
+      println(s"filtering nulls from columns: [${cols.mkString(", ")}]")
       df.filter(cols.map(_ + " != null").mkString(" AND "))
     }
 

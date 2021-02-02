@@ -84,6 +84,7 @@ def thrift_simple_json_protected(obj, obj_type) -> str:
     diff = differ.diff(serialized, actual)
     assert len(diff) == 0, f"""Serialization can't be reversed
 diff: \n{diff}
+original: \n{serialized}
 """
     differ.clean()
     return serialized

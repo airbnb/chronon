@@ -148,4 +148,5 @@ struct Join {
     1: optional MetaData metaData
     2: optional Source left
     3: list<JoinPart> joinParts
+    4: optional map<string,list<string>> skewKeys
 }

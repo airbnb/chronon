@@ -52,7 +52,7 @@ case class TableUtils(sparkSession: SparkSession) {
     println(s"$rowCount rows requested to be written into table $tableName")
 
     val rddPartitionCount = math.ceil(rowCount / 1000000.0).toInt
-    println(s"repartitioning data for table $tableName into $rowCount rdd partitions")
+    println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {

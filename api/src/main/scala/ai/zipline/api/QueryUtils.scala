@@ -8,19 +8,27 @@ object QueryUtils {
             from: String,
             wheres: Seq[String],
             fillIfAbsent: Map[String, String] = null): String = {
-    val finalSelects = (Option(selects) ++ Option(fillIfAbsent))
-      .reduceOption { (selects, fills) => fills ++ selects }
-      .map {
-        _.map {
-          case (col, expr) =>
-            if (expr == null) {
-              s"`$col`"
-            } else {
-              s"$expr as `$col`"
-            }
-        }
+    if (selects == null) {}
+
+    def toProjections(m: Map[String, String]) =
+      m.map {
+        case (col, expr) =>
+          if (expr == null) {
+            s"`$col`"
+          } else {
+            s"$expr as `$col`"
+          }
       }
-      .getOrElse(Seq("*"))
+
+    val finalSelects = (Option(selects), Option(fillIfAbsent)) match {
+      case (Some(sels), Some(fills)) => toProjections(fills ++ sels)
+      case (Some(sels), None)        => toProjections(sels)
+      case (None, _) => {
+        assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
+               s"Please specify selects, when columns are being overriden is set")
+        Seq("*")
+      }
+    }
 
     val whereClause = Option(wheres)
       .filter(_.nonEmpty)
