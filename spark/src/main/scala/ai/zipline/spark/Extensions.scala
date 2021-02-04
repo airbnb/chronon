@@ -1,9 +1,11 @@
 package ai.zipline.spark
 
 import ai.zipline.api._
-import org.apache.spark.sql.functions.{from_unixtime, unix_timestamp}
+import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
 
@@ -81,9 +83,18 @@ object Extensions {
       }
     }
 
+    private def mightContain(f: BloomFilter): UserDefinedFunction =
+      udf((x: Object) => if (x != null) f.mightContain(x) else true)
+
+    def filterBloom(bloomMap: Map[String, BloomFilter]): DataFrame =
+      bloomMap.foldLeft(df) {
+        case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom)(dfIter(col)))
+      }
+
     def removeNulls(cols: Seq[String]): DataFrame = {
       println(s"filtering nulls from columns: [${cols.mkString(", ")}]")
-      df.filter(cols.map(_ + " != null").mkString(" AND "))
+      // do not use != or <> operator with null, it doesn't return false ever!
+      df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
     }
 
     def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {

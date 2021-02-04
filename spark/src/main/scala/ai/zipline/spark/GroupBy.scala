@@ -13,6 +13,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types.{DataType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
 
@@ -228,7 +229,9 @@ object GroupBy {
   def from(groupByConf: GroupByConf,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
+           bloomMap: Map[String, BloomFilter],
            skewFilter: Option[String] = None): GroupBy = {
+    println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .flatMap {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
@@ -246,21 +249,30 @@ object GroupBy {
       }
 
     assert(
-      !Option(groupByConf.getAggregations).map(_.asScala.needsTimestamp).getOrElse(false) || inputDf.schema.names
+      !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
         .contains(Constants.TimeColumn),
       "Time column, \"ts\" doesn't exists, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
-    println(s"\n----[GroupBy input data schema: ${groupByConf.metaData.name}]----")
-    println(inputDf.schema.fields.map(field => s"${field.name} -> ${field.dataType.simpleString}").mkString(", "))
-    println("----[End input data schema]----")
 
     val keyColumns = groupByConf.getKeyColumns.asScala
-    val filteredInput = skewFilter
-      .map { inputDf.filter }
-      .getOrElse(inputDf.removeNulls(keyColumns))
-    new GroupBy(groupByConf.getAggregations.asScala, keyColumns, filteredInput)
+    println(s"input data count: ${inputDf.count()}")
+    val skewFiltered = skewFilter
+      .map { sf =>
+        println(s"Filtering using skew filter:\n    $sf")
+        val filtered = inputDf.filter(sf)
+        println(s"post skew filter count: ${filtered.count()}")
+        filtered
+      }
+      .getOrElse(inputDf)
+
+    val bloomFiltered = skewFiltered.filterBloom(bloomMap)
+    println(s"bloom filtered data count: ${bloomFiltered.count()}")
+    println(s"\ninput data schema:")
+    println(bloomFiltered.schema.pretty)
+
+    new GroupBy(groupByConf.getAggregations.asScala, keyColumns, bloomFiltered)
   }
 
   def renderDataSourceQuery(source: Source,

@@ -47,7 +47,6 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
-    df.persist()
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
 
@@ -79,7 +78,6 @@ case class TableUtils(sparkSession: SparkSession) {
       )
       rePartitioned.write.mode(saveMode).insertInto(tableName)
     }
-    df.unpersist()
   }
 
   private def createTableSql(tableName: String,

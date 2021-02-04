@@ -5,9 +5,10 @@ import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.col
 
 import scala.collection.JavaConverters._
-
+import org.apache.spark.util.sketch.BloomFilter
 class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
 
   private val outputTable = s"$namespace.${joinConf.metaData.cleanName}"
@@ -19,9 +20,29 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
   private val leftDf: DataFrame = {
     val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
-    println("Left schema: ")
-    println(df.schema.pretty)
-    joinConf.skewFilter().map(df.filter).getOrElse(df)
+    val skewFilter = joinConf.skewFilter()
+    skewFilter
+      .map(sf => {
+        println(s"left skew filter: $sf")
+        println(s"pre-skew filter count: ${df.count()}")
+        val filtered = df.filter(sf)
+        filtered
+      })
+      .getOrElse(df)
+  }
+
+  private val leftCount: Long = {
+    val count = leftDf.count()
+    println(s"left side count $count")
+    count
+  }
+
+  private val leftKeys = joinConf.keys
+
+  private val leftDfBlooms: Map[String, BloomFilter] = {
+    leftKeys.map { key =>
+      key -> leftDf.filter(leftDf.col(key).isNotNull).stat.bloomFilter(key, leftCount, 0.1)
+    }.toMap
   }
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -75,8 +96,12 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     println(s"Join keys for $partName: " + keys.mkString(", "))
     println("Left Schema:")
     println(joinableLeft.schema.pretty)
-    println(s"Right Schema for $partName:")
+    println("Left sample: ")
+    println(joinableLeft.selectExpr(keys: _*).show(10))
+    println(s"Right Schema for $partName: - this is the output of GroupBy")
     println(joinableRight.schema.pretty)
+    println("Right sample: ")
+    println(joinableRight.selectExpr(keys: _*).show(10))
     println()
     joinableLeft.validateJoinKeys(joinableRight, keys)
     val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
@@ -86,10 +111,16 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
   }
 
   private def computeJoinPart(joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
+    val rightSkewFilter = joinConf.partSkewFilter(joinPart)
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftDfBlooms)
+
+    lazy val partitionRangeGroupBy =
+      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, rightBloomMap, rightSkewFilter)
     // no-agg case - additional key, besides the user specified key, is simply the ds
     if (joinPart.groupBy.aggregations == null) {
-      return GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils).preAggregated
+      return partitionRangeGroupBy.preAggregated
     }
+
     lazy val unfilledTimeRange = {
       val whereClauses = unfilledRange.whereClauses.mkString(" AND ")
       println(s"filtering left df using query $whereClauses")
@@ -108,10 +139,9 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
          |  right unfilled range: $unfilledRange
          |""".stripMargin)
 
-    val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    lazy val partitionRangeGroupBy = GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, rightSkewFilter)
     lazy val leftTimePartitionRange = unfilledTimeRange.toPartitionRange
-    lazy val timeRangeGroupBy = GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, rightSkewFilter)
+    lazy val timeRangeGroupBy =
+      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, rightBloomMap, rightSkewFilter)
     lazy val renamedLeftDf = Option(joinPart.keyMapping)
       .map(_.asScala)
       .getOrElse(Map.empty)
@@ -128,7 +158,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       case (Events, Entities, Accuracy.SNAPSHOT) =>
         val PartitionRange(start, end) = leftTimePartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
-        GroupBy.from(joinPart.groupBy, rightRange, tableUtils).snapshotEntities
+        GroupBy.from(joinPart.groupBy, rightRange, tableUtils, rightBloomMap).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")

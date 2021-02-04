@@ -167,25 +167,75 @@ object Extensions {
     }
   }
 
+  implicit class JoinPartOps(joinPart: JoinPart) {
+    def leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
+
+    def rightToLeft: Map[String, String] = {
+      val rightToRight = joinPart.groupBy.keyColumns.asScala.map { key => key -> key }.toMap
+      Option(joinPart.keyMapping)
+        .map { leftToRight =>
+          val rToL = leftToRight.asScala.map {
+            case (left, right) => right -> left
+          }.toMap
+          rightToRight ++ rToL
+        }
+        .getOrElse(rightToRight)
+    }
+  }
+
   implicit class JoinOps(join: Join) {
-    def skewFilter(replacementMap: Option[Map[String, String]] = None, joiner: String = " OR "): Option[String] = {
+    // all keys on left
+    def keys: Array[String] = {
+      join.joinParts.asScala
+        .flatMap { _.rightToLeft.values }
+        .toSet
+        .toArray
+    }
+
+    private def generateSkewFilterSql(key: String, values: Seq[String]): String = {
+      val nulls = Seq("null", "Null", "NULL")
+      val nonNullFilters = Some(s"$key NOT IN (${values.filterNot(nulls.contains).mkString(", ")})")
+      val nullFilters = if (values.exists(nulls.contains)) Some(s"$key IS NOT NULL") else None
+      (nonNullFilters ++ nullFilters).mkString(" AND ")
+    }
+
+    // TODO: validate that non keys are not specified in - join.skewKeys
+    def skewFilter(joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
         val result = jmap.asScala
           .map {
             case (leftKey, values) =>
-              val replacedKey = replacementMap
-                .map { _.getOrElse(leftKey, leftKey) }
-                .getOrElse(leftKey)
-              s"$replacedKey NOT IN (${values.asScala.mkString(", ")})"
+              assert(
+                keys.contains(leftKey),
+                s"specified skew filter for $leftKey is not used as a key in any join part. " +
+                  s"Please specify key columns in skew filters: [${keys.mkString(", ")}]"
+              )
+              generateSkewFilterSql(leftKey, values.asScala)
           }
+          .filter(_.nonEmpty)
           .mkString(joiner)
-        println(s"Generated join part skew filter:\n    $result")
+        println(s"Generated join left side skew filter:\n    $result")
         result
       }
     }
 
-    def partSkewFilter(joinPart: JoinPart): Option[String] = {
-      skewFilter(Option(joinPart.keyMapping).map(_.asScala.toMap))
+    def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
+      Option(join.skewKeys).map { jmap =>
+        val result = jmap.asScala
+          .flatMap {
+            case (leftKey, values) =>
+              val replacedKey = Option(joinPart.keyMapping)
+                .map { _.asScala.getOrElse(leftKey, leftKey) }
+                .getOrElse(leftKey)
+              if (joinPart.groupBy.keyColumns.contains(replacedKey))
+                Some(generateSkewFilterSql(replacedKey, values.asScala))
+              else None
+          }
+          .filter(_.nonEmpty)
+          .mkString(joiner)
+        println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+        result
+      }
     }
   }
 }
