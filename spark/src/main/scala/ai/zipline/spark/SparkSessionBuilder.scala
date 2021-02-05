@@ -21,6 +21,7 @@ object SparkSessionBuilder {
     val baseBuilder = SparkSession
       .builder()
       .appName(name)
+      .enableHiveSupport()
       .config("spark.sql.session.timeZone", "UTC")
       //otherwise overwrite will delete ALL partitions, not just the ones it touches
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
@@ -34,7 +35,6 @@ object SparkSessionBuilder {
       .config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
       .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
-      .enableHiveSupport()
 
     val builder = if (local) {
       baseBuilder

@@ -41,7 +41,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 
   private val leftDfBlooms: Map[String, BloomFilter] = {
     leftKeys.map { key =>
-      key -> leftDf.filter(leftDf.col(key).isNotNull).stat.bloomFilter(key, leftCount, 0.1)
+      key -> leftDf.filter(leftDf.col(key).isNotNull).stat.bloomFilter(key, leftCount / 100, 0.1)
     }.toMap
   }
 

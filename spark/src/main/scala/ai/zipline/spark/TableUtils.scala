@@ -50,7 +50,7 @@ case class TableUtils(sparkSession: SparkSession) {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
 
-    val rddPartitionCount = math.ceil(rowCount / 1000000.0).toInt
+    val rddPartitionCount = math.ceil(rowCount / 1000000.0).toInt // 210
     println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
     // partitions to the last
@@ -72,11 +72,7 @@ case class TableUtils(sparkSession: SparkSession) {
     if (rowCount > 0) {
       // this does a full re-shuffle
       // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
-      val rePartitioned: DataFrame = dfRearranged.repartition(
-        rddPartitionCount,
-        partitionColumns.map(df.col): _*
-      )
-      rePartitioned.write.mode(saveMode).insertInto(tableName)
+      dfRearranged.coalesce(rddPartitionCount).write.mode(saveMode).insertInto(tableName)
     }
   }
 
