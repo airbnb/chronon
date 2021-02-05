@@ -96,17 +96,10 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     println(s"Join keys for $partName: " + keys.mkString(", "))
     println("Left Schema:")
     println(joinableLeft.schema.pretty)
-    println("Left sample: ")
-    println(joinableLeft.selectExpr(keys: _*).show(10))
     println(s"Right Schema for $partName: - this is the output of GroupBy")
     println(joinableRight.schema.pretty)
-    println("Right sample: ")
-    println(joinableRight.selectExpr(keys: _*).show(10))
-    println()
     joinableLeft.validateJoinKeys(joinableRight, keys)
     val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
-//    println(s"Left join result count: ${result.count()}")
-    // drop intermediate join key (used for right snapshot events case)
     result.drop(Constants.TimePartitionColumn)
   }
 
