@@ -62,7 +62,7 @@ class JoinTest {
 
     val rupeeSource =
       Builders.Source.entities(
-        query = Builders.Query(selects = Builders.Selects("ts", "CAST(amount_rupees/70 as long) as amount_dollars"),
+        query = Builders.Query(selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
                                startPartition = monthAgo),
         snapshotTable = rupeeTable
       )
@@ -96,7 +96,7 @@ class JoinTest {
 
     val runner1 = new Join(joinConf, end, namespace, tableUtils)
 
-    val computed = runner1.computeJoin
+    val computed = runner1.computeJoin(Some(3))
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
@@ -201,7 +201,7 @@ class JoinTest {
     )
 
     val runner = new Join(joinConf, end, namespace, tableUtils)
-    val computed = runner.computeJoin
+    val computed = runner.computeJoin(Some(7))
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
     |WITH 
@@ -293,7 +293,7 @@ class JoinTest {
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
-    val computed = join.computeJoin
+    val computed = join.computeJoin()
     computed.show()
 
     val expected = tableUtils.sql(s"""
@@ -368,7 +368,7 @@ class JoinTest {
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
-    val computed = join.computeJoin
+    val computed = join.computeJoin(Some(100))
     computed.show()
 
     val expected = tableUtils.sql(s"""

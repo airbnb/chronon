@@ -141,7 +141,7 @@ object Builders {
       if (selectors != null) // TODO: selectors are unused right now - we select everything
         result.setSelectors(selectors.asJava)
       result.setPrefix(prefix)
-      result.setAccuracy(accuracy)
+      result.getGroupBy.setAccuracy(accuracy)
       result
     }
   }

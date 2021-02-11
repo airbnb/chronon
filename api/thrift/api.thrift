@@ -100,6 +100,10 @@ struct AggregationPart {
     4: optional Window window
 }
 
+enum Accuracy {
+    TEMPORAL = 0,
+    SNAPSHOT = 1
+}
 
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
@@ -113,6 +117,7 @@ struct GroupBy {
     // when aggregations are not specified,
     // we assume the source is already grouped by keys
     4: optional list<Aggregation> aggregations
+    5: optional Accuracy accuracy
 }
 
 struct AggregationSelector {
@@ -120,17 +125,14 @@ struct AggregationSelector {
   2: optional list<Window> windows
 }
 
-enum Accuracy {
-    TEMPORAL = 0,
-    SNAPSHOT = 1
-}
+
 
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
     3: optional list<AggregationSelector> selectors
     4: optional string prefix
-    5: optional Accuracy accuracy
+
 }
 
 struct MetaData {

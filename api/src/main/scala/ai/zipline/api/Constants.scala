@@ -12,4 +12,5 @@ object Constants {
     PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
   val StartPartitionMacro = "[START_PARTITION]"
   val EndPartitionMacro = "[END_PARTITION]"
+  val lineTab = "\n    "
 }

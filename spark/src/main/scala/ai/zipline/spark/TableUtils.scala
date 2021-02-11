@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
 import ai.zipline.api.Constants
+import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
@@ -47,11 +48,6 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
-    val rowCount = df.count()
-    println(s"$rowCount rows requested to be written into table $tableName")
-
-    val rddPartitionCount = math.ceil(rowCount / 1000000.0).toInt // 210
-    println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
@@ -69,10 +65,23 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
+    val rowCount = df.count()
+    println(s"$rowCount rows requested to be written into table $tableName")
+
     if (rowCount > 0) {
-      // this does a full re-shuffle
-      // https://stackoverflow.com/questions/44808415/spark-parquet-partitioning-large-number-of-files
-      dfRearranged.coalesce(rddPartitionCount).write.mode(saveMode).insertInto(tableName)
+      // 100k rows per partition
+      val rddPartitionCount = math.ceil(rowCount / 100000.0).toInt // 210
+      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+
+      val saltCol = "random_partition_salt"
+      val saltedDf = dfRearranged.withColumn(saltCol, round(rand() * 1000000))
+      saltedDf
+        .repartition(rddPartitionCount, Seq(Constants.PartitionColumn, saltCol).map(saltedDf.col): _*)
+        .drop(saltCol)
+        .write
+        .mode(saveMode)
+        .insertInto(tableName)
+      println(s"Finished writing to $tableName")
     }
   }
 

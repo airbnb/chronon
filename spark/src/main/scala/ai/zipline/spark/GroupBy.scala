@@ -31,17 +31,16 @@ class GroupBy(aggregations: Seq[Aggregation],
   protected[spark] lazy val windowAggregator: RowAggregator =
     new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack))
 
-  def preAggregated: DataFrame = inputDf
-
   def snapshotEntities: DataFrame = {
+    if (aggregations == null || aggregations.isEmpty) return inputDf //data is pre-aggregated
 
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
-
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
       val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
       val updateFunc = (ir: Array[Any], row: Row) => {
+        // update when ts < tsOf(ds)
         windowAggregator.updateWindowed(ir, Conversions.toZiplineRow(row, tsIndex), row.getLong(partitionTsIndex))
         ir
       }
@@ -233,7 +232,7 @@ object GroupBy {
            skewFilter: Option[String] = None): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
-      .flatMap {
+      .map {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
       }
       .map { query =>
@@ -256,19 +255,20 @@ object GroupBy {
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
 
+    val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
     val keyColumns = groupByConf.getKeyColumns.asScala
-    println(s"input data count: ${inputDf.count()}")
+    println(s"$logPrefix input data count: ${inputDf.count()}")
     val skewFiltered = skewFilter
       .map { sf =>
-        println(s"Filtering using skew filter:\n    $sf")
+        println(s"$logPrefix filtering using skew filter:\n    $sf")
         val filtered = inputDf.filter(sf)
-        println(s"post skew filter count: ${filtered.count()}")
+        println(s"$logPrefix post skew filter count: ${filtered.count()}")
         filtered
       }
       .getOrElse(inputDf)
 
     val bloomFiltered = skewFiltered.filterBloom(bloomMap)
-    println(s"bloom filtered data count: ${bloomFiltered.count()}")
+    println(s"$logPrefix bloom filtered data count: ${bloomFiltered.count()}")
     println(s"\ninput data schema:")
     println(bloomFiltered.schema.pretty)
 
@@ -278,7 +278,7 @@ object GroupBy {
   def renderDataSourceQuery(source: Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
-                            window: Option[Window]): Option[String] = {
+                            window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val scanStart = source.dataModel match {
       case Entities => queryStart
@@ -287,7 +287,7 @@ object GroupBy {
 
     val sourceRange = PartitionRange(source.query.startPartition, source.query.endPartition)
     val queryableDataRange = PartitionRange(scanStart, queryEnd)
-    val intersectedRange: Option[PartitionRange] = sourceRange.intersect(queryableDataRange)
+    val intersectedRange = sourceRange.intersect(queryableDataRange)
 
     val metaColumns = source.dataModel match {
       case Entities =>
@@ -309,13 +309,17 @@ object GroupBy {
          |   metaColumns: $metaColumns
          |""".stripMargin)
 
-    intersectedRange.map { effectiveRange =>
-      QueryUtils.build(
-        Option(source.query.selects).map(_.asScala.toMap).orNull,
-        source.table,
-        Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ effectiveRange.whereClauses,
-        metaColumns ++ keys.map(_ -> null)
-      )
-    }
+    val query = QueryUtils.build(
+      Option(source.query.selects).map(_.asScala.toMap).orNull,
+      source.table,
+      Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
+      metaColumns ++ keys.map(_ -> null)
+    )
+
+    println(s"""
+        |Rendered query:
+        |$query
+        |""".stripMargin)
+    query
   }
 }

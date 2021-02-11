@@ -29,7 +29,7 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       case _                  => true
     }
 
-  def intersect(other: PartitionRange): Option[PartitionRange] = {
+  def intersect(other: PartitionRange): PartitionRange = {
     // lots of null handling
     val newStart = (Option(start) ++ Option(other.start))
       .reduceLeftOption(Ordering[String].max)
@@ -37,8 +37,8 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     val newEnd = (Option(end) ++ Option(other.end))
       .reduceLeftOption(Ordering[String].min)
       .orNull
-    val result = PartitionRange(newStart, newEnd)
-    if (result.valid) Some(result) else None
+    // could be invalid
+    PartitionRange(newStart, newEnd)
   }
 
   override def toTimePoints: Array[Long] = {
@@ -72,6 +72,14 @@ case class PartitionRange(start: String, end: String) extends DataRange {
                      from = table,
                      wheres = wheres)
   }
+
+  def steps(days: Int): Seq[PartitionRange] =
+    Stream
+      .iterate(start)(Constants.Partition.after)
+      .takeWhile(_ <= end)
+      .sliding(days, days)
+      .map { step => PartitionRange(step.head, step.last) }
+      .toSeq
 
   def length: Int =
     Stream

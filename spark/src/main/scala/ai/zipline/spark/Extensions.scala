@@ -91,6 +91,17 @@ object Extensions {
         case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom)(dfIter(col)))
       }
 
+    // math for computing bloom size
+    // n = number of keys (hardcoded as 1000000000 = billion distinct keys)
+    // e = false positive fraction (hardcoded as 0.1)
+    // numBits(m) = - n * log(e) / lg(2) * lg(2) = 2.08*n => 2e9 bits = 256MB
+    // hashes = numBits * lg(2)/ n = 1.44~2
+    // so each column bloom take 256MB on driver
+    def generateBloomFilter(col: String, count: Long): BloomFilter =
+      df.filter(df.col(col).isNotNull)
+        .stat
+        .bloomFilter(col, count, 0.1)
+
     def removeNulls(cols: Seq[String]): DataFrame = {
       println(s"filtering nulls from columns: [${cols.mkString(", ")}]")
       // do not use != or <> operator with null, it doesn't return false ever!

@@ -57,7 +57,7 @@ object Extensions {
   }
 
   implicit class MetadataOps(metaData: MetaData) {
-    val cleanName: String = metaData.name.replaceAll("[^a-zA-Z0-9_]", "_")
+    val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
   }
 
   // one per output column - so single window
@@ -185,7 +185,7 @@ object Extensions {
 
   implicit class JoinOps(join: Join) {
     // all keys on left
-    def keys: Array[String] = {
+    def leftKeyCols: Array[String] = {
       join.joinParts.asScala
         .flatMap { _.rightToLeft.values }
         .toSet
@@ -200,15 +200,16 @@ object Extensions {
     }
 
     // TODO: validate that non keys are not specified in - join.skewKeys
-    def skewFilter(joiner: String = " OR "): Option[String] = {
+    def skewFilter(keys: Option[Seq[String]] = None, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
         val result = jmap.asScala
+          .filterKeys(key => keys.forall { _.contains(key) })
           .map {
             case (leftKey, values) =>
               assert(
-                keys.contains(leftKey),
+                leftKeyCols.contains(leftKey),
                 s"specified skew filter for $leftKey is not used as a key in any join part. " +
-                  s"Please specify key columns in skew filters: [${keys.mkString(", ")}]"
+                  s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
               generateSkewFilterSql(leftKey, values.asScala)
           }
@@ -236,6 +237,15 @@ object Extensions {
         println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
         result
       }
+    }
+  }
+
+  implicit class StringsOps(strs: Iterable[String]) {
+    def pretty: String = {
+      if (strs.nonEmpty)
+        "\n    " + strs.mkString(",\n    ") + "\n"
+      else
+        ""
     }
   }
 }
