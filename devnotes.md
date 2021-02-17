@@ -61,3 +61,12 @@ on afdev box:
 ```
 APP_NAME=search_bench3_3 ./spark_submit.sh --class ai.zipline.spark.Join zipline-spark.jar --conf-path bench3_3.json --end-date 2021-01-01 --namespace search_ranking_training --step-days 30
 ```
+
+### Generate benchmark json
+```
+python ~/repos/ml_models/zipline/joins/new_algo/search_benchmarks.py > ~/bench3_4.json
+```
+```
+scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
+```
+
