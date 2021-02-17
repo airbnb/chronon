@@ -9,10 +9,14 @@ For me, that looks like `~/repos/zipline`.
 
 ### Generate python thrift definitions
  
+ 
 ```shell
 thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
 ```
-
+```
+export ZIPLINE_ROOT=/Users/nikhil_simha/repos/zipline
+export PYTHONPATH=$PYTHONPATH:$ZIPLINE_ROOT/api/gen-py/:$ZIPLINE_ROOT/api/py/
+```
 ### Testing
 
 All tests
