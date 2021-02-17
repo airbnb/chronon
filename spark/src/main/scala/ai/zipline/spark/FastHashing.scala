@@ -26,7 +26,8 @@ object FastHashing {
   // function to generate a fast-ish hasher
   // the approach tries to accumulate several tiny closures to compute the final hash
   def generateKeyBuilder(keys: Array[String], schema: StructType): Row => KeyWithHash = {
-    println(s"Generating key builder with keys: [${keys.mkString(",")}], over schema:\n${schema.pretty}\n")
+    val keySchema = StructType(schema.filter { sf => keys.contains(sf.name) })
+    println(s"Generating key builder over keys:\n${keySchema.pretty}\n")
     val keyIndices: Array[Int] = keys.map(schema.fieldIndex)
     // the hash function generation won't be in the hot path - so its okay to
     val hashFunctions: Array[(Hasher, Row) => Unit] = keys.zip(keyIndices).map {

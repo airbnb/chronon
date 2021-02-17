@@ -8,95 +8,77 @@ import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
 
-class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
+class Join(joinConf: JoinConf,
+           endPartition: String,
+           namespace: String,
+           tableUtils: TableUtils,
+           enableHyperspace: Boolean = false) {
 
   private val outputTable = s"$namespace.${joinConf.metaData.cleanName}"
 
-  private lazy val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
-    outputTable,
-    PartitionRange(joinConf.left.query.startPartition, endPartition),
-    Option(joinConf.left.table).toSeq)
+  private def joinWithLeft(leftDf: DataFrame,
+                           rightDf: DataFrame,
+                           joinPart: JoinPart,
+                           leftRange: PartitionRange): DataFrame = {
+    val partLeftKeys = joinPart.rightToLeft.values.toArray
 
-  private val leftDf: DataFrame = {
-    val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
-    val skewFilter = joinConf.skewFilter()
-    skewFilter
-      .map(sf => {
-        println(s"mega left skew filter: $sf")
-        println(s"pre-skew filter count: ${df.count()}")
-        val filtered = df.filter(sf)
-        filtered
-      })
-      .getOrElse(df)
-  }
-
-  private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
-    val replacedKeys = joinPart.groupBy.keyColumns.asScala.toArray
-
+    // besides the ones specified in the group-by
     val additionalKeys: Seq[String] = {
       if (joinConf.left.dataModel == Entities) {
         Seq(Constants.PartitionColumn)
       } else if (inferredAccuracy(joinPart) == Accuracy.TEMPORAL) {
         Seq(Constants.TimeColumn, Constants.PartitionColumn)
-      } else {
+      } else { // left-events + snapshot => join-key = ds_of_left_ts
         Seq(Constants.TimePartitionColumn)
       }
     }
 
     // apply key-renaming to key columns
-    val keyRenamedRight = Option(joinPart.keyMapping)
-      .map(_.asScala)
-      .getOrElse(Map.empty)
-      .foldLeft(rightDf) {
-        case (right, (leftKey, rightKey)) =>
-          replacedKeys.update(replacedKeys.indexOf(rightKey), leftKey)
-          right.withColumnRenamed(rightKey, leftKey)
-      }
+    val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
+      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
+    }
 
+    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
+                                                                     Constants.PartitionColumn,
+                                                                     Constants.TimePartitionColumn)
+    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     // append prefixes to non key columns
-    val renamedRight = Option(joinPart.prefix)
-      .map { prefix =>
-        val nonValueColumns =
-          replacedKeys ++ Array(Constants.TimeColumn, Constants.PartitionColumn, Constants.TimePartitionColumn)
-        keyRenamedRight.schema.names.foldLeft(keyRenamedRight) { (renamed, column) =>
-          if (!nonValueColumns.contains(column)) {
-            renamed.withColumnRenamed(column, s"${prefix}_$column")
-          } else {
-            renamed
-          }
-        }
-      }
+    val prefixedRight = Option(joinPart.prefix)
+      .map { keyRenamedRight.prefixColumnNames(_, valueColumns) }
       .getOrElse(keyRenamedRight)
 
-    val keys = replacedKeys ++ additionalKeys
-    val (joinableLeft, joinableRight) = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn) ->
-        renamedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
-    } else {
-      (leftDf, renamedRight)
-    }
+    // compute join keys, besides the groupBy keys -  like ds, ts etc.,
+    val keys = partLeftKeys ++ additionalKeys
 
     val partName = joinPart.groupBy.metaData.name
     println(s"Join keys for $partName: " + keys.mkString(", "))
     println("Left Schema:")
-    println(joinableLeft.schema.pretty)
+    println(leftDf.schema.pretty)
     println(s"Right Schema for $partName: - this is the output of GroupBy")
-    println(joinableRight.schema.pretty)
-    joinableLeft.validateJoinKeys(joinableRight, keys)
-    val result = joinableLeft.nullSafeJoin(joinableRight, keys, "left")
-    result.drop(Constants.TimePartitionColumn)
+    println(prefixedRight.schema.pretty)
+    leftRange.partitions
+      .map { partition =>
+        val leftPartition = leftDf.filter(leftDf(Constants.PartitionColumn) === partition)
+        var rightPartition = prefixedRight.filter(prefixedRight(Constants.PartitionColumn) === partition)
+        if (additionalKeys.contains(Constants.TimePartitionColumn)) {
+          rightPartition = prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
+        }
+        leftPartition.validateJoinKeys(rightPartition, keys)
+        leftPartition.join(rightPartition, keys, "left")
+      }
+      .reduce { _ union _ }
   }
 
-  private def computeJoinPart(joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
+  private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val leftPartitionPruneFilter = unfilledRange.whereClauses.mkString(" AND ")
-    println(s"Pruning using $leftPartitionPruneFilter")
-    val leftPartitionPruned = leftDf.filter(leftPartitionPruneFilter)
-    val leftPrunedCount = leftPartitionPruned.count()
+    val leftPrunedCount = leftDf.count()
     println(s"Pruned count $leftPrunedCount")
+    // technically 1 billion is 512MB - but java overhead is crazy and we need to cutoff - to 100M
+    val bloomSize = Math.min(100000000, Math.max(leftPrunedCount / 10, 100))
+    println(s"Bloom size: $bloomSize")
     val rightBloomMap = joinPart.rightToLeft
       .mapValues(
-        leftPartitionPruned.generateBloomFilter(_, Math.max(leftPrunedCount / 100, 100))
+        leftDf.generateBloomFilter(_, bloomSize)
       )
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
 
@@ -106,8 +88,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
          |  left type : ${joinConf.left.dataModel}, 
          |  right type: ${joinPart.groupBy.dataModel}, 
          |  accuracy  : ${joinPart.groupBy.accuracy},
-         |  left unfilled range: $leftUnfilledRange
-         |  right/part unfilled range: $unfilledRange
+         |  part unfilled range: $unfilledRange,
          |  bloom sizes: $bloomSizes
          |""".stripMargin)
 
@@ -116,7 +97,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, rightBloomMap, rightSkewFilter)
 
     lazy val unfilledTimeRange = {
-      val timeRange = leftPartitionPruned.timeRange
+      val timeRange = leftDf.timeRange
       println(s"right unfilled time range: $timeRange")
       timeRange
     }
@@ -175,8 +156,32 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
       joinPart.groupBy.accuracy
     }
 
-  def computeRange(leftRange: PartitionRange): DataFrame = {
-    joinConf.joinParts.asScala.foldLeft(leftDf) {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+    // hyperspace is used to create covering indexes to avoid sortMergeJoin
+    // currently hyperspace doesn't support arbitrary views/df
+    import com.microsoft.hyperspace._
+    import com.microsoft.hyperspace.index._
+    val hyperspace = new Hyperspace(leftDf.sparkSession)
+
+    val (leftTagged, additionalCols) = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
+      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn) ->
+        Seq(Constants.TimeColumn, Constants.TimePartitionColumn)
+    } else {
+      leftDf -> Seq.empty[String]
+    }
+
+    if (enableHyperspace) {
+      tableUtils.sparkSession.enableHyperspace()
+      val leftKeys = joinConf.leftKeyCols ++ Seq(Constants.PartitionColumn) ++ additionalCols
+      val leftIndexConf = IndexConfig(
+        s"${joinConf.metaData.cleanName}_left_index",
+        leftKeys,
+        leftTagged.schema.names.filterNot(leftKeys.contains)
+      )
+      hyperspace.createIndex(leftTagged, leftIndexConf)
+    }
+
+    val joined = joinConf.joinParts.asScala.foldLeft(leftTagged) {
       case (left, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
@@ -184,7 +189,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
           val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
 
           if (rightUnfilledRange.valid) {
-            val rightDf = computeJoinPart(joinPart, rightUnfilledRange)
+            val rightDf = computeJoinPart(left, joinPart, rightUnfilledRange)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
           }
@@ -192,11 +197,26 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
           tableUtils.sql(leftRange.genScanQuery(query = null, joinPartTableName))
         } else {
           // no need to generate join part cache if there are no aggregations
-          computeJoinPart(joinPart, leftRange)
+          computeJoinPart(left, joinPart, leftRange)
         }
-
-        joinWithLeft(left, rightDf, joinPart)
+        val rightKeys = joinPart.groupBy.keyColumns.asScala
+        val rightIndexConf = IndexConfig(
+          s"${joinConf.metaData.cleanName}_right_${joinPart.groupBy.metaData.cleanName}",
+          rightKeys,
+          rightDf.schema.names.filterNot(rightKeys.contains)
+        )
+        if (enableHyperspace) hyperspace.createIndex(rightDf, rightIndexConf)
+        joinWithLeft(left, rightDf, joinPart, leftRange)
     }
+
+    if (enableHyperspace) {
+      hyperspace.indexes.show()
+      hyperspace.explain(joined, verbose = true)
+    } else {
+      joined.explain()
+    }
+
+    joined.drop(Constants.TimePartitionColumn)
   }
 
   val tableProps = Option(joinConf.metaData.tableProperties)
@@ -204,13 +224,33 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     .orNull
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+    val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
+      outputTable,
+      PartitionRange(joinConf.left.query.startPartition, endPartition),
+      Option(joinConf.left.table).toSeq)
+
+    println(s"left unfilled range: $leftUnfilledRange")
+    val leftDfFull: DataFrame = {
+      val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
+      val skewFilter = joinConf.skewFilter()
+      skewFilter
+        .map(sf => {
+          println(s"left skew filter: $sf")
+          println(s"pre-skew-filter left count: ${df.count()}")
+          val filtered = df.filter(sf)
+          println(s"post-skew-filter left count: ${filtered.count()}")
+          filtered
+        })
+        .getOrElse(df)
+    }
+
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        computeRange(range).save(outputTable, tableProps)
+        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
@@ -218,18 +258,20 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
   }
 }
 
-import org.rogach.scallop._
-class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-  val confPath = opt[String](required = true)
-  val endDate = opt[String](required = true)
-  val namespace = opt[String](required = true)
-  val stepDays = opt[Int](required = false)
-  verify()
-}
-
+// the driver
 object Join {
+  import org.rogach.scallop._
+  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+    val confPath = opt[String](required = true)
+    val endDate = opt[String](required = true)
+    val namespace = opt[String](required = true)
+    val stepDays = opt[Int](required = false)
+    //val enableHyperspace = opt[Boolean](required = false, default = Some(false))
+    verify()
+  }
 
-  // TODO: make joins a subcommand of a larger driver that does multiple other things
+  // TODO: make joins a subcommand of a larger driver
+  //  that does group-by backfills/bulk uploads etc
   def main(args: Array[String]): Unit = {
     // args = conf path, end date, output namespace
     val parsedArgs = new ParsedArgs(args)
@@ -241,8 +283,12 @@ object Join {
       joinConf,
       parsedArgs.endDate(),
       parsedArgs.namespace(),
-      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
+      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false)),
+      // TODO: revive hyperspace indexing when s3 support is added - parsedArgs.enableHyperspace()
+      // see: https://github.com/microsoft/hyperspace/issues/359
+      false
     )
+
     join.computeJoin(parsedArgs.stepDays.toOption)
   }
 }

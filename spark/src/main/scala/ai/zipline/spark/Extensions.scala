@@ -33,6 +33,12 @@ object Extensions {
       TimeRange(start, end)
     }
 
+    def prunePartition(partitionRange: PartitionRange): DataFrame = {
+      val pruneFilter = partitionRange.whereClauses.mkString(" AND ")
+      println(s"Pruning using $pruneFilter")
+      df.filter(pruneFilter)
+    }
+
     def partitionRange: PartitionRange = {
       val (start, end) = df.range[String](Constants.PartitionColumn)
       PartitionRange(start, end)

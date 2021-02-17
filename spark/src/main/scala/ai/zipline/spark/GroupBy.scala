@@ -235,12 +235,7 @@ object GroupBy {
       .map {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
       }
-      .map { query =>
-        val df = tableUtils.sql(query)
-        println(s"----[GroupBy data source schema: ${groupByConf.metaData.name}]----")
-        println(df.schema.pretty)
-        df
-      }
+      .map { tableUtils.sql }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
         val columns1 = df1.schema.fields.map(_.name)
@@ -269,7 +264,7 @@ object GroupBy {
 
     val bloomFiltered = skewFiltered.filterBloom(bloomMap)
     println(s"$logPrefix bloom filtered data count: ${bloomFiltered.count()}")
-    println(s"\ninput data schema:")
+    println(s"\nGroup-by raw data schema:")
     println(bloomFiltered.schema.pretty)
 
     new GroupBy(groupByConf.getAggregations.asScala, keyColumns, bloomFiltered)

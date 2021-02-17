@@ -81,7 +81,7 @@ object DataGen {
     protected def rollDouble(max: JDouble, min: JDouble = 0, nullRate: Double = 0.1): JDouble = {
       val dice: Double = math.random
       if (dice < nullRate) null
-      else min + ((max - min) * dice)
+      else min + ((max - min) * math.random)
     }
 
     // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate

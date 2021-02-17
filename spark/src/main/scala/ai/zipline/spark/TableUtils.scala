@@ -4,6 +4,8 @@ import ai.zipline.api.Constants
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.storage.StorageLevel.MEMORY_ONLY_SER
+import org.apache.spark.util.SizeEstimator
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -48,7 +50,6 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
-
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -69,8 +70,7 @@ case class TableUtils(sparkSession: SparkSession) {
     println(s"$rowCount rows requested to be written into table $tableName")
 
     if (rowCount > 0) {
-      // 100k rows per partition
-      val rddPartitionCount = math.ceil(rowCount / 100000.0).toInt // 210
+      val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
@@ -141,14 +141,6 @@ case class TableUtils(sparkSession: SparkSession) {
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
-    assert(
-      result.valid,
-      s"""Invalid partition range for staged fill: $result 
-         |This usually means that the range being requesting to fill already exists.
-         |Data is found until - ${effectiveStart.orNull} [exclusive].
-         |Output table: $outputTable
-         |Input tables: [${inputTables.mkString(", ")}]""".stripMargin
-    )
     result
   }
 }
