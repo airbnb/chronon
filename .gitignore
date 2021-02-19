@@ -1,0 +1,13 @@
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+*.iml
+.idea/
+.eclipse
+**/.vscode/
+**/__pycache__/
+api/py/ai/zipline/api/
+**/derby.log
