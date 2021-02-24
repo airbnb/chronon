@@ -128,6 +128,10 @@ def _write_obj(full_output_root: str,
     if not force_overwrite and not validator.approve_diff(obj):
         _print_warning(f"user declined to overwrite {class_name} {name}")
         return False
+    print("+++++++")
+    print(obj_class)
+    print(obj)
+    print(output_file)
     _write_obj_as_json(name, obj, output_file, obj_class)
     return True
 
