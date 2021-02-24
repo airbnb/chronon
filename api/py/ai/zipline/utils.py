@@ -107,7 +107,7 @@ def get_topic(source: api.Source) -> str:
 
 def get_columns(source: api.Source):
     query = get_query(source)
-    columns = query.select.keys()
+    columns = query.selects.keys()
     return columns
 
 

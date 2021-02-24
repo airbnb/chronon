@@ -17,12 +17,6 @@ DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 
 
-@dataclass
-class DefaultAggregation:
-    operation: int = ttypes.Operation.LAST
-    windows: Optional[List[ttypes.Window]] = None
-
-
 def window_to_str_pretty(window: ttypes.Window):
     unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()
     return f"{window.length} {unit}"
@@ -32,23 +26,9 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def _expand_aggregations(columns: List[str],
-                         defaultAggregation: DefaultAggregation):
-    """
-    used to aggregate all the columns in the query using the same operation.
-    """
-    operation_name = op_to_str(defaultAggregation.operation)
-    for column in columns:
-        yield ttypes.Aggregation(
-            name=f"{column}_{operation_name}",
-            inputColumn=column,
-            operation=defaultAggregation.operation,
-            windows=defaultAggregation.windows,
-        )
-
-
 def Select(*args, **kwargs):
-    return args + [f" {expression} as `{alias}`" for alias, expression in kwargs.items()]
+    args = {x: x for x in args}
+    return {**args, **kwargs}
 
 
 def Aggregations(**kwargs):
@@ -72,23 +52,21 @@ def Aggregations(**kwargs):
     return aggs
 
 
-def contains_windowed_aggregation(aggregations: Optional[Union[List[ttypes.Aggregation], DefaultAggregation]]):
+def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
     if not aggregations:
         return False
-    if isinstance(aggregations, DefaultAggregation):
-        if aggregations.windows:
+    for agg in aggregations:
+        if agg.windows:
             return True
-    else:
-        for agg in aggregations:
-            if agg.windows:
-                return True
     return False
 
 
 def validate_group_by(sources: List[ttypes.Source],
                       keys: List[str],
-                      aggregations: Optional[Union[List[ttypes.Aggregation], DefaultAggregation]]):
+                      aggregations: Optional[List[ttypes.Aggregation]]):
     # check ts is not included in query.select
+    #TODO: Actually run this validation - returning for now
+    return
     first_source_columns = set(utils.get_columns(sources[0]))
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Zipline," \
                                              " please specify the expression in timeColumn"
@@ -120,7 +98,7 @@ Keys {unselected_keys}, are unselected in source
 
 def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             keys: List[str],
-            aggregations: Optional[Union[List[ttypes.Aggregation], DefaultAggregation]],
+            aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
             production: bool = DEFAULT_PRODUCTION) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
@@ -141,36 +119,16 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.select.update({"ts": src.entities.query.timeColumn})
     query = utils.get_query(updated_sources[0])
-    columns = utils.get_columns(updated_sources[0])
-    expanded_aggregations = aggregations
-    # expand default aggregation to actual aggregations
-    if isinstance(aggregations, DefaultAggregation):
-        # TODO: validate that all timeColumns and partitionColumns
-        # are the same in all the sources
-        # column names that need to be excluded from aggregation
-        non_aggregate_columns = keys + [
-            "ts",
-            query.timeColumn,
-            query.partitionColumn
-        ]
-        aggregate_columns = [
-            column
-            for column in columns
-            if column not in non_aggregate_columns
-        ]
-        expanded_aggregations = list(_expand_aggregations(
-            aggregate_columns,
-            aggregations
-        ))
-    # flattening
-    dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]
-    metadata = json.dumps({"dependencies": dependencies})
+
+    # TODO: Make dependencies work and add to metadata constructor
+    # dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]
+    # metadata = json.dumps({"dependencies": dependencies})
+
+    metadata = ttypes.MetaData(online=online, production=production)
 
     return ttypes.GroupBy(
         sources=updated_sources,
         keyColumns=keys,
-        aggregations=expanded_aggregations,
-        metadata=metadata,
-        online=online,
-        production=production
+        aggregations=aggregations,
+        metaData=metadata
     )
