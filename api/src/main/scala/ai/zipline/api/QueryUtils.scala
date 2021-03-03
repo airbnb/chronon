@@ -8,7 +8,6 @@ object QueryUtils {
             from: String,
             wheres: Seq[String],
             fillIfAbsent: Map[String, String] = null): String = {
-    if (selects == null) {}
 
     def toProjections(m: Map[String, String]) =
       m.map {
