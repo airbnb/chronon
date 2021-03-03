@@ -51,7 +51,7 @@ class GroupByTest extends TestCase {
 
   def testSnapshotEvents(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10), // ts = last 100 days
+      DataGen.Column("user", StringType, 10), // ts = last 10 days
       DataGen.Column("session_length", IntType, 2)
     )
 
