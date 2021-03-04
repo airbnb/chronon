@@ -70,28 +70,26 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
 
   // method is used to generate head-realtime ness on top of hops
   // But without the requirement that the input be sorted
-  def cumulateUnsorted(
-      inputs: Iterator[Row], // don't need to be sorted
-      endTimes: Array[Long], // sorted,
-      baseIR: Array[Any]
-  ): Array[Array[Any]] = {
-    if (endTimes == null || endTimes.isEmpty) return Array.empty[Array[Any]]
+  def cumulate(inputs: Iterator[Row], // don't need to be sorted
+               sortedEndTimes: Array[Long], // sorted,
+               baseIR: Array[Any]): Array[Array[Any]] = {
+    if (sortedEndTimes == null || sortedEndTimes.isEmpty) return Array.empty[Array[Any]]
     if (inputs == null || inputs.isEmpty)
-      return Array.fill[Array[Any]](endTimes.length)(baseIR)
+      return Array.fill[Array[Any]](sortedEndTimes.length)(baseIR)
 
-    val result = Array.fill[Array[Any]](endTimes.length)(null)
+    val result = Array.fill[Array[Any]](sortedEndTimes.length)(null)
     while (inputs.hasNext) {
       val row = inputs.next()
       val inputTs = row.ts
-      var updateIndex = util.Arrays.binarySearch(endTimes, inputTs)
+      var updateIndex = util.Arrays.binarySearch(sortedEndTimes, inputTs)
       if (updateIndex >= 0) { // we found an exact match so we need to search further to get updateIndex
-        while (updateIndex < endTimes.length && endTimes(updateIndex) == inputTs)
+        while (updateIndex < sortedEndTimes.length && sortedEndTimes(updateIndex) == inputTs)
           updateIndex += 1
       } else {
         // binary search didn't find an exact match
         updateIndex = math.abs(updateIndex) - 1
       }
-      if (updateIndex < endTimes.length && updateIndex >= 0) {
+      if (updateIndex < sortedEndTimes.length && updateIndex >= 0) {
         if (result(updateIndex) == null) {
           result.update(updateIndex, new Array[Any](baseAggregator.length))
         }

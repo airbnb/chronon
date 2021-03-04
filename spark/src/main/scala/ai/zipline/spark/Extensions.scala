@@ -1,13 +1,15 @@
 package ai.zipline.spark
 
+import java.util.TreeSet
+
 import ai.zipline.api._
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
-import scala.collection.JavaConverters._
+import scala.reflect.ClassTag
 
 object Extensions {
 
@@ -146,4 +148,20 @@ object Extensions {
     }
   }
 
+  implicit class ArrayOps[T: ClassTag](arr: Array[T]) {
+    def uniqSort(ordering: Ordering[T]): Array[T] = {
+      val tree = new TreeSet[T](ordering)
+      for (i <- 0 until arr.length) {
+        tree.add(arr(i))
+      }
+      val result = new Array[T](tree.size)
+      val it = tree.iterator()
+      var idx = 0
+      while (idx < tree.size()) {
+        result.update(idx, it.next())
+        idx += 1
+      }
+      result
+    }
+  }
 }

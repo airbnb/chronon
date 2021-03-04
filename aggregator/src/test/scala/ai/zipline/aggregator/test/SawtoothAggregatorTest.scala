@@ -186,7 +186,7 @@ class SawtoothAggregatorTest extends TestCase {
         util.Arrays.sort(endTimes)
       }
 
-      result ++= sawtoothAggregator.cumulateUnsorted(
+      result ++= sawtoothAggregator.cumulate(
         Option(headEvents).map(_.iterator).orNull,
         endTimes,
         tailIr

@@ -115,11 +115,9 @@ class GroupBy(aggregations: Seq[Aggregation],
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
-      .mapValues { queryTimesItr =>
-        val sorted = queryTimesItr.toArray
-        util.Arrays.sort(sorted, TimeTuple)
-        sorted
-      }
+      .mapValues { _.toArray.uniqSort(TimeTuple) }
+    // uniqSort to produce one row per key
+    // otherwise we the mega-join will produce square number of rows.
 
     val sawtoothAggregator =
       new SawtoothAggregator(aggregations, ziplineSchema, resolution)
@@ -157,7 +155,7 @@ class GroupBy(aggregations: Seq[Aggregation],
             eventsOpt.map(_.map(Conversions.toZiplineRow(_, tsIndex)).toIterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
-          val irs = sawtoothAggregator.cumulateUnsorted(inputsIt, queries, headStartIrOpt.orNull)
+          val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
           queries.indices.map { i => (keys.data ++ queriesWithPartition(i).toArray, irs(i)) }
       }
     toDataFrame(outputRdd, Seq((Constants.TimeColumn, LongType), (Constants.PartitionColumn, StringType)))
