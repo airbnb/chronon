@@ -158,35 +158,35 @@ class SawtoothAggregatorTest extends TestCase {
     val hops = hopsAggregator.toTimeSortedArray(hopMaps)
 
     val minResolution = resolution.hopSizes.min
-    // STEP-2. group events and queries by tailEnd - 5minute round down of ts
+    // STEP-2. group events and queries by headStart - 5minute round down of ts
     val groupedQueries: Map[Long, Array[Long]] =
       queries.groupBy(TsUtils.round(_, minResolution))
     val groupedEvents: Map[Long, Array[TestRow]] = events.groupBy { row =>
       TsUtils.round(row.ts, minResolution)
     }
 
-    // STEP-3. compute windows based on tailEnds
+    // STEP-3. compute windows based on headStart
     // aggregates will have at-most 5 minute staleness
     val headStartTimes = groupedQueries.keys.toArray
     util.Arrays.sort(headStartTimes)
     // compute windows up-to 5min accuracy for the queries
-    val tailIrs = sawtoothAggregator.computeWindows(hops, headStartTimes)
+    val nonRealtimeIrs = sawtoothAggregator.computeWindows(hops, headStartTimes)
 
     val result = mutable.ArrayBuffer.empty[Array[Any]]
     // STEP-4. join tailAccurate - Irs with headTimeStamps and headEvents
     // to achieve realtime accuracy
     for (i <- headStartTimes.indices) {
-      val tailEnd = headStartTimes(i)
-      val tailIr = tailIrs(i)
+      val headStart = headStartTimes(i)
+      val tailIr = nonRealtimeIrs(i)
 
       // join events and queries on tailEndTimes
-      val endTimes: Array[Long] = groupedQueries.getOrElse(tailEnd, null)
-      val headEvents = groupedEvents.getOrElse(tailEnd, null)
+      val endTimes: Array[Long] = groupedQueries.getOrElse(headStart, null)
+      val headEvents = groupedEvents.getOrElse(headStart, null)
       if (endTimes != null && headEvents != null) {
         util.Arrays.sort(endTimes)
       }
 
-      result ++= sawtoothAggregator.cumulateUnsorted(
+      result ++= sawtoothAggregator.cumulate(
         Option(headEvents).map(_.iterator).orNull,
         endTimes,
         tailIr

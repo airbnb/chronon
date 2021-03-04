@@ -137,7 +137,11 @@ struct JoinPart {
 
 struct MetaData {
     1: optional string name
+    // marking this as true means that the conf can be served online
+    // once marked online, a conf cannot be changed - compiling the conf won't be allowed
     2: optional bool online
+    // marking this as true means that the conf automatically generates a staging copy
+    // this flag is also meant to help a monitoring system re-direct alerts appropriately
     3: optional bool production
     4: optional string customJson
     5: optional list<string> dependencies
@@ -150,5 +154,9 @@ struct Join {
     1: optional MetaData metaData
     2: optional Source left
     3: list<JoinPart> joinParts
+    // map of left key column name and values representing the skew keys
+    // these skew keys will be excluded from the output
+    // specifying skew keys will also help us scan less raw data before aggregation & join
+    // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
 }

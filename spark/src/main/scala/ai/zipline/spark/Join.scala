@@ -8,18 +8,11 @@ import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
 
-class Join(joinConf: JoinConf,
-           endPartition: String,
-           namespace: String,
-           tableUtils: TableUtils,
-           enableHyperspace: Boolean = false) {
+class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
 
   private val outputTable = s"$namespace.${joinConf.metaData.cleanName}"
 
-  private def joinWithLeft(leftDf: DataFrame,
-                           rightDf: DataFrame,
-                           joinPart: JoinPart,
-                           leftRange: PartitionRange): DataFrame = {
+  private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
     // besides the ones specified in the group-by
@@ -56,17 +49,16 @@ class Join(joinConf: JoinConf,
     println(leftDf.schema.pretty)
     println(s"Right Schema for $partName: - this is the output of GroupBy")
     println(prefixedRight.schema.pretty)
-    leftRange.partitions
-      .map { partition =>
-        val leftPartition = leftDf.filter(leftDf(Constants.PartitionColumn) === partition)
-        var rightPartition = prefixedRight.filter(prefixedRight(Constants.PartitionColumn) === partition)
-        if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-          rightPartition = prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
-        }
-        leftPartition.validateJoinKeys(rightPartition, keys)
-        leftPartition.join(rightPartition, keys, "left")
-      }
-      .reduce { _ union _ }
+
+    val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
+      prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
+    } else {
+      prefixedRight
+    }
+
+    leftDf.validateJoinKeys(joinableRight, keys)
+    leftDf.join(joinableRight, keys, "left")
+
   }
 
   private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
@@ -157,39 +149,21 @@ class Join(joinConf: JoinConf,
     }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
-    // hyperspace is used to create covering indexes to avoid sortMergeJoin
-    // currently hyperspace doesn't support arbitrary views/df
-    import com.microsoft.hyperspace._
-    import com.microsoft.hyperspace.index._
-    val hyperspace = new Hyperspace(leftDf.sparkSession)
-
-    val (leftTagged, additionalCols) = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn) ->
-        Seq(Constants.TimeColumn, Constants.TimePartitionColumn)
+    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
+      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
-      leftDf -> Seq.empty[String]
+      leftDf
     }
 
-    if (enableHyperspace) {
-      tableUtils.sparkSession.enableHyperspace()
-      val leftKeys = joinConf.leftKeyCols ++ Seq(Constants.PartitionColumn) ++ additionalCols
-      val leftIndexConf = IndexConfig(
-        s"${joinConf.metaData.cleanName}_left_index",
-        leftKeys,
-        leftTagged.schema.names.filterNot(leftKeys.contains)
-      )
-      hyperspace.createIndex(leftTagged, leftIndexConf)
-    }
-
-    val joined = joinConf.joinParts.asScala.foldLeft(leftTagged) {
-      case (left, joinPart) =>
+    val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
+      case (partialDf, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
           val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
 
           if (rightUnfilledRange.valid) {
-            val rightDf = computeJoinPart(left, joinPart, rightUnfilledRange)
+            val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
           }
@@ -197,25 +171,12 @@ class Join(joinConf: JoinConf,
           tableUtils.sql(leftRange.genScanQuery(query = null, joinPartTableName))
         } else {
           // no need to generate join part cache if there are no aggregations
-          computeJoinPart(left, joinPart, leftRange)
+          computeJoinPart(partialDf, joinPart, leftRange)
         }
-        val rightKeys = joinPart.groupBy.keyColumns.asScala
-        val rightIndexConf = IndexConfig(
-          s"${joinConf.metaData.cleanName}_right_${joinPart.groupBy.metaData.cleanName}",
-          rightKeys,
-          rightDf.schema.names.filterNot(rightKeys.contains)
-        )
-        if (enableHyperspace) hyperspace.createIndex(rightDf, rightIndexConf)
-        joinWithLeft(left, rightDf, joinPart, leftRange)
+        joinWithLeft(partialDf, rightDf, joinPart)
     }
 
-    if (enableHyperspace) {
-      hyperspace.indexes.show()
-      hyperspace.explain(joined, verbose = true)
-    } else {
-      joined.explain()
-    }
-
+    joined.explain()
     joined.drop(Constants.TimePartitionColumn)
   }
 
@@ -266,7 +227,6 @@ object Join {
     val endDate = opt[String](required = true)
     val namespace = opt[String](required = true)
     val stepDays = opt[Int](required = false)
-    //val enableHyperspace = opt[Boolean](required = false, default = Some(false))
     verify()
   }
 
@@ -283,10 +243,7 @@ object Join {
       joinConf,
       parsedArgs.endDate(),
       parsedArgs.namespace(),
-      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false)),
-      // TODO: revive hyperspace indexing when s3 support is added - parsedArgs.enableHyperspace()
-      // see: https://github.com/microsoft/hyperspace/issues/359
-      false
+      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
     )
 
     join.computeJoin(parsedArgs.stepDays.toOption)

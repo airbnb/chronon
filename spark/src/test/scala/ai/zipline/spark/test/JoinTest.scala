@@ -5,6 +5,7 @@ import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{count, desc}
 import org.junit.Assert._
 import org.junit.{AfterClass, BeforeClass, Test}
 
@@ -355,16 +356,17 @@ class JoinTest {
     // left side
     val itemQueries = List(DataGen.Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
-    DataGen
+    val itemQueriesDf = DataGen
       .events(spark, itemQueries, 10000, partitions = 100)
-      .save(itemQueriesTable)
+    // duplicate the events
+    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features  ")
+      metaData = Builders.MetaData(name = "test.item_temporal_features")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
@@ -374,21 +376,26 @@ class JoinTest {
     val expected = tableUtils.sql(s"""
                                      |WITH 
                                      |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
-                                     | SELECT queries.item,
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_ts_min, part.user_ts_max, part.user_time_spent_ms_average
+                                     | FROM (SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
                                      |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_min,
                                      |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_max,
                                      |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average
-                                     | FROM queries left outer join $viewsTable
-                                     |  ON queries.item = $viewsTable.item
-                                     | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
-                                     | GROUP BY queries.item, queries.ts, queries.ds
+                                     |     FROM queries left outer join $viewsTable
+                                     |     ON queries.item = $viewsTable.item
+                                     |     WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     |     GROUP BY queries.item, queries.ts, queries.ds) as part
+                                     | JOIN queries
+                                     | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
                                      |""".stripMargin)
     expected.show()
 
     val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
-
+    val queriesBare =
+      tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
+    assertEquals(queriesBare.count(), computed.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
