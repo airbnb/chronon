@@ -149,21 +149,21 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
-    val leftTagged = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
+    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
 
-    val joined = joinConf.joinParts.asScala.foldLeft(leftTagged) {
-      case (left, joinPart) =>
+    val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
+      case (partialDf, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
           val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
 
           if (rightUnfilledRange.valid) {
-            val rightDf = computeJoinPart(left, joinPart, rightUnfilledRange)
+            val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
           }
@@ -171,9 +171,9 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
           tableUtils.sql(leftRange.genScanQuery(query = null, joinPartTableName))
         } else {
           // no need to generate join part cache if there are no aggregations
-          computeJoinPart(left, joinPart, leftRange)
+          computeJoinPart(partialDf, joinPart, leftRange)
         }
-        joinWithLeft(left, rightDf, joinPart)
+        joinWithLeft(partialDf, rightDf, joinPart)
     }
 
     joined.explain()

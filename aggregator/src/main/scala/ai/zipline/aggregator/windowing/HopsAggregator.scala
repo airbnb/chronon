@@ -69,11 +69,11 @@ class HopsAggregator(minQueryTs: Long,
   }
 
   def init(): IrMapType =
-    Array.fill(hopSizes.length)(new java.util.HashMap[Long, Array[Any]])
+    Array.fill(hopSizes.length)(new java.util.HashMap[Long, HopIr])
 
   @transient
-  private lazy val javaBuildHop = new java.util.function.Function[Long, Array[Any]] {
-    override def apply(ts: Long): Array[Any] = {
+  private lazy val javaBuildHop = new java.util.function.Function[Long, HopIr] {
+    override def apply(ts: Long): HopIr = {
       val v = new Array[Any](rowAggregator.length + 1)
       v.update(rowAggregator.length, ts)
       v
@@ -115,9 +115,10 @@ class HopsAggregator(minQueryTs: Long,
     leftHops
   }
 
+  // hops have timestamps attached to the end.
   // order by hopStart
-  @transient lazy val arrayOrdering: Ordering[Array[Any]] = new Ordering[Array[Any]] {
-    override def compare(x: Array[Any], y: Array[Any]): Int =
+  @transient lazy val arrayOrdering: Ordering[HopIr] = new Ordering[HopIr] {
+    override def compare(x: HopIr, y: HopIr): Int =
       Ordering[Long]
         .compare(x.last.asInstanceOf[Long], y.last.asInstanceOf[Long])
   }
@@ -125,7 +126,7 @@ class HopsAggregator(minQueryTs: Long,
   def toTimeSortedArray(hopMaps: IrMapType): OutputArrayType =
     hopMaps.map { m =>
       val resultIt = m.values.iterator()
-      val result = new Array[Array[Any]](m.size())
+      val result = new Array[HopIr](m.size())
       for (i <- 0 until m.size()) {
         result.update(i, resultIt.next())
       }
@@ -135,6 +136,9 @@ class HopsAggregator(minQueryTs: Long,
 }
 
 object HopsAggregator {
-  type OutputArrayType = Array[Array[Array[Any]]]
-  type IrMapType = Array[java.util.HashMap[Long, Array[Any]]]
+  // [IR1, IR2, IR3,.... IRN, ts_millis_long]
+  // hops have timestamps attached to the end
+  type HopIr = Array[Any]
+  type OutputArrayType = Array[Array[HopIr]]
+  type IrMapType = Array[java.util.HashMap[Long, HopIr]]
 }

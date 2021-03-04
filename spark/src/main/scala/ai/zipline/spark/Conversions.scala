@@ -6,18 +6,18 @@ import ai.zipline.aggregator.base.{
   IntType,
   ListType,
   UnknownType,
-  BinaryType => MBinaryType,
-  BooleanType => MBooleanType,
-  ByteType => MByteType,
-  DataType => MDataType,
-  DoubleType => MDoubleType,
-  FloatType => MFloatType,
-  LongType => MLongType,
-  MapType => MMapType,
-  ShortType => MShortType,
-  StringType => MStringType,
-  StructField => MStructField,
-  StructType => MStructType
+  BinaryType => ZBinaryType,
+  BooleanType => ZBooleanType,
+  ByteType => ZByteType,
+  DataType => ZDataType,
+  DoubleType => ZDoubleType,
+  FloatType => ZFloatType,
+  LongType => ZLongType,
+  MapType => ZMapType,
+  ShortType => ZShortType,
+  StringType => ZStringType,
+  StructField => ZStructField,
+  StructType => ZStructType
 }
 import ai.zipline.aggregator.row.{Row => MRow}
 import org.apache.spark.sql.Row
@@ -44,7 +44,7 @@ class ArrayRow(val row: Row, val tsIndex: Int) extends MRow {
 object Conversions {
   def fromZiplineRow(
       values: Array[Any],
-      ziplineSchema: Array[(String, MDataType)]
+      ziplineSchema: Array[(String, ZDataType)]
   ): Array[Any] = {
     if (values == null) return null
     val result = new Array[Any](values.length)
@@ -59,17 +59,17 @@ object Conversions {
   // won't handle arbitrary nesting
   // lists are util.ArrayList in both spark and zipline
   // structs in zipline are Array[Any], but in spark they are Row/GenericRow types
-  def fromZiplineColumn(value: Any, dataType: MDataType): Any = {
+  def fromZiplineColumn(value: Any, dataType: ZDataType): Any = {
     if (value == null) return null
     dataType match {
-      case ListType(MStructType(_, _)) => //Irs of LastK, FirstK
+      case ListType(ZStructType(_, _)) => //Irs of LastK, FirstK
         val list = value.asInstanceOf[util.ArrayList[Array[Any]]]
         val result = new util.ArrayList[GenericRow](list.size())
         for (i <- 0 until list.size()) {
           result.set(i, new GenericRow(list.get(i)))
         }
         result
-      case MStructType(_, _) =>
+      case ZStructType(_, _) =>
         new GenericRow(
           value.asInstanceOf[Array[Any]]
         ) // Irs of avg, last, first
@@ -79,59 +79,59 @@ object Conversions {
 
   def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
 
-  def toZiplineType(dataType: DataType): MDataType =
+  def toZiplineType(dataType: DataType): ZDataType =
     dataType match {
       case IntegerType               => IntType
-      case LongType                  => MLongType
-      case ShortType                 => MShortType
-      case ByteType                  => MByteType
-      case FloatType                 => MFloatType
-      case DoubleType                => MDoubleType
-      case StringType                => MStringType
-      case BinaryType                => MBinaryType
-      case BooleanType               => MBooleanType
+      case LongType                  => ZLongType
+      case ShortType                 => ZShortType
+      case ByteType                  => ZByteType
+      case FloatType                 => ZFloatType
+      case DoubleType                => ZDoubleType
+      case StringType                => ZStringType
+      case BinaryType                => ZBinaryType
+      case BooleanType               => ZBooleanType
       case ArrayType(elementType, _) => ListType(toZiplineType(elementType))
       case MapType(keyType, valueType, _) =>
-        MMapType(toZiplineType(keyType), toZiplineType(valueType))
+        ZMapType(toZiplineType(keyType), toZiplineType(valueType))
       case StructType(fields) =>
-        MStructType(
+        ZStructType(
           null,
           fields.map { field =>
-            MStructField(field.name, toZiplineType(field.dataType))
+            ZStructField(field.name, toZiplineType(field.dataType))
           }.toList
         )
       case other => UnknownType(other)
     }
 
-  def fromZiplineType(mType: MDataType): DataType =
-    mType match {
+  def fromZiplineType(zType: ZDataType): DataType =
+    zType match {
       case IntType               => IntegerType
-      case MLongType             => LongType
-      case MShortType            => ShortType
-      case MByteType             => ByteType
-      case MFloatType            => FloatType
-      case MDoubleType           => DoubleType
-      case MStringType           => StringType
-      case MBinaryType           => BinaryType
-      case MBooleanType          => BooleanType
+      case ZLongType             => LongType
+      case ZShortType            => ShortType
+      case ZByteType             => ByteType
+      case ZFloatType            => FloatType
+      case ZDoubleType           => DoubleType
+      case ZStringType           => StringType
+      case ZBinaryType           => BinaryType
+      case ZBooleanType          => BooleanType
       case ListType(elementType) => ArrayType(fromZiplineType(elementType))
-      case MMapType(keyType, valueType) =>
+      case ZMapType(keyType, valueType) =>
         MapType(fromZiplineType(keyType), fromZiplineType(valueType))
-      case MStructType(_, fields) =>
+      case ZStructType(_, fields) =>
         StructType(fields.map { field =>
           StructField(field.name, fromZiplineType(field.fieldType))
         })
       case UnknownType(other) => other.asInstanceOf[DataType]
     }
 
-  def toZiplineSchema(schema: StructType): Array[(String, MDataType)] =
+  def toZiplineSchema(schema: StructType): Array[(String, ZDataType)] =
     schema.fields.map { field =>
       (field.name, toZiplineType(field.dataType))
     }
 
-  def fromZiplineSchema(schema: Array[(String, MDataType)]): StructType =
+  def fromZiplineSchema(schema: Array[(String, ZDataType)]): StructType =
     StructType(schema.map {
-      case (name, mType) =>
-        StructField(name, fromZiplineType(mType))
+      case (name, zType) =>
+        StructField(name, fromZiplineType(zType))
     })
 }

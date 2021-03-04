@@ -7,15 +7,23 @@ import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.api.{Aggregation, AggregationPart}
 import ai.zipline.api.Extensions._
 
-// Head Sliding, Tail Hopping Window - windowed counters will look the edge of sawtooth
-// The hops on the tail are computed automatically to guarantee <10% variance
+// Head Sliding, Tail Hopping Window - effective window size when plotted against query timestamp
+// will look the edge of sawtooth - instead of like a straight line.
+//
 // There are three major steps in the strategy for realtime accuracy
 // 1. Roll up raw events into hops - using HopsAggregator - see buildHopsAggregator
-// 2. Use the hops to construct windows - see computeWindows.
+//      Output data will look like `key -> [[IR_hop1], [IR_hop2], [IR_hop3] ... ]`
+// 2. Use the hops to construct windows - see `computeWindows`.
+//       We consume the hops and construct the full window of IR - but without head accuracy
+//       Output data will look like `(key, hopStart) -> IR`
 //    At his point resolution of head of the window is the smallest hop - 5mins
-// 3. To make the head realtime use the cumulate method
-//
-// NOTE: Not using the "cumulate" method will result in snapshot accuracy.
+// 3. To make the head realtime use the `cumulate` method
+//       We JOIN the output of
+//       a. `computeWindows` - `(key, hopStart) -> IR`
+//       b. the raw events on the head by hopStart - `(key, hopStart) -> [Input]`
+//       c. query_times by hopStart - `(key, hopStart) -> [query_ts]`
+//      And produce `key -> [query_ts, IR]`
+// NOTE: Not using the `cumulate` method will result in snapshot accuracy.
 class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution)
     extends Serializable {
 

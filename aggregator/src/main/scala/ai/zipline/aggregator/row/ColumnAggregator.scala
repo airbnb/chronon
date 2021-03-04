@@ -26,9 +26,6 @@ abstract class ColumnAggregator extends Serializable {
   def denormalize(ir: Any): Any
 
   def clone(ir: Any): Any
-
-  // used for constructing windowed aggregates from unwindowed aggregations
-  def mergeRedirected(ir1: Array[Any], ir2: Array[Any], ir2Index: Int): Unit
 }
 
 abstract class BaseColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
@@ -45,26 +42,6 @@ abstract class BaseColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input
     // this is a critical assumption of the rest of the code
     if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
     agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
-  }
-
-  override def mergeRedirected(
-      ir1: Array[Any],
-      ir2: Array[Any],
-      ir2Index: Int
-  ): Unit = {
-    val irVal1 = ir1(columnIndices.output)
-    val irVal2 = ir2(ir2Index)
-    if (irVal2 == null) return
-    val irVal2Cloned: IR = agg.clone(irVal2.asInstanceOf[IR])
-    if (irVal1 == null) {
-      ir1.update(columnIndices.output, irVal2Cloned)
-      return
-    }
-    // both are non-null
-    ir1.update(
-      columnIndices.output,
-      agg.merge(irVal1.asInstanceOf[IR], irVal2Cloned)
-    )
   }
 
   override def finalize(ir: Any): Any = guardedApply(agg.finalize, ir)
@@ -158,7 +135,7 @@ object ColumnAggregator {
       override def isDeletable: Boolean = false
     }
 
-  // to forced numeric widening
+  //force numeric widening
   private def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
   private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
 
