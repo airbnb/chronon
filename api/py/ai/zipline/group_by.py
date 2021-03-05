@@ -27,7 +27,8 @@ def op_to_str(operation: OperationType):
 
 
 def Select(*args, **kwargs):
-    return kwargs
+    args = {x: x for x in args}
+    {**args, **kwargs}
 
 
 def Aggregations(**kwargs):
