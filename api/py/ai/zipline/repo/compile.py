@@ -81,7 +81,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
-            if obj_class is Join and obj.online:
+            if obj_class is Join and obj.metaData.online:
                 online_group_bys = {rt.groupBy.name: rt.groupBy for rt in obj.rightParts}
                 extra_online_group_bys.update(online_group_bys)
     if extra_online_group_bys:
