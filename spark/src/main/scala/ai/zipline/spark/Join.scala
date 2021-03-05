@@ -180,7 +180,7 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  val tableProps = Option(joinConf.metaData.tableProperties)
+  private val tableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .orNull
 
@@ -223,10 +223,10 @@ class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUti
 object Join {
   import org.rogach.scallop._
   class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath = opt[String](required = true)
-    val endDate = opt[String](required = true)
-    val namespace = opt[String](required = true)
-    val stepDays = opt[Int](required = false)
+    val confPath: ScallopOption[String] = opt[String](required = true)
+    val endDate: ScallopOption[String] = opt[String](required = true)
+    val namespace: ScallopOption[String] = opt[String](required = true)
+    val stepDays: ScallopOption[Int] = opt[Int](required = false)
     verify()
   }
 

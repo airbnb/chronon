@@ -4,8 +4,6 @@ import ai.zipline.api.Constants
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.spark.storage.StorageLevel.MEMORY_ONLY_SER
-import org.apache.spark.util.SizeEstimator
 
 case class TableUtils(sparkSession: SparkSession) {
 
