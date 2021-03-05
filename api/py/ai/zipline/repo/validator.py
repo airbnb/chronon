@@ -33,9 +33,6 @@ def extract_json_confs(obj_class: type, path: str):
     result = []
     for sub_root, sub_dirs, sub_files in os.walk(path):
         for f in sub_files:
-            print("!!")
-            print(f)
-
             obj = file2thrift(os.path.join(sub_root, f), obj_class)
             result.append(obj)
     return result
@@ -70,11 +67,6 @@ class ZiplineRepoValidator(object):
         returns:
            materialized version of the obj given the object's name.
         """
-        print("===========")
-        print(self.old_objs[obj_class.__name__])
-        print(obj_class)
-        print(obj_name)
-        print([x.metaData for x in self.old_group_bys])
         return next(
             (x for x in self.old_objs[obj_class.__name__] if x.metaData.name == obj_name),
             None

@@ -64,10 +64,8 @@ def validate_group_by(sources: List[ttypes.Source],
                       keys: List[str],
                       aggregations: Optional[List[ttypes.Aggregation]]):
     # check ts is not included in query.select
-    print("!!!")
+    #TODO: Actually run this validation - returning for now
     return
-
-    print("!!!!")
     first_source_columns = set(utils.get_columns(sources[0]))
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Zipline," \
                                              " please specify the expression in timeColumn"

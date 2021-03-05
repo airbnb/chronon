@@ -12,8 +12,6 @@ class ThriftJSONDecoder(json.JSONDecoder):
         super(ThriftJSONDecoder, self).__init__(*args, **kwargs)
 
     def decode(self, json_str):
-        print("-------------")
-        print(json_str)
         if isinstance(json_str, dict):
             dct = json_str
         else:
@@ -59,14 +57,10 @@ class ThriftJSONDecoder(json.JSONDecoder):
 
 
 def json2thrift(json_str, thrift_class):
-    print("_-_")
-    print(json_str)
     return json.loads(json_str, cls=ThriftJSONDecoder, thrift_class=thrift_class)
 
 
 def file2thrift(path, thrift_class):
-    print("PATH: {}".format(path))
-    print(thrift_class)
     with open(path, 'r') as file:
         return json2thrift(file.read(), thrift_class)
 
