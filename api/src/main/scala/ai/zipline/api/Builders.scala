@@ -152,13 +152,15 @@ object Builders {
         online: Boolean = false,
         production: Boolean = false,
         customJson: String = null,
-        dependencies: Seq[String] = null
+        dependencies: Seq[String] = null,
+        namespace: String = null
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
       result.setOnline(online)
       result.setProduction(production)
       result.setCustomJson(customJson)
+      result.setNameSpace(namespace)
       if (dependencies != null)
         result.setDependencies(dependencies.asJava)
       result
