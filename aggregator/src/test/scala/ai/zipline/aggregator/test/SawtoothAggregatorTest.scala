@@ -2,17 +2,16 @@ package ai.zipline.aggregator.test
 
 import java.util
 
-import ai.zipline.api.{Aggregation, Builders, Extensions, Operation, TimeUnit, Window}
 import ai.zipline.aggregator.base.{DataType, LongType}
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.test.TestDataUtils.{genNums, genTimestamps}
 import ai.zipline.aggregator.windowing._
+import ai.zipline.api.Extensions._
+import ai.zipline.api._
 import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert._
-import ai.zipline.api.Extensions._
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 class Timer {
@@ -57,9 +56,9 @@ class SawtoothAggregatorTest extends TestCase {
   def testTailAccuracy(): Unit = {
     val timer = new Timer
     val queries =
-      genTimestamps(5 * 60 * 1000, 1000, new Window(30, TimeUnit.DAYS)).sorted
+      genTimestamps(5 * 60 * 1000, 10000, new Window(30, TimeUnit.DAYS)).sorted
     val events = {
-      val eventCount = 1000
+      val eventCount = 10000
       val eventTimes = genTimestamps(1, eventCount, new Window(180, TimeUnit.DAYS))
       // max is 1M to avoid overflow when summing
       val eventValues = genNums(0, 1000, eventCount)

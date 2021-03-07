@@ -45,18 +45,23 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient private lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
   @transient private lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
 
+  // the cache uses this space to work out the IRs for the whole window based on hops
+  // we only create this arena once, so GC kicks in fewer times
+  @transient private lazy val arena =
+    Array.fill(resolution.hopSizes.length)(Array.fill[Entry](windowedAggregator.length)(null))
+
   def computeWindows(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result
-    val arena = Array.fill(hops.length)(Array.fill[Entry](windowedAggregator.length)(null))
+
     val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
     for (i <- endTimes.indices) {
       for (col <- windowedAggregator.indices) {
         result(i).update(col, genIr(cache, col, endTimes(i)))
-        cache.reset()
       }
     }
+    cache.reset()
     result
   }
 
@@ -131,7 +136,7 @@ private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayTyp
                                        // arena is the memory buffer where cache entries live
                                        arena: Array[Array[Entry]]) {
 
-  // without the reset method, recreating the arena would add to GC presure
+  // without the reset method, recreating the arena would add to GC pressure
   def reset(): Unit = {
     for (i <- arena.indices) {
       for (j <- arena(i).indices) {

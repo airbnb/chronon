@@ -6,7 +6,6 @@ import ai.zipline.aggregator.base.{FloatType, IntType, LongType, StringType}
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.api.{AggregationPart, Builders, Operation}
 import junit.framework.TestCase
-import ai.zipline.api.Extensions._
 
 import scala.collection.JavaConverters._
 
@@ -95,7 +94,7 @@ class RowAggregatorTest extends TestCase {
     val finalized = rowAggregator.finalize(forDeletion)
 
     assert(expectedVals.zip(finalized).forall {
-      case (expected: Any, actual: Any) => { expected == actual }
+      case (expected: Any, actual: Any) => expected == actual
     })
   }
 }
