@@ -88,12 +88,12 @@ class ZiplineRepoValidator(object):
         reasons = []
         if isinstance(obj, GroupBy):
             # GroupBys explicitly marked as offline should not be materialized.
-            if obj.online is False:
+            if obj.metaData.online is False:
                 reasons.append("is explicitly marked as offline")
             # Otherwise group_bys included in online join or are marked explicitly
             # online itself are materialized.
-            elif not any(join.online for join in self._get_old_joins_with_group_by(obj)) \
-                    and not obj.online:
+            elif not any(join.metaData.online for join in self._get_old_joins_with_group_by(obj)) \
+                    and not obj.metaData.online:
                 reasons.append("is not marked online nor is included in any online join")
         return reasons
 
@@ -102,7 +102,7 @@ class ZiplineRepoValidator(object):
         When a feature set is already materialized as online, it is no more safe
         to materialize without user permission.
         """
-        return obj.online is not True
+        return obj.metaData.online is not True
 
     def validate_obj(self, obj: object) -> List[str]:
         """

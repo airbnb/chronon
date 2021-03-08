@@ -28,7 +28,7 @@ def op_to_str(operation: OperationType):
 
 def Select(*args, **kwargs):
     args = {x: x for x in args}
-    {**args, **kwargs}
+    return {**args, **kwargs}
 
 
 def Aggregations(**kwargs):
@@ -119,28 +119,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.select.update({"ts": src.entities.query.timeColumn})
     query = utils.get_query(updated_sources[0])
-    #columns = utils.get_columns(updated_sources[0])
-    # expanded_aggregations = aggregations
-    # expand default aggregation to actual aggregations
-    # if isinstance(aggregations, DefaultAggregation):
-    #     # TODO: validate that all timeColumns and partitionColumns
-    #     # are the same in all the sources
-    #     # column names that need to be excluded from aggregation
-    #     non_aggregate_columns = keys + [
-    #         "ts",
-    #         query.timeColumn,
-    #         query.partitionColumn
-    #     ]
-    #     aggregate_columns = [
-    #         column
-    #         for column in columns
-    #         if column not in non_aggregate_columns
-    #     ]
-    #     expanded_aggregations = list(_expand_aggregations(
-    #         aggregate_columns,
-    #         aggregations
-    #     ))
-    # flattening
 
     # TODO: Make dependencies work and add to metadata constructor
     # dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]
@@ -153,6 +131,4 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata
-        #online=online,
-        #production=production
     )
