@@ -9,9 +9,9 @@ import org.apache.spark.sql.DataFrame
 import scala.collection.JavaConverters._
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
-  assert(Option(joinConf.metaData.nameSpace).nonEmpty,
-         s"output namespace could not be empty, namespace=${joinConf.metaData.nameSpace}")
-  private val outputTable = s"${joinConf.metaData.nameSpace}.${joinConf.metaData.cleanName}"
+  assert(Option(joinConf.metaData.outputNamespace).nonEmpty,
+         s"output namespace could not be empty or null")
+  private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray

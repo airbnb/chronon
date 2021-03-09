@@ -160,7 +160,7 @@ object Builders {
       result.setOnline(online)
       result.setProduction(production)
       result.setCustomJson(customJson)
-      result.setNameSpace(namespace)
+      result.setOutputNamespace(namespace)
       if (dependencies != null)
         result.setDependencies(dependencies.asJava)
       result

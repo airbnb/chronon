@@ -147,7 +147,7 @@ struct MetaData {
     5: optional list<string> dependencies
     6: optional map<string, string> tableProperties
     // todo: add sanity check in materialize script
-    7: optional string nameSpace
+    7: optional string outputNamespace
 }
 
 
