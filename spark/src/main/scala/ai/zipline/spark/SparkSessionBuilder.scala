@@ -5,7 +5,7 @@ import java.io.File
 import org.apache.spark.sql.SparkSession
 
 import scala.reflect.io.Directory
-import java.util.logging.{Level, Logger}
+import java.util.logging.Logger
 
 object SparkSessionBuilder {
 

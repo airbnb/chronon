@@ -9,8 +9,7 @@ import org.apache.spark.sql.DataFrame
 import scala.collection.JavaConverters._
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
-  assert(Option(joinConf.metaData.outputNamespace).nonEmpty,
-         s"output namespace could not be empty or null")
+  assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -181,7 +180,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  val tableProps = Option(joinConf.metaData.tableProperties)
+  private val tableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .orNull
 

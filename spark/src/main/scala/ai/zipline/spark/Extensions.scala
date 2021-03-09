@@ -1,6 +1,6 @@
 package ai.zipline.spark
 
-import java.util.TreeSet
+import java.util
 
 import ai.zipline.api._
 import org.apache.spark.sql.DataFrame
@@ -150,8 +150,8 @@ object Extensions {
 
   implicit class ArrayOps[T: ClassTag](arr: Array[T]) {
     def uniqSort(ordering: Ordering[T]): Array[T] = {
-      val tree = new TreeSet[T](ordering)
-      for (i <- 0 until arr.length) {
+      val tree = new util.TreeSet[T](ordering)
+      for (i <- arr.indices) {
         tree.add(arr(i))
       }
       val result = new Array[T](tree.size)

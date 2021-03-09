@@ -5,7 +5,6 @@ import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{count, desc}
 import org.junit.Assert._
 import org.junit.{AfterClass, BeforeClass, Test}
 
@@ -24,15 +23,15 @@ class JoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
-  val today = Constants.Partition.at(System.currentTimeMillis())
-  val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
-  val dayAndMonthBefore = Constants.Partition.before(monthAgo)
+  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
+  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
+  private val dayAndMonthBefore = Constants.Partition.before(monthAgo)
 
-  val namespace = "test_namespace_jointest"
+  private val namespace = "test_namespace_jointest"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
-  val tableUtils = TableUtils(spark)
+  private val tableUtils = TableUtils(spark)
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {

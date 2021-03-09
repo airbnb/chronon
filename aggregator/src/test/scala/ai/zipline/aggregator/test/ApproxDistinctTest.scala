@@ -1,6 +1,6 @@
 package ai.zipline.aggregator.test
 
-import ai.zipline.aggregator.base.{ApproxDistinctCount, IntType}
+import ai.zipline.aggregator.base.ApproxDistinctCount
 import junit.framework.TestCase
 import org.junit.Assert._
 

@@ -1,6 +1,5 @@
 package ai.zipline.spark
 import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Extensions._
 import ai.zipline.api.{Constants, Query, QueryUtils}
 
 import scala.collection.JavaConverters._

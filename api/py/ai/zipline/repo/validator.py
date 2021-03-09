@@ -68,7 +68,7 @@ class ZiplineRepoValidator(object):
            materialized version of the obj given the object's name.
         """
         return next(
-            (x for x in self.old_objs[obj_class.__name__] if x.name == obj_name),
+            (x for x in self.old_objs[obj_class.__name__] if x.metaData.name == obj_name),
             None
         )
 
@@ -78,7 +78,7 @@ class ZiplineRepoValidator(object):
             materialized joins including the group_by as dicts.
         """
         return [join for join in self.old_joins
-                if group_by.name in (rp.groupBy.name for rp in join.rightParts)]
+                if group_by.metaData.name in (rp.groupBy.metaData.name for rp in join.joinParts)]
 
     def can_skip_materialize(self, obj: object) -> List[str]:
         """
@@ -88,12 +88,12 @@ class ZiplineRepoValidator(object):
         reasons = []
         if isinstance(obj, GroupBy):
             # GroupBys explicitly marked as offline should not be materialized.
-            if obj.online is False:
+            if obj.metaData.online is False:
                 reasons.append("is explicitly marked as offline")
             # Otherwise group_bys included in online join or are marked explicitly
             # online itself are materialized.
-            elif not any(join.online for join in self._get_old_joins_with_group_by(obj)) \
-                    and not obj.online:
+            elif not any(join.metaData.online for join in self._get_old_joins_with_group_by(obj)) \
+                    and not obj.metaData.online:
                 reasons.append("is not marked online nor is included in any online join")
         return reasons
 
@@ -102,7 +102,7 @@ class ZiplineRepoValidator(object):
         When a feature set is already materialized as online, it is no more safe
         to materialize without user permission.
         """
-        return obj.online is not True
+        return obj.metaData.online is not True
 
     def validate_obj(self, obj: object) -> List[str]:
         """
@@ -122,7 +122,7 @@ class ZiplineRepoValidator(object):
         the old conf.
         """
         obj_class = type(obj).__name__
-        old_obj = self._get_old_obj(type(obj), obj.name)
+        old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         if old_obj and not self._safe_to_overwrite(old_obj):
             try:
                 differ = utils.JsonDiffer()
@@ -139,7 +139,7 @@ You can see the files here:
 old conf - {differ.old_name}
 new conf = {differ.new_name}
 
-Replace old {obj.name} with new configuration? If so, type y or yes.\n
+Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
 """
                     ans = get_input(prompt)
                     return ans.strip().lower() in ["y", "yes"]
@@ -183,27 +183,27 @@ Replace old {obj.name} with new configuration? If so, type y or yes.\n
         Returns:
           list of validation errors.
         """
-        included_group_bys = [rp.groupBy for rp in join.rightParts]
-        offline_included_group_bys = [gb.name for gb in included_group_bys
-                                      if gb.online is False]
+        included_group_bys = [rp.groupBy for rp in join.joinParts]
+        offline_included_group_bys = [gb.metaData.name for gb in included_group_bys
+                                      if not gb.metaData or gb.metaData.online is False]
         errors = []
         old_group_bys = [group_by for group_by in included_group_bys
-                         if self._get_old_obj(GroupBy, group_by.name)]
-        non_prod_old_group_bys = [group_by.name for group_by in old_group_bys
-                                  if group_by.production is False]
-        if join.production and non_prod_old_group_bys:
+                         if self._get_old_obj(GroupBy, group_by.metaData.name)]
+        non_prod_old_group_bys = [group_by.metaData.name for group_by in old_group_bys
+                                  if group_by.metaData.production is False]
+        if join.metaData.production and non_prod_old_group_bys:
             errors.append("join {} is production but includes "
                           "the following non production group_bys: {}".format(
-                              join.name, ', '.join(non_prod_old_group_bys)))
-        if join.online:
+                              join.metaData.name, ', '.join(non_prod_old_group_bys)))
+        if join.metaData.online:
             if offline_included_group_bys:
                 errors.append("join {} is online but includes "
                               "the following offline group_bys: {}".format(
-                                  join.name, ', '.join(offline_included_group_bys)))
+                                  join.metaData.name, ', '.join(offline_included_group_bys)))
             # If join is online we materialize the underlying group bys are materialized
             # So we need to check if they are valid.
             group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
-            errors += [f"join {join.name}'s underlying {error}"
+            errors += [f"join {join.metaData.name}'s underlying {error}"
                        for errors in group_by_errors for error in errors]
         return errors
 
@@ -216,28 +216,28 @@ Replace old {obj.name} with new configuration? If so, type y or yes.\n
           List of validation errors.
         """
         joins = self._get_old_joins_with_group_by(group_by)
-        online_joins = [join.name for join in joins if join.online is True]
-        prod_joins = [join.name for join in joins if join.production is True]
+        online_joins = [join.metaData.name for join in joins if join.metaData.online is True]
+        prod_joins = [join.metaData.name for join in joins if join.metaData.production is True]
         errors = []
         # group by that are marked explicitly offline should not be present in
         # materialized online joins.
-        if group_by.online is False and online_joins:
+        if group_by.metaData.online is False and online_joins:
             errors.append(
                 "group_by {} is explicitly marked offline but included in "
                 "the following online joins: {}".format(
-                    group_by.name, ", ".join(online_joins)))
+                    group_by.metaData.name, ", ".join(online_joins)))
         # group by that are marked explicitly non-production should not be
         # present in materialized production joins.
         self.logger.debug(prod_joins)
         self.logger.debug("new")
         self.logger.debug(self.old_joins)
         if prod_joins:
-            if group_by.production is False:
+            if group_by.metaData.production is False:
                 errors.append("group_by {} is explicitly marked as non-production "
                               "but included in the following production joins: {}".format(
-                                  group_by.name, ', '.join(prod_joins)))
+                                  group_by.metaData.name, ', '.join(prod_joins)))
             # if the group by is included in any of materialized production join,
             # set it to production in the materialized output.
             else:
-                group_by.production = True
+                group_by.metaData.production = True
         return errors
