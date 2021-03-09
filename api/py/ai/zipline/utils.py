@@ -2,11 +2,13 @@ from collections.abc import Iterable
 from typing import List, Union
 
 import ai.zipline.api.ttypes as api
+import gc
 import json
 import shutil
 import os
 import tempfile
 import subprocess
+import importlib
 
 
 def edit_distance(str1, str2):
@@ -119,3 +121,22 @@ def import_module_set_name(module, cls):
             # real world case: psx.reservation_status.v1
             obj.name = module.__name__.partition(".")[2] + "." + name
     return module
+
+
+def get_mod_name_from_gc(obj, mod_prefix):
+    """get an object's module information from garbage collector"""
+    mod_name = None
+    # get obj's module info from garbage collector
+    gc.collect()
+    for ref in gc.get_referrers(obj):
+        if '__name__' in ref and ref['__name__'].startswith(mod_prefix):
+            mod_name = ref['__name__']
+            break
+    return mod_name
+
+
+def get_staging_query_output_table_name(staging_query: api.StagingQuery):
+    """generate output table name for staging query job"""
+    staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries"))
+    import_module_set_name(staging_query_module, api.StagingQuery)
+    return staging_query.name.replace('.', '_')
