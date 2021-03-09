@@ -74,7 +74,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
                              windows = Seq(new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_transactions")
+      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace)
     )
     val queriesSchema = List(
       DataGen.Column("user", StringType, 100)
@@ -91,10 +91,10 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(query = Builders.Query(startPartition = start), table = queryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features")
+      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace)
     )
 
-    val runner1 = new Join(joinConf, end, namespace, tableUtils)
+    val runner1 = new Join(joinConf, end, tableUtils)
 
     val computed = runner1.computeJoin(Some(3))
     println(s"join start = $start")
@@ -165,7 +165,7 @@ class JoinTest {
       sources = Seq(weightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
-      metaData = Builders.MetaData(name = "unit_test.country_weights")
+      metaData = Builders.MetaData(name = "unit_test.country_weights", namespace = namespace)
     )
 
     val heightSchema = List(
@@ -184,7 +184,7 @@ class JoinTest {
       sources = Seq(heightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
-      metaData = Builders.MetaData(name = "unit_test.country_heights")
+      metaData = Builders.MetaData(name = "unit_test.country_heights", namespace = namespace)
     )
 
     // left side
@@ -197,10 +197,10 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
-      metaData = Builders.MetaData(name = "test.country_features")
+      metaData = Builders.MetaData(name = "test.country_features", namespace = namespace)
     )
 
-    val runner = new Join(joinConf, end, namespace, tableUtils)
+    val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
@@ -274,7 +274,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views")
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
     )
 
     // left side
@@ -289,10 +289,10 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.SNAPSHOT)),
-      metaData = Builders.MetaData(name = "test.item_snapshot_features")
+      metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace)
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin()
     computed.show()
 
@@ -349,7 +349,7 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views")
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
     )
 
     // left side
@@ -365,10 +365,10 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features")
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace)
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, namespace, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
 

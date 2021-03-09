@@ -8,9 +8,9 @@ import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
 
-class Join(joinConf: JoinConf, endPartition: String, namespace: String, tableUtils: TableUtils) {
-
-  private val outputTable = s"$namespace.${joinConf.metaData.cleanName}"
+class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
+  assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
+  private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -225,7 +225,6 @@ object Join {
   class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
     val confPath: ScallopOption[String] = opt[String](required = true)
     val endDate: ScallopOption[String] = opt[String](required = true)
-    val namespace: ScallopOption[String] = opt[String](required = true)
     val stepDays: ScallopOption[Int] = opt[Int](required = false)
     verify()
   }
@@ -242,7 +241,6 @@ object Join {
     val join = new Join(
       joinConf,
       parsedArgs.endDate(),
-      parsedArgs.namespace(),
       TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
     )
 
