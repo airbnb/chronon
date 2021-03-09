@@ -404,4 +404,113 @@ class JoinTest {
     }
     assertEquals(diff.count(), 0)
   }
+
+  @Test
+  def testNoAgg(): Unit = {
+    // Left side entities, right side entities no agg
+    // Also testing specific select statement (rather than select *)
+    val weightSchema = List(
+      DataGen.Column("user", StringType, 1000),
+      DataGen.Column("country", StringType, 100),
+      DataGen.Column("weight", DoubleType, 500)
+    )
+    val weightTable = s"$namespace.weights"
+    DataGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
+
+    val weightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("weight"),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore),
+      snapshotTable = weightTable
+    )
+
+    val weightGroupBy = Builders.GroupBy(
+      sources = Seq(weightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
+      metaData = Builders.MetaData(name = "unit_test.country_weights")
+    )
+
+    val heightSchema = List(
+      DataGen.Column("user", StringType, 1000),
+      DataGen.Column("country", StringType, 100),
+      DataGen.Column("height", LongType, 200)
+    )
+    val heightTable = s"$namespace.heights"
+    DataGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
+    val heightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
+      snapshotTable = heightTable
+    )
+
+    val heightGroupBy = Builders.GroupBy(
+      sources = Seq(heightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
+      metaData = Builders.MetaData(name = "unit_test.country_heights")
+    )
+
+    // left side
+    val countrySchema = List(DataGen.Column("country", StringType, 100))
+    val countryTable = s"$namespace.countries"
+    DataGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
+
+    val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
+      metaData = Builders.MetaData(name = "test.country_features")
+    )
+
+    val runner = new Join(joinConf, end, namespace, tableUtils)
+    val computed = runner.computeJoin(Some(7))
+    println(s"join start = $start")
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
+                                     |   grouped_weights AS (
+                                     |      SELECT country,
+                                     |             ds,
+                                     |             avg(weight) as weight_average
+                                     |      FROM $weightTable
+                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
+                                     |      GROUP BY country, ds),
+                                     |   grouped_heights AS (
+                                     |      SELECT country,
+                                     |             ds,
+                                     |             avg(height) as height_average
+                                     |      FROM $heightTable
+                                     |      WHERE ds >= '$monthAgo'
+                                     |      GROUP BY country, ds)
+                                     |   SELECT countries.country,
+                                     |        countries.ds,
+                                     |        grouped_weights.weight_average,
+                                     |        grouped_heights.height_average
+                                     | FROM countries left outer join grouped_weights
+                                     | ON countries.country = grouped_weights.country
+                                     | AND countries.ds = grouped_weights.ds
+                                     | left outer join grouped_heights
+                                     | ON countries.ds = grouped_heights.ds
+                                     | AND countries.country = grouped_heights.country
+    """.stripMargin)
+
+    println("showing join result")
+    computed.show()
+    println("showing query result")
+    expected.show()
+    println(
+      s"Left side count: ${spark.sql(s"SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'").count()}")
+    println(s"Actual count: ${computed.count()}")
+    println(s"Expected count: ${expected.count()}")
+    val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+
+  }
+
 }
