@@ -68,9 +68,6 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     val wheres =
       whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
     val selects = queryOpt.map {
-      query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull
-
-    val selects2 = queryOpt.map {
       query => {
         Option(
           includePartition match {
@@ -83,7 +80,7 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     }.orNull
 
 
-    QueryUtils.build(selects = selects2,
+    QueryUtils.build(selects = selects,
                      from = table,
                      wheres = wheres)
   }
