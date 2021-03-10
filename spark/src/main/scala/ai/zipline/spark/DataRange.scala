@@ -67,16 +67,14 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     val queryOpt = Option(query)
     val wheres =
       whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
-
     val fillIfAbsent = includePartition match {
       case true => Map(Constants.PartitionColumn -> Constants.PartitionColumn)
       case false => null
     }
-
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
                      from = table,
                      wheres = wheres,
-      fillIfAbsent = fillIfAbsent)
+                     fillIfAbsent = fillIfAbsent)
   }
 
   def steps(days: Int): Seq[PartitionRange] =
