@@ -72,7 +72,6 @@ case class PartitionRange(start: String, end: String) extends DataRange {
         Option(
           includePartition match {
             case true => query.selects.asScala + (Constants.PartitionColumn -> Constants.PartitionColumn)
-
             case false => query.selects.asScala
           }
         ).map(_.toMap).orNull
