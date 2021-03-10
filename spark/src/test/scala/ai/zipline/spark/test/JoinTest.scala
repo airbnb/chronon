@@ -409,90 +409,63 @@ class JoinTest {
   def testNoAgg(): Unit = {
     // Left side entities, right side entities no agg
     // Also testing specific select statement (rather than select *)
-    val weightSchema = List(
+    val namesSchema = List(
       DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 100),
-      DataGen.Column("weight", DoubleType, 500)
+      DataGen.Column("name", StringType, 500)
     )
-    val weightTable = s"$namespace.weights"
-    DataGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
+    val namesTable = s"$namespace.names"
+    DataGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
 
-    val weightSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("weight"),
+    val namesSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("name"),
         startPartition = yearAgo,
         endPartition = dayAndMonthBefore),
-      snapshotTable = weightTable
+      snapshotTable = namesTable
     )
 
-    val weightGroupBy = Builders.GroupBy(
-      sources = Seq(weightSource),
-      keyColumns = Seq("country"),
-      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
-      metaData = Builders.MetaData(name = "unit_test.country_weights")
+    val namesGroupBy = Builders.GroupBy(
+      sources = Seq(namesSource),
+      keyColumns = Seq("user"),
+      aggregations = null,
+      metaData = Builders.MetaData(name = "unit_test.user_names")
     )
 
-    val heightSchema = List(
-      DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 100),
-      DataGen.Column("height", LongType, 200)
-    )
-    val heightTable = s"$namespace.heights"
-    DataGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
-    val heightSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
-      snapshotTable = heightTable
-    )
-
-    val heightGroupBy = Builders.GroupBy(
-      sources = Seq(heightSource),
-      keyColumns = Seq("country"),
-      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
-      metaData = Builders.MetaData(name = "unit_test.country_heights")
-    )
+    DataGen.entities(spark, namesSchema, 1000, partitions = 400).groupBy("user", "ds")
+      .agg(Map("name" -> "max"))
+      .save(namesTable)
 
     // left side
-    val countrySchema = List(DataGen.Column("country", StringType, 100))
-    val countryTable = s"$namespace.countries"
-    DataGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
+    val userSchema = List(DataGen.Column("user", StringType, 100))
+    val usersTable = s"$namespace.users"
+    DataGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
+
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
-      metaData = Builders.MetaData(name = "test.country_features")
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start), snapshotTable = usersTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
+      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace)
     )
 
-    val runner = new Join(joinConf, end, namespace, tableUtils)
+    val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
                                      |WITH
-                                     |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
-                                     |   grouped_weights AS (
-                                     |      SELECT country,
-                                     |             ds,
-                                     |             avg(weight) as weight_average
-                                     |      FROM $weightTable
-                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
-                                     |      GROUP BY country, ds),
-                                     |   grouped_heights AS (
-                                     |      SELECT country,
-                                     |             ds,
-                                     |             avg(height) as height_average
-                                     |      FROM $heightTable
-                                     |      WHERE ds >= '$monthAgo'
-                                     |      GROUP BY country, ds)
-                                     |   SELECT countries.country,
-                                     |        countries.ds,
-                                     |        grouped_weights.weight_average,
-                                     |        grouped_heights.height_average
-                                     | FROM countries left outer join grouped_weights
-                                     | ON countries.country = grouped_weights.country
-                                     | AND countries.ds = grouped_weights.ds
-                                     | left outer join grouped_heights
-                                     | ON countries.ds = grouped_heights.ds
-                                     | AND countries.country = grouped_heights.country
+                                     |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
+                                     |   grouped_names AS (
+                                     |      SELECT user,
+                                     |             name,
+                                     |             ds
+                                     |      FROM $namesTable
+                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore')
+                                     |   SELECT users.user,
+                                     |        grouped_names.name,
+                                     |        users.ds
+                                     | FROM users left outer join grouped_names
+                                     | ON users.user = grouped_names.user
+                                     | AND users.ds = grouped_names.ds
     """.stripMargin)
 
     println("showing join result")
@@ -500,10 +473,10 @@ class JoinTest {
     println("showing query result")
     expected.show()
     println(
-      s"Left side count: ${spark.sql(s"SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'").count()}")
+      s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
     println(s"Actual count: ${computed.count()}")
     println(s"Expected count: ${expected.count()}")
-    val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")

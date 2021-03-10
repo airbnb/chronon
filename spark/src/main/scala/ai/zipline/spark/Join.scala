@@ -192,7 +192,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     println(s"left unfilled range: $leftUnfilledRange")
     val leftDfFull: DataFrame = {
-      val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table))
+      val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table, includePartition = true))
       val skewFilter = joinConf.skewFilter()
       skewFilter
         .map(sf => {

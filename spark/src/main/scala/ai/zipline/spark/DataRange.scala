@@ -63,11 +63,27 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     }
   }
 
-  def genScanQuery(query: Query, table: String): String = {
+  def genScanQuery(query: Query, table: String, includePartition: Boolean = false): String = {
     val queryOpt = Option(query)
     val wheres =
       whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
-    QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
+    val selects = queryOpt.map {
+      query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull
+
+    val selects2 = queryOpt.map {
+      query => {
+        Option(
+          includePartition match {
+            case true => query.selects.asScala + (Constants.PartitionColumn -> Constants.PartitionColumn)
+
+            case false => query.selects.asScala
+          }
+        ).map(_.toMap).orNull
+      }
+    }.orNull
+
+
+    QueryUtils.build(selects = selects2,
                      from = table,
                      wheres = wheres)
   }
