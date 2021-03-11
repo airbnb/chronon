@@ -7,6 +7,23 @@ Brain dump of commands used to do various things
 ***All commands assume you are in the root directory of this project***. 
 For me, that looks like `~/repos/zipline`.
 
+### Configuring IntelliJ
+
+Be sure to open the project from the `build.sbt` file (at the root level of the git directory).
+
+Mark the following directories as `Sources Root` by right clicking on the directory in the tree view, and selecting `Mark As` -> `Sources Root`:
+- aggregator/src/main/scala
+- api/src/main/scala
+- spark/src/main/scala
+
+
+Mark the following directories as `Test Root` in a similar way:
+- aggregator/src/test/scala
+- api/src/test/scala
+- spark/src/test/scala
+
+The project should then automatically start indexing, and when it finishes you should be good to go. 
+
 ### Generate python thrift definitions
  
 ```shell
