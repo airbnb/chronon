@@ -346,7 +346,8 @@ object GroupBy {
 //        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
 //        groupByConf.sources.asScala.zipWithIndex.foldLeft()
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
-        (GroupByConf)
+        groupByConf.sources.asScala
+          .map(src => src -> groupByConf.accuracy).toMap
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")
