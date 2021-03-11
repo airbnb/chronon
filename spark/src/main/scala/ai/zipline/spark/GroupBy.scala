@@ -1,6 +1,5 @@
 package ai.zipline.spark
 
-import java.util
 import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
@@ -10,10 +9,11 @@ import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDec
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.types.{DataType, LongType, StringType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.util
 import scala.collection.JavaConverters._
 
 class GroupBy(aggregations: Seq[Aggregation],
@@ -344,16 +344,13 @@ object GroupBy {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing group by for range: $range  $progress")
 //        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
+//        groupByConf.sources.asScala.zipWithIndex.foldLeft()
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
-        if (groupByConf.accuracy == null) {
-
-        }
+        (GroupByConf)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")
     tableUtils.sql(groupByUnfilledRange.genScanQuery(null, outputTable))
-
-
   }
 
   import org.rogach.scallop._
