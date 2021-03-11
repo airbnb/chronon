@@ -265,7 +265,7 @@ object GroupBy {
     println(s"\nGroup-by raw data schema:")
     println(bloomFilteredDf.schema.pretty)
 
-    new GroupBy(groupByConf.getAggregations.asScala, keyColumns, bloomFilteredDf)
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, bloomFilteredDf)
   }
 
   def renderDataSourceQuery(source: Source,
