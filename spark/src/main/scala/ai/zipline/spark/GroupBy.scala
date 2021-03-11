@@ -346,7 +346,7 @@ object GroupBy {
             case Events => groupByConf.accuracy match {
               case Accuracy.SNAPSHOT => groupByBackfill.snapshotEvents(groupByUnfilledRange)
               case Accuracy.TEMPORAL => groupByBackfill.temporalEvents(groupByUnfilledRange)
-              // todo: add the case if Accuracy is not set
+              // todo: add the case if Accuracy is not set. Should it be snapshot or tempral?
             }
           })
           .reduce(mergeDataFrame).save(outputTable, tableProps)
