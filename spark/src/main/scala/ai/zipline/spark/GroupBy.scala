@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -233,11 +233,7 @@ object GroupBy {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }
-      .reduce { (df1, df2) =>
-        // align the columns by name - when one source has select * the ordering might not be aligned
-        val columns1 = df1.schema.fields.map(_.name)
-        df1.union(df2.selectExpr(columns1: _*))
-      }
+      .reduce(mergeDataFrame)
 
     assert(
       !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
@@ -343,11 +339,17 @@ object GroupBy {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing group by for range: $range  $progress")
-//        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
-//        groupByConf.sources.asScala.zipWithIndex.foldLeft()
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
         groupByConf.sources.asScala
-          .map(src => src -> groupByConf.accuracy).toMap
+          .map(src => src.dataModel match {
+            case Entities => groupByBackfill.snapshotEntities
+            case Events => groupByConf.accuracy match {
+              case Accuracy.SNAPSHOT => groupByBackfill.snapshotEvents(groupByUnfilledRange)
+              case Accuracy.TEMPORAL => groupByBackfill.temporalEvents(groupByUnfilledRange)
+              // todo: add the case if Accuracy is not set
+            }
+          })
+          .reduce(mergeDataFrame).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")

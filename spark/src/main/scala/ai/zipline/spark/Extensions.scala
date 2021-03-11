@@ -1,7 +1,5 @@
 package ai.zipline.spark
 
-import java.util
-
 import ai.zipline.api._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -9,6 +7,7 @@ import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.util
 import scala.reflect.ClassTag
 
 object Extensions {
@@ -163,5 +162,10 @@ object Extensions {
       }
       result
     }
+  }
+
+  def mergeDataFrame(df1: DataFrame, df2: DataFrame): DataFrame = {
+    val columns1 = df1.schema.fields.map(_.name)
+    df1.union(df2.selectExpr(columns1: _*))
   }
 }
