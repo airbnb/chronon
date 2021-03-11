@@ -1,13 +1,12 @@
 package ai.zipline.spark
 
 import java.util
-
 import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -314,5 +313,70 @@ object GroupBy {
         |$query
         |""".stripMargin)
     query
+  }
+
+  def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): Unit = {
+     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
+     val tableProps = Option(groupByConf.metaData.tableProperties)
+      .map(_.asScala.toMap)
+      .orNull
+
+    val inputTables = groupByConf.sources.asScala.map(src => src.dataModel match {
+      case Entities => src.getEntities.snapshotTable
+      case Events => src.getEvents.table
+    })
+    val inputStart = inputTables.flatMap(tableUtils.firstAvailablePartition)
+      .reduceLeftOption(Ordering[String].min)
+
+    assert(inputStart.isDefined, s"group by sources don't have a valid first available partition")
+
+    val groupByUnfilledRange: PartitionRange = tableUtils.unfilledRange(
+      outputTable,
+      PartitionRange(inputStart.get, endPartition),
+      inputTables)
+
+    println(s"group by unfilled range: $groupByUnfilledRange")
+
+    val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
+    println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    stepRanges.zipWithIndex.foreach {
+      case (range, index) =>
+        val progress = s"| [${index + 1}/${stepRanges.size}]"
+        println(s"Computing group by for range: $range  $progress")
+//        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
+        val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
+        if (groupByConf.accuracy == null) {
+
+        }
+        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+    }
+    println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")
+    tableUtils.sql(groupByUnfilledRange.genScanQuery(null, outputTable))
+
+
+  }
+
+  import org.rogach.scallop._
+  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+    val confPath: ScallopOption[String] = opt[String](required = true)
+    val endDate: ScallopOption[String] = opt[String](required = true)
+    val stepDays: ScallopOption[Int] = opt[Int](required = false)
+    verify()
+  }
+
+  def main(args: Array[String]): Unit = {
+    // args = conf path, end date, output namespace
+    val parsedArgs = new ParsedArgs(args)
+    println(s"Parsed Args: $parsedArgs")
+    val groupByConf =
+      ThriftJsonDecoder.fromJsonFile[GroupByConf](parsedArgs.confPath(), check = true, clazz = classOf[GroupByConf])
+
+    computeGroupBy(
+      groupByConf,
+      parsedArgs.endDate(),
+      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}", local = false)),
+      parsedArgs.stepDays.toOption
+    )
+
   }
 }

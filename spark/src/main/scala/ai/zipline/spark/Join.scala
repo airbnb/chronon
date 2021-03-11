@@ -11,6 +11,9 @@ import scala.collection.JavaConverters._
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
+  private val tableProps = Option(joinConf.metaData.tableProperties)
+    .map(_.asScala.toMap)
+    .orNull
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -58,7 +61,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     leftDf.validateJoinKeys(joinableRight, keys)
     leftDf.join(joinableRight, keys, "left")
-
   }
 
   private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
@@ -179,10 +181,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.explain()
     joined.drop(Constants.TimePartitionColumn)
   }
-
-  private val tableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .orNull
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
