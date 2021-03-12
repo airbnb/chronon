@@ -311,7 +311,7 @@ object GroupBy {
     query
   }
 
-  def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): Unit = {
+  def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): DataFrame = {
      val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
      val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
@@ -339,17 +339,16 @@ object GroupBy {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing group by for range: $range  $progress")
+        // todo: support skew keys filter
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
         groupByConf.sources.asScala
           .map(src => src.dataModel match {
+              // group by backfills have to be snapshot only
             case Entities => groupByBackfill.snapshotEntities
-            case Events => groupByConf.accuracy match {
-              case Accuracy.SNAPSHOT => groupByBackfill.snapshotEvents(groupByUnfilledRange)
-              case Accuracy.TEMPORAL => groupByBackfill.temporalEvents(groupByUnfilledRange)
-              // todo: add the case if Accuracy is not set. Should it be snapshot or tempral?
-            }
+            case Events => groupByBackfill.snapshotEvents(groupByUnfilledRange)
           })
-          .reduce(mergeDataFrame).save(outputTable, tableProps)
+          .reduce(mergeDataFrame)
+          .save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")

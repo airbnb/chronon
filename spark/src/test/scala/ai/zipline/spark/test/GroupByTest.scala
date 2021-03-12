@@ -6,16 +6,37 @@ import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
 import ai.zipline.spark._
+import ai.zipline.spark.Extensions._
 import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType, LongType => SparkLongType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
+import org.junit.{AfterClass, BeforeClass,Test}
 
-class GroupByTest extends TestCase {
+// clean needs to be a static method
+object GroupByTest {
+  @BeforeClass
+  @AfterClass
+  def clean(): Unit = {
+    SparkSessionBuilder.cleanData()
+  }
+}
+
+class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
+  private val namespace = "test_namespace_groupby_test"
 
+  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
+  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
+  private val dayAndMonthBefore = Constants.Partition.before(monthAgo)
+
+  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  private val tableUtils = TableUtils(spark)
+
+  @Test
   def testSnapshotEntities(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10),
@@ -49,6 +70,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10), // ts = last 10 days
@@ -91,6 +113,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
       DataGen.Column("user", StringType, 10),
@@ -150,5 +173,51 @@ class GroupByTest extends TestCase {
       println("diff result rows")
     }
     assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testComputeGroupBy(): Unit = {
+    val viewsSchema = List(
+      DataGen.Column("user", StringType, 10000),
+      DataGen.Column("item", StringType, 100),
+      DataGen.Column("time_spent_ms", LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view"
+    DataGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
+
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      table = viewsTable
+    )
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+    )
+    val computed = GroupBy.computeGroupBy(viewsGroupBy,endPartition = dayAndMonthBefore,tableUtils)
+    computed.show(truncate = false)
+    println("size", computed.count())
+
+//    val expected = tableUtils.sql(s"""
+//                                     |WITH
+//                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+//                                     | SELECT queries.item,
+//                                     |        queries.ts,
+//                                     |        queries.ds,
+//                                     |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_min,
+//                                     |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_max,
+//                                     |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_time_spent_ms_count
+//                                     | FROM queries left outer join $viewsTable
+//                                     |  ON queries.item = $viewsTable.item
+//                                     | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+//                                     | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+//                                     |""".stripMargin)
   }
 }
