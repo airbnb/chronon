@@ -23,6 +23,8 @@ object GroupByTest {
   }
 }
 
+// !!!DO NOT extend Junit.TestCase!!!
+// Or the @BeforeClass and @AfterClass annotations fail to run
 class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
@@ -201,23 +203,30 @@ class GroupByTest {
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
     )
-    val computed = GroupBy.computeGroupBy(viewsGroupBy,endPartition = dayAndMonthBefore,tableUtils)
+    val computed = GroupBy.computeGroupBy(viewsGroupBy, endPartition = dayAndMonthBefore, tableUtils)
     computed.show(truncate = false)
     println("size", computed.count())
 
-//    val expected = tableUtils.sql(s"""
-//                                     |WITH
-//                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
-//                                     | SELECT queries.item,
-//                                     |        queries.ts,
-//                                     |        queries.ds,
-//                                     |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_min,
-//                                     |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_max,
-//                                     |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_time_spent_ms_count
-//                                     | FROM queries left outer join $viewsTable
-//                                     |  ON queries.item = $viewsTable.item
-//                                     | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
-//                                     | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
-//                                     |""".stripMargin)
+    val expected = tableUtils.sql(
+      s"""
+         | SELECT ds,
+         |        item,
+         |        MIN($viewsTable.ts) as ts_min,
+         |        MAX($viewsTable.ts) as ts_max,
+         |        COUNT(time_spent_ms) as time_spent_ms_count
+         | FROM  $viewsTable
+         | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+         | GROUP BY item, ds
+         |""".stripMargin)
+    val diff = Comparison.sideBySide(computed, expected, List("item", Constants.PartitionColumn))
+
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff
+        .replaceWithReadableTime(Seq("a_ts_max", "b_ts_max","a_ts_min", "b_ts_min"), dropOriginal = false)
+        .show()
+    }
+    assertEquals(0, diff.count())
   }
 }
