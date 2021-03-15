@@ -187,9 +187,8 @@ class GroupByTest {
 
     val viewsTable = s"$namespace.view"
     DataGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
-
     val viewsSource = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition = yearAgo, wheres = Seq("item is null")),
       table = viewsTable
     )
 
@@ -203,19 +202,19 @@ class GroupByTest {
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
     )
-    val computed = GroupBy.computeGroupBy(viewsGroupBy, endPartition = dayAndMonthBefore, tableUtils)
+    val endPartition = dayAndMonthBefore
+    val computed = GroupBy.computeGroupBy(viewsGroupBy, endPartition = endPartition, tableUtils)
     computed.show(truncate = false)
-    println("size", computed.count())
 
     val expected = tableUtils.sql(
       s"""
          | SELECT ds,
          |        item,
-         |        MIN($viewsTable.ts) as ts_min,
-         |        MAX($viewsTable.ts) as ts_max,
+         |        MIN(ts) as ts_min,
+         |        MAX(ts) as ts_max,
          |        COUNT(time_spent_ms) as time_spent_ms_count
          | FROM  $viewsTable
-         | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+         | WHERE ds >= '$yearAgo' AND ds <= '$endPartition' AND item is null
          | GROUP BY item, ds
          |""".stripMargin)
     val diff = Comparison.sideBySide(computed, expected, List("item", Constants.PartitionColumn))
@@ -227,6 +226,8 @@ class GroupByTest {
         .replaceWithReadableTime(Seq("a_ts_max", "b_ts_max","a_ts_min", "b_ts_min"), dropOriginal = false)
         .show()
     }
+    // todo: the mismatch seems to be from the endTimes.min
+    tableUtils.sql(s"select MIN(ts) from $viewsTable where item is null").show(false)
     assertEquals(0, diff.count())
   }
 }
