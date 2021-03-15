@@ -8,10 +8,11 @@ import os
 import click
 import ai.zipline.repo.extract_objects as eo
 from ai.zipline.repo import JOIN_FOLDER_NAME, \
-    GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME
+    GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
 from ai.zipline.repo.validator import ZiplineRepoValidator
 from ai.zipline.repo.serializer import thrift_simple_json_protected
 from ai.zipline.api.ttypes import GroupBy, Join, StagingQuery
+from ai.zipline.repo import teams
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -21,6 +22,7 @@ FOLDER_NAME_TO_CLASS = {
     STAGING_QUERY_FOLDER_NAME: StagingQuery,
 }
 
+DEFAULT_TEAM_NAME = "default"
 
 def get_folder_name_from_class_name(class_name):
     return {v.__name__: k for k, v in FOLDER_NAME_TO_CLASS.items()}[class_name]
@@ -61,7 +63,8 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         zipline_root = os.getcwd()
     _print_highlighted("Using zipline root path", zipline_root)
     zipline_root_path = os.path.expanduser(zipline_root)
-    obj_folder_name = input_path.split('/', 1)[0]
+    path_split = input_path.split('/')
+    obj_folder_name, team_name = path_split[0], path_split[1]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
     full_input_path = os.path.join(zipline_root_path, input_path)
     _print_highlighted(f"Input {obj_folder_name} from", full_input_path)
@@ -77,7 +80,10 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     extra_online_group_bys = {}
     num_written_objs = 0
     full_output_root = os.path.join(zipline_root_path, output_root)
+    teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
     for name, obj in results.items():
+        _set_team_level_metadata(obj, teams_path, team_name)
+        obj.metaData.name = name.split('.', 1)[1]
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
@@ -93,6 +99,13 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
     print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
+
+
+def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
+    namespace = teams.get_team_conf(teams_path, team_name, "namespace")
+    table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
+    obj.metaData.outputNamespace = namespace
+    obj.metaData.tableProperties = table_properties
 
 
 def _write_obj(full_output_root: str,
