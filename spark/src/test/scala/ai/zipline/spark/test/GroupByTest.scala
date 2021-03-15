@@ -5,14 +5,13 @@ import ai.zipline.aggregator.test.NaiveAggregator
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
-import ai.zipline.spark._
 import ai.zipline.spark.Extensions._
-import junit.framework.TestCase
+import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
-import org.junit.{AfterClass, BeforeClass,Test}
+import org.junit.{AfterClass, BeforeClass, Test}
 
 // clean needs to be a static method
 object GroupByTest {
@@ -186,7 +185,9 @@ class GroupByTest {
     )
 
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
+    val viewsDf = DataGen.events(spark, viewsSchema, count = 1000, partitions = 200)
+    viewsDf.show()
+    viewsDf.save(viewsTable)
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition = yearAgo, wheres = Seq("item is null")),
       table = viewsTable
@@ -215,7 +216,7 @@ class GroupByTest {
          |        COUNT(time_spent_ms) as time_spent_ms_count
          | FROM  $viewsTable
          | WHERE ds >= '$yearAgo' AND ds <= '$endPartition' AND item is null
-         | GROUP BY item, ds
+         | GROUP BY item
          |""".stripMargin)
     val diff = Comparison.sideBySide(computed, expected, List("item", Constants.PartitionColumn))
 

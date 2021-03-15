@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -317,18 +317,10 @@ object GroupBy {
       .map(_.asScala.toMap)
       .orNull
 
-    val inputTables = groupByConf.sources.asScala.map(src => src.dataModel match {
-      case Entities => src.getEntities.snapshotTable
-      case Events => src.getEvents.table
-    })
-    val inputStart = inputTables.flatMap(tableUtils.firstAvailablePartition)
-      .reduceLeftOption(Ordering[String].min)
-
-    assert(inputStart.isDefined, s"group by sources don't have a valid first available partition")
-
+    val inputTables = groupByConf.sources.asScala.map(_.table)
     val groupByUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
-      PartitionRange(inputStart.get, endPartition),
+      PartitionRange(groupByConf.sources.asScala.map(_.query.startPartition).min, endPartition),
       inputTables)
 
     println(s"group by unfilled range: $groupByUnfilledRange")
@@ -341,14 +333,11 @@ object GroupBy {
         println(s"Computing group by for range: $range  $progress")
         // todo: support skew keys filter
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
-        groupByConf.sources.asScala
-          .map(src => src.dataModel match {
+        (groupByConf.dataModel match {
               // group by backfills have to be snapshot only
             case Entities => groupByBackfill.snapshotEntities
             case Events => groupByBackfill.snapshotEvents(groupByUnfilledRange)
-          })
-          .reduce(mergeDataFrame)
-          .save(outputTable, tableProps)
+          }).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")
@@ -359,6 +348,7 @@ object GroupBy {
   class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
     val confPath: ScallopOption[String] = opt[String](required = true)
     val endDate: ScallopOption[String] = opt[String](required = true)
+    // todo: is stepDays needed here
     val stepDays: ScallopOption[Int] = opt[Int](required = false)
     verify()
   }
@@ -376,6 +366,5 @@ object GroupBy {
       TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}", local = false)),
       parsedArgs.stepDays.toOption
     )
-
   }
 }
