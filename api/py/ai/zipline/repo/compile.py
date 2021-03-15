@@ -22,6 +22,7 @@ FOLDER_NAME_TO_CLASS = {
     STAGING_QUERY_FOLDER_NAME: StagingQuery,
 }
 
+DEFAULT_TEAM_NAME = "default"
 
 def get_folder_name_from_class_name(class_name):
     return {v.__name__: k for k, v in FOLDER_NAME_TO_CLASS.items()}[class_name]
@@ -82,6 +83,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
     for name, obj in results.items():
         _set_team_level_metadata(obj, teams_path, team_name)
+        obj.metaData.name = name.split('.', 1)[1]
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
@@ -101,7 +103,9 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
+    table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
     obj.metaData.outputNamespace = namespace
+    obj.metaData.tableProperties = table_properties
 
 
 def _write_obj(full_output_root: str,
