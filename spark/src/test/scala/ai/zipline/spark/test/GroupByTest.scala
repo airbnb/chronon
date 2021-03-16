@@ -16,9 +16,6 @@ import org.junit.Test
 class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
-  private val namespace = "test_namespace_groupby_test"
-
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   @Test
   def testSnapshotEntities(): Unit = {
