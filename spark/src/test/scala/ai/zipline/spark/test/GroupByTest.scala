@@ -10,19 +10,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
-import org.junit.{AfterClass, BeforeClass, Test}
+import org.junit.Test
 
-// clean needs to be a static method
-object GroupByTest {
-  @BeforeClass
-  @AfterClass
-  def clean(): Unit = {
-    SparkSessionBuilder.cleanData()
-  }
-}
 
-// !!!DO NOT extend Junit.TestCase!!!
-// Or the @BeforeClass and @AfterClass annotations fail to run
 class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)

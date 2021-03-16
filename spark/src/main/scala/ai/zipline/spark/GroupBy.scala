@@ -235,6 +235,7 @@ object GroupBy {
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
+        // align the columns by name - when one source has select * the ordering might not be aligned
         val columns1 = df1.schema.fields.map(_.name)
         df1.union(df2.selectExpr(columns1: _*))
       }
@@ -321,11 +322,13 @@ object GroupBy {
       .map(_.asScala.toMap)
       .orNull
 
-    val inputTables = groupByConf.sources.asScala.map(_.table)
-    val inputQueries = groupByConf.sources.asScala.map(_.query)
+    val sources = groupByConf.sources.asScala
+    val inputTables = sources.map(_.table)
+    val minStartPartition = sources.map(src=>Option(src.query.startPartition)).min.orNull
+
     val groupByUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
-      PartitionRange(inputQueries.map(q => Option(q.startPartition)).min.orNull, endPartition),
+      PartitionRange(minStartPartition, endPartition),
       inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
 
