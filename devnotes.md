@@ -7,6 +7,16 @@ Brain dump of commands used to do various things
 ***All commands assume you are in the root directory of this project***. 
 For me, that looks like `~/repos/zipline`.
 
+### Prerequisites
+
+Add the following to your shell run command files e.g. `~/.bashrc`. 
+
+```
+export ZIPLINE_OS=<path/to/zipline/repo>
+export ZIPLINE_API=$ZIPLINE_OS/api/py
+alias materialize="PYTHONPATH=$ZIPLINE_API:$PYTHONPATH $ZIPLINE_API/ai/zipline/repo/compile.py"
+```
+
 ### Configuring IntelliJ
 
 Be sure to open the project from the `build.sbt` file (at the root level of the git directory).
@@ -27,7 +37,14 @@ The project should then automatically start indexing, and when it finishes you s
 ### Generate python thrift definitions
  
 ```shell
+cd $ZIPLINE_OS
 thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+```
+
+### Materializing confs
+
+```
+materizlize  --input_path=<path/to/conf>
 ```
 
 ### Testing
