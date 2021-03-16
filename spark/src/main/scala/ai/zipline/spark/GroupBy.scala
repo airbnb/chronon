@@ -234,7 +234,10 @@ object GroupBy {
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }
-      .reduce(mergeDataFrame)
+      .reduce { (df1, df2) =>
+        val columns1 = df1.schema.fields.map(_.name)
+        df1.union(df2.selectExpr(columns1: _*))
+      }
 
     assert(
       !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names

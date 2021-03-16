@@ -163,9 +163,4 @@ object Extensions {
       result
     }
   }
-
-  def mergeDataFrame(df1: DataFrame, df2: DataFrame): DataFrame = {
-    val columns1 = df1.schema.fields.map(_.name)
-    df1.union(df2.selectExpr(columns1: _*))
-  }
 }
