@@ -28,13 +28,7 @@ class GroupByTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
   private val namespace = "test_namespace_groupby_test"
 
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
-  private val dayAndMonthBefore = Constants.Partition.before(monthAgo)
-
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-  private val tableUtils = TableUtils(spark)
 
   @Test
   def testSnapshotEntities(): Unit = {
