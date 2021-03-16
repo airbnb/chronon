@@ -322,9 +322,10 @@ object GroupBy {
       .orNull
 
     val inputTables = groupByConf.sources.asScala.map(_.table)
+    val inputQueries = groupByConf.sources.asScala.map(_.query)
     val groupByUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
-      PartitionRange(groupByConf.sources.asScala.flatMap(Option(_.query.startPartition)).minOption.orNull, endPartition),
+      PartitionRange(inputQueries.map(q => Option(q.startPartition)).min.orNull, endPartition),
       inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
 
