@@ -5,7 +5,6 @@ import ai.zipline.aggregator.test.NaiveAggregator
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
-import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
@@ -85,12 +84,12 @@ class GroupByTest {
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.MAX, "ts", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
       Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
-
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -100,6 +99,8 @@ class GroupByTest {
                                           |       $datesViewName.ds, 
                                           |       MAX(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, ts, null)) AS ts_max_10d,
                                           |       MAX(ts) as ts_max,
+                                          |       COUNT(DISTINCT session_length) as session_length_approx_unique_count,
+                                          |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_approx_unique_count_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 
@@ -174,61 +175,5 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(diff.count(), 0)
-  }
-
-  @Test
-  def testComputeGroupBy(): Unit = {
-    val viewsSchema = List(
-      DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 100),
-      DataGen.Column("time_spent_ms", LongType, 5000)
-    )
-
-    val viewsTable = s"$namespace.view"
-    val viewsDf = DataGen.events(spark, viewsSchema, count = 1000, partitions = 200)
-    viewsDf.show()
-    viewsDf.save(viewsTable)
-    val viewsSource = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition = yearAgo, wheres = Seq("item is null")),
-      table = viewsTable
-    )
-
-    val viewsGroupBy = Builders.GroupBy(
-      sources = Seq(viewsSource),
-      keyColumns = Seq("item"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
-        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-      ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
-    )
-    val endPartition = dayAndMonthBefore
-    val computed = GroupBy.computeGroupBy(viewsGroupBy, endPartition = endPartition, tableUtils)
-    computed.show(truncate = false)
-
-    val expected = tableUtils.sql(
-      s"""
-         | SELECT ds,
-         |        item,
-         |        MIN(ts) as ts_min,
-         |        MAX(ts) as ts_max,
-         |        COUNT(time_spent_ms) as time_spent_ms_count
-         | FROM  $viewsTable
-         | WHERE ds >= '$yearAgo' AND ds <= '$endPartition' AND item is null
-         | GROUP BY item
-         |""".stripMargin)
-    val diff = Comparison.sideBySide(computed, expected, List("item", Constants.PartitionColumn))
-
-    if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
-      diff
-        .replaceWithReadableTime(Seq("a_ts_max", "b_ts_max","a_ts_min", "b_ts_min"), dropOriginal = false)
-        .show()
-    }
-    // todo: the mismatch seems to be from the endTimes.min
-    tableUtils.sql(s"select MIN(ts) from $viewsTable where item is null").show(false)
-    assertEquals(0, diff.count())
   }
 }

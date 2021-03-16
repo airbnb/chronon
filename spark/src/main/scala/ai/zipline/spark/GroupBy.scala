@@ -12,6 +12,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
+import org.rogach.scallop._
 
 import java.util
 import scala.collection.JavaConverters._
@@ -312,8 +313,8 @@ object GroupBy {
   }
 
   def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): DataFrame = {
-     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
-     val tableProps = Option(groupByConf.metaData.tableProperties)
+    val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
+    val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
 
@@ -322,11 +323,14 @@ object GroupBy {
       outputTable,
       PartitionRange(groupByConf.sources.asScala.map(_.query.startPartition).min, endPartition),
       inputTables)
-
     println(s"group by unfilled range: $groupByUnfilledRange")
 
     val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-    println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    println(s"Group By ranges to compute: ${
+      stepRanges.map {
+        _.toString
+      }.pretty
+    }")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
@@ -334,17 +338,16 @@ object GroupBy {
         // todo: support skew keys filter
         val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, Map.empty)
         (groupByConf.dataModel match {
-              // group by backfills have to be snapshot only
-            case Entities => groupByBackfill.snapshotEntities
-            case Events => groupByBackfill.snapshotEvents(groupByUnfilledRange)
-          }).save(outputTable, tableProps)
+          // group by backfills have to be snapshot only
+          case Entities => groupByBackfill.snapshotEntities
+          case Events => groupByBackfill.snapshotEvents(groupByUnfilledRange)
+        }).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $groupByUnfilledRange")
     tableUtils.sql(groupByUnfilledRange.genScanQuery(null, outputTable))
   }
 
-  import org.rogach.scallop._
   class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
     val confPath: ScallopOption[String] = opt[String](required = true)
     val endDate: ScallopOption[String] = opt[String](required = true)
