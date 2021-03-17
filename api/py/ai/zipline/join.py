@@ -5,6 +5,7 @@ import json
 import logging
 import ai.zipline.api.ttypes as api
 import ai.zipline.utils as utils
+import ai.zipline.repo.extract_objects as eo
 from typing import List, Dict, Union, Optional, Iterable
 
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +27,7 @@ def JoinPart(group_by: api.GroupBy,
             break
     logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
     group_by_module = importlib.import_module(group_by_module_name)
-    __builtins__['__import__'] = utils.import_module_set_name(group_by_module, api.GroupBy)
+    __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
     if keyMapping:
         utils.check_contains(keyMapping.values(),
                              group_by.keyColumns,

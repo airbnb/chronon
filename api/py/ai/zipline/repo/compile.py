@@ -83,7 +83,6 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
     for name, obj in results.items():
         _set_team_level_metadata(obj, teams_path, team_name)
-        obj.metaData.name = name.split('.', 1)[1]
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
@@ -151,7 +150,7 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
-    assert hasattr(obj, "name"), f"Can't serialize objects without the name attribute for object {name}"
+    assert (hasattr(obj, "name") or hasattr(obj, "metaData")), f"Can't serialize objects without the name attribute for object {name}"
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         f.write(thrift_simple_json_protected(obj, obj_class))
