@@ -163,3 +163,31 @@ struct Join {
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
 }
+
+// Online serving of zipline data is architected as a lambda, with the bulk upload process
+// determining
+// This is written by the bulk upload process into the metaDataset
+// streaming uses this to
+//     1. gather inputSchema from the kafka stream
+//     2. to check if the groupByJson is the same as the one it received - and emits a
+struct GroupByServingInfo {
+    1: optional GroupBy groupBy
+    // a. When groupBy is
+    //  1. temporal accurate - batch uploads deltaAvroSchema, streaming uploads inputAvroSchema
+    //                         the fetcher further aggregates deltas and inputs into outputs
+    //  2. snapshot accurate - batch uploads outputAvroSchema, fetcher doesn't do any further aggregation
+    // b. Given inputAvroSchema and groupByConf - deltaAvroSchema and outputAvroSchema are derivable
+    //     val agg = new RowAggregator(inputSchema, groupBy.aggregations.flatMap(_.unpack))
+    //     irAvroSchema = agg.irSchema.toAvro
+    //     outputSchema = agg.outputSchema.toAvro
+    2: optional string inputAvroSchema
+    3: optional string keyAvroSchema
+    4: optional string irAvroSchema
+    5: optional string outputAvroSchema
+    // "date", in 'yyyy-MM-dd' format, the bulk-upload data corresponds to
+    // we need to scan streaming events only starting this timestamp
+    // used to compute
+    //       1. batch_data_lag = current_time - batch_data_time
+    //       2. batch_upload_lag = batch_upload_time - batch_data_time
+    6: optional string batchDateStamp
+}

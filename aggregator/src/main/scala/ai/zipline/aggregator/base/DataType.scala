@@ -28,7 +28,15 @@ case class MapType(keyType: DataType, valueType: DataType) extends DataType
 case class StructField(name: String, fieldType: DataType)
 
 // maps to Array[Any]
-case class StructType(name: String, columns: List[StructField]) extends DataType
+case class StructType(name: String, fields: Seq[StructField]) extends DataType {
+  def unpack: Seq[(String, DataType)] = fields.map { field => field.name -> field.fieldType }
+}
+
+object StructType {
+  def from(name: String, fields: Seq[(String, DataType)]): StructType = {
+    StructType(name, fields.map { case (name, dtype) => StructField(name, dtype) })
+  }
+}
 
 // mechanism to accept unknown types into the ai.zipline.aggregator.row
 // while retaining the original type object for reconstructing the source type information

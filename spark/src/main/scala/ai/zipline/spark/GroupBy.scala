@@ -57,11 +57,7 @@ class GroupBy(aggregations: Seq[Aggregation],
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(
         seqOp = irUpdateFunc,
-        combOp = {
-          case (ir1, ir2) =>
-            windowAggregator.merge(ir1, ir2)
-            ir1
-        }
+        combOp = windowAggregator.merge
       )
       .map { case (keyWithHash, ir) => keyWithHash.data -> ir }
     toDataFrame(outputRdd, Seq((Constants.PartitionColumn, StringType)))
@@ -181,9 +177,7 @@ class GroupBy(aggregations: Seq[Aggregation],
           case (ir: HopsAggregator.IrMapType, input: Row) =>
             hopsAggregator.update(ir, Conversions.toZiplineRow(input, tsIndex))
         },
-        combOp = {
-          case (ir1: HopsAggregator.IrMapType, ir2: HopsAggregator.IrMapType) => hopsAggregator.merge(ir1, ir2)
-        }
+        combOp = hopsAggregator.merge
       )
       .mapValues {
         hopsAggregator.toTimeSortedArray

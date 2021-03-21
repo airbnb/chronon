@@ -8,16 +8,21 @@ import org.apache.thrift.protocol.TSimpleJSONProtocol
 import scala.reflect.runtime.universe._
 import scala.io.Source._
 
-object ThriftJsonDecoder {
+object ThriftJsonCodec {
   val mapper = new ObjectMapper()
   val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
   mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+  val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
+
+  def toJsonStr[T <: TBase[_, _]: Manifest](obj: T): String = {
+    new String(serializer.serialize(obj))
+  }
 
   def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[T]): T = {
     val obj: T = mapper.readValue(jsonStr, clazz)
     if (check) {
       val whiteSpaceNormalizedInput = jsonStr.replaceAll("\\s", "")
-      val reSerializedInput = new String(serializer.serialize(obj)).replaceAll("\\s", "")
+      val reSerializedInput = toJsonStr(obj).replaceAll("\\s", "")
       assert(
         whiteSpaceNormalizedInput == reSerializedInput,
         message = s"""

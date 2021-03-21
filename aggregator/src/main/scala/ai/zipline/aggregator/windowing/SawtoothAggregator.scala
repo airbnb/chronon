@@ -27,23 +27,23 @@ import ai.zipline.api.Extensions._
 class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution)
     extends Serializable {
 
-  private val hopSizes = resolution.hopSizes
+  protected val hopSizes = resolution.hopSizes
 
   // HopIrs have no notion of windows, and are computed once per `Aggregation`
   // This class maps a single hopIr column into as many window IR columns as specified
-  case class WindowMapping(baseIrIndex: Int, spec: AggregationPart) extends Serializable
+  case class WindowMapping(baseIrIndex: Int, aggregationPart: AggregationPart) extends Serializable
 
-  private val windowMappings: Array[WindowMapping] = aggregations.zipWithIndex.flatMap {
+  protected val windowMappings: Array[WindowMapping] = aggregations.zipWithIndex.flatMap {
     case (aggregation, hopIrIndex) =>
       aggregation.unpack.map(WindowMapping(hopIrIndex, _))
   }.toArray
-  private val tailHopIndices: Array[Int] = windowMappings.map { mapping =>
-    hopSizes.indexOf(resolution.calculateTailHop(mapping.spec.window))
+  protected val tailHopIndices: Array[Int] = windowMappings.map { mapping =>
+    hopSizes.indexOf(resolution.calculateTailHop(mapping.aggregationPart.window))
   }
 
   @transient lazy val windowedAggregator = new RowAggregator(inputSchema, aggregations.flatMap(_.unpack))
-  @transient private lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
-  @transient private lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
+  @transient protected lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
+  @transient protected lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
 
   // the cache uses this space to work out the IRs for the whole window based on hops
   // we only create this arena once, so GC kicks in fewer times
@@ -67,7 +67,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
 
   // stitches multiple hops into a continuous window
   private def genIr(cache: HopRangeCache, col: Int, endTime: Long): Any = {
-    val window = windowMappings(col).spec.window
+    val window = windowMappings(col).aggregationPart.window
     var hopIndex = tailHopIndices(col)
     val hopMillis = hopSizes(hopIndex)
     var baseIr: Any = null

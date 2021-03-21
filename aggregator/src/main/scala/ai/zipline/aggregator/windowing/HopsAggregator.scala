@@ -15,15 +15,72 @@ import scala.collection.JavaConverters._
 // we use minQueryTs to construct only the relevant hops for a given hop size.
 // 180day window , 5hr window (headStart(minTs) - 5hrs, maxTs)
 // daily aggregates (headStart(minTs) - 180days, maxTs),
-class HopsAggregator(minQueryTs: Long,
-                     aggregations: Seq[Aggregation],
-                     inputSchema: Seq[(String, DataType)],
-                     resolution: Resolution)
+// t
+class HopsAggregatorBase(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution)
     extends Serializable {
 
   @transient lazy val rowAggregator =
     new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
   val hopSizes: Array[Long] = resolution.hopSizes
+
+  def init(): IrMapType =
+    Array.fill(hopSizes.length)(new java.util.HashMap[Long, HopIr])
+
+  @transient
+  lazy val javaBuildHop: java.util.function.Function[Long, HopIr] = new java.util.function.Function[Long, HopIr] {
+    override def apply(ts: Long): HopIr = {
+      val v = new Array[Any](rowAggregator.length + 1)
+      v.update(rowAggregator.length, ts)
+      v
+    }
+  }
+
+  // Zero-copy merging
+  // NOTE: inputs will be mutated in the process, use "clone" if you want re-use references
+  def merge(leftHops: IrMapType, rightHops: IrMapType): IrMapType = {
+    if (leftHops == null) return rightHops
+    if (rightHops == null) return leftHops
+    for (i <- hopSizes.indices) { // left and right will be same size
+      val leftMap = leftHops(i)
+      val rightIter = rightHops(i).entrySet().iterator()
+      while (rightIter.hasNext) {
+        val entry = rightIter.next()
+        val hopStart = entry.getKey
+        val rightIr = entry.getValue
+        if (rightIr != null)
+          leftMap.put(hopStart, rowAggregator.merge(leftMap.get(hopStart), rightIr))
+      }
+    }
+    leftHops
+  }
+
+  // hops have timestamps attached to the end.
+  // order by hopStart
+  @transient lazy val arrayOrdering: Ordering[HopIr] = new Ordering[HopIr] {
+    override def compare(x: HopIr, y: HopIr): Int =
+      Ordering[Long]
+        .compare(x.last.asInstanceOf[Long], y.last.asInstanceOf[Long])
+  }
+
+  def toTimeSortedArray(hopMaps: IrMapType): OutputArrayType =
+    hopMaps.map { m =>
+      val resultIt = m.values.iterator()
+      val result = new Array[HopIr](m.size())
+      for (i <- 0 until m.size()) {
+        result.update(i, resultIt.next())
+      }
+      util.Arrays.sort(result, arrayOrdering)
+      result
+    }
+}
+
+// HopsAggregatorBase + update method
+class HopsAggregator(minQueryTs: Long,
+                     aggregations: Seq[Aggregation],
+                     inputSchema: Seq[(String, DataType)],
+                     resolution: Resolution)
+    extends HopsAggregatorBase(aggregations, inputSchema, resolution) {
+
   val leftBoundaries: Array[Option[Long]] = {
     val allWindows = aggregations
       .flatMap { agg => Option(agg.windows).map(_.asScala).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
@@ -68,18 +125,6 @@ class HopsAggregator(minQueryTs: Long,
     result
   }
 
-  def init(): IrMapType =
-    Array.fill(hopSizes.length)(new java.util.HashMap[Long, HopIr])
-
-  @transient
-  private lazy val javaBuildHop = new java.util.function.Function[Long, HopIr] {
-    override def apply(ts: Long): HopIr = {
-      val v = new Array[Any](rowAggregator.length + 1)
-      v.update(rowAggregator.length, ts)
-      v
-    }
-  }
-
   // used to collect hops of various sizes in a single pass of input rows
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
@@ -91,48 +136,6 @@ class HopsAggregator(minQueryTs: Long,
     }
     hopMaps
   }
-
-  // Zero-copy merging
-  // NOTE: inputs will be mutated in the process, use "clone" if you want re-use references
-  def merge(leftHops: IrMapType, rightHops: IrMapType): IrMapType = {
-    if (leftHops == null) return rightHops
-    if (rightHops == null) return leftHops
-    for (i <- hopSizes.indices) { // left and right will be same size
-      val leftMap = leftHops(i)
-      val rightIter = rightHops(i).entrySet().iterator()
-      while (rightIter.hasNext) {
-        val entry = rightIter.next()
-        val hopStart = entry.getKey
-        val rightIr = entry.getValue
-        val leftIr = leftMap.get(hopStart)
-        if (leftIr != null) { // unfortunate that the option has to be created
-          rowAggregator.merge(leftIr, rightIr)
-        } else {
-          leftMap.put(hopStart, rightIr)
-        }
-      }
-    }
-    leftHops
-  }
-
-  // hops have timestamps attached to the end.
-  // order by hopStart
-  @transient lazy val arrayOrdering: Ordering[HopIr] = new Ordering[HopIr] {
-    override def compare(x: HopIr, y: HopIr): Int =
-      Ordering[Long]
-        .compare(x.last.asInstanceOf[Long], y.last.asInstanceOf[Long])
-  }
-
-  def toTimeSortedArray(hopMaps: IrMapType): OutputArrayType =
-    hopMaps.map { m =>
-      val resultIt = m.values.iterator()
-      val result = new Array[HopIr](m.size())
-      for (i <- 0 until m.size()) {
-        result.update(i, resultIt.next())
-      }
-      util.Arrays.sort(result, arrayOrdering)
-      result
-    }
 }
 
 object HopsAggregator {
@@ -141,4 +144,5 @@ object HopsAggregator {
   type HopIr = Array[Any]
   type OutputArrayType = Array[Array[HopIr]]
   type IrMapType = Array[java.util.HashMap[Long, HopIr]]
+
 }

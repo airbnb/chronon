@@ -1,4 +1,3 @@
-
 import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
@@ -23,7 +22,7 @@ lazy val api = project
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.7.1",
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
-    ),
+    )
   )
 
 lazy val aggregator = project
@@ -33,7 +32,15 @@ lazy val aggregator = project
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
       "com.google.code.gson" % "gson" % "2.8.6"
-    ),
+    )
+  )
+
+lazy val fetcher = project
+  .dependsOn(aggregator)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.apache.avro" % "avro" % "1.8.0"
+    )
   )
 
 lazy val spark = project
@@ -73,7 +80,8 @@ git.gitTagToVersionNumber := { tag: String =>
   }
 }
 
-ThisBuild / publishTo  := Some("Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
+ThisBuild / publishTo := Some(
+  "Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
 ThisBuild / credentials += Credentials(new File("./artifactory_credentials.properties"))
 
 // TODO add benchmarks - follow this example

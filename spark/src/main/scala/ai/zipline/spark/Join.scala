@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
+import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonCodec, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
@@ -19,7 +19,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     .getOrElse(Map.empty[String, String])
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
-  private val confJson = ThriftJsonDecoder.serializer.toString(joinConf)
+  private val confJson = ThriftJsonCodec.serializer.toString(joinConf)
   private val confJsonBase64 = Base64.getEncoder.encodeToString(confJson.getBytes("UTF-8"))
 
   // Combine tableProperties set on conf with encoded Join
@@ -32,7 +32,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     val additionalKeys: Seq[String] = {
       if (joinConf.left.dataModel == Entities) {
         Seq(Constants.PartitionColumn)
-      } else if (inferredAccuracy(joinPart) == Accuracy.TEMPORAL) {
+      } else if (joinPart.groupBy.inferredAccuracy == Accuracy.TEMPORAL) {
         Seq(Constants.TimeColumn, Constants.PartitionColumn)
       } else { // left-events + snapshot => join-key = ds_of_left_ts
         Seq(Constants.TimePartitionColumn)
@@ -132,7 +132,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
       }
 
-    (joinConf.left.dataModel, joinPart.groupBy.dataModel, inferredAccuracy(joinPart)) match {
+    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
       case (Entities, Events, _)               => partitionRangeGroupBy.snapshotEvents(unfilledRange)
       case (Entities, Entities, _)             => partitionRangeGroupBy.snapshotEntities
       case (Events, Events, Accuracy.SNAPSHOT) => timeRangeGroupBy.snapshotEvents(leftTimePartitionRange)
@@ -148,18 +148,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }
   }
-
-  private def inferredAccuracy(joinPart: JoinPart): Accuracy =
-    if (joinConf.left.dataModel == Events && joinPart.groupBy.accuracy == null) {
-      if (joinPart.groupBy.dataModel == Events) {
-        Accuracy.TEMPORAL
-      } else {
-        Accuracy.SNAPSHOT
-      }
-    } else {
-      // doesn't matter for entities
-      joinPart.groupBy.accuracy
-    }
 
   def getJoinPartTableName(joinPart: JoinPart): String = {
     val joinPartPrefix = Option(joinPart.prefix).map(prefix => s"_$prefix").getOrElse("")
@@ -205,7 +193,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       val encodedMetadata = lastRunMetadata.get(Constants.JoinMetadataKey).get
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
-      ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
+      ThriftJsonCodec.fromJsonStr(joinJsonString, true, classOf[JoinConf])
     }
   }
 
@@ -323,7 +311,7 @@ object Join {
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")
     val joinConf =
-      ThriftJsonDecoder.fromJsonFile[JoinConf](parsedArgs.confPath(), check = true, clazz = classOf[JoinConf])
+      ThriftJsonCodec.fromJsonFile[JoinConf](parsedArgs.confPath(), check = true, clazz = classOf[JoinConf])
 
     val join = new Join(
       joinConf,
