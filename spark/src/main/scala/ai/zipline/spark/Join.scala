@@ -155,16 +155,29 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       leftDf
     }
 
+    // If the left side has changed, backfill everything
+    val backfillAll = !compareOutputTableLeftSideMetadata(session)
+    logger.info(s"backfillAll based on comparing output table left side: $backfillAll")
+
+
     val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
       case (partialDf, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
-          val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
-
+          val rightUnfilledRange = if (backfillAll || !compareIntermediateTableMetadata(session, joinPart)) {
+            // If metadata has changed, then we're going to archive the joinPartTable and recompute
+            println(s"Metadata change detected on ${joinPart.groupBy.metaData.name} (backfillAll is $backfillAll), archiving table $joinPartTableName and recomputing")
+            tableUtils.archiveTable(joinPartTableName)
+            leftRange
+          } else {
+            // In this case, metadata has not changed, so proceed with filling only what is missing
+            tableUtils.unfilledRange(joinPartTableName, leftRange)
+          }
           if (rightUnfilledRange.valid) {
             val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
             // cache the join-part output into table partitions
+            // TODO: Add metadata to table here
             rightDf.save(joinPartTableName, tableProps)
           }
 
@@ -185,6 +198,21 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     .orNull
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+
+    val backfillAll = !tableUtils.compareMetadataMatch(joinConf.left)
+    logger.info(s"backfillAll based on comparing output table left side: $backfillAll")
+
+    val joinPartsBackfillFlagTuple: Seq[(JoinPart, Boolean)] = joinConf.joinParts.asScala.map{ joinPart =>
+      (joinPart, backfillAll || !tableUtils.compareMetadataMatch(joinPart))
+    }
+
+    if (joinPartsBackfillFlagTuple.exists(_._2)) {
+      // Checks to see if we are handling any metadata changes
+      println(s"The following joinParts will be fully recomputed due to metadata change ${joinPartsBackfillFlagTuple.filter(_._2)} (backfillAll set to $backfillAll)")
+      val undoArchiveTableSQL = tableUtils.archiveTable(joinConf.left.table)
+      println(s"Archiving output table to recompute. If you wish to undo, run this SQL manually: $undoArchiveTableSQL")
+    }
+
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
       PartitionRange(joinConf.left.query.startPartition, endPartition),
@@ -211,6 +239,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
+        // TODO - make save take a left side and add semantic metadata
         computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
