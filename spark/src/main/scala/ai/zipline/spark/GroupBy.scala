@@ -260,16 +260,11 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val processedInputDf = if (bloomMap.isDefined) {
-      val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap.get)
+    val processedInputDf = bloomMapOpt.map { bloomMap =>
+      val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
       println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
-      println(s"\nGroup-by raw data schema:")
-      println(bloomFilteredDf.schema.pretty)
       bloomFilteredDf
-    } else {
-      println("empty bloom filter map")
-      skewFilteredDf
-    }
+    }.getOrElse { skewFilteredDf }
     new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
   }
 
