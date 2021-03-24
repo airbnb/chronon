@@ -36,7 +36,7 @@ lazy val aggregator = project
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
-    mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
+    mainClass in(Compile, run) := Some("ai.zipline.spark.Join"),
     assemblyJarName in assembly := "zipline-spark.jar",
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided",
