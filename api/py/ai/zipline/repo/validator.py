@@ -66,7 +66,7 @@ class ZiplineRepoValidator(object):
            materialized version of the obj given the object's name.
         """
         return next(
-            (x for x in self.old_objs[obj_class.__name__] if x.metaData.name == obj_name),
+            (x for x in self.old_objs[obj_class.__name__] if x.metaData and x.metaData.name == obj_name),
             None
         )
 
