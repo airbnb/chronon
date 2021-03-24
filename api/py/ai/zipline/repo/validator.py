@@ -75,7 +75,7 @@ class ZiplineRepoValidator(object):
         returns:
             materialized joins including the group_by as dicts.
         """
-        return [join for join in filter(lambda j: j.joinParts is not None,self.old_joins)
+        return [join for join in filter(lambda j: j.joinParts is not None, self.old_joins)
                 if group_by.metaData.name in (rp.groupBy.metaData.name if rp else [] for rp in join.joinParts)]
 
     def can_skip_materialize(self, obj: object) -> List[str]:
