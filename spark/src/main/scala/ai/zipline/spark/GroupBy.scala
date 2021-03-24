@@ -280,7 +280,7 @@ object GroupBy {
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val (scanStart, startPartition) = source.dataModel match {
-      case Entities => (queryStart, Option(source.query.startPartition).orNull)
+      case Entities => (queryStart, source.query.startPartition)
       case Events =>
         val windowStart = window.map(Constants.Partition.minus(queryStart, _)).orNull
         val sourceStart = (Option(source.query.startPartition) ++ tableUtils.firstAvailablePartition(source.table))
