@@ -226,7 +226,7 @@ object GroupBy {
   def from(groupByConf: GroupByConf,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
-           bloomMap: Option[Map[String, BloomFilter]],
+           bloomMapOpt: Option[Map[String, BloomFilter]],
            skewFilter: Option[String] = None): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
