@@ -148,24 +148,21 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       joinPart.groupBy.accuracy
     }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, joinPartsWithBackfillFlag: Seq[(JoinPart, Boolean)]): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
 
-    // If the left side has changed, backfill everything
-    val backfillAll = !compareOutputTableLeftSideMetadata(session)
-    logger.info(s"backfillAll based on comparing output table left side: $backfillAll")
-
-
-    val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
-      case (partialDf, joinPart) =>
+    val joined = joinPartsWithBackfillFlag.foldLeft(leftTaggedDf) {
+      case (partialDf, joinPartTuple) =>
+        val joinPart = joinPartTuple._1
+        val backfill = joinPartTuple._2
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
-          val rightUnfilledRange = if (backfillAll || !compareIntermediateTableMetadata(session, joinPart)) {
+          val rightUnfilledRange = if (backfill) {
             // If metadata has changed, then we're going to archive the joinPartTable and recompute
             println(s"Metadata change detected on ${joinPart.groupBy.metaData.name} (backfillAll is $backfillAll), archiving table $joinPartTableName and recomputing")
             tableUtils.archiveTable(joinPartTableName)
