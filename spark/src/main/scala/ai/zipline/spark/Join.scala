@@ -157,8 +157,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     val joined = joinPartsWithBackfillFlag.foldLeft(leftTaggedDf) {
       case (partialDf, joinPartTuple) =>
-        val joinPart = joinPartTuple._1
-        val backfill = joinPartTuple._2
+        val (joinPart, backfill) = joinPartTuple
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
