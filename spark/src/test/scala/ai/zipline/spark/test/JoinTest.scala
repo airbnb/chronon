@@ -404,4 +404,86 @@ class JoinTest {
     }
     assertEquals(diff.count(), 0)
   }
+
+  @Test
+  def testNoAgg(): Unit = {
+    // Left side entities, right side entities no agg
+    // Also testing specific select statement (rather than select *)
+    val namesSchema = List(
+      DataGen.Column("user", StringType, 1000),
+      DataGen.Column("name", StringType, 500)
+    )
+    val namesTable = s"$namespace.names"
+    DataGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
+
+    val namesSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("name"),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore),
+      snapshotTable = namesTable
+    )
+
+    val namesGroupBy = Builders.GroupBy(
+      sources = Seq(namesSource),
+      keyColumns = Seq("user"),
+      aggregations = null,
+      metaData = Builders.MetaData(name = "unit_test.user_names")
+    )
+
+    DataGen.entities(spark, namesSchema, 1000, partitions = 400).groupBy("user", "ds")
+      .agg(Map("name" -> "max"))
+      .save(namesTable)
+
+    // left side
+    val userSchema = List(DataGen.Column("user", StringType, 100))
+    val usersTable = s"$namespace.users"
+    DataGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
+
+
+    val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start), snapshotTable = usersTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
+      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace)
+    )
+
+    val runner = new Join(joinConf, end, tableUtils)
+    val computed = runner.computeJoin(Some(7))
+    println(s"join start = $start")
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
+                                     |   grouped_names AS (
+                                     |      SELECT user,
+                                     |             name,
+                                     |             ds
+                                     |      FROM $namesTable
+                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore')
+                                     |   SELECT users.user,
+                                     |        grouped_names.name,
+                                     |        users.ds
+                                     | FROM users left outer join grouped_names
+                                     | ON users.user = grouped_names.user
+                                     | AND users.ds = grouped_names.ds
+    """.stripMargin)
+
+    println("showing join result")
+    computed.show()
+    println("showing query result")
+    expected.show()
+    println(
+      s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
+    println(s"Actual count: ${computed.count()}")
+    println(s"Expected count: ${expected.count()}")
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+
+  }
+
 }

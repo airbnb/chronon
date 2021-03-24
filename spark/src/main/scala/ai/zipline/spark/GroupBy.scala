@@ -270,8 +270,7 @@ object GroupBy {
       println("empty bloom filter map")
       skewFilteredDf
     }
-
-    new GroupBy(groupByConf.getAggregations.asScala, keyColumns, processedInputDf)
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
   }
 
   def renderDataSourceQuery(source: Source,
