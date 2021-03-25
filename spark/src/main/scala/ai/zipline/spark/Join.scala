@@ -88,7 +88,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, Some(rightBloomMap), rightSkewFilter)
+      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
@@ -97,7 +97,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
     lazy val leftTimePartitionRange = unfilledTimeRange.toPartitionRange
     lazy val timeRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, Some(rightBloomMap), rightSkewFilter)
+      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     val leftSkewFilter = joinConf.skewFilter(Some(joinPart.rightToLeft.values.toSeq))
     // this is the second time we apply skew filter - but this filters only on the keys
