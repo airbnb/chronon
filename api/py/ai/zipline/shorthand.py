@@ -91,8 +91,8 @@ def GroupBy(name: str,
             model: DataModel,
             keys: List[Union[str, Tuple[str, str]]],
             aggs: List[Agg],  # data needs aggregation
-            outputNamespace: str,
             start_partition: str,
+            outputNamespace: str = None,
             tableProperties: Dict[str, str] = None,
             selects: Dict[str, str] = None,  # data is pre-aggregated
             ts: str = None,
@@ -131,7 +131,8 @@ def GroupBy(name: str,
                                                    query=query))
 
     return api.GroupBy(
-        metaData=api.MetaData(name=name, production=production, online=online,tableProperties=tableProperties,outputNamespace=outputNamespace),
+        metaData=api.MetaData(name=name, production=production, online=online, tableProperties=tableProperties,
+                              outputNamespace=outputNamespace),
         sources=[source],
         keyColumns=key_selects.keys(),
         aggregations=aggregations

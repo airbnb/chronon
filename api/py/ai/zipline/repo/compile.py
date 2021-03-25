@@ -2,17 +2,16 @@
 # tool to materialize feature_sources and feature_sets into thrift configurations
 # that zipline jobs can consume
 
+import ai.zipline.repo.extract_objects as eo
+import click
 import logging
 import os
-
-import click
-import ai.zipline.repo.extract_objects as eo
+from ai.zipline.api.ttypes import GroupBy, Join, StagingQuery
 from ai.zipline.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
-from ai.zipline.repo.validator import ZiplineRepoValidator
-from ai.zipline.repo.serializer import thrift_simple_json_protected
-from ai.zipline.api.ttypes import GroupBy, Join, StagingQuery
 from ai.zipline.repo import teams
+from ai.zipline.repo.serializer import thrift_simple_json_protected
+from ai.zipline.repo.validator import ZiplineRepoValidator
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -103,8 +102,8 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
     table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
-    obj.metaData.outputNamespace = namespace
-    obj.metaData.tableProperties = table_properties
+    obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
+    obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
 
 
 def _write_obj(full_output_root: str,
