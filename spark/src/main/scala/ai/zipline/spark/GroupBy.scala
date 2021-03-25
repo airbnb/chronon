@@ -226,7 +226,7 @@ object GroupBy {
   def from(groupByConf: GroupByConf,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
-           bloomMapOpt: Option[Map[String, BloomFilter]],
+           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
@@ -336,7 +336,7 @@ object GroupBy {
       tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
 
-    val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils, None)
+    val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils)
     (groupByConf.dataModel match {
       // group by backfills have to be snapshot only
       case Entities => groupByBackfill.snapshotEntities
