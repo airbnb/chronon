@@ -194,7 +194,8 @@ object Extensions {
 
     private def generateSkewFilterSql(key: String, values: Seq[String]): String = {
       val nulls = Seq("null", "Null", "NULL")
-      val nonNullFilters = Some(s"$key NOT IN (${values.filterNot(nulls.contains).mkString(", ")})")
+      val nonNullValues = values.filterNot(nulls.contains)
+      val nonNullFilters = if (nonNullValues.nonEmpty) Some(s"$key NOT IN (${values.filterNot(nulls.contains).mkString(", ")})") else None
       val nullFilters = if (values.exists(nulls.contains)) Some(s"$key IS NOT NULL") else None
       (nonNullFilters ++ nullFilters).mkString(" AND ")
     }
