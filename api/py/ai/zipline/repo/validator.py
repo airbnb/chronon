@@ -68,7 +68,7 @@ class ZiplineRepoValidator(object):
            materialized version of the obj given the object's name.
         """
         return next(
-            (x for x in self.old_objs[obj_class.__name__] if x.metaData.name == obj_name),
+            (x for x in self.old_objs[obj_class.__name__] if x.metaData and x.metaData.name == obj_name),
             None
         )
 
@@ -77,7 +77,7 @@ class ZiplineRepoValidator(object):
         returns:
             materialized joins including the group_by as dicts.
         """
-        return [join for join in self.old_joins
+        return [join for join in [join for join in self.old_joins if join.joinParts]
                 if group_by.metaData.name in (rp.groupBy.metaData.name for rp in join.joinParts)]
 
     def can_skip_materialize(self, obj: object) -> List[str]:
