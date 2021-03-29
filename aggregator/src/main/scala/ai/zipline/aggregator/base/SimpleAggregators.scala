@@ -80,6 +80,18 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.TreeS
     cloned.addAll(ir)
     cloned
   }
+
+  override def normalize(ir: util.TreeSet[T]): Any = {
+    val arr = new util.ArrayList[T](ir.size())
+    arr.addAll(ir)
+    arr
+  }
+
+  override def denormalize(ir: Any): util.TreeSet[T] = {
+    val set = new util.TreeSet[T]()
+    set.addAll(ir.asInstanceOf[util.ArrayList[T]])
+    set
+  }
 }
 
 class Average extends SimpleAggregator[Double, Array[Any], Double] {
