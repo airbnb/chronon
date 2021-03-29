@@ -6,16 +6,18 @@ import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
 import ai.zipline.spark._
-import junit.framework.TestCase
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType, LongType => SparkLongType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
+import org.junit.Test
 
-class GroupByTest extends TestCase {
+
+class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
 
+  @Test
   def testSnapshotEntities(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10),
@@ -49,6 +51,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
       DataGen.Column("user", StringType, 10), // ts = last 10 days
@@ -62,12 +65,12 @@ class GroupByTest extends TestCase {
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.MAX, "ts", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
       Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
-
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -77,6 +80,8 @@ class GroupByTest extends TestCase {
                                           |       $datesViewName.ds, 
                                           |       MAX(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, ts, null)) AS ts_max_10d,
                                           |       MAX(ts) as ts_max,
+                                          |       COUNT(DISTINCT session_length) as session_length_approx_unique_count,
+                                          |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_approx_unique_count_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 
@@ -91,6 +96,7 @@ class GroupByTest extends TestCase {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
       DataGen.Column("user", StringType, 10),

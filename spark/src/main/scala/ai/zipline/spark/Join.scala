@@ -11,6 +11,9 @@ import scala.collection.JavaConverters._
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
+  private val tableProps = Option(joinConf.metaData.tableProperties)
+    .map(_.asScala.toMap)
+    .orNull
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -58,7 +61,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     leftDf.validateJoinKeys(joinableRight, keys)
     leftDf.join(joinableRight, keys, "left")
-
   }
 
   private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
@@ -86,7 +88,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, rightBloomMap, rightSkewFilter)
+      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
@@ -95,7 +97,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
     lazy val leftTimePartitionRange = unfilledTimeRange.toPartitionRange
     lazy val timeRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, rightBloomMap, rightSkewFilter)
+      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     val leftSkewFilter = joinConf.skewFilter(Some(joinPart.rightToLeft.values.toSeq))
     // this is the second time we apply skew filter - but this filters only on the keys
@@ -129,7 +131,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       case (Events, Entities, Accuracy.SNAPSHOT) =>
         val PartitionRange(start, end) = leftTimePartitionRange
         val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
-        GroupBy.from(joinPart.groupBy, rightRange, tableUtils, rightBloomMap).snapshotEntities
+        GroupBy.from(joinPart.groupBy, rightRange, tableUtils, Option(rightBloomMap)).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
@@ -179,10 +181,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.explain()
     joined.drop(Constants.TimePartitionColumn)
   }
-
-  private val tableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .orNull
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
