@@ -37,6 +37,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "ai.zipline.spark.KeyWithHash",
       "java.util.HashMap",
       "java.util.ArrayList",
+      "java.util.TreeSet",
       "org.apache.spark.sql.Row",
       "org.apache.spark.sql.catalyst.InternalRow",
       "org.apache.spark.sql.catalyst.expressions.GenericRow",

@@ -46,25 +46,25 @@ class Count extends SimpleAggregator[Any, Long, Long] {
   override def isDeletable: Boolean = true
 }
 
-class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.ArrayList[T], Long] {
+class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.TreeSet[T], Long] {
   override def outputType: DataType = LongType
 
   override def irType: DataType = ListType(inputType)
 
-  override def prepare(input: T): util.ArrayList[T] = {
-    val result = new util.ArrayList[T]()
+  override def prepare(input: T): util.TreeSet[T] = {
+    val result = new util.TreeSet[T]()
     result.add(input)
     result
   }
 
-  override def update(ir: util.ArrayList[T], input: T): util.ArrayList[T] = {
+  override def update(ir: util.TreeSet[T], input: T): util.TreeSet[T] = {
     if (!ir.contains(input)) {
       ir.add(input)
     }
     ir
   }
 
-  override def merge(ir1: util.ArrayList[T], ir2: util.ArrayList[T]): util.ArrayList[T] = {
+  override def merge(ir1: util.TreeSet[T], ir2: util.TreeSet[T]): util.TreeSet[T] = {
     val it = ir2.iterator()
     while (it.hasNext) {
       val elem = it.next
@@ -73,10 +73,10 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.Array
     ir1
   }
 
-  override def finalize(ir: util.ArrayList[T]): Long = ir.size()
+  override def finalize(ir: util.TreeSet[T]): Long = ir.size()
 
-  override def clone(ir: util.ArrayList[T]): util.ArrayList[T] = {
-    val cloned = new util.ArrayList[T](ir.size())
+  override def clone(ir: util.TreeSet[T]): util.TreeSet[T] = {
+    val cloned = new util.TreeSet[T]()
     cloned.addAll(ir)
     cloned
   }

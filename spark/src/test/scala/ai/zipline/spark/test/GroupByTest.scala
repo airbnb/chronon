@@ -12,7 +12,6 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
-
 class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
@@ -65,7 +64,12 @@ class GroupByTest {
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.MAX, "ts", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
-      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT,
+                           "session_length",
+                           Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.UNIQUE_COUNT,
+                           "session_length",
+                           Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
       Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
@@ -81,7 +85,9 @@ class GroupByTest {
                                           |       MAX(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, ts, null)) AS ts_max_10d,
                                           |       MAX(ts) as ts_max,
                                           |       COUNT(DISTINCT session_length) as session_length_approx_unique_count,
+                                          |       COUNT(DISTINCT session_length) as session_length_unique_count,
                                           |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_approx_unique_count_10d,
+                                          |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_unique_count_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 
