@@ -173,21 +173,16 @@ struct Join {
 struct GroupByServingInfo {
     1: optional GroupBy groupBy
     // a. When groupBy is
-    //  1. temporal accurate - batch uploads deltaAvroSchema, streaming uploads inputAvroSchema
-    //                         the fetcher further aggregates deltas and inputs into outputs
-    //  2. snapshot accurate - batch uploads outputAvroSchema, fetcher doesn't do any further aggregation
-    // b. Given inputAvroSchema and groupByConf - deltaAvroSchema and outputAvroSchema are derivable
-    //     val agg = new RowAggregator(inputSchema, groupBy.aggregations.flatMap(_.unpack))
-    //     irAvroSchema = agg.irSchema.toAvro
-    //     outputSchema = agg.outputSchema.toAvro
+    //  1. temporal accurate - batch uploads irs, streaming uploads inputs
+    //                         the fetcher further aggregates irs and inputs into outputs
+    //  2. snapshot accurate - batch uploads outputs, fetcher doesn't do any further aggregation
+    // irSchema and outputSchema are derivable once inputSchema is known
     2: optional string inputAvroSchema
     3: optional string keyAvroSchema
-    4: optional string irAvroSchema
-    5: optional string outputAvroSchema
     // "date", in 'yyyy-MM-dd' format, the bulk-upload data corresponds to
     // we need to scan streaming events only starting this timestamp
     // used to compute
     //       1. batch_data_lag = current_time - batch_data_time
     //       2. batch_upload_lag = batch_upload_time - batch_data_time
-    6: optional string batchDateStamp
+    4: optional string batchDateStamp
 }

@@ -21,6 +21,7 @@ import ai.zipline.api.Constants
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
+import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWriter, GenericRecord}
 import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, EncoderFactory}
 
@@ -34,29 +35,50 @@ class AvroCodec(schema: Schema) {
   private var encoder: BinaryEncoder = null
 
   private val outputStream = new ByteArrayOutputStream()
-  private val tsIndex: Int = schema.getFields.asScala.map(_.name()).indexOf(Constants.TimeColumn)
-  private val length: Int = schema.getFields.size()
+  val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
+  private val tsIndex: Int = fieldNames.indexOf(Constants.TimeColumn)
+  private val length: Int = fieldNames.length
+
+  def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
+    val record = new GenericData.Record(schema)
+    schema.getFields.asScala.foreach { field =>
+      record.put(field.name(), valueMap.get(field.name()).orNull)
+    }
+    encodeRecord(record)
+  }
 
   def encode(row: Row): Array[Byte] = {
     val record = new GenericData.Record(schema)
     for (i <- 0 until row.length) {
       record.put(i, row.get(i))
     }
+    encodeRecord(record)
+  }
+
+  private def encodeRecord(record: Record): Array[Byte] = {
     outputStream.reset()
     encoder = EncoderFactory.get.binaryEncoder(outputStream, encoder)
     datumWriter.write(record, encoder)
     outputStream.toByteArray
   }
 
-  protected def decode(bytes: Array[Byte]): Seq[Row] = {
+  def decode(bytes: Array[Byte]): GenericRecord = {
     val inputStream = new SeekableByteArrayInput(bytes)
     decoder = DecoderFactory.get.binaryDecoder(inputStream, decoder)
-    val records = mutable.ListBuffer.empty[GenericRecordRow]
-    while (!decoder.isEnd) {
-      val record = datumReader.read(null, decoder)
-      records.append(new GenericRecordRow(record, tsIndex, length))
+    if (!decoder.isEnd) {
+      datumReader.read(null, decoder)
+    } else {
+      null
     }
-    records
+  }
+
+  def decodeRow(bytes: Array[Byte]): Row = new GenericRecordRow(decode(bytes), tsIndex, length)
+
+  def decodeMap(bytes: Array[Byte]): Map[String, AnyRef] = {
+    val record = decode(bytes)
+    fieldNames.indices.map { i =>
+      fieldNames(i) -> record.get(i)
+    }.toMap
   }
 }
 
@@ -78,7 +100,9 @@ object AvroCodec {
     }
 
   def of(schema: Schema): AvroCodec = codecMap.get().getOrElseUpdate(schema, new AvroCodec(schema))
+}
 
+object AvroUtils {
   def toZiplineSchema(schema: Schema): DataType = {
     schema.getType match {
       case Schema.Type.RECORD =>

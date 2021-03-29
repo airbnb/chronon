@@ -42,7 +42,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   }
 
   @transient lazy val windowedAggregator = new RowAggregator(inputSchema, aggregations.flatMap(_.unpack))
-  @transient protected lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
+  @transient lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
   @transient protected lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
 
   // the cache uses this space to work out the IRs for the whole window based on hops

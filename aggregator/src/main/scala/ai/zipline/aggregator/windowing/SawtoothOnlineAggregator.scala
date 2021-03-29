@@ -1,9 +1,13 @@
 package ai.zipline.aggregator.windowing
 
+import java.lang
+
 import ai.zipline.aggregator.base.{DataType, ListType, LongType, StructField, StructType}
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.zipline.api.{Aggregation, TimeUnit, Window}
+
+import scala.Long
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -11,7 +15,7 @@ case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputAr
 class SawtoothOnlineAggregator(batchEndTs: Long,
                                aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],
-                               resolution: Resolution,
+                               resolution: Resolution = FiveMinuteResolution,
                                tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
     extends SawtoothAggregator(aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],
