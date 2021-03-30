@@ -5,12 +5,29 @@ import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
-
 import scala.collection.JavaConverters._
+
+import org.apache.thrift.TSerializer
+import org.apache.thrift.protocol.TSimpleJSONProtocol
+import org.spark_project.guava.base.Charsets
+import org.spark_project.guava.io.BaseEncoding
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
+
+  // Get table properties from config
+  private val confTableProps = Option(joinConf.metaData.tableProperties)
+    .map(_.asScala.toMap)
+    .getOrElse(Map.empty)
+
+  // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
+  private val serializer: TSerializer = new TSerializer(new TSimpleJSONProtocol.Factory())
+  private val joinJson = serializer.toString(joinConf)
+  private val joinJsonEncoded = BaseEncoding.base64().encode(joinJson.getBytes(Charsets.UTF_8))
+
+  // Combine tableProperties set on conf with encoded Join
+  private val tableProps = confTableProps ++ Map(tableUtils.JoinMetadataKey -> joinJsonEncoded)
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -148,32 +165,23 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       joinPart.groupBy.accuracy
     }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, joinPartsWithBackfillFlag: Seq[(JoinPart, Boolean)]): DataFrame = {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
 
-    val joined = joinPartsWithBackfillFlag.foldLeft(leftTaggedDf) {
-      case (partialDf, joinPartTuple) =>
-        val (joinPart, backfill) = joinPartTuple
+    val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
+      case (partialDf, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
           val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
-          val rightUnfilledRange = if (backfill) {
-            // If metadata has changed, then we're going to archive the joinPartTable and recompute
-            println(s"Metadata change detected on ${joinPart.groupBy.metaData.name} (backfillAll is $backfillAll), archiving table $joinPartTableName and recomputing")
-            tableUtils.archiveTable(joinPartTableName)
-            leftRange
-          } else {
-            // In this case, metadata has not changed, so proceed with filling only what is missing
-            tableUtils.unfilledRange(joinPartTableName, leftRange)
-          }
+          val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
+
           if (rightUnfilledRange.valid) {
             val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
             // cache the join-part output into table partitions
-            // TODO: Add metadata to table here
             rightDf.save(joinPartTableName, tableProps)
           }
 
@@ -189,26 +197,19 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  private val tableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .orNull
+  def archiveTablesToRecompute(): Unit = {
+    // Detects semantic changes since last run in Join or GroupBy tables and archives the relevant tables so that they may be recomputed
+    val joinPartsToBackfill = tableUtils.joinPartsToRecompute(joinConf, outputTable)
+    joinPartsToBackfill.foreach(tableUtils.archiveTable(_))
+    if (joinPartsToBackfill.nonEmpty) {
+      // If anything changed, then we also need to recompute the join to the final table
+      // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
+      // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
+      tableUtils.archiveTable(joinConf)
+    }
+  }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
-
-    val backfillAll = !tableUtils.compareMetadataMatch(joinConf.left)
-    logger.info(s"backfillAll based on comparing output table left side: $backfillAll")
-
-    val joinPartsBackfillFlagTuple: Seq[(JoinPart, Boolean)] = joinConf.joinParts.asScala.map{ joinPart =>
-      (joinPart, backfillAll || !tableUtils.compareMetadataMatch(joinPart))
-    }
-
-    if (joinPartsBackfillFlagTuple.exists(_._2)) {
-      // Checks to see if we are handling any metadata changes
-      println(s"The following joinParts will be fully recomputed due to metadata change ${joinPartsBackfillFlagTuple.filter(_._2)} (backfillAll set to $backfillAll)")
-      val undoArchiveTableSQL = tableUtils.archiveTable(joinConf.left.table)
-      println(s"Archiving output table to recompute. If you wish to undo, run this SQL manually: $undoArchiveTableSQL")
-    }
-
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
       PartitionRange(joinConf.left.query.startPartition, endPartition),
@@ -235,7 +236,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        // TODO - make save take a left side and add semantic metadata
         computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }

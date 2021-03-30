@@ -1,11 +1,18 @@
 package ai.zipline.spark
 
-import ai.zipline.api.Constants
+import scala.collection.JavaConverters.asScalaBufferConverter
+
+import ai.zipline.api.{Constants, JoinPart, Source, Join => ThriftJoin}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.thrift.{TDeserializer, TSerializer}
+import org.apache.thrift.protocol.{TJSONProtocol, TSimpleJSONProtocol}
+import org.spark_project.guava.io.BaseEncoding
 
 case class TableUtils(sparkSession: SparkSession) {
+
+  val JoinMetadataKey = "join"
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -141,4 +148,51 @@ case class TableUtils(sparkSession: SparkSession) {
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
     result
   }
+
+  def getTableProperties(tableName: String): Option[Map[String, String]] = {
+    try {
+      val tableId = sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+      Some(sparkSession.sessionState.catalog.getTempViewOrPermanentTableMetadata(tableId).properties)
+    } catch {
+      case _: Exception => None
+    }
+  }
+
+  def joinPartsToRecompute(currentJoin: ThriftJoin, outputTable: String): Seq[JoinPart] = {
+    getTableProperties(outputTable).map{ lastRunMetadata =>
+      // get the join object that was saved onto the table as part of the last run
+      val encodedMetadata = lastRunMetadata.get(JoinMetadataKey).get
+      val joinJsonString = BaseEncoding.base64().decode(encodedMetadata)
+      val deserializer = new TDeserializer(new TSimpleJSONProtocol.Factory())
+      val lastRunJoin = new ThriftJoin()
+      deserializer.deserialize(lastRunJoin, joinJsonString)
+
+      if (SourceUtils.compareSourcesIgnoringStartEnd(currentJoin.left, lastRunJoin.left)) {
+        println("Changes detected on left side of join, recomputing all joinParts")
+        currentJoin.joinParts.asScala
+      } else {
+        currentJoin.joinParts.asScala.filter { joinPart =>
+          // For joinParts we simply check for bare equality
+          lastRunJoin.joinParts.asScala.exists(_ == joinPart)
+        }
+      }
+    }.getOrElse{
+      println("No Metadata found on existing table, attempting to proceed without recomputation.")
+      Seq.empty
+    }
+  }
+
+
+  def compareMetadata(joinPart: JoinPart): Boolean = {
+    true
+  }
+
+  def archiveTable(join: ai.zipline.api.Join) = {
+
+  }
+
+  def archiveTable(joinPart: JoinPart) = {
+
+  }
+
 }
