@@ -65,11 +65,7 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.TreeS
   }
 
   override def merge(ir1: util.TreeSet[T], ir2: util.TreeSet[T]): util.TreeSet[T] = {
-    val it = ir2.iterator()
-    while (it.hasNext) {
-      val elem = it.next
-      update(ir1, elem)
-    }
+    ir1.addAll(ir2)
     ir1
   }
 
