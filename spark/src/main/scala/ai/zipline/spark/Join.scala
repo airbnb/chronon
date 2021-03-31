@@ -38,10 +38,15 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    // append prefixes to non key columns
-    val prefixedRight = Option(joinPart.prefix)
-      .map { keyRenamedRight.prefixColumnNames(_, valueColumns) }
-      .getOrElse(keyRenamedRight)
+    // team name will be added/validated at the materialize step
+    val teamNm = if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinConf.metaData.team)
+    val prefixTeamNm = Seq(Option(joinPart.prefix), teamNm).flatten.mkString("_")
+    // append prefixTeamNm to non key columns
+    val prefixedRight = if (Option(prefixTeamNm).exists(_.trim.nonEmpty)) {
+      keyRenamedRight.prefixColumnNames(prefixTeamNm, valueColumns)
+    } else {
+      keyRenamedRight
+    }
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     val keys = partLeftKeys ++ additionalKeys

@@ -6,7 +6,9 @@ import ai.zipline.api.Extensions._
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
-class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[AggregationPart]) extends Serializable {
+class RowAggregator(inputSchema: Seq[(String, DataType)],
+                    aggregationParts: Seq[AggregationPart],
+                    groupByName: String = null) extends Serializable {
 
   val length: Int = aggregationParts.size
   val indices: Range = 0 until length
@@ -30,12 +32,12 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   def init: Array[Any] = new Array[Any](aggregationParts.length)
 
   val irSchema: Array[(String, DataType)] = aggregationParts
-    .map(_.outputColumnName)
+    .map(_.outputColumnName(groupByName))
     .toArray
     .zip(columnAggregators.map(_.irType))
 
   val outputSchema: Array[(String, DataType)] = aggregationParts
-    .map(_.outputColumnName)
+    .map(_.outputColumnName(groupByName))
     .toArray
     .zip(columnAggregators.map(_.outputType))
 

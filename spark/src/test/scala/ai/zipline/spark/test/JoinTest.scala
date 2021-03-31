@@ -74,7 +74,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
                              windows = Seq(new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "zipline")
     )
     val queriesSchema = List(
       DataGen.Column("user", StringType, 100)
@@ -91,7 +91,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(query = Builders.Query(startPartition = start), table = queryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
     val runner1 = new Join(joinConf, end, tableUtils)
@@ -105,7 +105,7 @@ class JoinTest {
         |   grouped_transactions AS (
         |      SELECT user, 
         |             ds, 
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS amount_dollars_sum_30d,
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
         |      FROM 
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
@@ -118,7 +118,7 @@ class JoinTest {
         | SELECT queries.user_name,
         |        queries.ts,
         |        queries.ds,
-        |        grouped_transactions.amount_dollars_sum_30d
+        |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
@@ -165,7 +165,7 @@ class JoinTest {
       sources = Seq(weightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
-      metaData = Builders.MetaData(name = "unit_test.country_weights", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.country_weights", namespace = namespace, team = "team_a")
     )
 
     val heightSchema = List(
@@ -184,7 +184,7 @@ class JoinTest {
       sources = Seq(heightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
-      metaData = Builders.MetaData(name = "unit_test.country_heights", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.country_heights", namespace = namespace, team = "team_b")
     )
 
     // left side
@@ -197,7 +197,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
-      metaData = Builders.MetaData(name = "test.country_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.country_features", namespace = namespace, team = "zipline")
     )
 
     val runner = new Join(joinConf, end, tableUtils)
@@ -209,21 +209,21 @@ class JoinTest {
     |   grouped_weights AS (
     |      SELECT country, 
     |             ds, 
-    |             avg(weight) as weight_average
+    |             avg(weight) as zipline_unit_test_country_weights_weight_average
     |      FROM $weightTable
     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
     |      GROUP BY country, ds),
     |   grouped_heights AS (
     |      SELECT country, 
     |             ds, 
-    |             avg(height) as height_average
+    |             avg(height) as zipline_unit_test_country_heights_height_average
     |      FROM $heightTable
     |      WHERE ds >= '$monthAgo'
     |      GROUP BY country, ds)
     |   SELECT countries.country,
     |        countries.ds,
-    |        grouped_weights.weight_average,
-    |        grouped_heights.height_average
+    |        grouped_weights.zipline_unit_test_country_weights_weight_average,
+    |        grouped_heights.zipline_unit_test_country_heights_height_average
     | FROM countries left outer join grouped_weights 
     | ON countries.country = grouped_weights.country
     | AND countries.ds = grouped_weights.ds
@@ -274,7 +274,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a")
     )
 
     // left side
@@ -289,7 +289,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.SNAPSHOT)),
-      metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace, team = "zipline")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
@@ -302,9 +302,9 @@ class JoinTest {
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
-                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_min,
-                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_ts_max,
-                                |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_time_spent_ms_count 
+                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_zipline_unit_test_item_views_ts_min,
+                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_zipline_unit_test_item_views_ts_max,
+                                |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_zipline_unit_test_item_views_time_spent_ms_count
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
@@ -349,7 +349,7 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "zipline")
     )
 
     // left side
@@ -365,8 +365,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace)
-    )
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline"))
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -375,13 +374,13 @@ class JoinTest {
     val expected = tableUtils.sql(s"""
                                      |WITH 
                                      |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
-                                     | SELECT queries.item, queries.ts, queries.ds, part.user_ts_min, part.user_ts_max, part.user_time_spent_ms_average
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_unit_test_item_views_ts_min, part.user_unit_test_item_views_ts_max, part.user_unit_test_item_views_time_spent_ms_average
                                      | FROM (SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
-                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_min,
-                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_max,
-                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
                                      |     FROM queries left outer join $viewsTable
                                      |     ON queries.item = $viewsTable.item
                                      |     WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
@@ -427,7 +426,7 @@ class JoinTest {
       sources = Seq(namesSource),
       keyColumns = Seq("user"),
       aggregations = null,
-      metaData = Builders.MetaData(name = "unit_test.user_names")
+      metaData = Builders.MetaData(name = "unit_test.user_names", team = "zipline")
     )
 
     DataGen.entities(spark, namesSchema, 1000, partitions = 400).groupBy("user", "ds")
@@ -445,7 +444,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start), snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
-      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")
     )
 
     val runner = new Join(joinConf, end, tableUtils)

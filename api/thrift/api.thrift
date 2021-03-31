@@ -148,6 +148,8 @@ struct MetaData {
     6: optional map<string, string> tableProperties
     // todo: add sanity check in materialize script
     7: optional string outputNamespace
+    // team name for the job
+    8: optional string team
 }
 
 

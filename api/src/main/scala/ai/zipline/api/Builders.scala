@@ -153,7 +153,8 @@ object Builders {
         production: Boolean = false,
         customJson: String = null,
         dependencies: Seq[String] = null,
-        namespace: String = null
+        namespace: String = null,
+        team: String = null
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -161,6 +162,7 @@ object Builders {
       result.setProduction(production)
       result.setCustomJson(customJson)
       result.setOutputNamespace(namespace)
+      result.setTeam(team)
       if (dependencies != null)
         result.setDependencies(dependencies.asJava)
       result
