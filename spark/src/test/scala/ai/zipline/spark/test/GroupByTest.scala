@@ -1,7 +1,7 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
-import ai.zipline.aggregator.test.NaiveAggregator
+import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
@@ -19,9 +19,9 @@ class GroupByTest {
   @Test
   def testSnapshotEntities(): Unit = {
     val schema = List(
-      DataFrameGen.Column("user", StringType, 10),
-      DataFrameGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
-      DataFrameGen.Column("session_length", IntType, 10000)
+      Column("user", StringType, 10),
+      Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      Column("session_length", IntType, 10000)
     )
     val df = DataFrameGen.entities(spark, schema, 100000, 10) // ds = last 10 days
     val viewName = "test_group_by_entities"
@@ -53,11 +53,11 @@ class GroupByTest {
   @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
-      DataFrameGen.Column("user", StringType, 10), // ts = last 10 days
-      DataFrameGen.Column("session_length", IntType, 2)
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2)
     )
 
-    val outputDates = DataFrameGen.genPartitions(10)
+    val outputDates = CStream.genPartitions(10)
 
     val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_group_by_snapshot_events"
@@ -105,13 +105,13 @@ class GroupByTest {
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
-      DataFrameGen.Column("user", StringType, 10),
-      DataFrameGen.Column("session_length", IntType, 10000)
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
     )
 
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
 
-    val querySchema = List(DataFrameGen.Column("user", StringType, 10))
+    val querySchema = List(Column("user", StringType, 10))
 
     val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
 

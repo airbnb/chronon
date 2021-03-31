@@ -9,7 +9,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.from_unixtime
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-
+import ai.zipline.spark.Extensions._
 import scala.collection.JavaConverters._
 
 // This class generates dataframes given certain dataTypes, cardinalities and rowCounts of data
@@ -19,7 +19,13 @@ object DataFrameGen {
   //  The main api: that generates dataframes given certain properties of data
   def genRows(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
     val RowStreamWithSchema(rows, schema) = gen(columns, count)
-    val data: RDD[Row] = spark.sparkContext.parallelize(rows.map { row => new GenericRow(row.fields.asScala.toArray) })
+    val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
+    val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
+    val sparkSchema = Conversions.fromZiplineSchema(schema.toArray)
+    println(sparkSchema.pretty)
+    (0 until genericRows(0).length).foreach { i =>
+      println(s"$i -> ${genericRows(0).get(i)}")
+    }
     spark.createDataFrame(data, Conversions.fromZiplineSchema(schema.toArray))
   }
 

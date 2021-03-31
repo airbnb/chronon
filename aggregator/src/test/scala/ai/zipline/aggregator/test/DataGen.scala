@@ -79,7 +79,7 @@ object CStream {
 
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
     override def next(): TestRow =
-      new TestRow(streams.map(_.next()).toArray)(tsIndex)
+      new TestRow(streams.map(_.next()).toArray: _*)(tsIndex)
   }
 
   //  The main api: that generates dataframes given certain properties of data
@@ -87,7 +87,7 @@ object CStream {
     val schema = columns.map(_.schema)
     val generators = columns.map(_.gen)
     val zippedStream = new ZippedStream(generators: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
-    RowStreamWithSchema(Stream.fill(count) { zippedStream.next() }, schema)
+    RowStreamWithSchema(Seq.fill(count) { zippedStream.next() }, schema)
   }
 }
 
@@ -111,4 +111,4 @@ case class Column(name: String, `type`: DataType, cardinality: Int) {
 
   def schema: (String, DataType) = name -> `type`
 }
-case class RowStreamWithSchema(rowStream: Stream[TestRow], schema: Seq[(String, DataType)])
+case class RowStreamWithSchema(rowStream: Seq[TestRow], schema: Seq[(String, DataType)])

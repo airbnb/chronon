@@ -9,7 +9,7 @@ import junit.framework.TestCase
 
 import scala.collection.JavaConverters._
 
-class TestRow(fieldsSeq: Any*)(tsIndex: Int = 0 ) extends Row {
+class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
   val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
   override val length: Int = fields.size()
 
