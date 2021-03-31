@@ -22,9 +22,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     .getOrElse(Map.empty)
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
-  private val serializer: TSerializer = new TSerializer(new TSimpleJSONProtocol.Factory())
-  private val joinJson = serializer.toString(joinConf)
-  private val joinJsonEncoded = BaseEncoding.base64().encode(joinJson.getBytes(Charsets.UTF_8))
+  private val joinJson = tableUtils.serializer.toString(joinConf)
+  private val joinJsonEncoded = tableUtils.encoder.encode(joinJson.getBytes(Charsets.UTF_8))
 
   // Combine tableProperties set on conf with encoded Join
   private val tableProps = confTableProps ++ Map(tableUtils.JoinMetadataKey -> joinJsonEncoded)
@@ -202,11 +201,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   def archiveTablesToRecompute(): Unit = {
     // Detects semantic changes since last run in Join or GroupBy tables and archives the relevant tables so that they may be recomputed
-    val joinPartsToBackfill = tableUtils.joinPartsToRecompute(joinConf, outputTable)
-    joinPartsToBackfill.foreach { joinPart =>
+    val joinPartsToRecompute = tableUtils.joinPartsToRecompute(joinConf, outputTable)
+    joinPartsToRecompute.foreach { joinPart =>
       tableUtils.archiveTableIfExists(getJoinPartTableName(joinPart))
     }
-    if (joinPartsToBackfill.nonEmpty) {
+    if (joinPartsToRecompute.nonEmpty) {
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins

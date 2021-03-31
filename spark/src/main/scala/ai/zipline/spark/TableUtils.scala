@@ -16,6 +16,10 @@ import org.spark_project.guava.io.BaseEncoding
 case class TableUtils(sparkSession: SparkSession) {
 
   val JoinMetadataKey = "join"
+  val jsonFactory = new TSimpleJSONProtocol.Factory()
+  val serializer = new TSerializer(jsonFactory)
+  val deserializer = new TDeserializer(jsonFactory)
+  val encoder = BaseEncoding.base64()
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -165,8 +169,7 @@ case class TableUtils(sparkSession: SparkSession) {
     getTableProperties(outputTable).map{ lastRunMetadata =>
       // get the join object that was saved onto the table as part of the last run
       val encodedMetadata = lastRunMetadata.get(JoinMetadataKey).get
-      val joinJsonString = BaseEncoding.base64().decode(encodedMetadata)
-      val deserializer = new TDeserializer(new TSimpleJSONProtocol.Factory())
+      val joinJsonString = encoder.decode(encodedMetadata)
       val lastRunJoin = new ThriftJoin()
       deserializer.deserialize(lastRunJoin, joinJsonString)
 
@@ -200,9 +203,8 @@ case class TableUtils(sparkSession: SparkSession) {
     val archiveSuffix = overrideSuffix.getOrElse(timeString)
     val newTableName = s"${tableName}__$archiveSuffix"
     val sql = s"ALTER TABLE $tableName RENAME TO $newTableName"
-    val reverseSql = s"ALTER TABLE $tableName RENAME TO $newTableName"
-    println(s"Archiving table with SQL: $sql")
-    println(s"Archiving table with SQL: $sql")
+    val reverseSql = s"DROP TABLE IF EXISTS $tableName; ALTER TABLE $newTableName RENAME TO $tableName; "
+    println(s"Archiving table with SQL: $sql \n If you wish to undo this, run manually in Spark SQL shell: $reverseSql")
     sparkSession.sql(sql)
   }
 
