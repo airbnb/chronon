@@ -69,7 +69,7 @@ class Agg:
         aggregations = []
         for op in self._all_ops():
             windows = self._all_window_groups()
-            if None in windows:
+            if not windows or None in windows:
                 agg = api.Aggregation(inputColumn=self.column, operation=op[0], argMap=op[1], windows=None)
                 aggregations.append(agg)
             pure_windows = [parse_window(window) for window in windows if window is not None]
