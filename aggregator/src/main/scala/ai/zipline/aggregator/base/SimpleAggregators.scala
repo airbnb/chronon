@@ -1,9 +1,8 @@
 package ai.zipline.aggregator.base
 
-import java.util
-
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 
+import java.util
 import scala.reflect.ClassTag
 
 // specializing underlying types for speed, and in-case of sum, the output type is
@@ -46,45 +45,45 @@ class Count extends SimpleAggregator[Any, Long, Long] {
   override def isDeletable: Boolean = true
 }
 
-class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.TreeSet[T], Long] {
+class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.HashSet[T], Long] {
   override def outputType: DataType = LongType
 
   override def irType: DataType = ListType(inputType)
 
-  override def prepare(input: T): util.TreeSet[T] = {
-    val result = new util.TreeSet[T]()
+  override def prepare(input: T): util.HashSet[T] = {
+    val result = new util.HashSet[T]()
     result.add(input)
     result
   }
 
-  override def update(ir: util.TreeSet[T], input: T): util.TreeSet[T] = {
+  override def update(ir: util.HashSet[T], input: T): util.HashSet[T] = {
     if (!ir.contains(input)) {
       ir.add(input)
     }
     ir
   }
 
-  override def merge(ir1: util.TreeSet[T], ir2: util.TreeSet[T]): util.TreeSet[T] = {
+  override def merge(ir1: util.HashSet[T], ir2: util.HashSet[T]): util.HashSet[T] = {
     ir1.addAll(ir2)
     ir1
   }
 
-  override def finalize(ir: util.TreeSet[T]): Long = ir.size()
+  override def finalize(ir: util.HashSet[T]): Long = ir.size()
 
-  override def clone(ir: util.TreeSet[T]): util.TreeSet[T] = {
-    val cloned = new util.TreeSet[T]()
+  override def clone(ir: util.HashSet[T]): util.HashSet[T] = {
+    val cloned = new util.HashSet[T]()
     cloned.addAll(ir)
     cloned
   }
 
-  override def normalize(ir: util.TreeSet[T]): Any = {
+  override def normalize(ir: util.HashSet[T]): Any = {
     val arr = new util.ArrayList[T](ir.size())
     arr.addAll(ir)
     arr
   }
 
-  override def denormalize(ir: Any): util.TreeSet[T] = {
-    val set = new util.TreeSet[T]()
+  override def denormalize(ir: Any): util.HashSet[T] = {
+    val set = new util.HashSet[T]()
     set.addAll(ir.asInstanceOf[util.ArrayList[T]])
     set
   }
