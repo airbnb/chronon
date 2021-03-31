@@ -122,12 +122,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
 
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
-  // 3. Based on accuracy
-  //   Temporal => a. fetches batch - (decoded as deltaAvroSchemas),
-  //               b. fetches streaming - (decoded as inputAvroSchema)
-  //                    TODO: scan query starting at batchUploadTime, ending at currentTime
-  //               c. aggregates them into a outputAvroSchema
-  //   False => fetches batch (outputSchema decoded)
+  // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: Seq[Request]): Future[Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests

@@ -19,11 +19,11 @@ class GroupByTest {
   @Test
   def testSnapshotEntities(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10),
-      DataGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
-      DataGen.Column("session_length", IntType, 10000)
+      DataFrameGen.Column("user", StringType, 10),
+      DataFrameGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      DataFrameGen.Column("session_length", IntType, 10000)
     )
-    val df = DataGen.entities(spark, schema, 100000, 10) // ds = last 10 days
+    val df = DataFrameGen.entities(spark, schema, 100000, 10) // ds = last 10 days
     val viewName = "test_group_by_entities"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
@@ -53,13 +53,13 @@ class GroupByTest {
   @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10), // ts = last 10 days
-      DataGen.Column("session_length", IntType, 2)
+      DataFrameGen.Column("user", StringType, 10), // ts = last 10 days
+      DataFrameGen.Column("session_length", IntType, 2)
     )
 
-    val outputDates = DataGen.genPartitions(10)
+    val outputDates = DataFrameGen.genPartitions(10)
 
-    val df = DataGen.events(spark, schema, count = 100000, partitions = 100)
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
@@ -105,15 +105,15 @@ class GroupByTest {
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
-      DataGen.Column("user", StringType, 10),
-      DataGen.Column("session_length", IntType, 10000)
+      DataFrameGen.Column("user", StringType, 10),
+      DataFrameGen.Column("session_length", IntType, 10000)
     )
 
-    val eventDf = DataGen.events(spark, eventSchema, count = 10000, partitions = 180)
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
 
-    val querySchema = List(DataGen.Column("user", StringType, 10))
+    val querySchema = List(DataFrameGen.Column("user", StringType, 10))
 
-    val queryDf = DataGen.events(spark, querySchema, count = 1000, partitions = 180)
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(

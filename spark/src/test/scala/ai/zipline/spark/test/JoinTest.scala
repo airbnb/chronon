@@ -1,6 +1,7 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
+import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
@@ -28,21 +29,21 @@ class JoinTest {
   def testEventsEntitiesSnapshot(): Unit = {
 
     val dollarTransactions = List(
-      DataGen.Column("user", StringType, 100),
-      DataGen.Column("ts", LongType, 200),
-      DataGen.Column("amount_dollars", LongType, 1000)
+      Column("user", StringType, 100),
+      Column("ts", LongType, 200),
+      Column("amount_dollars", LongType, 1000)
     )
 
     val rupeeTransactions = List(
-      DataGen.Column("user", StringType, 100),
-      DataGen.Column("ts", LongType, 200),
-      DataGen.Column("amount_rupees", LongType, 70000)
+      Column("user", StringType, 100),
+      Column("ts", LongType, 200),
+      Column("amount_rupees", LongType, 70000)
     )
 
     val dollarTable = s"$namespace.dollar_transactions"
     val rupeeTable = s"$namespace.rupee_transactions"
-    DataGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable, Map("tblProp1" -> "1"))
-    DataGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
+    DataFrameGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable, Map("tblProp1" -> "1"))
+    DataFrameGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
       query = Builders.Query(
@@ -79,11 +80,11 @@ class JoinTest {
       metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "zipline")
     )
     val queriesSchema = List(
-      DataGen.Column("user", StringType, 100)
+      Column("user", StringType, 100)
     )
 
     val queryTable = s"$namespace.queries"
-    DataGen
+    DataFrameGen
       .events(spark, queriesSchema, 1000, partitions = 180)
       .withColumnRenamed("user", "user_name") // to test zipline renaming logic
       .save(queryTable)
@@ -158,12 +159,12 @@ class JoinTest {
     // untimned/unwindowed entities on right
     // right side
     val weightSchema = List(
-      DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 100),
-      DataGen.Column("weight", DoubleType, 500)
+      Column("user", StringType, 1000),
+      Column("country", StringType, 100),
+      Column("weight", DoubleType, 500)
     )
     val weightTable = s"$namespace.weights"
-    DataGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
+    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
@@ -180,12 +181,12 @@ class JoinTest {
     )
 
     val heightSchema = List(
-      DataGen.Column("user", StringType, 1000),
-      DataGen.Column("country", StringType, 100),
-      DataGen.Column("height", LongType, 200)
+      Column("user", StringType, 1000),
+      Column("country", StringType, 100),
+      Column("height", LongType, 200)
     )
     val heightTable = s"$namespace.heights"
-    DataGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
+    DataFrameGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
     val heightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
       snapshotTable = heightTable
@@ -199,9 +200,9 @@ class JoinTest {
     )
 
     // left side
-    val countrySchema = List(DataGen.Column("country", StringType, 100))
+    val countrySchema = List(Column("country", StringType, 100))
     val countryTable = s"$namespace.countries"
-    DataGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
+    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
@@ -264,13 +265,13 @@ class JoinTest {
   @Test
   def testEventsEventsSnapshot(): Unit = {
     val viewsSchema = List(
-      DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 100),
-      DataGen.Column("time_spent_ms", LongType, 5000)
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
 
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
@@ -289,9 +290,9 @@ class JoinTest {
     )
 
     // left side
-    val itemQueries = List(DataGen.Column("item", StringType, 100))
+    val itemQueries = List(Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
-    DataGen
+    DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
 
@@ -337,11 +338,43 @@ class JoinTest {
 
   @Test
   def testEventsEventsTemporal(): Unit = {
+
     val joinConf = getEventsEventsTemporal()
-    val itemQueriesTable = joinConf.getLeft.getEvents.getTable
-    val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
-    // Some code duplication here
+    val viewsSchema = List(
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000)
+    )
+
     val viewsTable = s"$namespace.view"
+    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo)
+    )
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
+        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+    )
+
+    // left side
+    val itemQueries = List(Column("item", StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueriesDf = DataFrameGen
+      .events(spark, itemQueries, 10000, partitions = 100)
+    // duplicate the events
+    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
+
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -385,11 +418,11 @@ class JoinTest {
     // Left side entities, right side entities no agg
     // Also testing specific select statement (rather than select *)
     val namesSchema = List(
-      DataGen.Column("user", StringType, 1000),
-      DataGen.Column("name", StringType, 500)
+      Column("user", StringType, 1000),
+      Column("name", StringType, 500)
     )
     val namesTable = s"$namespace.names"
-    DataGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
+    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
 
     val namesSource = Builders.Source.entities(
       query =
@@ -404,16 +437,16 @@ class JoinTest {
       metaData = Builders.MetaData(name = "unit_test.user_names", team = "zipline")
     )
 
-    DataGen
+    DataFrameGen
       .entities(spark, namesSchema, 1000, partitions = 400)
       .groupBy("user", "ds")
       .agg(Map("name" -> "max"))
       .save(namesTable)
 
     // left side
-    val userSchema = List(DataGen.Column("user", StringType, 100))
+    val userSchema = List(Column("user", StringType, 100))
     val usersTable = s"$namespace.users"
-    DataGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
+    DataFrameGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
@@ -553,13 +586,13 @@ class JoinTest {
 
   def getViewsGroupBy() = {
     val viewsSchema = List(
-      DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 100),
-      DataGen.Column("time_spent_ms", LongType, 5000)
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
+    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
 
     val viewsSource = Builders.Source.events(
       table = viewsTable,
@@ -581,9 +614,9 @@ class JoinTest {
 
   def getEventsEventsTemporal() = {
     // left side
-    val itemQueries = List(DataGen.Column("item", StringType, 100))
+    val itemQueries = List(Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
-    val itemQueriesDf = DataGen
+    val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 10000, partitions = 100)
     // duplicate the events
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)

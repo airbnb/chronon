@@ -117,12 +117,13 @@ git tag -a -m 'new release' release-zl-0.0.2
 ``` shell
  git push origin release-zl-0.0.2
 ```
-### Install a specific version of thrift
+
+### Install specific version of thrift
 ```
 brew tap-new $USER/local-thrift
 brew extract --version=0.13.0 thrift $USER/local-thrift
 brew install thrift@0.13.0
 ```
 
-Thrift is a dependency for compile. The latest version 0.14 is incompatible with hive metastore. So we force 0.13
+Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
 

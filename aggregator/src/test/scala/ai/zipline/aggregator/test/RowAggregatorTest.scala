@@ -9,14 +9,14 @@ import junit.framework.TestCase
 
 import scala.collection.JavaConverters._
 
-class TestRow(fieldsSeq: Any*) extends Row {
+class TestRow(fieldsSeq: Any*)(tsIndex: Int = 0 ) extends Row {
   val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
   override val length: Int = fields.size()
 
   override def get(index: Int): Any = fields.get(index)
 
   // just a convention for testing
-  lazy val timeStamp: Long = getAs[Long](0)
+  lazy val timeStamp: Long = getAs[Long](tsIndex)
 
   override def ts: Long = timeStamp
 
@@ -24,7 +24,7 @@ class TestRow(fieldsSeq: Any*) extends Row {
 }
 
 object TestRow {
-  def apply(inputsArray: Any*): TestRow = new TestRow(inputsArray: _*)
+  def apply(inputsArray: Any*): TestRow = new TestRow(inputsArray: _*)()
 }
 
 class RowAggregatorTest extends TestCase {
