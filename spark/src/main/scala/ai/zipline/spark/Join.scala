@@ -165,6 +165,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       joinPart.groupBy.accuracy
     }
 
+  def getJoinPartTableName(joinPart: JoinPart): String =
+    s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
+
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
@@ -176,7 +179,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       case (partialDf, joinPart) =>
         val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
           // compute only the missing piece
-          val joinPartTableName = s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
+          val joinPartTableName = getJoinPartTableName(joinPart)
           val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
 
           if (rightUnfilledRange.valid) {
@@ -200,12 +203,14 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   def archiveTablesToRecompute(): Unit = {
     // Detects semantic changes since last run in Join or GroupBy tables and archives the relevant tables so that they may be recomputed
     val joinPartsToBackfill = tableUtils.joinPartsToRecompute(joinConf, outputTable)
-    joinPartsToBackfill.foreach(tableUtils.archiveTable(_))
+    joinPartsToBackfill.foreach { joinPart =>
+      tableUtils.archiveTableIfExists(getJoinPartTableName(joinPart))
+    }
     if (joinPartsToBackfill.nonEmpty) {
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
-      tableUtils.archiveTable(joinConf)
+      tableUtils.archiveTableIfExists(outputTable)
     }
   }
 

@@ -1,5 +1,8 @@
 package ai.zipline.spark
 
+import java.text.SimpleDateFormat
+import java.util.Calendar
+
 import scala.collection.JavaConverters.asScalaBufferConverter
 
 import ai.zipline.api.{Constants, JoinPart, Source, Join => ThriftJoin}
@@ -182,17 +185,25 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-
-  def compareMetadata(joinPart: JoinPart): Boolean = {
-    true
+  def archiveTableIfExists(tableName: String, overrideSuffix: Option[String] = None): Unit = {
+    if (sparkSession.catalog.tableExists(tableName)) {
+      archiveTable(tableName, overrideSuffix)
+    } else {
+      println(s"Table ${tableName} not found, nothing to archive.")
+    }
   }
 
-  def archiveTable(join: ai.zipline.api.Join) = {
-
-  }
-
-  def archiveTable(joinPart: JoinPart) = {
-
+  def archiveTable(tableName: String, overrideSuffix: Option[String] = None): Unit = {
+    val format = new SimpleDateFormat("y_M_d_H_mm")
+    val cal = Calendar.getInstance
+    val timeString = format.format(cal.getTime())
+    val archiveSuffix = overrideSuffix.getOrElse(timeString)
+    val newTableName = s"${tableName}__$archiveSuffix"
+    val sql = s"ALTER TABLE $tableName RENAME TO $newTableName"
+    val reverseSql = s"ALTER TABLE $tableName RENAME TO $newTableName"
+    println(s"Archiving table with SQL: $sql")
+    println(s"Archiving table with SQL: $sql")
+    sparkSession.sql(sql)
   }
 
 }
