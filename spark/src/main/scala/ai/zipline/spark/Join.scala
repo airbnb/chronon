@@ -39,7 +39,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     // team name will be added/validated at the materialize step
-    val teamNm = if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinConf.metaData.team)
+    val teamNm = if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
     val prefixTeamNm = Seq(Option(joinPart.prefix), teamNm).flatten.mkString("_")
     // append prefixTeamNm to non key columns
     val prefixedRight = if (Option(prefixTeamNm).exists(_.trim.nonEmpty)) {

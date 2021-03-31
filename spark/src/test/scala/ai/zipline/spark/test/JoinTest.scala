@@ -209,21 +209,21 @@ class JoinTest {
     |   grouped_weights AS (
     |      SELECT country, 
     |             ds, 
-    |             avg(weight) as zipline_unit_test_country_weights_weight_average
+    |             avg(weight) as team_a_unit_test_country_weights_weight_average
     |      FROM $weightTable
     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
     |      GROUP BY country, ds),
     |   grouped_heights AS (
     |      SELECT country, 
     |             ds, 
-    |             avg(height) as zipline_unit_test_country_heights_height_average
+    |             avg(height) as team_b_unit_test_country_heights_height_average
     |      FROM $heightTable
     |      WHERE ds >= '$monthAgo'
     |      GROUP BY country, ds)
     |   SELECT countries.country,
     |        countries.ds,
-    |        grouped_weights.zipline_unit_test_country_weights_weight_average,
-    |        grouped_heights.zipline_unit_test_country_heights_height_average
+    |        grouped_weights.team_a_unit_test_country_weights_weight_average,
+    |        grouped_heights.team_b_unit_test_country_heights_height_average
     | FROM countries left outer join grouped_weights 
     | ON countries.country = grouped_weights.country
     | AND countries.ds = grouped_weights.ds
@@ -302,9 +302,9 @@ class JoinTest {
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
-                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_zipline_unit_test_item_views_ts_min,
-                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_zipline_unit_test_item_views_ts_max,
-                                |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_zipline_unit_test_item_views_time_spent_ms_count
+                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
+                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
+                                |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_count
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
