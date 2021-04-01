@@ -66,11 +66,10 @@ object SparkSessionBuilder {
     cleanUp(metastoreDb)
   }
 
-  def setupSession(session: SparkSession, commands: util.List[String]): Unit = {
+  def setupSession(tableUtils: TableUtils, commands: util.List[String]): Unit = {
     Option(commands).foreach {
       _.asScala.foreach { setupQuery =>
-        println(s"Running setup in session: $setupQuery")
-        session.sql(setupQuery)
+        tableUtils.sql(setupQuery)
       }
     }
   }

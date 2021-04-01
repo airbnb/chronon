@@ -324,15 +324,13 @@ object GroupBy {
 
   def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
     val sources = groupByConf.sources.asScala
-    val inputTables = sources.map(_.table)
-    val minStartPartition = sources.map(src => Option(src.query.startPartition)).min.orNull
-    sources.foreach(src => SparkSessionBuilder.setupSession(tableUtils.sparkSession, src.query.setups))
-
+    sources.foreach(src => SparkSessionBuilder.setupSession(tableUtils, src.query.setups))
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
-
+    val inputTables = sources.map(_.table)
+    val minStartPartition = sources.map(src => Option(src.query.startPartition)).min.orNull
     val groupByUnfilledRange: PartitionRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
