@@ -222,9 +222,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
   }
 
-  def archiveTablesToRecompute(): Unit = {
-    // Detects semantic changes since last run in Join or GroupBy tables and archives the relevant tables so that they may be recomputed
-    val joinPartsToRecompute = getJoinPartsToRecompute(outputTable)
+  def dropTablesToRecompute(): Unit = {
+    // Detects semantic changes since last run in Join or GroupBy tables and drops the relevant tables so that they may be recomputed
+    val joinPartsToRecompute = getJoinPartsToRecompute
     joinPartsToRecompute.foreach { joinPart =>
       tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
     }

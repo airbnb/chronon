@@ -8,9 +8,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 case class TableUtils(sparkSession: SparkSession) {
 
   val JoinMetadataKey = "join"
-
   sparkSession.sparkContext.setLogLevel("ERROR")
-
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
     pstring

@@ -143,6 +143,7 @@ object Extensions {
     }
 
     def datesIgnoredCopy: Source = {
+      // Makes a copy of the source and unsets date fields, used to compute equality on sources while ignoring these fields
       val newSource = source.deepCopy()
       val query = newSource.query
       query.unsetEndPartition()
