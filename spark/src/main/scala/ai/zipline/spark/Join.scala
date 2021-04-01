@@ -183,6 +183,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+    SparkSessionBuilder.setupSession(tableUtils.sparkSession, joinConf.left.query.setups)
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
       PartitionRange(joinConf.left.query.startPartition, endPartition),

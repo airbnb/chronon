@@ -1,11 +1,12 @@
 package ai.zipline.spark
 
-import java.io.File
-
 import org.apache.spark.sql.SparkSession
 
-import scala.reflect.io.Directory
+import java.io.File
+import java.util
 import java.util.logging.Logger
+import scala.collection.JavaConverters._
+import scala.reflect.io.Directory
 
 object SparkSessionBuilder {
 
@@ -65,4 +66,12 @@ object SparkSessionBuilder {
     cleanUp(metastoreDb)
   }
 
+  def setupSession(session: SparkSession, commands: util.List[String]): Unit = {
+    Option(commands).foreach {
+      _.asScala.foreach { setupQuery =>
+        println(s"Running setup in session: $setupQuery")
+        session.sql(setupQuery)
+      }
+    }
+  }
 }
