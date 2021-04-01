@@ -2,7 +2,6 @@ package ai.zipline.aggregator.test
 
 import ai.zipline.aggregator.base.LongType
 import ai.zipline.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.zipline.aggregator.test.TestDataUtils.genNums
 import ai.zipline.aggregator.windowing.{FiveMinuteResolution, SawtoothOnlineAggregator, TsUtils}
 import ai.zipline.api.Extensions.{WindowOps, WindowUtils}
 import ai.zipline.api._
@@ -15,22 +14,11 @@ class SawtoothOnlineAggregatorTest extends TestCase {
   def testConsistency: Unit = {
     val queryEndTs = TsUtils.round(System.currentTimeMillis(), WindowUtils.Day.millis)
     val batchEndTs = queryEndTs - WindowUtils.Day.millis
-    val monthAgoTs = queryEndTs - (30 * WindowUtils.Day.millis)
-    val queries = genNums(batchEndTs, queryEndTs, 1000).sorted
+    val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
     val eventCount = 1000000
-    val events = {
-      val eventTimes = genNums(queryEndTs, monthAgoTs, eventCount)
-      // max is 1M to avoid overflow when summing
-      val eventValues = genNums(0, 10, eventCount)
-      eventTimes.zip(eventValues).map {
-        case (time, value) => TestRow(time, value)
-      }
-    }
 
-    val schema = List(
-      "ts" -> LongType,
-      "num" -> LongType
-    )
+    val columns = Seq(Column("ts", LongType, 60), Column("num", LongType, 100))
+    val RowsWithSchema(events, schema) = CStream.gen(columns, eventCount)
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(

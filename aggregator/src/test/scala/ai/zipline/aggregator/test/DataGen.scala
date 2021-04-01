@@ -25,11 +25,22 @@ abstract class CStream[+T: ClassTag] {
     val roll = rollDouble(max.toDouble, min.toDouble, nullRate)
     if (roll == null) null else roll.toLong
   }
+
+  def gen(count: Int): Seq[T] = {
+    Stream.fill(count)(next())
+  }
 }
 
 object CStream {
   private type JLong = java.lang.Long
   private type JDouble = java.lang.Double
+
+  def genTimestamps(window: Window,
+                    count: Int,
+                    roundMillis: Int = 1,
+                    maxTs: Long = System.currentTimeMillis()): Array[Long] =
+    new CStream.TimeStream(window, roundMillis, maxTs).gen(count).toArray.sorted
+
   def genPartitions(count: Int): Array[String] = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     Stream
@@ -53,12 +64,14 @@ object CStream {
     override def next(): String = Option(roll(keyCount)).map(dice => keys(dice.toInt)).orNull
   }
 
-  class TimeStream(window: Window) extends CStream[Long] {
-    private val max = System.currentTimeMillis()
-    private val min = max - window.millis
+  class TimeStream(window: Window, roundMillis: Long = 1, maxTs: Long = System.currentTimeMillis())
+      extends CStream[Long] {
+    private val minTs = maxTs - window.millis
+
+    def round(v: Long): Long = (v / roundMillis) * roundMillis
 
     override def next(): Long = {
-      roll(max, min, -1) // timestamps can't be null
+      round(roll(maxTs, minTs, -1)) // timestamps can't be null
     }
   }
 
@@ -83,11 +96,11 @@ object CStream {
   }
 
   //  The main api: that generates dataframes given certain properties of data
-  def gen(columns: Seq[Column], count: Int): RowStreamWithSchema = {
+  def gen(columns: Seq[Column], count: Int): RowsWithSchema = {
     val schema = columns.map(_.schema)
     val generators = columns.map(_.gen)
     val zippedStream = new ZippedStream(generators: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
-    RowStreamWithSchema(Seq.fill(count) { zippedStream.next() }, schema)
+    RowsWithSchema(Seq.fill(count) { zippedStream.next() }.toArray, schema)
   }
 }
 
@@ -111,4 +124,4 @@ case class Column(name: String, `type`: DataType, cardinality: Int) {
 
   def schema: (String, DataType) = name -> `type`
 }
-case class RowStreamWithSchema(rowStream: Seq[TestRow], schema: Seq[(String, DataType)])
+case class RowsWithSchema(rows: Array[TestRow], schema: Seq[(String, DataType)])

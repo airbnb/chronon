@@ -2,7 +2,7 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base._
 import ai.zipline.aggregator.test.CStream.gen
-import ai.zipline.aggregator.test.{Column, RowStreamWithSchema}
+import ai.zipline.aggregator.test.{Column, RowsWithSchema}
 import ai.zipline.api.Constants
 import ai.zipline.spark.Conversions
 import org.apache.spark.rdd.RDD
@@ -18,7 +18,7 @@ import scala.collection.JavaConverters._
 object DataFrameGen {
   //  The main api: that generates dataframes given certain properties of data
   def genRows(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
-    val RowStreamWithSchema(rows, schema) = gen(columns, count)
+    val RowsWithSchema(rows, schema) = gen(columns, count)
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
     val sparkSchema = Conversions.fromZiplineSchema(schema.toArray)
