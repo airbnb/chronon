@@ -3,9 +3,7 @@ package ai.zipline.spark
 import org.apache.spark.sql.SparkSession
 
 import java.io.File
-import java.util
 import java.util.logging.Logger
-import scala.collection.JavaConverters._
 import scala.reflect.io.Directory
 
 object SparkSessionBuilder {
@@ -64,13 +62,5 @@ object SparkSessionBuilder {
   def cleanData(): Unit = {
     cleanUp(warehouseDir)
     cleanUp(metastoreDb)
-  }
-
-  def setupSession(tableUtils: TableUtils, commands: util.List[String]): Unit = {
-    Option(commands).foreach {
-      _.asScala.foreach { setupQuery =>
-        tableUtils.sql(setupQuery)
-      }
-    }
   }
 }

@@ -324,7 +324,7 @@ object GroupBy {
 
   def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
     val sources = groupByConf.sources.asScala
-    sources.foreach(src => SparkSessionBuilder.setupSession(tableUtils, src.query.setups))
+    sources.foreach(src => Option(src.query.setups.asScala).foreach(_.foreach(tableUtils.sql)))
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
