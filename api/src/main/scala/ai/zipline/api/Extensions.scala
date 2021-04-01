@@ -141,6 +141,14 @@ object Extensions {
     def topic: String = {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
     }
+
+    def datesIgnoredCopy: Source = {
+      val newSource = source.deepCopy()
+      val query = newSource.query
+      query.unsetEndPartition()
+      query.unsetStartPartition()
+      newSource
+    }
   }
 
   implicit class GroupByOps(groupBy: GroupBy) {

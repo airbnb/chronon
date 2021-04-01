@@ -1,27 +1,16 @@
 package ai.zipline.spark
 
-import java.text.SimpleDateFormat
-import java.util.Calendar
-
-import scala.collection.JavaConverters.asScalaBufferConverter
-
-import ai.zipline.api.{Constants, JoinPart, Source, Join => ThriftJoin}
+import ai.zipline.api.Constants
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.thrift.{TDeserializer, TSerializer}
-import org.apache.thrift.protocol.{TJSONProtocol, TSimpleJSONProtocol}
-import org.spark_project.guava.io.BaseEncoding
 
 case class TableUtils(sparkSession: SparkSession) {
 
   val JoinMetadataKey = "join"
-  val jsonFactory = new TSimpleJSONProtocol.Factory()
-  val serializer = new TSerializer(jsonFactory)
-  val deserializer = new TDeserializer(jsonFactory)
-  val encoder = BaseEncoding.base64()
 
   sparkSession.sparkContext.setLogLevel("ERROR")
+
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
     pstring
@@ -56,12 +45,14 @@ case class TableUtils(sparkSession: SparkSession) {
     partitions(tableName)
       .reduceOption(Ordering[String].min)
 
-  def insertPartitions(df: DataFrame,
-                       tableName: String,
-                       tableProperties: Map[String, String] = null,
-                       partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
-                       saveMode: SaveMode = SaveMode.Overwrite,
-                       fileFormat: String = "PARQUET"): Unit = {
+  def insertPartitions(
+      df: DataFrame,
+      tableName: String,
+      tableProperties: Map[String, String] = null,
+      partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+      saveMode: SaveMode = SaveMode.Overwrite,
+      fileFormat: String = "PARQUET"
+  ): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -97,11 +88,13 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  private def createTableSql(tableName: String,
-                             schema: StructType,
-                             partitionColumns: Seq[String],
-                             tableProperties: Map[String, String],
-                             fileFormat: String): String = {
+  private def createTableSql(
+      tableName: String,
+      schema: StructType,
+      partitionColumns: Seq[String],
+      tableProperties: Map[String, String],
+      fileFormat: String
+  ): String = {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"${field.name} ${field.dataType.catalogString}")
@@ -143,9 +136,11 @@ case class TableUtils(sparkSession: SparkSession) {
   // logic for resuming computation from a previous job
   // applicable to join, joinPart, groupBy, daily_cache
   // TODO: Log each step - to make it easy to follow the range inference logic
-  def unfilledRange(outputTable: String,
-                    partitionRange: PartitionRange,
-                    inputTables: Seq[String] = Seq.empty[String]): PartitionRange = {
+  def unfilledRange(
+      outputTable: String,
+      partitionRange: PartitionRange,
+      inputTables: Seq[String] = Seq.empty[String]
+  ): PartitionRange = {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
@@ -165,46 +160,9 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def joinPartsToRecompute(currentJoin: ThriftJoin, outputTable: String): Seq[JoinPart] = {
-    getTableProperties(outputTable).map{ lastRunMetadata =>
-      // get the join object that was saved onto the table as part of the last run
-      val encodedMetadata = lastRunMetadata.get(JoinMetadataKey).get
-      val joinJsonString = encoder.decode(encodedMetadata)
-      val lastRunJoin = new ThriftJoin()
-      deserializer.deserialize(lastRunJoin, joinJsonString)
-
-      if (SourceUtils.compareSourcesIgnoringStartEnd(currentJoin.left, lastRunJoin.left)) {
-        println("Changes detected on left side of join, recomputing all joinParts")
-        currentJoin.joinParts.asScala
-      } else {
-        currentJoin.joinParts.asScala.filter { joinPart =>
-          // For joinParts we simply check for bare equality
-          lastRunJoin.joinParts.asScala.exists(_ == joinPart)
-        }
-      }
-    }.getOrElse{
-      println("No Metadata found on existing table, attempting to proceed without recomputation.")
-      Seq.empty
-    }
-  }
-
-  def archiveTableIfExists(tableName: String, overrideSuffix: Option[String] = None): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
-      archiveTable(tableName, overrideSuffix)
-    } else {
-      println(s"Table ${tableName} not found, nothing to archive.")
-    }
-  }
-
-  def archiveTable(tableName: String, overrideSuffix: Option[String] = None): Unit = {
-    val format = new SimpleDateFormat("y_M_d_H_mm")
-    val cal = Calendar.getInstance
-    val timeString = format.format(cal.getTime())
-    val archiveSuffix = overrideSuffix.getOrElse(timeString)
-    val newTableName = s"${tableName}__$archiveSuffix"
-    val sql = s"ALTER TABLE $tableName RENAME TO $newTableName"
-    val reverseSql = s"DROP TABLE IF EXISTS $tableName; ALTER TABLE $newTableName RENAME TO $tableName; "
-    println(s"Archiving table with SQL: $sql \n If you wish to undo this, run manually in Spark SQL shell: $reverseSql")
+  def dropTableIfExists(tableName: String): Unit = {
+    val sql = s"DROP TABLE IF EXISTS $tableName;"
+    println(s"Dropping table with command: $sql")
     sparkSession.sql(sql)
   }
 

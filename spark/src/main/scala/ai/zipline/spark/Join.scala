@@ -1,16 +1,15 @@
 package ai.zipline.spark
 
+import java.util.Base64
+
+import scala.collection.JavaConverters._
+
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
-import scala.collection.JavaConverters._
-
-import org.apache.thrift.TSerializer
-import org.apache.thrift.protocol.TSimpleJSONProtocol
 import org.spark_project.guava.base.Charsets
-import org.spark_project.guava.io.BaseEncoding
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -22,8 +21,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     .getOrElse(Map.empty)
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
-  private val joinJson = tableUtils.serializer.toString(joinConf)
-  private val joinJsonEncoded = tableUtils.encoder.encode(joinJson.getBytes(Charsets.UTF_8))
+  private val joinJson = ThriftJsonDecoder.serializer.toString(joinConf)
+  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes(Charsets.UTF_8))
 
   // Combine tableProperties set on conf with encoded Join
   private val tableProps = confTableProps ++ Map(tableUtils.JoinMetadataKey -> joinJsonEncoded)
@@ -199,17 +198,41 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.drop(Constants.TimePartitionColumn)
   }
 
+  def getJoinPartsToRecompute(): Seq[JoinPart] = {
+    tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
+      // get the join object that was saved onto the table as part of the last run
+      val encodedMetadata = lastRunMetadata.get(tableUtils.JoinMetadataKey).get
+      val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
+      val joinJsonString = new String(joinJsonBytes)
+
+      val lastRunJoin = ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
+
+      if (joinConf.left.datesIgnoredCopy == lastRunJoin.left.datesIgnoredCopy) {
+        println("Changes detected on left side of join, recomputing all joinParts")
+        joinConf.joinParts.asScala
+      } else {
+        joinConf.joinParts.asScala.filter { joinPart =>
+          // For joinParts we simply check for bare equality
+          lastRunJoin.joinParts.asScala.exists(_ == joinPart)
+        }
+      }
+    }.getOrElse {
+      println("No Metadata found on existing table, attempting to proceed without recomputation.")
+      Seq.empty
+    }
+  }
+
   def archiveTablesToRecompute(): Unit = {
     // Detects semantic changes since last run in Join or GroupBy tables and archives the relevant tables so that they may be recomputed
-    val joinPartsToRecompute = tableUtils.joinPartsToRecompute(joinConf, outputTable)
+    val joinPartsToRecompute = getJoinPartsToRecompute(outputTable)
     joinPartsToRecompute.foreach { joinPart =>
-      tableUtils.archiveTableIfExists(getJoinPartTableName(joinPart))
+      tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
     }
     if (joinPartsToRecompute.nonEmpty) {
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
-      tableUtils.archiveTableIfExists(outputTable)
+      tableUtils.dropTableIfExists(outputTable)
     }
   }
 

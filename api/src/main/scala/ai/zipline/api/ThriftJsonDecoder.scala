@@ -10,10 +10,10 @@ import scala.io.Source._
 
 object ThriftJsonDecoder {
   val mapper = new ObjectMapper()
+  val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
   mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
   def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[T]): T = {
-    val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
     val obj: T = mapper.readValue(jsonStr, clazz)
     if (check) {
       val whiteSpaceNormalizedInput = jsonStr.replaceAll("\\s", "")
