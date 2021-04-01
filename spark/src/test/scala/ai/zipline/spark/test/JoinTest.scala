@@ -65,7 +65,8 @@ class JoinTest {
       Builders.Source.entities(
         query = Builders.Query(selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
                                startPartition = monthAgo,
-                               setups = Seq("create temporary function temp_replace_right_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
+                               setups = Seq("create temporary function temp_replace_right_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'",
+                                 "create temporary function temp_replace_right_c as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
         snapshotTable = rupeeTable
       )
 
