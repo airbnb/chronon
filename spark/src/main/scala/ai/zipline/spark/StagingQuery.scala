@@ -17,6 +17,7 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
   private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
 
   def computeStagingQuery(): Unit = {
+    Option(stagingQueryConf.setups.asScala).map(_ => tableUtils.sql(_))
     val stagingQueryUnfilledRange: PartitionRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
 
