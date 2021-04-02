@@ -36,7 +36,7 @@ lazy val aggregator = project
   )
 
 lazy val fetcher = project
-  .dependsOn(aggregator)
+  .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
       "org.apache.avro" % "avro" % "1.8.0"
@@ -44,7 +44,7 @@ lazy val fetcher = project
   )
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
   .settings(
     mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
     assemblyJarName in assembly := "zipline-spark.jar",

@@ -1,7 +1,4 @@
-package ai.zipline.fetcher.test
-
-import ai.zipline.fetcher.KVStore
-import ai.zipline.fetcher.KVStore.PutRequest
+package ai.zipline.spark.test
 
 import scala.collection.{mutable, parallel}
 import scala.concurrent.{ExecutionContext, Future}
