@@ -207,13 +207,19 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
       val lastRunJoin = ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
 
-      if (joinConf.left.datesIgnoredCopy == lastRunJoin.left.datesIgnoredCopy) {
+      if (joinConf.left.datesIgnoredCopy != lastRunJoin.left.datesIgnoredCopy) {
         println("Changes detected on left side of join, recomputing all joinParts")
         joinConf.joinParts.asScala
       } else {
+        println("No changes detected on left side of join, comparing individual JoinParts for equality")
         joinConf.joinParts.asScala.filter { joinPart =>
           // For joinParts we simply check for bare equality
-          lastRunJoin.joinParts.asScala.exists(_ == joinPart)
+          println("COMPARING~~~~")
+          println(lastRunJoin.joinParts.asScala.head)
+          println(joinPart)
+          println(lastRunJoin.joinParts.asScala.head == joinPart)
+          println("COMPARING~~~~")
+          !lastRunJoin.joinParts.asScala.exists(_ == joinPart)
         }
       }
     }.getOrElse {
@@ -237,6 +243,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+    // First run command to drop tables that have changed semantically since the last run
+    dropTablesToRecompute
+
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
       PartitionRange(joinConf.left.query.startPartition, endPartition),

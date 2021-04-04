@@ -159,7 +159,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def dropTableIfExists(tableName: String): Unit = {
-    val sql = s"DROP TABLE IF EXISTS $tableName;"
+    val sql = s"DROP TABLE IF EXISTS $tableName"
     println(s"Dropping table with command: $sql")
     sparkSession.sql(sql)
   }
