@@ -166,4 +166,20 @@ object Builders {
       result
     }
   }
+
+  object StagingQuery {
+    def apply(
+               query: String = null,
+               metaData: MetaData = null,
+               startPartition: String = null,
+               setups: Seq[String] = null
+             ): StagingQuery = {
+      val stagingQuery = new StagingQuery()
+      stagingQuery.setQuery(query)
+      stagingQuery.setMetaData(metaData)
+      stagingQuery.setStartPartition(startPartition)
+      if (setups != null) stagingQuery.setSetups(setups.asJava)
+      stagingQuery
+    }
+  }
 }
