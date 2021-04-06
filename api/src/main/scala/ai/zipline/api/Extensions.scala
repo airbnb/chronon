@@ -166,9 +166,9 @@ object Extensions {
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
 
-    def setups: Set[String] = {
+    def setups: Seq[String] = {
       val sources = groupBy.sources.asScala
-      sources.flatMap(_.query.setupsSet).toSet
+      sources.flatMap(_.query.setupsSeq).distinct
     }
   }
 
@@ -244,7 +244,7 @@ object Extensions {
       }
     }
 
-    def setups: Set[String] = join.left.query.setupsSet ++ join.joinParts.asScala.flatMap(_.groupBy.setups).toSet
+    def setups: Seq[String] = (join.left.query.setupsSeq ++ join.joinParts.asScala.flatMap(_.groupBy.setups)).distinct
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -257,8 +257,8 @@ object Extensions {
   }
 
   implicit class QueryOps(query: Query) {
-    def setupsSet: Set[String] = {
-      Option(query.setups).map(_.asScala.toSet).getOrElse(Set.empty)
+    def setupsSeq: Seq[String] = {
+      Option(query.setups).map(_.asScala.toSeq).getOrElse(Seq.empty)
     }
   }
 }
