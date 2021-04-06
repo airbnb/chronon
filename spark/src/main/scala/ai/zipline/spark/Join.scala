@@ -21,10 +21,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
   private val joinJson = ThriftJsonDecoder.serializer.toString(joinConf)
-  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes("UTF_8"))
+  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes("UTF-8"))
 
   // Combine tableProperties set on conf with encoded Join
-  private val tableProps = confTableProps ++ Map(tableUtils.JoinMetadataKey -> joinJsonEncoded)
+  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> joinJsonEncoded)
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -200,7 +200,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   def getLastRunJoin(): Option[JoinConf] = {
     tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
       // get the join object that was saved onto the table as part of the last run
-      val encodedMetadata = lastRunMetadata.get(tableUtils.JoinMetadataKey).get
+      val encodedMetadata = lastRunMetadata.get(Constants.JoinMetadataKey).get
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
       ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
@@ -218,21 +218,22 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def getJoinPartsToRecompute(): Seq[JoinPart] = {
-    getLastRunJoin.map { lastRunJoin =>
-      if (joinConf.left.datesIgnoredCopy != lastRunJoin.left.datesIgnoredCopy) {
-        println("Changes detected on left side of join, recomputing all joinParts")
-        joinConf.joinParts.asScala
-      } else {
-        println("No changes detected on left side of join, comparing individual JoinParts for equality")
-        joinConf.joinParts.asScala.filter { joinPart =>
-          // For joinParts we simply check for bare equality
-          !lastRunJoin.joinParts.asScala.contains(joinPart)
+    getLastRunJoin
+      .map { lastRunJoin =>
+        if (joinConf.copyForVersioningComparison != lastRunJoin.copyForVersioningComparison) {
+          println("Changes detected on left side of join, recomputing all joinParts")
+          joinConf.joinParts.asScala
+        } else {
+          println("No changes detected on left side of join, comparing individual JoinParts for equality")
+          joinConf.joinParts.asScala.filter { joinPart =>
+            !lastRunJoin.joinParts.asScala.exists(_.copyForVersioningComparison == joinPart.copyForVersioningComparison)
+          }
         }
       }
-    }.getOrElse {
-      println("No Metadata found on existing table, attempting to proceed without recomputation.")
-      Seq.empty
-    }
+      .getOrElse {
+        println("No Metadata found on existing table, attempting to proceed without recomputation.")
+        Seq.empty
+      }
   }
 
   def dropTablesToRecompute(): Unit = {
@@ -260,7 +261,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     println(s"left unfilled range: $leftUnfilledRange")
     val leftDfFull: DataFrame = {
-      val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table, fillIfAbsent = Map(Constants.PartitionColumn -> null)))
+      val df = tableUtils.sql(
+        leftUnfilledRange.genScanQuery(joinConf.left.query,
+                                       joinConf.left.table,
+                                       fillIfAbsent = Map(Constants.PartitionColumn -> null)))
       val skewFilter = joinConf.skewFilter()
       skewFilter
         .map(sf => {
