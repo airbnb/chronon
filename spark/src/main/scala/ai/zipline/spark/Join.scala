@@ -211,11 +211,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   def joinPartsWereRemoved(): Boolean = {
     // This check is to handle the edge case where a join part was removed without any other changes
     // to the join definition (and so the final table needs to be dropped for schema migration).
-    // In the case that one join part was removed but others were added, this check will not detect
-    // the deletes, but that is fine because the added one will already trigger a left-side schema migration
-    getLastRunJoin.map { lastRunJoin =>
-      joinConf.joinParts.asScala.size < lastRunJoin.joinParts.asScala.size
-    }.getOrElse(false)
+    getLastRunJoin.exists { lastRunJoin =>
+      lastRunJoin.joinParts.asScala.exists { joinPart =>
+        !joinConf.joinParts.asScala.contains(joinPart)
+      }
+    }
   }
 
   def getJoinPartsToRecompute(): Seq[JoinPart] = {
@@ -227,7 +227,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         println("No changes detected on left side of join, comparing individual JoinParts for equality")
         joinConf.joinParts.asScala.filter { joinPart =>
           // For joinParts we simply check for bare equality
-          !lastRunJoin.joinParts.asScala.exists(_ == joinPart)
+          !lastRunJoin.joinParts.asScala.contains(joinPart)
         }
       }
     }.getOrElse {
