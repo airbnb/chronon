@@ -60,14 +60,8 @@ object Extensions {
     val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
 
     def copyForVersioningComparison: MetaData = {
-      val newMetaData = metaData.deepCopy()
-      // Unset everything except name
-      newMetaData.unsetOnline()
-      newMetaData.unsetCustomJson()
-      newMetaData.unsetDependencies()
-      newMetaData.unsetOutputNamespace()
-      newMetaData.unsetProduction()
-      newMetaData.unsetTableProperties()
+      val newMetaData = new MetaData()
+      newMetaData.setName(metaData.name)
       newMetaData
     }
   }
