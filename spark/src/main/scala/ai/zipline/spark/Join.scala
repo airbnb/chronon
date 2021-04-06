@@ -17,7 +17,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   // Get table properties from config
   private val confTableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
-    .getOrElse(Map.empty)
+    .getOrElse(Map.empty[String, String])
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
   private val joinJson = ThriftJsonDecoder.serializer.toString(joinConf)
