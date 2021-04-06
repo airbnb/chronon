@@ -234,7 +234,7 @@ object Join {
   // TODO: make joins a subcommand of a larger driver
   //  that does group-by backfills/bulk uploads etc
   def main(args: Array[String]): Unit = {
-    // args = conf path, end date, output namespace
+    // args = conf path, end date
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")
     val joinConf =
