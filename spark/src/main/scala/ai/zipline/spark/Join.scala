@@ -21,7 +21,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
   private val joinJson = ThriftJsonDecoder.serializer.toString(joinConf)
-  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes(Charsets.UTF_8))
+  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes("UTF_8"))
 
   // Combine tableProperties set on conf with encoded Join
   private val tableProps = confTableProps ++ Map(tableUtils.JoinMetadataKey -> joinJsonEncoded)
