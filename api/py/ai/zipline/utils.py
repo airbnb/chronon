@@ -1,15 +1,14 @@
-from collections.abc import Iterable
-from typing import List, Union
-
 import ai.zipline.api.ttypes as api
 import ai.zipline.repo.extract_objects as eo
 import gc
-import json
-import shutil
-import os
-import tempfile
-import subprocess
 import importlib
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from collections.abc import Iterable
+from typing import List, Union
 
 
 def edit_distance(str1, str2):
@@ -130,4 +129,4 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     """generate output table name for staging query job"""
     staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries"))
     eo.import_module_set_name(staging_query_module, api.StagingQuery)
-    return staging_query.name.replace('.', '_')
+    return staging_query.metaData.name.replace('.', '_')
