@@ -183,9 +183,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
-    Option(joinConf.left.query.setups.asScala).foreach(_.foreach(tableUtils.sql))
+    Option(joinConf.left.query.setups).foreach(_.asScala.foreach(tableUtils.sql))
     val rightSources = joinConf.joinParts.asScala.flatMap(_.groupBy.sources.asScala)
-    rightSources.flatMap(src => Option(src.query.setups.asScala)).flatten.foreach(tableUtils.sql)
+    rightSources.flatMap(src => Option(src.query.setups)).foreach(_.asScala.foreach(tableUtils.sql))
 
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
       outputTable,
