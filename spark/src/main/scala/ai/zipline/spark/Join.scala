@@ -198,15 +198,28 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  def getJoinPartsToRecompute(): Seq[JoinPart] = {
+  def getLastRunJoin(): Option[JoinConf] = {
     tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
       // get the join object that was saved onto the table as part of the last run
       val encodedMetadata = lastRunMetadata.get(tableUtils.JoinMetadataKey).get
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
+      ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
+    }
+  }
 
-      val lastRunJoin = ThriftJsonDecoder.fromJsonStr(joinJsonString, true, classOf[JoinConf])
+  def joinPartsWereRemoved(): Boolean = {
+    // This check is to handle the edge case where a join part was removed without any other changes
+    // to the join definition (and so the final table needs to be dropped for schema migration).
+    // In the case that one join part was removed but others were added, this check will not detect
+    // the deletes, but that is fine because the added one will already trigger a left-side schema migration
+    getLastRunJoin.map { lastRunJoin =>
+      joinConf.joinParts.asScala.size < lastRunJoin.joinParts.asScala.size
+    }.getOrElse(false)
+  }
 
+  def getJoinPartsToRecompute(): Seq[JoinPart] = {
+    getLastRunJoin.map { lastRunJoin =>
       if (joinConf.left.datesIgnoredCopy != lastRunJoin.left.datesIgnoredCopy) {
         println("Changes detected on left side of join, recomputing all joinParts")
         joinConf.joinParts.asScala
@@ -214,11 +227,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         println("No changes detected on left side of join, comparing individual JoinParts for equality")
         joinConf.joinParts.asScala.filter { joinPart =>
           // For joinParts we simply check for bare equality
-          println("COMPARING~~~~")
-          println(lastRunJoin.joinParts.asScala.head)
-          println(joinPart)
-          println(lastRunJoin.joinParts.asScala.head == joinPart)
-          println("COMPARING~~~~")
           !lastRunJoin.joinParts.asScala.exists(_ == joinPart)
         }
       }
@@ -234,7 +242,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joinPartsToRecompute.foreach { joinPart =>
       tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
     }
-    if (joinPartsToRecompute.nonEmpty) {
+    if (joinPartsToRecompute.nonEmpty || joinPartsWereRemoved) {
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
