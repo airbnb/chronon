@@ -93,7 +93,12 @@ class JoinTest {
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.events(query = Builders.Query(startPartition = start, setups = Seq("create temporary function temp_replace_left as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")), table = queryTable),
+      left = Builders.Source.events(
+        query = Builders.Query(
+          startPartition = start,
+          setups = Seq("create temporary function temp_replace_left as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'",
+            "create temporary function temp_replace_right_c as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
+        table = queryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace)
     )
