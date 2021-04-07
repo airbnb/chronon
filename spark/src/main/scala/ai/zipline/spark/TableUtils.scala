@@ -19,12 +19,6 @@ case class TableUtils(sparkSession: SparkSession) {
       .toMap
   }
 
-  def sql(query: String): DataFrame = {
-    println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query)
-    df
-  }
-
   def partitions(tableName: String): Seq[String] = {
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
     sparkSession.sqlContext
@@ -83,6 +77,12 @@ case class TableUtils(sparkSession: SparkSession) {
         .insertInto(tableName)
       println(s"Finished writing to $tableName")
     }
+  }
+
+  def sql(query: String): DataFrame = {
+    println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
+    val df = sparkSession.sql(query)
+    df
   }
 
   private def createTableSql(
