@@ -60,6 +60,7 @@ object Extensions {
     val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
 
     def copyForVersioningComparison: MetaData = {
+      // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
       val newMetaData = new MetaData()
       newMetaData.setName(metaData.name)
       newMetaData
