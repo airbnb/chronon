@@ -162,8 +162,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       joinPart.groupBy.accuracy
     }
 
-  def getJoinPartTableName(joinPart: JoinPart): String =
-    s"${outputTable}_${joinPart.groupBy.metaData.cleanName}"
+  def getJoinPartTableName(joinPart: JoinPart): String = {
+    val joinPartPrefix = Option(joinPart.prefix).map(prefix => s"_$prefix").getOrElse("")
+    s"${outputTable}_$joinPartPrefix${joinPart.groupBy.metaData.cleanName}"
+  }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
