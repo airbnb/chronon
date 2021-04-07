@@ -212,7 +212,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     // to the join definition (and so the final table needs to be dropped for schema migration).
     getLastRunJoin.exists { lastRunJoin =>
       lastRunJoin.joinParts.asScala.exists { joinPart =>
-        !joinConf.joinParts.asScala.contains(joinPart)
+        !joinConf.joinParts.asScala.exists(_.copyForVersioningComparison == joinPart.copyForVersioningComparison)
       }
     }
   }
