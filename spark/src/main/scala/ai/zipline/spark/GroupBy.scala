@@ -1,20 +1,20 @@
 package ai.zipline.spark
 
-import java.util
-
 import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.types.{DataType, LongType, StringType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
+import org.rogach.scallop._
 
+import java.util
 import scala.collection.JavaConverters._
 
 class GroupBy(aggregations: Seq[Aggregation],
@@ -226,12 +226,12 @@ object GroupBy {
   def from(groupByConf: GroupByConf,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
-           bloomMap: Map[String, BloomFilter],
+           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map {
-        renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, groupByConf.maxWindow)
+        renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
@@ -260,25 +260,31 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-    println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
-    println(s"\nGroup-by raw data schema:")
-    println(bloomFilteredDf.schema.pretty)
-
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, bloomFilteredDf)
+    val processedInputDf = bloomMapOpt.map { bloomMap =>
+      val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
+      println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
+      bloomFilteredDf
+    }.getOrElse { skewFilteredDf }
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
   }
 
   def renderDataSourceQuery(source: Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
+                            tableUtils: TableUtils,
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
-    val scanStart = source.dataModel match {
-      case Entities => queryStart
-      case Events   => window.map(Constants.Partition.minus(queryStart, _)).orNull
+    val (scanStart, startPartition) = source.dataModel match {
+      case Entities => (queryStart, source.query.startPartition)
+      case Events =>
+        val windowStart = window.map(Constants.Partition.minus(queryStart, _)).orNull
+        val sourceStart = (Option(source.query.startPartition) ++ tableUtils.firstAvailablePartition(source.table))
+          .reduceLeftOption(Ordering[String].min)
+          .orNull
+        (windowStart, sourceStart)
     }
 
-    val sourceRange = PartitionRange(source.query.startPartition, source.query.endPartition)
+    val sourceRange = PartitionRange(startPartition, source.query.endPartition)
     val queryableDataRange = PartitionRange(scanStart, queryEnd)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
 
@@ -314,5 +320,47 @@ object GroupBy {
         |$query
         |""".stripMargin)
     query
+  }
+
+  def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
+    val sources = groupByConf.sources.asScala
+    sources.flatMap(src => Option(src.query.setups)).foreach(_.asScala.foreach(tableUtils.sql))
+    val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
+    val tableProps = Option(groupByConf.metaData.tableProperties)
+      .map(_.asScala.toMap)
+      .orNull
+    val inputTables = sources.map(_.table)
+    val minStartPartition = sources.map(src => Option(src.query.startPartition)).min.orNull
+    val groupByUnfilledRange: PartitionRange =
+      tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
+    println(s"group by unfilled range: $groupByUnfilledRange")
+
+    val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils)
+    (groupByConf.dataModel match {
+      // group by backfills have to be snapshot only
+      case Entities => groupByBackfill.snapshotEntities
+      case Events   => groupByBackfill.snapshotEvents(groupByUnfilledRange)
+    }).save(outputTable, tableProps)
+    println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+  }
+
+  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
+    val confPath: ScallopOption[String] = opt[String](required = true)
+    val endDate: ScallopOption[String] = opt[String](required = true)
+    verify()
+  }
+
+  def main(args: Array[String]): Unit = {
+    // args = conf path, end date, output namespace
+    val parsedArgs = new ParsedArgs(args)
+    println(s"Parsed Args: $parsedArgs")
+    val groupByConf =
+      ThriftJsonDecoder.fromJsonFile[GroupByConf](parsedArgs.confPath(), check = true, clazz = classOf[GroupByConf])
+
+    computeGroupBy(
+      groupByConf,
+      parsedArgs.endDate(),
+      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}", local = false))
+    )
   }
 }

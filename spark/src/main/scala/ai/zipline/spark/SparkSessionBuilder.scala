@@ -1,11 +1,10 @@
 package ai.zipline.spark
 
-import java.io.File
-
 import org.apache.spark.sql.SparkSession
 
-import scala.reflect.io.Directory
+import java.io.File
 import java.util.logging.Logger
+import scala.reflect.io.Directory
 
 object SparkSessionBuilder {
 
@@ -40,8 +39,7 @@ object SparkSessionBuilder {
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
-      //.config("spark.kryo.registrationRequired", "true")
-
+        .config("spark.kryo.registrationRequired", "true")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder
@@ -65,5 +63,4 @@ object SparkSessionBuilder {
     cleanUp(warehouseDir)
     cleanUp(metastoreDb)
   }
-
 }

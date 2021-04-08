@@ -1,23 +1,21 @@
 """Object for checking whether a Zipline API thrift object is consistent with other
 """
-from collections import defaultdict
+import ai.zipline.utils as utils
 import json
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
-from typing import List, Optional
-
-import ai.zipline.utils as utils
-
-from ai.zipline.repo import JOIN_FOLDER_NAME, \
-    GROUP_BY_FOLDER_NAME
-from ai.zipline.logger import get_logger
 from ai.zipline.api.ttypes import \
     GroupBy, Join
+from ai.zipline.logger import get_logger
+from ai.zipline.repo import JOIN_FOLDER_NAME, \
+    GROUP_BY_FOLDER_NAME
 from ai.zipline.repo.serializer import \
     thrift_simple_json, file2thrift
+from collections import defaultdict
+from typing import List, Optional
 
 # Fields that indicate stutus of the entities.
 STATUS_FIELDS = frozenset(['online', 'production'])
@@ -68,7 +66,7 @@ class ZiplineRepoValidator(object):
            materialized version of the obj given the object's name.
         """
         return next(
-            (x for x in self.old_objs[obj_class.__name__] if x.metaData.name == obj_name),
+            (x for x in self.old_objs[obj_class.__name__] if x.metaData and x.metaData.name == obj_name),
             None
         )
 
@@ -77,8 +75,8 @@ class ZiplineRepoValidator(object):
         returns:
             materialized joins including the group_by as dicts.
         """
-        return [join for join in self.old_joins
-                if group_by.metaData.name in (rp.groupBy.metaData.name for rp in join.joinParts)]
+        return [join for join in self.old_joins if join.joinParts is not None and
+                group_by.metaData.name in [rp.groupBy.metaData.name for rp in join.joinParts]]
 
     def can_skip_materialize(self, obj: object) -> List[str]:
         """
@@ -88,13 +86,13 @@ class ZiplineRepoValidator(object):
         reasons = []
         if isinstance(obj, GroupBy):
             # GroupBys explicitly marked as offline should not be materialized.
-            if obj.metaData.online is False:
+            if obj.metaData.online is False and obj.metaData.production is False:
                 reasons.append("is explicitly marked as offline")
             # Otherwise group_bys included in online join or are marked explicitly
             # online itself are materialized.
             elif not any(join.metaData.online for join in self._get_old_joins_with_group_by(obj)) \
-                    and not obj.metaData.online:
-                reasons.append("is not marked online nor is included in any online join")
+                    and not obj.metaData.online and not obj.metaData.production:
+                reasons.append("is not marked online/production nor is included in any online join")
         return reasons
 
     def _safe_to_overwrite(self, obj: object) -> bool:

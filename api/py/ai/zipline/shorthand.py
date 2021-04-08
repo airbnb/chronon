@@ -1,10 +1,7 @@
-from typing import List, Union, Tuple, Dict, Callable
-
 import ai.zipline.api.ttypes as api
-
 from dataclasses import dataclass
 from enum import Enum
-
+from typing import List, Union, Tuple, Dict, Callable
 
 MIN = api.Operation.MIN
 MAX = api.Operation.MAX
@@ -72,7 +69,7 @@ class Agg:
         aggregations = []
         for op in self._all_ops():
             windows = self._all_window_groups()
-            if None in windows:
+            if not windows or None in windows:
                 agg = api.Aggregation(inputColumn=self.column, operation=op[0], argMap=op[1], windows=None)
                 aggregations.append(agg)
             pure_windows = [parse_window(window) for window in windows if window is not None]
@@ -93,8 +90,10 @@ def GroupBy(name: str,
             table: str,
             model: DataModel,
             keys: List[Union[str, Tuple[str, str]]],
-            start_partition: str,
             aggs: List[Agg],  # data needs aggregation
+            start_partition: str,
+            outputNamespace: str = None,
+            tableProperties: Dict[str, str] = None,
             selects: Dict[str, str] = None,  # data is pre-aggregated
             ts: str = None,
             wheres: List[str] = None,
@@ -132,7 +131,8 @@ def GroupBy(name: str,
                                                    query=query))
 
     return api.GroupBy(
-        metaData=api.MetaData(name=name, production=production, online=online),
+        metaData=api.MetaData(name=name, production=production, online=online, tableProperties=tableProperties,
+                              outputNamespace=outputNamespace),
         sources=[source],
         keyColumns=key_selects.keys(),
         aggregations=aggregations

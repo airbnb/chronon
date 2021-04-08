@@ -1,7 +1,5 @@
 package ai.zipline.spark
 
-import java.util
-
 import ai.zipline.api._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -9,6 +7,7 @@ import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.util
 import scala.reflect.ClassTag
 
 object Extensions {

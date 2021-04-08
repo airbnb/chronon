@@ -37,6 +37,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "ai.zipline.spark.KeyWithHash",
       "java.util.HashMap",
       "java.util.ArrayList",
+      "java.util.HashSet",
       "org.apache.spark.sql.Row",
       "org.apache.spark.sql.catalyst.InternalRow",
       "org.apache.spark.sql.catalyst.expressions.GenericRow",
@@ -46,7 +47,9 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.LongType$", // dollar stands for case objects
       "org.apache.spark.sql.types.StringType",
       "org.apache.spark.sql.types.StringType$",
-      "org.apache.spark.sql.types.IntegerType$"
+      "org.apache.spark.sql.types.IntegerType$",
+      "org.apache.spark.util.sketch.BitArray",
+      "org.apache.spark.util.sketch.BloomFilterImpl"
     )
     names.foreach { name =>
       kryo.register(Class.forName(name))

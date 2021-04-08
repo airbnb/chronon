@@ -17,14 +17,13 @@ struct Query {
 
 
 struct StagingQuery {
-    1: optional string name
+    1: optional MetaData metaData
     // query should be written with `{{ start_date }}` and `{{ end_date }}` templates
     2: optional string query
     // on the first run, `{{ start_date }}` will be set to this user provided start date, future incremental runs will
     // set it to the latest existing partition + 1 day
-    3: optional string startDate
-    4: optional list<string> dependencies
-    5: optional list<string> querySetupCommands
+    3: optional string startPartition
+    4: optional list<string> setups
 }
 
 struct EventSource {
