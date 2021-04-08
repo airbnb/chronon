@@ -200,7 +200,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  def getLastRunJoin(): Option[JoinConf] = {
+  def getLastRunJoinOpt: Option[JoinConf] = {
     tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
       // get the join object that was saved onto the table as part of the last run
       val encodedMetadata = lastRunMetadata.get(Constants.JoinMetadataKey).get
@@ -241,7 +241,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   def dropTablesToRecompute(): Unit = {
     // Detects semantic changes since last run in Join or GroupBy tables and drops the relevant tables so that they may be recomputed
-    val lastRunjoin = getLastRunJoin
+    val lastRunjoin = getLastRunJoinOpt
     val joinPartsToRecompute = getJoinPartsToRecompute(lastRunjoin)
     joinPartsToRecompute.foreach { joinPart =>
       tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
