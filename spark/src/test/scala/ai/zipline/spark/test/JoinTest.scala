@@ -538,8 +538,11 @@ class JoinTest {
     val rightModRecompute = rightModJoin.getJoinPartsToRecompute()
     assertEquals(rightModRecompute.size, 1)
     assertEquals(rightModRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    // Modify both
+    rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
+    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     // Compute to ensure that it works
-    val computed = rightModJoin.computeJoin(Some(100))
+    val computed = rightModBothJoin.computeJoin(Some(100))
 
     // Now assert that the actual output is correct after all these runs
     computed.show()
@@ -550,13 +553,13 @@ class JoinTest {
     val expected = tableUtils.sql(s"""
                                      |WITH
                                      |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
-                                     | SELECT queries.item, queries.ts, queries.ds, part.user_ts_min, part.user_ts_max, part.user_time_spent_ms_average, part.user_3_ts_min, part.user_3_ts_max, part.user_3_time_spent_ms_average
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_4_ts_min, part.user_4_ts_max, part.user_4_time_spent_ms_average, part.user_3_ts_min, part.user_3_ts_max, part.user_3_time_spent_ms_average
                                      | FROM (SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
-                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_min,
-                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_ts_max,
-                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_time_spent_ms_average,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_4_time_spent_ms_average,
                                      |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_min,
                                      |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_max,
                                      |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_3_time_spent_ms_average
@@ -577,7 +580,7 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff
-        .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = true)
+        .replaceWithReadableTime(Seq("ts", "a_user_3_ts_max", "b_user_3_ts_max"), dropOriginal = true)
         .show()
     }
     assertEquals(0, diff.count())

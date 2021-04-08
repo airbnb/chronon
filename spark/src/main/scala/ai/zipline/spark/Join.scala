@@ -180,6 +180,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
           // compute only the missing piece
           val joinPartTableName = getJoinPartTableName(joinPart)
           val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
+          println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
           if (rightUnfilledRange.valid) {
             val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
@@ -209,18 +210,18 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
   }
 
-  def joinPartsWereRemoved(): Boolean = {
+  def joinPartsWereRemoved(lastRunJoin: Option[JoinConf]): Boolean = {
     // This check is to handle the edge case where a join part was removed without any other changes
     // to the join definition (and so the final table needs to be dropped for schema migration).
-    getLastRunJoin.exists { lastRunJoin =>
+    lastRunJoin.exists { lastRunJoin =>
       lastRunJoin.joinParts.asScala.exists { joinPart =>
         !joinConf.joinParts.asScala.exists(_.copyForVersioningComparison == joinPart.copyForVersioningComparison)
       }
     }
   }
 
-  def getJoinPartsToRecompute(): Seq[JoinPart] = {
-    getLastRunJoin
+  def getJoinPartsToRecompute(lastRunJoin: Option[JoinConf]): Seq[JoinPart] = {
+    lastRunJoin
       .map { lastRunJoin =>
         if (joinConf.copyForVersioningComparison != lastRunJoin.copyForVersioningComparison) {
           println("Changes detected on left side of join, recomputing all joinParts")
@@ -240,7 +241,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   def dropTablesToRecompute(): Unit = {
     // Detects semantic changes since last run in Join or GroupBy tables and drops the relevant tables so that they may be recomputed
-    val joinPartsToRecompute = getJoinPartsToRecompute
+    val lastRunjoin = getLastRunJoin
+    val joinPartsToRecompute = getJoinPartsToRecompute(lastRunjoin)
     joinPartsToRecompute.foreach { joinPart =>
       tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
     }
