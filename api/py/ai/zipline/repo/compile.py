@@ -76,16 +76,26 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     else:
         raise Exception(f"Input Path: {full_input_path}, isn't a file or a folder")
     validator = ZiplineRepoValidator(zipline_root_path, output_root, log_level=log_level)
-    extra_online_group_bys = {}
-    num_written_objs = 0
     full_output_root = os.path.join(zipline_root_path, output_root)
     teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
+    compile_extracted_objects(teams_path, team_name, validator, results, full_output_root,
+                              force_overwrite=force_overwrite, log_level=log_level)
+
+
+def compile_extracted_objects(teams_path, team_name, validator, results, full_output_root, force_overwrite=False,
+                              log_level=logging.INFO):
+    """
+    Given a teams location and extracted objects and a validator write production configs.
+    Shared between ziperva and repo API.
+    """
+    extra_online_group_bys = {}
+    num_written_objs = 0
     for name, obj in results.items():
         _set_team_level_metadata(obj, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
-            if obj_class is Join and obj.metaData.online:
+            if obj.__class__ is Join and obj.metaData.online:
                 online_group_bys = {rt.groupBy.name: rt.groupBy for rt in obj.rightParts}
                 extra_online_group_bys.update(online_group_bys)
     if extra_online_group_bys:
@@ -96,7 +106,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
             if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
-    print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
+    print(f"Successfully wrote {num_written_objs} {(obj.__class__).__name__} objects to {full_output_root}")
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
