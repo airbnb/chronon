@@ -36,14 +36,12 @@ case class TableUtils(sparkSession: SparkSession) {
     partitions(tableName)
       .reduceOption(Ordering[String].min)
 
-  def insertPartitions(
-      df: DataFrame,
-      tableName: String,
-      tableProperties: Map[String, String] = null,
-      partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
-      saveMode: SaveMode = SaveMode.Overwrite,
-      fileFormat: String = "PARQUET"
-  ): Unit = {
+  def insertPartitions(df: DataFrame,
+                       tableName: String,
+                       tableProperties: Map[String, String] = null,
+                       partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                       saveMode: SaveMode = SaveMode.Overwrite,
+                       fileFormat: String = "PARQUET"): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -85,13 +83,11 @@ case class TableUtils(sparkSession: SparkSession) {
     df
   }
 
-  private def createTableSql(
-      tableName: String,
-      schema: StructType,
-      partitionColumns: Seq[String],
-      tableProperties: Map[String, String],
-      fileFormat: String
-  ): String = {
+  private def createTableSql(tableName: String,
+                             schema: StructType,
+                             partitionColumns: Seq[String],
+                             tableProperties: Map[String, String],
+                             fileFormat: String): String = {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"${field.name} ${field.dataType.catalogString}")
@@ -133,11 +129,9 @@ case class TableUtils(sparkSession: SparkSession) {
   // logic for resuming computation from a previous job
   // applicable to join, joinPart, groupBy, daily_cache
   // TODO: Log each step - to make it easy to follow the range inference logic
-  def unfilledRange(
-      outputTable: String,
-      partitionRange: PartitionRange,
-      inputTables: Seq[String] = Seq.empty[String]
-  ): PartitionRange = {
+  def unfilledRange(outputTable: String,
+                    partitionRange: PartitionRange,
+                    inputTables: Seq[String] = Seq.empty[String]): PartitionRange = {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
@@ -158,9 +152,9 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def dropTableIfExists(tableName: String): Unit = {
-    val sql = s"DROP TABLE IF EXISTS $tableName"
-    println(s"Dropping table with command: $sql")
-    sparkSession.sql(sql)
+    val command = s"DROP TABLE IF EXISTS $tableName"
+    println(s"Dropping table with command: $command")
+    sql(command)
   }
 
 }

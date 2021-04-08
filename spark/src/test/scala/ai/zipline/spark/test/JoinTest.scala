@@ -380,7 +380,6 @@ class JoinTest {
     // Some code duplication here
     val viewsTable = s"$namespace.view"
 
-
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
@@ -430,9 +429,8 @@ class JoinTest {
     DataGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
 
     val namesSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("name"),
-        startPartition = yearAgo,
-        endPartition = dayAndMonthBefore),
+      query =
+        Builders.Query(selects = Builders.Selects("name"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
       snapshotTable = namesTable
     )
 
@@ -443,7 +441,9 @@ class JoinTest {
       metaData = Builders.MetaData(name = "unit_test.user_names")
     )
 
-    DataGen.entities(spark, namesSchema, 1000, partitions = 400).groupBy("user", "ds")
+    DataGen
+      .entities(spark, namesSchema, 1000, partitions = 400)
+      .groupBy("user", "ds")
       .agg(Map("name" -> "max"))
       .save(namesTable)
 
@@ -452,11 +452,11 @@ class JoinTest {
     val usersTable = s"$namespace.users"
     DataGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
-
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start), snapshotTable = usersTable),
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
+                                      snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace)
     )
@@ -501,6 +501,7 @@ class JoinTest {
   @Test
   def testVersioning(): Unit = {
     val joinConf = getEventsEventsTemporal()
+    joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
     val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
@@ -579,8 +580,7 @@ class JoinTest {
         .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = true)
         .show()
     }
-    assertEquals(diff.count(), 0)
-
+    assertEquals(0, diff.count())
   }
 
 }
