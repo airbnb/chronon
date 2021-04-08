@@ -1,0 +1,2 @@
+-r base.in
+pytest-cov
