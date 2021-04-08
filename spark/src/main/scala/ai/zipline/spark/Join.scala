@@ -20,11 +20,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     .getOrElse(Map.empty[String, String])
 
   // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
-  private val joinJson = ThriftJsonDecoder.serializer.toString(joinConf)
-  private val joinJsonEncoded = Base64.getEncoder.encodeToString(joinJson.getBytes("UTF-8"))
+  private val confJson = ThriftJsonDecoder.serializer.toString(joinConf)
+  private val confJsonBase64 = Base64.getEncoder.encodeToString(confJson.getBytes("UTF-8"))
 
   // Combine tableProperties set on conf with encoded Join
-  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> joinJsonEncoded)
+  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> confJsonBase64)
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
