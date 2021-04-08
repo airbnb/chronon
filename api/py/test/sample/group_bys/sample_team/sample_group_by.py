@@ -21,5 +21,4 @@ v1 = GroupBy(
         "description": "sample description"
     },
     outputNamespace="sample_namespace",
-    # ts="CONCAT(ds, ' 23:59:59.999')"
 )

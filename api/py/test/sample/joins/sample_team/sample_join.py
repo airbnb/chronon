@@ -13,7 +13,6 @@ v1 = api.Join(
             snapshotTable="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),
             query=api.Query(
                 startPartition='2021-03-01',
-                timeColumn="CONCAT(ds, ' 23:59:59.999')"
             )
         )
     ),

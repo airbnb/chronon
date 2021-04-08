@@ -11,7 +11,6 @@
       "snapshotTable": "sample_namespace.sample_team_sample_staging_query_v1",
       "query": {
         "startPartition": "2021-03-01",
-        "timeColumn": "CONCAT(ds, ' 23:59:59.999')",
         "setups": []
       }
     }
