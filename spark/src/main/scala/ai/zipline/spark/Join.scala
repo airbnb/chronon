@@ -225,7 +225,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       .map { lastRunJoin =>
         if (joinConf.copyForVersioningComparison != lastRunJoin.copyForVersioningComparison) {
           println("Changes detected on left side of join, recomputing all joinParts")
-          joinConf.joinParts.asScala
+          joinConf.joinParts.asScala ++ lastRunJoin.joinParts.asScala
         } else {
           println("No changes detected on left side of join, comparing individual JoinParts for equality")
           joinConf.joinParts.asScala.filter { joinPart =>
