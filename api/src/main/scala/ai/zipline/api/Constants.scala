@@ -13,4 +13,5 @@ object Constants {
   val StartPartitionMacro = "[START_PARTITION]"
   val EndPartitionMacro = "[END_PARTITION]"
   val lineTab = "\n    "
+  val JoinMetadataKey = "join"
 }
