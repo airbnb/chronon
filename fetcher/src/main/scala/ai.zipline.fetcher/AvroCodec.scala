@@ -28,7 +28,7 @@ import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, Encoder
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-class AvroCodec(schema: Schema) {
+class AvroCodec(val schema: Schema) extends Serializable {
   private val datumWriter = new GenericDatumWriter[GenericRecord](schema)
   private val datumReader = new GenericDatumReader[GenericRecord](schema)
   private var decoder: BinaryDecoder = null
@@ -51,6 +51,14 @@ class AvroCodec(schema: Schema) {
     val record = new GenericData.Record(schema)
     for (i <- 0 until row.length) {
       record.put(i, row.get(i))
+    }
+    encodeRecord(record)
+  }
+
+  def encodeArray(anyArray: Array[Any]): Array[Byte] = {
+    val record = new GenericData.Record(schema)
+    for (i <- 0 until anyArray.length) {
+      record.put(i, anyArray(i))
     }
     encodeRecord(record)
   }

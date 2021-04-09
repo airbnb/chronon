@@ -200,6 +200,7 @@ object Extensions {
 
     def batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
     def streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
+    def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) {

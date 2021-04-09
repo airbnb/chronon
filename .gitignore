@@ -13,7 +13,6 @@ api/py/ai/zipline/api/
 api/py/.coverage
 api/py/htmlcov/
 **/derby.log
-
 # Python distribution and packaging
 api/py/dist/
 api/py/eggs/
@@ -21,3 +20,5 @@ api/py/sdist/
 api/py/build/
 api/py/*.egg-info/
 *.egg
+**/spark-warehouse/
+**/metastore_db/

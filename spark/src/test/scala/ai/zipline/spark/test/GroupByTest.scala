@@ -154,7 +154,7 @@ class GroupByTest {
             (key.data :+ query, ir)
         }
     }
-    val naiveDf = groupBy.toDataFrame(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))
+    val naiveDf = groupBy.toDf(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))
 
     val diff = Comparison.sideBySide(naiveDf, resultDf, List("user", Constants.TimeColumn))
     if (diff.count() > 0) {

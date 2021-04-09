@@ -35,6 +35,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex",
       "org.apache.spark.sql.types.Metadata",
       "ai.zipline.spark.KeyWithHash",
+      "ai.zipline.aggregator.windowing.BatchIr",
       "java.util.HashMap",
       "java.util.ArrayList",
       "java.util.HashSet",

@@ -39,7 +39,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
     val collapsedSchema = windowedAggregator.irSchema
     val hopFields = baseAggregator.irSchema :+ ("ts", LongType)
     Seq("collapsedIr" -> StructType.from("WindowedIr", collapsedSchema),
-        "tailHopIrs" -> ListType(StructType.from("HopIr", hopFields)))
+        "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
   }
 
   val tailTs: Array[Option[Long]] = windowMappings.map { mapping =>
@@ -86,8 +86,14 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
 
   def finalizeTail(batchIr: BatchIr): FinalBatchIr =
     FinalBatchIr(
-      batchIr.collapsed,
-      Option(batchIr.tailHops).map(hopsAggregator.toTimeSortedArray).orNull
+      windowedAggregator.normalize(batchIr.collapsed),
+      Option(batchIr.tailHops)
+        .map(hopsAggregator.toTimeSortedArray)
+        .map(_.map(_.map { hopIr =>
+          baseAggregator.indices.foreach(i => hopIr.update(i, baseAggregator(i).normalize(hopIr(i))))
+          hopIr
+        }))
+        .orNull
     )
 
   // TODO: We can cache aggregated values in a very interesting way

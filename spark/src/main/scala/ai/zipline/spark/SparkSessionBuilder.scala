@@ -10,7 +10,7 @@ object SparkSessionBuilder {
 
   val warehouseDir = new File("spark-warehouse")
 
-  def build(name: String, local: Boolean): SparkSession = {
+  def build(name: String, local: Boolean = false): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
@@ -25,7 +25,7 @@ object SparkSessionBuilder {
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
-      .config("spark.kryoserializer.buffer.max.mb", "2000")
+      .config("spark.kryoserializer.buffer.max", "2000m")
       .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")

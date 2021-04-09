@@ -2,26 +2,33 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
-import ai.zipline.api.{Builders, Operation, TimeUnit, Window}
+import ai.zipline.api.{Builders, Constants, Operation, TimeUnit, Window}
+import ai.zipline.spark.{GroupBy, PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.SparkSession
+import ai.zipline.spark.Extensions._
+import junit.framework.TestCase
 
-class FetcherTest {
+class FetcherTest extends TestCase {
+  val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
+
   def testTemporalFetch: Unit = {
 
-    val paymentCols = Seq(Column("user", StringType, 100),
-                          Column("vendor", StringType, 10),
-                          Column("ts", LongType, 60),
-                          Column("payment", LongType, 100))
+    val paymentCols =
+      Seq(Column("user", StringType, 100), Column("vendor", StringType, 10), Column("payment", LongType, 100))
 
-    val ratingCols = Seq(Column("user", StringType, 100),
-                         Column("vendor", StringType, 10),
-                         Column("ts", LongType, 180),
-                         Column("rating", IntType, 5))
+    val ratingCols =
+      Seq(Column("user", StringType, 100), Column("vendor", StringType, 10), Column("rating", IntType, 5))
+
+    val paymentsTable = "payments_table"
+    DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
+    val ratingsTable = "ratings_table"
+    DataFrameGen.events(spark, ratingCols, 100000, 180).save(ratingsTable)
 
     val queryCols =
       Seq(Column("user_id", StringType, 100), Column("vendor_id", StringType, 10), Column("ts", LongType, 1))
 
     val vendorRatingsGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = Builders.Query(), table = "ratings_table")),
+      sources = Seq(Builders.Source.events(query = Builders.Query(), table = ratingsTable)),
       keyColumns = Seq("vendor"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.AVERAGE,
@@ -31,16 +38,21 @@ class FetcherTest {
     )
 
     val userPaymentsGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = Builders.Query(), table = "payments_table")),
+      sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable)),
       keyColumns = Seq("user"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.SUM,
+        Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
                              inputColumn = "payment",
-                             windows = Seq(new Window(1, TimeUnit.HOURS), new Window(10, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(1, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_payments")
     )
 
-    val RowsWithSchema(rows, schema) = CStream.gen(paymentCols, 100000)
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    println(today)
+    GroupBy
+      .from(userPaymentsGroupBy, PartitionRange(today, today), TableUtils(spark))
+      .temporalEventsUpload(today)
+      .show()
     // create groupBy data
 
     // create queries

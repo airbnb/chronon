@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonDecoder, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonCodec, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -17,23 +17,36 @@ import org.rogach.scallop._
 import java.util
 import scala.collection.JavaConverters._
 
-class GroupBy(aggregations: Seq[Aggregation],
-              keyColumns: Seq[String],
-              inputDf: DataFrame,
+class GroupBy(val aggregations: Seq[Aggregation],
+              val keyColumns: Seq[String],
+              val inputDf: DataFrame,
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
-  private val ziplineSchema = Conversions.toZiplineSchema(inputDf.schema)
-  private lazy val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+  protected val inputZiplineSchema = Conversions.toZiplineSchema(inputDf.schema)
+
+  val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
+  implicit val sparkSession = inputDf.sparkSession
+  // distinct inputs to aggregations - post projection types that needs to match with
+  // streaming's post projection types etc.,
+  val preAggSchema = if (aggregations != null) {
+    StructType(aggregations.map(_.inputColumn).distinct.map(inputDf.schema.apply))
+  } else {
+    val values = inputDf.schema.map(_.name).filterNot((keyColumns ++ Constants.ReservedColumns).contains)
+    val valuesIndices = values.map(inputDf.schema.fieldIndex).toArray
+    StructType(valuesIndices.map(inputDf.schema))
+  }
+
+  protected lazy val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+  lazy val postAggSchema = Conversions.fromZiplineSchema(valueZiplineSchema)
+
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
-    new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack))
+    new RowAggregator(inputZiplineSchema, aggregations.flatMap(_.unpack))
 
-  def snapshotEntities: DataFrame = {
-    if (aggregations == null || aggregations.isEmpty) return inputDf //data is pre-aggregated
-
+  def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
@@ -53,32 +66,37 @@ class GroupBy(aggregations: Seq[Aggregation],
       inputDf -> updateFunc
     }
 
-    val outputRdd = preppedInputDf.rdd
+    preppedInputDf.rdd
       .keyBy(keyBuilder)
-      .aggregateByKey(windowAggregator.init)(
-        seqOp = irUpdateFunc,
-        combOp = windowAggregator.merge
-      )
-      .map { case (keyWithHash, ir) => keyWithHash.data -> ir }
-    toDataFrame(outputRdd, Seq((Constants.PartitionColumn, StringType)))
+      .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
+      .map { case (keyWithHash, ir) => keyWithHash.data -> sparkify(ir) }
   }
-  // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
-  // At this time, we hardcode the resolution to Daily, but it is straight forward to support
-  // hourly resolution.
-  def snapshotEvents(partitionRange: PartitionRange, resolution: Resolution = DailyResolution): DataFrame = {
-    val endTimes: Array[Long] = partitionRange.toTimePoints
-    val sawtoothAggregator = new SawtoothAggregator(aggregations, ziplineSchema, resolution)
 
-    val outputRdd = hopsAggregate(endTimes.min, resolution)
+  def snapshotEntities: DataFrame =
+    if (aggregations == null || aggregations.isEmpty) {
+      inputDf
+    } else {
+      toDf(snapshotEntitiesBase, Seq(Constants.PartitionColumn -> StringType))
+    }
+
+  def snapshotEventsBase(partitionRange: PartitionRange,
+                         resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
+    val endTimes: Array[Long] = partitionRange.toTimePoints
+    val sawtoothAggregator = new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
+    hopsAggregate(endTimes.min, resolution)
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
-            (keys.data :+ Constants.Partition.at(endTimes(i)), irs(i))
+            (keys.data :+ Constants.Partition.at(endTimes(i)), sparkify(irs(i)))
           }
       }
-    toDataFrame(outputRdd, Seq((Constants.PartitionColumn, StringType)))
   }
+  // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
+  // At this time, we hardcode the resolution to Daily, but it is straight forward to support
+  // hourly resolution.
+  def snapshotEvents(partitionRange: PartitionRange): DataFrame =
+    toDf(snapshotEventsBase(partitionRange), Seq((Constants.PartitionColumn, StringType)))
 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
@@ -116,7 +134,7 @@ class GroupBy(aggregations: Seq[Aggregation],
     // otherwise we the mega-join will produce square number of rows.
 
     val sawtoothAggregator =
-      new SawtoothAggregator(aggregations, ziplineSchema, resolution)
+      new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
 
     // create the IRs up to minHop accuracy
     val headStartsWithIrs = queriesByHeadStarts.keys
@@ -152,9 +170,10 @@ class GroupBy(aggregations: Seq[Aggregation],
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
-          queries.indices.map { i => (keys.data ++ queriesWithPartition(i).toArray, irs(i)) }
+          queries.indices.map { i => (keys.data ++ queriesWithPartition(i).toArray, sparkify(irs(i))) }
       }
-    toDataFrame(outputRdd, Seq((Constants.TimeColumn, LongType), (Constants.PartitionColumn, StringType)))
+
+    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -164,30 +183,25 @@ class GroupBy(aggregations: Seq[Aggregation],
   //  buildRddRow(GenericRowWithSchema) -> (keyWithHash, hopsOutput)
   def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
-      new HopsAggregator(minQueryTs, aggregations, ziplineSchema, resolution)
+      new HopsAggregator(minQueryTs, aggregations, inputZiplineSchema, resolution)
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
     inputDf.rdd
-      .keyBy {
-        keyBuilder
-      }
+      .keyBy(keyBuilder)
+      .mapValues(Conversions.toZiplineRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
-        seqOp = {
-          case (ir: HopsAggregator.IrMapType, input: Row) =>
-            hopsAggregator.update(ir, Conversions.toZiplineRow(input, tsIndex))
-        },
+        seqOp = hopsAggregator.update,
         combOp = hopsAggregator.merge
       )
-      .mapValues {
-        hopsAggregator.toTimeSortedArray
-      }
+      .mapValues { hopsAggregator.toTimeSortedArray }
   }
 
-  protected[spark] def toDataFrame(aggregateRdd: RDD[(Array[Any], Array[Any])],
-                                   additionalFields: Seq[(String, DataType)]): DataFrame = {
-    val flattened = aggregateRdd.map { case (keys, ir) => makeRow(keys, ir) }
-    inputDf.sparkSession.createDataFrame(flattened, outputSchema(additionalFields))
+  protected[spark] def toDf(aggregateRdd: RDD[(Array[Any], Array[Any])],
+                            additionalFields: Seq[(String, DataType)]): DataFrame = {
+    val finalKeySchema = StructType(keySchema ++ additionalFields.map { case (name, typ) => StructField(name, typ) })
+    KvRdd(aggregateRdd, finalKeySchema, postAggSchema).toFlatDf
+
   }
 
   private def sparkify(ir: Array[Any]): Array[Any] =
@@ -197,21 +211,6 @@ class GroupBy(aggregations: Seq[Aggregation],
       Conversions.fromZiplineRow(windowAggregator.denormalize(ir), valueZiplineSchema)
     }
 
-  protected[spark] def makeRow(keys: Array[Any], values: Array[Any]): Row = {
-    val result = new Array[Any](keys.length + values.length)
-    System.arraycopy(keys, 0, result, 0, keys.length)
-    System.arraycopy(sparkify(values), 0, result, keys.length, values.length)
-    new GenericRow(result)
-  }
-
-  protected[spark] def outputSchema(additionalFields: Seq[(String, DataType)]): StructType = {
-    val keyIndices = keyColumns.map(inputDf.schema.fieldIndex).toArray
-    val keySchema: Array[StructField] = keyIndices.map(inputDf.schema)
-    val valueSchema: Array[StructField] = Conversions.fromZiplineSchema(valueZiplineSchema).fields
-    val additionalSchema =
-      additionalFields.map(field => StructField(field._1, field._2))
-    StructType((keySchema ++ additionalSchema) ++ valueSchema)
-  }
 }
 
 // TODO: truncate queryRange for caching
@@ -318,7 +317,7 @@ object GroupBy {
     query
   }
 
-  def computeGroupBy(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
+  def computeBackfill(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
     val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
@@ -340,23 +339,24 @@ object GroupBy {
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
   }
 
+  // args = conf path, end date, output namespace
   class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath: ScallopOption[String] = opt[String](required = true)
-    val endDate: ScallopOption[String] = opt[String](required = true)
+    val confPath: ScallopOption[String] =
+      opt[String](required = true, descr = "Absolute Path to TSimpleJson serialized GroupBy object")
+    val endDate: ScallopOption[String] =
+      opt[String](required = true, descr = "End date / end partition for computing groupBy")
     verify()
+    def groupByConf =
+      ThriftJsonCodec.fromJsonFile[GroupByConf](confPath(), check = true, clazz = classOf[GroupByConf])
   }
 
   def main(args: Array[String]): Unit = {
-    // args = conf path, end date, output namespace
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")
-    val groupByConf =
-      ThriftJsonDecoder.fromJsonFile[GroupByConf](parsedArgs.confPath(), check = true, clazz = classOf[GroupByConf])
-
-    computeGroupBy(
-      groupByConf,
+    computeBackfill(
+      parsedArgs.groupByConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}", local = false))
+      TableUtils(SparkSessionBuilder.build(s"groupBy_${parsedArgs.groupByConf.metaData.name}_backfill"))
     )
   }
 }

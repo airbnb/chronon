@@ -1,9 +1,14 @@
 package ai.zipline.spark.test
 
+import ai.zipline.api.Constants
+import ai.zipline.fetcher.KVStore
+import ai.zipline.fetcher.KVStore.PutRequest
+import ai.zipline.spark.{SparkSessionBuilder, TableUtils}
+
 import scala.collection.{mutable, parallel}
 import scala.concurrent.{ExecutionContext, Future}
 
-class InMemoryKvStore(implicit ec: ExecutionContext) extends KVStore {
+class InMemoryKvStore(implicit ec: ExecutionContext, tableUtils: TableUtils) extends KVStore {
   //type aliases for readability
   type Key = Array[Byte]
   type Data = Array[Byte]
@@ -41,8 +46,22 @@ class InMemoryKvStore(implicit ec: ExecutionContext) extends KVStore {
     }
   }
 
-  // not implemented - because we simulate bulkPuts using multiPut in testing
-  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, tsMillis: Long): Unit = ???
+  // the table is assumed to be encoded with two columns - `key` and `value` as Array[Bytes]
+  // one of the keys should be "group_by_serving_info" as bytes with value as TSimpleJsonEncoded String
+  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, tsMillis: Long): Unit = {
+    val df = tableUtils.sql(s"""SELECT key, value 
+         |FROM $sourceOfflineTable 
+         |WHERE ${Constants.PartitionColumn} = '${Constants.Partition.of(tsMillis)}'""".stripMargin)
+    val requests = df.rdd
+      .map { row =>
+        val key = row.get(0).asInstanceOf[Array[Byte]]
+        val value = row.get(1).asInstanceOf[Array[Byte]]
+        KVStore.PutRequest(key, value, destinationOnlineDataSet)
+      }
+      .collect()
+    create(destinationOnlineDataSet)
+    multiPut(requests)
+  }
 
   override def create(dataset: String): Unit = {
     database.put(dataset, parallel.mutable.ParHashMap.empty[Key, mutable.Buffer[(Version, Data)]])

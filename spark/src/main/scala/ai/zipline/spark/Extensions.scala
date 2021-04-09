@@ -1,6 +1,9 @@
 package ai.zipline.spark
 
+import ai.zipline.aggregator.base.{StructType => ZStructType}
 import ai.zipline.api._
+import ai.zipline.fetcher.{AvroCodec, AvroUtils}
+import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
@@ -26,6 +29,13 @@ object Extensions {
         }
         .mkString("\n")
     }
+
+    def toAvroSchema(name: String = null): Schema = {
+      val ziplineSchema = ZStructType.from(name, Conversions.toZiplineSchema(schema))
+      AvroUtils.fromZiplineSchema(ziplineSchema)
+    }
+
+    def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name))
   }
 
   implicit class DataframeOps(df: DataFrame) {

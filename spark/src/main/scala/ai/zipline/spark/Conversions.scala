@@ -129,7 +129,7 @@ object Conversions {
       (field.name, toZiplineType(field.dataType))
     }
 
-  def fromZiplineSchema(schema: Array[(String, ZDataType)]): StructType =
+  def fromZiplineSchema(schema: Seq[(String, ZDataType)]): StructType =
     StructType(schema.map {
       case (name, zType) =>
         StructField(name, fromZiplineType(zType))
