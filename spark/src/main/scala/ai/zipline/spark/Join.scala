@@ -1,21 +1,17 @@
 package ai.zipline.spark
 
-import java.util.Base64
-
-import scala.collection.JavaConverters._
-
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonDecoder, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 
+import java.util.Base64
+import scala.collection.JavaConverters._
+
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
-  private val tableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .orNull
 
   // Get table properties from config
   private val confTableProps = Option(joinConf.metaData.tableProperties)
@@ -248,7 +244,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joinPartsToRecompute.foreach { joinPart =>
       tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
     }
-    if (joinPartsToRecompute.nonEmpty || joinPartsWereRemoved) {
+    if (joinPartsToRecompute.nonEmpty || joinPartsWereRemoved(lastRunjoin)) {
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
@@ -259,7 +255,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     // First run command to drop tables that have changed semantically since the last run
     dropTablesToRecompute
-    
+
     Option(joinConf.left.query.setups).foreach(_.asScala.foreach(tableUtils.sql))
     val rightSources = joinConf.joinParts.asScala.flatMap(_.groupBy.sources.asScala)
     rightSources.flatMap(src => Option(src.query.setups)).foreach(_.asScala.foreach(tableUtils.sql))

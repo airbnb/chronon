@@ -285,14 +285,14 @@ object Extensions {
       newJoin.unsetMetaData()
       newJoin
     }
+  }
 
-    implicit class StringsOps(strs: Iterable[String]) {
-      def pretty: String = {
-        if (strs.nonEmpty)
-          "\n    " + strs.mkString(",\n    ") + "\n"
-        else
-          ""
-      }
+  implicit class StringsOps(strs: Iterable[String]) {
+    def pretty: String = {
+      if (strs.nonEmpty)
+        "\n    " + strs.mkString(",\n    ") + "\n"
+      else
+        ""
     }
   }
 }
