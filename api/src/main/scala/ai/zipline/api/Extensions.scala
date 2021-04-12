@@ -215,7 +215,9 @@ object Extensions {
     // all keys on left
     def leftKeyCols: Array[String] = {
       join.joinParts.asScala
-        .flatMap { _.rightToLeft.values }
+        .flatMap {
+          _.rightToLeft.values
+        }
         .toSet
         .toArray
     }
@@ -231,7 +233,10 @@ object Extensions {
     def skewFilter(keys: Option[Seq[String]] = None, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
         val result = jmap.asScala
-          .filterKeys(key => keys.forall { _.contains(key) })
+          .filterKeys(key =>
+            keys.forall {
+              _.contains(key)
+            })
           .map {
             case (leftKey, values) =>
               assert(
@@ -254,7 +259,9 @@ object Extensions {
           .flatMap {
             case (leftKey, values) =>
               val replacedKey = Option(joinPart.keyMapping)
-                .map { _.asScala.getOrElse(leftKey, leftKey) }
+                .map {
+                  _.asScala.getOrElse(leftKey, leftKey)
+                }
                 .getOrElse(leftKey)
               if (joinPart.groupBy.keyColumns.contains(replacedKey))
                 Some(generateSkewFilterSql(replacedKey, values.asScala))
@@ -279,13 +286,13 @@ object Extensions {
       newJoin
     }
 
-
-  implicit class StringsOps(strs: Iterable[String]) {
-    def pretty: String = {
-      if (strs.nonEmpty)
-        "\n    " + strs.mkString(",\n    ") + "\n"
-      else
-        ""
+    implicit class StringsOps(strs: Iterable[String]) {
+      def pretty: String = {
+        if (strs.nonEmpty)
+          "\n    " + strs.mkString(",\n    ") + "\n"
+        else
+          ""
+      }
     }
   }
 }
