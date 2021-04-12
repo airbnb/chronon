@@ -278,7 +278,7 @@ object Extensions {
       newJoin.unsetMetaData()
       newJoin
     }
-  }
+
 
   implicit class StringsOps(strs: Iterable[String]) {
     def pretty: String = {
