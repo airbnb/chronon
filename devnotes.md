@@ -34,11 +34,14 @@ Mark the following directories as `Test Root` in a similar way:
 
 The project should then automatically start indexing, and when it finishes you should be good to go. 
 
-### Generate python thrift definitions
+### Generate thrift definitions
  
 ```shell
 cd $ZIPLINE_OS
+# python
 thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+# java
+sbt clean compile
 ```
 
 ### Materializing confs
