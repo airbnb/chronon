@@ -33,11 +33,7 @@ def import_module_set_name(module, cls):
         if isinstance(obj, cls):
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
             # real world case: psx.reservation_status.v1
-            if hasattr(obj, "metaData"):
-                obj.metaData.name = module.__name__.partition(".")[2] + "." + name
-            else:
-                # StagingQuery has no metaData property
-                obj.name = module.__name__.partition(".")[2] + "." + name
+            obj.metaData.name = module.__name__.partition(".")[2] + "." + name
     return module
 
 
@@ -61,8 +57,5 @@ def from_file(root_path: str,
     result = {}
 
     for obj in [o for o in mod.__dict__.values() if isinstance(o, cls)]:
-        if hasattr(obj, "metaData"):
-            result[obj.metaData.name] = obj
-        else:
-            result[obj.name] = obj
+        result[obj.metaData.name] = obj
     return result

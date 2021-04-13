@@ -58,6 +58,13 @@ object Extensions {
 
   implicit class MetadataOps(metaData: MetaData) {
     val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
+
+    def copyForVersioningComparison: MetaData = {
+      // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
+      val newMetaData = new MetaData()
+      newMetaData.setName(metaData.name)
+      newMetaData
+    }
   }
 
   // one per output column - so single window
@@ -141,6 +148,15 @@ object Extensions {
     def topic: String = {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
     }
+
+    def copyForVersioningComparison: Source = {
+      // Makes a copy of the source and unsets date fields, used to compute equality on sources while ignoring these fields
+      val newSource = source.deepCopy()
+      val query = newSource.query
+      query.unsetEndPartition()
+      query.unsetStartPartition()
+      newSource
+    }
   }
 
   implicit class GroupByOps(groupBy: GroupBy) {
@@ -165,6 +181,12 @@ object Extensions {
       val validTopics = groupBy.sources.asScala.map(_.topic).filter(_ != null)
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
+
+    def copyForVersioningComparison: GroupBy = {
+      val newGroupBy = groupBy.deepCopy()
+      newGroupBy.setMetaData(newGroupBy.metaData.copyForVersioningComparison)
+      newGroupBy
+    }
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) {
@@ -180,6 +202,12 @@ object Extensions {
           rightToRight ++ rToL
         }
         .getOrElse(rightToRight)
+    }
+
+    def copyForVersioningComparison: JoinPart = {
+      val newJoinPart = joinPart.deepCopy()
+      newJoinPart.setGroupBy(newJoinPart.groupBy.copyForVersioningComparison)
+      newJoinPart
     }
   }
 
@@ -237,6 +265,18 @@ object Extensions {
         println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
         result
       }
+    }
+
+    def copyForVersioningComparison(): Join = {
+      // When we compare previous-run join to current join to detect changes requiring table migration
+      // these are the fields that should be checked to not have accidental recomputes
+      val newJoin = join.deepCopy()
+      newJoin.setLeft(newJoin.left.copyForVersioningComparison)
+      newJoin.unsetJoinParts()
+      // Opting not to use metaData.copyForVersioningComparison here because if somehow a name change results
+      // in a table existing for the new name (with no other metadata change), it is more than likely intentional
+      newJoin.unsetMetaData()
+      newJoin
     }
   }
 

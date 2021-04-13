@@ -1,11 +1,10 @@
 package ai.zipline.spark
 
-import java.io.File
-
 import org.apache.spark.sql.SparkSession
 
-import scala.reflect.io.Directory
+import java.io.File
 import java.util.logging.Logger
+import scala.reflect.io.Directory
 
 object SparkSessionBuilder {
 
@@ -64,5 +63,4 @@ object SparkSessionBuilder {
     cleanUp(warehouseDir)
     cleanUp(metastoreDb)
   }
-
 }

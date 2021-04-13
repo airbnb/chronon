@@ -1,5 +1,7 @@
 package ai.zipline.spark.test
 
+import scala.collection.JavaConverters._
+
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
@@ -54,16 +56,26 @@ class JoinTest {
     DataGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("ts", "amount_dollars"),
-                             startPartition = yearAgo,
-                             endPartition = dayAndMonthBefore),
+      query = Builders.Query(
+        selects = Builders.Selects("ts", "amount_dollars"),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore,
+        setups =
+          Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")
+      ),
       snapshotTable = dollarTable
     )
 
     val rupeeSource =
       Builders.Source.entities(
-        query = Builders.Query(selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
-                               startPartition = monthAgo),
+        query = Builders.Query(
+          selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
+          startPartition = monthAgo,
+          setups = Seq(
+            "create temporary function temp_replace_right_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'",
+            "create temporary function temp_replace_right_c as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"
+          )
+        ),
         snapshotTable = rupeeTable
       )
 
@@ -89,7 +101,13 @@ class JoinTest {
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.events(query = Builders.Query(startPartition = start), table = queryTable),
+      left = Builders.Source.events(
+        query = Builders.Query(
+          startPartition = start,
+          setups =
+            Seq("create temporary function temp_replace_left as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
+        table = queryTable
+      ),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
@@ -326,47 +344,11 @@ class JoinTest {
 
   @Test
   def testEventsEventsTemporal(): Unit = {
-    val viewsSchema = List(
-      DataGen.Column("user", StringType, 10000),
-      DataGen.Column("item", StringType, 100),
-      DataGen.Column("time_spent_ms", LongType, 5000)
-    )
-
+    val joinConf = getEventsEventsTemporal()
+    val itemQueriesTable = joinConf.getLeft.getEvents.getTable
+    val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
+    // Some code duplication here
     val viewsTable = s"$namespace.view"
-    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
-
-    val viewsSource = Builders.Source.events(
-      table = viewsTable,
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo)
-    )
-    val viewsGroupBy = Builders.GroupBy(
-      sources = Seq(viewsSource),
-      keyColumns = Seq("item"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
-        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
-        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
-        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
-      ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "zipline")
-    )
-
-    // left side
-    val itemQueries = List(DataGen.Column("item", StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
-    val itemQueriesDf = DataGen
-      .events(spark, itemQueries, 10000, partitions = 100)
-    // duplicate the events
-    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
-
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-
-    val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline")
-    )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -443,7 +425,7 @@ class JoinTest {
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start),
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
                                       snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")
@@ -484,6 +466,140 @@ class JoinTest {
       diff.show()
     }
     assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testVersioning(): Unit = {
+    val joinConf = getEventsEventsTemporal()
+    joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
+
+    // Run the old join to ensure that tables exist
+    val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    oldJoin.computeJoin(Some(100))
+
+    // Make sure that there is no versioning-detected changes at this phase
+    val joinPartsToRecomputeNoChange = oldJoin.getJoinPartsToRecompute(oldJoin.getLastRunJoinOpt)
+    assertEquals(joinPartsToRecomputeNoChange.size, 0)
+
+    // First test changing the left side table - this should trigger a full recompute
+    val leftChangeJoinConf = joinConf.deepCopy()
+    leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
+    val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val leftChangeRecompute = leftChangeJoin.getJoinPartsToRecompute(leftChangeJoin.getLastRunJoinOpt)
+    assertEquals(leftChangeRecompute.size, 2)
+    assertEquals(leftChangeRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+
+    // Test adding a joinPart
+    val addPartJoinConf = joinConf.deepCopy()
+    val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
+    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user_2", accuracy = Accuracy.TEMPORAL)
+    addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
+    val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
+    assertEquals(addPartRecompute.size, 1)
+    assertEquals(addPartRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    // Compute to ensure that it works and to set the stage for the next assertion
+    addPartJoin.computeJoin(Some(100))
+
+    // Test modifying only one of two joinParts
+    val rightModJoinConf = addPartJoinConf.deepCopy()
+    rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
+    val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val rightModRecompute = rightModJoin.getJoinPartsToRecompute(rightModJoin.getLastRunJoinOpt)
+    assertEquals(rightModRecompute.size, 1)
+    assertEquals(rightModRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    // Modify both
+    rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
+    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    // Compute to ensure that it works
+    val computed = rightModBothJoin.computeJoin(Some(100))
+
+    // Now assert that the actual output is correct after all these runs
+    computed.show()
+    val itemQueriesTable = joinConf.getLeft.getEvents.getTable
+    val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
+    val viewsTable = s"$namespace.view"
+
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_4_ts_min, part.user_4_ts_max, part.user_4_time_spent_ms_average, part.user_3_ts_min, part.user_3_ts_max, part.user_3_time_spent_ms_average
+                                     | FROM (SELECT queries.item,
+                                     |        queries.ts,
+                                     |        queries.ds,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_4_time_spent_ms_average,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_3_time_spent_ms_average
+                                     |     FROM queries left outer join $viewsTable
+                                     |     ON queries.item = $viewsTable.item
+                                     |     WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     |     GROUP BY queries.item, queries.ts, queries.ds) as part
+                                     | JOIN queries
+                                     | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
+                                     |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(expected, computed, List("item", "ts", "ds"))
+    val queriesBare =
+      tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
+    assertEquals(queriesBare.count(), computed.count())
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff
+        .replaceWithReadableTime(Seq("ts", "a_user_3_ts_max", "b_user_3_ts_max"), dropOriginal = true)
+        .show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  def getViewsGroupBy() = {
+    val viewsSchema = List(
+      DataGen.Column("user", StringType, 10000),
+      DataGen.Column("item", StringType, 100),
+      DataGen.Column("time_spent_ms", LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view"
+    DataGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo)
+    )
+    Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
+        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+    )
+  }
+
+  def getEventsEventsTemporal() = {
+    // left side
+    val itemQueries = List(DataGen.Column("item", StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueriesDf = DataGen
+      .events(spark, itemQueries, 10000, partitions = 100)
+    // duplicate the events
+    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
+
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+
+    Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace)
+    )
 
   }
 
