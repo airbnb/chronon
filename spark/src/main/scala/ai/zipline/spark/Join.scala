@@ -254,7 +254,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     // First run command to drop tables that have changed semantically since the last run
-    dropTablesToRecompute()
+    dropTablesToRecompute
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
