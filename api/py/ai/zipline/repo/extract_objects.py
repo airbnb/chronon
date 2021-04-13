@@ -33,7 +33,7 @@ def import_module_set_name(module, cls):
         if isinstance(obj, cls):
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
             # real world case: psx.reservation_status.v1
-            obj.metaData.name = obj.metaData.name or module.__name__.partition(".")[2] + "." + name
+            obj.metaData.name = module.__name__.partition(".")[2] + "." + name
     return module
 
 

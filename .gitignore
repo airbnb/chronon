@@ -10,4 +10,6 @@
 **/.vscode/
 **/__pycache__/
 api/py/ai/zipline/api/
+api/py/.coverage
+api/py/htmlcov/
 **/derby.log
