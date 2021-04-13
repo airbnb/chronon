@@ -56,26 +56,22 @@ class JoinTest {
     DataGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
-      query = Builders.Query(
-        selects = Builders.Selects("ts", "amount_dollars"),
+      query = Builders.Query(selects = Builders.Selects("ts", "amount_dollars"),
         startPartition = yearAgo,
         endPartition = dayAndMonthBefore,
         setups =
-          Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")
-      ),
+          Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
       snapshotTable = dollarTable
     )
 
     val rupeeSource =
       Builders.Source.entities(
-        query = Builders.Query(
-          selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
+        query = Builders.Query(selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)"),
           startPartition = monthAgo,
           setups = Seq(
             "create temporary function temp_replace_right_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'",
             "create temporary function temp_replace_right_c as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"
-          )
-        ),
+          )),
         snapshotTable = rupeeTable
       )
 
@@ -101,13 +97,7 @@ class JoinTest {
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.events(
-        query = Builders.Query(
-          startPartition = start,
-          setups =
-            Seq("create temporary function temp_replace_left as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")),
-        table = queryTable
-      ),
+      left = Builders.Source.events(query = Builders.Query(startPartition = start, setups = Seq("create temporary function temp_replace_left as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")), table = queryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace)
     )
