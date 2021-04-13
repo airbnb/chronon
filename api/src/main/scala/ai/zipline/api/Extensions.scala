@@ -182,6 +182,11 @@ object Extensions {
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
 
+    def setups: Seq[String] = {
+      val sources = groupBy.sources.asScala
+      sources.flatMap(_.query.setupsSeq).distinct
+    }
+
     def copyForVersioningComparison: GroupBy = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.setMetaData(newGroupBy.metaData.copyForVersioningComparison)
@@ -267,6 +272,8 @@ object Extensions {
       }
     }
 
+    def setups: Seq[String] = (join.left.query.setupsSeq ++ join.joinParts.asScala.flatMap(_.groupBy.setups)).distinct
+
     def copyForVersioningComparison(): Join = {
       // When we compare previous-run join to current join to detect changes requiring table migration
       // these are the fields that should be checked to not have accidental recomputes
@@ -286,6 +293,12 @@ object Extensions {
         "\n    " + strs.mkString(",\n    ") + "\n"
       else
         ""
+    }
+  }
+
+  implicit class QueryOps(query: Query) {
+    def setupsSeq: Seq[String] = {
+      Option(query.setups).map(_.asScala.toSeq).getOrElse(Seq.empty)
     }
   }
 }
