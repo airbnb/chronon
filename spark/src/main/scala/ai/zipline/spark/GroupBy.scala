@@ -260,11 +260,13 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val processedInputDf = bloomMapOpt.map { bloomMap =>
-      val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-      println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
-      bloomFilteredDf
-    }.getOrElse { skewFilteredDf }
+    val processedInputDf = bloomMapOpt
+      .map { bloomMap =>
+        val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
+        println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
+        bloomFilteredDf
+      }
+      .getOrElse { skewFilteredDf }
     new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
   }
 

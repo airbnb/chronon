@@ -104,7 +104,7 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
-
+    obj.metaData.team = team_name
 
 def _write_obj(full_output_root: str,
                validator: ZiplineRepoValidator,
