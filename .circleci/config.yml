@@ -1,0 +1,107 @@
+version: 2.1
+
+base_defaults: &base_defaults
+    resource_class: xlarge
+    working_directory: /zipline
+
+commands:
+    full_checkout:
+        description: Checks out repo and updates submodules
+        steps:
+            - checkout
+            - run:
+                  name: Checkout submodules
+                  command: git submodule update --init --recursive
+
+executors:
+    docker_baseimg_executor:
+        resource_class: xlarge
+        working_directory: /zipline
+        docker:
+            - image: patyoon/zipline-ci:base--${CIRCLE_BRANCH}
+
+jobs:
+    "Docker Base Build":
+        <<: *base_defaults
+        docker:
+            - image: docker:17.05.0-ce-git
+        steps:
+            - setup_remote_docker:
+                docker_layer_caching: true
+            - checkout
+            - run:
+                name: Pull existing docker image
+                command: |
+                    set +o pipefail
+                    docker pull patyoon/zipline-ci:base || true
+            - run:
+                name: Build docker image
+                command: |
+                    set +o pipefail
+                    docker build -t patyoon/zipline-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f docker/Dockerfile .
+            - deploy:
+                name: Push docker image
+                command: |
+                    set +o pipefail
+                    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+                    docker push patyoon/zipline-ci:base--${CIRCLE_BRANCH}
+                    if [ "${CIRCLE_BRANCH}" == "master" ]; then
+                        docker tag patyoon/zipline-ci:base--${CIRCLE_BRANCH} patyoon/zipline-ci:base
+                        docker push patyoon/zipline-ci:base
+                    fi
+
+    "Zipline Scala Tests":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - run:
+                  name: Run Zipline tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      # Increase if we see OOM.
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      sbt test
+
+    "Zipline Python Lint":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - run:
+                  name: Run Zipline Python tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate zipline_py
+                      cd /zipline/api/py/ai/zipline
+                      flake8 --extend-ignore=W605,Q000
+
+    "Zipline Python Tests":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - run:
+                  name: Run Zipline Python tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate zipline_py
+                      pushd /zipline/api/ && PYTHONPATH=/zipline/api/py/ai/zipline: python -m nose -v py.ai.zipline.tests --nocapture --verbose && popd
+
+workflows:
+
+    build_test_deploy:
+        jobs:
+            - "Docker Base Build":
+                filters:  # required since `Publish JARs` has tag filters AND requires this step
+                    tags:
+                        only: /.*/
+            - "Zipline Scala Tests":
+                  requires:
+                      - "Docker Base Build"
+                  filters:
+                      tags:
+                          only: /^release-zl-.*/
+            - "Zipline Python Tests":
+                requires:
+                  - "Docker Base Build"
+            - "Zipline Python Lint":
+                requires:
+                  - "Docker Base Build"

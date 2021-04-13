@@ -50,13 +50,15 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.IntegerType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
-      "scala.reflect.ManifestFactory$$anon$10"
+      "scala.reflect.ManifestFactory$$anon$10",
+      "scala.reflect.ClassTag$$anon$1"
     )
     names.foreach { name =>
       kryo.register(Class.forName(name))
       kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
     }
-
+    kryo.register(classOf[Array[Array[Array[AnyRef]]]])
+    kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
   }
 }
