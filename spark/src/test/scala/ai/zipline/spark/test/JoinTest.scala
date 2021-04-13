@@ -486,7 +486,7 @@ class JoinTest {
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.getJoinPartsToRecompute(leftChangeJoin.getLastRunJoinOpt)
-    assertEquals(leftChangeRecompute.size, 1)
+    assertEquals(leftChangeRecompute.size, 2)
     assertEquals(leftChangeRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
 
     // Test adding a joinPart
