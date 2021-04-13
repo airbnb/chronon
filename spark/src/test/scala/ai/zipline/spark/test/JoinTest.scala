@@ -523,7 +523,7 @@ class JoinTest {
     val expected = tableUtils.sql(s"""
                                      |WITH
                                      |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
-                                     | SELECT queries.item, queries.ts, queries.ds, part.user_4_ts_min, part.user_4_ts_max, part.user_4_time_spent_ms_average, part.user_3_ts_min, part.user_3_ts_max, part.user_3_time_spent_ms_average
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_4_unit_test_item_views_ts_min, part.user_4_unit_test_item_views_ts_max, part.user_4_unit_test_item_views_time_spent_ms_average, part.user_3_unit_test_item_views_ts_min, part.user_3_unit_test_item_views_ts_max, part.user_3_unit_test_item_views_time_spent_ms_average
                                      | FROM (SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
@@ -550,7 +550,9 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff
-        .replaceWithReadableTime(Seq("ts", "a_user_3_ts_max", "b_user_3_ts_max"), dropOriginal = true)
+        .replaceWithReadableTime(
+          Seq("ts", "a_user_3_unit_test_item_views_ts_max", "b_user_3_unit_test_item_views_ts_max"),
+          dropOriginal = true)
         .show()
     }
     assertEquals(0, diff.count())
