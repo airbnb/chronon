@@ -39,13 +39,14 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     // team name will be added/validated at the materialize step
-    val teamNm = if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
+    val teamNm =
+      if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
     val prefixTeamNm = Seq(Option(joinPart.prefix), teamNm).flatten.mkString("_")
     // append prefixTeamNm to non key columns
     val prefixedRight = if (Option(prefixTeamNm).exists(_.trim.nonEmpty)) {
-      keyRenamedRight.prefixColumnNames(prefixTeamNm, valueColumns)
+      keyRenamedRight.prefixColumnNames(prefixTeamNm + "_" + joinPart.groupBy.metaData.cleanName, valueColumns)
     } else {
-      keyRenamedRight
+      keyRenamedRight.prefixColumnNames(joinPart.groupBy.metaData.cleanName, valueColumns)
     }
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
@@ -195,7 +196,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     println(s"left unfilled range: $leftUnfilledRange")
     val leftDfFull: DataFrame = {
-      val df = tableUtils.sql(leftUnfilledRange.genScanQuery(joinConf.left.query, joinConf.left.table, fillIfAbsent = Map(Constants.PartitionColumn -> null)))
+      val df = tableUtils.sql(
+        leftUnfilledRange.genScanQuery(joinConf.left.query,
+                                       joinConf.left.table,
+                                       fillIfAbsent = Map(Constants.PartitionColumn -> null)))
       val skewFilter = joinConf.skewFilter()
       skewFilter
         .map(sf => {

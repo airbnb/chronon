@@ -82,10 +82,7 @@ object Extensions {
         case other    => other.toString.toLowerCase
       }
 
-    def outputColumnName(groupByName: String = null): String =
-      s"${Option(groupByName).map(_.replaceAll("[^a-zA-Z0-9_]", "_") + "_").getOrElse("")}" +
-        s"${aggregationPart.inputColumn}" +
-        s"_$opSuffix${aggregationPart.window.suffix}"
+    def outputColumnName = s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}"
   }
 
   implicit class AggregationOps(aggregation: Aggregation) {

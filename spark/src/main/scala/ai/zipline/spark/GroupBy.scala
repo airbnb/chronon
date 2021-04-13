@@ -20,7 +20,6 @@ import scala.collection.JavaConverters._
 class GroupBy(aggregations: Seq[Aggregation],
               keyColumns: Seq[String],
               inputDf: DataFrame,
-              name: Option[String] = None,
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
@@ -30,7 +29,7 @@ class GroupBy(aggregations: Seq[Aggregation],
   private lazy val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
-    new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack), name.orNull)
+    new RowAggregator(ziplineSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntities: DataFrame = {
     if (aggregations == null || aggregations.isEmpty) return inputDf //data is pre-aggregated
@@ -261,15 +260,14 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val processedInputDf = bloomMapOpt.map { bloomMap =>
-      val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-      println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
-      bloomFilteredDf
-    }.getOrElse { skewFilteredDf }
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
-      keyColumns,
-      processedInputDf,
-      Option(groupByConf.metaData.name))
+    val processedInputDf = bloomMapOpt
+      .map { bloomMap =>
+        val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
+        println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
+        bloomFilteredDf
+      }
+      .getOrElse { skewFilteredDf }
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
   }
 
   def renderDataSourceQuery(source: Source,
