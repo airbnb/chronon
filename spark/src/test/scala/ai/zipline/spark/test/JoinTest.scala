@@ -1,7 +1,5 @@
 package ai.zipline.spark.test
 
-import scala.collection.JavaConverters._
-
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
@@ -9,6 +7,8 @@ import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
 import org.junit.{AfterClass, BeforeClass, Test}
+
+import scala.collection.JavaConverters._
 
 // clean needs to be a static method
 object JoinTest {
@@ -598,7 +598,7 @@ class JoinTest {
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline")
     )
 
   }
