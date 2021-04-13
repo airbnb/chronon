@@ -49,10 +49,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     // team name is assigned at the materialize step
-    assert(
-      Option(joinConf.metaData.team).nonEmpty && Option(joinPart.groupBy.metaData.team).nonEmpty,
-      s"team name should not be null for either join or join part. It should be assigned at materialize step"
-    )
     val teamNm =
       if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
     val prefixTeamNm = Seq(Option(joinPart.prefix), teamNm).flatten.mkString("_")
@@ -263,6 +259,12 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+    assert(
+      Option(joinConf.metaData.team).nonEmpty &&
+        joinConf.joinParts.asScala.forall(jp => Option(jp.groupBy.metaData.team).nonEmpty),
+      s"team name should not be null for either join or join part. It should be assigned at materialize step automatically"
+    )
+
     // First run command to drop tables that have changed semantically since the last run
     dropTablesToRecompute
 

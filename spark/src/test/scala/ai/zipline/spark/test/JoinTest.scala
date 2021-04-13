@@ -586,7 +586,7 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "item_team")
     )
   }
 
@@ -604,7 +604,7 @@ class JoinTest {
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "item_team")
     )
 
   }
