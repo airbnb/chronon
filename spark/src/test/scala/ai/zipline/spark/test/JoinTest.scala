@@ -527,12 +527,12 @@ class JoinTest {
                                      | FROM (SELECT queries.item,
                                      |        queries.ts,
                                      |        queries.ds,
-                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_min,
-                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_ts_max,
-                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_4_time_spent_ms_average,
-                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_min,
-                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_ts_max,
-                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_3_time_spent_ms_average
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_unit_test_item_views_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_4_unit_test_item_views_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_4_unit_test_item_views_time_spent_ms_average,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_unit_test_item_views_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_3_unit_test_item_views_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_3_unit_test_item_views_time_spent_ms_average
                                      |     FROM queries left outer join $viewsTable
                                      |     ON queries.item = $viewsTable.item
                                      |     WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
@@ -580,7 +580,7 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "zipline")
     )
   }
 
