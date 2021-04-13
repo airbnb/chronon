@@ -35,7 +35,7 @@ Mark the following directories as `Test Root` in a similar way:
 The project should then automatically start indexing, and when it finishes you should be good to go. 
 
 ### Generate thrift definitions
- 
+Rebuild thrift for Python or Java after any changes in `zipline/api/thrift/api.thrift`. Otherwise, the IDE may not recognize the newly added fields/methods.
 ```shell
 cd $ZIPLINE_OS
 # python
