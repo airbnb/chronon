@@ -365,7 +365,8 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline"))
+      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "zipline")
+    )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -416,9 +417,8 @@ class JoinTest {
     DataGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
 
     val namesSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("name"),
-        startPartition = yearAgo,
-        endPartition = dayAndMonthBefore),
+      query =
+        Builders.Query(selects = Builders.Selects("name"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
       snapshotTable = namesTable
     )
 
@@ -429,7 +429,9 @@ class JoinTest {
       metaData = Builders.MetaData(name = "unit_test.user_names", team = "zipline")
     )
 
-    DataGen.entities(spark, namesSchema, 1000, partitions = 400).groupBy("user", "ds")
+    DataGen
+      .entities(spark, namesSchema, 1000, partitions = 400)
+      .groupBy("user", "ds")
       .agg(Map("name" -> "max"))
       .save(namesTable)
 
@@ -438,11 +440,11 @@ class JoinTest {
     val usersTable = s"$namespace.users"
     DataGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
-
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start), snapshotTable = usersTable),
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start),
+                                      snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")
     )
@@ -455,12 +457,12 @@ class JoinTest {
                                      |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
                                      |   grouped_names AS (
                                      |      SELECT user,
-                                     |             name,
+                                     |             name as unit_test_user_names_name,
                                      |             ds
                                      |      FROM $namesTable
                                      |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore')
                                      |   SELECT users.user,
-                                     |        grouped_names.name,
+                                     |        grouped_names.unit_test_user_names_name,
                                      |        users.ds
                                      | FROM users left outer join grouped_names
                                      | ON users.user = grouped_names.user
