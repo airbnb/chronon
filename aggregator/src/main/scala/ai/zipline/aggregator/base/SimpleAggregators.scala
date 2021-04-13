@@ -94,8 +94,8 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
 
   override def irType: DataType =
     StructType(
-      s"avg_ir",
-      List(StructField("sum", DoubleType), StructField("count", IntType))
+      "AvgIr",
+      Array(StructField("sum", DoubleType), StructField("count", IntType))
     )
 
   override def prepare(input: Double): Array[Any] = Array(input, 1)

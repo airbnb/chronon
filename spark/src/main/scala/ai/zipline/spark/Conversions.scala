@@ -79,7 +79,10 @@ object Conversions {
 
   def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
 
-  def toZiplineType(dataType: DataType): ZDataType =
+  def capitalize(str: String): String = s"${str.head.toUpper}${str.tail}"
+
+  def toZiplineType(name: String, dataType: DataType): ZDataType = {
+    val typeName = capitalize(name)
     dataType match {
       case IntegerType               => IntType
       case LongType                  => ZLongType
@@ -90,18 +93,19 @@ object Conversions {
       case StringType                => ZStringType
       case BinaryType                => ZBinaryType
       case BooleanType               => ZBooleanType
-      case ArrayType(elementType, _) => ListType(toZiplineType(elementType))
+      case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
-        ZMapType(toZiplineType(keyType), toZiplineType(valueType))
+        ZMapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
       case StructType(fields) =>
         ZStructType(
-          null,
+          s"${typeName}Struct",
           fields.map { field =>
-            ZStructField(field.name, toZiplineType(field.dataType))
-          }.toList
+            ZStructField(field.name, toZiplineType(field.name, field.dataType))
+          }
         )
       case other => UnknownType(other)
     }
+  }
 
   def fromZiplineType(zType: ZDataType): DataType =
     zType match {
@@ -126,7 +130,7 @@ object Conversions {
 
   def toZiplineSchema(schema: StructType): Array[(String, ZDataType)] =
     schema.fields.map { field =>
-      (field.name, toZiplineType(field.dataType))
+      (field.name, toZiplineType(field.name, field.dataType))
     }
 
   def fromZiplineSchema(schema: Seq[(String, ZDataType)]): StructType =

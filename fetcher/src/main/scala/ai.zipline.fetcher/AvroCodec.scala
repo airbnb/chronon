@@ -28,16 +28,22 @@ import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, Encoder
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-class AvroCodec(val schema: Schema) extends Serializable {
-  private val datumWriter = new GenericDatumWriter[GenericRecord](schema)
-  private val datumReader = new GenericDatumReader[GenericRecord](schema)
-  private var decoder: BinaryDecoder = null
-  private var encoder: BinaryEncoder = null
+class AvroCodec(val schemaStr: String) extends Serializable {
+  @transient private lazy val parser = new Schema.Parser()
+  @transient private lazy val schema = parser.parse(schemaStr)
 
-  private val outputStream = new ByteArrayOutputStream()
+  // we reuse a lot of intermediate
+  // lazy vals so that spark can serialize & ship the codec to executors
+  @transient private lazy val datumWriter = new GenericDatumWriter[GenericRecord](schema)
+  @transient private lazy val datumReader = new GenericDatumReader[GenericRecord](schema)
+
+  @transient private lazy val outputStream = new ByteArrayOutputStream()
   val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
   private val tsIndex: Int = fieldNames.indexOf(Constants.TimeColumn)
   private val length: Int = fieldNames.length
+
+  @transient private var encoder: BinaryEncoder = null
+  @transient private var decoder: BinaryDecoder = null
 
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
     val record = new GenericData.Record(schema)
@@ -57,16 +63,18 @@ class AvroCodec(val schema: Schema) extends Serializable {
 
   def encodeArray(anyArray: Array[Any]): Array[Byte] = {
     val record = new GenericData.Record(schema)
-    for (i <- 0 until anyArray.length) {
+    for (i <- anyArray.indices) {
       record.put(i, anyArray(i))
     }
     encodeRecord(record)
   }
 
-  private def encodeRecord(record: Record): Array[Byte] = {
+  def encodeRecord(record: GenericRecord): Array[Byte] = {
     outputStream.reset()
     encoder = EncoderFactory.get.binaryEncoder(outputStream, encoder)
     datumWriter.write(record, encoder)
+    encoder.flush()
+    outputStream.flush()
     outputStream.toByteArray
   }
 
@@ -102,12 +110,12 @@ class GenericRecordRow(record: GenericRecord, tsIndex: Int, fieldCount: Int) ext
 object AvroCodec {
   // creating new codecs is expensive - so we want to do it once per process
   // but at the same-time we want to avoid contention across threads - hence threadlocal
-  private val codecMap: ThreadLocal[mutable.HashMap[Schema, AvroCodec]] =
-    new ThreadLocal[mutable.HashMap[Schema, AvroCodec]] {
-      override def initialValue(): mutable.HashMap[Schema, AvroCodec] = new mutable.HashMap[Schema, AvroCodec]()
+  private val codecMap: ThreadLocal[mutable.HashMap[String, AvroCodec]] =
+    new ThreadLocal[mutable.HashMap[String, AvroCodec]] {
+      override def initialValue(): mutable.HashMap[String, AvroCodec] = new mutable.HashMap[String, AvroCodec]()
     }
 
-  def of(schema: Schema): AvroCodec = codecMap.get().getOrElseUpdate(schema, new AvroCodec(schema))
+  def of(schemaStr: String): AvroCodec = codecMap.get().getOrElseUpdate(schemaStr, new AvroCodec(schemaStr))
 }
 
 object AvroUtils {
@@ -115,7 +123,7 @@ object AvroUtils {
     schema.getType match {
       case Schema.Type.RECORD =>
         StructType(schema.getName,
-                   schema.getFields.asScala.map { field =>
+                   schema.getFields.asScala.toArray.map { field =>
                      StructField(field.name(), toZiplineSchema(field.schema()))
                    })
       case Schema.Type.ARRAY   => ListType(toZiplineSchema(schema.getElementType))
@@ -134,15 +142,22 @@ object AvroUtils {
   def fromZiplineSchema(dataType: DataType): Schema = {
     dataType match {
       case StructType(name, fields) =>
+        assert(name != null)
         Schema.createRecord(
           name,
-          "Zipline record schema", // doc
+          "", // doc
           "ai.zipline.data", // nameSpace
           false, // isError
-          fields.map { ziplineField =>
-            val defaultValue: AnyRef = null
-            new Field(ziplineField.name, fromZiplineSchema(ziplineField.fieldType), "", defaultValue)
-          }.asJava
+          fields
+            .map { ziplineField =>
+              val defaultValue: AnyRef = null
+              new Field(ziplineField.name,
+                        Schema.createUnion(Schema.create(Schema.Type.NULL), fromZiplineSchema(ziplineField.fieldType)),
+                        "",
+                        defaultValue)
+            }
+            .toList
+            .asJava
         )
       case ListType(elementType) => Schema.createArray(fromZiplineSchema(elementType))
       case MapType(keyType, valueType) => {
@@ -151,7 +166,7 @@ object AvroUtils {
       }
       case StringType  => Schema.create(Schema.Type.STRING)
       case IntType     => Schema.create(Schema.Type.INT)
-      case FloatType   => Schema.create(Schema.Type.LONG)
+      case LongType    => Schema.create(Schema.Type.LONG)
       case FloatType   => Schema.create(Schema.Type.FLOAT)
       case DoubleType  => Schema.create(Schema.Type.DOUBLE)
       case BinaryType  => Schema.create(Schema.Type.BYTES)

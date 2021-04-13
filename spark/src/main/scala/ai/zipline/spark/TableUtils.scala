@@ -83,6 +83,40 @@ case class TableUtils(sparkSession: SparkSession) {
     df
   }
 
+  // un-partitioned
+  def insert(df: DataFrame,
+             tableName: String,
+             tableProperties: Map[String, String] = null,
+             saveMode: SaveMode = SaveMode.Overwrite,
+             fileFormat: String = "PARQUET"): Unit = {
+
+    if (!sparkSession.catalog.tableExists(tableName)) {
+      sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
+    } else {
+      if (tableProperties != null && tableProperties.nonEmpty) {
+        sql(alterTablePropertiesSql(tableName, tableProperties))
+      }
+    }
+
+    val rowCount = df.count()
+    println(s"$rowCount rows requested to be written into table $tableName")
+
+    if (rowCount > 0) {
+      val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
+      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+
+      val saltCol = "random_partition_salt"
+      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      saltedDf
+        .repartition(rddPartitionCount, Seq(saltCol).map(saltedDf.col): _*)
+        .drop(saltCol)
+        .write
+        .mode(saveMode)
+        .insertInto(tableName)
+      println(s"Finished writing to $tableName")
+    }
+  }
+
   private def createTableSql(tableName: String,
                              schema: StructType,
                              partitionColumns: Seq[String],

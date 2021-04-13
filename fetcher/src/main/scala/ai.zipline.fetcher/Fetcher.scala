@@ -82,9 +82,9 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
   class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
       extends GroupByServingInfo(groupByServingInfo) {
     private val avroSchemaParser = new Schema.Parser()
-    private def codec(schemaStr: String): AvroCodec = AvroCodec.of(avroSchemaParser.parse(schemaStr))
-    val keyCodec: AvroCodec = codec(keyAvroSchema)
-    val inputCodec: AvroCodec = codec(inputAvroSchema)
+    private def codec(schemaStr: String): AvroCodec = AvroCodec.of(schemaStr)
+    val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
+    val inputCodec: AvroCodec = AvroCodec.of(inputAvroSchema)
     // streaming needs to start scanning after this
     val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchDateStamp)
     private val avroInputSchema = avroSchemaParser.parse(inputAvroSchema)
@@ -97,7 +97,7 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
     val irCodecOpt: Option[AvroCodec] = aggregatorOpt
       .map { agg =>
         val irZiplineSchema = StructType.from(s"${groupBy.metaData.cleanName}_IR", agg.batchIrSchema)
-        val irAvroSchema = AvroUtils.fromZiplineSchema(irZiplineSchema)
+        val irAvroSchema = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
         AvroCodec.of(irAvroSchema)
       }
 
@@ -105,7 +105,7 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
       .map { agg =>
         val outputZiplineSchema =
           StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", agg.windowedAggregator.outputSchema)
-        val outputAvroSchema = AvroUtils.fromZiplineSchema(outputZiplineSchema)
+        val outputAvroSchema = AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
         AvroCodec.of(outputAvroSchema)
       }
   }

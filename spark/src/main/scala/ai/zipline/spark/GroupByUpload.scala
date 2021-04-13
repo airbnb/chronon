@@ -2,22 +2,11 @@ package ai.zipline.spark
 
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{
-  Accuracy,
-  Aggregation,
-  Constants,
-  DataModel,
-  GroupByServingInfo,
-  ThriftJsonCodec,
-  GroupBy => GroupByConf
-}
+import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
-import ai.zipline.spark.GroupBy.{ParsedArgs, computeBackfill}
+import ai.zipline.spark.GroupBy.ParsedArgs
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Row}
-import org.apache.spark.sql.catalyst.expressions.GenericRow
-
-import scala.collection.JavaConverters._
+import org.apache.spark.sql.Row
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession = groupBy.sparkSession
@@ -64,17 +53,9 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       .mapValues(sawtoothOnlineAggregator.finalizeTail)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
-          val collapsed = new GenericRow(finalBatchIr.collapsed)
-          val tail = Option(finalBatchIr.tailHops).map(_.map(_.map(new GenericRow(_)))).orNull
           val irArray = new Array[Any](2)
-          irArray.update(0, collapsed)
-          irArray.update(1, tail)
-          //          val gson = new Gson()
-          //          println(s"""
-          //               |keys: ${gson.toJson(keyWithHash.data)}
-          //               |collapsed: ${gson.toJson(finalBatchIr.collapsed)}
-          //               |tailHops: ${gson.toJson(finalBatchIr.tailHops)}
-          //               |""".stripMargin)
+          irArray.update(0, finalBatchIr.collapsed)
+          irArray.update(1, finalBatchIr.tailHops)
           keyWithHash.data -> irArray
 
       }
@@ -86,8 +67,12 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
-  def run(groupByConf: GroupByConf, endDs: String): Unit = {
-    val tableUtils = TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_upload"))
+  def run(groupByConf: GroupByConf, endDs: String, tableUtilsOpt: Option[TableUtils] = None): Unit = {
+    val tableUtils =
+      tableUtilsOpt.getOrElse(
+        TableUtils(
+          SparkSessionBuilder
+            .build(s"groupBy_${groupByConf.metaData.name}_upload")))
     val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     val groupByUpload = new GroupByUpload(endDs, groupBy)
 
@@ -99,19 +84,21 @@ object GroupByUpload {
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }).toAvroDf
 
+    kvDf.show()
+    println("**** kvdf ****")
+
     val groupByServingInfo = new GroupByServingInfo()
     groupByServingInfo.setBatchDateStamp(endDs)
     groupByServingInfo.setGroupBy(groupByConf)
-    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema().toString(true))
-    groupByServingInfo.setKeyAvroSchema(groupBy.preAggSchema.toAvroSchema().toString(true))
+    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
+    groupByServingInfo.setKeyAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     val metaRows = Seq(
       Row(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
           ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8)))
     val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
-    val tableName = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}_upload"
-    val tableProps = groupByConf.metaData.tableProperties.asScala.toMap
-    kvDf.union(metaDf).save(tableName, tableProps)
+    metaDf.show()
+    kvDf.union(metaDf).saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
   }
 
   def main(args: Array[String]): Unit = {

@@ -3,13 +3,16 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.zipline.api.{Builders, Constants, Operation, TimeUnit, Window}
-import ai.zipline.spark.{GroupBy, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.zipline.spark.{GroupBy, GroupByUpload, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import ai.zipline.spark.Extensions._
 import junit.framework.TestCase
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
+
+  private val namespace = "fetcher_test"
+  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   def testTemporalFetch: Unit = {
 
@@ -34,7 +37,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.AVERAGE,
                              inputColumn = "rating",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.vendor_ratings")
+      metaData = Builders.MetaData(name = "unit_test.vendor_ratings", namespace = namespace)
     )
 
     val userPaymentsGroupBy = Builders.GroupBy(
@@ -44,15 +47,13 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
                              inputColumn = "payment",
                              windows = Seq(new Window(1, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_payments")
+      metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     println(today)
-    GroupBy
-      .from(userPaymentsGroupBy, PartitionRange(today, today), TableUtils(spark))
-      .temporalEventsUpload(today)
-      .show()
+    GroupByUpload
+      .run(userPaymentsGroupBy, today, Some(TableUtils(spark)))
     // create groupBy data
 
     // create queries

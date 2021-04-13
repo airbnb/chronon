@@ -30,12 +30,9 @@ object Extensions {
         .mkString("\n")
     }
 
-    def toAvroSchema(name: String = null): Schema = {
-      val ziplineSchema = ZStructType.from(name, Conversions.toZiplineSchema(schema))
-      AvroUtils.fromZiplineSchema(ziplineSchema)
-    }
-
-    def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name))
+    def toZiplineSchema(name: String = null): ZStructType = ZStructType.from(name, Conversions.toZiplineSchema(schema))
+    def toAvroSchema(name: String = null): Schema = AvroUtils.fromZiplineSchema(toZiplineSchema(name))
+    def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
   implicit class DataframeOps(df: DataFrame) {
@@ -76,6 +73,10 @@ object Extensions {
     // use sparingly/in tests.
     def save(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties)
+    }
+
+    def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
+      TableUtils(df.sparkSession).insert(df, tableName, tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {

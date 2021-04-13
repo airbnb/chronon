@@ -58,6 +58,7 @@ object Extensions {
 
   implicit class MetadataOps(metaData: MetaData) {
     val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
+<<<<<<< HEAD
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -65,6 +66,9 @@ object Extensions {
       newMetaData.setName(metaData.name)
       newMetaData
     }
+=======
+    val tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
+>>>>>>> Avro serialization of groupBy upload data
   }
 
   // one per output column - so single window

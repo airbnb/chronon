@@ -35,11 +35,11 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
   // 1h_irs - [(txn-sum, login-count, ..., ts)]
   // 5min_irs - [(txn-sum, login-count, ..., ts)]
 
-  def batchIrSchema: Seq[(String, DataType)] = {
+  def batchIrSchema: Array[(String, DataType)] = {
     val collapsedSchema = windowedAggregator.irSchema
     val hopFields = baseAggregator.irSchema :+ ("ts", LongType)
-    Seq("collapsedIr" -> StructType.from("WindowedIr", collapsedSchema),
-        "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
+    Array("collapsedIr" -> StructType.from("WindowedIr", collapsedSchema),
+          "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
   }
 
   val tailTs: Array[Option[Long]] = windowMappings.map { mapping =>

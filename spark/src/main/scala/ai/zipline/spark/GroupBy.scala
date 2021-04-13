@@ -39,8 +39,10 @@ class GroupBy(val aggregations: Seq[Aggregation],
     StructType(valuesIndices.map(inputDf.schema))
   }
 
-  protected lazy val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
-  lazy val postAggSchema = Conversions.fromZiplineSchema(valueZiplineSchema)
+  lazy val postAggSchema = {
+    val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+    Conversions.fromZiplineSchema(valueZiplineSchema)
+  }
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
@@ -201,14 +203,13 @@ class GroupBy(val aggregations: Seq[Aggregation],
                             additionalFields: Seq[(String, DataType)]): DataFrame = {
     val finalKeySchema = StructType(keySchema ++ additionalFields.map { case (name, typ) => StructField(name, typ) })
     KvRdd(aggregateRdd, finalKeySchema, postAggSchema).toFlatDf
-
   }
 
   private def sparkify(ir: Array[Any]): Array[Any] =
     if (finalize) {
-      Conversions.fromZiplineRow(windowAggregator.finalize(ir), valueZiplineSchema)
+      windowAggregator.finalize(ir)
     } else {
-      Conversions.fromZiplineRow(windowAggregator.denormalize(ir), valueZiplineSchema)
+      windowAggregator.denormalize(ir)
     }
 
 }
