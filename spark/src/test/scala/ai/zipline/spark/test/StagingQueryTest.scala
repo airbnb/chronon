@@ -9,13 +9,13 @@ import org.junit.Assert.assertEquals
 import org.junit.{AfterClass, BeforeClass, Test}
 
 // clean needs to be a static method
-object StagingQueryTest {
-  @BeforeClass
-  @AfterClass
-  def clean(): Unit = {
-    SparkSessionBuilder.cleanData()
-  }
-}
+//object StagingQueryTest {
+//  @BeforeClass
+//  @AfterClass
+//  def clean(): Unit = {
+//    SparkSessionBuilder.cleanData()
+//  }
+//}
 
 // !!!DO NOT extend Junit.TestCase!!!
 // Or the @BeforeClass and @AfterClass annotations fail to run
@@ -42,8 +42,7 @@ class StagingQueryTest {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = tenDaysAgo,
-      setups =
-        Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
+      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
     )
 

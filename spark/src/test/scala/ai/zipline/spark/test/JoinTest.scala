@@ -12,8 +12,7 @@ import scala.collection.JavaConverters._
 
 // clean needs to be a static method
 object JoinTest {
-  @BeforeClass
-  @AfterClass
+  @BeforeClass // @AfterClass
   def clean(): Unit = {
     SparkSessionBuilder.cleanData()
   }

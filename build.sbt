@@ -44,7 +44,9 @@ lazy val spark = project
       "org.apache.spark" %% "spark-core" % "2.4.4" % "provided",
       "org.rogach" %% "scallop" % "4.0.1",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
-    )
+    ),
+    testOptions in Test += Tests.Setup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db")),
+    testOptions in Test += Tests.Cleanup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db"))
   )
 
 // TODO add benchmarks - follow this example
