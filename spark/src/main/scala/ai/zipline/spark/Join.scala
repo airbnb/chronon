@@ -276,10 +276,15 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     println(s"left unfilled range: $leftUnfilledRange")
     val leftDfFull: DataFrame = {
+      val timeProjection = if (joinConf.left.dataModel == Events) {
+        Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
+      } else {
+        Seq()
+      }
       val df = tableUtils.sql(
         leftUnfilledRange.genScanQuery(joinConf.left.query,
                                        joinConf.left.table,
-                                       fillIfAbsent = Map(Constants.PartitionColumn -> null)))
+                                       fillIfAbsent = Map(Constants.PartitionColumn -> null) ++ timeProjection))
       val skewFilter = joinConf.skewFilter()
       skewFilter
         .map(sf => {
