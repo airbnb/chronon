@@ -6,19 +6,8 @@ import ai.zipline.api.{Builders, Constants, TimeUnit, Window}
 import ai.zipline.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
-import org.junit.{AfterClass, BeforeClass, Test}
+import org.junit.Test
 
-// clean needs to be a static method
-object StagingQueryTest {
-  @BeforeClass
-  @AfterClass
-  def clean(): Unit = {
-    SparkSessionBuilder.cleanData()
-  }
-}
-
-// !!!DO NOT extend Junit.TestCase!!!
-// Or the @BeforeClass and @AfterClass annotations fail to run
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   private val today = Constants.Partition.at(System.currentTimeMillis())
@@ -33,8 +22,6 @@ class StagingQueryTest {
       DataGen.Column("session_length", IntType, 2)
     )
 
-    val outputDates = DataGen.genPartitions(10)
-
     val df = DataGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_staging_query"
     df.createOrReplaceTempView(viewName)
@@ -42,8 +29,7 @@ class StagingQueryTest {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = tenDaysAgo,
-      setups =
-        Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
+      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
     )
 

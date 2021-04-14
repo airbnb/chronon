@@ -9,7 +9,6 @@ import scala.reflect.io.Directory
 object SparkSessionBuilder {
 
   val warehouseDir = new File("spark-warehouse")
-  val metastoreDb = new File("metastore_db")
 
   def build(name: String, local: Boolean): SparkSession = {
     if (local) {
@@ -34,6 +33,7 @@ object SparkSessionBuilder {
       .config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
       .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.sql.hive.metastore.version", "1.2.1")
 
     val builder = if (local) {
       baseBuilder
@@ -49,18 +49,5 @@ object SparkSessionBuilder {
     spark.sparkContext.setLogLevel("ERROR")
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
-  }
-
-  private def cleanUp(file: File): Unit = {
-    if (file.exists() && file.isDirectory) {
-      val directory = new Directory(file)
-      directory.deleteRecursively()
-    }
-  }
-
-  // remove the old warehouse folders
-  def cleanData(): Unit = {
-    cleanUp(warehouseDir)
-    cleanUp(metastoreDb)
   }
 }

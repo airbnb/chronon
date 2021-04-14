@@ -6,21 +6,10 @@ import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
-import org.junit.{AfterClass, BeforeClass, Test}
+import org.junit.Test
 
 import scala.collection.JavaConverters._
 
-// clean needs to be a static method
-object JoinTest {
-  @BeforeClass
-  @AfterClass
-  def clean(): Unit = {
-    SparkSessionBuilder.cleanData()
-  }
-}
-
-// !!!DO NOT extend Junit.TestCase!!!
-// Or the @BeforeClass and @AfterClass annotations fail to run
 class JoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
