@@ -10,7 +10,6 @@ import scala.io.Source._
 
 object ThriftJsonCodec {
   val mapper = new ObjectMapper()
-  val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
   mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
   val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
 

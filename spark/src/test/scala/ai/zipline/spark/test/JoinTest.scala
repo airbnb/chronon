@@ -451,7 +451,7 @@ class JoinTest {
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> null), startPartition = start),
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
                                       snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")

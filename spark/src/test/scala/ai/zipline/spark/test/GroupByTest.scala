@@ -151,7 +151,7 @@ class GroupByTest {
         val irs = naiveAggregator.aggregate(events.map(_.toSeq).orNull, queries)
         queries.zip(irs).map {
           case (query: Long, ir: Array[Any]) =>
-            (key.data :+ query, ir)
+            (key.data :+ query, groupBy.windowAggregator.finalize(ir))
         }
     }
     val naiveDf = groupBy.toDf(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))

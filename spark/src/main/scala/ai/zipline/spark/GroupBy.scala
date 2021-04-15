@@ -7,6 +7,7 @@ import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonCodec, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
+import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
@@ -71,7 +72,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     preppedInputDf.rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
-      .map { case (keyWithHash, ir) => keyWithHash.data -> sparkify(ir) }
+      .map { case (keyWithHash, ir) => keyWithHash.data -> normalizeOrFinalize(ir) }
   }
 
   def snapshotEntities: DataFrame =
@@ -90,7 +91,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
-            (keys.data :+ Constants.Partition.at(endTimes(i)), sparkify(irs(i)))
+            (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
       }
   }
@@ -172,7 +173,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
-          queries.indices.map { i => (keys.data ++ queriesWithPartition(i).toArray, sparkify(irs(i))) }
+          queries.indices.map { i =>
+            (keys.data ++ queriesWithPartition(i).toArray, normalizeOrFinalize(irs(i)))
+          }
       }
 
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
@@ -205,11 +208,11 @@ class GroupBy(val aggregations: Seq[Aggregation],
     KvRdd(aggregateRdd, finalKeySchema, postAggSchema).toFlatDf
   }
 
-  private def sparkify(ir: Array[Any]): Array[Any] =
+  private def normalizeOrFinalize(ir: Array[Any]): Array[Any] =
     if (finalize) {
       windowAggregator.finalize(ir)
     } else {
-      windowAggregator.denormalize(ir)
+      windowAggregator.normalize(ir)
     }
 
 }

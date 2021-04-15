@@ -1,6 +1,7 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, StringType}
+import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Builders, Constants, TimeUnit, Window}
 import ai.zipline.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
@@ -18,11 +19,11 @@ class StagingQueryTest {
   @Test
   def testStagingQuery(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10), // ts = last 10 days
-      DataGen.Column("session_length", IntType, 2)
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2)
     )
 
-    val df = DataGen.events(spark, schema, count = 100000, partitions = 100)
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_staging_query"
     df.createOrReplaceTempView(viewName)
 
