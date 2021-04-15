@@ -40,6 +40,7 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", "true")
+        .config("spark.local.dir", s"/tmp/$name")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder

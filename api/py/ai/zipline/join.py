@@ -6,7 +6,7 @@ import logging
 import ai.zipline.api.ttypes as api
 import ai.zipline.utils as utils
 import ai.zipline.repo.extract_objects as eo
-from typing import List, Dict, Union, Optional, Iterable
+from typing import List, Dict, Union, Optional
 
 logging.basicConfig(level=logging.INFO)
 
@@ -60,9 +60,8 @@ def Join(left: api.Source,
         # mapping ts to query.timeColumn to events only
         updated_left.events.query.select.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
-    root_base_source = updated_left.entities if updated_left.entities else updated_left.events
-    #root_keys = set(root_base_source.query.select.keys())
-    #for joinPart in rightParts:
+    # root_keys = set(root_base_source.query.select.keys())
+    # for joinPart in rightParts:
     #    mapping = joinPart.keyMapping if joinPart.keyMapping else {}
     #    # TODO: Add back validation? Or not?
     #    #utils.check_contains(mapping.keys(), root_keys, "root key", "")

@@ -1,6 +1,4 @@
 import copy
-import json
-from dataclasses import dataclass
 from typing import List, Optional, Union
 
 import ai.zipline.api.ttypes as ttypes
@@ -65,7 +63,7 @@ def validate_group_by(sources: List[ttypes.Source],
                       keys: List[str],
                       aggregations: Optional[List[ttypes.Aggregation]]):
     # check ts is not included in query.select
-    #TODO: Actually run this validation - returning for now
+    # TODO: Actually run this validation - returning for now
     return
     first_source_columns = set(utils.get_columns(sources[0]))
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Zipline," \
@@ -118,7 +116,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             # timeColumn for entity source is optional
             if src.entities.query.timeColumn:
                 src.entities.query.select.update({"ts": src.entities.query.timeColumn})
-    query = utils.get_query(updated_sources[0])
 
     # TODO: Make dependencies work and add to metadata constructor
     # dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]

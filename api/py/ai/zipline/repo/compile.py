@@ -23,6 +23,7 @@ FOLDER_NAME_TO_CLASS = {
 
 DEFAULT_TEAM_NAME = "default"
 
+
 def get_folder_name_from_class_name(class_name):
     return {v.__name__: k for k, v in FOLDER_NAME_TO_CLASS.items()}[class_name]
 
@@ -106,6 +107,7 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
     obj.metaData.team = team_name
 
+
 def _write_obj(full_output_root: str,
                validator: ZiplineRepoValidator,
                name: str,
@@ -149,7 +151,8 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
-    assert (hasattr(obj, "name") or hasattr(obj, "metaData")), f"Can't serialize objects without the name attribute for object {name}"
+    assert (hasattr(obj, "name") or hasattr(obj, "metaData")), \
+        f"Can't serialize objects without the name attribute for object {name}"
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         f.write(thrift_simple_json_protected(obj, obj_class))
