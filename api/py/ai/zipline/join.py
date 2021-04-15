@@ -50,15 +50,17 @@ def Join(left: api.Source,
          additional_args: List[str] = None,
          additional_env: List[str] = None,
          online: bool = False,
-         production: bool = False) -> api.Join:
+         production: bool = False,
+         name: str = None,
+        ) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
     if left.events:
-        assert "ts" not in left.events.query.select.keys(), "'ts' is a reserved key word for Zipline," \
+        assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Zipline," \
             " please specify the expression in timeColumn"
         # mapping ts to query.timeColumn to events only
-        updated_left.events.query.select.update({"ts": updated_left.events.query.timeColumn})
+        updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
     root_base_source = updated_left.entities if updated_left.entities else updated_left.events
     #root_keys = set(root_base_source.query.select.keys())
@@ -89,7 +91,7 @@ def Join(left: api.Source,
     if additional_env:
         customJson["additional_env"] = additional_env
 
-    metadata = api.MetaData(online=online, production=production, customJson=json.dumps(customJson))
+    metadata = api.MetaData(online=online, production=production, customJson=json.dumps(customJson), name=name)
 
     return api.Join(
         left=updated_left,

@@ -83,26 +83,26 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
 
 
 def compile_extracted_objects(teams_path, team_name, validator, results, full_output_root, force_overwrite=False,
-                              log_level=logging.INFO):
+                              log_level=logging.INFO, materialize_group_bys=False):
     """
     Given a teams location and extracted objects and a validator write production configs.
     Shared between ziperva and repo API.
     """
-    extra_online_group_bys = {}
+    extra_materialized_group_bys = {}
     num_written_objs = 0
     for name, obj in results.items():
         _set_team_level_metadata(obj, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
             # In case of online join, we need to materialize the underlying online group_bys.
-            if obj.__class__ is Join and obj.metaData.online:
-                online_group_bys = {rt.groupBy.name: rt.groupBy for rt in obj.rightParts}
-                extra_online_group_bys.update(online_group_bys)
-    if extra_online_group_bys:
+            if obj.__class__ is Join and (obj.metaData.online or materialize_group_bys):
+                extra_group_bys = {'{}.{}'.format(name, rt.groupBy.metaData.name): rt.groupBy for rt in obj.joinParts}
+                extra_materialized_group_bys.update(extra_group_bys)
+    if extra_materialized_group_bys:
         num_written_group_bys = 0
         # load materialized joins to validate the additional group_bys against.
         validator.load_objs()
-        for name, obj in extra_online_group_bys.items():
+        for name, obj in extra_materialized_group_bys.items():
             if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")

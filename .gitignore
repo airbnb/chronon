@@ -5,6 +5,7 @@
 *.ear
 *.logs
 *.iml
+*.pyc
 .idea/
 .eclipse
 **/.vscode/
