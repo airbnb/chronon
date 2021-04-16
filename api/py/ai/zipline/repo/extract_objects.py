@@ -31,9 +31,13 @@ def import_module_set_name(module, cls):
     """evaluate imported modules to assign object name"""
     for name, obj in list(module.__dict__.items()):
         if isinstance(obj, cls):
+            print(module.__name__)
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
-            # real world case: psx.reservation_status.v1
+            # example module.__name__=group_bys.user.avg_session_length, name=v1
+            # obj.metaData.name=user.avg_session_length.v1
+            # obj.metaData.team=user
             obj.metaData.name = module.__name__.partition(".")[2] + "." + name
+            obj.metaData.team = module.__name__.split(".")[1]
     return module
 
 
