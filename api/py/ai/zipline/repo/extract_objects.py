@@ -34,6 +34,7 @@ def import_module_set_name(module, cls):
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
             # real world case: psx.reservation_status.v1
             obj.metaData.name = module.__name__.partition(".")[2] + "." + name
+            obj.metaData.team = module.__name__.split(".")[1]
     return module
 
 

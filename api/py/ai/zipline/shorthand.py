@@ -2,6 +2,7 @@ import ai.zipline.api.ttypes as api
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Union, Tuple, Dict, Callable
+import inspect
 
 MIN = api.Operation.MIN
 MAX = api.Operation.MAX
@@ -129,10 +130,16 @@ def GroupBy(name: str,
         source = api.Source(events=api.EventSource(table=table,
                                                    topic=topic,
                                                    query=query))
+    # get caller's filename to assign team
+    team = inspect.stack()[1].filename.split("/")[-2]
 
     return api.GroupBy(
-        metaData=api.MetaData(name=name, production=production, online=online, tableProperties=tableProperties,
-                              outputNamespace=outputNamespace),
+        metaData=api.MetaData(name=name,
+                              production=production,
+                              online=online,
+                              tableProperties=tableProperties,
+                              outputNamespace=outputNamespace,
+                              team=team),
         sources=[source],
         keyColumns=key_selects.keys(),
         aggregations=aggregations
