@@ -67,7 +67,7 @@ jobs:
         steps:
             - full_checkout
             - run:
-                  name: Run Zipline Python tests
+                  name: Run Zipline Python lint
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate zipline_py
@@ -83,7 +83,13 @@ jobs:
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate zipline_py
-                      pushd /zipline/api/ && PYTHONPATH=/zipline/api/py/ai/zipline: python -m nose -v py.ai.zipline.tests --nocapture --verbose && popd
+                      pushd /zipline/api/
+                      thrift --gen py -out /zipline/api/py/ai/zipline\
+                         /zipline/api/thrift/api.thrift                 # Generate thrift files
+                      cd /zipline/api/py                                # Go to Python module
+                      pip install -r requirements/dev.txt               # Install latest requirements
+                      tox                                               # Run tests
+                      popd
 
 workflows:
 
