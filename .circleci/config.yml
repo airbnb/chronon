@@ -1,5 +1,13 @@
 version: 2.1
 
+early_exit_for_release_prs: &early_exit_for_release_prs
+    run:
+        name: Early exit for release PRs
+        command: |
+            if expr "${CIRCLE_BRANCH}" : '^release-branch--[a-z][a-z]-v[0-9.]*$' ; then
+                circleci-agent step halt
+            fi
+
 base_defaults: &base_defaults
     resource_class: xlarge
     working_directory: /zipline
@@ -91,8 +99,18 @@ jobs:
                       tox                                               # Run tests
                       popd
 
-workflows:
+    "Publish Zipline JAR to Artifactory":
+        executor: docker_baseimg_executor
+        steps:
+            - <<: *early_exit_for_release_prs
+            - checkout
+            - run:
+                name: Run sbt publish
+                command: |
+                      sed -i -e "s/<username>/${ARTIFACTORY_USERNAME}/g" -e "s/<password>/${ARTIFACTORY_PASSWORD}/g" /zipline/artifactory_credentials.properties
+                      sbt publish
 
+workflows:
     build_test_deploy:
         jobs:
             - "Docker Base Build":
@@ -111,3 +129,9 @@ workflows:
             - "Zipline Python Lint":
                 requires:
                   - "Docker Base Build"
+            - "Publish Zipline JAR to Artifactory":
+                  filters:
+                      tags:
+                          only: /^release-zl.*/
+                      branches:
+                          ignore: /.*/

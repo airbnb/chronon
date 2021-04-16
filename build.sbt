@@ -1,12 +1,15 @@
+
 import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
-ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "2.11.12"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark)
-  .settings(name := "zipline")
+  .settings(
+    name := "zipline",
+    skip in publish := true
+  )
 
 lazy val api = project
   .settings(
@@ -20,7 +23,8 @@ lazy val api = project
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.7.1",
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
-    )
+    ),
+    skip in publish := true
   )
 
 lazy val aggregator = project
@@ -30,7 +34,8 @@ lazy val aggregator = project
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
       "com.google.code.gson" % "gson" % "2.8.6"
-    )
+    ),
+    skip in publish := true
   )
 
 lazy val spark = project
@@ -48,6 +53,30 @@ lazy val spark = project
     testOptions in Test += Tests.Setup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db")),
     testOptions in Test += Tests.Cleanup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db"))
   )
+
+artifact in (Compile, assembly) := {
+  val art = (artifact in (Compile, assembly)).value
+  art.withClassifier(Some("assembly"))
+}
+
+addArtifact(artifact in (Compile, assembly), assembly)
+
+enablePlugins(GitVersioning)
+git.useGitDescribe := true
+git.baseVersion := "0.0.0"
+
+val VersionRegex = "release-zl-([0-9]+.[0-9]+.[0-9]+)$".r
+git.gitTagToVersionNumber := { tag: String =>
+  val matches = VersionRegex.findFirstMatchIn(tag)
+  matches match {
+    case Some(m) => Some(s"${m.group(1)})")
+    // maven releases repository automatically rejects version ending with SNAPSHOT.
+    case _ => Some("rejected-SNAPSHOT")
+  }
+}
+
+ThisBuild / publishTo  := Some("Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
+ThisBuild / credentials += Credentials(new File("./artifactory_credentials.properties"))
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b
