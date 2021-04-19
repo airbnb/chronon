@@ -160,25 +160,16 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
               groupByServingInfo.outputCodecOpt.get.decodeMap(batchResponseBytes)
             } else { // temporal accurate
               val aggregator = groupByServingInfo.aggregatorOpt.get
-              val irCodec = groupByServingInfo.irCodec
               val streamingResponses = streamingRequestOpt.map(responsesMap)
               val streamingRows = streamingResponses
-                .flatMap(response => Option(response).map(_.iterator.map(groupByServingInfo.inputCodec.decodeRow)))
+                .flatMap(response =>
+                  Option(response)
+                    .map(_.iterator.map(groupByServingInfo.inputCodec.decodeRow)))
                 .getOrElse(Iterator.empty)
-              val batchRecord =
-                RowConversions
-                  .fromAvroRecord(irCodec.decode(batchResponseBytes), groupByServingInfo.irZiplineSchema)
-                  .asInstanceOf[Array[Any]]
-              val gson = new Gson()
-              println(gson.toJson(batchRecord))
-              val collapsed = aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
-              val tailHops = batchRecord(1)
-                .asInstanceOf[Array[Any]]
-                .map(_.asInstanceOf[Array[Any]]
-                  .map(hop => aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]])))
-              val batchIr = FinalBatchIr(collapsed, tailHops)
               val output = aggregator
-                .lambdaAggregateFinalized(batchIr, streamingRows, System.currentTimeMillis())
+                .lambdaAggregateFinalized(toBatchIr(batchResponseBytes, groupByServingInfo),
+                                          streamingRows,
+                                          System.currentTimeMillis())
               outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
             }
             responseMap
@@ -189,9 +180,17 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
     }
   }
 
-  private def recordToArray(rec: Any, len: Int): Array[Any] = {
-    val grec = rec.asInstanceOf[GenericRecord]
-    (0 until len).map(grec.get).toArray
+  def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
+    val batchRecord =
+      RowConversions
+        .fromAvroRecord(gbInfo.irCodec.decode(bytes), gbInfo.irZiplineSchema)
+        .asInstanceOf[Array[Any]]
+    val collapsed = gbInfo.aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
+    val tailHops = batchRecord(1)
+      .asInstanceOf[Array[Any]]
+      .map(_.asInstanceOf[Array[Any]]
+        .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]])))
+    FinalBatchIr(collapsed, tailHops)
   }
 
   def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).mapValues(_.map(_._2))

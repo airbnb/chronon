@@ -7,10 +7,10 @@ import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.ParsedArgs
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Row, SparkSession}
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
-  implicit val sparkSession = groupBy.sparkSession
+  implicit val sparkSession: SparkSession = groupBy.sparkSession
 
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
     KvRdd(rdd.map { case (keyAndDs, values) => keyAndDs.init -> values }, groupBy.keySchema, groupBy.postAggSchema)
@@ -85,9 +85,6 @@ object GroupByUpload {
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }).toAvroDf
 
-    kvDf.show()
-    println("**** kvdf ****")
-
     val groupByServingInfo = new GroupByServingInfo()
     groupByServingInfo.setBatchDateStamp(endDs)
     groupByServingInfo.setGroupBy(groupByConf)
@@ -98,11 +95,7 @@ object GroupByUpload {
           ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8)))
     val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
-    metaDf.show()
     kvDf.union(metaDf).saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
-    val gson = new Gson()
-
-    println(s"Meta key: ${gson.toJson(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8))}")
   }
 
   def main(args: Array[String]): Unit = {

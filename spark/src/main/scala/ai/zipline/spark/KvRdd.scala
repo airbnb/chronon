@@ -47,13 +47,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
       val codec: AvroCodec = new AvroCodec(AvroUtils.fromZiplineSchema(schema).toString(true));
       { data: Any =>
         val record = RowConversions.toAvroRecord(data, schema).asInstanceOf[GenericData.Record]
-        val gson = new Gson()
         val bytes = codec.encodeRecord(record)
-//        println(s"""
-//                   |data: ${gson.toJson(data)}
-//                   |record: ${record.toString}
-//                   |bytes: ${gson.toJson(bytes)}
-//                   |""".stripMargin)
         bytes
       }
     }
@@ -72,8 +66,6 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
         val result = new Array[Any](2)
         result.update(0, keyToBytes(keys))
         result.update(1, valueToBytes(values))
-        val gson = new Gson()
-        println(gson.toJson(result))
         new GenericRow(result)
     }
     sparkSession.createDataFrame(rowRdd, rowSchema)

@@ -313,11 +313,6 @@ object GroupBy {
       Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
       metaColumns ++ keys.map(_ -> null)
     )
-
-    println(s"""
-        |Rendered query:
-        |$query
-        |""".stripMargin)
     query
   }
 
