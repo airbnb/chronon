@@ -4,7 +4,8 @@
     "tableProperties": {
       "config_json": "{\"sample_key\": \"sample_value\"}"
     },
-    "outputNamespace": "sample_namespace"
+    "outputNamespace": "sample_namespace",
+    "team": "sample_team"
   },
   "left": {
     "entities": {
@@ -26,7 +27,8 @@
             "sample_config_json": "{\"sample_key\": \"sample_value\"}",
             "description": "sample description"
           },
-          "outputNamespace": "sample_namespace"
+          "outputNamespace": "sample_namespace",
+          "team": "sample_team"
         },
         "sources": [
           {
