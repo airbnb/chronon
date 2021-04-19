@@ -73,6 +73,11 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   def normalize(ir: Array[Any]): Array[Any] = map(ir, _.normalize)
   def denormalize(ir: Array[Any]): Array[Any] = map(ir, _.denormalize)
 
+  def denormalizeInPlace(ir: Array[Any]): Array[Any] = {
+    columnAggregators.indices.foreach(idx => ir.update(idx, columnAggregators(idx).denormalize(ir(idx))))
+    ir
+  }
+
   // deep copies an IR ai.zipline.aggregator.row
   def clone(ir: Array[Any]): Array[Any] = map(ir, _.clone)
 

@@ -1,7 +1,6 @@
 package ai.zipline.fetcher
 
 import java.io.ByteArrayOutputStream
-
 import ai.zipline.aggregator.base.{
   BinaryType,
   BooleanType,
@@ -25,8 +24,10 @@ import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWriter, GenericRecord}
 import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, EncoderFactory}
 
+import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import java.util
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
@@ -135,6 +136,7 @@ object AvroUtils {
       case Schema.Type.DOUBLE  => DoubleType
       case Schema.Type.BYTES   => BinaryType
       case Schema.Type.BOOLEAN => BooleanType
+      case Schema.Type.UNION   => toZiplineSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
       case _                   => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
     }
   }

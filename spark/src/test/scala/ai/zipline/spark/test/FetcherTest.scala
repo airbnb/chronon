@@ -2,11 +2,17 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Builders, Constants, Operation, TimeUnit, Window}
+import ai.zipline.fetcher.Fetcher
 import ai.zipline.spark.{GroupBy, GroupByUpload, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import ai.zipline.spark.Extensions._
 import junit.framework.TestCase
+
+import java.util.concurrent.Executors
+import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.{Await, ExecutionContext}
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
@@ -50,10 +56,25 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
 
+    implicit val tableUtils = TableUtils(spark)
     val today = Constants.Partition.at(System.currentTimeMillis())
     println(today)
+    val yesterday = Constants.Partition.before(today)
     GroupByUpload
       .run(userPaymentsGroupBy, today, Some(TableUtils(spark)))
+
+    implicit val executionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    val inMemoryKvStore = new InMemoryKvStore()
+
+    inMemoryKvStore.bulkPut(userPaymentsGroupBy.kvTable, userPaymentsGroupBy.batchDataset, null)
+
+    inMemoryKvStore.create(userPaymentsGroupBy.streamingDataset)
+    val fetcher = new Fetcher(inMemoryKvStore)
+    val future =
+      fetcher.fetchGroupBys(Seq(Fetcher.Request(userPaymentsGroupBy.metaData.cleanName, Map("user" -> "user58"))))
+    val result = Await.result(future, Duration(100, MILLISECONDS))
+    println(result)
+
     // create groupBy data
 
     // create queries

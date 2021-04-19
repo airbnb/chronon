@@ -5,6 +5,7 @@ import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.ParsedArgs
+import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 
@@ -91,7 +92,7 @@ object GroupByUpload {
     groupByServingInfo.setBatchDateStamp(endDs)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
-    groupByServingInfo.setKeyAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
+    groupByServingInfo.setInputAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     val metaRows = Seq(
       Row(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
           ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8)))
@@ -99,6 +100,9 @@ object GroupByUpload {
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     metaDf.show()
     kvDf.union(metaDf).saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
+    val gson = new Gson()
+
+    println(s"Meta key: ${gson.toJson(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8))}")
   }
 
   def main(args: Array[String]): Unit = {

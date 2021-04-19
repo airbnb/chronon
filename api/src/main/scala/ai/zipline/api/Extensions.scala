@@ -57,7 +57,7 @@ object Extensions {
   }
 
   implicit class MetadataOps(metaData: MetaData) {
-    val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
+    val cleanName: String = metaData.name.sanitize
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -203,6 +203,10 @@ object Extensions {
     def batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
     def streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
     def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
+  }
+
+  implicit class StringOps(string: String) {
+    def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) {

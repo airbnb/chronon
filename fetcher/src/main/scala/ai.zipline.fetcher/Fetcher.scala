@@ -1,12 +1,14 @@
 package ai.zipline.fetcher
 
 import ai.zipline.aggregator.base.StructType
+import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Extensions._
 import ai.zipline.api._
 import ai.zipline.fetcher.KVStore.{GetRequest, GetResponse, PutRequest}
+import com.google.gson.Gson
 import org.apache.avro.Schema
-import org.apache.avro.generic.GenericRecord
+import org.apache.avro.generic.{GenericData, GenericRecord}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -20,12 +22,21 @@ trait KVStore {
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
   def multiPut(keyValueDatasets: Seq[PutRequest]): Unit
 
-  def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, tsMillis: Long): Unit
+  def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods
   def get(request: GetRequest)(implicit executionContext: ExecutionContext): Future[GetResponse] =
     multiGet(Seq(request)).map(_.head)
   def put(putRequest: PutRequest): Unit = multiPut(Seq(putRequest))
+
+  def getString(key: String, dataset: String, timeoutMillis: Long)(implicit
+      executionContext: ExecutionContext): String = {
+    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
+    val responseFuture = get(fetchRequest)
+    val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
+    println(response)
+    new String(response.values.head, Constants.UTF8)
+  }
 }
 
 object KVStore {
@@ -36,17 +47,8 @@ object KVStore {
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
 }
 
-class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
+class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
     ex: ExecutionContext) {
-  protected val timeout = Duration(timeoutMillis.toDouble, MILLISECONDS)
-
-  def getMetadata(key: String, dataset: String = metaDataSet): Array[Byte] = {
-    val fetchRequest = KVStore.GetRequest(key.getBytes, dataset)
-    val responseFuture = kvStore.get(fetchRequest)
-    val response = Await.result(responseFuture, timeout)
-    response.values.head
-  }
-
   // a simple thread safe cache for metadata & schemas
   private def memoize[I, O](f: I => O): I => O =
     new mutable.HashMap[I, O]() {
@@ -55,37 +57,33 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
 
   lazy val getJoinConf: String => Join = memoize { name =>
     ThriftJsonCodec
-      .fromJsonStr[Join](new String(getMetadata(s"join/$name")), check = true, classOf[Join])
+      .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join])
   }
 
   def putJoinConf(join: Join): Unit = {
     kvStore.put(
-      PutRequest(s"join/${join.metaData.name}".getBytes, ThriftJsonCodec.toJsonStr(join).getBytes, metaDataSet))
+      PutRequest(s"joins/${join.metaData.name}".getBytes(Constants.UTF8),
+                 ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
+                 dataset))
   }
 
   lazy val getGroupByServingInfo: String => GroupByServingInfoParsed = memoize { name =>
+    val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
+    println(s"Fetching ${Constants.GroupByServingInfoKey} from : $batchDataset")
+    val metaData =
+      kvStore.getString(Constants.GroupByServingInfoKey, s"${name.sanitize.toUpperCase()}_BATCH", timeoutMillis)
     val groupByServingInfo = ThriftJsonCodec
-      .fromJsonStr[GroupByServingInfo](new String(getMetadata(s"group_by/$name/serving_info")),
-                                       check = true,
-                                       classOf[GroupByServingInfo])
+      .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
     new GroupByServingInfoParsed(groupByServingInfo)
-  }
-
-  def putGroupByServingInfo(groupByServingInfo: GroupByServingInfo): Unit = {
-    kvStore.put(
-      PutRequest(s"group_by/${groupByServingInfo.groupBy.metaData.name}/serving_info".getBytes,
-                 ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes,
-                 metaDataSet))
   }
 
   // mixin class - with schema
   class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
       extends GroupByServingInfo(groupByServingInfo) {
     private val avroSchemaParser = new Schema.Parser()
-    private def codec(schemaStr: String): AvroCodec = AvroCodec.of(schemaStr)
     val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
     val inputCodec: AvroCodec = AvroCodec.of(inputAvroSchema)
-    // streaming needs to start scanning after this
+    // streaming starts scanning after batchEnd
     val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchDateStamp)
     private val avroInputSchema = avroSchemaParser.parse(inputAvroSchema)
     private val ziplineInputSchema =
@@ -94,12 +92,13 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
     val aggregatorOpt = aggregationsOpt.map { aggs =>
       new SawtoothOnlineAggregator(batchEndTsMillis, aggs.asScala, ziplineInputSchema)
     }
-    val irCodecOpt: Option[AvroCodec] = aggregatorOpt
-      .map { agg =>
-        val irZiplineSchema = StructType.from(s"${groupBy.metaData.cleanName}_IR", agg.batchIrSchema)
-        val irAvroSchema = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
-        AvroCodec.of(irAvroSchema)
-      }
+    lazy val aggregator = new SawtoothOnlineAggregator(batchEndTsMillis,
+                                                       groupByServingInfo.groupBy.aggregations.asScala,
+                                                       ziplineInputSchema)
+    lazy val irZiplineSchema: StructType =
+      StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
+    lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
+    lazy val irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
 
     val outputCodecOpt: Option[AvroCodec] = aggregatorOpt
       .map { agg =>
@@ -111,14 +110,15 @@ class MetadataStore(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", 
   }
 
 }
+object Fetcher {
+  case class Request(name: String, keys: Map[String, AnyRef])
+  case class Response(request: Request, values: Map[String, AnyRef])
+}
+import Fetcher._
 
 class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
     ex: ExecutionContext)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
-
-  // the request and response classes are similar for both groupBy and Join
-  case class Request(name: String, keys: Map[String, AnyRef])
-  case class Response(request: Request, values: Map[String, AnyRef])
 
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
@@ -160,18 +160,24 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
               groupByServingInfo.outputCodecOpt.get.decodeMap(batchResponseBytes)
             } else { // temporal accurate
               val aggregator = groupByServingInfo.aggregatorOpt.get
-              val irCodec = groupByServingInfo.irCodecOpt.get
-              val streamingResponses = streamingRequestOpt.map(responsesMap).get
-              val streamingRows = streamingResponses.iterator.map(groupByServingInfo.inputCodec.decodeRow)
-              val batchRecord = irCodec.decode(batchResponseBytes)
-              val collapsed = recordToArray(batchRecord.get(0), aggregator.windowedAggregator.length)
-              val tailHops = batchRecord.get(1).asInstanceOf[Array[AnyRef]].map { hops =>
-                hops
-                  .asInstanceOf[Array[AnyRef]]
-                  .map(hop => recordToArray(hop, aggregator.baseAggregator.length))
-              }
+              val irCodec = groupByServingInfo.irCodec
+              val streamingResponses = streamingRequestOpt.map(responsesMap)
+              val streamingRows = streamingResponses
+                .flatMap(response => Option(response).map(_.iterator.map(groupByServingInfo.inputCodec.decodeRow)))
+                .getOrElse(Iterator.empty)
+              val batchRecord =
+                RowConversions
+                  .fromAvroRecord(irCodec.decode(batchResponseBytes), groupByServingInfo.irZiplineSchema)
+                  .asInstanceOf[Array[Any]]
+              val gson = new Gson()
+              println(gson.toJson(batchRecord))
+              val collapsed = aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
+              val tailHops = batchRecord(1)
+                .asInstanceOf[Array[Any]]
+                .map(_.asInstanceOf[Array[Any]]
+                  .map(hop => aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]])))
               val batchIr = FinalBatchIr(collapsed, tailHops)
-              val output = groupByServingInfo.aggregatorOpt.get
+              val output = aggregator
                 .lambdaAggregateFinalized(batchIr, streamingRows, System.currentTimeMillis())
               outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
             }
@@ -183,7 +189,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
     }
   }
 
-  private def recordToArray(rec: AnyRef, len: Int): Array[Any] = {
+  private def recordToArray(rec: Any, len: Int): Array[Any] = {
     val grec = rec.asInstanceOf[GenericRecord]
     (0 until len).map(grec.get).toArray
   }
