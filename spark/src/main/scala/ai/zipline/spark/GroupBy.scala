@@ -69,6 +69,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
       inputDf -> updateFunc
     }
 
+    println("prepped input schema")
+    println(preppedInputDf.schema.pretty)
+
     preppedInputDf.rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)

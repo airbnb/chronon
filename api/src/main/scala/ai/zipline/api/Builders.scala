@@ -100,7 +100,8 @@ object Builders {
         metaData: MetaData = null,
         sources: Seq[Source] = null,
         keyColumns: Seq[String] = null,
-        aggregations: Seq[Aggregation] = null
+        aggregations: Seq[Aggregation] = null,
+        accuracy: Accuracy = null
     ): GroupBy = {
       val result = new GroupBy()
       result.setMetaData(metaData)
@@ -110,6 +111,7 @@ object Builders {
         result.setKeyColumns(keyColumns.asJava)
       if (aggregations != null)
         result.setAggregations(aggregations.asJava)
+      result.setAccuracy(accuracy)
       result
     }
   }
@@ -162,7 +164,7 @@ object Builders {
       result.setProduction(production)
       result.setCustomJson(customJson)
       result.setOutputNamespace(namespace)
-      result.setTeam(team)
+      result.setTeam(Option(team).getOrElse("zipline"))
       if (dependencies != null)
         result.setDependencies(dependencies.asJava)
       result
@@ -171,11 +173,11 @@ object Builders {
 
   object StagingQuery {
     def apply(
-               query: String = null,
-               metaData: MetaData = null,
-               startPartition: String = null,
-               setups: Seq[String] = null
-             ): StagingQuery = {
+        query: String = null,
+        metaData: MetaData = null,
+        startPartition: String = null,
+        setups: Seq[String] = null
+    ): StagingQuery = {
       val stagingQuery = new StagingQuery()
       stagingQuery.setQuery(query)
       stagingQuery.setMetaData(metaData)

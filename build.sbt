@@ -43,6 +43,13 @@ lazy val fetcher = project
     )
   )
 
+def cleanSparkMeta: Unit = {
+  Folder.clean(file(".") / "spark" / "spark-warehouse",
+               file(".") / "spark-warehouse",
+               file(".") / "spark" / "metastore_db",
+               file(".") / "metastore_db")
+}
+
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
   .settings(
@@ -55,8 +62,8 @@ lazy val spark = project
       "org.rogach" %% "scallop" % "4.0.1",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
     ),
-    testOptions in Test += Tests.Setup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db")),
-    testOptions in Test += Tests.Cleanup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db"))
+    testOptions in Test += Tests.Setup(() => cleanSparkMeta),
+    testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
 
 artifact in (Compile, assembly) := {

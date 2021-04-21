@@ -242,11 +242,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
-    assert(
-      Option(joinConf.metaData.team).nonEmpty &&
-        joinConf.joinParts.asScala.forall(jp => Option(jp.groupBy.metaData.team).nonEmpty),
-      s"team name should not be null for either join or join part. It should be assigned at materialize step automatically"
-    )
+    assert(Option(joinConf.metaData.team).nonEmpty,
+           s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
+
+    joinConf.joinParts.asScala.foreach { jp =>
+      assert(Option(jp.groupBy.metaData.team).nonEmpty,
+             s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
+    }
 
     // First run command to drop tables that have changed semantically since the last run
     dropTablesToRecompute
