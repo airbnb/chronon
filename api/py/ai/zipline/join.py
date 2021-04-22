@@ -32,7 +32,7 @@ def JoinPart(group_by: api.GroupBy,
         utils.check_contains(keyMapping.values(),
                              group_by.keyColumns,
                              "key",
-                             group_by.name)
+                             group_by.metaData.name)
 
     join_part = api.JoinPart(
         groupBy=group_by,
@@ -55,10 +55,10 @@ def Join(left: api.Source,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
     if left.events:
-        assert "ts" not in left.events.query.select.keys(), "'ts' is a reserved key word for Zipline," \
+        assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Zipline," \
             " please specify the expression in timeColumn"
         # mapping ts to query.timeColumn to events only
-        updated_left.events.query.select.update({"ts": updated_left.events.query.timeColumn})
+        updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
     # root_keys = set(root_base_source.query.select.keys())
     # for joinPart in rightParts:
