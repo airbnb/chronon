@@ -111,7 +111,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
     # mapping ts with query.timeColumn
     for src in updated_sources:
         if src.events:
-            src.events.query.select.update({"ts": src.events.query.timeColumn})
+            src.events.query.selects.update({"ts": src.events.query.timeColumn})
         else:
             # timeColumn for entity source is optional
             if src.entities.query.timeColumn:
