@@ -115,7 +115,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         else:
             # timeColumn for entity source is optional
             if src.entities.query.timeColumn:
-                src.entities.query.select.update({"ts": src.entities.query.timeColumn})
+                src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
     # TODO: Make dependencies work and add to metadata constructor
     # dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]
