@@ -6,7 +6,7 @@ from ai.zipline.join import Join, JoinPart
 from ai.zipline.utils import get_staging_query_output_table_name
 from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import (
-    sample_group_by_from_module,
+    event_sample_group_by,
     entity_sample_group_by_from_module,
 )
 
@@ -27,7 +27,7 @@ v1 = Join(
     ),
     rightParts=[
         JoinPart(
-            group_by=sample_group_by_from_module.v1,
+            group_by=event_sample_group_by.v1,
             keyMapping={'subject': 'group_by_subject'},
         ),
         JoinPart(
