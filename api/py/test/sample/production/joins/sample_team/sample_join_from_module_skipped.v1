@@ -1,0 +1,78 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_join_from_module_skipped.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false}",
+    "tableProperties": {
+      "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+    },
+    "outputNamespace": "sample_team_namespace",
+    "team": "sample_team"
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_skipped",
+      "query": {
+        "selects": {
+          "subject": "subject_expr",
+          "event": "event_expr",
+          "ts": "UNIX_TIMESTAMP(ts) * 1000"
+        },
+        "startPartition": "2021-03-01",
+        "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.sample_non_prod_group_by.v1",
+          "online": 0,
+          "production": 0,
+          "outputNamespace": "sample_namespace",
+          "team": "sample_team"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr"
+                },
+                "startPartition": "2021-04-09",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "event",
+            "operation": 7
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ]
+}

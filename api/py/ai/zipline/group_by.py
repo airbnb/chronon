@@ -40,8 +40,6 @@ def Aggregations(**kwargs):
     for name, aggregation in kwargs.items():
         assert isinstance(aggregation, ttypes.Aggregation), \
             f"argument for {name}, {aggregation} is not instance of Aggregation"
-        if not aggregation.name:
-            aggregation.name = name
         if not aggregation.operation:  # Default operation is last
             aggregation.operation = ttypes.Operation.LAST
         if not aggregation.inputColumn:  # Default input column is the variable name
@@ -63,15 +61,13 @@ def validate_group_by(sources: List[ttypes.Source],
                       keys: List[str],
                       aggregations: Optional[List[ttypes.Aggregation]]):
     # check ts is not included in query.select
-    # TODO: Actually run this validation - returning for now
-    return
     first_source_columns = set(utils.get_columns(sources[0]))
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Zipline," \
                                              " please specify the expression in timeColumn"
     for src in sources:
         query = utils.get_query(src)
         if src.events:
-            assert query.ingestionTimeColumn is None, "ingestionTimeColumn should not be specified for " \
+            assert query.mutationTimeColumn is None, "ingestionTimeColumn should not be specified for " \
                                                       "event source as it should be the same with timeColumn"
             assert query.reversalColumn is None, "reversalColumn should not be specified for event source " \
                                                  "as it won't have mutations"

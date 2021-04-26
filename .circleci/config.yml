@@ -90,6 +90,8 @@ jobs:
                       pip install -r requirements/dev.txt               # Install latest requirements
                       tox                                               # Run tests
                       popd
+            - store_artifacts:
+                  path: /zipline/api/py/htmlcov
 
 workflows:
 

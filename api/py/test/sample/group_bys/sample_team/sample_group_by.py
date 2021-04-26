@@ -5,6 +5,7 @@ from ai.zipline.shorthand import *
 from ai.zipline.utils import get_staging_query_output_table_name
 from staging_queries.sample_team import sample_staging_query
 
+
 v1 = GroupBy(
     name="sample_group_by",
     table="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),
