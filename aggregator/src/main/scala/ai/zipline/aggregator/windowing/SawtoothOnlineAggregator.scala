@@ -105,15 +105,20 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
   //    - row needs to have a concept of "reversal_flag"
   //    - call delete instead of update when reversal_flag is true.
   def lambdaAggregateIr(finalBatchIr: FinalBatchIr, streamingRows: Iterator[Row], queryTs: Long): Array[Any] = {
+    // null handling
+    if (finalBatchIr == null && streamingRows == null) return null
+    val batchIr = Option(finalBatchIr).getOrElse(finalizeTail(init))
+    val headRows = Option(streamingRows).getOrElse(Array.empty[Row].iterator)
+
     if (batchEndTs > queryTs) {
       throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
     }
 
     // initialize with collapsed
-    val resultIr = windowedAggregator.clone(finalBatchIr.collapsed)
+    val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
     // add head events
-    for (row <- streamingRows) {
+    for (row <- headRows) {
       val rowTs = row.ts // unbox long only once
       if (queryTs > rowTs && rowTs >= batchEndTs) {
         for (i <- windowedAggregator.indices) {
@@ -132,7 +137,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
       if (window != null) { // no hops for unwindowed
         val hopIndex = tailHopIndices(i)
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
-        val hopIrs = finalBatchIr.tailHops(hopIndex)
+        val hopIrs = batchIr.tailHops(hopIndex)
         for (hopIr <- hopIrs) {
           val hopTs = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopTs && hopTs >= queryTail) {
@@ -147,6 +152,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
   }
 
   def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr, streamingRows: Iterator[Row], ts: Long): Array[Any] = {
+    println(s"lambda aggregation ts: ${ts}")
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts))
   }
 

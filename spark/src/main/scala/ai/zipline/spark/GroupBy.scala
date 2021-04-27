@@ -32,7 +32,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
   implicit val sparkSession = inputDf.sparkSession
   // distinct inputs to aggregations - post projection types that needs to match with
   // streaming's post projection types etc.,
-  val preAggSchema = if (aggregations != null) {
+  val preAggSchema: StructType = if (aggregations != null) {
     StructType(aggregations.map(_.inputColumn).distinct.map(inputDf.schema.apply))
   } else {
     val values = inputDf.schema.map(_.name).filterNot((keyColumns ++ Constants.ReservedColumns).contains)

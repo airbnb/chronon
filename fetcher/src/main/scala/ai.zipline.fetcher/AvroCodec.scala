@@ -42,6 +42,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
   private val tsIndex: Int = fieldNames.indexOf(Constants.TimeColumn)
   private val length: Int = fieldNames.length
+  @transient private lazy val ziplineSchema = AvroUtils.toZiplineSchema(schema)
 
   @transient private var encoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null
@@ -89,9 +90,11 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     }
   }
 
-  def decodeRow(bytes: Array[Byte]): Row = new GenericRecordRow(decode(bytes), tsIndex, length)
+  def decodeRow(bytes: Array[Byte], millis: Long): ArrayRow =
+    new ArrayRow(RowConversions.fromAvroRecord(decode(bytes), ziplineSchema).asInstanceOf[Array[Any]], millis)
 
   def decodeMap(bytes: Array[Byte]): Map[String, AnyRef] = {
+    if (bytes == null) return null
     val record = decode(bytes)
     fieldNames.indices.map { i =>
       fieldNames(i) -> record.get(i)
@@ -100,12 +103,12 @@ class AvroCodec(val schemaStr: String) extends Serializable {
 }
 
 // to be consumed by RowAggregator
-class GenericRecordRow(record: GenericRecord, tsIndex: Int, fieldCount: Int) extends Row {
-  override def get(index: Int): Any = record.get(index)
+class ArrayRow(values: Array[Any], millis: Long) extends Row {
+  override def get(index: Int): Any = values(index)
 
-  override def ts: Long = tsIndex
+  override def ts: Long = millis
 
-  override val length: Int = fieldCount
+  override val length: Int = values.length
 }
 
 object AvroCodec {

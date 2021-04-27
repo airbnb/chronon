@@ -89,7 +89,7 @@ object GroupByUpload {
     groupByServingInfo.setBatchDateStamp(endDs)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
-    groupByServingInfo.setInputAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
+    groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     val metaRows = Seq(
       Row(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
           ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8)))

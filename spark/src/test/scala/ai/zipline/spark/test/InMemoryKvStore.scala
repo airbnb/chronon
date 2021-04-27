@@ -2,7 +2,7 @@ package ai.zipline.spark.test
 
 import ai.zipline.api.Constants
 import ai.zipline.fetcher.KVStore
-import ai.zipline.fetcher.KVStore.PutRequest
+import ai.zipline.fetcher.KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.{SparkSessionBuilder, TableUtils}
 import com.google.gson.Gson
 
@@ -25,22 +25,17 @@ class InMemoryKvStore(implicit ec: ExecutionContext, tableUtils: TableUtils) ext
   override def multiGet(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     Future {
       requests.map { req =>
-        val gson = new Gson()
-        println(s"keyBytes: ${gson.toJson(req.keyBytes)}")
-        println(s"datasets: [${database.keys.mkString(", ")}]")
-        val table = database(req.dataset)
         assert(database.keys.exists(req.dataset == _), s"dataset ${req.dataset} doesn't exist")
-        // assert(table.keys.exists(req.keyBytes == _), s"key ${toStr(req.keyBytes)} doesn't exist")
 
-        val valueBytes = database(req.dataset) // table
+        val values = database(req.dataset) // table
           .get(encode(req.keyBytes)) // values of key
           .map { values =>
             values
-              .filter { case (version, _) => req.afterTsMillis.forall(_ >= version) } // filter version
-              .map(_._2) // select data
+              .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
+              .map { case (version, bytes) => TimedValue(bytes, version) }
           }
           .orNull
-        KVStore.GetResponse(req, valueBytes)
+        KVStore.GetResponse(req, values)
       }
     }
   }

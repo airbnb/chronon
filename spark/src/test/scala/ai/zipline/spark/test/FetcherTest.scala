@@ -1,17 +1,20 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
-import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
+import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
-import ai.zipline.fetcher.Fetcher
-import ai.zipline.spark.{GroupBy, GroupByUpload, Join, PartitionRange, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.SparkSession
+import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.fetcher.KVStore.PutRequest
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore}
 import ai.zipline.spark.Extensions._
+import ai.zipline.spark._
+import com.google.gson.Gson
 import junit.framework.TestCase
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.avg
 
 import java.util.concurrent.Executors
+import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -21,12 +24,52 @@ class FetcherTest extends TestCase {
   private val namespace = "fetcher_test"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
+  // TODO: Pull the code here into what streaming can use.
+  def putStreaming(groupByConf: GroupByConf,
+                   fetcher: Fetcher,
+                   kvStore: KVStore,
+                   tableUtils: TableUtils,
+                   ds: String): Unit = {
+    val servingInfo: GroupByServingInfoParsed = fetcher.getGroupByServingInfo(groupByConf.metaData.cleanName)
+    val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
+    val selected = groupBy.inputDf
+    val keys = groupByConf.keyColumns.asScala.toArray
+    val values = groupBy.preAggSchema.fields.map(_.name)
+    val keyIndices = keys.map(selected.schema.fieldIndex)
+    val valueIndices = values.map(selected.schema.fieldIndex)
+    val tsIndex = selected.schema.fieldIndex(Constants.TimeColumn)
+    val keyValueTs =
+      selected
+        .filter(s"ds='$ds'")
+        .rdd
+        .map { row =>
+          val keys = keyIndices.map(row.get)
+          val keyBytes = servingInfo.keyCodec.encodeArray(keys)
+          val values = valueIndices.map(row.get)
+          val valueBytes = servingInfo.selectedCodec.encodeArray(values)
+          val ts = row.get(tsIndex).asInstanceOf[Long]
+          val gson = new Gson()
+          println(s"""
+               |keys: ${gson.toJson(keys)}
+               |values: ${gson.toJson(values)}
+               |ts: $ts
+               |""".stripMargin)
+          (keyBytes, valueBytes, ts)
+        }
+        .collect()
+    val puts = keyValueTs.map {
+      case (keyBytes, valueBytes, ts) =>
+        PutRequest(keyBytes, valueBytes, groupByConf.streamingDataset, Some(ts))
+    }
+    kvStore.multiPut(puts)
+  }
+
   def testTemporalFetch: Unit = {
 
-    implicit val executionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    implicit val tableUtils = TableUtils(spark)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = new InMemoryKvStore()
-    val fetcher = new Fetcher(inMemoryKvStore)
+    @transient lazy val fetcher = new Fetcher(inMemoryKvStore)
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
@@ -34,7 +77,7 @@ class FetcherTest extends TestCase {
 
     // temporal events
     val paymentCols =
-      Seq(Column("user", StringType, 100), Column("vendor", StringType, 10), Column("payment", LongType, 100))
+      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("payment", LongType, 100))
     val paymentsTable = "payments_table"
     DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
@@ -43,16 +86,22 @@ class FetcherTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
                              inputColumn = "payment",
-                             windows = Seq(new Window(1, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
     GroupByUpload.run(userPaymentsGroupBy, yesterday, Some(tableUtils))
     inMemoryKvStore.bulkPut(userPaymentsGroupBy.kvTable, userPaymentsGroupBy.batchDataset, null)
     inMemoryKvStore.create(userPaymentsGroupBy.streamingDataset)
+    putStreaming(userPaymentsGroupBy, fetcher, inMemoryKvStore, tableUtils, today)
+    val result = Await.result(
+      fetcher.fetchGroupBys(Seq(Fetcher.Request(userPaymentsGroupBy.metaData.cleanName, Map("user" -> "user5")))),
+      Duration(1000, MILLISECONDS))
+    println(result)
 
+    assert(false)
     // snapshot events
     val ratingCols =
-      Seq(Column("user", StringType, 100), Column("vendor", StringType, 10), Column("rating", IntType, 5))
+      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("rating", IntType, 5))
     val ratingsTable = "ratings_table"
     DataFrameGen.events(spark, ratingCols, 100000, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
@@ -70,7 +119,7 @@ class FetcherTest extends TestCase {
 
     // no-agg
     val userBalanceCols =
-      Seq(Column("user", StringType, 100), Column("balance", IntType, 5000))
+      Seq(Column("user", StringType, 10), Column("balance", IntType, 5000))
     val balanceTable = "balance_table"
     DataFrameGen
       .entities(spark, userBalanceCols, 100000, 180)
@@ -110,7 +159,7 @@ class FetcherTest extends TestCase {
 
     // queries
     val queryCols =
-      Seq(Column("user", StringType, 100), Column("vendor", StringType, 10))
+      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
     val queriesTable = "queries_table"
     DataFrameGen
       .events(spark, queryCols, 100000, 4)
@@ -130,13 +179,6 @@ class FetcherTest extends TestCase {
     )
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     joinedDf.show()
-
-    inMemoryKvStore.bulkPut(userPaymentsGroupBy.kvTable, userPaymentsGroupBy.batchDataset, null)
-    inMemoryKvStore.create(userPaymentsGroupBy.streamingDataset)
-    val future =
-      fetcher.fetchGroupBys(Seq(Fetcher.Request(userPaymentsGroupBy.metaData.cleanName, Map("user" -> "user58"))))
-    val result = Await.result(future, Duration(100, MILLISECONDS))
-    println(result)
 
     // create groupBy data
 

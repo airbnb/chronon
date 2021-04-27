@@ -35,7 +35,7 @@ trait KVStore {
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
     println(response)
-    new String(response.values.head, Constants.UTF8)
+    new String(response.values.head.bytes, Constants.UTF8)
   }
 }
 
@@ -43,8 +43,42 @@ object KVStore {
   // a scan request essentially for the keyBytes
   // afterTsMillis - is used to limit the scan to more recent data
   case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
-  case class GetResponse(request: GetRequest, values: Seq[Array[Byte]])
+  case class TimedValue(bytes: Array[Byte], millis: Long)
+  case class GetResponse(request: GetRequest, values: Seq[TimedValue])
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
+}
+
+// mixin class - with schema
+class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
+    extends GroupByServingInfo(groupByServingInfo)
+    with Serializable {
+
+  // streaming starts scanning after batchEnd
+  val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchDateStamp)
+
+  lazy val aggregator = {
+    val avroSchemaParser = new Schema.Parser()
+    val avroInputSchema = avroSchemaParser.parse(selectedAvroSchema)
+    val ziplineInputSchema =
+      AvroUtils.toZiplineSchema(avroInputSchema).asInstanceOf[StructType].unpack
+    new SawtoothOnlineAggregator(batchEndTsMillis, groupByServingInfo.groupBy.aggregations.asScala, ziplineInputSchema)
+  }
+
+  lazy val irZiplineSchema: StructType =
+    StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
+
+  val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
+  val selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
+  val irCodec: AvroCodec = {
+    val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
+    AvroCodec.of(irAvroSchema)
+  }
+  val outputCodec: AvroCodec = {
+    val outputZiplineSchema =
+      StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
+    val outputAvroSchema = AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
+    AvroCodec.of(outputAvroSchema)
+  }
 }
 
 class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
@@ -76,42 +110,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", 
       .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
     new GroupByServingInfoParsed(groupByServingInfo)
   }
-
-  // mixin class - with schema
-  class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
-      extends GroupByServingInfo(groupByServingInfo) {
-    private val avroSchemaParser = new Schema.Parser()
-    val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
-    val inputCodec: AvroCodec = AvroCodec.of(inputAvroSchema)
-    // streaming starts scanning after batchEnd
-    val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchDateStamp)
-    private val avroInputSchema = avroSchemaParser.parse(inputAvroSchema)
-    private val ziplineInputSchema =
-      AvroUtils.toZiplineSchema(avroInputSchema).asInstanceOf[StructType].unpack
-    val aggregationsOpt = Option(groupByServingInfo.groupBy.aggregations)
-    val aggregatorOpt = aggregationsOpt.map { aggs =>
-      new SawtoothOnlineAggregator(batchEndTsMillis, aggs.asScala, ziplineInputSchema)
-    }
-    lazy val aggregator = new SawtoothOnlineAggregator(batchEndTsMillis,
-                                                       groupByServingInfo.groupBy.aggregations.asScala,
-                                                       ziplineInputSchema)
-    lazy val irZiplineSchema: StructType =
-      StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
-    lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
-    lazy val irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
-
-    val outputCodecOpt: Option[AvroCodec] = aggregatorOpt
-      .map { agg =>
-        val outputZiplineSchema =
-          StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", agg.windowedAggregator.outputSchema)
-        val outputAvroSchema = AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
-        AvroCodec.of(outputAvroSchema)
-      }
-  }
-
 }
+
 object Fetcher {
-  case class Request(name: String, keys: Map[String, AnyRef])
+  case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
   case class Response(request: Request, values: Map[String, AnyRef])
 }
 import Fetcher._
@@ -133,14 +135,18 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
       val batchRequest = GetRequest(keyBytes, groupByServingInfo.groupBy.batchDataset)
       val streamingRequestOpt = groupByServingInfo.groupBy.inferredAccuracy match {
         // fetch batch(ir) and streaming(input) and aggregate
-        case Accuracy.TEMPORAL => Some(GetRequest(keyBytes, groupByServingInfo.groupBy.streamingDataset))
+        case Accuracy.TEMPORAL =>
+          Some(
+            GetRequest(keyBytes,
+                       groupByServingInfo.groupBy.streamingDataset,
+                       Some(groupByServingInfo.batchEndTsMillis)))
         // no further aggregation is required - the value in KVstore is good as is
         case Accuracy.SNAPSHOT => None
       }
-      request -> (groupByServingInfo, batchRequest, streamingRequestOpt)
+      request -> (groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis)
     }.toMap
     val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.values.flatMap {
-      case (_, batchRequest, streamingRequestOpt) =>
+      case (_, batchRequest, streamingRequestOpt, _) =>
         Some(batchRequest) ++ streamingRequestOpt
     }.toSeq
 
@@ -148,29 +154,43 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
 
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
-      val responsesMap = responsesFuture.map { response => response.request -> response.values }.toMap
+      val gson = new Gson()
+      val responsesMap = responsesFuture.map { response =>
+        println(s"""
+             |Request key: ${gson.toJson(response.request.keyBytes)},
+             |Request dataset: ${gson.toJson(response.request.dataset)} 
+             |Response: ${gson.toJson(response.values.toArray)}
+             |""".stripMargin)
+        response.request -> response.values
+      }.toMap
       val responses: Seq[Response] = groupByRequestToKvRequest
         .mapValues {
-          case (groupByServingInfo, batchRequest, streamingRequestOpt) =>
-            lazy val batchResponseBytes = responsesMap(batchRequest).headOption.orNull
-            val outputCodec = groupByServingInfo.outputCodecOpt.get
+          case (groupByServingInfo, batchRequest, streamingRequestOpt, atMillis) =>
+            val batchResponseBytes: Array[Byte] =
+              Option(responsesMap(batchRequest)).flatMap(_.headOption).map(_.bytes).orNull
             val responseMap: Map[String, AnyRef] = if (groupByServingInfo.groupBy.aggregations == null) { // no-agg
-              groupByServingInfo.inputCodec.decodeMap(batchResponseBytes)
+              groupByServingInfo.selectedCodec.decodeMap(batchResponseBytes)
             } else if (streamingRequestOpt.isEmpty) { // snapshot accurate
-              groupByServingInfo.outputCodecOpt.get.decodeMap(batchResponseBytes)
+              groupByServingInfo.outputCodec.decodeMap(batchResponseBytes)
             } else { // temporal accurate
-              val aggregator = groupByServingInfo.aggregatorOpt.get
+              val aggregator = groupByServingInfo.aggregator
               val streamingResponses = streamingRequestOpt.map(responsesMap)
               val streamingRows = streamingResponses
-                .flatMap(response =>
-                  Option(response)
-                    .map(_.iterator.map(groupByServingInfo.inputCodec.decodeRow)))
-                .getOrElse(Iterator.empty)
+                .map(responses =>
+                  responses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis)))
+                .getOrElse(Seq.empty[Row])
+              val batchIr = toBatchIr(batchResponseBytes, groupByServingInfo)
               val output = aggregator
-                .lambdaAggregateFinalized(toBatchIr(batchResponseBytes, groupByServingInfo),
-                                          streamingRows,
-                                          System.currentTimeMillis())
-              outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+                .lambdaAggregateFinalized(batchIr,
+                                          streamingRows.iterator,
+                                          atMillis.getOrElse(System.currentTimeMillis()))
+              println(s"""
+                         |BatchIr:${gson.toJson(batchIr)}
+                         |Streaming responses: ${gson.toJson(streamingResponses.get.toArray)}
+                         |Streaming rows: ${gson.toJson(streamingRows)}
+                         |Final: ${gson.toJson(output)}
+                         |""".stripMargin)
+              groupByServingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
             }
             responseMap
         }
@@ -181,6 +201,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
+    if (bytes == null) return null
     val batchRecord =
       RowConversions
         .fromAvroRecord(gbInfo.irCodec.decode(bytes), gbInfo.irZiplineSchema)
