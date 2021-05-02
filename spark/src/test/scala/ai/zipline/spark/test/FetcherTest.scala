@@ -2,19 +2,26 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
-import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
+import ai.zipline.aggregator.windowing.TsUtils
+import ai.zipline.api.Extensions.{GroupByOps, JoinPartOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.KVStore.PutRequest
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore}
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import com.google.gson.Gson
 import junit.framework.TestCase
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
+import org.apache.spark.sql.types.StructType
+import org.junit.Assert.assertEquals
 
+import java.lang
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.asScalaBufferConverter
+import scala.collection.JavaConverters.{asJavaIterableConverter, asScalaBufferConverter}
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -49,11 +56,11 @@ class FetcherTest extends TestCase {
           val valueBytes = servingInfo.selectedCodec.encodeArray(values)
           val ts = row.get(tsIndex).asInstanceOf[Long]
           val gson = new Gson()
-          println(s"""
-               |keys: ${gson.toJson(keys)}
-               |values: ${gson.toJson(values)}
-               |ts: $ts
-               |""".stripMargin)
+//          println(s"""
+//               |keys: ${gson.toJson(keys)}
+//               |values: ${gson.toJson(values)}
+//               |ts: ${TsUtils.toStr(ts)}
+//               |""".stripMargin)
           (keyBytes, valueBytes, ts)
         }
         .collect()
@@ -74,6 +81,7 @@ class FetcherTest extends TestCase {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
     val twoDaysAgo = Constants.Partition.before(yesterday)
+    val tomorrow = Constants.Partition.after(today)
 
     // temporal events
     val paymentCols =
@@ -84,7 +92,7 @@ class FetcherTest extends TestCase {
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable)),
       keyColumns = Seq("user"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
+        Builders.Aggregation(operation = Operation.AVERAGE,
                              inputColumn = "payment",
                              windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
@@ -98,7 +106,6 @@ class FetcherTest extends TestCase {
       Duration(1000, MILLISECONDS))
     println(result)
 
-    assert(false)
     // snapshot events
     val ratingCols =
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("rating", IntType, 5))
@@ -178,9 +185,52 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
-    joinedDf.show()
+    val joinTable = s"$namespace.join_test_expected"
+    joinedDf.save(joinTable)
+    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
 
-    // create groupBy data
+    val todaysQueries = tableUtils.sql(s"SELECT * from $queriesTable WHERE ds='$yesterday'")
+    val keys = joinConf.joinParts.asScala.flatMap(_.leftToRight.keys).distinct.toArray
+    val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
+    val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
+    val metadataStore = new MetadataStore(inMemoryKvStore)
+    inMemoryKvStore.create("ZIPLINE_METADATA")
+    metadataStore.putJoinConf(joinConf)
+
+    val requests = todaysQueries.rdd
+      .map { row =>
+        val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
+        val ts = row.get(tsIndex).asInstanceOf[Long]
+        Request(joinConf.metaData.name, keyMap, Some(ts))
+      }
+      .collect()
+    val joinResponseFuture = fetcher.fetchJoin(requests)
+    val joinResponses = Await.result(joinResponseFuture, Duration(10000, MILLISECONDS))
+
+    val columns = todaysExpected.schema.fields.map(_.name)
+    val responseRows: Seq[Row] = joinResponses.map { res =>
+      val all: Map[String, AnyRef] =
+        res.request.keys ++
+          res.values ++
+          Map(Constants.PartitionColumn -> today) ++
+          Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
+      val values: Array[Any] = columns.map(all.get(_).orNull)
+      new GenericRow(values)
+    }
+    println(todaysExpected.schema.pretty)
+    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
+    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
+    todaysExpected.show()
+    responseDf.show()
+    val diff = Comparison.sideBySide(responseDf, todaysExpected, List("vendor_id", "user_id", "ts", "ds"))
+    assertEquals(todaysQueries.count(), responseDf.count())
+//    assertEquals(todaysQueries.count(), todaysExpected.count())
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0) // create groupBy data
 
     // create queries
     // sawtooth aggregate batch data

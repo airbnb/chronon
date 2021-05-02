@@ -152,7 +152,6 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
   }
 
   def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr, streamingRows: Iterator[Row], ts: Long): Array[Any] = {
-    println(s"lambda aggregation ts: ${ts}")
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts))
   }
 

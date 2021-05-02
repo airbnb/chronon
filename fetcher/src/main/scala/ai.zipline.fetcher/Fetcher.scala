@@ -2,10 +2,10 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
-import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
+import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
 import ai.zipline.api.Extensions._
 import ai.zipline.api._
-import ai.zipline.fetcher.KVStore.{GetRequest, GetResponse, PutRequest}
+import ai.zipline.fetcher.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import com.google.gson.Gson
 import org.apache.avro.Schema
 import org.apache.avro.generic.{GenericData, GenericRecord}
@@ -34,7 +34,6 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    println(response)
     new String(response.values.head.bytes, Constants.UTF8)
   }
 }
@@ -67,13 +66,13 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   lazy val irZiplineSchema: StructType =
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
-  val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
-  val selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
-  val irCodec: AvroCodec = {
+  lazy val keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
+  lazy val selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
+  lazy val irCodec: AvroCodec = {
     val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
     AvroCodec.of(irAvroSchema)
   }
-  val outputCodec: AvroCodec = {
+  lazy val outputCodec: AvroCodec = {
     val outputZiplineSchema =
       StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
     val outputAvroSchema = AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
@@ -103,9 +102,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", 
 
   lazy val getGroupByServingInfo: String => GroupByServingInfoParsed = memoize { name =>
     val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
-    println(s"Fetching ${Constants.GroupByServingInfoKey} from : $batchDataset")
     val metaData =
       kvStore.getString(Constants.GroupByServingInfoKey, s"${name.sanitize.toUpperCase()}_BATCH", timeoutMillis)
+    println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
     val groupByServingInfo = ThriftJsonCodec
       .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
     new GroupByServingInfoParsed(groupByServingInfo)
@@ -156,11 +155,11 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
       val gson = new Gson()
       val responsesMap = responsesFuture.map { response =>
-        println(s"""
-             |Request key: ${gson.toJson(response.request.keyBytes)},
-             |Request dataset: ${gson.toJson(response.request.dataset)} 
-             |Response: ${gson.toJson(response.values.toArray)}
-             |""".stripMargin)
+//        println(s"""
+//             |Request key: ${gson.toJson(response.request.keyBytes)},
+//             |Request dataset: ${gson.toJson(response.request.dataset)}
+//             |Response: ${gson.toJson(Option(response.values).map(_.toArray).orNull)}
+//             |""".stripMargin)
         response.request -> response.values
       }.toMap
       val responses: Seq[Response] = groupByRequestToKvRequest
@@ -173,23 +172,27 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
             } else if (streamingRequestOpt.isEmpty) { // snapshot accurate
               groupByServingInfo.outputCodec.decodeMap(batchResponseBytes)
             } else { // temporal accurate
-              val aggregator = groupByServingInfo.aggregator
-              val streamingResponses = streamingRequestOpt.map(responsesMap)
-              val streamingRows = streamingResponses
-                .map(responses =>
-                  responses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis)))
-                .getOrElse(Seq.empty[Row])
+              val aggregator: SawtoothOnlineAggregator = groupByServingInfo.aggregator
+              val streamingResponses: Seq[TimedValue] =
+                responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
+              val streamingRows: Seq[Row] =
+                streamingResponses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis))
               val batchIr = toBatchIr(batchResponseBytes, groupByServingInfo)
-              val output = aggregator
-                .lambdaAggregateFinalized(batchIr,
-                                          streamingRows.iterator,
-                                          atMillis.getOrElse(System.currentTimeMillis()))
-              println(s"""
-                         |BatchIr:${gson.toJson(batchIr)}
-                         |Streaming responses: ${gson.toJson(streamingResponses.get.toArray)}
-                         |Streaming rows: ${gson.toJson(streamingRows)}
-                         |Final: ${gson.toJson(output)}
-                         |""".stripMargin)
+              val queryTs = atMillis.getOrElse(System.currentTimeMillis())
+              val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTs)
+//              if (streamingRows.nonEmpty)
+//                println(s"""streaming row count: ${streamingRows.length}
+//                   |min streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).min)}
+//                   |max streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).max)}
+//                   |query ts: ${TsUtils.toStr(queryTs)}
+//                   |""".stripMargin)
+//              println(s"queryTs: ${TsUtils.toStr(queryTs)}")
+//              println(s"Streaming responses:")
+//              streamingRows.foreach(row => println(s"${TsUtils.toStr(row.ts)}, ${gson.toJson(row.values)}"))
+//              println(s"""
+//                         |BatchIr:${gson.toJson(batchIr)}
+//                         |Final: ${gson.toJson(output)}
+//                         |""".stripMargin)
               groupByServingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
             }
             responseMap
@@ -225,8 +228,10 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
           join.joinParts.asScala.map { part =>
             val groupByName = part.groupBy.getMetaData.getName
             val leftToRight = part.leftToRight
-            val rightKeys = request.keys.map { case (leftKey, value) => leftToRight(leftKey) -> value }
-            val prefix = Option(part.prefix).map(_ + "_").getOrElse("")
+            val rightKeys = request.keys.filterKeys(leftToRight.contains).map {
+              case (leftKey, value) => leftToRight(leftKey) -> value
+            }
+            val prefix = (Option(part.prefix) ++ Some(part.groupBy.getMetaData.cleanName)).mkString("_")
             request -> (prefix -> Request(groupByName, rightKeys))
           }
         })
@@ -241,8 +246,13 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
         case (joinRequest, prefixedGroupByRequests) =>
           val joinValues = prefixedGroupByRequests.flatMap {
             case (prefix, groupByRequest) =>
-              // this map lookup may fail. TODO: handle + log failure counters per (join, groupBy)
-              responseMap(groupByRequest).map { case (aggName, aggValue) => prefix + aggName -> aggValue }
+              responseMap
+                .get(groupByRequest)
+                .flatMap(Option(_))
+                .map {
+                  _.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+                }
+                .getOrElse(Seq.empty)
           }.toMap
           Response(joinRequest, joinValues)
       }.toSeq

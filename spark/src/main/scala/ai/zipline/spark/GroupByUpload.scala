@@ -37,6 +37,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
     val endTs = Constants.Partition.epochMillis(endPartition)
+    println(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(endTs,
                                                                 groupBy.aggregations,
                                                                 Conversions.toZiplineSchema(groupBy.inputDf.schema),
