@@ -4,12 +4,12 @@ Brain dump of commands used to do various things
 
 ## Commands
 
-***All commands assume you are in the root directory of this project***. 
+***All commands assume you are in the root directory of this project***.
 For me, that looks like `~/repos/zipline`.
 
 ### Prerequisites
 
-Add the following to your shell run command files e.g. `~/.bashrc`. 
+Add the following to your shell run command files e.g. `~/.bashrc`.
 
 ```
 export ZIPLINE_OS=<path/to/zipline/repo>
@@ -32,10 +32,10 @@ Mark the following directories as `Test Root` in a similar way:
 - api/src/test/scala
 - spark/src/test/scala
 
-The project should then automatically start indexing, and when it finishes you should be good to go. 
+The project should then automatically start indexing, and when it finishes you should be good to go.
 
 ### Generate python thrift definitions
- 
+
 ```shell
 cd $ZIPLINE_OS
 thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
@@ -63,7 +63,7 @@ sbt "aggregator/test"
 ### Build a fat jar
 ```
 sbt assemble
-``` 
+```
 
 Building a fat jar for just one submodule
 ```
@@ -104,3 +104,17 @@ python ~/repos/ml_models/zipline/joins/new_algo/search_benchmarks.py > ~/bench3_
 scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
 ```
 
+
+### Pushing the JAR to artifactory
+
+- Switch to master branch.
+- Tag your change.
+
+``` shell
+git tag -a -m 'new release' release-zl-0.0.2
+```
+- Push the tag to artifactory
+
+``` shell
+ git push origin release-zl-0.0.2
+```
