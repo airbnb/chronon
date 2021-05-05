@@ -24,7 +24,6 @@ lazy val api = project
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
     ),
-    skip in publish := true
   )
 
 lazy val aggregator = project
@@ -35,7 +34,6 @@ lazy val aggregator = project
       "com.novocode" % "junit-interface" % "0.11" % "test",
       "com.google.code.gson" % "gson" % "2.8.6"
     ),
-    skip in publish := true
   )
 
 lazy val spark = project
@@ -69,7 +67,7 @@ val VersionRegex = "release-zl-([0-9]+.[0-9]+.[0-9]+)$".r
 git.gitTagToVersionNumber := { tag: String =>
   val matches = VersionRegex.findFirstMatchIn(tag)
   matches match {
-    case Some(m) => Some(s"${m.group(1)})")
+    case Some(m) => Some(m.group(1))
     // maven releases repository automatically rejects version ending with SNAPSHOT.
     case _ => Some("rejected-SNAPSHOT")
   }
