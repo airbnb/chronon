@@ -1,5 +1,5 @@
 import copy
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
@@ -15,6 +15,27 @@ DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 
 
+class Operation():
+    MIN = ttypes.Operation.MIN
+    MAX = ttypes.Operation.MAX
+    FIRST = ttypes.Operation.FIRST
+    LAST = ttypes.Operation.LAST
+    APPROX_UNIQUE_COUNT = ttypes.Operation.APPROX_UNIQUE_COUNT
+    UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
+    COUNT = ttypes.Operation.COUNT
+    SUM = ttypes.Operation.SUM
+    AVERAGE = ttypes.Operation.AVERAGE
+    VARIANCE = ttypes.Operation.VARIANCE
+    SKEW = ttypes.Operation.SKEW
+    KURTOSIS = ttypes.Operation.KURTOSIS
+    APPROX_PERCENTILE = ttypes.Operation.APPROX_PERCENTILE
+
+
+class TimeUnit():
+    HOURS = ttypes.TimeUnit.HOURS
+    DAYS = ttypes.TimeUnit.DAYS
+
+
 def window_to_str_pretty(window: ttypes.Window):
     unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()
     return f"{window.length} {unit}"
@@ -24,28 +45,18 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def Select(*args, **kwargs):
-    args = {x: x for x in args}
-    return {**args, **kwargs}
+def aggregation(inputColumn: str = None,
+                operation = None,
+                argMap: Dict[str, str] = {},
+                windows: List[ttypes.Window] = []) -> ttypes.Aggregation:
+    # Default to last
+    operation = operation if operation else Operation.LAST
+    assert(inputColumn or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
+    return ttypes.Aggregation(inputColumn, operation, argMap, windows)
 
 
-def Aggregations(**kwargs):
-    """
-    fills in missing arguments of the aggregation object.
-    default operation is LAST
-    default name is {arg_name}_{operation_name}
-    default input column is {arg_name}
-    """
-    aggs = []
-    for name, aggregation in kwargs.items():
-        assert isinstance(aggregation, ttypes.Aggregation), \
-            f"argument for {name}, {aggregation} is not instance of Aggregation"
-        if not aggregation.operation:  # Default operation is last
-            aggregation.operation = ttypes.Operation.LAST
-        if not aggregation.inputColumn:  # Default input column is the variable name
-            aggregation.inputColumn = name
-        aggs.append(aggregation)
-    return aggs
+def window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
+    return ttypes.Window(length, timeUnit)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -90,7 +101,7 @@ Keys {unselected_keys}, are unselected in source
 """
 
 
-def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
+def group_by(sources: Union[List[ttypes.Source], ttypes.Source],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,

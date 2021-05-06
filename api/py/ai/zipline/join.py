@@ -11,8 +11,8 @@ from typing import List, Dict, Union, Optional
 logging.basicConfig(level=logging.INFO)
 
 
-def JoinPart(group_by: api.GroupBy,
-             keyMapping: Dict[str, str] = None,  # mapping of key columns from the join
+def join_part(group_by: api.GroupBy,
+             key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
              selectors: Optional[List[Union[api.AggregationSelector, str]]] = None,
              prefix: str = None  # all aggregations will be prefixed with that name
              ) -> api.JoinPart:
@@ -28,15 +28,15 @@ def JoinPart(group_by: api.GroupBy,
     logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
     group_by_module = importlib.import_module(group_by_module_name)
     __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
-    if keyMapping:
-        utils.check_contains(keyMapping.values(),
+    if key_mapping:
+        utils.check_contains(key_mapping.values(),
                              group_by.keyColumns,
                              "key",
                              group_by.metaData.name)
 
     join_part = api.JoinPart(
         groupBy=group_by,
-        keyMapping=keyMapping,
+        keyMapping=key_mapping,
         prefix=prefix
     )
     # reset before next run
@@ -44,8 +44,8 @@ def JoinPart(group_by: api.GroupBy,
     return join_part
 
 
-def Join(left: api.Source,
-         rightParts: List[api.JoinPart],
+def join(left: api.Source,
+         right_parts: List[api.JoinPart],
          check_consistency: bool = False,
          additional_args: List[str] = None,
          additional_env: List[str] = None,
@@ -61,8 +61,8 @@ def Join(left: api.Source,
         updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
     # root_keys = set(root_base_source.query.select.keys())
-    # for joinPart in rightParts:
-    #    mapping = joinPart.keyMapping if joinPart.keyMapping else {}
+    # for joinPart in right_parts:
+    #    mapping = joinPart.key_mapping if joinPart.key_mapping else {}
     #    # TODO: Add back validation? Or not?
     #    #utils.check_contains(mapping.keys(), root_keys, "root key", "")
     #    uncovered_keys = set(joinPart.groupBy.keyColumns) - set(mapping.values()) - root_keys
@@ -74,7 +74,7 @@ def Join(left: api.Source,
     #    Root only selected: {root_keys}
     #    """
 
-    right_sources = [joinPart.groupBy.sources for joinPart in rightParts]
+    right_sources = [joinPart.groupBy.sources for joinPart in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
 
@@ -92,6 +92,6 @@ def Join(left: api.Source,
 
     return api.Join(
         left=updated_left,
-        joinParts=rightParts,
+        joinParts=right_parts,
         metaData=metadata
     )
