@@ -124,14 +124,22 @@ workflows:
                       - "Docker Base Build"
                   filters:
                       tags:
-                          only: /^release-zl-.*/
+                          ignore: /^release-zl-.*/
             - "Zipline Python Tests":
-                requires:
-                  - "Docker Base Build"
+                  requires:
+                      - "Docker Base Build"
+                  filters:
+                      tags:
+                          ignore: /^release-zl-.*/
             - "Zipline Python Lint":
-                requires:
-                  - "Docker Base Build"
+                  requires:
+                      - "Docker Base Build"
+                  filters:
+                      tags:
+                          ignore: /^release-zl-.*/
             - "Publish Zipline JAR to Artifactory":
+                  requires:
+                      - "Docker Base Build"
                   filters:
                       tags:
                           only: /^release-zl.*/
