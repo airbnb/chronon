@@ -38,24 +38,26 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String): Unit = {
     val servingInfo: GroupByServingInfoParsed = fetcher.getGroupByServingInfo(groupByConf.metaData.cleanName)
+    //val dayAfter = Constants.Partition.after(ds)
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
-    val selected = groupBy.inputDf
+    // for events this will select ds-1 <= ts < ds
+    val selected = groupBy.inputDf.filter(s"ds='$ds'")
+    println("streaming inserts")
+    selected.show()
     val keys = groupByConf.keyColumns.asScala.toArray
     val values = groupBy.preAggSchema.fields.map(_.name)
     val keyIndices = keys.map(selected.schema.fieldIndex)
     val valueIndices = values.map(selected.schema.fieldIndex)
     val tsIndex = selected.schema.fieldIndex(Constants.TimeColumn)
     val keyValueTs =
-      selected
-        .filter(s"ds='$ds'")
-        .rdd
+      selected.rdd
         .map { row =>
           val keys = keyIndices.map(row.get)
           val keyBytes = servingInfo.keyCodec.encodeArray(keys)
           val values = valueIndices.map(row.get)
           val valueBytes = servingInfo.selectedCodec.encodeArray(values)
           val ts = row.get(tsIndex).asInstanceOf[Long]
-          val gson = new Gson()
+//          val gson = new Gson()
 //          println(s"""
 //               |keys: ${gson.toJson(keys)}
 //               |values: ${gson.toJson(values)}
@@ -80,8 +82,6 @@ class FetcherTest extends TestCase {
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
-    val twoDaysAgo = Constants.Partition.before(yesterday)
-    val tomorrow = Constants.Partition.after(today)
 
     // temporal events
     val paymentCols =
@@ -92,19 +92,11 @@ class FetcherTest extends TestCase {
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable)),
       keyColumns = Seq("user"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE,
+        Builders.Aggregation(operation = Operation.COUNT,
                              inputColumn = "payment",
                              windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
-    GroupByUpload.run(userPaymentsGroupBy, yesterday, Some(tableUtils))
-    inMemoryKvStore.bulkPut(userPaymentsGroupBy.kvTable, userPaymentsGroupBy.batchDataset, null)
-    inMemoryKvStore.create(userPaymentsGroupBy.streamingDataset)
-    putStreaming(userPaymentsGroupBy, fetcher, inMemoryKvStore, tableUtils, today)
-    val result = Await.result(
-      fetcher.fetchGroupBys(Seq(Fetcher.Request(userPaymentsGroupBy.metaData.cleanName, Map("user" -> "user5")))),
-      Duration(1000, MILLISECONDS))
-    println(result)
 
     // snapshot events
     val ratingCols =
@@ -121,8 +113,6 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "unit_test.vendor_ratings", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
-    GroupByUpload.run(vendorRatingsGroupBy, yesterday, Some(tableUtils))
-    inMemoryKvStore.bulkPut(vendorRatingsGroupBy.kvTable, vendorRatingsGroupBy.batchDataset, null)
 
     // no-agg
     val userBalanceCols =
@@ -138,8 +128,6 @@ class FetcherTest extends TestCase {
       keyColumns = Seq("user"),
       metaData = Builders.MetaData(name = "unit_test.user_balance", namespace = namespace)
     )
-    GroupByUpload.run(userBalanceGroupBy, yesterday, Some(tableUtils))
-    inMemoryKvStore.bulkPut(userBalanceGroupBy.kvTable, userBalanceGroupBy.batchDataset, null)
 
     // snapshot-entities
     val userVendorCreditCols =
@@ -161,23 +149,23 @@ class FetcherTest extends TestCase {
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.vendor_credit", namespace = namespace)
     )
-    GroupByUpload.run(creditGroupBy, yesterday, Some(tableUtils))
-    inMemoryKvStore.bulkPut(creditGroupBy.kvTable, creditGroupBy.batchDataset, null)
 
     // queries
     val queryCols =
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
-    val queriesTable = "queries_table"
-    DataFrameGen
-      .events(spark, queryCols, 100000, 4)
+    val queriesTable = s"$namespace.queries_table"
+    val queriesDf = DataFrameGen
+      .events(spark, queryCols, 1000, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
-      .save(queriesTable)
+    queriesDf.show()
+    queriesDf.save(queriesTable)
+
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = twoDaysAgo), table = queriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
@@ -187,10 +175,28 @@ class FetcherTest extends TestCase {
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
-    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
+    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
 
-    val todaysQueries = tableUtils.sql(s"SELECT * from $queriesTable WHERE ds='$yesterday'")
-    val keys = joinConf.joinParts.asScala.flatMap(_.leftToRight.keys).distinct.toArray
+    def serve(groupByConf: GroupByConf): Unit = {
+
+      GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
+      inMemoryKvStore.bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL) {
+        inMemoryKvStore.create(groupByConf.streamingDataset)
+        putStreaming(groupByConf, fetcher, inMemoryKvStore, tableUtils, today)
+      }
+    }
+    joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
+
+    val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
+    println(s"""
+         |today: $today
+         |queriesRange: ${todaysQueries.timeRange.pretty}
+         |""".stripMargin)
+    val keys =
+      todaysQueries.schema.fieldNames.filterNot(
+        Constants.ReservedColumns.contains
+      ) //joinConf.joinParts.asScala.flatMap(_.leftToRight.keys).distinct.toArray
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore)
@@ -218,16 +224,22 @@ class FetcherTest extends TestCase {
       new GenericRow(values)
     }
     println(todaysExpected.schema.pretty)
+    val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
-    todaysExpected.show()
-    responseDf.show()
-    val diff = Comparison.sideBySide(responseDf, todaysExpected, List("vendor_id", "user_id", "ts", "ds"))
+    println("queries:")
+    todaysQueries.order(keyishColumns).show()
+    println("expected:")
+    todaysExpected.order(keyishColumns).show()
+    println("response:")
+    responseDf.order(keyishColumns).show()
+    //val filterClause = "(user_id IS NOT NULL) AND (vendor_id IS NOT NULL)"
+    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
     assertEquals(todaysQueries.count(), responseDf.count())
 //    assertEquals(todaysQueries.count(), todaysExpected.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      println(s"diff result rows:")
       diff.show()
     }
     assertEquals(diff.count(), 0) // create groupBy data

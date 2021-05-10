@@ -18,6 +18,8 @@ case class TimeRange(start: Long, end: Long) extends DataRange {
   def toPartitionRange: PartitionRange = {
     PartitionRange(Constants.Partition.of(start), Constants.Partition.of(end))
   }
+
+  def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
 case class PartitionRange(start: String, end: String) extends DataRange {
@@ -84,4 +86,6 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
 
+  def shift(days: Int): PartitionRange =
+    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
 }

@@ -6,7 +6,7 @@ import ai.zipline.fetcher.{AvroCodec, AvroUtils}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
+import org.apache.spark.sql.functions.{desc, from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
@@ -155,6 +155,12 @@ object Extensions {
           .withColumn(s"${col}_str", from_unixtime(df(col) / 1000, "yyyy-MM-dd HH:mm:ss"))
         if (dropOriginal) renamed.drop(col) else renamed
       }
+    }
+
+    def order(keys: Seq[String]): DataFrame = {
+      val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
+      val filtered = df.where(filterClause)
+      filtered.orderBy(keys.map(desc): _*)
     }
   }
 

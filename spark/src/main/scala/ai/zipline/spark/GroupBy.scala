@@ -89,11 +89,30 @@ class GroupBy(val aggregations: Seq[Aggregation],
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
     val sawtoothAggregator = new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
-    hopsAggregate(endTimes.min, resolution)
+    val hops = hopsAggregate(endTimes.min, resolution)
+    // DEBUG
+    val hopCount = hops.count()
+    hops.foreach {
+      case (keyWithHash, hopArray) =>
+        val gson = new Gson()
+        println(s"""
+           |key: ${gson.toJson(keyWithHash.data)}
+           |hops: ${gson.toJson(hopArray)}
+           |""".stripMargin)
+    }
+    // END DEBUG
+    hops
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
+            val gson = new Gson()
+            println(s"""
+                 |keys: ${gson.toJson(keys.data)}
+                 |ir: ${gson.toJson(irs(i))}
+                 |normalized: ${gson.toJson(normalizeOrFinalize(irs(i)))}
+                 |end-time: ${Constants.Partition.at(endTimes(i))}
+                 |""".stripMargin)
             (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
       }
@@ -267,7 +286,12 @@ object GroupBy {
         bloomFilteredDf
       }
       .getOrElse { skewFilteredDf }
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, processedInputDf)
+
+    // at-least one of the keys should be present in the row.
+    val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
+    val nullFiltered = processedInputDf.filter(nullFilterClause)
+
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, nullFiltered)
   }
 
   def renderDataSourceQuery(source: Source,
@@ -276,10 +300,11 @@ object GroupBy {
                             tableUtils: TableUtils,
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
+    val minQuery = Constants.Partition.before(queryStart)
     val (scanStart, startPartition) = source.dataModel match {
       case Entities => (queryStart, source.query.startPartition)
       case Events =>
-        val windowStart = window.map(Constants.Partition.minus(queryStart, _)).orNull
+        val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
         val sourceStart = (Option(source.query.startPartition) ++ tableUtils.firstAvailablePartition(source.table))
           .reduceLeftOption(Ordering[String].min)
           .orNull

@@ -19,7 +19,4 @@ object TsUtils {
 
   def round(epochMillis: Long, roundMillis: Long): Long =
     (epochMillis / roundMillis) * roundMillis
-
-  def start(epochMillis: Long, hopMillis: Long, windowMillis: Long): Long =
-    round(epochMillis, hopMillis) - windowMillis
 }

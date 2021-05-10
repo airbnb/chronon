@@ -71,7 +71,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     var hopIndex = tailHopIndices(col)
     val hopMillis = hopSizes(hopIndex)
     var baseIr: Any = null
-    var start = TsUtils.start(endTime, hopMillis, window.millis)
+    var start = TsUtils.round(endTime - window.millis, hopMillis)
     while (hopIndex < hopSizes.length) {
       val end = TsUtils.round(endTime, hopSizes(hopIndex))
       baseIr = windowedAggregator(col).merge(baseIr, cache.merge(hopIndex, col, start, end))

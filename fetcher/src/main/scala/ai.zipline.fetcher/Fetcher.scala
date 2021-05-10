@@ -153,8 +153,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
 
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
-      val gson = new Gson()
       val responsesMap = responsesFuture.map { response =>
+//        val gson = new Gson()
 //        println(s"""
 //             |Request key: ${gson.toJson(response.request.keyBytes)},
 //             |Request dataset: ${gson.toJson(response.request.dataset)}
@@ -162,43 +162,40 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
 //             |""".stripMargin)
         response.request -> response.values
       }.toMap
-      val responses: Seq[Response] = groupByRequestToKvRequest
-        .mapValues {
-          case (groupByServingInfo, batchRequest, streamingRequestOpt, atMillis) =>
-            val batchResponseBytes: Array[Byte] =
-              Option(responsesMap(batchRequest)).flatMap(_.headOption).map(_.bytes).orNull
-            val responseMap: Map[String, AnyRef] = if (groupByServingInfo.groupBy.aggregations == null) { // no-agg
-              groupByServingInfo.selectedCodec.decodeMap(batchResponseBytes)
-            } else if (streamingRequestOpt.isEmpty) { // snapshot accurate
-              groupByServingInfo.outputCodec.decodeMap(batchResponseBytes)
-            } else { // temporal accurate
-              val aggregator: SawtoothOnlineAggregator = groupByServingInfo.aggregator
-              val streamingResponses: Seq[TimedValue] =
-                responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
-              val streamingRows: Seq[Row] =
-                streamingResponses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis))
-              val batchIr = toBatchIr(batchResponseBytes, groupByServingInfo)
-              val queryTs = atMillis.getOrElse(System.currentTimeMillis())
-              val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTs)
+      val responses: Seq[Response] = groupByRequestToKvRequest.map {
+        case (request, (groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
+          val batchResponseBytes: Array[Byte] =
+            Option(responsesMap(batchRequest)).flatMap(_.headOption).map(_.bytes).orNull
+          val responseMap: Map[String, AnyRef] = if (groupByServingInfo.groupBy.aggregations == null) { // no-agg
+            groupByServingInfo.selectedCodec.decodeMap(batchResponseBytes)
+          } else if (streamingRequestOpt.isEmpty) { // snapshot accurate
+            groupByServingInfo.outputCodec.decodeMap(batchResponseBytes)
+          } else { // temporal accurate
+            val aggregator: SawtoothOnlineAggregator = groupByServingInfo.aggregator
+            val streamingResponses: Seq[TimedValue] =
+              responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
+            val streamingRows: Seq[Row] =
+              streamingResponses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis))
+            val batchIr = toBatchIr(batchResponseBytes, groupByServingInfo)
+            val queryTs = atMillis.getOrElse(System.currentTimeMillis())
+            val gson = new Gson()
+            println(s"query: ${gson.toJson(request.keys)}, ts: ${request.atMillis.get}")
+            val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTs)
 //              if (streamingRows.nonEmpty)
 //                println(s"""streaming row count: ${streamingRows.length}
 //                   |min streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).min)}
 //                   |max streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).max)}
+//                   |batchEnd ts: ${TsUtils.toStr(groupByServingInfo.batchEndTsMillis)}
 //                   |query ts: ${TsUtils.toStr(queryTs)}
 //                   |""".stripMargin)
-//              println(s"queryTs: ${TsUtils.toStr(queryTs)}")
-//              println(s"Streaming responses:")
-//              streamingRows.foreach(row => println(s"${TsUtils.toStr(row.ts)}, ${gson.toJson(row.values)}"))
 //              println(s"""
 //                         |BatchIr:${gson.toJson(batchIr)}
 //                         |Final: ${gson.toJson(output)}
 //                         |""".stripMargin)
-              groupByServingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
-            }
-            responseMap
-        }
-        .map { case (request, responseMap) => Response(request, responseMap) }
-        .toSeq
+            groupByServingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+          }
+          Response(request, responseMap)
+      }.toSeq
       responses
     }
   }
@@ -232,7 +229,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
               case (leftKey, value) => leftToRight(leftKey) -> value
             }
             val prefix = (Option(part.prefix) ++ Some(part.groupBy.getMetaData.cleanName)).mkString("_")
-            request -> (prefix -> Request(groupByName, rightKeys))
+            request -> (prefix -> Request(groupByName, rightKeys, request.atMillis))
           }
         })
 

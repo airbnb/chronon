@@ -286,7 +286,8 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a")
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a"),
+      accuracy = Accuracy.SNAPSHOT
     )
 
     // left side
@@ -300,7 +301,7 @@ class JoinTest {
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user", accuracy = Accuracy.SNAPSHOT)),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
       metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace, team = "zipline")
     )
 
@@ -518,7 +519,7 @@ class JoinTest {
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
-    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user_2", accuracy = Accuracy.TEMPORAL)
+    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
@@ -608,7 +609,8 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "item_team")
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.TEMPORAL
     )
   }
 
@@ -625,7 +627,7 @@ class JoinTest {
 
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user", accuracy = Accuracy.TEMPORAL)),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user")),
       metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "item_team")
     )
 

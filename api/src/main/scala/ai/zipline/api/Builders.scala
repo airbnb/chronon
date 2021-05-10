@@ -111,7 +111,13 @@ object Builders {
         result.setKeyColumns(keyColumns.asJava)
       if (aggregations != null)
         result.setAggregations(aggregations.asJava)
-      result.setAccuracy(accuracy)
+      println(s"""
+          |****
+          |GroupBy: ${metaData.name}
+          |accuracy: $accuracy
+          |""".stripMargin)
+      if (accuracy != null)
+        result.setAccuracy(accuracy)
       result
     }
   }
@@ -132,8 +138,7 @@ object Builders {
         groupBy: GroupBy = null,
         keyMapping: Map[String, String] = null,
         selectors: Seq[AggregationSelector] = null,
-        prefix: String = null,
-        accuracy: Accuracy = null
+        prefix: String = null
     ): JoinPart = {
       val result = new JoinPart()
       result.setGroupBy(groupBy)
@@ -143,7 +148,6 @@ object Builders {
       if (selectors != null) // TODO: selectors are unused right now - we select everything
         result.setSelectors(selectors.asJava)
       result.setPrefix(prefix)
-      result.getGroupBy.setAccuracy(accuracy)
       result
     }
   }

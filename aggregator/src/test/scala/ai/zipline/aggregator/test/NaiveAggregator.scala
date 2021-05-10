@@ -20,7 +20,7 @@ class NaiveAggregator(aggregator: RowAggregator,
       for (endTimeIndex <- queries.indices) {
         val queryTime = queries(endTimeIndex)
         for (col <- aggregator.indices) {
-          val windowStart = TsUtils.start(queryTime, tailHops(col), windows(col).millis)
+          val windowStart = TsUtils.round(queryTime - windows(col).millis, tailHops(col))
           if (windowStart <= inputRow.ts && inputRow.ts < TsUtils.round(queryTime, headRoundingMillis)) {
             aggregator.columnAggregators(col).update(results(endTimeIndex), inputRow)
           }

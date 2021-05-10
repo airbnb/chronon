@@ -43,7 +43,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val batchIr2 = events2.foldLeft(onlineAggregator.init)(onlineAggregator.update)
     val batchIr = onlineAggregator.finalizeTail(onlineAggregator.merge(batchIr1, batchIr2))
 
-    val windowHeadEvents = events.filter(_.ts > batchEndTs)
+    val windowHeadEvents = events.filter(_.ts >= batchEndTs)
     val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(batchIr, windowHeadEvents.iterator, _))
 
     println("Generated online irs")

@@ -55,7 +55,18 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
       "scala.reflect.ManifestFactory$$anon$10",
-      "scala.reflect.ClassTag$$anon$1"
+      "scala.reflect.ClassTag$$anon$1",
+      "scala.math.Ordering$$anon$4",
+      "org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering",
+      "org.apache.spark.sql.catalyst.expressions.SortOrder",
+      "org.apache.spark.sql.catalyst.expressions.BoundReference",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
+      "org.apache.spark.sql.catalyst.trees.Origin",
+      "org.apache.spark.sql.catalyst.expressions.Ascending$",
+      "org.apache.spark.sql.catalyst.expressions.Descending$",
+      "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
+      "org.apache.spark.sql.catalyst.expressions.NullsLast$",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
     )
     names.foreach { name =>
       kryo.register(Class.forName(name))

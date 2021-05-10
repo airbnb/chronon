@@ -58,8 +58,13 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
           val irArray = new Array[Any](2)
           irArray.update(0, finalBatchIr.collapsed)
           irArray.update(1, finalBatchIr.tailHops)
+          val gson = new Gson()
+          println(s"""
+               |key: ${gson.toJson(keyWithHash.data)}
+               |tailHops: ${gson.toJson(finalBatchIr.tailHops)}
+               |collapsed: ${gson.toJson(finalBatchIr.collapsed)}
+               |""".stripMargin)
           keyWithHash.data -> irArray
-
       }
     KvRdd(outputRdd, groupBy.keySchema, irSchema)
   }
@@ -77,6 +82,12 @@ object GroupByUpload {
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
     val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     val groupByUpload = new GroupByUpload(endDs, groupBy)
+
+    println(s"""
+         |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
+         |Accuracy: ${groupByConf.inferredAccuracy}
+         |Data Model: ${groupByConf.dataModel}
+         |""".stripMargin)
 
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents

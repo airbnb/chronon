@@ -1,11 +1,11 @@
 package ai.zipline.aggregator.windowing
 
 import java.lang
-
 import ai.zipline.aggregator.base.{DataType, ListType, LongType, StructField, StructType}
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.zipline.api.{Aggregation, TimeUnit, Window}
+import com.google.gson.Gson
 
 import scala.Long
 
@@ -60,17 +60,17 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
     val rowTs = row.ts
     val updatedHop = Array.fill(hopSizes.length)(false)
     for (i <- 0 until windowedAggregator.length) {
-      if (batchEndTs > rowTs && tailTs(i).forall(rowTs > _)) { // this row is relevant
-        if (tailTs(i).forall(rowTs >= _ + tailBufferMillis)) { // goes to collapsed part
+      if (batchEndTs > rowTs && tailTs(i).forall(rowTs > _)) { // relevant for the window
+        if (tailTs(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
           windowedAggregator.columnAggregators(i).update(batchIr.collapsed, row)
-        } else { // goes to tailHops part
+        } else { // update tailHops part
           val hopIndex = tailHopIndices(i)
           // eg., 7d, 8d windows shouldn't update the same 1hr tail hop twice
           // so update a hop only once
           if (!updatedHop(hopIndex)) {
             updatedHop.update(hopIndex, true)
-            val hopTs = TsUtils.round(rowTs, hopSizes(hopIndex))
-            val hopIr = batchIr.tailHops(hopIndex).computeIfAbsent(hopTs, hopsAggregator.javaBuildHop)
+            val hopStart = TsUtils.round(rowTs, hopSizes(hopIndex))
+            val hopIr = batchIr.tailHops(hopIndex).computeIfAbsent(hopStart, hopsAggregator.javaBuildHop)
             val baseIrIndex = windowMappings(i).baseIrIndex
             baseAggregator.columnAggregators(baseIrIndex).update(hopIr, row)
           }
@@ -117,6 +117,8 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
     // initialize with collapsed
     val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
+    val gson = new Gson()
+    println(s"collapsed: ${gson.toJson(resultIr)}")
     // add head events
     for (row <- headRows) {
       val rowTs = row.ts // unbox long only once
@@ -130,6 +132,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
         }
       }
     }
+    println(s"collapsed + streaming: ${gson.toJson(resultIr)}")
 
     // add tail hopIrs
     for (i <- 0 until windowedAggregator.length) {
@@ -139,14 +142,16 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
         val hopIrs = batchIr.tailHops(hopIndex)
         for (hopIr <- hopIrs) {
-          val hopTs = hopIr.last.asInstanceOf[Long]
-          if ((batchEndTs - window.millis) + tailBufferMillis > hopTs && hopTs >= queryTail) {
+          val hopStart = hopIr.last.asInstanceOf[Long]
+          if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
             val merged = windowedAggregator(i).merge(resultIr(i), hopIr(baseIrIndices(i)))
             resultIr.update(i, merged)
           }
         }
       }
     }
+
+    println(s"collapsed + streaming + tailHops: ${gson.toJson(resultIr)}")
 
     resultIr
   }

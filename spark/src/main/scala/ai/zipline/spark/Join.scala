@@ -26,6 +26,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> confJsonBase64)
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
+    println("rightDf:")
+    rightDf.show()
+    println("leftDf:")
+    leftDf.show()
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
     // besides the ones specified in the group-by
@@ -69,7 +73,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     } else {
       prefixedRight
     }
-
+    println("joinable Right:")
+    joinableRight.show()
     leftDf.validateJoinKeys(joinableRight, keys)
     leftDf.join(joinableRight, keys, "left")
   }
@@ -92,9 +97,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
          |  part name : ${joinPart.groupBy.metaData.name}, 
          |  left type : ${joinConf.left.dataModel}, 
          |  right type: ${joinPart.groupBy.dataModel}, 
-         |  accuracy  : ${joinPart.groupBy.accuracy},
+         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
          |  part unfilled range: $unfilledRange,
          |  bloom sizes: $bloomSizes
+         |  groupBy: ${joinPart.groupBy.toString}
          |""".stripMargin)
 
     // all lazy vals - so evaluated only when needed by each case.
@@ -106,9 +112,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       println(s"right unfilled time range: $timeRange")
       timeRange
     }
-    lazy val leftTimePartitionRange = unfilledTimeRange.toPartitionRange
-    lazy val timeRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, leftTimePartitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+
+    def genGroupBy(partitionRange: PartitionRange) =
+      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     val leftSkewFilter = joinConf.skewFilter(Some(joinPart.rightToLeft.values.toSeq))
     // this is the second time we apply skew filter - but this filters only on the keys
@@ -132,17 +138,16 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
       }
 
+    lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
-      case (Entities, Events, _)               => partitionRangeGroupBy.snapshotEvents(unfilledRange)
-      case (Entities, Entities, _)             => partitionRangeGroupBy.snapshotEntities
-      case (Events, Events, Accuracy.SNAPSHOT) => timeRangeGroupBy.snapshotEvents(leftTimePartitionRange)
+      case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
+      case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
+      case (Events, Events, Accuracy.SNAPSHOT) =>
+        genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
       case (Events, Events, Accuracy.TEMPORAL) =>
-        timeRangeGroupBy.temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
+        genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
 
-      case (Events, Entities, Accuracy.SNAPSHOT) =>
-        val PartitionRange(start, end) = leftTimePartitionRange
-        val rightRange = PartitionRange(Constants.Partition.before(start), Constants.Partition.before(end))
-        GroupBy.from(joinPart.groupBy, rightRange, tableUtils, Option(rightBloomMap)).snapshotEntities
+      case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
@@ -174,8 +179,14 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
           }
-
-          tableUtils.sql(leftRange.genScanQuery(query = null, joinPartTableName))
+          val scanRange =
+            if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+              // the events of a ds will join with
+              leftDf.timeRange.toPartitionRange.shift(-1)
+            } else {
+              leftRange
+            }
+          tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
         } else {
           // no need to generate join part cache if there are no aggregations
           computeJoinPart(partialDf, joinPart, leftRange)
@@ -190,10 +201,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   def getLastRunJoinOpt: Option[JoinConf] = {
     tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
       // get the join object that was saved onto the table as part of the last run
-      val encodedMetadata = lastRunMetadata.get(Constants.JoinMetadataKey).get
+      val encodedMetadata = lastRunMetadata(Constants.JoinMetadataKey)
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
-      ThriftJsonCodec.fromJsonStr(joinJsonString, true, classOf[JoinConf])
+      ThriftJsonCodec.fromJsonStr(joinJsonString, check = true, classOf[JoinConf])
     }
   }
 
@@ -251,7 +262,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
 
     // First run command to drop tables that have changed semantically since the last run
-    dropTablesToRecompute
+    dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
@@ -318,7 +329,7 @@ object Join {
     val join = new Join(
       joinConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}", local = false))
+      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}"))
     )
 
     join.computeJoin(parsedArgs.stepDays.toOption)
