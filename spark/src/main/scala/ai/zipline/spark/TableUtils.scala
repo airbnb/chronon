@@ -58,23 +58,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    val rowCount = df.count()
-    println(s"$rowCount rows requested to be written into table $tableName")
-
-    if (rowCount > 0) {
-      val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
-      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
-
-      val saltCol = "random_partition_salt"
-      val saltedDf = dfRearranged.withColumn(saltCol, round(rand() * 1000000))
-      saltedDf
-        .repartition(rddPartitionCount, Seq(Constants.PartitionColumn, saltCol).map(saltedDf.col): _*)
-        .drop(saltCol)
-        .write
-        .mode(saveMode)
-        .insertInto(tableName)
-      println(s"Finished writing to $tableName")
-    }
+    repartitionAndWrite(df, tableName, saveMode)
   }
 
   def sql(query: String): DataFrame = {
@@ -98,9 +82,12 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
+    repartitionAndWrite(df, tableName, saveMode)
+  }
+
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
-
     if (rowCount > 0) {
       val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")

@@ -53,7 +53,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     with Serializable {
 
   // streaming starts scanning after batchEnd
-  val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchDateStamp)
+  val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
 
   lazy val aggregator = {
     val avroSchemaParser = new Schema.Parser()

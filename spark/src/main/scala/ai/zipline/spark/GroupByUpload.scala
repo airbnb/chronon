@@ -92,7 +92,7 @@ object GroupByUpload {
     }).toAvroDf
 
     val groupByServingInfo = new GroupByServingInfo()
-    groupByServingInfo.setBatchDateStamp(endDs)
+    groupByServingInfo.setBatchEndDate(endDs)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
