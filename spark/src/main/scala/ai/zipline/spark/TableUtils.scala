@@ -67,12 +67,11 @@ case class TableUtils(sparkSession: SparkSession) {
     df
   }
 
-  // un-partitioned
-  def insert(df: DataFrame,
-             tableName: String,
-             tableProperties: Map[String, String] = null,
-             saveMode: SaveMode = SaveMode.Overwrite,
-             fileFormat: String = "PARQUET"): Unit = {
+  def insertUnPartitioned(df: DataFrame,
+                          tableName: String,
+                          tableProperties: Map[String, String] = null,
+                          saveMode: SaveMode = SaveMode.Overwrite,
+                          fileFormat: String = "PARQUET"): Unit = {
 
     if (!sparkSession.catalog.tableExists(tableName)) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))

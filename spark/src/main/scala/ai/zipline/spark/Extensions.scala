@@ -76,7 +76,7 @@ object Extensions {
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
-      TableUtils(df.sparkSession).insert(df, tableName, tableProperties)
+      TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
