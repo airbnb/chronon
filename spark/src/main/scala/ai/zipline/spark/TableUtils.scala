@@ -93,8 +93,12 @@ case class TableUtils(sparkSession: SparkSession) {
 
       val saltCol = "random_partition_salt"
       val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      val repartitionCols =
+        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+          Seq(Constants.PartitionColumn, saltCol)
+        } else { Seq(saltCol) }
       saltedDf
-        .repartition(rddPartitionCount, Seq(saltCol).map(saltedDf.col): _*)
+        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
         .write
         .mode(saveMode)
