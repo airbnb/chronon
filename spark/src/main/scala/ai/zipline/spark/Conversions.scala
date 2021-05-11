@@ -45,10 +45,8 @@ object Conversions {
 
   def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
 
-  def capitalize(str: String): String = s"${str.head.toUpper}${str.tail}"
-
   def toZiplineType(name: String, dataType: DataType): ZDataType = {
-    val typeName = capitalize(name)
+    val typeName = name.capitalize
     dataType match {
       case IntegerType               => IntType
       case LongType                  => ZLongType

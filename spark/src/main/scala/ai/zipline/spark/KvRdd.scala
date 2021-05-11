@@ -62,9 +62,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
     val rowRdd: RDD[Row] = data.map {
       case (keys, values) =>
-        val result = new Array[Any](2)
-        result.update(0, keyToBytes(keys))
-        result.update(1, valueToBytes(values))
+        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values))
         new GenericRow(result)
     }
     sparkSession.createDataFrame(rowRdd, rowSchema)
