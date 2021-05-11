@@ -185,5 +185,5 @@ struct GroupByServingInfo {
     // used to compute
     //       1. batch_data_lag = current_time - batch_data_time
     //       2. batch_upload_lag = batch_upload_time - batch_data_time
-    5: optional string batchDateStamp
+    5: optional string batchEndDate
 }
