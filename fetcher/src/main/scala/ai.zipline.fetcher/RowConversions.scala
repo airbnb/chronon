@@ -27,8 +27,6 @@ object RowConversions {
   }
 
   def fromAvroRecord(value: Any, dataType: DataType): Any = {
-    // TODO: avoid schema generation multiple times
-    // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     inverseEdit[GenericRecord, ByteBuffer, GenericData.Array[Any]](
       value,
       dataType,
