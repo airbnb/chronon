@@ -38,7 +38,12 @@ class HopsAggregator(minQueryTs: Long,
         .groupBy(resolution.calculateTailHop)
         .mapValues(_.map(_.millis).max)
 
-    val maxHopSize = resolution.calculateTailHop(allWindows.maxBy(_.millis))
+    val maxHopSize = if (allWindows.nonEmpty) {
+      resolution.calculateTailHop(allWindows.maxBy(_.millis))
+    } else {
+      Long.MaxValue
+    }
+
     val result: Array[Option[Long]] = resolution.hopSizes.indices.map { hopIndex =>
       val hopSize = resolution.hopSizes(hopIndex)
       // for windows with this hop as the tail hop size
