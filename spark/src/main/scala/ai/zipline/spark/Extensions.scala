@@ -1,9 +1,12 @@
 package ai.zipline.spark
 
+import ai.zipline.aggregator.base.{StructType => ZStructType}
 import ai.zipline.api._
+import ai.zipline.fetcher.{AvroCodec, AvroUtils}
+import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.{from_unixtime, udf, unix_timestamp}
+import org.apache.spark.sql.functions.{desc, from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
@@ -26,6 +29,10 @@ object Extensions {
         }
         .mkString("\n")
     }
+
+    def toZiplineSchema(name: String = null): ZStructType = ZStructType.from(name, Conversions.toZiplineSchema(schema))
+    def toAvroSchema(name: String = null): Schema = AvroUtils.fromZiplineSchema(toZiplineSchema(name))
+    def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
   implicit class DataframeOps(df: DataFrame) {
@@ -66,6 +73,10 @@ object Extensions {
     // use sparingly/in tests.
     def save(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties)
+    }
+
+    def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
+      TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
@@ -144,6 +155,12 @@ object Extensions {
           .withColumn(s"${col}_str", from_unixtime(df(col) / 1000, "yyyy-MM-dd HH:mm:ss"))
         if (dropOriginal) renamed.drop(col) else renamed
       }
+    }
+
+    def order(keys: Seq[String]): DataFrame = {
+      val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
+      val filtered = df.where(filterClause)
+      filtered.orderBy(keys.map(desc): _*)
     }
   }
 

@@ -52,9 +52,14 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
         columnAggregators(i).update(ir, inputRow)
     }
 
-  def merge(ir1: Array[Any], ir2: Array[Any]): Unit =
-    for (i <- columnAggregators.indices)
+  def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
+    if (ir1 == null) return ir2
+    if (ir2 == null) return ir1
+    for (i <- columnAggregators.indices) {
       ir1.update(i, columnAggregators(i).merge(ir1(i), ir2(i)))
+    }
+    ir1
+  }
 
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)
 
@@ -67,6 +72,11 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   // CPCSketch is the primary use-case now. We will need it for quantile estimation too I think
   def normalize(ir: Array[Any]): Array[Any] = map(ir, _.normalize)
   def denormalize(ir: Array[Any]): Array[Any] = map(ir, _.denormalize)
+
+  def denormalizeInPlace(ir: Array[Any]): Array[Any] = {
+    columnAggregators.indices.foreach(idx => ir.update(idx, columnAggregators(idx).denormalize(ir(idx))))
+    ir
+  }
 
   // deep copies an IR ai.zipline.aggregator.row
   def clone(ir: Array[Any]): Array[Any] = map(ir, _.clone)

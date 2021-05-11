@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.desc
 
 object Comparison {
 
@@ -21,15 +22,21 @@ object Comparison {
     var finalDf = joined
     val comparisonColumns =
       a.schema.fieldNames.toSet.diff(keys.toSet).toList.sorted
-    finalDf = finalDf.filter(
-      s"${comparisonColumns.map { col => s"a_$col <> b_$col" }.mkString(" or ")}"
-    )
     val colOrder =
       keys.map(key => { finalDf(s"a_$key").as(key) }) ++
         comparisonColumns.flatMap { col =>
           List(finalDf(s"a_$col"), finalDf(s"b_$col"))
         }
     finalDf = finalDf.select(colOrder: _*)
+    finalDf = finalDf.filter(
+      s"${comparisonColumns
+        .flatMap { col =>
+          val left = s"a_$col"
+          val right = s"b_$col"
+          Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR ($left <> $right))")
+        }
+        .mkString(" or ")}"
+    )
     finalDf
   }
 

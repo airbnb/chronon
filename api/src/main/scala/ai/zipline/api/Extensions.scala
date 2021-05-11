@@ -57,7 +57,7 @@ object Extensions {
   }
 
   implicit class MetadataOps(metaData: MetaData) {
-    val cleanName: String = Option(metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).getOrElse("missing_name")
+    val cleanName: String = metaData.name.sanitize
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -65,6 +65,8 @@ object Extensions {
       newMetaData.setName(metaData.name)
       newMetaData
     }
+
+    val tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
   }
 
   // one per output column - so single window
@@ -177,9 +179,14 @@ object Extensions {
       models.head
     }
 
-    def accuracy: Accuracy = {
+    def inferredAccuracy: Accuracy = {
+      // if user specified something - respect it
+      if (groupBy.accuracy != null) return groupBy.accuracy
+      // if a topic is specified - then treat it as temporally accurate
       val validTopics = groupBy.sources.asScala.map(_.topic).filter(_ != null)
-      if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
+      if (validTopics.nonEmpty) return Accuracy.TEMPORAL
+      // the default accuracy for events is temporal and entities is snapshot
+      if (groupBy.dataModel == DataModel.Events) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
 
     def setups: Seq[String] = {
@@ -192,6 +199,14 @@ object Extensions {
       newGroupBy.setMetaData(newGroupBy.metaData.copyForVersioningComparison)
       newGroupBy
     }
+
+    def batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
+    def streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
+    def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
+  }
+
+  implicit class StringOps(string: String) {
+    def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) {

@@ -1,4 +1,3 @@
-
 import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
@@ -23,7 +22,7 @@ lazy val api = project
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.7.1",
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
-    ),
+    )
   )
 
 lazy val aggregator = project
@@ -33,11 +32,26 @@ lazy val aggregator = project
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
       "com.google.code.gson" % "gson" % "2.8.6"
-    ),
+    )
   )
 
-lazy val spark = project
+lazy val fetcher = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.apache.avro" % "avro" % "1.8.0"
+    )
+  )
+
+def cleanSparkMeta: Unit = {
+  Folder.clean(file(".") / "spark" / "spark-warehouse",
+               file(".") / "spark-warehouse",
+               file(".") / "spark" / "metastore_db",
+               file(".") / "metastore_db")
+}
+
+lazy val spark = project
+  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
   .settings(
     mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
     assemblyJarName in assembly := "zipline-spark.jar",
@@ -48,8 +62,8 @@ lazy val spark = project
       "org.rogach" %% "scallop" % "4.0.1",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
     ),
-    testOptions in Test += Tests.Setup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db")),
-    testOptions in Test += Tests.Cleanup(() => Folder.clean(file(".") / "spark-warehouse", file(".") / "metastore_db"))
+    testOptions in Test += Tests.Setup(() => cleanSparkMeta),
+    testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
 
 artifact in (Compile, assembly) := {
@@ -73,7 +87,8 @@ git.gitTagToVersionNumber := { tag: String =>
   }
 }
 
-ThisBuild / publishTo  := Some("Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
+ThisBuild / publishTo := Some(
+  "Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
 ThisBuild / credentials += Credentials(new File("./artifactory_credentials.properties"))
 
 // TODO add benchmarks - follow this example

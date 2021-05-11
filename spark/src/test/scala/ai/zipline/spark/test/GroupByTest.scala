@@ -1,7 +1,7 @@
 package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
-import ai.zipline.aggregator.test.NaiveAggregator
+import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
@@ -19,11 +19,11 @@ class GroupByTest {
   @Test
   def testSnapshotEntities(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10),
-      DataGen.Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
-      DataGen.Column("session_length", IntType, 10000)
+      Column("user", StringType, 10),
+      Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      Column("session_length", IntType, 10000)
     )
-    val df = DataGen.entities(spark, schema, 100000, 10) // ds = last 10 days
+    val df = DataFrameGen.entities(spark, schema, 100000, 10) // ds = last 10 days
     val viewName = "test_group_by_entities"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
@@ -53,13 +53,13 @@ class GroupByTest {
   @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
-      DataGen.Column("user", StringType, 10), // ts = last 10 days
-      DataGen.Column("session_length", IntType, 2)
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2)
     )
 
-    val outputDates = DataGen.genPartitions(10)
+    val outputDates = CStream.genPartitions(10)
 
-    val df = DataGen.events(spark, schema, count = 100000, partitions = 100)
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
@@ -105,15 +105,15 @@ class GroupByTest {
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
-      DataGen.Column("user", StringType, 10),
-      DataGen.Column("session_length", IntType, 10000)
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
     )
 
-    val eventDf = DataGen.events(spark, eventSchema, count = 10000, partitions = 180)
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
 
-    val querySchema = List(DataGen.Column("user", StringType, 10))
+    val querySchema = List(Column("user", StringType, 10))
 
-    val queryDf = DataGen.events(spark, querySchema, count = 1000, partitions = 180)
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(
@@ -128,7 +128,9 @@ class GroupByTest {
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
     // this will basically explode on even moderate large table
-    val queriesByKey: RDD[(KeyWithHash, Array[Long])] = queryDf.rdd
+    val queriesByKey: RDD[(KeyWithHash, Array[Long])] = queryDf
+      .where("user IS NOT NULL")
+      .rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
         rowIter.map {
@@ -151,10 +153,10 @@ class GroupByTest {
         val irs = naiveAggregator.aggregate(events.map(_.toSeq).orNull, queries)
         queries.zip(irs).map {
           case (query: Long, ir: Array[Any]) =>
-            (key.data :+ query, ir)
+            (key.data :+ query, groupBy.windowAggregator.finalize(ir))
         }
     }
-    val naiveDf = groupBy.toDataFrame(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))
+    val naiveDf = groupBy.toDf(naiveRdd, Seq((Constants.TimeColumn, SparkLongType)))
 
     val diff = Comparison.sideBySide(naiveDf, resultDf, List("user", Constants.TimeColumn))
     if (diff.count() > 0) {

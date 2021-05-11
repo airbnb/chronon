@@ -163,3 +163,25 @@ struct Join {
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
 }
+
+// This is written by the bulk upload process into the metaDataset
+// streaming uses this to
+//     1. gather inputSchema from the kafka stream
+//     2. to check if the groupByJson is the same as the one it received - and emits a
+struct GroupByServingInfo {
+    1: optional GroupBy groupBy
+    // a. When groupBy is
+    //  1. temporal accurate - batch uploads irs, streaming uploads inputs
+    //                         the fetcher further aggregates irs and inputs into outputs
+    //  2. snapshot accurate - batch uploads outputs, fetcher doesn't do any further aggregation
+    // irSchema and outputSchema are derivable once inputSchema is known
+    2: optional string inputAvroSchema // will be used by streaming
+    3: optional string selectedAvroSchema
+    4: optional string keyAvroSchema
+    // "date", in 'yyyy-MM-dd' format, the bulk-upload data corresponds to
+    // we need to scan streaming events only starting this timestamp
+    // used to compute
+    //       1. batch_data_lag = current_time - batch_data_time
+    //       2. batch_upload_lag = batch_upload_time - batch_data_time
+    5: optional string batchEndDate
+}
