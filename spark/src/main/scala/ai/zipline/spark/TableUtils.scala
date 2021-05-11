@@ -58,7 +58,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode)
+    repartitionAndWrite(dfRearranged, tableName, saveMode)
   }
 
   def sql(query: String): DataFrame = {
