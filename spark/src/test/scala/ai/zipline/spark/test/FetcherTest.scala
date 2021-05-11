@@ -57,12 +57,6 @@ class FetcherTest extends TestCase {
           val values = valueIndices.map(row.get)
           val valueBytes = servingInfo.selectedCodec.encodeArray(values)
           val ts = row.get(tsIndex).asInstanceOf[Long]
-//          val gson = new Gson()
-//          println(s"""
-//               |keys: ${gson.toJson(keys)}
-//               |values: ${gson.toJson(values)}
-//               |ts: ${TsUtils.toStr(ts)}
-//               |""".stripMargin)
           (keyBytes, valueBytes, ts)
         }
         .collect()

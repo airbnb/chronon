@@ -111,11 +111,6 @@ object Builders {
         result.setKeyColumns(keyColumns.asJava)
       if (aggregations != null)
         result.setAggregations(aggregations.asJava)
-      println(s"""
-          |****
-          |GroupBy: ${metaData.name}
-          |accuracy: $accuracy
-          |""".stripMargin)
       if (accuracy != null)
         result.setAccuracy(accuracy)
       result

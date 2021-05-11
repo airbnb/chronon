@@ -7,9 +7,7 @@ import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonCodec, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
-import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
@@ -90,29 +88,12 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val endTimes: Array[Long] = partitionRange.toTimePoints
     val sawtoothAggregator = new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
-    // DEBUG
-    val hopCount = hops.count()
-    hops.foreach {
-      case (keyWithHash, hopArray) =>
-        val gson = new Gson()
-        println(s"""
-           |key: ${gson.toJson(keyWithHash.data)}
-           |hops: ${gson.toJson(hopArray)}
-           |""".stripMargin)
-    }
-    // END DEBUG
+
     hops
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
-            val gson = new Gson()
-            println(s"""
-                 |keys: ${gson.toJson(keys.data)}
-                 |ir: ${gson.toJson(irs(i))}
-                 |normalized: ${gson.toJson(normalizeOrFinalize(irs(i)))}
-                 |end-time: ${Constants.Partition.at(endTimes(i))}
-                 |""".stripMargin)
             (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
       }

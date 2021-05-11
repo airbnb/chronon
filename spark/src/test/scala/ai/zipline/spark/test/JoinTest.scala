@@ -136,12 +136,6 @@ class JoinTest {
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
         |""".stripMargin)
     val queries = tableUtils.sql(s"SELECT user_name, ts, ds from $queryTable where ds >= '$start'")
-    println("showing left queries")
-    queries.show()
-    println("showing join result")
-    computed.show()
-    println("showing query result")
-    expected.show()
     val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
@@ -214,7 +208,6 @@ class JoinTest {
 
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
-    println(s"join start = $start")
     val expected = tableUtils.sql(s"""
     |WITH 
     |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
@@ -282,7 +275,7 @@ class JoinTest {
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ),
@@ -317,10 +310,10 @@ class JoinTest {
                                 |        queries.ds,
                                 |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
                                 |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
-                                |        COUNT(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_count
+                                |        AVG(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
-                                | WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
                                 | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
                                 |""".stripMargin)
     expected.show()
@@ -330,9 +323,7 @@ class JoinTest {
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
-      diff
-        .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = false)
-        .show()
+      diff.show()
     }
     assertEquals(diff.count(), 0)
   }
@@ -340,7 +331,7 @@ class JoinTest {
   @Test
   def testEventsEventsTemporal(): Unit = {
 
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal
     val viewsSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
@@ -392,8 +383,8 @@ class JoinTest {
                                      |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_max,
                                      |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
                                      |     FROM queries left outer join $viewsTable
-                                     |     ON queries.item = $viewsTable.item
-                                     |     WHERE $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     |     ON queries.item = $viewsTable.item  
+                                     |     WHERE $viewsTable.item IS NOT NULL AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
                                      |     GROUP BY queries.item, queries.ts, queries.ds) as part
                                      | JOIN queries
                                      | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
@@ -497,7 +488,7 @@ class JoinTest {
 
   @Test
   def testVersioning(): Unit = {
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal
     joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
@@ -585,7 +576,7 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  def getViewsGroupBy() = {
+  private def getViewsGroupBy = {
     val viewsSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
@@ -614,7 +605,7 @@ class JoinTest {
     )
   }
 
-  def getEventsEventsTemporal() = {
+  private def getEventsEventsTemporal = {
     // left side
     val itemQueries = List(Column("item", StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"

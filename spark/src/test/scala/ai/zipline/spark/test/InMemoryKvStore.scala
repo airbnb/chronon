@@ -41,8 +41,6 @@ class InMemoryKvStore(implicit ec: ExecutionContext, tableUtils: TableUtils) ext
   }
 
   override def multiPut(putRequests: Seq[KVStore.PutRequest]): Unit = {
-    println(
-      s"Writing ${putRequests.size} requests to [${putRequests.iterator.map(_.dataset).toSet.mkString(",")}] datasets.")
     putRequests.foreach {
       case PutRequest(keyBytes, valueBytes, dataset, millis) =>
         val table = database(dataset)

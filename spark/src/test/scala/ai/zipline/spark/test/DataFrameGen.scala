@@ -22,10 +22,6 @@ object DataFrameGen {
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
     val sparkSchema = Conversions.fromZiplineSchema(schema)
-    println(sparkSchema.pretty)
-    (0 until genericRows(0).length).foreach { i =>
-      println(s"$i -> ${genericRows(0).get(i)}")
-    }
     spark.createDataFrame(data, Conversions.fromZiplineSchema(schema))
   }
 

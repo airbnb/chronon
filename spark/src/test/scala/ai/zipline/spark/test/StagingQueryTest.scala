@@ -3,6 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.base.{IntType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions._
+import ai.zipline.spark.Extensions._
 import ai.zipline.api.{Builders, Constants, TimeUnit, Window}
 import ai.zipline.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
@@ -19,13 +20,15 @@ class StagingQueryTest {
   @Test
   def testStagingQuery(): Unit = {
     val schema = List(
-      Column("user", StringType, 10), // ts = last 10 days
-      Column("session_length", IntType, 2)
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 1000)
     )
 
     val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
-    val viewName = "test_staging_query"
-    df.createOrReplaceTempView(viewName)
+    println("Generated staging query data:")
+    df.show()
+    val viewName = s"$namespace.test_staging_query_compare"
+    df.save(viewName)
 
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
@@ -36,16 +39,17 @@ class StagingQueryTest {
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery()
-    val actual = tableUtils.sql(s"select * from $viewName where ds between $tenDaysAgo and $today")
+    val expected = tableUtils.sql(s"select * from $viewName where ds between '$tenDaysAgo' and '$today'")
 
-    val expected = tableUtils.sql(
-      s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName} ")
-    val diff = Comparison.sideBySide(actual, expected, List("user", "ts", "ds"))
+    val computed = tableUtils.sql(
+      s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName}")
+    val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${actual.count()}")
-      println(s"Expected count: ${expected.count()}")
+      println(s"Actual count: ${expected.count()}")
+      println(expected.show())
+      println(s"Computed count: ${computed.count()}")
+      println(computed.show())
       println(s"Diff count: ${diff.count()}")
-      println(s"Queries count: ${expected.count()}")
       println(s"diff result rows")
       diff.show()
     }

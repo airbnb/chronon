@@ -154,12 +154,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
       val responsesMap = responsesFuture.map { response =>
-//        val gson = new Gson()
-//        println(s"""
-//             |Request key: ${gson.toJson(response.request.keyBytes)},
-//             |Request dataset: ${gson.toJson(response.request.dataset)}
-//             |Response: ${gson.toJson(Option(response.values).map(_.toArray).orNull)}
-//             |""".stripMargin)
         response.request -> response.values
       }.toMap
       val responses: Seq[Response] = groupByRequestToKvRequest.map {
@@ -178,20 +172,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
               streamingResponses.map(tVal => groupByServingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis))
             val batchIr = toBatchIr(batchResponseBytes, groupByServingInfo)
             val queryTs = atMillis.getOrElse(System.currentTimeMillis())
-            val gson = new Gson()
-            println(s"query: ${gson.toJson(request.keys)}, ts: ${request.atMillis.get}")
             val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTs)
-//              if (streamingRows.nonEmpty)
-//                println(s"""streaming row count: ${streamingRows.length}
-//                   |min streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).min)}
-//                   |max streaming ts: ${TsUtils.toStr(streamingRows.map(_.ts).max)}
-//                   |batchEnd ts: ${TsUtils.toStr(groupByServingInfo.batchEndTsMillis)}
-//                   |query ts: ${TsUtils.toStr(queryTs)}
-//                   |""".stripMargin)
-//              println(s"""
-//                         |BatchIr:${gson.toJson(batchIr)}
-//                         |Final: ${gson.toJson(output)}
-//                         |""".stripMargin)
             groupByServingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
           }
           Response(request, responseMap)

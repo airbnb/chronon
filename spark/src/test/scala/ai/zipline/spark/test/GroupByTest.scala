@@ -128,7 +128,9 @@ class GroupByTest {
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
     // this will basically explode on even moderate large table
-    val queriesByKey: RDD[(KeyWithHash, Array[Long])] = queryDf.rdd
+    val queriesByKey: RDD[(KeyWithHash, Array[Long])] = queryDf
+      .where("user IS NOT NULL")
+      .rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
         rowIter.map {

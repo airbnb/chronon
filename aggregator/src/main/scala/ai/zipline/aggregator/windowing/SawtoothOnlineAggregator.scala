@@ -117,8 +117,6 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
     // initialize with collapsed
     val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
-    val gson = new Gson()
-    println(s"collapsed: ${gson.toJson(resultIr)}")
     // add head events
     for (row <- headRows) {
       val rowTs = row.ts // unbox long only once
@@ -132,7 +130,6 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
         }
       }
     }
-    println(s"collapsed + streaming: ${gson.toJson(resultIr)}")
 
     // add tail hopIrs
     for (i <- 0 until windowedAggregator.length) {
@@ -150,8 +147,6 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
         }
       }
     }
-
-    println(s"collapsed + streaming + tailHops: ${gson.toJson(resultIr)}")
 
     resultIr
   }

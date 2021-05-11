@@ -26,10 +26,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> confJsonBase64)
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
-    println("rightDf:")
-    rightDf.show()
-    println("leftDf:")
-    leftDf.show()
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
     // besides the ones specified in the group-by
@@ -73,8 +69,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     } else {
       prefixedRight
     }
-    println("joinable Right:")
-    joinableRight.show()
+
     leftDf.validateJoinKeys(joinableRight, keys)
     leftDf.join(joinableRight, keys, "left")
   }

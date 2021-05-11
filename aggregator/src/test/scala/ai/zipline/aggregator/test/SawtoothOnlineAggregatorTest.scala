@@ -11,7 +11,7 @@ import org.junit.Assert.assertEquals
 
 class SawtoothOnlineAggregatorTest extends TestCase {
 
-  def testConsistency: Unit = {
+  def testConsistency(): Unit = {
     val queryEndTs = TsUtils.round(System.currentTimeMillis(), WindowUtils.Day.millis)
     val batchEndTs = queryEndTs - WindowUtils.Day.millis
     val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
@@ -36,7 +36,6 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     )
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
-    println("Generated sawtooth irs")
     val onlineAggregator = new SawtoothOnlineAggregator(batchEndTs, aggregations, schema, FiveMinuteResolution)
     val (events1, events2) = events.splitAt(eventCount / 2)
     val batchIr1 = events1.foldLeft(onlineAggregator.init)(onlineAggregator.update)
@@ -46,10 +45,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val windowHeadEvents = events.filter(_.ts >= batchEndTs)
     val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(batchIr, windowHeadEvents.iterator, _))
 
-    println("Generated online irs")
-    val gson = new Gson
-    println("collapsed: " + gson.toJson(batchIr.collapsed))
-    println("tail: " + gson.toJson(batchIr.tailHops))
+    val gson = new Gson()
     for (i <- queries.indices) {
       val onlineStr = gson.toJson(onlineIrs(i))
       val sawtoothStr = gson.toJson(sawtoothIrs(i))
