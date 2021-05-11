@@ -162,11 +162,12 @@ object Extensions {
   implicit class GroupByOps(groupBy: GroupBy) {
     def maxWindow: Option[Window] = {
       val aggs = Option(groupBy.aggregations).map(_.asScala).orNull
+      val windowsFlattened = Option(aggs).map(_.flatMap(_.windows.asScala)).getOrElse(Seq.empty)
       if (aggs == null) None // no-agg
       else if (aggs.exists(_.windows == null)) None // agg without windows
-      else if (aggs.flatMap(_.windows.asScala).contains(null))
-        None // one of the windows is null - meaning unwindowed
-      else Some(aggs.flatMap(_.windows.asScala).maxBy(_.millis)) // no null windows
+      else if (windowsFlattened.isEmpty || windowsFlattened.contains(null))
+        None // at least one of the windows is null - meaning unwindowed
+      else Some(windowsFlattened.maxBy(_.millis)) // no null windows
     }
 
     def dataModel: DataModel = {
