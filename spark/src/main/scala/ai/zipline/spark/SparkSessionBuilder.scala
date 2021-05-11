@@ -33,6 +33,7 @@ object SparkSessionBuilder {
       .config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
       .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
 
     val builder = if (local) {
       baseBuilder
