@@ -164,8 +164,6 @@ struct Join {
     4: optional map<string,list<string>> skewKeys
 }
 
-// Online serving of zipline data is architected as a lambda, with the bulk upload process
-// determining
 // This is written by the bulk upload process into the metaDataset
 // streaming uses this to
 //     1. gather inputSchema from the kafka stream
