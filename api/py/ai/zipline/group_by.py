@@ -25,10 +25,10 @@ class Operation():
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
-    VARIANCE = ttypes.Operation.VARIANCE
-    SKEW = ttypes.Operation.SKEW
-    KURTOSIS = ttypes.Operation.KURTOSIS
-    APPROX_PERCENTILE = ttypes.Operation.APPROX_PERCENTILE
+    FIRST_K = ttypes.Operation.FIRST_K
+    LAST_K = ttypes.Operation.LAST_K
+    TOP_K =  ttypes.Operation.TOP_K
+    BOTTOM_K =  ttypes.Operation.BOTTOM_K
 
 
 class TimeUnit():

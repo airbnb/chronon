@@ -13,7 +13,6 @@ logging.basicConfig(level=logging.INFO)
 
 def join_part(group_by: api.GroupBy,
              key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
-             selectors: Optional[List[Union[api.AggregationSelector, str]]] = None,
              prefix: str = None  # all aggregations will be prefixed with that name
              ) -> api.JoinPart:
     # used for reset for next run
@@ -61,7 +60,7 @@ def join(left: api.Source,
         updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
     # root_keys = set(root_base_source.query.select.keys())
-    # for joinPart in right_parts:
+    # for join_part in right_parts:
     #    mapping = joinPart.key_mapping if joinPart.key_mapping else {}
     #    # TODO: Add back validation? Or not?
     #    #utils.check_contains(mapping.keys(), root_keys, "root key", "")
@@ -74,7 +73,7 @@ def join(left: api.Source,
     #    Root only selected: {root_keys}
     #    """
 
-    right_sources = [joinPart.groupBy.sources for joinPart in right_parts]
+    right_sources = [join_part.groupBy.sources for join_part in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
 

@@ -6,14 +6,14 @@ from typing import List, Dict
 
 def query(selects: Dict[str, str] = None,
           wheres: List[str] = None,
-          startPartition: str = None,
-          endPartition: str = None,
-          timeColumn: str = None,
+          start_partition: str = None,
+          end_partition: str = None,
+          time_column: str = None,
           setups: List[str] = [],
-          mutationTimeColumn: str = None,
-          reversalColumn: str = None) -> api.Query:
+          mutation_time_column: str = None,
+          reversal_column: str = None) -> api.Query:
 
-    return api.Query(selects, wheres, startPartition, endPartition, timeColumn, setups, mutationTimeColumn, reversalColumn)
+    return api.Query(selects, wheres, start_partition, end_partition, time_column, setups, mutation_time_column, reversal_column)
 
 
 def select(*args, **kwargs):
