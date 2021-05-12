@@ -6,7 +6,7 @@ import logging
 import ai.zipline.api.ttypes as api
 import ai.zipline.utils as utils
 import ai.zipline.repo.extract_objects as eo
-from typing import List, Dict, Union, Optional
+from typing import List, Dict
 
 logging.basicConfig(level=logging.INFO)
 
