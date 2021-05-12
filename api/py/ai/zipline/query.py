@@ -13,7 +13,15 @@ def query(selects: Dict[str, str] = None,
           mutation_time_column: str = None,
           reversal_column: str = None) -> api.Query:
 
-    return api.Query(selects, wheres, start_partition, end_partition, time_column, setups, mutation_time_column, reversal_column)
+    return api.Query(
+        selects,
+        wheres,
+        start_partition,
+        end_partition,
+        time_column,
+        setups,
+        mutation_time_column,
+        reversal_column)
 
 
 def select(*args, **kwargs):

@@ -27,8 +27,8 @@ class Operation():
     AVERAGE = ttypes.Operation.AVERAGE
     FIRST_K = ttypes.Operation.FIRST_K
     LAST_K = ttypes.Operation.LAST_K
-    TOP_K =  ttypes.Operation.TOP_K
-    BOTTOM_K =  ttypes.Operation.BOTTOM_K
+    TOP_K = ttypes.Operation.TOP_K
+    BOTTOM_K = ttypes.Operation.BOTTOM_K
 
 
 class TimeUnit():
@@ -46,7 +46,7 @@ def op_to_str(operation: OperationType):
 
 
 def aggregation(inputColumn: str = None,
-                operation = None,
+                operation=None,
                 argMap: Dict[str, str] = {},
                 windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
     # Default to last
@@ -79,7 +79,7 @@ def validate_group_by(sources: List[ttypes.Source],
         query = utils.get_query(src)
         if src.events:
             assert query.mutationTimeColumn is None, "ingestionTimeColumn should not be specified for " \
-                                                      "event source as it should be the same with timeColumn"
+                "event source as it should be the same with timeColumn"
             assert query.reversalColumn is None, "reversalColumn should not be specified for event source " \
                                                  "as it won't have mutations"
         else:
@@ -102,10 +102,10 @@ Keys {unselected_keys}, are unselected in source
 
 
 def group_by(sources: Union[List[ttypes.Source], ttypes.Source],
-            keys: List[str],
-            aggregations: Optional[List[ttypes.Aggregation]],
-            online: bool = DEFAULT_ONLINE,
-            production: bool = DEFAULT_PRODUCTION) -> ttypes.GroupBy:
+             keys: List[str],
+             aggregations: Optional[List[ttypes.Aggregation]],
+             online: bool = DEFAULT_ONLINE,
+             production: bool = DEFAULT_PRODUCTION) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
