@@ -35,6 +35,8 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex",
       "org.apache.spark.sql.types.Metadata",
       "ai.zipline.spark.KeyWithHash",
+      "ai.zipline.aggregator.windowing.BatchIr",
+      "ai.zipline.fetcher.Fetcher$Request",
       "java.util.HashMap",
       "java.util.ArrayList",
       "java.util.HashSet",
@@ -48,10 +50,23 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.StringType",
       "org.apache.spark.sql.types.StringType$",
       "org.apache.spark.sql.types.IntegerType$",
+      "org.apache.spark.sql.types.BinaryType",
+      "org.apache.spark.sql.types.BinaryType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
       "scala.reflect.ManifestFactory$$anon$10",
-      "scala.reflect.ClassTag$$anon$1"
+      "scala.reflect.ClassTag$$anon$1",
+      "scala.math.Ordering$$anon$4",
+      "org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering",
+      "org.apache.spark.sql.catalyst.expressions.SortOrder",
+      "org.apache.spark.sql.catalyst.expressions.BoundReference",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
+      "org.apache.spark.sql.catalyst.trees.Origin",
+      "org.apache.spark.sql.catalyst.expressions.Ascending$",
+      "org.apache.spark.sql.catalyst.expressions.Descending$",
+      "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
+      "org.apache.spark.sql.catalyst.expressions.NullsLast$",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
     )
     names.foreach { name =>
       kryo.register(Class.forName(name))

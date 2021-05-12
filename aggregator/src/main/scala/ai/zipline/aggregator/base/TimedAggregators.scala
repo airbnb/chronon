@@ -7,8 +7,8 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
 
   def `type`(inputType: DataType): DataType =
     StructType(
-      s"TimePair",
-      List(
+      "TimePair",
+      Array(
         StructField("epochMillis", LongType),
         StructField("payload", inputType)
       )
@@ -33,8 +33,7 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
   }
 }
 
-abstract class TimeOrdered(inputType: DataType)
-    extends TimedAggregator[Any, TimeTuple.typ, Any] {
+abstract class TimeOrdered(inputType: DataType) extends TimedAggregator[Any, TimeTuple.typ, Any] {
   override def outputType: DataType = inputType
 
   override def irType: DataType = TimeTuple.`type`(inputType)
@@ -96,9 +95,11 @@ class OrderByLimitTimed(
     inputType: DataType,
     limit: Int,
     ordering: Ordering[TimeTuple.typ]
-) extends TimedAggregator[Any, util.ArrayList[TimeTuple.typ], util.ArrayList[
-      Any
-    ]] {
+) extends TimedAggregator[Any,
+                            util.ArrayList[TimeTuple.typ],
+                            util.ArrayList[
+                              Any
+                            ]] {
   type Container = util.ArrayList[TimeTuple.typ]
   private val minHeap = new MinHeap[TimeTuple.typ](limit, ordering)
 
@@ -151,8 +152,6 @@ class OrderByLimitTimed(
   }
 }
 
-class LastK(inputType: DataType, k: Int)
-    extends OrderByLimitTimed(inputType, k, TimeTuple.reverse)
+class LastK(inputType: DataType, k: Int) extends OrderByLimitTimed(inputType, k, TimeTuple.reverse)
 
-class FirstK(inputType: DataType, k: Int)
-    extends OrderByLimitTimed(inputType, k, TimeTuple)
+class FirstK(inputType: DataType, k: Int) extends OrderByLimitTimed(inputType, k, TimeTuple)

@@ -42,44 +42,11 @@ class ArrayRow(val row: Row, val tsIndex: Int) extends MRow {
 }
 
 object Conversions {
-  def fromZiplineRow(
-      values: Array[Any],
-      ziplineSchema: Array[(String, ZDataType)]
-  ): Array[Any] = {
-    if (values == null) return null
-    val result = new Array[Any](values.length)
-    for (i <- values.indices) {
-      val columnType = ziplineSchema(i)._2
-      val convertedColumn = fromZiplineColumn(values(i), columnType)
-      result.update(i, convertedColumn)
-    }
-    result
-  }
-
-  // won't handle arbitrary nesting
-  // lists are util.ArrayList in both spark and zipline
-  // structs in zipline are Array[Any], but in spark they are Row/GenericRow types
-  def fromZiplineColumn(value: Any, dataType: ZDataType): Any = {
-    if (value == null) return null
-    dataType match {
-      case ListType(ZStructType(_, _)) => //Irs of LastK, FirstK
-        val list = value.asInstanceOf[util.ArrayList[Array[Any]]]
-        val result = new util.ArrayList[GenericRow](list.size())
-        for (i <- 0 until list.size()) {
-          result.set(i, new GenericRow(list.get(i)))
-        }
-        result
-      case ZStructType(_, _) =>
-        new GenericRow(
-          value.asInstanceOf[Array[Any]]
-        ) // Irs of avg, last, first
-      case _ => value
-    }
-  }
 
   def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
 
-  def toZiplineType(dataType: DataType): ZDataType =
+  def toZiplineType(name: String, dataType: DataType): ZDataType = {
+    val typeName = name.capitalize
     dataType match {
       case IntegerType               => IntType
       case LongType                  => ZLongType
@@ -90,18 +57,19 @@ object Conversions {
       case StringType                => ZStringType
       case BinaryType                => ZBinaryType
       case BooleanType               => ZBooleanType
-      case ArrayType(elementType, _) => ListType(toZiplineType(elementType))
+      case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
-        ZMapType(toZiplineType(keyType), toZiplineType(valueType))
+        ZMapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
       case StructType(fields) =>
         ZStructType(
-          null,
+          s"${typeName}Struct",
           fields.map { field =>
-            ZStructField(field.name, toZiplineType(field.dataType))
-          }.toList
+            ZStructField(field.name, toZiplineType(field.name, field.dataType))
+          }
         )
       case other => UnknownType(other)
     }
+  }
 
   def fromZiplineType(zType: ZDataType): DataType =
     zType match {
@@ -126,10 +94,10 @@ object Conversions {
 
   def toZiplineSchema(schema: StructType): Array[(String, ZDataType)] =
     schema.fields.map { field =>
-      (field.name, toZiplineType(field.dataType))
+      (field.name, toZiplineType(field.name, field.dataType))
     }
 
-  def fromZiplineSchema(schema: Array[(String, ZDataType)]): StructType =
+  def fromZiplineSchema(schema: Seq[(String, ZDataType)]): StructType =
     StructType(schema.map {
       case (name, zType) =>
         StructField(name, fromZiplineType(zType))

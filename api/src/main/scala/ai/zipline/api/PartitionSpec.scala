@@ -18,6 +18,7 @@ case class PartitionSpec(format: String, spanMillis: Long) {
     sdf.parse(partition).getTime
   }
 
+  // what partition does this timestamp belong to (when dataModel is Events)
   def of(millis: Long): String = {
     // [ASSUMPTION] Event partitions are start inclusive end exclusive
     // For example, for daily partitions of event data:
@@ -25,20 +26,20 @@ case class PartitionSpec(format: String, spanMillis: Long) {
     //   Event timestamp at midnight of the day of partition is excluded
     val roundedMillis =
       math.ceil((millis + 1).toDouble / spanMillis.toDouble).toLong * spanMillis
-    partitionFormatter.format(Instant.ofEpochMilli(roundedMillis))
+    at(roundedMillis)
   }
 
+  // what is the date portion of this timestamp
   def at(millis: Long): String = partitionFormatter.format(Instant.ofEpochMilli(millis))
 
-  def before(s: String): String = {
-    partitionFormatter.format(Instant.ofEpochMilli(epochMillis(s) - spanMillis))
-  }
+  def before(s: String): String = shift(s, -1)
 
   def minus(s: String, window: Window): String = of(epochMillis(s) - window.millis)
 
-  def after(s: String): String = {
-    partitionFormatter.format(Instant.ofEpochMilli(epochMillis(s) + spanMillis))
-  }
+  def after(s: String): String = shift(s, 1)
 
   def before(millis: Long): String = of(millis - spanMillis)
+
+  def shift(date: String, days: Int): String =
+    partitionFormatter.format(Instant.ofEpochMilli(epochMillis(date) + days * spanMillis))
 }

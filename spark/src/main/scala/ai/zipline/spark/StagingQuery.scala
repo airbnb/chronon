@@ -1,6 +1,6 @@
 package ai.zipline.spark
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{ThriftJsonDecoder, StagingQuery => StagingQueryConf}
+import ai.zipline.api.{ThriftJsonCodec, StagingQuery => StagingQueryConf}
 import ai.zipline.spark.Extensions._
 
 import scala.collection.JavaConverters._
@@ -44,7 +44,7 @@ object StagingQuery {
     val parsedArgs = new ParsedArgs(args)
     println(s"Parsed Args: $parsedArgs")
     val stagingQueryConf =
-      ThriftJsonDecoder
+      ThriftJsonCodec
         .fromJsonFile[StagingQueryConf](parsedArgs.confPath(), check = true, clazz = classOf[StagingQueryConf])
 
     val stagingQueryJob = new StagingQuery(
