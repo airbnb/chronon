@@ -139,6 +139,9 @@ case class TableUtils(sparkSession: SparkSession) {
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
+    assert(
+      Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),
+      s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis")
     result
   }
 

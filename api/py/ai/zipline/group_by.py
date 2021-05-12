@@ -48,7 +48,7 @@ def op_to_str(operation: OperationType):
 def aggregation(inputColumn: str = None,
                 operation = None,
                 argMap: Dict[str, str] = {},
-                windows: List[ttypes.Window] = []) -> ttypes.Aggregation:
+                windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation else Operation.LAST
     assert(inputColumn or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")

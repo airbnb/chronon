@@ -2,8 +2,9 @@ package ai.zipline.api
 
 import ai.zipline.api.DataModel._
 import ai.zipline.api.Operation._
-
 import scala.collection.JavaConverters._
+
+import org.apache.thrift
 
 object Extensions {
 
@@ -129,6 +130,11 @@ object Extensions {
 
     def hasWindows: Boolean = aggregations.exists(_.windows != null)
     def needsTimestamp: Boolean = hasWindows || hasTimedAggregations
+    def allWindowsOpt: Option[Seq[Window]] = Option(aggregations).map { aggs =>
+      aggs.flatMap { agg =>
+        Option(agg.windows).map(_.asScala).getOrElse(Seq(null))
+      }
+    }
   }
 
   implicit class SourceOps(source: Source) {
@@ -161,13 +167,11 @@ object Extensions {
 
   implicit class GroupByOps(groupBy: GroupBy) {
     def maxWindow: Option[Window] = {
-      val aggs = Option(groupBy.aggregations).map(_.asScala).orNull
-      val windowsFlattened = Option(aggs).map(_.flatMap(_.windows.asScala)).getOrElse(Seq.empty)
-      if (aggs == null) None // no-agg
-      else if (aggs.exists(_.windows == null)) None // agg without windows
-      else if (windowsFlattened.isEmpty || windowsFlattened.contains(null))
-        None // at least one of the windows is null - meaning unwindowed
-      else Some(windowsFlattened.maxBy(_.millis)) // no null windows
+      val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.allWindowsOpt)
+      allWindowsOpt.flatMap{ windows =>
+        if (windows.contains(null)) None
+        else Some(windows.maxBy(_.millis))
+      }
     }
 
     def dataModel: DataModel = {
