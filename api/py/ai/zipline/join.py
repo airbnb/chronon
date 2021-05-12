@@ -12,9 +12,9 @@ logging.basicConfig(level=logging.INFO)
 
 
 def JoinPart(group_by: api.GroupBy,
-              key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
-              prefix: str = None  # all aggregations will be prefixed with that name
-              ) -> api.JoinPart:
+             key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
+             prefix: str = None  # all aggregations will be prefixed with that name
+             ) -> api.JoinPart:
     # used for reset for next run
     import_copy = __builtins__['__import__']
     # get group_by's module info from garbage collector

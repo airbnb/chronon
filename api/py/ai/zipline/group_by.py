@@ -102,10 +102,10 @@ Keys {unselected_keys}, are unselected in source
 
 
 def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
-             keys: List[str],
-             aggregations: Optional[List[ttypes.Aggregation]],
-             online: bool = DEFAULT_ONLINE,
-             production: bool = DEFAULT_PRODUCTION) -> ttypes.GroupBy:
+            keys: List[str],
+            aggregations: Optional[List[ttypes.Aggregation]],
+            online: bool = DEFAULT_ONLINE,
+            production: bool = DEFAULT_PRODUCTION) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
