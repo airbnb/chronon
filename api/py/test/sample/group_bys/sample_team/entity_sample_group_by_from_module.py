@@ -2,10 +2,10 @@
 Sample group by
 """
 from ai.zipline.api import ttypes as api
-from ai.zipline.group_by import GroupBy
+from ai.zipline.group_by import group_by
 
 
-v1 = GroupBy(
+v1 = group_by(
     sources=api.Source(
         entities=api.EntitySource(
             snapshotTable="sample_table.sample_entity_snapshot",

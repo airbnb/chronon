@@ -1,7 +1,7 @@
 """
 Module for testing code paths not covered in normal compile.
 """
-from ai.zipline import group_by
+from ai.zipline import group_by, query
 from ai.zipline.api import ttypes
 
 import pytest
@@ -55,24 +55,7 @@ def test_select():
     """
     Test select builder
     """
-    assert group_by.Select('subject', event="event_expr") == {"subject": "subject", "event": "event_expr"}
-
-
-def test_aggregation_util(sum_op):
-    """
-    Test aggregation util to fill values.
-    """
-    agg = ttypes.Aggregation(
-        operation=sum_op,
-    )
-    filled = group_by.Aggregations(event=agg)
-    # Note it actually mutates the input
-    assert agg.inputColumn == 'event'
-    assert filled[0].inputColumn == 'event'
-    agg = ttypes.Aggregation()
-    pre_op = agg.operation
-    filled = group_by.Aggregations(event=agg)
-    assert agg.inputColumn == 'event' and agg.operation != pre_op
+    assert query.select('subject', event="event_expr") == {"subject": "subject", "event": "event_expr"}
 
 
 def test_contains_windowed_aggregation(sum_op, min_op, days_unit):

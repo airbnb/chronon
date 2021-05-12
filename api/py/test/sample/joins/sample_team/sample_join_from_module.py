@@ -2,7 +2,7 @@
 Sample Join
 """
 from ai.zipline.api import ttypes as api
-from ai.zipline.join import Join, JoinPart
+from ai.zipline.join import join, join_part
 from ai.zipline.utils import get_staging_query_output_table_name
 from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import (
@@ -11,7 +11,7 @@ from group_bys.sample_team import (
 )
 
 
-v1 = Join(
+v1 = join(
     left = api.Source(
         events=api.EventSource(
             table="sample_namespace.sample_table",
@@ -25,14 +25,14 @@ v1 = Join(
             ),
         ),
     ),
-    rightParts=[
-        JoinPart(
+    right_parts=[
+        join_part(
             group_by=sample_group_by_from_module.v1,
-            keyMapping={'subject': 'group_by_subject'},
+            key_mapping={'subject': 'group_by_subject'},
         ),
-        JoinPart(
+        join_part(
             group_by=entity_sample_group_by_from_module.v1,
-            keyMapping={'subject': 'group_by_subject'},
+            key_mapping={'subject': 'group_by_subject'},
         )
     ],
     additional_args={
