@@ -11,7 +11,7 @@ from typing import List, Dict
 logging.basicConfig(level=logging.INFO)
 
 
-def join_part(group_by: api.GroupBy,
+def JoinPart(group_by: api.GroupBy,
               key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
               prefix: str = None  # all aggregations will be prefixed with that name
               ) -> api.JoinPart:
@@ -43,7 +43,7 @@ def join_part(group_by: api.GroupBy,
     return join_part
 
 
-def join(left: api.Source,
+def Join(left: api.Source,
          right_parts: List[api.JoinPart],
          check_consistency: bool = False,
          additional_args: List[str] = None,

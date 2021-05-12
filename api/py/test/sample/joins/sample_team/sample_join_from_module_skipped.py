@@ -2,7 +2,7 @@
 Sample Non Production Join
 """
 from ai.zipline.api import ttypes as api
-from ai.zipline.join import join, join_part
+from ai.zipline.join import Join, JoinPart
 from ai.zipline.utils import get_staging_query_output_table_name
 from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import (
@@ -10,7 +10,7 @@ from group_bys.sample_team import (
 )
 
 
-v1 = join(
+v1 = Join(
     left = api.Source(
         events=api.EventSource(
             table="sample_namespace.sample_table_skipped",
@@ -25,7 +25,7 @@ v1 = join(
         ),
     ),
     right_parts=[
-        join_part(
+        JoinPart(
             group_by=sample_non_prod_group_by.v1,
             key_mapping={'subject': 'group_by_subject'},
         ),

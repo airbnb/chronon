@@ -45,7 +45,7 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def aggregation(inputColumn: str = None,
+def Aggregation(inputColumn: str = None,
                 operation=None,
                 argMap: Dict[str, str] = {},
                 windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
@@ -55,7 +55,7 @@ def aggregation(inputColumn: str = None,
     return ttypes.Aggregation(inputColumn, operation, argMap, windows)
 
 
-def window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
+def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
@@ -101,7 +101,7 @@ Keys {unselected_keys}, are unselected in source
 """
 
 
-def group_by(sources: Union[List[ttypes.Source], ttypes.Source],
+def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
              keys: List[str],
              aggregations: Optional[List[ttypes.Aggregation]],
              online: bool = DEFAULT_ONLINE,

@@ -2,10 +2,10 @@
 Sample group by
 """
 from ai.zipline.api import ttypes as api
-from ai.zipline.group_by import group_by
+from ai.zipline.group_by import GroupBy
 
 
-v1 = group_by(
+v1 = GroupBy(
     sources=[
         api.Source(
             events=api.EventSource(
