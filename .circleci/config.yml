@@ -80,7 +80,7 @@ jobs:
                   command: |
                       conda activate zipline_py
                       cd /zipline/api/py/ai/zipline
-                      flake8 --extend-ignore=W605,Q000
+                      flake8 --extend-ignore=W605,Q000,F631
 
     "Zipline Python Tests":
         executor: docker_baseimg_executor
