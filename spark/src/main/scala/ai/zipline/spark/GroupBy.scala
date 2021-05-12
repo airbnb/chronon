@@ -243,7 +243,7 @@ object GroupBy {
     assert(
       !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
         .contains(Constants.TimeColumn),
-      "Time column, \"ts\" doesn't exists, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
+        s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )

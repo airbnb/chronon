@@ -104,7 +104,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
-      println(s"right unfilled time range: $timeRange")
+      println(s"left unfilled time range: $timeRange")
       timeRange
     }
 

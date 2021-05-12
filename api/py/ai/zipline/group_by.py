@@ -1,5 +1,5 @@
 import copy
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
@@ -15,6 +15,27 @@ DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 
 
+class Operation():
+    MIN = ttypes.Operation.MIN
+    MAX = ttypes.Operation.MAX
+    FIRST = ttypes.Operation.FIRST
+    LAST = ttypes.Operation.LAST
+    APPROX_UNIQUE_COUNT = ttypes.Operation.APPROX_UNIQUE_COUNT
+    UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
+    COUNT = ttypes.Operation.COUNT
+    SUM = ttypes.Operation.SUM
+    AVERAGE = ttypes.Operation.AVERAGE
+    FIRST_K = ttypes.Operation.FIRST_K
+    LAST_K = ttypes.Operation.LAST_K
+    TOP_K = ttypes.Operation.TOP_K
+    BOTTOM_K = ttypes.Operation.BOTTOM_K
+
+
+class TimeUnit():
+    HOURS = ttypes.TimeUnit.HOURS
+    DAYS = ttypes.TimeUnit.DAYS
+
+
 def window_to_str_pretty(window: ttypes.Window):
     unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()
     return f"{window.length} {unit}"
@@ -24,28 +45,18 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def Select(*args, **kwargs):
-    args = {x: x for x in args}
-    return {**args, **kwargs}
+def Aggregation(inputColumn: str = None,
+                operation=None,
+                argMap: Dict[str, str] = {},
+                windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
+    # Default to last
+    operation = operation if operation else Operation.LAST
+    assert(inputColumn or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
+    return ttypes.Aggregation(inputColumn, operation, argMap, windows)
 
 
-def Aggregations(**kwargs):
-    """
-    fills in missing arguments of the aggregation object.
-    default operation is LAST
-    default name is {arg_name}_{operation_name}
-    default input column is {arg_name}
-    """
-    aggs = []
-    for name, aggregation in kwargs.items():
-        assert isinstance(aggregation, ttypes.Aggregation), \
-            f"argument for {name}, {aggregation} is not instance of Aggregation"
-        if not aggregation.operation:  # Default operation is last
-            aggregation.operation = ttypes.Operation.LAST
-        if not aggregation.inputColumn:  # Default input column is the variable name
-            aggregation.inputColumn = name
-        aggs.append(aggregation)
-    return aggs
+def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
+    return ttypes.Window(length, timeUnit)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -68,7 +79,7 @@ def validate_group_by(sources: List[ttypes.Source],
         query = utils.get_query(src)
         if src.events:
             assert query.mutationTimeColumn is None, "ingestionTimeColumn should not be specified for " \
-                                                      "event source as it should be the same with timeColumn"
+                "event source as it should be the same with timeColumn"
             assert query.reversalColumn is None, "reversalColumn should not be specified for event source " \
                                                  "as it won't have mutations"
         else:

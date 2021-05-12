@@ -24,10 +24,10 @@ v1 = Join(
             ),
         ),
     ),
-    rightParts=[
+    right_parts=[
         JoinPart(
             group_by=sample_non_prod_group_by.v1,
-            keyMapping={'subject': 'group_by_subject'},
+            key_mapping={'subject': 'group_by_subject'},
         ),
     ],
     online=True,

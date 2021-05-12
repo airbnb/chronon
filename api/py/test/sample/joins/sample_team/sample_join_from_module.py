@@ -25,14 +25,14 @@ v1 = Join(
             ),
         ),
     ),
-    rightParts=[
+    right_parts=[
         JoinPart(
             group_by=sample_group_by_from_module.v1,
-            keyMapping={'subject': 'group_by_subject'},
+            key_mapping={'subject': 'group_by_subject'},
         ),
         JoinPart(
             group_by=entity_sample_group_by_from_module.v1,
-            keyMapping={'subject': 'group_by_subject'},
+            key_mapping={'subject': 'group_by_subject'},
         )
     ],
     additional_args={

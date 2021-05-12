@@ -163,6 +163,10 @@ case class TableUtils(sparkSession: SparkSession) {
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
+    // Using seconds rather than milis will result in bad dates close to start of epoch, Choosing 1980 as an arbitrary cutoff date, can be modified
+    assert(
+      Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),
+      s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis")
     result
   }
 

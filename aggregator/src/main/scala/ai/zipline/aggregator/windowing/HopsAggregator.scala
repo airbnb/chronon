@@ -82,8 +82,8 @@ class HopsAggregator(minQueryTs: Long,
     extends HopsAggregatorBase(aggregations, inputSchema, resolution) {
 
   val leftBoundaries: Array[Option[Long]] = {
-    val allWindows = aggregations
-      .flatMap { agg => Option(agg.windows).map(_.asScala).getOrElse(Seq(null)) } // agg.windows = Null => "unwindowed"
+    // Nikhil is pretty confident we won't call this when aggregations is empty
+    val allWindows = aggregations.allWindowsOpt.get
       .map { window =>
         Option(window).getOrElse(WindowUtils.Unbounded)
       } // agg.windows(i) = Null => one of the windows is "unwindowed"
@@ -96,6 +96,7 @@ class HopsAggregator(minQueryTs: Long,
         .mapValues(_.map(_.millis).max)
 
     val maxHopSize = resolution.calculateTailHop(allWindows.maxBy(_.millis))
+
     val result: Array[Option[Long]] = resolution.hopSizes.indices.map { hopIndex =>
       val hopSize = resolution.hopSizes(hopIndex)
       // for windows with this hop as the tail hop size
