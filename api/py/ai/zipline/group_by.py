@@ -45,14 +45,14 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def Aggregation(inputColumn: str = None,
+def Aggregation(input_column: str = None,
                 operation=None,
-                argMap: Dict[str, str] = {},
+                arg_map: Dict[str, str] = {},
                 windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation else Operation.LAST
-    assert(inputColumn or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
-    return ttypes.Aggregation(inputColumn, operation, argMap, windows)
+    assert(input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
+    return ttypes.Aggregation(input_column, operation, arg_map, windows)
 
 
 def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
