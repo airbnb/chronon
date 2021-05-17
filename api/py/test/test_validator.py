@@ -81,13 +81,3 @@ def test_can_skip_materialize_if_not_used(zvalidator, valid_online_group_by):
     for join in list(zvalidator._get_old_joins_with_group_by(valid_online_group_by)):
         join.metaData.online = False
     assert zvalidator.can_skip_materialize(valid_online_group_by)
-
-
-def test_diff(zvalidator, valid_online_group_by):
-    different = copy.deepcopy(valid_online_group_by)
-    no_diff = zvalidator._get_diff(obj=different, old_obj=valid_online_group_by)
-    assert no_diff == ""
-    different.metaData.online = not valid_online_group_by.metaData.online
-    diff = zvalidator._get_diff(obj=different, old_obj=valid_online_group_by)
-    assert diff
-

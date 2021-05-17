@@ -99,7 +99,7 @@ def GroupBy(name: str,
             ts: str = None,
             wheres: List[str] = None,
             production: bool = False,
-            online: bool = False,
+            online: bool = None,
             topic: str = None,
             mutation_table: str = None,
             backfill: bool = False) -> api.GroupBy:

@@ -50,7 +50,7 @@ def Aggregation(input_column: str = None,
                 windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation else Operation.LAST
-    assert(input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
+    assert input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT"
     return ttypes.Aggregation(input_column, operation, arg_map, windows)
 
 
