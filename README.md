@@ -1,9 +1,8 @@
 # Publishing project fat JAR to Artifactory
 
-0. Create MVN settings file under `mvn_settings.xml`.
+0. Create MVN settings file under `mvn_settings.xml` in the repo root.
 
 ``` xml
-
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
@@ -17,6 +16,7 @@
     </servers>
 </settings>
 ```
+
 Replace `ARTIFACTORY_USERNAME` and `ARTIFACTORY_PASSWORD` with your username and API key from [Artifactory](https://artifactory.d.musta.ch/artifactory/webapp/#/profile).
 
 1. After you merge your PR, check out and pull `master` branch.
