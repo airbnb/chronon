@@ -101,17 +101,6 @@ jobs:
             - store_artifacts:
                   path: /zipline/api/py/htmlcov
 
-    "Publish Zipline JAR to Artifactory":
-        executor: docker_baseimg_executor
-        steps:
-            - <<: *early_exit_for_release_prs
-            - checkout
-            - run:
-                name: Run sbt publish
-                command: |
-                      sed -i -e "s/<username>/${ARTIFACTORY_USERNAME}/g" -e "s/<password>/${ARTIFACTORY_PASSWORD}/g" /zipline/artifactory_credentials.properties
-                      sbt publish
-
 workflows:
     build_test_deploy:
         jobs:
@@ -137,11 +126,3 @@ workflows:
                   filters:
                       tags:
                           ignore: /^release-zl-.*/
-            - "Publish Zipline JAR to Artifactory":
-                  requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          only: /^release-zl.*/
-                      branches:
-                          ignore: /.*/
