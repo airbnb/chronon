@@ -104,20 +104,6 @@ python ~/repos/ml_models/zipline/joins/new_algo/search_benchmarks.py > ~/bench3_
 scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
 ```
 
-### Pushing the JAR to artifactory
-
-- Switch to master branch.
-- Tag your change.
-
-``` shell
-git tag -a -m 'new release' release-zl-0.0.2
-```
-- Push the tag to artifactory
-
-``` shell
- git push origin release-zl-0.0.2
-```
-
 ### Install specific version of thrift
 ```
 brew tap-new $USER/local-thrift
@@ -127,3 +113,48 @@ brew install thrift@0.13.0
 
 Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
 
+
+# Publishing project fat JAR to Artifactory
+
+0. Create MVN settings file under `mvn_settings.xml` in the repo root.
+
+``` xml
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                          https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <servers>
+        <server>
+            <id>airbnb</id>
+            <username>ARTIFACTORY_USERNAME</username>
+            <password>ARTIFACTORY_PASSWORD</password>
+        </server>
+    </servers>
+</settings>
+```
+
+Replace `ARTIFACTORY_USERNAME` and `ARTIFACTORY_PASSWORD` with your username and API key from [Artifactory](https://artifactory.d.musta.ch/artifactory/webapp/#/profile).
+
+1. After you merge your PR, check out and pull `master` branch.
+2. Create a tag named `release-zl-X.X.X`. Check `git tag` to find out the next version.
+
+``` shell
+git tag -a -m '<tag message>' release-zl-X.X.X
+```
+
+3. Publish to artifactory
+
+``` shell
+./push_to_artifactory.sh
+```
+
+# Publishing python project to PYPI
+
+1. After you merge your PR, check out and pull `master` branch.
+2. Create a tag named `release-zl-py-X.X.X`. Check `git tag` to find out the next version.
+
+``` shell
+git tag -a -m '<tag message>' release-zl-py-X.X.X
+```
+
+3. Push the tag to CircleCI. It will build the wheel and push it to `zipline-ai-dev` pacakge.

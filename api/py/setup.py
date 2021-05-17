@@ -1,5 +1,8 @@
-from setuptools import find_packages, setup
+import os
+import sys
 
+from setuptools import find_packages, setup
+from setuptools.command.install import install
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -20,10 +23,12 @@ class VerifyVersionCommand(install):
 
     def run(self):
         tag = os.getenv('CIRCLE_TAG')
+        if not tag:
+            sys.exit("Git tag does not exist.")
         tag_version = tag.split('-')[-1]
-        if tag_version != VERSION:
+        if tag_version != __version__:
             info = "Git tag version: {0} does not match the version of this app: {1}".format(
-                tag_version, VERSION
+                tag_version, __version__
             )
             sys.exit(info)
 

@@ -108,13 +108,9 @@ jobs:
             - setup_remote_docker:
                 docker_layer_caching: true
             - run:
-                name: Install twine
-                command: |
-                  conda activate zipline_py
-                  python -m pip install --user --upgrade twine
-            - run:
                 name: Verify git tag vs. version
                 command: |
+                  conda init bash
                   conda activate zipline_py
                   cd /zipline/api/py
                   python setup.py verify
@@ -158,8 +154,3 @@ workflows:
             - "Publish Zipline Python package to PyPI":
                   requires:
                       - "Docker Base Build"
-                  filters:
-                      tags:
-                          only: /^zl-py-.*/
-                      branches:
-                          ignore: /.*/
