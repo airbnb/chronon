@@ -101,7 +101,8 @@ def GroupBy(name: str,
             production: bool = False,
             online: bool = False,
             topic: str = None,
-            mutation_table: str = None) -> api.GroupBy:
+            mutation_table: str = None,
+            backfill: bool = False) -> api.GroupBy:
     assert (aggs is None) ^ (selects is None), "specity only one of aggs or selects"
     final_selects = selects
     aggregations = None
@@ -142,5 +143,6 @@ def GroupBy(name: str,
                               team=team),
         sources=[source],
         keyColumns=key_selects.keys(),
-        aggregations=aggregations
+        aggregations=aggregations,
+        backfill=backfill
     )

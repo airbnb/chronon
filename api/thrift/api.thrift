@@ -117,6 +117,9 @@ struct GroupBy {
     // we assume the source is already grouped by keys
     4: optional list<Aggregation> aggregations
     5: optional Accuracy accuracy
+    // enable backfill for group by offline jobs
+    // distinguish group by backfill with batch upload jobs
+    6: optional bool backfill
 }
 
 struct AggregationSelector {

@@ -85,13 +85,12 @@ class ZiplineRepoValidator(object):
         """
         reasons = []
         if isinstance(obj, GroupBy):
-            # GroupBys explicitly marked as offline should not be materialized.
-            if obj.metaData.online is False and obj.metaData.production is False:
-                reasons.append("is explicitly marked as offline")
+            if obj.metaData.online is False and obj.metaData.production is False and not obj.backfill:
+                reasons.append("GroupBys should not be materialized if batch upload job is not needed")
             # Otherwise group_bys included in online join or are marked explicitly
             # online itself are materialized.
             elif not any(join.metaData.online for join in self._get_old_joins_with_group_by(obj)) \
-                    and not obj.metaData.online and not obj.metaData.production:
+                    and not obj.metaData.online and not obj.metaData.production and not obj.backfill:
                 reasons.append("is not marked online/production nor is included in any online join")
         return reasons
 
