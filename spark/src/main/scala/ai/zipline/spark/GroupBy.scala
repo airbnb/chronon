@@ -325,7 +325,7 @@ object GroupBy {
     query
   }
 
-  def computeBackfill(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils): Unit = {
+  def computeBackfill(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): Unit = {
     val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
@@ -337,13 +337,24 @@ object GroupBy {
     val groupByUnfilledRange: PartitionRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
-
-    val groupByBackfill = from(groupByConf, groupByUnfilledRange, tableUtils)
-    (groupByConf.dataModel match {
-      // group by backfills have to be snapshot only
-      case Entities => groupByBackfill.snapshotEntities
-      case Events   => groupByBackfill.snapshotEvents(groupByUnfilledRange)
-    }).save(outputTable, tableProps)
+    val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
+    println(s"Group By ranges to compute: ${
+      stepRanges.map {
+        _.toString
+      }.pretty
+    }")
+    stepRanges.zipWithIndex.foreach {
+      case (range, index) =>
+        val progress = s"| [${index + 1}/${stepRanges.size}]"
+        println(s"Computing group by for range: $range $progress")
+        val groupByBackfill = from(groupByConf, range, tableUtils)
+        (groupByConf.dataModel match {
+          // group by backfills have to be snapshot only
+          case Entities => groupByBackfill.snapshotEntities
+          case Events   => groupByBackfill.snapshotEvents(range)
+        }).save(outputTable, tableProps)
+        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+    }
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
   }
 
@@ -353,6 +364,8 @@ object GroupBy {
       opt[String](required = true, descr = "Absolute Path to TSimpleJson serialized GroupBy object")
     val endDate: ScallopOption[String] =
       opt[String](required = true, descr = "End date / end partition for computing groupBy")
+    val stepDays: ScallopOption[Int] =
+      opt[Int](required = false, descr = "Max number of days to compute at a time.")
     verify()
     def groupByConf =
       ThriftJsonCodec.fromJsonFile[GroupByConf](confPath(), check = true, clazz = classOf[GroupByConf])
@@ -364,7 +377,8 @@ object GroupBy {
     computeBackfill(
       parsedArgs.groupByConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${parsedArgs.groupByConf.metaData.name}_backfill"))
+      TableUtils(SparkSessionBuilder.build(s"groupBy_${parsedArgs.groupByConf.metaData.name}_backfill")),
+      parsedArgs.stepDays.toOption
     )
   }
 }
