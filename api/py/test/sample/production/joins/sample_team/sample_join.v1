@@ -60,7 +60,8 @@
             "inputColumn": "viewed_unique_count_1d",
             "operation": 7
           }
-        ]
+        ],
+        "backfill": 0
       }
     }
   ]

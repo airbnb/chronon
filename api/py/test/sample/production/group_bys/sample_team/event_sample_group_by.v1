@@ -39,5 +39,6 @@
       "inputColumn": "event",
       "operation": 7
     }
-  ]
+  ],
+  "backfill": 0
 }

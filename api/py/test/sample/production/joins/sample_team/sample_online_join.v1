@@ -68,7 +68,8 @@
             "inputColumn": "event",
             "operation": 7
           }
-        ]
+        ],
+        "backfill": 0
       },
       "keyMapping": {
         "subject": "group_by_subject"
@@ -119,7 +120,8 @@
       },
       "keyMapping": {
         "subject": "group_by_subject"
-      }
+      },
+      "backfill": 0
     }
   ]
 }

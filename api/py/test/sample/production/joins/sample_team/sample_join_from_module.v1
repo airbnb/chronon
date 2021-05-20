@@ -86,7 +86,8 @@
       },
       "keyMapping": {
         "subject": "group_by_subject"
-      }
+      },
+      "backfill": 0
     },
     {
       "groupBy": {
@@ -133,7 +134,8 @@
       },
       "keyMapping": {
         "subject": "group_by_subject"
-      }
+      },
+      "backfill": 0
     }
   ]
 }
