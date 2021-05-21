@@ -37,7 +37,7 @@ def extract_json_confs(obj_class: type, path: str):
 
 
 def is_batch_upload_needed(group_by: GroupBy) -> bool:
-    if group_by.metaData.online is False and group_by.metaData.production is False\
+    if group_by.metaData.online is False and group_by.metaData.production is False \
             and group_by.metaData.backfill is False:
         return False
     else:
@@ -197,13 +197,11 @@ Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
         non_prod_old_group_bys = [group_by.metaData.name for group_by in old_group_bys
                                   if group_by.metaData.production is False]
         if join.metaData.production and non_prod_old_group_bys:
-            errors.append("join {} is production but includes "
-                          "the following non production group_bys: {}".format(
+            errors.append("join {} is production but includes the following non production group_bys: {}".format(
                 join.metaData.name, ', '.join(non_prod_old_group_bys)))
         if join.metaData.online:
             if offline_included_group_bys:
-                errors.append("join {} is online but includes "
-                              "the following offline group_bys: {}".format(
+                errors.append("join {} is online but includes the following offline group_bys: {}".format(
                     join.metaData.name, ', '.join(offline_included_group_bys)))
             # If join is online we materialize the underlying group bys are materialized
             # So we need to check if they are valid.
@@ -238,9 +236,10 @@ Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
         self.logger.debug(self.old_joins)
         if prod_joins:
             if group_by.metaData.production is False:
-                errors.append("group_by {} is explicitly marked as non-production "
-                              "but included in the following production joins: {}".format(
-                    group_by.metaData.name, ', '.join(prod_joins)))
+                errors.append(
+                    "group_by {} is explicitly marked as non-production but included in the following production "
+                    "joins: {}".format(
+                        group_by.metaData.name, ', '.join(prod_joins)))
             # if the group by is included in any of materialized production join,
             # set it to production in the materialized output.
             else:
