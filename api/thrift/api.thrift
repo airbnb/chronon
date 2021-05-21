@@ -104,39 +104,6 @@ enum Accuracy {
     SNAPSHOT = 1
 }
 
-// Equivalent to a FeatureSet in zipline terms
-struct GroupBy {
-    1: optional MetaData metaData
-    // CONDITION: all sources select the same columns
-    // source[i].select.keys() == source[0].select.keys()
-    2: optional list<Source> sources
-    // CONDITION: all keyColumns are selected by each of the
-    // set(sources[0].select.keys()) <= set(keyColumns)
-    3: optional list<string> keyColumns
-    // when aggregations are not specified,
-    // we assume the source is already grouped by keys
-    4: optional list<Aggregation> aggregations
-    5: optional Accuracy accuracy
-    // enable backfill for group by offline jobs
-    // distinguish group by backfill with batch upload jobs
-    6: optional bool backfill
-}
-
-struct AggregationSelector {
-  1: optional string name
-  2: optional list<Window> windows
-}
-
-
-
-struct JoinPart {
-    1: optional GroupBy groupBy
-    2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors
-    4: optional string prefix
-
-}
-
 struct MetaData {
     1: optional string name
     // marking this as true means that the conf can be served online
@@ -152,12 +119,39 @@ struct MetaData {
     7: optional string outputNamespace
     // team name for the job
     8: optional string team
+    9: optional bool backfill
 }
 
+// Equivalent to a FeatureSet in zipline terms
+struct GroupBy {
+    1: optional MetaData metaData = {"backfill": false}
+    // CONDITION: all sources select the same columns
+    // source[i].select.keys() == source[0].select.keys()
+    2: optional list<Source> sources
+    // CONDITION: all keyColumns are selected by each of the
+    // set(sources[0].select.keys()) <= set(keyColumns)
+    3: optional list<string> keyColumns
+    // when aggregations are not specified,
+    // we assume the source is already grouped by keys
+    4: optional list<Aggregation> aggregations
+    5: optional Accuracy accuracy
+}
+
+struct AggregationSelector {
+  1: optional string name
+  2: optional list<Window> windows
+}
+
+struct JoinPart {
+    1: optional GroupBy groupBy
+    2: optional map<string, string> keyMapping
+    3: optional list<AggregationSelector> selectors
+    4: optional string prefix
+}
 
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
-    1: optional MetaData metaData
+    1: optional MetaData metaData = {"backfill":true}
     2: optional Source left
     3: list<JoinPart> joinParts
     // map of left key column name and values representing the skew keys
