@@ -37,8 +37,8 @@ def extract_json_confs(obj_class: type, path: str):
 
 
 def is_batch_upload_needed(group_by: GroupBy) -> bool:
-    if group_by.metaData.online is False and group_by.metaData.production is False \
-            and group_by.metaData.backfill is False:
+    if not group_by.metaData.online and not group_by.metaData.production \
+            and not group_by.metaData.backfill:
         return False
     else:
         return True
