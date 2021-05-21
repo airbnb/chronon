@@ -48,6 +48,7 @@ def Join(left: api.Source,
          check_consistency: bool = False,
          additional_args: List[str] = None,
          additional_env: List[str] = None,
+         dependencies: List[str] = None,
          online: bool = False,
          production: bool = False,
          backfill: bool = True) -> api.Join:
@@ -88,7 +89,13 @@ def Join(left: api.Source,
     if additional_env:
         customJson["additional_env"] = additional_env
 
-    metadata = api.MetaData(online=online, production=production, customJson=json.dumps(customJson), backfill=backfill)
+    metadata = api.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(customJson),
+        dependencies=dependencies,
+        backfill=backfill,
+    )
 
     return api.Join(
         left=updated_left,
