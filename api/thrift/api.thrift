@@ -119,11 +119,13 @@ struct MetaData {
     7: optional string outputNamespace
     // team name for the job
     8: optional string team
-    9: optional bool backfill
+    // enable backfill or not for offline jobs
+    9: optional bool backfill = true
 }
 
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
+    // user has to enable group by backfill explicitly
     1: optional MetaData metaData = {"backfill": false}
     // CONDITION: all sources select the same columns
     // source[i].select.keys() == source[0].select.keys()
@@ -151,7 +153,7 @@ struct JoinPart {
 
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
-    1: optional MetaData metaData = {"backfill":true}
+    1: optional MetaData metaData
     2: optional Source left
     3: list<JoinPart> joinParts
     // map of left key column name and values representing the skew keys
