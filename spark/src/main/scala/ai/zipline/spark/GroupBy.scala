@@ -338,22 +338,17 @@ object GroupBy {
       tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
     val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-    println(s"Group By ranges to compute: ${
-      stepRanges.map {
-        _.toString
-      }.pretty
-    }")
+    println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
-        val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing group by for range: $range $progress")
+        println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
         val groupByBackfill = from(groupByConf, range, tableUtils)
         (groupByConf.dataModel match {
           // group by backfills have to be snapshot only
           case Entities => groupByBackfill.snapshotEntities
           case Events   => groupByBackfill.snapshotEvents(range)
         }).save(outputTable, tableProps)
-        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+        println(s"Wrote to table $outputTable, into partitions: $range")
     }
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
   }

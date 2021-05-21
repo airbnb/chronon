@@ -175,54 +175,45 @@ class GroupByTest {
     val startPartition = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
     val endPartition = Constants.Partition.at(System.currentTimeMillis())
     val tableUtils = TableUtils(spark)
-    val stepsSchema = List(
+    val sourceSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
       Column("time_spent_ms", LongType, 5000)
     )
     val namespace = "test_steps"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-    val stepsTable = s"$namespace.test_group_by_steps"
-    val stepsName = "unit_test_item_views"
-    val noStepsName = "unit_test_item_views_no_steps"
+    val sourceTable = s"$namespace.test_group_by_steps"
     val testSteps = Option(30)
-    DataFrameGen.events(spark, stepsSchema, count = 1000, partitions = 200).save(stepsTable)
-    val stepsSource = Builders.Source.events(
+
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
+    val source = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition=startPartition),
-      table = stepsTable
-    )
-    val testedAggregations = Seq(
-      Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-      Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
-      Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-    )
-    val stepsGroupBy = Builders.GroupBy(
-      sources = Seq(stepsSource),
-      keyColumns = Seq("item"),
-      aggregations = testedAggregations,
-      metaData = Builders.MetaData(name = stepsName, namespace = namespace, team = "zipline")
-    )
-    val noStepsGroupBy = Builders.GroupBy(
-      sources = Seq(stepsSource),
-      keyColumns = Seq("item"),
-      aggregations = testedAggregations,
-      metaData = Builders.MetaData(name = noStepsName, namespace = namespace, team = "zipline")
+      table = sourceTable
     )
 
-    val computed_with_steps = GroupBy.computeBackfill(
-      stepsGroupBy,
-      endPartition = endPartition,
-      tableUtils = tableUtils,
-      stepDays = Option(30)
-    )
-    val computed_without_steps = GroupBy.computeBackfill(
-      noStepsGroupBy,
-      endPartition = endPartition,
-      tableUtils = tableUtils
-    )
+    def backfill(name: String, stepDays: Option[Int] = None): String = {
+      val groupBy = Builders.GroupBy(
+        sources = Seq(source),
+        keyColumns = Seq("item"),
+        aggregations = Seq(
+          Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+          Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        ),
+        metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
+      )
+
+      GroupBy.computeBackfill(
+        groupBy,
+        endPartition = endPartition,
+        tableUtils = tableUtils,
+        stepDays = stepDays
+      )
+      s"$namespace.$name"
+    }
     val diff = Comparison.sideBySide(
-      tableUtils.sql(s"SELECT * FROM $namespace.$noStepsName"),
-      tableUtils.sql(s"SELECT * FROM $namespace.$stepsName"),
+      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_steps", testSteps)}"),
+      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_no_steps")}"),
       List("item", Constants.PartitionColumn)
     )
     assertEquals(diff.count(), 0)
