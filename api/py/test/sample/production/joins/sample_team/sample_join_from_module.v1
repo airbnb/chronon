@@ -1,0 +1,142 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_join_from_module.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}}",
+    "tableProperties": {
+      "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+    },
+    "outputNamespace": "sample_team_namespace",
+    "team": "sample_team",
+    "backfill": 1
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table",
+      "query": {
+        "selects": {
+          "subject": "subject_expr",
+          "event": "event_expr",
+          "ts": "UNIX_TIMESTAMP(ts) * 1000"
+        },
+        "startPartition": "2021-03-01",
+        "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.sample_group_by_from_module.v1",
+          "team": "sample_team",
+          "backfill": 1
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "group_by_subject": "group_by_subject_expr",
+                  "event": "event_expr",
+                  "ts": "UNIX_TIMESTAMP(ts) * 1000"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
+                "setups": []
+              }
+            }
+          },
+          {
+            "events": {
+              "table": "sample_namespace.another_sample_table_group_by",
+              "query": {
+                "selects": {
+                  "group_by_subject": "possibly_different_group_by_subject_expr",
+                  "event": "possibly_different_event_expr",
+                  "ts": "UNIX_TIMESTAMP(ts) * 1000"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7
+          },
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "team": "sample_team",
+          "backfill": 1
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "sample_table.sample_entity_snapshot",
+              "query": {
+                "selects": {
+                  "group_by_subject": "group_by_subject_expr",
+                  "entity": "entity_expr",
+                  "ts": "ts"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "ts",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "entity",
+            "operation": 3
+          },
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ]
+}

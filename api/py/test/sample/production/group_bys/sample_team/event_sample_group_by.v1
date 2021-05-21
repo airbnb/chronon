@@ -1,0 +1,44 @@
+{
+  "metaData": {
+    "name": "sample_team.event_sample_group_by.v1",
+    "online": 1,
+    "production": 0,
+    "outputNamespace": "sample_namespace",
+    "team": "sample_team",
+    "backfill": 0
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "sample_namespace.sample_table_group_by",
+        "query": {
+          "selects": {
+            "event": "event_expr",
+            "group_by_subject": "group_by_expr"
+          },
+          "startPartition": "2021-04-09",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "group_by_subject"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "event",
+      "operation": 7,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "event",
+      "operation": 7
+    }
+  ]
+}

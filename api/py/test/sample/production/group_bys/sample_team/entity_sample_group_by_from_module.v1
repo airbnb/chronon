@@ -1,0 +1,43 @@
+{
+  "metaData": {
+    "name": "sample_team.entity_sample_group_by_from_module.v1",
+    "team": "sample_team",
+    "backfill": 1
+  },
+  "sources": [
+    {
+      "entities": {
+        "snapshotTable": "sample_table.sample_entity_snapshot",
+        "query": {
+          "selects": {
+            "group_by_subject": "group_by_subject_expr",
+            "entity": "entity_expr",
+            "ts": "ts"
+          },
+          "startPartition": "2021-03-01",
+          "timeColumn": "ts",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "group_by_subject"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "entity",
+      "operation": 3
+    },
+    {
+      "inputColumn": "entity",
+      "operation": 3,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    }
+  ]
+}
