@@ -83,6 +83,9 @@ def Join(left: api.Source,
         "check_consistency": check_consistency
     }
 
+    if not dependencies:
+        dependencies = ['{}/{}'.format(utils.get_table(left), 'ds={{ ds }}')]
+
     if additional_args:
         customJson["additional_args"] = additional_args
 
