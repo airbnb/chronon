@@ -197,7 +197,10 @@ class GroupByTest {
         keyColumns = Seq("item"),
         aggregations = Seq(
           Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts", windows = Seq(
+            new Window(15, TimeUnit.DAYS),
+            new Window(60, TimeUnit.DAYS)
+          )),
           Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
         ),
         metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
