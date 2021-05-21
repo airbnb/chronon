@@ -120,13 +120,12 @@ struct MetaData {
     // team name for the job
     8: optional string team
     // enable backfill or not for offline jobs
-    9: optional bool backfill = true
+    9: optional bool backfill
 }
 
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
-    // user has to enable group by backfill explicitly
-    1: optional MetaData metaData = {"backfill": false}
+    1: optional MetaData metaData
     // CONDITION: all sources select the same columns
     // source[i].select.keys() == source[0].select.keys()
     2: optional list<Source> sources

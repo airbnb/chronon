@@ -5,8 +5,7 @@
       "config_json": "{\"sample_key\": \"sample_value\"}"
     },
     "outputNamespace": "sample_namespace",
-    "team": "sample_team",
-    "backfill": 1
+    "team": "sample_team"
   },
   "left": {
     "entities": {

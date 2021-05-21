@@ -1,0 +1,18 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_staging_query.v1",
+    "dependencies": [
+      "sample_namespace.sample_table/ds={{ ds }}"
+    ],
+    "tableProperties": {
+      "sample_config_json": "{\"sample_key\": \"sample value}"
+    },
+    "outputNamespace": "sample_namespace",
+    "team": "sample_team"
+  },
+  "query": "\nSELECT\n    id_listing,\n    place_id,\n    S2_CELL(lat, lng, 12) AS s2CellId,\n    impressed_unique_count_1d,\n    viewed_unique_count_1d,\n    ds\nFROM sample_namespace.sample_table\nWHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'\n",
+  "startPartition": "2020-03-01",
+  "setups": [
+    "CREATE TEMPORARY FUNCTION S2_CELL AS 'com.sample.hive.udf.S2CellId'"
+  ]
+}
