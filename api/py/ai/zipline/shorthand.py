@@ -140,9 +140,9 @@ def GroupBy(name: str,
                               online=online,
                               tableProperties=tableProperties,
                               outputNamespace=outputNamespace,
-                              team=team),
+                              team=team,
+                              backfill=backfill),
         sources=[source],
         keyColumns=key_selects.keys(),
-        aggregations=aggregations,
-        backfill=backfill
+        aggregations=aggregations
     )

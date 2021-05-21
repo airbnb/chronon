@@ -4,7 +4,8 @@
     "online": 1,
     "production": 0,
     "outputNamespace": "sample_namespace",
-    "team": "sample_team"
+    "team": "sample_team",
+    "backfill": 0
   },
   "sources": [
     {
@@ -39,6 +40,5 @@
       "inputColumn": "event",
       "operation": 7
     }
-  ],
-  "backfill": 0
+  ]
 }

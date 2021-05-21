@@ -8,7 +8,8 @@
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
     },
     "outputNamespace": "sample_team_namespace",
-    "team": "sample_team"
+    "team": "sample_team",
+    "backfill": 1
   },
   "left": {
     "events": {
@@ -33,7 +34,8 @@
           "online": 1,
           "production": 0,
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "backfill": 0
         },
         "sources": [
           {
@@ -68,8 +70,7 @@
             "inputColumn": "event",
             "operation": 7
           }
-        ],
-        "backfill": 0
+        ]
       },
       "keyMapping": {
         "subject": "group_by_subject"
@@ -120,8 +121,7 @@
       },
       "keyMapping": {
         "subject": "group_by_subject"
-      },
-      "backfill": 0
+      }
     }
   ]
 }

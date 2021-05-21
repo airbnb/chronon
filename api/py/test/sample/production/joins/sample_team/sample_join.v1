@@ -5,7 +5,8 @@
       "config_json": "{\"sample_key\": \"sample_value\"}"
     },
     "outputNamespace": "sample_namespace",
-    "team": "sample_team"
+    "team": "sample_team",
+    "backfill": 1
   },
   "left": {
     "entities": {
@@ -28,7 +29,8 @@
             "description": "sample description"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "backfill": 0
         },
         "sources": [
           {
@@ -60,8 +62,7 @@
             "inputColumn": "viewed_unique_count_1d",
             "operation": 7
           }
-        ],
-        "backfill": 0
+        ]
       }
     }
   ]
