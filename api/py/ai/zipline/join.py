@@ -50,7 +50,7 @@ def Join(left: api.Source,
          additional_env: List[str] = None,
          online: bool = False,
          production: bool = False,
-         backfill = True) -> api.Join:
+         backfill: bool = True) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
