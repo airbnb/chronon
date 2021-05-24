@@ -5,7 +5,7 @@
     "production": 0,
     "customJson": "{\"check_consistency\": false}",
     "dependencies": [
-      "sample_namespace.sample_table/ds={{ ds }}"
+      "sample_namespace.sample_table_v2/ds={{ ds }}"
     ],
     "tableProperties": {
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
