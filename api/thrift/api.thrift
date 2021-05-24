@@ -104,6 +104,25 @@ enum Accuracy {
     SNAPSHOT = 1
 }
 
+struct MetaData {
+    1: optional string name
+    // marking this as true means that the conf can be served online
+    // once marked online, a conf cannot be changed - compiling the conf won't be allowed
+    2: optional bool online
+    // marking this as true means that the conf automatically generates a staging copy
+    // this flag is also meant to help a monitoring system re-direct alerts appropriately
+    3: optional bool production
+    4: optional string customJson
+    5: optional list<string> dependencies
+    6: optional map<string, string> tableProperties
+    // todo: add sanity check in materialize script
+    7: optional string outputNamespace
+    // team name for the job
+    8: optional string team
+    // enable backfill or not for offline jobs
+    9: optional bool backfill
+}
+
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
     1: optional MetaData metaData
@@ -124,33 +143,12 @@ struct AggregationSelector {
   2: optional list<Window> windows
 }
 
-
-
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
     3: optional list<AggregationSelector> selectors
     4: optional string prefix
-
 }
-
-struct MetaData {
-    1: optional string name
-    // marking this as true means that the conf can be served online
-    // once marked online, a conf cannot be changed - compiling the conf won't be allowed
-    2: optional bool online
-    // marking this as true means that the conf automatically generates a staging copy
-    // this flag is also meant to help a monitoring system re-direct alerts appropriately
-    3: optional bool production
-    4: optional string customJson
-    5: optional list<string> dependencies
-    6: optional map<string, string> tableProperties
-    // todo: add sanity check in materialize script
-    7: optional string outputNamespace
-    // team name for the job
-    8: optional string team
-}
-
 
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {

@@ -36,6 +36,14 @@ def extract_json_confs(obj_class: type, path: str):
     return result
 
 
+def is_batch_upload_needed(group_by: GroupBy) -> bool:
+    if not group_by.metaData.online and not group_by.metaData.production \
+            and not group_by.metaData.backfill:
+        return False
+    else:
+        return True
+
+
 class ZiplineRepoValidator(object):
     def __init__(self, zipline_root_path: str, output_root: str, log_level=logging.INFO):
         self.logger = get_logger(log_level)
@@ -85,13 +93,12 @@ class ZiplineRepoValidator(object):
         """
         reasons = []
         if isinstance(obj, GroupBy):
-            # GroupBys explicitly marked as offline should not be materialized.
-            if obj.metaData.online is False and obj.metaData.production is False:
-                reasons.append("is explicitly marked as offline")
+            if not is_batch_upload_needed(obj):
+                reasons.append("GroupBys should not be materialized if batch upload job is not needed")
             # Otherwise group_bys included in online join or are marked explicitly
             # online itself are materialized.
             elif not any(join.metaData.online for join in self._get_old_joins_with_group_by(obj)) \
-                    and not obj.metaData.online and not obj.metaData.production:
+                    and not is_batch_upload_needed(obj):
                 reasons.append("is not marked online/production nor is included in any online join")
         return reasons
 
@@ -190,14 +197,12 @@ Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
         non_prod_old_group_bys = [group_by.metaData.name for group_by in old_group_bys
                                   if group_by.metaData.production is False]
         if join.metaData.production and non_prod_old_group_bys:
-            errors.append("join {} is production but includes "
-                          "the following non production group_bys: {}".format(
-                              join.metaData.name, ', '.join(non_prod_old_group_bys)))
+            errors.append("join {} is production but includes the following non production group_bys: {}".format(
+                join.metaData.name, ', '.join(non_prod_old_group_bys)))
         if join.metaData.online:
             if offline_included_group_bys:
-                errors.append("join {} is online but includes "
-                              "the following offline group_bys: {}".format(
-                                  join.metaData.name, ', '.join(offline_included_group_bys)))
+                errors.append("join {} is online but includes the following offline group_bys: {}".format(
+                    join.metaData.name, ', '.join(offline_included_group_bys)))
             # If join is online we materialize the underlying group bys are materialized
             # So we need to check if they are valid.
             group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
@@ -231,9 +236,10 @@ Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
         self.logger.debug(self.old_joins)
         if prod_joins:
             if group_by.metaData.production is False:
-                errors.append("group_by {} is explicitly marked as non-production "
-                              "but included in the following production joins: {}".format(
-                                  group_by.metaData.name, ', '.join(prod_joins)))
+                errors.append(
+                    "group_by {} is explicitly marked as non-production but included in the following production "
+                    "joins: {}".format(
+                        group_by.metaData.name, ', '.join(prod_joins)))
             # if the group by is included in any of materialized production join,
             # set it to production in the materialized output.
             else:

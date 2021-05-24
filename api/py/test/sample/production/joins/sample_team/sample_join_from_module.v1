@@ -8,7 +8,8 @@
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
     },
     "outputNamespace": "sample_team_namespace",
-    "team": "sample_team"
+    "team": "sample_team",
+    "backfill": 1
   },
   "left": {
     "events": {
@@ -30,7 +31,8 @@
       "groupBy": {
         "metaData": {
           "name": "sample_team.sample_group_by_from_module.v1",
-          "team": "sample_team"
+          "team": "sample_team",
+          "backfill": 0
         },
         "sources": [
           {
@@ -92,7 +94,8 @@
       "groupBy": {
         "metaData": {
           "name": "sample_team.entity_sample_group_by_from_module.v1",
-          "team": "sample_team"
+          "team": "sample_team",
+          "backfill": 0
         },
         "sources": [
           {

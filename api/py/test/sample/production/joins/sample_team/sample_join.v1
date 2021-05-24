@@ -28,7 +28,8 @@
             "description": "sample description"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "backfill": 0
         },
         "sources": [
           {
