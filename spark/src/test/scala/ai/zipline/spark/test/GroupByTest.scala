@@ -6,9 +6,11 @@ import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
 import ai.zipline.spark._
+import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.Test
 
@@ -163,6 +165,60 @@ class GroupByTest {
       diff.show()
       println("diff result rows")
     }
+    assertEquals(diff.count(), 0)
+  }
+
+  // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
+  @Test
+  def testStepDaysConsistency(): Unit = {
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val startPartition = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
+    val endPartition = Constants.Partition.at(System.currentTimeMillis())
+    val tableUtils = TableUtils(spark)
+    val sourceSchema = List(
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000)
+    )
+    val namespace = "test_steps"
+    val sourceTable = s"$namespace.test_group_by_steps"
+    val testSteps = Option(30)
+
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition=startPartition),
+      table = sourceTable
+    )
+
+    def backfill(name: String, stepDays: Option[Int] = None): String = {
+      val groupBy = Builders.GroupBy(
+        sources = Seq(source),
+        keyColumns = Seq("item"),
+        aggregations = Seq(
+          Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts", windows = Seq(
+            new Window(15, TimeUnit.DAYS),
+            new Window(60, TimeUnit.DAYS)
+          )),
+          Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        ),
+        metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
+      )
+
+      GroupBy.computeBackfill(
+        groupBy,
+        endPartition = endPartition,
+        tableUtils = tableUtils,
+        stepDays = stepDays
+      )
+      s"$namespace.$name"
+    }
+    val diff = Comparison.sideBySide(
+      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_steps", testSteps)}"),
+      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_no_steps")}"),
+      List("item", Constants.PartitionColumn)
+    )
     assertEquals(diff.count(), 0)
   }
 }
