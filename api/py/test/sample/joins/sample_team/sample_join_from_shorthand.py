@@ -18,5 +18,5 @@ v1 = Join(
         ),
     ),
     right_parts=[],
-    dependencies=["sample_namespace.sample_table/ds={{ ds }}"]
+    dependencies=["sample_namespace.sample_table_v2/ds={{ ds }}"]
 )
