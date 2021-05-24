@@ -105,7 +105,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
             production: bool = DEFAULT_PRODUCTION,
-            backfill: bool = False) -> ttypes.GroupBy:
+            backfill: bool = False,
+            dependencies: List[str] = None) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -124,11 +125,10 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
-    # TODO: Make dependencies work and add to metadata constructor
-    # dependencies = [dep for source in updated_sources for dep in utils.get_dependencies(source)]
-    # metadata = json.dumps({"dependencies": dependencies})
+    if not dependencies:
+        dependencies = ['{}/{}'.format(utils.get_table(src), 'ds={{ ds }}') for src in sources]
 
-    metadata = ttypes.MetaData(online=online, production=production, backfill=backfill)
+    metadata = ttypes.MetaData(online=online, production=production, dependencies=dependencies, backfill=backfill)
 
     return ttypes.GroupBy(
         sources=updated_sources,

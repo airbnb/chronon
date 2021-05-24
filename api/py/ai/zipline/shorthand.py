@@ -102,7 +102,8 @@ def GroupBy(name: str,
             online: bool = False,
             topic: str = None,
             mutation_table: str = None,
-            backfill: bool = False) -> api.GroupBy:
+            backfill: bool = False,
+            dependencies: List[str] = None) -> api.GroupBy:
     assert (aggs is None) ^ (selects is None), "specity only one of aggs or selects"
     final_selects = selects
     aggregations = None
@@ -134,6 +135,9 @@ def GroupBy(name: str,
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
+    if not dependencies:
+        dependencies = ['{}/{}'.format(table, 'ds={{ ds }}')]
+
     return api.GroupBy(
         metaData=api.MetaData(name=name,
                               production=production,
@@ -141,6 +145,7 @@ def GroupBy(name: str,
                               tableProperties=tableProperties,
                               outputNamespace=outputNamespace,
                               team=team,
+                              dependencies=dependencies,
                               backfill=backfill),
         sources=[source],
         keyColumns=key_selects.keys(),
