@@ -1,12 +1,8 @@
 """Object for checking whether a Zipline API thrift object is consistent with other
 """
-import ai.zipline.utils as utils
 import json
 import logging
 import os
-import shutil
-import subprocess
-import tempfile
 from ai.zipline.api.ttypes import \
     GroupBy, Join
 from ai.zipline.logger import get_logger
@@ -15,33 +11,41 @@ from ai.zipline.repo import JOIN_FOLDER_NAME, \
 from ai.zipline.repo.serializer import \
     thrift_simple_json, file2thrift
 from collections import defaultdict
-from typing import List, Optional
+from typing import List, Dict
 
 # Fields that indicate stutus of the entities.
-STATUS_FIELDS = frozenset(['online', 'production'])
+SKIPPED_FIELDS = frozenset(['metaData'])
 
 
-def get_input(text):
-    return input(text)
+def _filter_skipped_fields_from_joinparts(json_obj: Dict, skipped_fields):
+    for join_part in json_obj['joinParts']:
+        group_by = join_part['groupBy']
+        for field in skipped_fields:
+            group_by.pop(field, None)
 
 
-def extract_json_confs(obj_class: type, path: str):
+def is_valid_conf(conf: object) -> bool:
+    return conf.metaData is not None
+
+
+def extract_json_confs(obj_class: type, path: str) -> List[object]:
     if os.path.isfile(path):
-        return [file2thrift(path, obj_class)]
+        conf = file2thrift(path, obj_class)
+        return [conf] if is_valid_conf(conf) else []
     result = []
     for sub_root, sub_dirs, sub_files in os.walk(path):
         for f in sub_files:
             obj = file2thrift(os.path.join(sub_root, f), obj_class)
-            result.append(obj)
+            if is_valid_conf(obj):
+                result.append(obj)
     return result
 
 
 def is_batch_upload_needed(group_by: GroupBy) -> bool:
-    if not group_by.metaData.online and not group_by.metaData.production \
-            and not group_by.metaData.backfill:
-        return False
-    else:
+    if group_by.metaData.online or group_by.metaData.backfill:
         return True
+    else:
+        return False
 
 
 class ZiplineRepoValidator(object):
@@ -102,13 +106,6 @@ class ZiplineRepoValidator(object):
                 reasons.append("is not marked online/production nor is included in any online join")
         return reasons
 
-    def _safe_to_overwrite(self, obj: object) -> bool:
-        """
-        When a feature set is already materialized as online, it is no more safe
-        to materialize without user permission.
-        """
-        return obj.metaData.online is not True
-
     def validate_obj(self, obj: object) -> List[str]:
         """
         Validate Zipline API obj against other entities in the repo.
@@ -122,63 +119,26 @@ class ZiplineRepoValidator(object):
             return self._validate_join(obj)
         return []
 
-    def approve_diff(self, obj: object) -> bool:
-        """If the obj is already materialized, check if it is safe to overwrite
-        the old conf.
-        """
-        obj_class = type(obj).__name__
-        old_obj = self._get_old_obj(type(obj), obj.metaData.name)
-        if old_obj and not self._safe_to_overwrite(old_obj):
-            try:
-                differ = utils.JsonDiffer()
-                diff = differ.diff(thrift_simple_json(obj), thrift_simple_json(old_obj))
-                if diff:
-                    prompt = f"""
-You are trying to overwrite a protected {obj_class} conf. See the diff:
-(first line above --- is from the new conf, second line is from the old conf)
-
-{diff}
-
-You can see the files here:
-
-old conf - {differ.old_name}
-new conf = {differ.new_name}
-
-Replace old {obj.metaData.name} with new configuration? If so, type y or yes.\n
-"""
-                    ans = get_input(prompt)
-                    return ans.strip().lower() in ["y", "yes"]
-            finally:
-                differ.clean()
-        return True
-
-    def _get_diff(
+    def _has_diff(
             self,
             obj: object,
             old_obj: object,
-            skipped_keys=STATUS_FIELDS,
-            to_dir: Optional[str] = None,
-            new_name: str = 'new.json',
-            old_name: str = 'old.json') -> str:
+            skipped_fields=SKIPPED_FIELDS) -> str:
         new_json = {k: v for k, v in json.loads(thrift_simple_json(obj)).items()
-                    if k not in skipped_keys}
+                    if k not in skipped_fields}
         old_json = {k: v for k, v in json.loads(thrift_simple_json(old_obj)).items()
-                    if k not in skipped_keys}
-        try:
-            if to_dir:
-                temp_dir = to_dir
-            else:
-                temp_dir = tempfile.mkdtemp()
-            with open(os.path.join(temp_dir, old_name), mode='w') as old, \
-                    open(os.path.join(temp_dir, new_name), mode='w') as new:
-                old.write(json.dumps(old_json, sort_keys=True, indent=2))
-                new.write(json.dumps(new_json, sort_keys=True, indent=2))
+                    if k not in skipped_fields}
+        if isinstance(obj, Join):
+            _filter_skipped_fields_from_joinparts(new_json, skipped_fields)
+            _filter_skipped_fields_from_joinparts(old_json, skipped_fields)
+        return new_json != old_json
 
-            return subprocess.run(
-                ['diff', old.name, new.name], stdout=subprocess.PIPE).stdout.decode('utf-8')
-        finally:
-            if not to_dir:
-                shutil.rmtree(temp_dir)
+    def safe_to_overwrite(self, obj: object) -> bool:
+        """When an object is already materialized as online, it is no more safe
+        to materialize and overwrite the old conf.
+        """
+        old_obj = self._get_old_obj(type(obj), obj.metaData.name)
+        return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
     def _validate_join(self, join: Join) -> List[str]:
         """

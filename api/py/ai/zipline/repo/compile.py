@@ -94,7 +94,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         # load materialized joins to validate the additional group_bys against.
         validator.load_objs()
         for name, obj in extra_online_group_bys.items():
-            if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
+            if _write_obj(full_output_root, validator, name, obj, log_level, force_compile=True):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
     print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
@@ -113,7 +113,8 @@ def _write_obj(full_output_root: str,
                name: str,
                obj: object,
                log_level: int,
-               force_overwrite: bool) -> bool:
+               force_compile: bool = False,
+               force_overwrite: bool = False) -> bool:
     """
     Returns True if the object is successfully written.
     """
@@ -127,7 +128,7 @@ def _write_obj(full_output_root: str,
     output_path = os.path.join(full_output_root, obj_folder_name, team_name)
     output_file = os.path.join(output_path, name)
     skip_reasons = validator.can_skip_materialize(obj)
-    if skip_reasons:
+    if not force_compile and skip_reasons:
         reasons = ', '.join(skip_reasons)
         _print_warning(f"Skipping {class_name} {name}: {reasons}")
         if os.path.exists(output_file):
@@ -138,8 +139,10 @@ def _write_obj(full_output_root: str,
         _print_error(f"Could not write {class_name} {name}",
                      ', '.join(validation_errors))
         return False
-    if not force_overwrite and not validator.approve_diff(obj):
-        _print_warning(f"user declined to overwrite {class_name} {name}")
+    if force_overwrite:
+        _print_warning(f"force overwrite {class_name} {name}")
+    elif not validator.safe_to_overwrite(obj):
+        _print_warning(f"cannot overwrite {class_name} {name} with existing online conf")
         return False
     _write_obj_as_json(name, obj, output_file, obj_class)
     return True
