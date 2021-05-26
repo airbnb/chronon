@@ -228,6 +228,7 @@ object GroupBy {
            tableUtils: TableUtils,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None): GroupBy = {
+    // TODO: validate that sources(startPartition/endPartition) cover all data needed for queryRange
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map {
@@ -243,7 +244,7 @@ object GroupBy {
     assert(
       !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
         .contains(Constants.TimeColumn),
-        s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
+      s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
@@ -281,21 +282,30 @@ object GroupBy {
                             tableUtils: TableUtils,
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
-    val minQuery = Constants.Partition.before(queryStart)
-    val (scanStart, startPartition) = source.dataModel match {
-      case Entities => (queryStart, source.query.startPartition)
+
+    val (earliestRequired: String, earliestPresent: String, latestAllowed: String) = source.dataModel match {
+      case Entities => (queryStart, source.query.startPartition, source.query.endPartition)
       case Events =>
-        val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
-        val sourceStart = (Option(source.query.startPartition) ++ tableUtils.firstAvailablePartition(source.table))
-          .reduceLeftOption(Ordering[String].min)
-          .orNull
-        (windowStart, sourceStart)
+        Option(source.getEvents.isCumulative).getOrElse(false) match {
+          case false =>
+            // normal events case, shift queryStart by window
+            val minQuery = Constants.Partition.before(queryStart)
+            val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
+            lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
+            val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
+            (windowStart, sourceStart, source.query.endPartition)
+          case true =>
+            // Cumulative case - pick only a single partition for the entire range
+            lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
+            val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
+            (latestValid, latestValid, latestValid)
+        }
     }
 
-    val sourceRange = PartitionRange(startPartition, source.query.endPartition)
-    val queryableDataRange = PartitionRange(scanStart, queryEnd)
+    val sourceRange = PartitionRange(earliestPresent, latestAllowed)
+    val queryableDataRange = PartitionRange(earliestRequired, queryEnd)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
-
+    // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
     val metaColumns = source.dataModel match {
       case Entities =>
         Map(Constants.PartitionColumn -> null) ++ Option(source.query.timeColumn)

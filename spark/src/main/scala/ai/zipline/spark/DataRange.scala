@@ -21,6 +21,7 @@ case class TimeRange(start: Long, end: Long) extends DataRange {
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
+
 // start and end can be null - signifies unbounded-ness
 case class PartitionRange(start: String, end: String) extends DataRange {
 

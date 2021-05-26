@@ -21,6 +21,10 @@ api/py/sdist/
 api/py/build/
 api/py/*.egg-info/
 *.egg
+
+# spark test scratch area
 **/spark-warehouse/
 **/metastore_db/
+
+# airbnb specific stuff
 mvn_settings.xml
