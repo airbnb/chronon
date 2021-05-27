@@ -157,5 +157,3 @@ def get_dependencies(src: api.Source, dependencies: List[str] = None, meta_data:
             "end": query.endPartition
         }]
     return [json.dumps(res) for res in result]
-
-
