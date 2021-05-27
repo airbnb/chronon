@@ -8,7 +8,7 @@ from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import sample_group_by
 
 v1 = api.Join(
-    left = api.Source(
+    left=api.Source(
         entities=api.EntitySource(
             snapshotTable="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),
             query=api.Query(

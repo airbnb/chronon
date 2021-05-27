@@ -11,7 +11,7 @@ from group_bys.sample_team import (
 
 
 v1 = Join(
-    left = api.Source(
+    left=api.Source(
         events=api.EventSource(
             table="sample_namespace.sample_table_skipped",
             query=api.Query(

@@ -90,4 +90,3 @@ def test_diff(zvalidator, valid_online_group_by):
     different.metaData.online = not valid_online_group_by.metaData.online
     diff = zvalidator._get_diff(obj=different, old_obj=valid_online_group_by)
     assert diff
-

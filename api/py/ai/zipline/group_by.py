@@ -1,5 +1,5 @@
 import copy
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, Callable, Tuple
 
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
@@ -14,6 +14,8 @@ OperationType = int  # type(zthrift.Operation.FIRST)
 DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 
+def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
+    return lambda k: (op, {"k": str(k)})
 
 class Operation():
     MIN = ttypes.Operation.MIN
@@ -25,10 +27,10 @@ class Operation():
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
-    FIRST_K = ttypes.Operation.FIRST_K
-    LAST_K = ttypes.Operation.LAST_K
-    TOP_K = ttypes.Operation.TOP_K
-    BOTTOM_K = ttypes.Operation.BOTTOM_K
+    FIRST_K = collector(ttypes.Operation.FIRST_K)
+    LAST_K = collector(ttypes.Operation.LAST_K)
+    TOP_K = collector(ttypes.Operation.TOP_K)
+    BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
 
 
 class TimeUnit():
@@ -46,11 +48,13 @@ def op_to_str(operation: OperationType):
 
 
 def Aggregation(input_column: str = None,
-                operation=None,
-                arg_map: Dict[str, str] = {},
+                operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
                 windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation else Operation.LAST
+    arg_map = {}
+    if isinstance(operation, tuple):
+        operation, arg_map = operation[0], operation[1]
     assert(input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT")
     return ttypes.Aggregation(input_column, operation, arg_map, windows)
 
