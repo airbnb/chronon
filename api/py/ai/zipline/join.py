@@ -60,7 +60,7 @@ def Join(left: api.Source,
     updated_left = copy.deepcopy(left)
     if left.events:
         assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Zipline," \
-            " please specify the expression in timeColumn"
+                                                             " please specify the expression in timeColumn"
         # mapping ts to query.timeColumn to events only
         updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
@@ -83,7 +83,6 @@ def Join(left: api.Source,
     right_sources = [source for source_list in right_sources for source in source_list]
     left_dependencies = utils.get_dependencies(left, dependencies)
     right_dependencies = [dep for source in right_sources for dep in utils.get_dependencies(source, dependencies)]
-
 
     customJson = {
         "check_consistency": check_consistency
