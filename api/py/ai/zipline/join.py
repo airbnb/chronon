@@ -1,12 +1,13 @@
-import ai.zipline.api.ttypes as api
-import ai.zipline.repo.extract_objects as eo
-import ai.zipline.utils as utils
 import copy
 import gc
 import importlib
 import json
 import logging
 from typing import List, Dict
+
+import ai.zipline.api.ttypes as api
+import ai.zipline.repo.extract_objects as eo
+import ai.zipline.utils as utils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -51,7 +52,9 @@ def Join(left: api.Source,
          dependencies: List[str] = None,
          online: bool = False,
          production: bool = False,
-         backfill: bool = True) -> api.Join:
+         backfill: bool = True,
+         output_namespace: str = None,
+         table_properties: Dict[str, str] = None,) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -78,13 +81,13 @@ def Join(left: api.Source,
     right_sources = [join_part.groupBy.sources for join_part in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
+    deps = utils.get_dependencies(left)
+    right_dependencies = [dep for source in right_sources for dep in utils.get_dependencies(source, dependencies)]
+    deps.extend(right_dependencies)
 
     customJson = {
         "check_consistency": check_consistency
     }
-
-    if not dependencies:
-        dependencies = ['{}/{}'.format(utils.get_table(left), 'ds={{ ds }}')]
 
     if additional_args:
         customJson["additional_args"] = additional_args
@@ -96,8 +99,10 @@ def Join(left: api.Source,
         online=online,
         production=production,
         customJson=json.dumps(customJson),
-        dependencies=dependencies,
+        dependencies=deps,
         backfill=backfill,
+        outputNamespace=output_namespace,
+        tableProperties=table_properties
     )
 
     return api.Join(

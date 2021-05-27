@@ -1,14 +1,16 @@
-import ai.zipline.api.ttypes as api
-import ai.zipline.repo.extract_objects as eo
 import gc
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
 from typing import List, Union
+
+import ai.zipline.api.ttypes as api
+import ai.zipline.repo.extract_objects as eo
 
 
 def edit_distance(str1, str2):
@@ -130,3 +132,30 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries"))
     eo.import_module_set_name(staging_query_module, api.StagingQuery)
     return staging_query.metaData.name.replace('.', '_')
+
+
+def get_dependencies(src: api.Source, dependencies: List[str] = None, meta_data: api.MetaData = None) -> List[str]:
+    if meta_data is not None:
+        deps = meta_data.dependencies
+    else:
+        deps = dependencies
+    ds_string = "{{ ds }}"
+    table = get_table(src)
+    query = get_query(src)
+    if deps:
+        result = [{
+            "name": re.sub('_+', '_', f"wait_for_{table}_{re.sub('[^a-zA-Z0-9]', '_', dep)}").rstrip('_'),
+            "spec": dep,
+            "start": query.startPartition,
+            "end": query.endPartition
+        } for dep in deps]
+    else:
+        result = [{
+            "name": f"wait_for_{table}_ds",
+            "spec": f"{table}/ds={ds_string}",
+            "start": query.startPartition,
+            "end": query.endPartition
+        }]
+    return [json.dumps(res) for res in result]
+
+

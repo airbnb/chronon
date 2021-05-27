@@ -1,7 +1,8 @@
-import ai.zipline.api.ttypes as ttypes
-import ai.zipline.utils as utils
 import copy
 from typing import List, Optional, Union, Dict
+
+import ai.zipline.api.ttypes as ttypes
+import ai.zipline.utils as utils
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -125,10 +126,9 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
-    if not dependencies:
-        dependencies = ['{}/{}'.format(utils.get_table(src), 'ds={{ ds }}') for src in sources]
+    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
 
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=dependencies, backfill=backfill)
+    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, backfill=backfill)
 
     return ttypes.GroupBy(
         sources=updated_sources,
