@@ -81,7 +81,7 @@ def Join(left: api.Source,
     right_sources = [join_part.groupBy.sources for join_part in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
-    deps = utils.get_dependencies(left)
+    deps = utils.get_dependencies(left, dependencies)
     right_dependencies = [dep for source in right_sources for dep in utils.get_dependencies(source, dependencies)]
     deps.extend(right_dependencies)
 

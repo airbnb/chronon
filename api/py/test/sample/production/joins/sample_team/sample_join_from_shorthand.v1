@@ -5,7 +5,7 @@
     "production": 0,
     "customJson": "{\"check_consistency\": false}",
     "dependencies": [
-      "{\"name\": \"wait_for_sample_namespace.sample_table_ds\", \"spec\": \"sample_namespace.sample_table/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
+      "{\"name\": \"wait_for_sample_namespace.sample_table_sample_namespace_sample_table_v2_ds_ds\", \"spec\": \"sample_namespace.sample_table_v2/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
     "tableProperties": {
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
