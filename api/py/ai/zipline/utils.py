@@ -144,7 +144,7 @@ def get_dependencies(src: api.Source, dependencies: List[str] = None, meta_data:
     query = get_query(src)
     if deps:
         result = [{
-            "name": re.sub('_+', '_', f"wait_for_{table}_{re.sub('[^a-zA-Z0-9]', '_', dep)}").rstrip('_'),
+            "name": wait_for_name(dep, table),
             "spec": dep,
             "start": query.startPartition,
             "end": query.endPartition
@@ -157,3 +157,9 @@ def get_dependencies(src: api.Source, dependencies: List[str] = None, meta_data:
             "end": query.endPartition
         }]
     return [json.dumps(res) for res in result]
+
+
+def wait_for_name(dep, table):
+    replace_nonalphanumeric = re.sub('[^a-zA-Z0-9]', '_', dep)
+    name = f"wait_for_{table}_{replace_nonalphanumeric}"
+    return re.sub('_+', '_', name).rstrip('_')
