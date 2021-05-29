@@ -13,8 +13,10 @@ OperationType = int  # type(zthrift.Operation.FIRST)
 DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 
+
 def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
     return lambda k: (op, {"k": str(k)})
+
 
 class Operation():
     MIN = ttypes.Operation.MIN
