@@ -27,10 +27,11 @@ case class TableUtils(sparkSession: SparkSession) {
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
   }
 
+  def lastAvailablePartition(tableName: String): Option[String] =
+    partitions(tableName).reduceOption(Ordering[String].max)
+
   def firstUnavailablePartition(tableName: String): Option[String] =
-    partitions(tableName)
-      .reduceOption(Ordering[String].max)
-      .map(Constants.Partition.after)
+    lastAvailablePartition(tableName).map(Constants.Partition.after)
 
   def firstAvailablePartition(tableName: String): Option[String] =
     partitions(tableName)

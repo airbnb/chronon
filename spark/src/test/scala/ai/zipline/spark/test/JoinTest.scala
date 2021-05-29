@@ -406,6 +406,17 @@ class JoinTest {
   }
 
   @Test
+  def testEventsEventsCumulative(): Unit = {
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      isCumulative = true
+    )
+    
+  }
+
+  @Test
   def testNoAgg(): Unit = {
     // Left side entities, right side entities no agg
     // Also testing specific select statement (rather than select *)

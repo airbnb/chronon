@@ -30,6 +30,9 @@ struct EventSource {
     1: optional string table
     2: optional string topic
     3: optional Query query
+    // Means that every partition contains full history of all events uptill the ds of that partition
+    // Every partition should contain the entirety of the previous partition, plus new events.
+    4: optional bool isCumulative
 }
 
 struct EntitySource {

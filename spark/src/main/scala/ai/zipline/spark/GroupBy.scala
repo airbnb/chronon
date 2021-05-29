@@ -276,25 +276,35 @@ object GroupBy {
   }
 
   def renderDataSourceQuery(source: Source,
-                            keys: Seq[String],
-                            queryRange: PartitionRange,
-                            tableUtils: TableUtils,
-                            window: Option[Window]): String = {
+      keys: Seq[String],
+      queryRange: PartitionRange,
+      tableUtils: TableUtils,
+      window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
-    val minQuery = Constants.Partition.before(queryStart)
-    val (scanStart, startPartition) = source.dataModel match {
-      case Entities => (queryStart, source.query.startPartition)
+
+    val (earliestRequired: String, earliestPresent: String, latestAllowed: String) = source.dataModel match {
+      case Entities => (queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
       case Events =>
-        val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
-        lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
-        val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
-        (windowStart, sourceStart)
+        Option(source.getEvents.isCumulative).getOrElse(false) match {
+          case false =>
+            // normal events case, shift queryStart by window
+            val minQuery = Constants.Partition.before(queryStart)
+            val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
+            lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
+            val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
+            (windowStart, sourceStart, Option(source.query.endPartition).getOrElse(queryRange.end))
+          case true =>
+            // Cumulative case - pick only a single partition for the entire range
+            lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
+            val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
+            (latestValid, latestValid, latestValid)
+        }
     }
 
-    val sourceRange = PartitionRange(startPartition, source.query.endPartition)
-    val queryableDataRange = PartitionRange(scanStart, queryEnd)
+    val sourceRange = PartitionRange(earliestPresent, latestAllowed)
+    val queryableDataRange = PartitionRange(earliestRequired, queryEnd)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
-
+    // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
     val metaColumns = source.dataModel match {
       case Entities =>
         Map(Constants.PartitionColumn -> null) ++ Option(source.query.timeColumn)
@@ -304,16 +314,16 @@ object GroupBy {
     }
 
     println(s"""
-         |Rendering source query:
-         |   query range: $queryRange
-         |   query window: $window
-         |   source table: ${source.table}
-         |   source data range: $sourceRange
-         |   source data model: ${source.dataModel}
-         |   queryable data range: $queryableDataRange
-         |   intersected/effective scan range: $intersectedRange 
-         |   metaColumns: $metaColumns
-         |""".stripMargin)
+               |Rendering source query:
+               |   query range: $queryRange
+               |   query window: $window
+               |   source table: ${source.table}
+               |   source data range: $sourceRange
+               |   source data model: ${source.dataModel}
+               |   queryable data range: $queryableDataRange
+               |   intersected/effective scan range: $intersectedRange
+               |   metaColumns: $metaColumns
+               |""".stripMargin)
 
     val query = QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
