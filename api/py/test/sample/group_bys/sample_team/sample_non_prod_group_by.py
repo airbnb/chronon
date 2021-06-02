@@ -20,7 +20,7 @@ v1 = GroupBy(
         ),
     ],
     start_partition="2021-04-09",
-    outputNamespace="sample_namespace",
+    output_namespace="sample_namespace",
     online=False,
     production=False,
 )

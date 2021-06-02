@@ -1,10 +1,10 @@
 """
 Sample group by
 """
-from ai.zipline.shorthand import *
-from ai.zipline.utils import get_staging_query_output_table_name
 from staging_queries.sample_team import sample_staging_query
 
+from ai.zipline.shorthand import *
+from ai.zipline.utils import get_staging_query_output_table_name
 
 v1 = GroupBy(
     name="sample_group_by",
@@ -17,9 +17,9 @@ v1 = GroupBy(
         Agg(column="viewed_unique_count_1d", op=SUM),
     ],
     production=False,
-    tableProperties={
+    table_properties={
         "sample_config_json": """{"sample_key": "sample_value"}""",
         "description": "sample description"
     },
-    outputNamespace="sample_namespace",
+    output_namespace="sample_namespace",
 )

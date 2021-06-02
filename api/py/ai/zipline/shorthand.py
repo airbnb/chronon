@@ -1,8 +1,10 @@
-import ai.zipline.api.ttypes as api
+import inspect
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Union, Tuple, Dict, Callable
-import inspect
+
+import ai.zipline.api.ttypes as api
+import ai.zipline.utils as utils
 
 MIN = api.Operation.MIN
 MAX = api.Operation.MAX
@@ -93,8 +95,8 @@ def GroupBy(name: str,
             keys: List[Union[str, Tuple[str, str]]],
             aggs: List[Agg],  # data needs aggregation
             start_partition: str,
-            outputNamespace: str = None,
-            tableProperties: Dict[str, str] = None,
+            output_namespace: str = None,
+            table_properties: Dict[str, str] = None,
             selects: Dict[str, str] = None,  # data is pre-aggregated
             ts: str = None,
             wheres: List[str] = None,
@@ -102,7 +104,8 @@ def GroupBy(name: str,
             online: bool = None,
             topic: str = None,
             mutation_table: str = None,
-            backfill: bool = False) -> api.GroupBy:
+            backfill: bool = False,
+            dependencies: List[str] = None) -> api.GroupBy:
     assert (aggs is None) ^ (selects is None), "specity only one of aggs or selects"
     final_selects = selects
     aggregations = None
@@ -134,13 +137,16 @@ def GroupBy(name: str,
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
+    deps = utils.get_dependencies(source, dependencies)
+
     return api.GroupBy(
         metaData=api.MetaData(name=name,
                               production=production,
                               online=online,
-                              tableProperties=tableProperties,
-                              outputNamespace=outputNamespace,
+                              tableProperties=table_properties,
+                              outputNamespace=output_namespace,
                               team=team,
+                              dependencies=deps,
                               backfill=backfill),
         sources=[source],
         keyColumns=key_selects.keys(),
