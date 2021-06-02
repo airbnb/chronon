@@ -408,11 +408,63 @@ class JoinTest {
   @Test
   def testEventsEventsCumulative(): Unit = {
 
+    // Create a cumulative source GroupBy
+    val viewsTable = s"$namespace.view"
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
       isCumulative = true
     )
+    val viewsGroupBy = getViewsGroupBy
+    viewsGroupBy.setSources(Seq(viewsSource).asJava)
+
+    // Copy and modify existing events/events case to use cumulative GroupBy
+    val joinConf = getEventsEventsTemporal
+    joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
+
+    // Run job
+    val itemQueriesTable = s"$namespace.item_queries"
+    println("Item Queries DF: ")
+    spark.sql(s"SELECT * FROM $itemQueriesTable").show()
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val computed = join.computeJoin(Some(100))
+    println("Computed DF: ")
+    computed.show()
+
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds = '$dayAndMonthBefore')
+                                     | SELECT queries.item, queries.ts, queries.ds, part.unit_test_item_views_ts_min, part.unit_test_item_views_ts_max, part.unit_test_item_views_time_spent_ms_average
+                                     | FROM (SELECT queries.item,
+                                     |        queries.ts,
+                                     |        queries.ds,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as unit_test_item_views_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as unit_test_item_views_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as unit_test_item_views_time_spent_ms_average
+                                     |     FROM queries left outer join $viewsTable
+                                     |     ON queries.item = $viewsTable.item
+                                     |     WHERE $viewsTable.item IS NOT NULL AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     |     GROUP BY queries.item, queries.ts, queries.ds) as part
+                                     | JOIN queries
+                                     | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
+                                     |""".stripMargin)
+    println("Expected DF:")
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
+    val queriesBare =
+      tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
+    assertEquals(queriesBare.count(), computed.count())
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff
+        .replaceWithReadableTime(Seq("ts", "a_unit_test_item_views_ts_max", "b_unit_test_item_views_ts_max"), dropOriginal = true)
+        .show()
+    }
+    assertEquals(diff.count(), 0)
+
     
   }
 
@@ -630,7 +682,7 @@ class JoinTest {
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy, prefix = "user")),
-      metaData = Builders.MetaData(name = "test.item_temporal_features", namespace = namespace, team = "item_team")
+      metaData = Builders.MetaData(name = "test.item_temporal_features_4", namespace = namespace, team = "item_team")
     )
 
   }

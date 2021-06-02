@@ -231,6 +231,7 @@ object GroupBy {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map {
+        println(s"Rendering with: ${groupByConf.getKeyColumns.asScala}, $queryRange, ${groupByConf.maxWindow}")
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }
@@ -285,6 +286,7 @@ object GroupBy {
     val (earliestRequired: String, earliestPresent: String, latestAllowed: String) = source.dataModel match {
       case Entities => (queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
       case Events =>
+        println(s"Cumulative: ${source.getEvents.isCumulative}")
         Option(source.getEvents.isCumulative).getOrElse(false) match {
           case false =>
             // normal events case, shift queryStart by window
@@ -297,6 +299,7 @@ object GroupBy {
             // Cumulative case - pick only a single partition for the entire range
             lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
             val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
+            println(s"Latest available: ${latestAvailable}, latest valid: ${latestValid}")
             (latestValid, latestValid, latestValid)
         }
     }
@@ -304,6 +307,7 @@ object GroupBy {
     val sourceRange = PartitionRange(earliestPresent, latestAllowed)
     val queryableDataRange = PartitionRange(earliestRequired, queryEnd)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
+    println(s"ranges: $sourceRange, $queryableDataRange, $intersectedRange")
     // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
     val metaColumns = source.dataModel match {
       case Entities =>
