@@ -277,10 +277,10 @@ object GroupBy {
   }
 
   def renderDataSourceQuery(source: Source,
-      keys: Seq[String],
-      queryRange: PartitionRange,
-      tableUtils: TableUtils,
-      window: Option[Window]): String = {
+                            keys: Seq[String],
+                            queryRange: PartitionRange,
+                            tableUtils: TableUtils,
+                            window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
     // Need to use a case class here to allow null matching
@@ -322,16 +322,16 @@ object GroupBy {
     }
 
     println(s"""
-               |Rendering source query:
-               |   query range: $queryRange
-               |   query window: $window
-               |   source table: ${source.table}
-               |   source data range: $sourceRange
-               |   source data model: ${source.dataModel}
-               |   queryable data range: $queryableDataRange
-               |   intersected/effective scan range: $intersectedRange
-               |   metaColumns: $metaColumns
-               |""".stripMargin)
+         |Rendering source query:
+         |   query range: $queryRange
+         |   query window: $window
+         |   source table: ${source.table}
+         |   source data range: $sourceRange
+         |   source data model: ${source.dataModel}
+         |   queryable data range: $queryableDataRange
+         |   intersected/effective scan range: $intersectedRange
+         |   metaColumns: $metaColumns
+         |""".stripMargin)
 
     val query = QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
