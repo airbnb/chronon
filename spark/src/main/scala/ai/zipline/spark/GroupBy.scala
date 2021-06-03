@@ -283,31 +283,35 @@ object GroupBy {
       window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
-    val (earliestRequired: String, earliestPresent: String, latestAllowed: String) = source.dataModel match {
-      case Entities => (queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
+    // Need to use a case class here to allow null matching
+    case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
+
+    val sourcePartition: SourceDataProfile = source.dataModel match {
+      case Entities => SourceDataProfile(queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
       case Events =>
-        println(s"Cumulative: ${source.getEvents.isCumulative}")
         Option(source.getEvents.isCumulative).getOrElse(false) match {
           case false =>
             // normal events case, shift queryStart by window
             val minQuery = Constants.Partition.before(queryStart)
-            val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
+            val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
             lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
             val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
-            (windowStart, sourceStart, Option(source.query.endPartition).getOrElse(queryRange.end))
+            SourceDataProfile(windowStart, sourceStart, Option(source.query.endPartition).getOrElse(queryRange.end))
           case true =>
             // Cumulative case - pick only a single partition for the entire range
             lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
             val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
-            println(s"Latest available: ${latestAvailable}, latest valid: ${latestValid}")
-            (latestValid, latestValid, latestValid)
+            SourceDataProfile(latestValid, latestValid, latestValid)
         }
     }
 
+    val earliestRequired = sourcePartition.earliestRequired
+    val earliestPresent = sourcePartition.earliestPresent
+    val latestAllowed = sourcePartition.latestAllowed
+
     val sourceRange = PartitionRange(earliestPresent, latestAllowed)
-    val queryableDataRange = PartitionRange(earliestRequired, queryEnd)
+    val queryableDataRange = PartitionRange(earliestRequired, Seq(queryEnd, latestAllowed).max)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
-    println(s"ranges: $sourceRange, $queryableDataRange, $intersectedRange")
     // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
     val metaColumns = source.dataModel match {
       case Entities =>
