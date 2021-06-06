@@ -2,14 +2,13 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
-import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
+import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Extensions._
 import ai.zipline.api._
 import ai.zipline.fetcher.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
-import com.google.gson.Gson
 import org.apache.avro.Schema
-import org.apache.avro.generic.{GenericData, GenericRecord}
 
+import java.util.concurrent.Executors
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.{Duration, MILLISECONDS}
@@ -18,16 +17,18 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 // the main system level api for online storage integration
 // used for fetcher + streaming + bulk uploads
 trait KVStore {
+  implicit val executionContext: ExecutionContext =
+    ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
+
   def create(dataset: String): Unit
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
-  def multiPut(keyValueDatasets: Seq[PutRequest]): Unit
+  def multiPut(keyValueDatasets: Seq[PutRequest]): Future[Seq[Boolean]]
 
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
-  // helper methods
-  def get(request: GetRequest)(implicit executionContext: ExecutionContext): Future[GetResponse] =
-    multiGet(Seq(request)).map(_.head)
-  def put(putRequest: PutRequest): Unit = multiPut(Seq(putRequest))
+  // helper methods to do single put and single get
+  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
+  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
   def getString(key: String, dataset: String, timeoutMillis: Long)(implicit
       executionContext: ExecutionContext): String = {
@@ -55,7 +56,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   // streaming starts scanning after batchEnd
   val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
 
-  lazy val aggregator = {
+  lazy val aggregator: SawtoothOnlineAggregator = {
     val avroSchemaParser = new Schema.Parser()
     val avroInputSchema = avroSchemaParser.parse(selectedAvroSchema)
     val ziplineInputSchema =
@@ -80,8 +81,8 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   }
 }
 
-class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
-    ex: ExecutionContext) {
+class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000) {
+  implicit val executionContext: ExecutionContext = kvStore.executionContext
   // a simple thread safe cache for metadata & schemas
   private def memoize[I, O](f: I => O): I => O =
     new mutable.HashMap[I, O]() {
@@ -115,10 +116,9 @@ object Fetcher {
   case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
   case class Response(request: Request, values: Map[String, AnyRef])
 }
-import Fetcher._
+import ai.zipline.fetcher.Fetcher._
 
-class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)(implicit
-    ex: ExecutionContext)
+class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 2000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   // 1. fetches GroupByServingInfo
@@ -139,7 +139,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
             GetRequest(keyBytes,
                        groupByServingInfo.groupBy.streamingDataset,
                        Some(groupByServingInfo.batchEndTsMillis)))
-        // no further aggregation is required - the value in KVstore is good as is
+        // no further aggregation is required - the value in KvStore is good as is
         case Accuracy.SNAPSHOT => None
       }
       request -> (groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis)

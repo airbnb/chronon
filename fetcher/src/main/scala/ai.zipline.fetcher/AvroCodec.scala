@@ -22,7 +22,7 @@ import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
 import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWriter, GenericRecord}
-import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, EncoderFactory}
+import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, Encoder, EncoderFactory, JsonEncoder}
 
 import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
@@ -39,12 +39,11 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val datumReader = new GenericDatumReader[GenericRecord](schema)
 
   @transient private lazy val outputStream = new ByteArrayOutputStream()
+  @transient private var jsonEncoder: JsonEncoder = null
   val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
-  private val tsIndex: Int = fieldNames.indexOf(Constants.TimeColumn)
-  private val length: Int = fieldNames.length
   @transient private lazy val ziplineSchema = AvroUtils.toZiplineSchema(schema)
 
-  @transient private var encoder: BinaryEncoder = null
+  @transient private var binaryEncoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null
 
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
@@ -52,7 +51,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     schema.getFields.asScala.foreach { field =>
       record.put(field.name(), valueMap.get(field.name()).orNull)
     }
-    encodeRecord(record)
+    encodeBinary(record)
   }
 
   def encode(row: Row): Array[Byte] = {
@@ -60,7 +59,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     for (i <- 0 until row.length) {
       record.put(i, row.get(i))
     }
-    encodeRecord(record)
+    encodeBinary(record)
   }
 
   def encodeArray(anyArray: Array[Any]): Array[Byte] = {
@@ -68,16 +67,25 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     for (i <- anyArray.indices) {
       record.put(i, anyArray(i))
     }
-    encodeRecord(record)
+    encodeBinary(record)
   }
 
-  def encodeRecord(record: GenericRecord): Array[Byte] = {
+  def encodeBinary(record: GenericRecord): Array[Byte] = {
+    binaryEncoder = EncoderFactory.get.binaryEncoder(outputStream, binaryEncoder)
+    encodeRecord(record, binaryEncoder)
+  }
+
+  def encodeRecord(record: GenericRecord, reusableEncoder: Encoder): Array[Byte] = {
     outputStream.reset()
-    encoder = EncoderFactory.get.binaryEncoder(outputStream, encoder)
-    datumWriter.write(record, encoder)
-    encoder.flush()
+    datumWriter.write(record, reusableEncoder)
+    reusableEncoder.flush()
     outputStream.flush()
     outputStream.toByteArray
+  }
+
+  def encodeJson(record: GenericRecord): String = {
+    jsonEncoder = EncoderFactory.get.jsonEncoder(schema, outputStream)
+    new String(encodeRecord(record, jsonEncoder))
   }
 
   def decode(bytes: Array[Byte]): GenericRecord = {

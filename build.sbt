@@ -2,13 +2,11 @@ import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
+ThisBuild / version := "0.1-SNAPSHOT"
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark)
-  .settings(
-    name := "zipline",
-    skip in publish := true
-  )
+  .aggregate(api, aggregator, spark, fetcher)
+  .settings(name := "zipline")
 
 lazy val api = project
   .settings(
@@ -28,6 +26,7 @@ lazy val api = project
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
+    assembly / test := {},
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
@@ -53,8 +52,10 @@ def cleanSparkMeta: Unit = {
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
   .settings(
-    mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
-    assemblyJarName in assembly := "zipline-spark.jar",
+    assembly / test := {},
+    mainClass in (Compile, run) := Some(
+      "ai.zipline.spark.Join"
+    ),
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided",
       "org.apache.spark" %% "spark-hive" % "2.4.4" % "provided",
@@ -66,30 +67,7 @@ lazy val spark = project
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
 
-artifact in (Compile, assembly) := {
-  val art = (artifact in (Compile, assembly)).value
-  art.withClassifier(Some("assembly"))
-}
-
-addArtifact(artifact in (Compile, assembly), assembly)
-
-enablePlugins(GitVersioning)
-git.useGitDescribe := true
-git.baseVersion := "0.0.0"
-
-val VersionRegex = "release-zl-([0-9]+.[0-9]+.[0-9]+)$".r
-git.gitTagToVersionNumber := { tag: String =>
-  val matches = VersionRegex.findFirstMatchIn(tag)
-  matches match {
-    case Some(m) => Some(m.group(1))
-    // maven releases repository automatically rejects version ending with SNAPSHOT.
-    case _ => Some("rejected-SNAPSHOT")
-  }
-}
-
-ThisBuild / publishTo := Some(
-  "Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/")
-ThisBuild / credentials += Credentials(new File("./artifactory_credentials.properties"))
+exportJars := true
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b

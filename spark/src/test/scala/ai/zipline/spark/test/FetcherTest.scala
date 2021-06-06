@@ -2,26 +2,22 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
-import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Extensions.{GroupByOps, JoinPartOps, MetadataOps}
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.KVStore.PutRequest
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
-import com.google.gson.Gson
 import junit.framework.TestCase
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 
 import java.lang
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asJavaIterableConverter, asScalaBufferConverter}
+import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -38,7 +34,6 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String): Unit = {
     val servingInfo: GroupByServingInfoParsed = fetcher.getGroupByServingInfo(groupByConf.metaData.cleanName)
-    //val dayAfter = Constants.Partition.after(ds)
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
     val selected = groupBy.inputDf.filter(s"ds='$ds'")
@@ -67,7 +62,7 @@ class FetcherTest extends TestCase {
     kvStore.multiPut(puts)
   }
 
-  def testTemporalFetch: Unit = {
+  def testTemporalFetch(): Unit = {
 
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
@@ -183,14 +178,7 @@ class FetcherTest extends TestCase {
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
 
     val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
-    println(s"""
-               |today: $today
-               |queriesRange: ${todaysQueries.timeRange.pretty}
-               |""".stripMargin)
-    val keys =
-      todaysQueries.schema.fieldNames.filterNot(
-        Constants.ReservedColumns.contains
-      ) //joinConf.joinParts.asScala.flatMap(_.leftToRight.keys).distinct.toArray
+    val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore)
@@ -227,24 +215,13 @@ class FetcherTest extends TestCase {
     todaysExpected.order(keyishColumns).show()
     println("response:")
     responseDf.order(keyishColumns).show()
-    //val filterClause = "(user_id IS NOT NULL) AND (vendor_id IS NOT NULL)"
     val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
     assertEquals(todaysQueries.count(), responseDf.count())
-    //    assertEquals(todaysQueries.count(), todaysExpected.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
       diff.show()
     }
-    assertEquals(diff.count(), 0) // create groupBy data
-
-    // create queries
-    // sawtooth aggregate batch data
-    // split "streaming" data
-    // bulk upload batch data
-
-    // merge queries + streaming data and replay to inmemory store
-    // streaming data gets "put", queries do "get"
-
+    assertEquals(diff.count(), 0)
   }
 }

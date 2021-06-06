@@ -61,22 +61,22 @@ sbt "aggregator/test"
 ```
 
 ### Build a fat jar
-```
+```shell
 sbt assemble
 ```
 
 Building a fat jar for just one submodule
-```
+```shell
 sbt 'spark/assembly'
 ```
 
 Without running tests
-```
+```shell
 sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean assembly
 ```
 
 For a submodule without running tests
-```
+```shell
 sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean 'spark/assembly'
 ```
 
@@ -86,21 +86,21 @@ sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark :=
 ### Push the fat jar to afdev
 
 For running backfills
-```
+```shell
 sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean 'spark/assembly'
 scp spark/target/scala-2.11/zipline-spark.jar $USER@$AFDEV_HOST:~/
 ```
 
 on afdev box:
-```
+```shell
 APP_NAME=search_bench3_3 ./spark_submit.sh --class ai.zipline.spark.Join zipline-spark.jar --conf-path bench3_3.json --end-date 2021-01-01 --namespace search_ranking_training --step-days 30
 ```
 
 ### Generate benchmark json
-```
+```shell
 python ~/repos/ml_models/zipline/joins/new_algo/search_benchmarks.py > ~/bench3_4.json
 ```
-```
+```shell
 scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
 ```
 
@@ -109,7 +109,7 @@ scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
 
 0. Create MVN settings file under `~/mvn_settings.xml` in the repo root.
 
-``` xml
+```xml
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
@@ -129,18 +129,18 @@ Replace `ARTIFACTORY_USERNAME` and `ARTIFACTORY_PASSWORD` with your username and
 1. After you merge your PR, check out and pull `master` branch.
 2. Create a tag named `release-zl-X.X.X`. Check `git tag` to find out the next version.
 
-``` shell
+```shell
 git tag -a -m '<tag message>' release-zl-X.X.X
 ```
 
 3. Publish to artifactory
 
-``` shell
+```shell
 ./push_to_artifactory.sh <tag-message>
 ```
 
 ### Install specific version of thrift
-```
+```shell
 brew tap-new $USER/local-thrift
 brew extract --version=0.13.0 thrift $USER/local-thrift
 brew install thrift@0.13.0
