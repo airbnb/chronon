@@ -100,7 +100,7 @@ Keys {unselected_keys}, are unselected in source
 """
 
     # Aggregations=None is only valid if group_by is Entities
-    if not aggregations:
+    if aggregations is None:
         assert not any ([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
 
 
