@@ -286,7 +286,7 @@ object GroupBy {
     // Need to use a case class here to allow null matching
     case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
-    val sourcePartition: SourceDataProfile = source.dataModel match {
+    val dataProfile: SourceDataProfile = source.dataModel match {
       case Entities => SourceDataProfile(queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
       case Events =>
         Option(source.getEvents.isCumulative).getOrElse(false) match {
@@ -305,12 +305,8 @@ object GroupBy {
         }
     }
 
-    val earliestRequired = sourcePartition.earliestRequired
-    val earliestPresent = sourcePartition.earliestPresent
-    val latestAllowed = sourcePartition.latestAllowed
-
-    val sourceRange = PartitionRange(earliestPresent, latestAllowed)
-    val queryableDataRange = PartitionRange(earliestRequired, Seq(queryEnd, latestAllowed).max)
+    val sourceRange = PartitionRange(dataProfile.earliestPresent, dataProfile.latestAllowed)
+    val queryableDataRange = PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
     // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
     val metaColumns = source.dataModel match {

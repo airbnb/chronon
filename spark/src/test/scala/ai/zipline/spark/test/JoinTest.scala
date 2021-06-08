@@ -1,20 +1,19 @@
 package ai.zipline.spark.test
 
+import scala.collection.JavaConverters._
+
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
+import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession, types}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
-import scala.collection.JavaConverters._
-
-import ai.zipline.spark.GroupBy.renderDataSourceQuery
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.StructType
-
-import org.apache.spark.sql.functions.lit
 
 class JoinTest {
 
@@ -464,9 +463,7 @@ class JoinTest {
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
-      diff
-        .replaceWithReadableTime(Seq("ts", "a_unit_test_item_views_ts_max", "b_unit_test_item_views_ts_max"), dropOriginal = true)
-        .show()
+      diff.show()
     }
     assertEquals(diff.count(), 0)
   }
@@ -479,9 +476,9 @@ class JoinTest {
     )
 
     val messageSchema: StructType = new StructType()
-      .add("message", org.apache.spark.sql.types.StringType)
-      .add("id", org.apache.spark.sql.types.StringType)
-      .add("ds", org.apache.spark.sql.types.StringType)
+      .add("message", SparkStringType)
+      .add("id", SparkStringType)
+      .add("ds", SparkStringType)
 
     val rdd: RDD[Row] = spark.sparkContext.parallelize(messageData)
     val df: DataFrame = spark.createDataFrame(rdd, messageSchema)
