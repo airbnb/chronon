@@ -101,7 +101,7 @@ Keys {unselected_keys}, are unselected in source
 
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
-        assert not any ([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
+        assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
 
 
 def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
