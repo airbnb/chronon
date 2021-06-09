@@ -1,6 +1,6 @@
 package ai.zipline.fetcher
 
-import ai.zipline.aggregator.base.{BinaryType, DataType, ListType, MapType, StructField, StructType}
+import ai.zipline.aggregator.base._
 import org.apache.avro.generic.{GenericData, GenericRecord}
 
 import java.nio.ByteBuffer
@@ -80,10 +80,7 @@ object RowConversions {
         }
       case ListType(elemType) =>
         value match {
-          case list: util.ArrayList[Any] =>
-            val newList = new util.ArrayList[Any](list.size())
-            (0 until list.size()).foreach { idx => newList.add(edit(list.get(idx), elemType)) }
-            newList
+          case list: util.ArrayList[Any] => ArrayUtils.toArray(list) // Spark only accepts Array
           case arr: Array[Any] => // avro only recognizes arrayList for its ArrayType/ListType
             val newArr = new util.ArrayList[Any](arr.length)
             arr.foreach { elem => newArr.add(edit(elem, elemType)) }

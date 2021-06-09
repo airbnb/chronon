@@ -5,12 +5,11 @@ import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{GroupBy => _, _}
-import ai.zipline.spark._
 import ai.zipline.spark.Extensions._
+import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
-import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.Test
 
@@ -35,14 +34,14 @@ class GroupByTest {
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEntities
     val expectedDf = df.sqlContext.sql(s"""
-        |SELECT user, 
-        |       ds, 
-        |       AVG(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - (86400*10)) * 1000, session_length, null)) AS session_length_average_10d,
-        |       AVG(session_length) as session_length_average
-        |FROM $viewName
-        |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 
-        |GROUP BY user, ds
-        |""".stripMargin)
+                                          |SELECT user, 
+                                          |       ds, 
+                                          |       AVG(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - (86400*10)) * 1000, session_length, null)) AS session_length_average_10d,
+                                          |       AVG(session_length) as session_length_average
+                                          |FROM $viewName
+                                          |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 
+                                          |GROUP BY user, ds
+                                          |""".stripMargin)
 
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", Constants.PartitionColumn))
     if (diff.count() > 0) {
@@ -187,7 +186,8 @@ class GroupByTest {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition=startPartition),
+      query =
+        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms"), startPartition = startPartition),
       table = sourceTable
     )
 
@@ -197,10 +197,12 @@ class GroupByTest {
         keyColumns = Seq("item"),
         aggregations = Seq(
           Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts", windows = Seq(
-            new Window(15, TimeUnit.DAYS),
-            new Window(60, TimeUnit.DAYS)
-          )),
+          Builders.Aggregation(operation = Operation.MIN,
+                               inputColumn = "ts",
+                               windows = Seq(
+                                 new Window(15, TimeUnit.DAYS),
+                                 new Window(60, TimeUnit.DAYS)
+                               )),
           Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
         ),
         metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
