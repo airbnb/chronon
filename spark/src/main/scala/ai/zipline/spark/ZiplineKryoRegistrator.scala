@@ -66,7 +66,8 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
+      "org.apache.avro.generic.GenericData$Array"
     )
     names.foreach { name =>
       kryo.register(Class.forName(name))

@@ -182,7 +182,7 @@ class GroupByTest {
         s"SELECT * FROM ${backfill(name = "unit_test_item_views_no_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)}"),
       List("item", Constants.PartitionColumn)
     )
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -230,7 +230,7 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-  private def createTestSource = {
+  private def createTestSource: (Source, String) = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val startPartition = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
     val endPartition = Constants.Partition.at(System.currentTimeMillis())

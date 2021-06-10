@@ -22,7 +22,8 @@ object RowConversions {
         }
         record
       },
-      ByteBuffer.wrap
+      ByteBuffer.wrap,
+      false
     )
   }
 
@@ -67,9 +68,10 @@ object RowConversions {
   def recursiveEdit[CompositeType, BinaryType](value: Any,
                                                dataType: DataType,
                                                composer: (Array[Any], DataType) => CompositeType,
-                                               binarizer: Array[Byte] => BinaryType): Any = {
+                                               binarizer: Array[Byte] => BinaryType,
+                                               isSparkRow: Boolean = true): Any = {
     if (value == null) return null
-    def edit(value: Any, dataType: DataType): Any = recursiveEdit(value, dataType, composer, binarizer)
+    def edit(value: Any, dataType: DataType): Any = recursiveEdit(value, dataType, composer, binarizer, isSparkRow)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -80,11 +82,20 @@ object RowConversions {
         }
       case ListType(elemType) =>
         value match {
-          case list: util.ArrayList[Any] => ArrayUtils.toArray(list) // Spark only accepts Array
+          case list: util.ArrayList[Any] =>
+            if (isSparkRow) ArrayUtils.toArray(list) // spark expects ArrayType
+            else {
+              val newList = new util.ArrayList[Any](list.size())
+              (0 until list.size()).foreach { idx => newList.add(edit(list.get(idx), elemType)) }
+              newList
+            }
           case arr: Array[Any] => // avro only recognizes arrayList for its ArrayType/ListType
-            val newArr = new util.ArrayList[Any](arr.length)
-            arr.foreach { elem => newArr.add(edit(elem, elemType)) }
-            newArr
+            if (isSparkRow) arr
+            else {
+              val newArr = new util.ArrayList[Any](arr.length)
+              arr.foreach { elem => newArr.add(edit(elem, elemType)) }
+              newArr
+            }
         }
       case MapType(keyType, valueType) =>
         value match {
