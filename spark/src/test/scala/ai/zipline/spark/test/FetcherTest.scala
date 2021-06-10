@@ -2,26 +2,22 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
-import ai.zipline.aggregator.windowing.TsUtils
-import ai.zipline.api.Extensions.{GroupByOps, JoinPartOps, MetadataOps}
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.KVStore.PutRequest
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
-import com.google.gson.Gson
 import junit.framework.TestCase
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 
 import java.lang
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asJavaIterableConverter, asScalaBufferConverter}
+import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -140,7 +136,12 @@ class FetcherTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "credit",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST_K,
+                             inputColumn = "credit",
+                             windows = Seq(new Window(2, TimeUnit.DAYS)),
+                             argMap = Map("k" -> "2"))
+      ),
       metaData = Builders.MetaData(name = "unit_test.vendor_credit", namespace = namespace)
     )
 
