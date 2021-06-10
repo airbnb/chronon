@@ -20,7 +20,7 @@ case object StringType extends DataType
 
 case object BinaryType extends DataType
 
-// maps to Array[ElementType]
+// maps to java.util.ArrayList[ElementType]
 case class ListType(elementType: DataType) extends DataType
 
 case class MapType(keyType: DataType, valueType: DataType) extends DataType
