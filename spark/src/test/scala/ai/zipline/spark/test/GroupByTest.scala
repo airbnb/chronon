@@ -187,7 +187,7 @@ class GroupByTest {
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
   @Test
-  def testFirstKLastKTopKBottomK(): Unit = {
+  def testFirstKLastKTopKBottomKApproxUniqueCount(): Unit = {
     val (source, endPartition) = createTestSource
 
     val tableUtils = TableUtils(spark)
@@ -220,9 +220,15 @@ class GroupByTest {
                              new Window(15, TimeUnit.DAYS),
                              new Window(60, TimeUnit.DAYS)
                            ),
-                           argMap = Map("k" -> "2"))
+                           argMap = Map("k" -> "2")),
+      Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ))
     )
-    backfill(name = "unit_test_first_k_last_k_top_k_bottom_k",
+    backfill(name = "unit_test_serialization",
              source = source,
              endPartition = endPartition,
              namespace = namespace,
