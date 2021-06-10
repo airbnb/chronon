@@ -9,6 +9,7 @@ import ai.zipline.fetcher.KVStore.PutRequest
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
+import com.google.gson.Gson
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
@@ -159,10 +160,10 @@ class FetcherTest extends TestCase {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
-        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
+        //        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        //        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
+        //        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
+        //        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
@@ -185,9 +186,9 @@ class FetcherTest extends TestCase {
 
     val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
     println(s"""
-         |today: $today
-         |queriesRange: ${todaysQueries.timeRange.pretty}
-         |""".stripMargin)
+               |today: $today
+               |queriesRange: ${todaysQueries.timeRange.pretty}
+               |""".stripMargin)
     val keys =
       todaysQueries.schema.fieldNames.filterNot(
         Constants.ReservedColumns.contains
@@ -215,9 +216,12 @@ class FetcherTest extends TestCase {
           res.values ++
           Map(Constants.PartitionColumn -> today) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
-      val values: Array[Any] = columns.map(all.get(_).orNull)
-      new GenericRow(values)
+      val row: Array[Any] = columns.map(all.get(_).orNull)
+      new GenericRow(row)
     }
+    val gson = new Gson()
+    responseRows.foreach(_.toSeq.toArray andThen gson.toJson andThen println)
+
     println(todaysExpected.schema.pretty)
     val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
@@ -231,7 +235,7 @@ class FetcherTest extends TestCase {
     //val filterClause = "(user_id IS NOT NULL) AND (vendor_id IS NOT NULL)"
     val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
     assertEquals(todaysQueries.count(), responseDf.count())
-//    assertEquals(todaysQueries.count(), todaysExpected.count())
+    //    assertEquals(todaysQueries.count(), todaysExpected.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
