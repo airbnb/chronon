@@ -12,13 +12,12 @@ import ai.zipline.spark._
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
-import org.apache.spark.sql.types.{ArrayType, MapType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 
 import java.lang
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asJavaIterableConverter, asScalaBufferConverter}
+import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -137,12 +136,7 @@ class FetcherTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "credit",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS))),
-        Builders.Aggregation(operation = Operation.LAST_K,
-                             inputColumn = "credit",
-                             windows = Seq(new Window(2, TimeUnit.DAYS)),
-                             argMap = Map("k" -> "2"))
-      ),
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.vendor_credit", namespace = namespace)
     )
 
@@ -160,10 +154,10 @@ class FetcherTest extends TestCase {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-//        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
-//        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
-//        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
-//        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
+        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
+        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
@@ -186,9 +180,9 @@ class FetcherTest extends TestCase {
 
     val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
     println(s"""
-         |today: $today
-         |queriesRange: ${todaysQueries.timeRange.pretty}
-         |""".stripMargin)
+               |today: $today
+               |queriesRange: ${todaysQueries.timeRange.pretty}
+               |""".stripMargin)
     val keys =
       todaysQueries.schema.fieldNames.filterNot(
         Constants.ReservedColumns.contains
@@ -216,48 +210,29 @@ class FetcherTest extends TestCase {
           res.values ++
           Map(Constants.PartitionColumn -> today) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
-      val values: Array[Any] = todaysExpected.schema.fields.map(f = field => {
-        //        if (field.dataType == ArrayType(_, _)) {} else {
-        //          all.get(field.name).orNull
-        //        }
-        field.dataType match {
-          case ArrayType(_, _) => {
-            all.get(field.name).orElse(Some(List(1, 2).asJava))
-          }
-          case MapType(_, _, _) => {
-            all.get(field.name).orElse(Some(Map.empty))
-          }
-          case _ => {
-            all.get(field.name).orNull
-          }
-        }
-      })
+      val values: Array[Any] = columns.map(all.get(_).orNull)
       new GenericRow(values)
     }
-    println(s"response rows ${responseRows}")
-    println(s"expected schema: \n ${todaysExpected.schema.pretty}")
+    println(todaysExpected.schema.pretty)
     val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
-    responseRdd.collect().foreach(println)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
     println("queries:")
     todaysQueries.order(keyishColumns).show()
     println("expected:")
     todaysExpected.order(keyishColumns).show()
     println("response:")
-    responseDf.show()
-//    responseDf.order(keyishColumns).show()
-    System.exit(0)
+    responseDf.order(keyishColumns).show()
     //val filterClause = "(user_id IS NOT NULL) AND (vendor_id IS NOT NULL)"
     val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
     assertEquals(todaysQueries.count(), responseDf.count())
-//    assertEquals(todaysQueries.count(), todaysExpected.count())
+    //    assertEquals(todaysQueries.count(), todaysExpected.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
       diff.show()
     }
-    assertEquals(0, diff.count()) // create groupBy data
+    assertEquals(diff.count(), 0) // create groupBy data
 
     // create queries
     // sawtooth aggregate batch data
