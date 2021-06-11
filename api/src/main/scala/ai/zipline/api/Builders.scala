@@ -101,7 +101,8 @@ object Builders {
         sources: Seq[Source] = null,
         keyColumns: Seq[String] = null,
         aggregations: Seq[Aggregation] = null,
-        accuracy: Accuracy = null
+        accuracy: Accuracy = null,
+        backfillStartDate: String = null
     ): GroupBy = {
       val result = new GroupBy()
       result.setMetaData(metaData)
@@ -113,6 +114,8 @@ object Builders {
         result.setAggregations(aggregations.asJava)
       if (accuracy != null)
         result.setAccuracy(accuracy)
+      if (backfillStartDate != null)
+        result.setBackfillStartDate(backfillStartDate)
       result
     }
   }

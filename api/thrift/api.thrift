@@ -119,8 +119,6 @@ struct MetaData {
     7: optional string outputNamespace
     // team name for the job
     8: optional string team
-    // enable backfill or not for offline jobs
-    9: optional bool backfill
 }
 
 // Equivalent to a FeatureSet in zipline terms
@@ -136,6 +134,7 @@ struct GroupBy {
     // we assume the source is already grouped by keys
     4: optional list<Aggregation> aggregations
     5: optional Accuracy accuracy
+    6: optional string backfillStartDate
 }
 
 struct AggregationSelector {

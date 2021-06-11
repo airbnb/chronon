@@ -280,7 +280,9 @@ class GroupByTest {
                              )),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ) ++ additionalAgg,
-      metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline"),
+      backfillStartDate =
+        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
     )
 
     GroupBy.computeBackfill(
