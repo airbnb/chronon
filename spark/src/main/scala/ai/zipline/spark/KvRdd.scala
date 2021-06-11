@@ -18,23 +18,6 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
   val flatSchema: StructType = StructType(keySchema ++ valueSchema)
   val flatZSchema: ZStructType = flatSchema.toZiplineSchema("Flat")
 
-  def toDf: DataFrame = {
-    val rowSchema = StructType(
-      Seq(
-        StructField("key", StructType(keySchema)),
-        StructField("value", valueSchema)
-      )
-    )
-    val rowRdd: RDD[Row] = data.map {
-      case (keys, values) =>
-        val result = new Array[Any](2)
-        result.update(0, KvRdd.toSparkRow(keys, keyZSchema))
-        result.update(0, KvRdd.toSparkRow(values, valueZSchema))
-        new GenericRow(result)
-    }
-    sparkSession.createDataFrame(rowRdd, rowSchema)
-  }
-
   def toAvroDf: DataFrame = {
     val rowSchema = StructType(
       Seq(
@@ -82,10 +65,18 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
 object KvRdd {
   def toSparkRow(value: Any, dataType: ZDataType): Any = {
-    recursiveEdit[GenericRow, Array[Byte]](value,
-                                           dataType,
-                                           { (data: Array[Any], _) => new GenericRow(data) },
-                                           { bytes: Array[Byte] => bytes })
+    recursiveEdit[GenericRow, Array[Byte], Array[Any]](
+      value,
+      dataType,
+      { (data: Array[Any], _) => new GenericRow(data) },
+      { bytes: Array[Byte] => bytes },
+      { (elems: Iterator[Any], size: Int) =>
+        val result = new Array[Any](size)
+        var i = 0
+        for (x <- elems) { result(i) = x; i += 1 }
+        result
+      }
+    )
   }
 
 }

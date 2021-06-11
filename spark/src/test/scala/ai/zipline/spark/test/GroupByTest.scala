@@ -4,13 +4,12 @@ import ai.zipline.aggregator.base.{IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{GroupBy => _, _}
-import ai.zipline.spark._
+import ai.zipline.api.{Aggregation, GroupBy => _, _}
 import ai.zipline.spark.Extensions._
+import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
-import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.Test
 
@@ -35,14 +34,14 @@ class GroupByTest {
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEntities
     val expectedDf = df.sqlContext.sql(s"""
-        |SELECT user, 
-        |       ds, 
-        |       AVG(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - (86400*10)) * 1000, session_length, null)) AS session_length_average_10d,
-        |       AVG(session_length) as session_length_average
-        |FROM $viewName
-        |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 
-        |GROUP BY user, ds
-        |""".stripMargin)
+                                          |SELECT user, 
+                                          |       ds, 
+                                          |       AVG(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - (86400*10)) * 1000, session_length, null)) AS session_length_average_10d,
+                                          |       AVG(session_length) as session_length_average
+                                          |FROM $viewName
+                                          |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 
+                                          |GROUP BY user, ds
+                                          |""".stripMargin)
 
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", Constants.PartitionColumn))
     if (diff.count() > 0) {
@@ -171,54 +170,125 @@ class GroupByTest {
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
   @Test
   def testStepDaysConsistency(): Unit = {
+    val (source, endPartition) = createTestSource
+
+    val tableUtils = TableUtils(spark)
+    val testSteps = Option(30)
+    val namespace = "test_steps"
+    val diff = Comparison.sideBySide(
+      tableUtils.sql(
+        s"SELECT * FROM ${backfill(name = "unit_test_item_views_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils, stepDays = testSteps)}"),
+      tableUtils.sql(
+        s"SELECT * FROM ${backfill(name = "unit_test_item_views_no_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)}"),
+      List("item", Constants.PartitionColumn)
+    )
+    assertEquals(0, diff.count())
+  }
+
+  // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
+  @Test
+  def testFirstKLastKTopKBottomKApproxUniqueCount(): Unit = {
+    val (source, endPartition) = createTestSource
+
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_order_by_limit"
+    val aggs = Seq(
+      Builders.Aggregation(operation = Operation.LAST_K,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ),
+                           argMap = Map("k" -> "2")),
+      Builders.Aggregation(operation = Operation.FIRST_K,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ),
+                           argMap = Map("k" -> "2")),
+      Builders.Aggregation(operation = Operation.TOP_K,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ),
+                           argMap = Map("k" -> "2")),
+      Builders.Aggregation(operation = Operation.BOTTOM_K,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ),
+                           argMap = Map("k" -> "2")),
+      Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
+                           inputColumn = "ts",
+                           windows = Seq(
+                             new Window(15, TimeUnit.DAYS),
+                             new Window(60, TimeUnit.DAYS)
+                           ))
+    )
+    backfill(name = "unit_test_serialization",
+             source = source,
+             endPartition = endPartition,
+             namespace = namespace,
+             tableUtils = tableUtils,
+             additionalAgg = aggs)
+  }
+
+  private def createTestSource: (Source, String) = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val startPartition = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
     val endPartition = Constants.Partition.at(System.currentTimeMillis())
-    val tableUtils = TableUtils(spark)
     val sourceSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
       Column("time_spent_ms", LongType, 5000)
     )
-    val namespace = "test_steps"
+    val namespace = "zipline_test"
     val sourceTable = s"$namespace.test_group_by_steps"
-    val testSteps = Option(30)
 
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts","item","time_spent_ms"), startPartition=startPartition),
+      query =
+        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms"), startPartition = startPartition),
       table = sourceTable
     )
+    (source, endPartition)
+  }
 
-    def backfill(name: String, stepDays: Option[Int] = None): String = {
-      val groupBy = Builders.GroupBy(
-        sources = Seq(source),
-        keyColumns = Seq("item"),
-        aggregations = Seq(
-          Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-          Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts", windows = Seq(
-            new Window(15, TimeUnit.DAYS),
-            new Window(60, TimeUnit.DAYS)
-          )),
-          Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-        ),
-        metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
-      )
-
-      GroupBy.computeBackfill(
-        groupBy,
-        endPartition = endPartition,
-        tableUtils = tableUtils,
-        stepDays = stepDays
-      )
-      s"$namespace.$name"
-    }
-    val diff = Comparison.sideBySide(
-      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_steps", testSteps)}"),
-      tableUtils.sql(s"SELECT * FROM ${backfill("unit_test_item_views_no_steps")}"),
-      List("item", Constants.PartitionColumn)
+  def backfill(name: String,
+               source: Source,
+               namespace: String,
+               endPartition: String,
+               tableUtils: TableUtils,
+               stepDays: Option[Int] = None,
+               additionalAgg: Seq[Aggregation] = Seq.empty): String = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN,
+                             inputColumn = "ts",
+                             windows = Seq(
+                               new Window(15, TimeUnit.DAYS),
+                               new Window(60, TimeUnit.DAYS),
+                               WindowUtils.Unbounded
+                             )),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+      ) ++ additionalAgg,
+      metaData = Builders.MetaData(name = name, namespace = namespace, team = "zipline")
     )
-    assertEquals(diff.count(), 0)
+
+    GroupBy.computeBackfill(
+      groupBy,
+      endPartition = endPartition,
+      tableUtils = tableUtils,
+      stepDays = stepDays
+    )
+    s"$namespace.$name"
   }
 }

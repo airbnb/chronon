@@ -184,9 +184,9 @@ class FetcherTest extends TestCase {
 
     val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
     println(s"""
-         |today: $today
-         |queriesRange: ${todaysQueries.timeRange.pretty}
-         |""".stripMargin)
+               |today: $today
+               |queriesRange: ${todaysQueries.timeRange.pretty}
+               |""".stripMargin)
     val keys =
       todaysQueries.schema.fieldNames.filterNot(
         Constants.ReservedColumns.contains
@@ -230,7 +230,7 @@ class FetcherTest extends TestCase {
     //val filterClause = "(user_id IS NOT NULL) AND (vendor_id IS NOT NULL)"
     val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
     assertEquals(todaysQueries.count(), responseDf.count())
-//    assertEquals(todaysQueries.count(), todaysExpected.count())
+    //    assertEquals(todaysQueries.count(), todaysExpected.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
