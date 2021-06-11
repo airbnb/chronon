@@ -1,6 +1,6 @@
 package ai.zipline.fetcher
 
-import ai.zipline.aggregator.base.{BinaryType, DataType, ListType, MapType, StructField, StructType}
+import ai.zipline.aggregator.base._
 import org.apache.avro.generic.{GenericData, GenericRecord}
 
 import java.nio.ByteBuffer
@@ -11,7 +11,7 @@ object RowConversions {
   def toAvroRecord(value: Any, dataType: DataType): Any = {
     // TODO: avoid schema generation multiple times
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
-    recursiveEdit[GenericRecord, ByteBuffer](
+    recursiveEdit[GenericRecord, ByteBuffer, util.ArrayList[Any]](
       value,
       dataType,
       { (data: Array[Any], elemDataType: DataType) =>
@@ -22,7 +22,12 @@ object RowConversions {
         }
         record
       },
-      ByteBuffer.wrap
+      ByteBuffer.wrap,
+      { (elems: Iterator[Any], size: Int) =>
+        val result = new util.ArrayList[Any](size)
+        elems.foreach(result.add)
+        result
+      }
     )
   }
 
@@ -64,12 +69,14 @@ object RowConversions {
 
   // compositor converts a bare array of java types into a format specific row/record type
   // recursively explore the ZDataType to explore where composition/record building happens
-  def recursiveEdit[CompositeType, BinaryType](value: Any,
-                                               dataType: DataType,
-                                               composer: (Array[Any], DataType) => CompositeType,
-                                               binarizer: Array[Byte] => BinaryType): Any = {
+  def recursiveEdit[CompositeType, BinaryType, CollectionType](
+      value: Any,
+      dataType: DataType,
+      composer: (Array[Any], DataType) => CompositeType,
+      binarizer: Array[Byte] => BinaryType,
+      collector: (Iterator[Any], Int) => CollectionType): Any = {
     if (value == null) return null
-    def edit(value: Any, dataType: DataType): Any = recursiveEdit(value, dataType, composer, binarizer)
+    def edit(value: Any, dataType: DataType): Any = recursiveEdit(value, dataType, composer, binarizer, collector)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -81,13 +88,9 @@ object RowConversions {
       case ListType(elemType) =>
         value match {
           case list: util.ArrayList[Any] =>
-            val newList = new util.ArrayList[Any](list.size())
-            (0 until list.size()).foreach { idx => newList.add(edit(list.get(idx), elemType)) }
-            newList
+            collector(list.iterator().asScala.map(edit(_, elemType)), list.size())
           case arr: Array[Any] => // avro only recognizes arrayList for its ArrayType/ListType
-            val newArr = new util.ArrayList[Any](arr.length)
-            arr.foreach { elem => newArr.add(edit(elem, elemType)) }
-            newArr
+            collector(arr.iterator.map(edit(_, elemType)), arr.length)
         }
       case MapType(keyType, valueType) =>
         value match {
