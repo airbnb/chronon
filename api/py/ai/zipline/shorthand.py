@@ -1,10 +1,9 @@
+import ai.zipline.api.ttypes as api
+import ai.zipline.utils as utils
 import inspect
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Union, Tuple, Dict, Callable
-
-import ai.zipline.api.ttypes as api
-import ai.zipline.utils as utils
 
 MIN = api.Operation.MIN
 MAX = api.Operation.MAX
@@ -104,7 +103,7 @@ def GroupBy(name: str,
             online: bool = None,
             topic: str = None,
             mutation_table: str = None,
-            backfill: bool = False,
+            backfill_start_date: str = None,
             dependencies: List[str] = None) -> api.GroupBy:
     assert (aggs is None) ^ (selects is None), "specity only one of aggs or selects"
     final_selects = selects
@@ -146,9 +145,9 @@ def GroupBy(name: str,
                               tableProperties=table_properties,
                               outputNamespace=output_namespace,
                               team=team,
-                              dependencies=deps,
-                              backfill=backfill),
+                              dependencies=deps),
         sources=[source],
         keyColumns=key_selects.keys(),
-        aggregations=aggregations
+        aggregations=aggregations,
+        backfillStartDate=backfill_start_date
     )

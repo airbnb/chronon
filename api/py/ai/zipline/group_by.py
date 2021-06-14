@@ -1,8 +1,7 @@
-import copy
-from typing import List, Optional, Union, Dict, Callable, Tuple
-
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
+import copy
+from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -116,7 +115,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
             production: bool = DEFAULT_PRODUCTION,
-            backfill: bool = False,
+            backfill_start_date: str = None,
             dependencies: List[str] = None) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
@@ -138,11 +137,12 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
 
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, backfill=backfill)
+    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps)
 
     return ttypes.GroupBy(
         sources=updated_sources,
         keyColumns=keys,
         aggregations=aggregations,
-        metaData=metadata
+        metaData=metadata,
+        backfillStartDate=backfill_start_date
     )

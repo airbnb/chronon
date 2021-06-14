@@ -1,13 +1,12 @@
+import ai.zipline.api.ttypes as api
+import ai.zipline.repo.extract_objects as eo
+import ai.zipline.utils as utils
 import copy
 import gc
 import importlib
 import json
 import logging
 from typing import List, Dict
-
-import ai.zipline.api.ttypes as api
-import ai.zipline.repo.extract_objects as eo
-import ai.zipline.utils as utils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -52,7 +51,6 @@ def Join(left: api.Source,
          dependencies: List[str] = None,
          online: bool = False,
          production: bool = False,
-         backfill: bool = True,
          output_namespace: str = None,
          table_properties: Dict[str, str] = None) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
@@ -99,7 +97,6 @@ def Join(left: api.Source,
         production=production,
         customJson=json.dumps(customJson),
         dependencies=left_dependencies + right_dependencies,
-        backfill=backfill,
         outputNamespace=output_namespace,
         tableProperties=table_properties
     )

@@ -21,7 +21,6 @@
       "groupBy": {
         "metaData": {
           "name": "sample_group_by",
-          "online": 0,
           "production": 0,
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_team_sample_staging_query_v1_ds\", \"spec\": \"sample_namespace.sample_team_sample_staging_query_v1/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
@@ -31,8 +30,7 @@
             "description": "sample description"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team",
-          "backfill": 0
+          "team": "sample_team"
         },
         "sources": [
           {
