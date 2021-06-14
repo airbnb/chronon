@@ -7,6 +7,7 @@ import org.apache.thrift.protocol.TSimpleJSONProtocol
 
 import scala.reflect.runtime.universe._
 import scala.io.Source._
+import scala.reflect.ClassTag
 
 object ThriftJsonCodec {
   val mapper = new ObjectMapper()
@@ -33,12 +34,12 @@ object ThriftJsonCodec {
     obj
   }
 
-  def fromJsonFile[T <: TBase[_, _]: Manifest](fileName: String, check: Boolean, clazz: Class[T]): T = {
+  def fromJsonFile[T <: TBase[_, _]: Manifest: ClassTag](fileName: String, check: Boolean): T = {
     val src = fromFile(fileName)
     val jsonStr =
       try src.mkString
       finally src.close()
-    val obj: T = fromJsonStr[T](jsonStr, check, clazz)
+    val obj: T = fromJsonStr[T](jsonStr, check, clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]])
     obj
   }
 }

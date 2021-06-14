@@ -38,7 +38,7 @@ object StagingQuery {
     println(s"Parsed Args: $parsedArgs")
     val stagingQueryConf =
       ThriftJsonCodec
-        .fromJsonFile[StagingQueryConf](parsedArgs.confPath(), check = true, clazz = classOf[StagingQueryConf])
+        .fromJsonFile[StagingQueryConf](parsedArgs.confPath(), check = true)
 
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,
