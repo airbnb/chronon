@@ -158,7 +158,6 @@ struct JoinPart {
     4: optional string prefix
 }
 
-
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
     1: optional MetaData metaData
