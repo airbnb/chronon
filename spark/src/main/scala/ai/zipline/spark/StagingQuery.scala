@@ -32,16 +32,9 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
 }
 
 object StagingQuery {
-  import org.rogach.scallop._
-  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath: ScallopOption[String] = opt[String](required = true)
-    val endDate: ScallopOption[String] = opt[String](required = true)
-    verify()
-  }
-
   def main(args: Array[String]): Unit = {
     // args = conf path, end date
-    val parsedArgs = new ParsedArgs(args)
+    val parsedArgs = new BatchArgs(args)
     println(s"Parsed Args: $parsedArgs")
     val stagingQueryConf =
       ThriftJsonCodec
