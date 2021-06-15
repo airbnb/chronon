@@ -13,8 +13,7 @@
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
     },
     "outputNamespace": "sample_team_namespace",
-    "team": "sample_team",
-    "backfill": 1
+    "team": "sample_team"
   },
   "left": {
     "events": {
@@ -42,8 +41,7 @@
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
           "outputNamespace": "sample_namespace",
-          "team": "sample_team",
-          "backfill": 0
+          "team": "sample_team"
         },
         "sources": [
           {
@@ -91,8 +89,7 @@
           "dependencies": [
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
-          "team": "sample_team",
-          "backfill": 0
+          "team": "sample_team"
         },
         "sources": [
           {

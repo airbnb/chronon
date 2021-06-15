@@ -243,7 +243,7 @@ object GroupBy {
     assert(
       !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
         .contains(Constants.TimeColumn),
-        s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
+      s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
@@ -286,9 +286,8 @@ object GroupBy {
       case Entities => (queryStart, source.query.startPartition)
       case Events =>
         val windowStart = window.map(Constants.Partition.minus(minQuery, _)).orNull
-        val sourceStart = (Option(source.query.startPartition) ++ tableUtils.firstAvailablePartition(source.table))
-          .reduceLeftOption(Ordering[String].min)
-          .orNull
+        lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
+        val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
         (windowStart, sourceStart)
     }
 
@@ -325,7 +324,13 @@ object GroupBy {
     query
   }
 
-  def computeBackfill(groupByConf: GroupByConf, endPartition: String, tableUtils: TableUtils, stepDays: Option[Int] = None): Unit = {
+  def computeBackfill(groupByConf: GroupByConf,
+                      endPartition: String,
+                      tableUtils: TableUtils,
+                      stepDays: Option[Int] = None): Unit = {
+    assert(
+      groupByConf.backfillStartDate != null,
+      s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
@@ -333,9 +338,8 @@ object GroupBy {
       .map(_.asScala.toMap)
       .orNull
     val inputTables = sources.map(_.table)
-    val minStartPartition = sources.map(src => Option(src.query.startPartition)).min.orNull
     val groupByUnfilledRange: PartitionRange =
-      tableUtils.unfilledRange(outputTable, PartitionRange(minStartPartition, endPartition), inputTables)
+      tableUtils.unfilledRange(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), inputTables)
     println(s"group by unfilled range: $groupByUnfilledRange")
     val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
     println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")

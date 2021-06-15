@@ -11,8 +11,7 @@
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
     },
     "outputNamespace": "sample_team_namespace",
-    "team": "sample_team",
-    "backfill": 1
+    "team": "sample_team"
   },
   "left": {
     "events": {
