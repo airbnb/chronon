@@ -127,3 +127,32 @@ brew install thrift@0.13.0
 
 Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
 
+
+### Pushing python API package to a private Pypi repository
+
+First make sure the thrift definitions are updated:
+```shell
+cd $ZIPLINE_OS
+thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+```
+
+Second make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
+```
+[distutils]
+index-servers = private
+
+[private]
+repository: <private pypi artifactory url>
+username: <username>
+password: <password or token>
+```
+
+Finally, go into the folder containing setup.py and run the publish to the required (using setuptools or twine).
+For example, following the configuration above to publish into the `<private>` repository.
+```
+cd $ZIPLINE_OS
+cd api/py
+python setup.py sdist upload -r private
+```
+
+Don't forget to update the version if necessary
