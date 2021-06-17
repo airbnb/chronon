@@ -27,10 +27,11 @@ case class TableUtils(sparkSession: SparkSession) {
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
   }
 
+  def lastAvailablePartition(tableName: String): Option[String] =
+    partitions(tableName).reduceOption(Ordering[String].max)
+
   def firstUnavailablePartition(tableName: String): Option[String] =
-    partitions(tableName)
-      .reduceOption(Ordering[String].max)
-      .map(Constants.Partition.after)
+    lastAvailablePartition(tableName).map(Constants.Partition.after)
 
   def firstAvailablePartition(tableName: String): Option[String] =
     partitions(tableName)
@@ -159,10 +160,15 @@ case class TableUtils(sparkSession: SparkSession) {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
+    println(s"Input start $inputStart from tables $inputTables")
     val resumePartition = firstUnavailablePartition(outputTable)
+    println(s"First unavailable for $outputTable is $resumePartition")
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
+    println(s"Effective Start $effectiveStart")
+    println(s"partition start ${partitionRange.start}")
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
+    println(s"Result: ${result}")
     // Using seconds rather than milis will result in bad dates close to start of epoch, Choosing 1980 as an arbitrary cutoff date, can be modified
     assert(
       Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),

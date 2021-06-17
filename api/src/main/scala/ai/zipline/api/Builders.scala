@@ -84,11 +84,12 @@ object Builders {
       source
     }
 
-    def events(query: Query, table: String, topic: String = null): Source = {
+    def events(query: Query, table: String, topic: String = null, isCumulative: Boolean = false): Source = {
       val result = new EventSource()
       result.setQuery(query)
       result.setTable(table)
       result.setTopic(topic)
+      result.setIsCumulative(isCumulative)
       val source = new Source()
       source.setEvents(result)
       source
