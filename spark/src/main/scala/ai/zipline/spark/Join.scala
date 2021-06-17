@@ -265,7 +265,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       PartitionRange(joinConf.left.query.startPartition, endPartition),
       Option(joinConf.left.table).toSeq)
 
-    println(s"left unfilled range: $leftUnfilledRange")
+    println(s"left unfilled range: $leftUnfilledRange based on $outputTable")
+    println(s"Left query start: ${joinConf.left.query.startPartition}")
+    println(s"Left query end: ${joinConf.left.query.endPartition}")
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)

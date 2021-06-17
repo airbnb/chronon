@@ -103,7 +103,7 @@ class JoinTest {
         table = queryTable
       ),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.user_transaction_features_2", namespace = namespace, team = "zipline")
     )
 
     val runner1 = new Join(joinConf, end, tableUtils)
@@ -112,7 +112,7 @@ class JoinTest {
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
-        |WITH 
+        |WITH
         |   queries AS (SELECT user_name, ts, ds from $queryTable where ds >= '$start' and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
@@ -295,7 +295,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
-      metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)

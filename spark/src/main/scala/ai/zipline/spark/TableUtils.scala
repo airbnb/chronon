@@ -160,9 +160,12 @@ case class TableUtils(sparkSession: SparkSession) {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
+    println(s"Input start based on $inputTables = $inputStart")
     val resumePartition = firstUnavailablePartition(outputTable)
+    println(s"First unavailable partition of $outputTable = $resumePartition")
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
+    println(s"Effective Start = $effectiveStart")
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
     // Using seconds rather than milis will result in bad dates close to start of epoch, Choosing 1980 as an arbitrary cutoff date, can be modified
     assert(
