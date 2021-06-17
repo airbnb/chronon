@@ -81,7 +81,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
                              windows = Seq(new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_transactions_3", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "zipline")
     )
     val queriesSchema = List(
       Column("user", StringType, 100)
@@ -107,7 +107,7 @@ class JoinTest {
         table = queryTable
       ),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.user_transaction_features_3", namespace = namespace, team = "zipline")
     )
 
     val runner1 = new Join(joinConf, end, tableUtils)
@@ -121,7 +121,7 @@ class JoinTest {
         |   grouped_transactions AS (
         |      SELECT user, 
         |             ds, 
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_3_amount_dollars_sum_30d,
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
         |      FROM 
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
@@ -134,7 +134,7 @@ class JoinTest {
         | SELECT queries.user_name,
         |        queries.ts,
         |        queries.ds,
-        |        grouped_transactions.unit_test_user_transactions_3_amount_dollars_sum_30d
+        |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
