@@ -113,11 +113,12 @@ class JoinTest {
         table = queryTable
       ),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features_5", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
     val runner1 = new Join(joinConf, end, tableUtils)
 
+    spark.sql(s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
     val computed = runner1.computeJoin(Some(3))
     println(s"join start = $start")
 

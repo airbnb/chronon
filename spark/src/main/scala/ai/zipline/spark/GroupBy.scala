@@ -283,11 +283,15 @@ object GroupBy {
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
+    val effectiveEnd = Option(source.query.endPartition).map { endPartition =>
+      Seq(endPartition, queryRange.end).min
+    }.getOrElse(queryRange.end)
+
     // Need to use a case class here to allow null matching
     case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
     val dataProfile: SourceDataProfile = source.dataModel match {
-      case Entities => SourceDataProfile(queryStart, source.query.startPartition, Option(source.query.endPartition).getOrElse(queryRange.end))
+      case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
       case Events =>
         Option(source.getEvents.isCumulative).getOrElse(false) match {
           case false =>
@@ -296,7 +300,7 @@ object GroupBy {
             val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
             lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
             val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
-            SourceDataProfile(windowStart, sourceStart, Option(source.query.endPartition).getOrElse(queryRange.end))
+            SourceDataProfile(windowStart, sourceStart, effectiveEnd)
           case true =>
             // Cumulative case - pick only a single partition for the entire range
             lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
