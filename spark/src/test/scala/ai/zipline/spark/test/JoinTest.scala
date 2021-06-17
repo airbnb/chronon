@@ -299,7 +299,7 @@ class JoinTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
-      metaData = Builders.MetaData(name = "test.item_snapshot_features", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
