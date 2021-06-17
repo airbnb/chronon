@@ -81,7 +81,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
                              windows = Seq(new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test.user_transactions_2", namespace = namespace, team = "zipline")
     )
     val queriesSchema = List(
       Column("user", StringType, 100)
