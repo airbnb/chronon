@@ -46,6 +46,8 @@ class JoinTest {
 
     val dollarTable = s"$namespace.dollar_transactions"
     val rupeeTable = s"$namespace.rupee_transactions"
+    spark.sql(s"DROP TABLE IF EXISTS $dollarTable")
+    spark.sql(s"DROP TABLE IF EXISTS $rupeeTable")
     DataFrameGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable, Map("tblProp1" -> "1"))
     DataFrameGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
 
@@ -60,6 +62,7 @@ class JoinTest {
       snapshotTable = dollarTable
     )
 
+    //println("Rupee Source start partition $month")
     val rupeeSource =
       Builders.Source.entities(
         query = Builders.Query(
@@ -93,6 +96,9 @@ class JoinTest {
       .withColumnRenamed("user", "user_name") // to test zipline renaming logic
       .save(queryTable)
 
+    println("Left side:")
+    //spark.sql(s"SELECT * FROM $queryTable").show(20)
+
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
@@ -107,7 +113,7 @@ class JoinTest {
         table = queryTable
       ),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user"))),
-      metaData = Builders.MetaData(name = "test.user_transaction_features_3", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "test.user_transaction_features_5", namespace = namespace, team = "zipline")
     )
 
     val runner1 = new Join(joinConf, end, tableUtils)

@@ -323,6 +323,7 @@ object GroupBy {
          |   query window: $window
          |   source table: ${source.table}
          |   source data range: $sourceRange
+         |   source start/end: ${source.query.startPartition}/${source.query.endPartition}
          |   source data model: ${source.dataModel}
          |   queryable data range: $queryableDataRange
          |   intersected/effective scan range: $intersectedRange
