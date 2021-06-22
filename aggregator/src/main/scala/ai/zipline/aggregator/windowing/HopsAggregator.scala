@@ -10,6 +10,7 @@ import ai.zipline.aggregator.windowing.HopsAggregator._
 import ai.zipline.api.{Aggregation, Window}
 import ai.zipline.api.Extensions._
 import scala.collection.JavaConverters._
+import java.lang.ClassCastException
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution
 // we use minQueryTs to construct only the relevant hops for a given hop size.
@@ -129,6 +130,11 @@ class HopsAggregator(minQueryTs: Long,
   // used to collect hops of various sizes in a single pass of input rows
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
+      try{
+        row.ts
+      } catch {
+        case _: ClassCastException => println(s"There was an error getting the timestamp from the row with values ${row.values}. Timestamps must be LONG type.")
+      }
       if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
         val hopStart = TsUtils.round(row.ts, hopSizes(i))
         val hopIr = hopMaps(i).computeIfAbsent(hopStart, javaBuildHop)

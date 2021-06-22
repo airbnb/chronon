@@ -170,9 +170,15 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
           println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
           if (rightUnfilledRange.valid) {
-            val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
-            // cache the join-part output into table partitions
-            rightDf.save(joinPartTableName, tableProps)
+            try {
+              val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
+              // cache the join-part output into table partitions
+              rightDf.save(joinPartTableName, tableProps)
+            } catch {
+              case e: Exception =>
+                println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
+                throw e
+            }
           }
           val scanRange =
             if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
