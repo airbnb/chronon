@@ -131,14 +131,17 @@ class HopsAggregator(minQueryTs: Long,
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
       try{
-        row.ts
+        if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
+          val hopStart = TsUtils.round(row.ts, hopSizes(i))
+          val hopIr = hopMaps(i).computeIfAbsent(hopStart, javaBuildHop)
+          rowAggregator.update(hopIr, row)
+        }
       } catch {
-        case _: ClassCastException => println(s"There was an error getting the timestamp from the row with values ${row.values}. Timestamps must be LONG type.")
-      }
-      if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
-        val hopStart = TsUtils.round(row.ts, hopSizes(i))
-        val hopIr = hopMaps(i).computeIfAbsent(hopStart, javaBuildHop)
-        rowAggregator.update(hopIr, row)
+        case e: ClassCastException =>
+          println(s"There was an error getting the timestamp from the row with values ${row.values}. Timestamps must be LONG type.")
+          throw e
+        case e: Exception =>
+          throw e
       }
     }
     hopMaps
