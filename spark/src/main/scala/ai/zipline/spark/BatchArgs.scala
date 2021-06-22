@@ -11,6 +11,5 @@ class BatchArgs(args: Seq[String]) extends ScallopConf(args) {
   val stepDays: ScallopOption[Int] = opt[Int](required = false) // doesn't apply to uploads
   verify()
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
-    ThriftJsonCodec
-      .fromJsonFile[T](confPath(), check = true)
+    ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
 }

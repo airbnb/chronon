@@ -11,9 +11,9 @@ import subprocess
 JAR_URL = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
           "spark_uber_2.11/0.0.4_nikhiltest/spark_uber_2.11-0.0.4_nikhiltest.jar "
 MODE_ARGS = {
-    'backfill': '--confPath={conf_path} --endDate={ds}',
-    'upload': '--confPath={conf_path} --endDate={ds}',
-    'streaming': '--confPath={conf_path} --userJar={user_jar}'
+    'backfill': '--conf-path={conf_path} --end-date={ds}',
+    'upload': '--conf-path={conf_path} --end-date={ds}',
+    'streaming': '--conf-path={conf_path} --user-jar={user_jar}'
 }
 ROUTES = {
     'group_bys': {
@@ -31,6 +31,11 @@ ROUTES = {
 }
 
 
+def check_call(cmd):
+    print("Running command: " + cmd)
+    return subprocess.check_call(cmd, shell=True)
+
+
 def check_output(cmd):
     print("Running command: " + cmd)
     return subprocess.check_output(cmd, shell=True).strip()
@@ -38,19 +43,22 @@ def check_output(cmd):
 
 def download_only_once(url, path):
     should_download = True
+    path = path.strip()
     if os.path.exists(path):
-        remote_size = check_output("curl -sI " + url + " | grep -i Content-Length | awk '{print $2}'")
-        local_size = check_output("stat " + path + " | awk '{print $8}'")
-        print("""
-    Downloading {url} vs. {path}.
-    Remote size: {remote_size},
-    Local size : {local_size},
-        """.format(**locals()))
+        remote_size = int(check_output("curl -sI " + url + " | grep -i Content-Length | awk '{print $2}'"))
+        local_size = int(check_output("wc -c <" + path))
+        print("""Files sizes of {url} vs. {path}
+    Remote size: {remote_size}
+    Local size : {local_size}""".format(**locals()))
         if local_size == remote_size:
-            print("Seems to be already downloaded. Exiting...")
+            print("Sizes match. Assuming its already downloaded.")
             should_download = False
         if should_download:
-            check_output('curl {} -o {}'.format(url, path))
+            print("Different file from remote at local: " + path + ". Re-downloading..")
+            check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
+    else: 
+        print("No file at: " + path + ". Downloading..")
+        check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
 def download_jar():
@@ -66,7 +74,7 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        self.conf_type, self.team = self.conf.split('/')[1:][:2]
+        self.context, self.conf_type, self.team = self.conf.split('/')[:3]
         possible_modes = ROUTES[self.conf_type].keys()
         assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
             args.mode, self.conf, self.conf_type, possible_modes)
@@ -81,27 +89,31 @@ class Runner:
             conf_json = json.load(conf_file)
         with open(os.path.join(self.repo, 'teams.json'), 'r') as teams_file:
             teams_json = json.load(teams_file)
-        # env priority conf.metaData.env >> team.env >> default_team.env
+        app_name = conf_json['metaData']['name']
+        # env priority conf.metaData.modeToEnvMap >> team.env >> default_team.env
         # default env & conf env are optional, team env is not.
-        env = teams_json.get('default', {}).get(self.mode, {})
-        team_env = teams_json[self.team].get(self.mode, {})
+        env = teams_json.get('default', {}).get(self.context, {}).get(self.mode, {})
+        team_env = teams_json[self.team].get(self.context, {}).get(self.mode, {})
         conf_env = conf_json.get('metaData').get('modeToEnvMap', {}).get(self.mode, {})
         env.update(team_env)
         env.update(conf_env)
+        env["APP_NAME"]=app_name
+        print("Setting env variables:")
         for key, value in env.items():
-            print("Setting env variable: " + key + " to value: " + value)
+            print("    " + key + "=" + value)
             os.environ[key] = value
 
     def run(self):
         self.set_env()
-        additional_args = self.args.format(conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
-        command = 'bash {script} {jar} --class ai.zipline.spark.{main} {args}'.format(
+        additional_args = (MODE_ARGS[self.mode] + self.args).format(
+            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
+        command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
             script=os.path.join(self.repo, 'spark_submit.sh'),
             jar=self.jar_path,
             main=ROUTES[self.conf_type][self.mode],
-            args=MODE_ARGS[self.mode] + additional_args
+            args=additional_args
         )
-        check_output(command)
+        check_call(command)
 
 
 if __name__ == "__main__":

@@ -21,25 +21,20 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
     val stagingQueryUnfilledRange: PartitionRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
 
-    println(s"staging query unfilled range: $stagingQueryUnfilledRange")
+    println(s"Staging Query unfilled range: $stagingQueryUnfilledRange")
     val renderedQuery = stagingQueryConf.query
       .replaceAll(StartDateRegex, stagingQueryUnfilledRange.start)
       .replaceAll(EndDateRegex, stagingQueryUnfilledRange.end)
-    println(s"the rendered staging query to run is $renderedQuery")
+    println(s"Rendered Staging Query to run is:\n$renderedQuery")
     tableUtils.sql(renderedQuery).save(outputTable, tableProps)
-    println(s"Finished writing staging query data to $outputTable")
+    println(s"Finished writing Staging Query data to $outputTable")
   }
 }
 
 object StagingQuery {
   def main(args: Array[String]): Unit = {
-    // args = conf path, end date
     val parsedArgs = new BatchArgs(args)
-    println(s"Parsed Args: $parsedArgs")
-    val stagingQueryConf =
-      ThriftJsonCodec
-        .fromJsonFile[StagingQueryConf](parsedArgs.confPath(), check = true)
-
+    val stagingQueryConf = parsedArgs.parseConf[StagingQueryConf]
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,
       parsedArgs.endDate(),

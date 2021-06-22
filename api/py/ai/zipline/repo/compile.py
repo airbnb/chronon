@@ -162,8 +162,8 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
 
 
 def _print_highlighted(left, right):
-    # print in blue and bold
-    print(f"{left:>25} - \033[34m\033[1m{right}\033[00m")
+    # print in blue.
+    print(f"{left:>25} - \u001b[34m{right}\u001b[0m")
 
 
 def _print_error(left, right):
@@ -172,8 +172,8 @@ def _print_error(left, right):
 
 
 def _print_warning(string):
-    # print in yellow.
-    print(f"\033[93m{string}\033[00m")
+    # print in yellow - \u001b[33m
+    print(f"\u001b[33m{string}\u001b[0m")
 
 
 if __name__ == '__main__':
