@@ -56,7 +56,7 @@ def download_only_once(url, path):
         if should_download:
             print("Different file from remote at local: " + path + ". Re-downloading..")
             check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
-    else: 
+    else:
         print("No file at: " + path + ". Downloading..")
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
@@ -97,7 +97,7 @@ class Runner:
         conf_env = conf_json.get('metaData').get('modeToEnvMap', {}).get(self.mode, {})
         env.update(team_env)
         env.update(conf_env)
-        env["APP_NAME"]=app_name
+        env["APP_NAME"] = app_name
         print("Setting env variables:")
         for key, value in env.items():
             print("    " + key + "=" + value)
