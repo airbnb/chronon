@@ -89,6 +89,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   }
 
   def decode(bytes: Array[Byte]): GenericRecord = {
+    if (bytes == null) return null
     val inputStream = new SeekableByteArrayInput(bytes)
     decoder = DecoderFactory.get.binaryDecoder(inputStream, decoder)
     if (!decoder.isEnd) {
@@ -103,10 +104,10 @@ class AvroCodec(val schemaStr: String) extends Serializable {
 
   def decodeMap(bytes: Array[Byte]): Map[String, AnyRef] = {
     if (bytes == null) return null
-    val record = decode(bytes)
-    fieldNames.indices.map { i =>
-      fieldNames(i) -> record.get(i)
-    }.toMap
+    val output = RowConversions
+      .fromAvroRecord(decode(bytes), ziplineSchema)
+      .asInstanceOf[Array[Any]]
+    fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
   }
 }
 

@@ -2,6 +2,7 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.base._
 import org.apache.avro.generic.{GenericData, GenericRecord}
+import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
@@ -32,22 +33,26 @@ object RowConversions {
   }
 
   def fromAvroRecord(value: Any, dataType: DataType): Any = {
-    inverseEdit[GenericRecord, ByteBuffer, GenericData.Array[Any]](
+    inverseEdit[GenericRecord, ByteBuffer, GenericData.Array[Any], Utf8](
       value,
       dataType,
       { (record: GenericRecord, fields: Seq[StructField]) => fields.indices.map(record.get).toArray },
       { (byteBuffer: ByteBuffer) => byteBuffer.array() },
-      { (garr: GenericData.Array[Any]) => (0 until garr.size()).map { garr.get }.toArray }
+      { (garr: GenericData.Array[Any]) => (0 until garr.size()).map { garr.get }.toArray },
+      { (avString: Utf8) => avString.toString }
     )
   }
 
-  def inverseEdit[CompositeType, BinaryType, ArrayType](value: Any,
-                                                        dataType: DataType,
-                                                        decomposer: (CompositeType, Seq[StructField]) => Array[Any],
-                                                        debinarizer: BinaryType => Array[Byte],
-                                                        delister: ArrayType => Array[Any]): Any = {
+  def inverseEdit[CompositeType, BinaryType, ArrayType, StringType](
+      value: Any,
+      dataType: DataType,
+      decomposer: (CompositeType, Seq[StructField]) => Array[Any],
+      debinarizer: BinaryType => Array[Byte],
+      delister: ArrayType => Array[Any],
+      deStringer: StringType => String): Any = {
     if (value == null) return null
-    def edit(value: Any, dataType: DataType): Any = inverseEdit(value, dataType, decomposer, debinarizer, delister)
+    def edit(value: Any, dataType: DataType): Any =
+      inverseEdit(value, dataType, decomposer, debinarizer, delister, deStringer)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -63,6 +68,7 @@ object RowConversions {
             arr
         }
       case BinaryType => debinarizer(value.asInstanceOf[BinaryType])
+      case StringType => deStringer(value.asInstanceOf[StringType])
       case _          => value
     }
   }
