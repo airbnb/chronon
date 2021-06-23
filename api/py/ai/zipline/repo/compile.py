@@ -33,7 +33,7 @@ def get_folder_name_from_class_name(class_name):
     '--zipline_root',
     envvar='ZIPLINE_ROOT',
     help='Path to the root zipline folder',
-    default=False)
+    required=True)
 @click.option(
     '--input_path',
     help='Relative Path to the root zipline folder, which contains the objects to be serialized',
