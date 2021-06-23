@@ -9,6 +9,7 @@
 .eclipse
 **/.vscode/
 **/__pycache__/
+**/.DS_Store/
 api/py/ai/zipline/api/
 api/py/.coverage
 api/py/htmlcov/
