@@ -230,7 +230,6 @@ object GroupBy {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map {
-        println(s"Rendering with: ${groupByConf.getKeyColumns.asScala}, $queryRange, ${groupByConf.maxWindow}")
         renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }

@@ -160,16 +160,20 @@ case class TableUtils(sparkSession: SparkSession) {
     val inputStart = inputTables
       .flatMap(firstAvailablePartition)
       .reduceLeftOption(Ordering[String].min)
-    println(s"Input start $inputStart from tables $inputTables")
     val resumePartition = firstUnavailablePartition(outputTable)
-    println(s"First unavailable for $outputTable is $resumePartition")
     val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
       .reduceLeftOption(Ordering[String].max)
-    println(s"Effective Start $effectiveStart")
-    println(s"partition start ${partitionRange.start}")
     val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
-    println(s"Result: ${result}")
     // Using seconds rather than milis will result in bad dates close to start of epoch, Choosing 1980 as an arbitrary cutoff date, can be modified
+    println(s"""
+               |Unfilled range computation:
+               |   Input start: $inputStart
+               |   From tables: $inputTables
+               |   first unavailable: $resumePartition
+               |   effective start: $effectiveStart
+               |   partition range: $partitionRange
+               |   result: $result
+               |""".stripMargin)
     assert(
       Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),
       s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis")

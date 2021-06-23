@@ -96,9 +96,6 @@ class JoinTest {
       .withColumnRenamed("user", "user_name") // to test zipline renaming logic
       .save(queryTable)
 
-    println("Left side:")
-    //spark.sql(s"SELECT * FROM $queryTable").show(20)
-
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
