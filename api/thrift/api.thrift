@@ -122,6 +122,11 @@ struct MetaData {
     7: optional string outputNamespace
     // team name for the job
     8: optional string team
+    // modes - backfill, upload, streaming
+    // join streaming makes sense & join upload probably also makes sense
+    // (These just aren't implemented yet)
+    // The inner map should contain environment variables
+    9: optional map<string, map<string, string>> modeToEnvMap
 }
 
 // Equivalent to a FeatureSet in zipline terms

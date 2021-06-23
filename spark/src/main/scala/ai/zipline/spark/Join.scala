@@ -304,23 +304,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
 // the driver
 object Join {
-  import org.rogach.scallop._
-  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath: ScallopOption[String] = opt[String](required = true)
-    val endDate: ScallopOption[String] = opt[String](required = true)
-    val stepDays: ScallopOption[Int] = opt[Int](required = false)
-    verify()
-  }
-
   // TODO: make joins a subcommand of a larger driver
   //  that does group-by backfills/bulk uploads etc
   def main(args: Array[String]): Unit = {
     // args = conf path, end date
-    val parsedArgs = new ParsedArgs(args)
+    val parsedArgs = new BatchArgs(args)
     println(s"Parsed Args: $parsedArgs")
-    val joinConf =
-      ThriftJsonCodec.fromJsonFile[JoinConf](parsedArgs.confPath(), check = true, clazz = classOf[JoinConf])
-
+    val joinConf = parsedArgs.parseConf[JoinConf]
     val join = new Join(
       joinConf,
       parsedArgs.endDate(),

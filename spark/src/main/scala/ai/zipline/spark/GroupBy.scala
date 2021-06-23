@@ -5,13 +5,12 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, ThriftJsonCodec, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
-import org.rogach.scallop._
 
 import java.util
 import scala.collection.JavaConverters._
@@ -283,9 +282,11 @@ object GroupBy {
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
-    val effectiveEnd = Option(source.query.endPartition).map { endPartition =>
-      Seq(endPartition, queryRange.end).min
-    }.getOrElse(queryRange.end)
+    val effectiveEnd = Option(source.query.endPartition)
+      .map { endPartition =>
+        Seq(endPartition, queryRange.end).min
+      }
+      .getOrElse(queryRange.end)
 
     // Need to use a case class here to allow null matching
     case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
@@ -376,26 +377,14 @@ object GroupBy {
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
   }
 
-  // args = conf path, end date, output namespace
-  class ParsedArgs(args: Seq[String]) extends ScallopConf(args) {
-    val confPath: ScallopOption[String] =
-      opt[String](required = true, descr = "Absolute Path to TSimpleJson serialized GroupBy object")
-    val endDate: ScallopOption[String] =
-      opt[String](required = true, descr = "End date / end partition for computing groupBy")
-    val stepDays: ScallopOption[Int] =
-      opt[Int](required = false, descr = "Max number of days to compute at a time.")
-    verify()
-    def groupByConf =
-      ThriftJsonCodec.fromJsonFile[GroupByConf](confPath(), check = true, clazz = classOf[GroupByConf])
-  }
-
   def main(args: Array[String]): Unit = {
-    val parsedArgs = new ParsedArgs(args)
+    val parsedArgs = new BatchArgs(args)
     println(s"Parsed Args: $parsedArgs")
+    val groupByConf = parsedArgs.parseConf[GroupByConf]
     computeBackfill(
-      parsedArgs.groupByConf,
+      groupByConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${parsedArgs.groupByConf.metaData.name}_backfill")),
+      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
       parsedArgs.stepDays.toOption
     )
   }

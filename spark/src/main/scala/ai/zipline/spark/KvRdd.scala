@@ -4,10 +4,11 @@ import ai.zipline.aggregator.base.{DataType => ZDataType, StructType => ZStructT
 import ai.zipline.fetcher.RowConversions.recursiveEdit
 import ai.zipline.fetcher.{AvroCodec, AvroUtils, RowConversions}
 import ai.zipline.spark.Extensions._
+import com.google.gson.Gson
 import org.apache.avro.generic.GenericData
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.types.{BinaryType, StructField, StructType}
+import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
@@ -21,31 +22,44 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
   def toAvroDf: DataFrame = {
     val rowSchema = StructType(
       Seq(
-        StructField("key", BinaryType),
-        StructField("value", BinaryType)
+        StructField("key_bytes", BinaryType),
+        StructField("value_bytes", BinaryType),
+        StructField("key_json", StringType),
+        StructField("value_json", StringType)
       )
     )
     def encodeBytes(schema: ZStructType): Any => Array[Byte] = {
       val codec: AvroCodec = new AvroCodec(AvroUtils.fromZiplineSchema(schema).toString(true));
       { data: Any =>
         val record = RowConversions.toAvroRecord(data, schema).asInstanceOf[GenericData.Record]
-        val bytes = codec.encodeRecord(record)
+        val bytes = codec.encodeBinary(record)
+        bytes
+      }
+    }
+
+    def encodeJson(schema: ZStructType): Any => String = {
+      val codec: AvroCodec = new AvroCodec(AvroUtils.fromZiplineSchema(schema).toString(true));
+      { data: Any =>
+        val record = RowConversions.toAvroRecord(data, schema).asInstanceOf[GenericData.Record]
+        val bytes = codec.encodeJson(record)
         bytes
       }
     }
 
     println(s"""
-         |keySchema: 
+         |key schema: 
          |  ${AvroUtils.fromZiplineSchema(keyZSchema).toString(true)}
-         |valueSchema: 
+         |value schema: 
          |  ${AvroUtils.fromZiplineSchema(valueZSchema).toString(true)}
          |""".stripMargin)
     val keyToBytes = encodeBytes(keyZSchema)
     val valueToBytes = encodeBytes(valueZSchema)
+    val keyToJson = encodeJson(keyZSchema)
+    val valueToJson = encodeJson(valueZSchema)
 
     val rowRdd: RDD[Row] = data.map {
       case (keys, values) =>
-        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values))
+        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyToJson(keys), valueToJson(values))
         new GenericRow(result)
     }
     sparkSession.createDataFrame(rowRdd, rowSchema)

@@ -4,9 +4,8 @@ import ai.zipline.aggregator.windowing._
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
-import ai.zipline.spark.GroupBy.ParsedArgs
-import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{Row, SparkSession}
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
@@ -97,16 +96,24 @@ object GroupByUpload {
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     val metaRows = Seq(
-      Row(Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
-          ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8)))
+      Row(
+        Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
+        ThriftJsonCodec.toJsonStr(groupByServingInfo).getBytes(Constants.UTF8),
+        Constants.GroupByServingInfoKey,
+        ThriftJsonCodec.toJsonStr(groupByServingInfo)
+      ))
     val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
-    kvDf.union(metaDf).saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
+    kvDf
+      .union(metaDf)
+      .withColumn("ds", lit(endDs))
+      .saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
   }
 
   def main(args: Array[String]): Unit = {
-    val parsedArgs = new ParsedArgs(args)
+    val parsedArgs = new BatchArgs(args)
+    assert(parsedArgs.stepDays.isEmpty, "Don't need to specify step days for GroupBy uploads")
     println(s"Parsed Args: $parsedArgs")
-    run(parsedArgs.groupByConf, parsedArgs.endDate())
+    run(parsedArgs.parseConf[GroupByConf], parsedArgs.endDate())
   }
 }
