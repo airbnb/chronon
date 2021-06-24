@@ -96,7 +96,7 @@ def Join(left: api.Source,
         online=online,
         production=production,
         customJson=json.dumps(customJson),
-        dependencies=left_dependencies + right_dependencies,
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
         outputNamespace=output_namespace,
         tableProperties=table_properties
     )
