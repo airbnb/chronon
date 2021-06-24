@@ -11,8 +11,8 @@ BRANCH_GIT=$(git branch --show-current)
 BRANCH_GIT_SHA=$(git log --pretty=format:'%h' -n 1)
 NEW_TAG=release-0.0.$MINOR_VERSION
 echo "Tagging $BRANCH_GIT@$BRANCH_GIT_SHA with $NEW_TAG (minor version incremented)"
-git tag -a -m '' NEW_TAG
-git push origin NEW_TAG
+git tag -a -m '' $NEW_TAG
+git push origin $NEW_TAG
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 echo "Building jars"
