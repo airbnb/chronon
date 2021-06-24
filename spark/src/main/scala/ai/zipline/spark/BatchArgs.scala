@@ -12,4 +12,11 @@ class BatchArgs(args: Seq[String]) extends ScallopConf(args) {
   verify()
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
     ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
+
+  override def toString(): String = {
+    s"""
+       |confPath = $confPath
+       |endDate = $endDate
+       |stepDays = $stepDays""".stripMargin
+  }
 }

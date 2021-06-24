@@ -205,7 +205,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       val encodedMetadata = lastRunMetadata(Constants.JoinMetadataKey)
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
-      ThriftJsonCodec.fromJsonStr(joinJsonString, check = true, classOf[JoinConf])
+      ThriftJsonCodec.fromJsonStr(joinJsonString, check = false, classOf[JoinConf])
     }
   }
 
