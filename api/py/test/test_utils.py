@@ -37,3 +37,8 @@ def test_source_utils(event_source):
 
 def test_group_by_utils(event_group_by):
     assert not utils.get_streaming_sources(event_group_by)
+
+
+def test_dedupe_in_order():
+    assert utils.dedupe_in_order([1, 1, 3, 1, 3, 2]) == [1, 3, 2]
+    assert utils.dedupe_in_order([2, 1, 3, 1, 3, 2]) == [2, 1, 3]

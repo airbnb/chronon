@@ -163,3 +163,9 @@ def wait_for_name(dep, table):
     replace_nonalphanumeric = re.sub('[^a-zA-Z0-9]', '_', dep)
     name = f"wait_for_{table}_{replace_nonalphanumeric}"
     return re.sub('_+', '_', name).rstrip('_')
+
+
+def dedupe_in_order(seq):
+    seen = set()
+    seen_add = seen.add
+    return [x for x in seq if not (x in seen or seen_add(x))]
