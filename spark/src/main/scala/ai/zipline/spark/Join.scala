@@ -9,7 +9,7 @@ import org.apache.spark.sql.DataFrame
 import java.util.Base64
 import scala.collection.JavaConverters._
 
-class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean) {
+class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 

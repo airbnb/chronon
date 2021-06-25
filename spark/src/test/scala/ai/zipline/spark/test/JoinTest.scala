@@ -113,7 +113,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
-    val runner1 = new Join(joinConf, end, tableUtils, false)
+    val runner1 = new Join(joinConf, end, tableUtils)
 
     spark.sql(
       s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
@@ -215,7 +215,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.country_features", namespace = namespace, team = "zipline")
     )
 
-    val runner = new Join(joinConf, end, tableUtils, false)
+    val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     val expected = tableUtils.sql(s"""
     |WITH 
@@ -307,7 +307,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin()
     computed.show()
 
@@ -377,7 +377,7 @@ class JoinTest {
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
 
@@ -438,7 +438,7 @@ class JoinTest {
         |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
     spark.sql(q).show()
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
 
@@ -580,7 +580,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")
     )
 
-    val runner = new Join(joinConf, end, tableUtils, false)
+    val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
@@ -623,7 +623,7 @@ class JoinTest {
     joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
-    val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
@@ -633,7 +633,7 @@ class JoinTest {
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
-    val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.getJoinPartsToRecompute(leftChangeJoin.getLastRunJoinOpt)
     assertEquals(leftChangeRecompute.size, 2)
     assertEquals(leftChangeRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
@@ -643,7 +643,7 @@ class JoinTest {
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
-    val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
     assertEquals(addPartRecompute.size, 1)
     assertEquals(addPartRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
@@ -653,13 +653,13 @@ class JoinTest {
     // Test modifying only one of two joinParts
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
-    val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val rightModRecompute = rightModJoin.getJoinPartsToRecompute(rightModJoin.getLastRunJoinOpt)
     assertEquals(rightModRecompute.size, 1)
     assertEquals(rightModRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
-    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils, false)
+    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     // Compute to ensure that it works
     val computed = rightModBothJoin.computeJoin(Some(100))
 
