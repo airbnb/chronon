@@ -9,6 +9,8 @@ class BatchArgs(args: Seq[String]) extends ScallopConf(args) {
   val confPath: ScallopOption[String] = opt[String](required = true)
   val endDate: ScallopOption[String] = opt[String](required = true)
   val stepDays: ScallopOption[Int] = opt[Int](required = false) // doesn't apply to uploads
+  val isEqualRequired: ScallopOption[Boolean] =
+    opt[Boolean](required = false) // only applies to join job for versioning
   verify()
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
     ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
@@ -17,6 +19,7 @@ class BatchArgs(args: Seq[String]) extends ScallopConf(args) {
     s"""
        |confPath = $confPath
        |endDate = $endDate
-       |stepDays = $stepDays""".stripMargin
+       |stepDays = $stepDays
+       |isEqualRequired = $isEqualRequired""".stripMargin
   }
 }

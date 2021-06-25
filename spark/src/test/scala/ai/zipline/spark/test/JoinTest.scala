@@ -1,19 +1,19 @@
 package ai.zipline.spark.test
 
-import scala.collection.JavaConverters._
-
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
-import ai.zipline.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.zipline.spark.{Join => _, _}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
+
+import scala.collection.JavaConverters._
 
 class JoinTest {
 
@@ -113,9 +113,10 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
-    val runner1 = new Join(joinConf, end, tableUtils)
+    val runner1 = new Join(joinConf, end, tableUtils, true)
 
-    spark.sql(s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
+    spark.sql(
+      s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
     val computed = runner1.computeJoin(Some(3))
     println(s"join start = $start")
 
@@ -214,7 +215,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.country_features", namespace = namespace, team = "zipline")
     )
 
-    val runner = new Join(joinConf, end, tableUtils)
+    val runner = new Join(joinConf, end, tableUtils, true)
     val computed = runner.computeJoin(Some(7))
     val expected = tableUtils.sql(s"""
     |WITH 
@@ -306,7 +307,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val computed = join.computeJoin()
     computed.show()
 
@@ -376,7 +377,7 @@ class JoinTest {
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val computed = join.computeJoin(Some(100))
     computed.show()
 
@@ -437,7 +438,7 @@ class JoinTest {
         |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
     spark.sql(q).show()
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val computed = join.computeJoin(Some(100))
     computed.show()
 
@@ -516,13 +517,21 @@ class JoinTest {
   def testSourceQueryRender(): Unit = {
     // Test cumulative
     val viewsGroupByCumulative = getViewsGroupBy(makeCumulative = true)
-    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head, Seq("item"), PartitionRange("2021-02-23", "2021-05-03"), tableUtils, None)
+    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head,
+                                                   Seq("item"),
+                                                   PartitionRange("2021-02-23", "2021-05-03"),
+                                                   tableUtils,
+                                                   None)
     // Only checking that the date logic is correct in the query
     assert(renderedCumulative.contains(s"ds >= '${today}' AND ds <= '${today}'"))
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
-    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head, Seq("item"), PartitionRange("2021-01-01", "2021-01-03"), tableUtils, None)
+    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head,
+                                                    Seq("item"),
+                                                    PartitionRange("2021-01-01", "2021-01-03"),
+                                                    tableUtils,
+                                                    None)
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
   }
@@ -571,7 +580,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "zipline")
     )
 
-    val runner = new Join(joinConf, end, tableUtils)
+    val runner = new Join(joinConf, end, tableUtils, true)
     val computed = runner.computeJoin(Some(7))
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
@@ -614,7 +623,7 @@ class JoinTest {
     joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
-    val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
@@ -624,7 +633,7 @@ class JoinTest {
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
-    val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val leftChangeRecompute = leftChangeJoin.getJoinPartsToRecompute(leftChangeJoin.getLastRunJoinOpt)
     assertEquals(leftChangeRecompute.size, 2)
     assertEquals(leftChangeRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
@@ -634,7 +643,7 @@ class JoinTest {
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
-    val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
     assertEquals(addPartRecompute.size, 1)
     assertEquals(addPartRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
@@ -644,13 +653,13 @@ class JoinTest {
     // Test modifying only one of two joinParts
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
-    val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     val rightModRecompute = rightModJoin.getJoinPartsToRecompute(rightModJoin.getLastRunJoinOpt)
     assertEquals(rightModRecompute.size, 1)
     assertEquals(rightModRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
-    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils, true)
     // Compute to ensure that it works
     val computed = rightModBothJoin.computeJoin(Some(100))
 
@@ -751,7 +760,8 @@ class JoinTest {
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user")),
-      metaData = Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
+      metaData =
+        Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
     )
 
   }
