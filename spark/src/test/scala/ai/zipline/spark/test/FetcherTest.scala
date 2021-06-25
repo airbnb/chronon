@@ -166,7 +166,7 @@ class FetcherTest extends TestCase {
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
-    val joinedDf = new Join(joinConf, today, tableUtils, true).computeJoin()
+    val joinedDf = new Join(joinConf, today, tableUtils, false).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
     val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")

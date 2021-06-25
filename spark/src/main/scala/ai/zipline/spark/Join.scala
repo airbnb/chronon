@@ -9,7 +9,7 @@ import org.apache.spark.sql.DataFrame
 import java.util.Base64
 import scala.collection.JavaConverters._
 
-class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, isEqualRequired: Boolean) {
+class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 
@@ -205,7 +205,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, isE
       val encodedMetadata = lastRunMetadata(Constants.JoinMetadataKey)
       val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
       val joinJsonString = new String(joinJsonBytes)
-      ThriftJsonCodec.fromJsonStr(joinJsonString, check = isEqualRequired, classOf[JoinConf])
+      ThriftJsonCodec.fromJsonStr(joinJsonString, check = !skipEqualCheck, classOf[JoinConf])
     }
   }
 
@@ -321,7 +321,7 @@ object Join {
       joinConf,
       parsedArgs.endDate(),
       TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}")),
-      parsedArgs.isEqualRequired()
+      parsedArgs.skipEqualCheck()
     )
 
     join.computeJoin(parsedArgs.stepDays.toOption)
