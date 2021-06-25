@@ -1,19 +1,19 @@
 package ai.zipline.spark.test
 
+import scala.collection.JavaConverters._
+
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
-import ai.zipline.spark.{Join => _, _}
+import ai.zipline.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
-
-import scala.collection.JavaConverters._
 
 class JoinTest {
 
