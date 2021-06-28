@@ -115,7 +115,8 @@ class JoinTest {
 
     val runner1 = new Join(joinConf, end, tableUtils)
 
-    spark.sql(s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
+    spark.sql(
+      s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
     val computed = runner1.computeJoin(Some(3))
     println(s"join start = $start")
 
@@ -516,13 +517,21 @@ class JoinTest {
   def testSourceQueryRender(): Unit = {
     // Test cumulative
     val viewsGroupByCumulative = getViewsGroupBy(makeCumulative = true)
-    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head, Seq("item"), PartitionRange("2021-02-23", "2021-05-03"), tableUtils, None)
+    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head,
+                                                   Seq("item"),
+                                                   PartitionRange("2021-02-23", "2021-05-03"),
+                                                   tableUtils,
+                                                   None)
     // Only checking that the date logic is correct in the query
     assert(renderedCumulative.contains(s"ds >= '${today}' AND ds <= '${today}'"))
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
-    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head, Seq("item"), PartitionRange("2021-01-01", "2021-01-03"), tableUtils, None)
+    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head,
+                                                    Seq("item"),
+                                                    PartitionRange("2021-01-01", "2021-01-03"),
+                                                    tableUtils,
+                                                    None)
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
   }
@@ -751,7 +760,8 @@ class JoinTest {
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user")),
-      metaData = Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
+      metaData =
+        Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
     )
 
   }
