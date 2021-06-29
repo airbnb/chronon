@@ -2,9 +2,11 @@ package ai.zipline.api
 
 import ai.zipline.api.DataModel._
 import ai.zipline.api.Operation._
-import scala.collection.JavaConverters._
 
+import scala.collection.JavaConverters._
 import org.apache.thrift
+
+import scala.collection.mutable
 
 object Extensions {
 
@@ -92,35 +94,72 @@ object Extensions {
         case other    => other.toString.toLowerCase
       }
 
-    def outputColumnName = s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}"
+    private def bucketSuffix = Option(aggregationPart.bucket).map("_by_" + _).getOrElse("")
+
+    def outputColumnName =
+      s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}${bucketSuffix}"
   }
 
   implicit class AggregationOps(aggregation: Aggregation) {
 
-    def unpack: Seq[AggregationPart] =
-      Option(aggregation.windows)
-        .map(_.asScala)
-        .getOrElse(Seq(WindowUtils.Unbounded))
-        .map { window =>
-          Option(window) match {
-            case Some(window) =>
-              Builders.AggregationPart(aggregation.operation,
-                                       aggregation.inputColumn,
-                                       window,
-                                       Option(aggregation.argMap).map(_.asScala.toMap).orNull)
-            case None =>
-              Builders.AggregationPart(aggregation.operation,
-                                       aggregation.inputColumn,
-                                       WindowUtils.Unbounded,
-                                       Option(aggregation.argMap).map(_.asScala.toMap).orNull)
-          }
-        }
+    // one agg part per bucket per window
+    // unspecified windows are translated to one unbounded window
+    def unpack: Seq[AggregationPart] = {
+      val windows = Option(aggregation.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded))
+      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      for (bucket <- buckets; window <- windows) yield {
+        Builders.AggregationPart(aggregation.operation,
+                                 aggregation.inputColumn,
+                                 window,
+                                 Option(aggregation.argMap).map(_.asScala.toMap).orNull,
+                                 bucket)
+      }
+    }
 
-    def unWindowed: AggregationPart =
-      Builders.AggregationPart(aggregation.operation,
-                               aggregation.inputColumn,
-                               WindowUtils.Unbounded,
-                               Option(aggregation.argMap).map(_.asScala.toMap).orNull)
+    // one agg part per bucket
+    // ignoring the windowing
+    def unWindowed: Seq[AggregationPart] = {
+      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      for (bucket <- buckets) yield {
+        Builders.AggregationPart(aggregation.operation,
+                                 aggregation.inputColumn,
+                                 WindowUtils.Unbounded,
+                                 Option(aggregation.argMap).map(_.asScala.toMap).orNull,
+                                 bucket)
+      }
+    }
+  }
+
+  case class WindowMapping(aggregationPart: AggregationPart, baseIrIndex: Int)
+  case class UnpackedAggregations(perBucket: Array[AggregationPart], perWindow: Array[WindowMapping])
+
+  object UnpackedAggregations {
+    def from(aggregations: Seq[Aggregation]): UnpackedAggregations = {
+      var counter = 0
+      val perBucket = new mutable.ArrayBuffer[AggregationPart]
+      val perWindow = new mutable.ArrayBuffer[WindowMapping]
+      aggregations.foreach { agg =>
+        val buckets = Option(agg.buckets).map(_.asScala).getOrElse(Seq(null))
+        val windows = Option(agg.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded))
+        for (bucket <- buckets) {
+          perBucket += Builders.AggregationPart(agg.operation,
+                                                agg.inputColumn,
+                                                WindowUtils.Unbounded,
+                                                Option(agg.argMap).map(_.asScala.toMap).orNull,
+                                                bucket)
+          for (window <- windows) {
+            perWindow += WindowMapping(Builders.AggregationPart(agg.operation,
+                                                                agg.inputColumn,
+                                                                window,
+                                                                Option(agg.argMap).map(_.asScala.toMap).orNull,
+                                                                bucket),
+                                       counter)
+          }
+          counter += 1
+        }
+      }
+      UnpackedAggregations(perBucket = perBucket.toArray, perWindow = perWindow.toArray)
+    }
   }
 
   implicit class AggregationsOps(aggregations: Seq[Aggregation]) {
@@ -132,11 +171,12 @@ object Extensions {
 
     def hasWindows: Boolean = aggregations.exists(_.windows != null)
     def needsTimestamp: Boolean = hasWindows || hasTimedAggregations
-    def allWindowsOpt: Option[Seq[Window]] = Option(aggregations).map { aggs =>
-      aggs.flatMap { agg =>
-        Option(agg.windows).map(_.asScala).getOrElse(Seq(null))
+    def allWindowsOpt: Option[Seq[Window]] =
+      Option(aggregations).map { aggs =>
+        aggs.flatMap { agg =>
+          Option(agg.windows).map(_.asScala).getOrElse(Seq(null))
+        }
       }
-    }
   }
 
   implicit class SourceOps(source: Source) {
@@ -170,7 +210,7 @@ object Extensions {
   implicit class GroupByOps(groupBy: GroupBy) {
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.allWindowsOpt)
-      allWindowsOpt.flatMap{ windows =>
+      allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
       }

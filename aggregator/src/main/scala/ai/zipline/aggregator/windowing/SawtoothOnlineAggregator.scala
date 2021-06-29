@@ -1,13 +1,9 @@
 package ai.zipline.aggregator.windowing
 
-import java.lang
-import ai.zipline.aggregator.base.{DataType, ListType, LongType, StructField, StructType}
+import ai.zipline.aggregator.base.{DataType, ListType, LongType, StructType}
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.zipline.api.{Aggregation, TimeUnit, Window}
-import com.google.gson.Gson
-
-import scala.Long
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -71,8 +67,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
             updatedHop.update(hopIndex, true)
             val hopStart = TsUtils.round(rowTs, hopSizes(hopIndex))
             val hopIr = batchIr.tailHops(hopIndex).computeIfAbsent(hopStart, hopsAggregator.javaBuildHop)
-            val baseIrIndex = windowMappings(i).baseIrIndex
-            baseAggregator.columnAggregators(baseIrIndex).update(hopIr, row)
+            baseAggregator.columnAggregators(baseIrIndices(i)).update(hopIr, row)
           }
         }
       }

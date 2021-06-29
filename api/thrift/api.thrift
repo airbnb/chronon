@@ -92,6 +92,7 @@ struct Aggregation {
     2: optional Operation operation
     3: optional map<string, string> argMap
     4: optional list<Window> windows
+    5: optional list<string> buckets
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
@@ -100,6 +101,7 @@ struct AggregationPart {
     2: optional Operation operation
     3: optional map<string, string> argMap
     4: optional Window window
+    5: optional string bucket
 }
 
 enum Accuracy {

@@ -1,8 +1,8 @@
 package ai.zipline.aggregator.row
 
 import ai.zipline.aggregator.base._
-import ai.zipline.api.{AggregationPart, Operation}
 import ai.zipline.api.Extensions._
+import ai.zipline.api.{AggregationPart, Operation}
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -28,31 +28,42 @@ abstract class ColumnAggregator extends Serializable {
   def clone(ir: Any): Any
 }
 
-abstract class BaseColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
-                                                       columnIndices: ColumnIndices)
-    extends ColumnAggregator {
-  override def outputType: DataType = agg.outputType
+// implementations to assume nulls have been filtered out before calling
+trait Dispatcher[Input, IR] {
+  def prepare(inputRow: Row): IR
+  def updateColumn(ir: IR, inputRow: Row): IR
+  def inversePrepare(inputRow: Row): IR
+  def deleteColumn(ir: IR, inputRow: Row): IR
+}
 
-  override def irType: DataType = agg.irType
+class SimpleDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
+                                  columnIndices: ColumnIndices,
+                                  toTypedInput: Any => Input)
+    extends Dispatcher[Input, IR] {
+  override def prepare(inputRow: Row): IR =
+    agg.prepare(toTypedInput(inputRow.get(columnIndices.input)))
 
-  override def merge(ir1: Any, ir2: Any): Any = {
-    if (ir2 == null) return ir1
-    // we need to clone here because the contract is to only mutate ir1
-    // ir2 can it self be expected to mutate later - and hence has to retain it's value
-    // this is a critical assumption of the rest of the code
-    if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
-    agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
-  }
+  override def inversePrepare(inputRow: Row): IR =
+    agg.inversePrepare(toTypedInput(inputRow.get(columnIndices.input)))
 
-  override def finalize(ir: Any): Any = guardedApply(agg.finalize, ir)
+  override def deleteColumn(ir: IR, inputRow: Row): IR =
+    agg.delete(ir, toTypedInput(inputRow.get(columnIndices.input)))
 
-  override def normalize(ir: Any): Any = guardedApply(agg.normalize, ir)
+  override def updateColumn(ir: IR, inputRow: Row): IR =
+    agg.update(ir, toTypedInput(inputRow.get(columnIndices.input)))
+}
 
-  override def denormalize(ir: Any): Any = if (ir == null) null else agg.denormalize(ir)
+class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndices: ColumnIndices)
+    extends Dispatcher[Input, IR] {
+  override def prepare(inputRow: Row): IR =
+    agg.prepare(inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
 
-  override def clone(ir: Any): Any = guardedApply(agg.clone, ir)
+  override def updateColumn(ir: IR, inputRow: Row): IR =
+    agg.update(ir, inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
 
-  private def guardedApply(f: IR => Any, ir: Any): Any = if (ir == null) null else f(ir.asInstanceOf[IR])
+  override def inversePrepare(inputRow: Row): IR = ???
+
+  override def deleteColumn(ir: IR, inputRow: Row): IR = ???
 }
 
 case class ColumnIndices(input: Int, output: Int)
@@ -64,76 +75,28 @@ object ColumnAggregator {
   // by the time we call underlying aggregators there should be no nulls left to handle
   def fromSimple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                     columnIndices: ColumnIndices,
-                                    toTypedInput: Any => Input = (cast[Input] _)): ColumnAggregator =
-    new BaseColumnAggregator(agg, columnIndices) {
-
-      override def update(ir: Array[Any], inputRow: Row): Unit = {
-        val inputVal = inputRow.get(columnIndices.input)
-        if (inputVal == null) return
-        val previousVal = ir(columnIndices.output)
-        if (previousVal == null) {
-          ir.update(columnIndices.output, agg.prepare(toTypedInput(inputVal)))
-          return
-        }
-        val previous = previousVal.asInstanceOf[IR]
-        val input = toTypedInput(inputVal)
-        val updated = agg.update(previous, input)
-        ir.update(columnIndices.output, updated)
-      }
-
-      override def delete(ir: Array[Any], inputRow: Row): Unit = {
-        if (!agg.isDeletable) return
-        val inputVal = inputRow.get(columnIndices.input)
-        if (inputVal == null) return
-        val previousVal = ir(columnIndices.output)
-        if (previousVal == null) {
-          // we don't have `empty()` method or a `inverse(input)` method,
-          // we only have `prepare(input)` and `delete(ir, input)`
-          // so we call `prepare(input)` followed by two `deletes(ir, input)`
-          val input = toTypedInput(inputVal)
-          val irOfOneInput = agg.prepare(input)
-          val irOfZeroInputs = agg.delete(irOfOneInput, input)
-          val irOfMinusOneInput = agg.delete(irOfZeroInputs, input)
-          ir.update(columnIndices.output, irOfMinusOneInput)
-          return
-        }
-        val previous = previousVal.asInstanceOf[IR]
-        val input = toTypedInput(inputVal)
-        val deleted = agg.delete(previous, input)
-        ir.update(columnIndices.output, deleted)
-      }
-
-      override def isDeletable: Boolean = agg.isDeletable
+                                    toTypedInput: Any => Input,
+                                    bucketIndex: Option[Int] = None): ColumnAggregator = {
+    val dispatcher = new SimpleDispatcher(agg, columnIndices, toTypedInput)
+    if (bucketIndex.isEmpty) {
+      new DirectColumnAggregator(agg, columnIndices, dispatcher)
+    } else {
+      new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     }
+  }
 
   def fromTimed[Input, IR, Output](
       agg: TimedAggregator[Input, IR, Output],
-      columnIndices: ColumnIndices
-  ): ColumnAggregator =
-    new BaseColumnAggregator(agg, columnIndices) {
-
-      override def update(ir: Array[Any], inputRow: Row): Unit = {
-        val inputVal = inputRow.get(columnIndices.input)
-        if (inputVal == null) return
-        val previousVal = ir(columnIndices.output)
-        if (previousVal == null) {
-          ir.update(
-            columnIndices.output,
-            agg.prepare(cast[Input](inputVal), inputRow.ts)
-          )
-          return
-        }
-        val previous = previousVal.asInstanceOf[IR]
-        val input = cast[Input](inputVal)
-        val updated = agg.update(previous, input, inputRow.ts)
-        ir.update(columnIndices.output, updated)
-      }
-
-      // timed aggregators are not deletable - they assume implicit time ordering
-      override def delete(ir: Array[Any], inputRow: Row): Unit = {}
-
-      override def isDeletable: Boolean = false
+      columnIndices: ColumnIndices,
+      bucketIndex: Option[Int] = None
+  ): ColumnAggregator = {
+    val dispatcher = new TimedDispatcher(agg, columnIndices)
+    if (bucketIndex.isEmpty) {
+      new DirectColumnAggregator(agg, columnIndices, dispatcher)
+    } else {
+      new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     }
+  }
 
   //force numeric widening
   private def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
@@ -141,97 +104,108 @@ object ColumnAggregator {
 
   def construct(inputType: DataType,
                 aggregationPart: AggregationPart,
-                columnIndices: ColumnIndices): ColumnAggregator = {
+                columnIndices: ColumnIndices,
+                bucketIndex: Option[Int]): ColumnAggregator = {
     def mismatchException =
       throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.operation}")
+
+    def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
+                                  toTypedInput: Any => Input = (cast[Input] _)): ColumnAggregator = {
+      fromSimple(agg, columnIndices, toTypedInput, bucketIndex)
+    }
+
+    def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
+      fromTimed(agg, columnIndices, bucketIndex)
+    }
+
     aggregationPart.operation match {
-      case Operation.COUNT => fromSimple(new Count, columnIndices)
+      case Operation.COUNT => simple(new Count)
       case Operation.SUM =>
         inputType match {
-          case IntType    => fromSimple(new Sum[Long], columnIndices, toLong[Int])
-          case LongType   => fromSimple(new Sum[Long], columnIndices)
-          case ShortType  => fromSimple(new Sum[Long], columnIndices, toLong[Short])
-          case DoubleType => fromSimple(new Sum[Double], columnIndices)
-          case FloatType  => fromSimple(new Sum[Double], columnIndices, toDouble[Float])
+          case IntType    => simple(new Sum[Long], toLong[Int])
+          case LongType   => simple(new Sum[Long])
+          case ShortType  => simple(new Sum[Long], toLong[Short])
+          case DoubleType => simple(new Sum[Double])
+          case FloatType  => simple(new Sum[Double], toDouble[Float])
           case _          => mismatchException
         }
       case Operation.UNIQUE_COUNT =>
         inputType match {
-          case IntType    => fromSimple(new UniqueCount[Int](inputType), columnIndices)
-          case LongType   => fromSimple(new UniqueCount[Long](inputType), columnIndices)
-          case ShortType  => fromSimple(new UniqueCount[Short](inputType), columnIndices)
-          case DoubleType => fromSimple(new UniqueCount[Double](inputType), columnIndices)
-          case FloatType  => fromSimple(new UniqueCount[Float](inputType), columnIndices)
-          case StringType => fromSimple(new UniqueCount[String](inputType), columnIndices)
-          case BinaryType => fromSimple(new UniqueCount[Array[Byte]](inputType), columnIndices)
+          case IntType    => simple(new UniqueCount[Int](inputType))
+          case LongType   => simple(new UniqueCount[Long](inputType))
+          case ShortType  => simple(new UniqueCount[Short](inputType))
+          case DoubleType => simple(new UniqueCount[Double](inputType))
+          case FloatType  => simple(new UniqueCount[Float](inputType))
+          case StringType => simple(new UniqueCount[String](inputType))
+          case BinaryType => simple(new UniqueCount[Array[Byte]](inputType))
           case _          => mismatchException
         }
       case Operation.APPROX_UNIQUE_COUNT =>
         inputType match {
-          case IntType    => fromSimple(new ApproxDistinctCount[Long], columnIndices, toLong[Int])
-          case LongType   => fromSimple(new ApproxDistinctCount[Long], columnIndices)
-          case ShortType  => fromSimple(new ApproxDistinctCount[Long], columnIndices, toLong[Short])
-          case DoubleType => fromSimple(new ApproxDistinctCount[Double], columnIndices)
-          case FloatType  => fromSimple(new ApproxDistinctCount[Double], columnIndices, toDouble[Float])
-          case StringType => fromSimple(new ApproxDistinctCount[String], columnIndices)
-          case BinaryType => fromSimple(new ApproxDistinctCount[Array[Byte]], columnIndices)
+          case IntType    => simple(new ApproxDistinctCount[Long], toLong[Int])
+          case LongType   => simple(new ApproxDistinctCount[Long])
+          case ShortType  => simple(new ApproxDistinctCount[Long], toLong[Short])
+          case DoubleType => simple(new ApproxDistinctCount[Double])
+          case FloatType  => simple(new ApproxDistinctCount[Double], toDouble[Float])
+          case StringType => simple(new ApproxDistinctCount[String])
+          case BinaryType => simple(new ApproxDistinctCount[Array[Byte]])
           case _          => mismatchException
         }
       case Operation.AVERAGE =>
         inputType match {
-          case IntType    => fromSimple(new Average, columnIndices, toDouble[Int])
-          case LongType   => fromSimple(new Average, columnIndices, toDouble[Long])
-          case ShortType  => fromSimple(new Average, columnIndices, toDouble[Short])
-          case DoubleType => fromSimple(new Average, columnIndices)
-          case FloatType  => fromSimple(new Average, columnIndices, toDouble[Float])
+          case IntType    => simple(new Average, toDouble[Int])
+          case LongType   => simple(new Average, toDouble[Long])
+          case ShortType  => simple(new Average, toDouble[Short])
+          case DoubleType => simple(new Average)
+          case FloatType  => simple(new Average, toDouble[Float])
           case _          => mismatchException
         }
       case Operation.MIN =>
         inputType match {
-          case IntType    => fromSimple(new Min[Int](inputType), columnIndices)
-          case LongType   => fromSimple(new Min[Long](inputType), columnIndices)
-          case ShortType  => fromSimple(new Min[Short](inputType), columnIndices)
-          case DoubleType => fromSimple(new Min[Double](inputType), columnIndices)
-          case FloatType  => fromSimple(new Min[Float](inputType), columnIndices)
-          case StringType => fromSimple(new Min[String](inputType), columnIndices)
+          case IntType    => simple(new Min[Int](inputType))
+          case LongType   => simple(new Min[Long](inputType))
+          case ShortType  => simple(new Min[Short](inputType))
+          case DoubleType => simple(new Min[Double](inputType))
+          case FloatType  => simple(new Min[Float](inputType))
+          case StringType => simple(new Min[String](inputType))
           case _          => mismatchException
         }
       case Operation.MAX =>
         inputType match {
-          case IntType    => fromSimple(new Max[Int](inputType), columnIndices)
-          case LongType   => fromSimple(new Max[Long](inputType), columnIndices)
-          case ShortType  => fromSimple(new Max[Short](inputType), columnIndices)
-          case DoubleType => fromSimple(new Max[Double](inputType), columnIndices)
-          case FloatType  => fromSimple(new Max[Float](inputType), columnIndices)
-          case StringType => fromSimple(new Max[String](inputType), columnIndices)
+          case IntType    => simple(new Max[Int](inputType))
+          case LongType   => simple(new Max[Long](inputType))
+          case ShortType  => simple(new Max[Short](inputType))
+          case DoubleType => simple(new Max[Double](inputType))
+          case FloatType  => simple(new Max[Float](inputType))
+          case StringType => simple(new Max[String](inputType))
           case _          => mismatchException
         }
       case Operation.TOP_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
-          case IntType    => fromSimple(new TopK[Int](inputType, k), columnIndices)
-          case LongType   => fromSimple(new TopK[Long](inputType, k), columnIndices)
-          case ShortType  => fromSimple(new TopK[Short](inputType, k), columnIndices)
-          case DoubleType => fromSimple(new TopK[Double](inputType, k), columnIndices)
-          case FloatType  => fromSimple(new TopK[Float](inputType, k), columnIndices)
-          case StringType => fromSimple(new TopK[String](inputType, k), columnIndices)
+          case IntType    => simple(new TopK[Int](inputType, k))
+          case LongType   => simple(new TopK[Long](inputType, k))
+          case ShortType  => simple(new TopK[Short](inputType, k))
+          case DoubleType => simple(new TopK[Double](inputType, k))
+          case FloatType  => simple(new TopK[Float](inputType, k))
+          case StringType => simple(new TopK[String](inputType, k))
           case _          => mismatchException
         }
       case Operation.BOTTOM_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
-          case IntType    => fromSimple(new BottomK[Int](inputType, k), columnIndices)
-          case LongType   => fromSimple(new BottomK[Long](inputType, k), columnIndices)
-          case ShortType  => fromSimple(new BottomK[Short](inputType, k), columnIndices)
-          case DoubleType => fromSimple(new BottomK[Double](inputType, k), columnIndices)
-          case FloatType  => fromSimple(new BottomK[Float](inputType, k), columnIndices)
-          case StringType => fromSimple(new BottomK[String](inputType, k), columnIndices)
+          case IntType    => simple(new BottomK[Int](inputType, k))
+          case LongType   => simple(new BottomK[Long](inputType, k))
+          case ShortType  => simple(new BottomK[Short](inputType, k))
+          case DoubleType => simple(new BottomK[Double](inputType, k))
+          case FloatType  => simple(new BottomK[Float](inputType, k))
+          case StringType => simple(new BottomK[String](inputType, k))
           case _          => mismatchException
         }
-      case Operation.FIRST   => fromTimed(new First(inputType), columnIndices)
-      case Operation.LAST    => fromTimed(new Last(inputType), columnIndices)
-      case Operation.FIRST_K => fromTimed(new FirstK(inputType, aggregationPart.getInt("k")), columnIndices)
-      case Operation.LAST_K  => fromTimed(new LastK(inputType, aggregationPart.getInt("k")), columnIndices)
+      case Operation.FIRST   => timed(new First(inputType))
+      case Operation.LAST    => timed(new Last(inputType))
+      case Operation.FIRST_K => timed(new FirstK(inputType, aggregationPart.getInt("k")))
+      case Operation.LAST_K  => timed(new LastK(inputType, aggregationPart.getInt("k")))
     }
   }
 }

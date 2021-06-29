@@ -3,16 +3,16 @@ package ai.zipline.spark
 import ai.zipline.aggregator.base.{StructType => ZStructType}
 import ai.zipline.api._
 import ai.zipline.fetcher.{AvroCodec, AvroUtils}
+import com.google.gson.Gson
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.types.{DataType, LongType, StructType}
+import org.apache.spark.sql.types.{DataType, LongType, MapType, StructType}
 import org.apache.spark.sql.functions.{desc, from_unixtime, udf, unix_timestamp}
 import org.apache.spark.util.sketch.BloomFilter
+
 import java.util
-
 import scala.reflect.ClassTag
-
 
 object Extensions {
 
@@ -38,7 +38,10 @@ object Extensions {
 
   implicit class DataframeOps(df: DataFrame) {
     def timeRange: TimeRange = {
-      assert(df.schema(Constants.TimeColumn).dataType == LongType, s"Timestamp must be a Long but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts) function.")
+      assert(
+        df.schema(Constants.TimeColumn).dataType == LongType,
+        s"Timestamp must be a Long but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts) function."
+      )
       val (start, end) = df.range[Long](Constants.TimeColumn)
       TimeRange(start, end)
     }

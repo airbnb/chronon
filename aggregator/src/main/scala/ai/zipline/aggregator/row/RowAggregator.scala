@@ -1,6 +1,6 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.aggregator.base.DataType
+import ai.zipline.aggregator.base.{DataType, StringType}
 import ai.zipline.api.AggregationPart
 import ai.zipline.api.Extensions._
 
@@ -17,10 +17,20 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
         val ((_, inputType), inputIndex) = {
           inputSchema.zipWithIndex.find(_._1._1 == spec.inputColumn).get
         }
+
+        val bucketIndex: Option[Int] = Option(spec.bucket).map { bucketCol =>
+          val bIndex = inputSchema.indexWhere(_._1 == bucketCol)
+          assert(bIndex != -1, s"bucketing column: $bucketCol is not found in input: ${inputSchema.map(_._1)}")
+          val bucketType = inputSchema(bIndex)._2
+          assert(bucketType == StringType, s"bucketing column: $bucketCol needs to be a string, but found $bucketType")
+          bIndex
+        }
+
         ColumnAggregator.construct(
           inputType,
           spec,
-          ColumnIndices(inputIndex, aggregatorIndex)
+          ColumnIndices(inputIndex, aggregatorIndex),
+          bucketIndex
         )
     }
   }.toArray

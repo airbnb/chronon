@@ -21,7 +21,7 @@ class HopsAggregatorBase(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     extends Serializable {
 
   @transient lazy val rowAggregator =
-    new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
+    new RowAggregator(inputSchema, aggregations.flatMap(_.unWindowed))
   val hopSizes: Array[Long] = resolution.hopSizes
 
   def init(): IrMapType =
@@ -130,10 +130,12 @@ class HopsAggregator(minQueryTs: Long,
   // used to collect hops of various sizes in a single pass of input rows
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
-      try{
+      try {
         row.ts
       } catch {
-        case _: ClassCastException => println(s"There was an error getting the timestamp from the row with values ${row.values}. Timestamps must be LONG type.")
+        case _: ClassCastException =>
+          println(
+            s"There was an error getting the timestamp from the row with values ${row.values}. Timestamps must be LONG type.")
       }
       if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
         val hopStart = TsUtils.round(row.ts, hopSizes(i))

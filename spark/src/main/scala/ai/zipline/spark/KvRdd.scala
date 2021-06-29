@@ -11,6 +11,9 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
+import java.util
+import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.mutable
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession) {
 
@@ -79,7 +82,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
 object KvRdd {
   def toSparkRow(value: Any, dataType: ZDataType): Any = {
-    recursiveEdit[GenericRow, Array[Byte], Array[Any]](
+    recursiveEdit[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
       value,
       dataType,
       { (data: Array[Any], _) => new GenericRow(data) },
@@ -88,6 +91,15 @@ object KvRdd {
         val result = new Array[Any](size)
         var i = 0
         for (x <- elems) { result(i) = x; i += 1 }
+        result
+      },
+      { m: util.Map[Any, Any] =>
+        val result = new mutable.HashMap[Any, Any]
+        val it = m.entrySet().iterator()
+        while (it.hasNext) {
+          val entry = it.next()
+          result.update(entry.getKey, entry.getValue)
+        }
         result
       }
     )
