@@ -1,7 +1,9 @@
+import copy
+import json
+from typing import List, Optional, Union, Dict, Callable, Tuple
+
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
-import copy
-from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -116,7 +118,9 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             online: bool = DEFAULT_ONLINE,
             production: bool = DEFAULT_PRODUCTION,
             backfill_start_date: str = None,
-            dependencies: List[str] = None) -> ttypes.GroupBy:
+            dependencies: List[str] = None,
+            additional_args: List[str] = None,
+            additional_env: List[str] = None,) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -137,6 +141,12 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
 
+    customJson = {}
+    if additional_args:
+        customJson["additional_args"] = additional_args
+    if additional_env:
+        customJson["additional_env"] = additional_env
+
     metadata = ttypes.MetaData(online=online, production=production, dependencies=deps)
 
     return ttypes.GroupBy(
@@ -144,5 +154,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata,
+        customJson=json.dumps(customJson),
         backfillStartDate=backfill_start_date
     )
