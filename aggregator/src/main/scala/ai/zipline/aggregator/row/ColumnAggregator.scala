@@ -39,7 +39,8 @@ trait Dispatcher[Input, IR] {
 class SimpleDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
                                   columnIndices: ColumnIndices,
                                   toTypedInput: Any => Input)
-    extends Dispatcher[Input, IR] {
+    extends Dispatcher[Input, IR]
+    with Serializable {
   override def prepare(inputRow: Row): IR =
     agg.prepare(toTypedInput(inputRow.get(columnIndices.input)))
 
