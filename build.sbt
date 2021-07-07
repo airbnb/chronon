@@ -2,11 +2,13 @@ import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
-ThisBuild / version := "0.1-SNAPSHOT"
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark, fetcher)
-  .settings(name := "zipline")
+  .aggregate(api, aggregator, spark)
+  .settings(
+    name := "zipline",
+    skip in publish := true
+  )
 
 lazy val api = project
   .settings(
@@ -23,10 +25,16 @@ lazy val api = project
     )
   )
 
+lazy val lib = project
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7"
+    )
+  )
+
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
-    assembly / test := {},
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
@@ -35,7 +43,7 @@ lazy val aggregator = project
   )
 
 lazy val fetcher = project
-  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), lib)
   .settings(
     libraryDependencies ++= Seq(
       "org.apache.avro" % "avro" % "1.8.0",
@@ -52,12 +60,10 @@ def cleanSparkMeta: Unit = {
 }
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
+  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher, lib)
   .settings(
-    assembly / test := {},
-    mainClass in (Compile, run) := Some(
-      "ai.zipline.spark.Join"
-    ),
+    mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
+    assemblyJarName in assembly := "zipline-spark.jar",
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
@@ -70,7 +76,12 @@ lazy val spark = project
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
 
-exportJars := true
+artifact in (Compile, assembly) := {
+  val art = (artifact in (Compile, assembly)).value
+  art.withClassifier(Some("assembly"))
+}
+
+addArtifact(artifact in (Compile, assembly), assembly)
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b

@@ -8,17 +8,22 @@ import org.apache.thrift.TBase
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.{Option => JsonPathOption}
-
 import java.io.File
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
+
+import ai.zipline.lib.Metrics
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
-    new JoinOps(
+   val startTimeMs = System.currentTimeMillis()
+    val joinOps: JoinOps = new JoinOps(
       ThriftJsonCodec
         .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
+    Metrics.Fetcher.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
+    joinOps
   })
 
   def putJoinConf(join: Join): Unit = {
