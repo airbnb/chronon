@@ -8,12 +8,14 @@ import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import ai.zipline.api.{StructType, _}
 import org.apache.avro.Schema
 import ai.zipline.fetcher.Fetcher._
-
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function
+
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
+
+import ai.zipline.lib.Metrics
 
 // mixin class - with schema
 class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
@@ -76,6 +78,15 @@ object Fetcher {
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
+   private def getGroupByContext(groupByServingInfo: GroupByServingInfo, contextOption: Option[Metrics.Context] = None): Metrics.Context = {
+    val context = contextOption.getOrElse(Metrics.Context())
+    val groupBy = groupByServingInfo.getGroupBy
+    context
+      .withGroupBy(groupBy.getMetaData.getName)
+      .withProduction(groupBy.getMetaData.isProduction)
+      .withTeam(groupBy.getMetaData.getTeam)
+  }
+
   private case class GroupByRequestMeta(groupByServingInfoParsed: GroupByServingInfoParsed,
                                         batchRequest: GetRequest,
                                         streamingRequestOpt: Option[GetRequest],
@@ -84,8 +95,11 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   // 2. encodes keys as keyAvroSchema)
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
-  def fetchGroupBys(requests: Seq[Request]): Future[Seq[Response]] = {
+  def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
+    val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
+    Metrics.Fetcher.reportRequestBatchSize(requests.size, context)
+    val startTimeMs = System.currentTimeMillis()
     val groupByRequestToKvRequest = requests.iterator.map { request =>
       val groupByName = request.name
       val groupByServingInfo = getGroupByServingInfo(groupByName)
@@ -120,6 +134,14 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
       val responses: Seq[Response] = requestParFanout.map {
         case (request, GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
+          val groupBy = groupByServingInfo.getGroupBy
+          val groupByContext = getGroupByContext(groupByServingInfo, Some(context))
+          // batch request has only one value per key.
+          val batchValueOption: Option[TimedValue] = Option(responsesMap(batchRequest)).flatMap(_.headOption)
+          val batchResponseBytes: Array[Byte] = batchValueOption.map(_.bytes).orNull
+          batchValueOption.foreach(value => Metrics.Fetcher.reportDataFreshness(value.millis, groupByContext.asBatch))
+          Metrics.Fetcher.reportDataSize(batchResponseBytes.size, groupByContext.asBatch)
+
           // pick the batch version with highest timestamp
           val batchOption = Option(responsesMap(batchRequest)).map(_.maxBy(_.millis))
           val batchTime: Option[Long] = batchOption.map(_.millis)
@@ -152,6 +174,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               streamingResponses.iterator
                 .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
                 .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis))
+            Metrics.Fetcher.reportDataSize(totalDataSizeBytes(streamingResponses), groupByContext.asStreaming)
             val batchIr = toBatchIr(batchBytes, servingInfo)
             val queryTs = atMillis.getOrElse(System.currentTimeMillis())
             val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTs)
