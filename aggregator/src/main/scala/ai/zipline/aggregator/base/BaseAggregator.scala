@@ -10,7 +10,7 @@ abstract class BaseAggregator[Input, IR, Output] extends Serializable {
   // we allow mutating the IR
   // in cases where we need to work on the same IR twice (eg., Sawtooth::cumulate)
   // we will need to preserve a copy before mutating the IR
-  def clone(ir: IR): IR = ir
+  def clone(ir: IR): IR
 
   // we work on RDDs, and use custom java types for IRs - like CPCSketch etc,
   // But when it comes time to serialize it, we will need to convert IR into types

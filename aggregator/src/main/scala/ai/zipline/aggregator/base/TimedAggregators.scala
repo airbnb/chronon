@@ -1,6 +1,9 @@
 package ai.zipline.aggregator.base
 
+import ai.zipline.aggregator.base.TimeTuple.typ
+
 import java.util
+import java.util.PriorityQueue
 
 object TimeTuple extends Ordering[util.ArrayList[Any]] {
   type typ = util.ArrayList[Any]
@@ -29,7 +32,7 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
   def getTs(tup: util.ArrayList[Any]): Long = tup.get(0).asInstanceOf[Long]
 
   override def compare(x: util.ArrayList[Any], y: util.ArrayList[Any]): Int = {
-    (getTs(x) - getTs(y)).toInt
+    java.lang.Long.compare(getTs(x), getTs(y))
   }
 }
 
@@ -47,6 +50,8 @@ abstract class TimeOrdered(inputType: DataType) extends TimedAggregator[Any, Tim
 
   override def denormalize(ir: Any): TimeTuple.typ =
     ArrayUtils.fromArray(ir.asInstanceOf[Array[Any]])
+
+  override def clone(ir: TimeTuple.typ): TimeTuple.typ = ir.clone().asInstanceOf[TimeTuple.typ]
 
 }
 
@@ -89,6 +94,8 @@ class Last(inputType: DataType) extends TimeOrdered(inputType) {
   ): util.ArrayList[Any] =
     TimeTuple.max(ir1, ir2)
 }
+
+// FIRSTK LASTK ==============================================================
 
 // FIRSTK LASTK ==============================================================
 class OrderByLimitTimed(
@@ -150,6 +157,8 @@ class OrderByLimitTimed(
     }
     result
   }
+
+  override def clone(ir: util.ArrayList[typ]): util.ArrayList[typ] = ir.clone().asInstanceOf[util.ArrayList[typ]]
 }
 
 class LastK(inputType: DataType, k: Int) extends OrderByLimitTimed(inputType, k, TimeTuple.reverse)

@@ -7,11 +7,14 @@ import ai.zipline.api.Extensions._
 import ai.zipline.api.{Aggregation, GroupBy => _, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
+import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
+
+import scala.collection.mutable
 
 class GroupByTest {
 
@@ -103,6 +106,71 @@ class GroupByTest {
     assertEquals(diff.count(), 0)
   }
 
+  @Test
+  def temporalEventsLastKTest(): Unit = {
+    val eventSchema = List(
+      Column("user", StringType, 10),
+      Column("listing_view", StringType, 100)
+    )
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
+    eventDf.createOrReplaceTempView("events_last_k")
+
+    val querySchema = List(Column("user", StringType, 10))
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
+    queryDf.createOrReplaceTempView("queries_last_k")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30"))
+    )
+    val keys = Seq("user").toArray
+    val groupBy =
+      new GroupBy(aggregations,
+                  keys,
+                  eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
+    val resultDf = groupBy.temporalEvents(queryDf)
+    val computed = resultDf.select("user", "ts", "listing_view_last30")
+    computed.show()
+
+    val expected = eventDf.sqlContext.sql(s"""
+         |SELECT 
+         |      events_last_k.user as user,
+         |      queries_last_k.ts as ts,
+         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30
+         |FROM events_last_k CROSS JOIN queries_last_k
+         |ON events_last_k.user = queries_last_k.user
+         |WHERE events_last_k.ts < queries_last_k.ts
+         |GROUP BY events_last_k.user, queries_last_k.ts
+         |""".stripMargin)
+
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ts"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+      diff.rdd.foreach { row =>
+        val gson = new Gson()
+        val computed =
+          Option(row(2)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
+        val expected =
+          Option(row(3))
+            .map(_.asInstanceOf[mutable.WrappedArray[String]].toArray.sorted.reverse.take(30))
+            .getOrElse(Array.empty[String])
+        val computedStr = gson.toJson(computed)
+        val expectedStr = gson.toJson(expected)
+        if (computedStr != expectedStr) {
+          println(s"""
+                     |computed: ${gson.toJson(computed)}
+                     |expected: ${gson.toJson(expected)}
+                     |""".stripMargin)
+        }
+        assertEquals(gson.toJson(computed), gson.toJson(expected))
+      }
+    }
+  }
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(

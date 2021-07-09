@@ -77,10 +77,10 @@ object Extensions {
   implicit class AggregationPartOps(aggregationPart: AggregationPart) {
 
     def getInt(arg: String): Int = {
-      val argOpt = aggregationPart.argMap.asScala.get(arg)
+      val argOpt = Option(aggregationPart.argMap).flatMap(_.asScala.get(arg))
       require(
         argOpt.isDefined,
-        s"$arg needs to be specified in the constructor json for ${aggregationPart.operation} type"
+        s"$arg needs to be specified in the `argMap` for ${aggregationPart.operation} type"
       )
       argOpt.get.toInt
     }

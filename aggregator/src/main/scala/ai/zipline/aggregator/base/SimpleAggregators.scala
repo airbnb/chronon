@@ -25,6 +25,8 @@ class Sum[I: Numeric] extends SimpleAggregator[I, Long, Long] {
   override def delete(ir: Long, input: I): Long = ir - prepare(input)
 
   override def isDeletable: Boolean = true
+
+  override def clone(ir: Long): Long = ir
 }
 
 class Count extends SimpleAggregator[Any, Long, Long] {
@@ -43,6 +45,8 @@ class Count extends SimpleAggregator[Any, Long, Long] {
   override def delete(ir: Long, input: Any): Long = ir - 1
 
   override def isDeletable: Boolean = true
+
+  override def clone(ir: Long): Long = ir
 }
 
 class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.HashSet[T], Long] {
@@ -207,6 +211,8 @@ abstract class Order[I](inputType: DataType) extends SimpleAggregator[I, I, I] {
   override def prepare(input: I): I = input
 
   override def finalize(ir: I): I = ir
+
+  override def clone(ir: I): I = ir
 }
 
 class Max[I: Ordering](inputType: DataType) extends Order[I](inputType) {
