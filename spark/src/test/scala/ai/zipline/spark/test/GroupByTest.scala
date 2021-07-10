@@ -120,7 +120,8 @@ class GroupByTest {
     queryDf.createOrReplaceTempView("queries_last_k")
 
     val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30"))
+      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
+      Builders.Aggregation(Operation.COUNT, "listing_view", Seq(WindowUtils.Unbounded))
     )
     val keys = Seq("user").toArray
     val groupBy =
@@ -128,14 +129,15 @@ class GroupByTest {
                   keys,
                   eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
     val resultDf = groupBy.temporalEvents(queryDf)
-    val computed = resultDf.select("user", "ts", "listing_view_last30")
+    val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
     computed.show()
 
     val expected = eventDf.sqlContext.sql(s"""
          |SELECT 
          |      events_last_k.user as user,
          |      queries_last_k.ts as ts,
-         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30
+         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30,
+         |      SUM(case when events_last_k.listing_view <=> NULL then 0 else 1 end) as listing_view_count
          |FROM events_last_k CROSS JOIN queries_last_k
          |ON events_last_k.user = queries_last_k.user
          |WHERE events_last_k.ts < queries_last_k.ts
@@ -154,17 +156,19 @@ class GroupByTest {
       diff.rdd.foreach { row =>
         val gson = new Gson()
         val computed =
-          Option(row(2)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
+          Option(row(4)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
         val expected =
-          Option(row(3))
+          Option(row(5))
             .map(_.asInstanceOf[mutable.WrappedArray[String]].toArray.sorted.reverse.take(30))
             .getOrElse(Array.empty[String])
+        val computedCount = Option(row(2)).map(_.asInstanceOf[Long]).getOrElse(0)
+        val expectedCount = Option(row(3)).map(_.asInstanceOf[Long]).getOrElse(0)
         val computedStr = gson.toJson(computed)
         val expectedStr = gson.toJson(expected)
         if (computedStr != expectedStr) {
           println(s"""
-                     |computed: ${gson.toJson(computed)}
-                     |expected: ${gson.toJson(expected)}
+                     |computed [$computedCount]: ${gson.toJson(computed)}
+                     |expected [$expectedCount]: ${gson.toJson(expected)}
                      |""".stripMargin)
         }
         assertEquals(gson.toJson(computed), gson.toJson(expected))

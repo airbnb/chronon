@@ -42,8 +42,6 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
 
   // mutating arr
   def insert(arr: ContainerType[T], elem: T): ContainerType[T] = {
-    val gson = new Gson()
-    println(gson.toJson(elem))
     if (arr.size < maxSize - 1) {
       arr.add(elem)
     } else if (arr.size == maxSize - 1) {
@@ -67,8 +65,7 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
       arr1: ContainerType[T],
       arr2: ContainerType[T]
   ): ContainerType[T] = {
-    if (arr1.size() + arr2.size() <= maxSize) {
-      //arr1.ensureCapacity(arr1.size() + arr2.size())
+    if (arr1.size() + arr2.size() < maxSize) {
       arr1.addAll(arr2)
     } else {
       val it = arr2.iterator
@@ -77,6 +74,7 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
       }
     }
     arr1
+
   }
 
   def sort(arr: ContainerType[T]): ContainerType[T] = {

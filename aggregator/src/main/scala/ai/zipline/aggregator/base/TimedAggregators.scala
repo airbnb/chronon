@@ -1,6 +1,7 @@
 package ai.zipline.aggregator.base
 
 import ai.zipline.aggregator.base.TimeTuple.typ
+import com.google.gson.Gson
 
 import java.util
 import java.util.PriorityQueue
@@ -102,11 +103,7 @@ class OrderByLimitTimed(
     inputType: DataType,
     limit: Int,
     ordering: Ordering[TimeTuple.typ]
-) extends TimedAggregator[Any,
-                            util.ArrayList[TimeTuple.typ],
-                            util.ArrayList[
-                              Any
-                            ]] {
+) extends TimedAggregator[Any, util.ArrayList[TimeTuple.typ], util.ArrayList[Any]] {
   type Container = util.ArrayList[TimeTuple.typ]
   private val minHeap = new MinHeap[TimeTuple.typ](limit, ordering)
 
@@ -115,8 +112,11 @@ class OrderByLimitTimed(
   override def irType: DataType = ListType(TimeTuple.`type`(inputType))
 
   override final def prepare(input: Any, ts: Long): Container = {
-    val arr = new Container(limit)
-    arr.add(TimeTuple.make(ts, input))
+//    val gson = new Gson()
+    val tuple = TimeTuple.make(ts, input)
+//    println(s"init: ${gson.toJson(tuple)}")
+    val arr = new Container()
+    arr.add(tuple)
     arr
   }
 

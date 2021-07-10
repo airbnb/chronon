@@ -55,7 +55,7 @@ object CStream {
   }
 
   class StringStream(count: Int, prefix: String, absenceRatio: Double = 0.2) extends CStream[String] {
-    val keyCount: Int = (count * (1 - absenceRatio)).toInt
+    val keyCount: Int = (count * (1 - absenceRatio)).ceil.toInt
     val keys: Array[String] = {
       val fullKeySet = (1 until (count + 1)).map(i => s"$prefix$i")
       Random.shuffle(fullKeySet).take(keyCount).toArray
