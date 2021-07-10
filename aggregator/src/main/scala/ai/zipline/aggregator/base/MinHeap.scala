@@ -74,7 +74,6 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
       }
     }
     arr1
-
   }
 
   def sort(arr: ContainerType[T]): ContainerType[T] = {
