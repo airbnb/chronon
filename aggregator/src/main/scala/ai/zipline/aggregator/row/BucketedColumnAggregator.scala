@@ -21,7 +21,7 @@ class BucketedColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR,
   override def merge(ir1: Any, ir2: Any): Any = {
     if (ir2 == null) return ir1
     // we need to clone here because the contract is to only mutate ir1
-    // ir2 can it self be expected to mutate later - and hence has to retain it's value
+    // ir2 can it self be expected to mutate later - and hence has to retain its value
     val rightMap = castIr(ir2)
     val rightIter = rightMap.entrySet().iterator()
 
