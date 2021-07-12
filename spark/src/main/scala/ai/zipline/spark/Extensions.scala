@@ -40,7 +40,7 @@ object Extensions {
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
-        s"Timestamp must be a Long but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts) function."
+        s"Timestamp must be a Long type in milliseconds but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts)*1000 function."
       )
       val (start, end) = df.range[Long](Constants.TimeColumn)
       TimeRange(start, end)
