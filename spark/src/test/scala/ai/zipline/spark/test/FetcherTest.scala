@@ -1,6 +1,6 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{IntType, LongType, StringType}
+import ai.zipline.aggregator.base.{IntType, LongType, StringType, StructType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
@@ -89,7 +89,10 @@ class FetcherTest extends TestCase {
 
     // snapshot events
     val ratingCols =
-      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("rating", IntType, 5))
+      Seq(Column("user", StringType, 10),
+          Column("vendor", StringType, 10),
+          Column("rating", IntType, 5),
+          Column("bucket", StringType, 5))
     val ratingsTable = "ratings_table"
     DataFrameGen.events(spark, ratingCols, 100000, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
@@ -98,7 +101,8 @@ class FetcherTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.AVERAGE,
                              inputColumn = "rating",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS))),
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
+                             buckets = Seq("bucket")),
         Builders.Aggregation(operation = Operation.LAST_K,
                              argMap = Map("k" -> "300"),
                              inputColumn = "user",
@@ -208,8 +212,11 @@ class FetcherTest extends TestCase {
           Map(Constants.PartitionColumn -> today) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
-      new GenericRow(values)
+      KvRdd
+        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(todaysExpected.schema)))
+        .asInstanceOf[GenericRow]
     }
+
     println(todaysExpected.schema.pretty)
     val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)

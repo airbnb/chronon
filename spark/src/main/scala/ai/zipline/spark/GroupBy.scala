@@ -30,7 +30,15 @@ class GroupBy(val aggregations: Seq[Aggregation],
   // distinct inputs to aggregations - post projection types that needs to match with
   // streaming's post projection types etc.,
   val preAggSchema: StructType = if (aggregations != null) {
-    StructType(aggregations.map(_.inputColumn).distinct.map(inputDf.schema.apply))
+    StructType(
+      aggregations
+        .flatMap(agg =>
+          Option(agg.buckets)
+            .map(_.asScala)
+            .getOrElse(Seq.empty[String]) :+
+            agg.inputColumn)
+        .distinct
+        .map(inputDf.schema.apply))
   } else {
     val values = inputDf.schema.map(_.name).filterNot((keyColumns ++ Constants.ReservedColumns).contains)
     val valuesIndices = values.map(inputDf.schema.fieldIndex).toArray

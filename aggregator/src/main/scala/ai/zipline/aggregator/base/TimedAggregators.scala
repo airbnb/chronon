@@ -1,6 +1,10 @@
 package ai.zipline.aggregator.base
 
+import ai.zipline.aggregator.base.TimeTuple.typ
+import com.google.gson.Gson
+
 import java.util
+import java.util.PriorityQueue
 
 object TimeTuple extends Ordering[util.ArrayList[Any]] {
   type typ = util.ArrayList[Any]
@@ -29,7 +33,7 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
   def getTs(tup: util.ArrayList[Any]): Long = tup.get(0).asInstanceOf[Long]
 
   override def compare(x: util.ArrayList[Any], y: util.ArrayList[Any]): Int = {
-    (getTs(x) - getTs(y)).toInt
+    java.lang.Long.compare(getTs(x), getTs(y))
   }
 }
 
@@ -47,6 +51,8 @@ abstract class TimeOrdered(inputType: DataType) extends TimedAggregator[Any, Tim
 
   override def denormalize(ir: Any): TimeTuple.typ =
     ArrayUtils.fromArray(ir.asInstanceOf[Array[Any]])
+
+  override def clone(ir: TimeTuple.typ): TimeTuple.typ = ir.clone().asInstanceOf[TimeTuple.typ]
 
 }
 
@@ -91,15 +97,13 @@ class Last(inputType: DataType) extends TimeOrdered(inputType) {
 }
 
 // FIRSTK LASTK ==============================================================
+
+// FIRSTK LASTK ==============================================================
 class OrderByLimitTimed(
     inputType: DataType,
     limit: Int,
     ordering: Ordering[TimeTuple.typ]
-) extends TimedAggregator[Any,
-                            util.ArrayList[TimeTuple.typ],
-                            util.ArrayList[
-                              Any
-                            ]] {
+) extends TimedAggregator[Any, util.ArrayList[TimeTuple.typ], util.ArrayList[Any]] {
   type Container = util.ArrayList[TimeTuple.typ]
   private val minHeap = new MinHeap[TimeTuple.typ](limit, ordering)
 
@@ -108,8 +112,11 @@ class OrderByLimitTimed(
   override def irType: DataType = ListType(TimeTuple.`type`(inputType))
 
   override final def prepare(input: Any, ts: Long): Container = {
-    val arr = new Container(limit)
-    arr.add(TimeTuple.make(ts, input))
+//    val gson = new Gson()
+    val tuple = TimeTuple.make(ts, input)
+//    println(s"init: ${gson.toJson(tuple)}")
+    val arr = new Container()
+    arr.add(tuple)
     arr
   }
 
@@ -150,6 +157,8 @@ class OrderByLimitTimed(
     }
     result
   }
+
+  override def clone(ir: util.ArrayList[typ]): util.ArrayList[typ] = ir.clone().asInstanceOf[util.ArrayList[typ]]
 }
 
 class LastK(inputType: DataType, k: Int) extends OrderByLimitTimed(inputType, k, TimeTuple.reverse)

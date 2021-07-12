@@ -1,15 +1,46 @@
 package ai.zipline.spark
 
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.desc
+import com.google.gson.Gson
+import org.apache.spark.sql.types.MapType
+
+import java.util
+import scala.collection.JavaConverters.asJavaIterableConverter
 
 object Comparison {
+
+  // used for comparison
+  def sortedJson(m: Map[String, Any]): String = {
+    if (m == null) return null
+    val tm = new util.TreeMap[String, Any]()
+    m.iterator.foreach { case (key, value) => tm.put(key, value) }
+    val gson = new Gson()
+    gson.toJson(tm)
+  }
+
+  def stringifyMaps(df: DataFrame): DataFrame = {
+    try {
+      df.sparkSession.udf.register("sorted_json", (m: Map[String, Any]) => sortedJson(m))
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }
+    val selects = for (field <- df.schema.fields) yield {
+      if (field.dataType.isInstanceOf[MapType]) {
+        s"sorted_json(${field.name}) as `${field.name}`"
+      } else {
+        s"${field.name} as `${field.name}`"
+      }
+    }
+    df.selectExpr(selects: _*)
+  }
 
   // Produces a "comparison" dataframe - given two dataframes that are supposed to have same data
   // The result contains the differing rows of the same key
   def sideBySide(a: DataFrame, b: DataFrame, keys: List[String]): DataFrame = {
-    val prefixedExpectedDf = prefixColumnName(a, "a_")
-    val prefixedOutputDf = prefixColumnName(b, "b_")
+
+    val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), "a_")
+    val prefixedOutputDf = prefixColumnName(stringifyMaps(b), "b_")
+
     val joinExpr = keys
       .map(key => prefixedExpectedDf(s"a_$key") <=> prefixedOutputDf(s"b_$key"))
       .reduce((col1, col2) => col1.and(col2))

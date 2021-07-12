@@ -1,11 +1,11 @@
 package ai.zipline.aggregator.windowing
 
-import java.util
-
 import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
-import ai.zipline.api.{Aggregation, AggregationPart}
 import ai.zipline.api.Extensions._
+import ai.zipline.api.{Aggregation, AggregationPart}
+
+import java.util
 
 // Head Sliding, Tail Hopping Window - effective window size when plotted against query timestamp
 // will look the edge of sawtooth - instead of like a straight line.
@@ -29,20 +29,15 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
 
   protected val hopSizes = resolution.hopSizes
 
-  // HopIrs have no notion of windows, and are computed once per `Aggregation`
-  // This class maps a single hopIr column into as many window IR columns as specified
-  case class WindowMapping(baseIrIndex: Int, aggregationPart: AggregationPart) extends Serializable
-
-  protected val windowMappings: Array[WindowMapping] = aggregations.zipWithIndex.flatMap {
-    case (aggregation, hopIrIndex) =>
-      aggregation.unpack.map(WindowMapping(hopIrIndex, _))
-  }.toArray
-  protected val tailHopIndices: Array[Int] = windowMappings.map { mapping =>
+  @transient lazy val unpackedAggs = UnpackedAggregations.from(aggregations)
+  @transient lazy protected val tailHopIndices: Array[Int] = windowMappings.map { mapping =>
     hopSizes.indexOf(resolution.calculateTailHop(mapping.aggregationPart.window))
   }
 
-  @transient lazy val windowedAggregator = new RowAggregator(inputSchema, aggregations.flatMap(_.unpack))
-  @transient lazy val baseAggregator = new RowAggregator(inputSchema, aggregations.map(_.unWindowed))
+  @transient lazy val windowMappings: Array[WindowMapping] = unpackedAggs.perWindow
+  @transient lazy val perWindowAggs: Array[AggregationPart] = windowMappings.map(_.aggregationPart)
+  @transient lazy val windowedAggregator = new RowAggregator(inputSchema, unpackedAggs.perWindow.map(_.aggregationPart))
+  @transient lazy val baseAggregator = new RowAggregator(inputSchema, unpackedAggs.perBucket)
   @transient protected lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
 
   // the cache uses this space to work out the IRs for the whole window based on hops
@@ -67,7 +62,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
 
   // stitches multiple hops into a continuous window
   private def genIr(cache: HopRangeCache, col: Int, endTime: Long): Any = {
-    val window = windowMappings(col).aggregationPart.window
+    val window = perWindowAggs(col).window
     var hopIndex = tailHopIndices(col)
     val hopMillis = hopSizes(hopIndex)
     var baseIr: Any = null

@@ -12,7 +12,7 @@ object RowConversions {
   def toAvroRecord(value: Any, dataType: DataType): Any = {
     // TODO: avoid schema generation multiple times
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
-    recursiveEdit[GenericRecord, ByteBuffer, util.ArrayList[Any]](
+    recursiveEdit[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
       dataType,
       { (data: Array[Any], elemDataType: DataType) =>
@@ -28,7 +28,8 @@ object RowConversions {
         val result = new util.ArrayList[Any](size)
         elems.foreach(result.add)
         result
-      }
+      },
+      { m: util.Map[Any, Any] => m }
     )
   }
 
@@ -67,6 +68,17 @@ object RowConversions {
             arr.indices.foreach { idx => arr.update(idx, edit(arr(idx), elemType)) }
             arr
         }
+      case MapType(keyType, valueType) =>
+        value match {
+          case map: util.Map[Any, Any] =>
+            val newMap = new util.HashMap[Any, Any]()
+            map
+              .entrySet()
+              .iterator()
+              .asScala
+              .foreach { entry => newMap.put(edit(entry.getKey, keyType), edit(entry.getValue, valueType)) }
+            newMap
+        }
       case BinaryType => debinarizer(value.asInstanceOf[BinaryType])
       case StringType => deStringer(value.asInstanceOf[StringType])
       case _          => value
@@ -75,14 +87,16 @@ object RowConversions {
 
   // compositor converts a bare array of java types into a format specific row/record type
   // recursively explore the ZDataType to explore where composition/record building happens
-  def recursiveEdit[CompositeType, BinaryType, CollectionType](
-      value: Any,
-      dataType: DataType,
-      composer: (Array[Any], DataType) => CompositeType,
-      binarizer: Array[Byte] => BinaryType,
-      collector: (Iterator[Any], Int) => CollectionType): Any = {
+  def recursiveEdit[StructType, BinaryType, ListType, MapType](value: Any,
+                                                               dataType: DataType,
+                                                               composer: (Array[Any], DataType) => StructType,
+                                                               binarizer: Array[Byte] => BinaryType,
+                                                               collector: (Iterator[Any], Int) => ListType,
+                                                               mapper: (util.Map[Any, Any] => MapType)): Any = {
+
     if (value == null) return null
-    def edit(value: Any, dataType: DataType): Any = recursiveEdit(value, dataType, composer, binarizer, collector)
+    def edit(value: Any, dataType: DataType): Any =
+      recursiveEdit(value, dataType, composer, binarizer, collector, mapper)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -107,7 +121,7 @@ object RowConversions {
               .iterator()
               .asScala
               .foreach { entry => newMap.put(edit(entry.getKey, keyType), edit(entry.getValue, valueType)) }
-            newMap
+            mapper(newMap)
         }
       case BinaryType => binarizer(value.asInstanceOf[Array[Byte]])
       case _          => value

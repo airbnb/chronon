@@ -1,5 +1,7 @@
 package ai.zipline.aggregator.base
 
+import com.google.gson.Gson
+
 import java.util
 
 // An implementation of a fast non-strict min-heap,
@@ -63,8 +65,7 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
       arr1: ContainerType[T],
       arr2: ContainerType[T]
   ): ContainerType[T] = {
-    if (arr1.size() + arr2.size() <= maxSize) {
-      //arr1.ensureCapacity(arr1.size() + arr2.size())
+    if (arr1.size() + arr2.size() < maxSize) {
       arr1.addAll(arr2)
     } else {
       val it = arr2.iterator

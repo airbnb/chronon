@@ -1,8 +1,7 @@
 package ai.zipline.aggregator.test
 
 import java.util
-
-import ai.zipline.aggregator.base.{DataType, LongType}
+import ai.zipline.aggregator.base.{DataType, LongType, StringType}
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.zipline.aggregator.windowing._
@@ -104,7 +103,11 @@ class SawtoothAggregatorTest extends TestCase {
   def testRealTimeAccuracy(): Unit = {
     val timer = new Timer
     val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
-    val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
+    val columns = Seq(Column("ts", LongType, 180),
+                      Column("num", LongType, 1000),
+                      Column("age", LongType, 100),
+                      Column("bucket1", StringType, 3),
+                      Column("bucket2", StringType, 2))
     val events = CStream.gen(columns, 10000).rows
     val schema = columns.map(_.schema)
 
@@ -115,16 +118,28 @@ class SawtoothAggregatorTest extends TestCase {
                              new Window(1, TimeUnit.DAYS),
                              new Window(1, TimeUnit.HOURS),
                              new Window(30, TimeUnit.DAYS)
-                           )))
+                           ),
+                           buckets = Seq("bucket1", "bucket2")),
+      Builders.Aggregation(Operation.AVERAGE, "age", buckets = Seq("bucket1")),
+      Builders.Aggregation(Operation.AVERAGE,
+                           "age",
+                           Seq(
+                             new Window(1, TimeUnit.DAYS),
+                             new Window(1, TimeUnit.HOURS),
+                             new Window(30, TimeUnit.DAYS)
+                           )),
+      Builders.Aggregation(Operation.SUM, "age")
+    )
     timer.publish("setup")
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
     timer.publish("sawtoothAggregate")
 
-    val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
+    val unpacked = aggregations.flatMap(_.unpack.map(_.window)).toArray
+    val tailHops = unpacked.map(FiveMinuteResolution.calculateTailHop)
+    val rowAgg = new RowAggregator(schema, aggregations.flatMap(_.unpack))
     val naiveAggregator = new NaiveAggregator(
-      new RowAggregator(schema, aggregations.flatMap(_.unpack)),
-      windows,
+      rowAgg,
+      unpacked,
       tailHops
     )
     val naiveIrs = naiveAggregator.aggregate(events, queries)
@@ -134,8 +149,8 @@ class SawtoothAggregatorTest extends TestCase {
     assertEquals(sawtoothIrs.length, queries.length)
     val gson = new Gson
     for (i <- queries.indices) {
-      val naiveStr = gson.toJson(naiveIrs(i))
-      val sawtoothStr = gson.toJson(sawtoothIrs(i))
+      val naiveStr = gson.toJson(rowAgg.finalize(naiveIrs(i)))
+      val sawtoothStr = gson.toJson(rowAgg.finalize(sawtoothIrs(i)))
       assertEquals(naiveStr, sawtoothStr)
     }
     timer.publish("comparison")

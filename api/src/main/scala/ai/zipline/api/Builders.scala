@@ -42,13 +42,17 @@ object Builders {
     def apply(operation: Operation,
               inputColumn: String,
               window: Window = WindowUtils.Unbounded,
-              argMap: Map[String, String] = null): AggregationPart = {
+              argMap: Map[String, String] = null,
+              bucket: String = null): AggregationPart = {
       val result = new AggregationPart()
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
       result.setWindow(window)
       if (argMap != null)
         result.setArgMap(argMap.asJava)
+      if (bucket != null) {
+        result.setBucket(bucket)
+      }
       result
     }
   }
@@ -57,7 +61,8 @@ object Builders {
     def apply(operation: Operation,
               inputColumn: String,
               windows: Seq[Window] = null,
-              argMap: Map[String, String] = null): Aggregation = {
+              argMap: Map[String, String] = null,
+              buckets: Seq[String] = null): Aggregation = {
       val result = new Aggregation()
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
@@ -65,6 +70,8 @@ object Builders {
         result.setArgMap(argMap.asJava)
       if (windows != null)
         result.setWindows(windows.asJava)
+      if (buckets != null)
+        result.setBuckets(buckets.asJava)
       result
     }
   }
