@@ -16,17 +16,26 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
   private final val EndDateRegex = replacementRegexFor("end_date")
   private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
 
-  def computeStagingQuery(): Unit = {
+  def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
     val stagingQueryUnfilledRange: PartitionRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
 
     println(s"Staging Query unfilled range: $stagingQueryUnfilledRange")
-    val renderedQuery = stagingQueryConf.query
-      .replaceAll(StartDateRegex, stagingQueryUnfilledRange.start)
-      .replaceAll(EndDateRegex, stagingQueryUnfilledRange.end)
-    println(s"Rendered Staging Query to run is:\n$renderedQuery")
-    tableUtils.sql(renderedQuery).save(outputTable, tableProps)
+    val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
+    println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+
+    stepRanges.zipWithIndex.foreach {
+      case (range, index) =>
+        val progress = s"| [${index + 1}/${stepRanges.size}]"
+        println(s"Computing staging query for range: $range  $progress")
+        val renderedQuery = stagingQueryConf.query
+          .replaceAll(StartDateRegex, range.start)
+          .replaceAll(EndDateRegex, range.end)
+        println(s"Rendered Staging Query to run is:\n$renderedQuery")
+        tableUtils.sql(renderedQuery).save(outputTable, tableProps)
+        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+    }
     println(s"Finished writing Staging Query data to $outputTable")
   }
 }
@@ -38,8 +47,8 @@ object StagingQuery {
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}", local = false))
+      TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}"))
     )
-    stagingQueryJob.computeStagingQuery()
+    stagingQueryJob.computeStagingQuery(parsedArgs.stepDays.toOption)
   }
 }
