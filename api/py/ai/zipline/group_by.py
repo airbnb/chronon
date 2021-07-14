@@ -1,6 +1,7 @@
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
 import copy
+import inspect
 from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
@@ -136,8 +137,9 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
                 src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
-
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps)
+    # get caller's filename to assign team
+    team = inspect.stack()[1].filename.split("/")[-2]
+    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, team=team)
 
     return ttypes.GroupBy(
         sources=updated_sources,
