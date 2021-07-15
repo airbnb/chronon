@@ -13,7 +13,7 @@ import org.junit.Test
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val tenDaysAgo = Constants.Partition.minus(today, new Window(10, TimeUnit.DAYS))
+  private val ninetyDaysAgo = Constants.Partition.minus(today, new Window(90, TimeUnit.DAYS))
   private val namespace = "staging_query_zipline_test"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val tableUtils = TableUtils(spark)
@@ -32,14 +32,14 @@ class StagingQueryTest {
 
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
-      startPartition = tenDaysAgo,
+      startPartition = ninetyDaysAgo,
       setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
     )
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
-    stagingQuery.computeStagingQuery()
-    val expected = tableUtils.sql(s"select * from $viewName where ds between '$tenDaysAgo' and '$today'")
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+    val expected = tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today'")
 
     val computed = tableUtils.sql(
       s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName}")
