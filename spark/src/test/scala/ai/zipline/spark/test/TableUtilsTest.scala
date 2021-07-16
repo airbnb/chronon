@@ -4,7 +4,7 @@ import ai.zipline.spark.TableUtils
 import ai.zipline.aggregator.base.{IntType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.spark.SparkSessionBuilder
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
 

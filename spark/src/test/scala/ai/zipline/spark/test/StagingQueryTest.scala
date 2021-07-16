@@ -86,7 +86,7 @@ class StagingQueryChangedStartDate extends StagingQueryTestBase {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = ninetyDaysAgo,
-      metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.user_session_features_with_holes", namespace = namespace)
     )
     val sixtyDaysAgo = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val stagingQuery = new StagingQuery(stagingQueryConf, sixtyDaysAgo, tableUtils)
@@ -95,7 +95,7 @@ class StagingQueryChangedStartDate extends StagingQueryTestBase {
     val newConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = today,
-      metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.user_session_features_with_holes", namespace = namespace)
     )
     val newStagingQuery = new StagingQuery(newConf, today, tableUtils)
     newStagingQuery.computeStagingQuery()
