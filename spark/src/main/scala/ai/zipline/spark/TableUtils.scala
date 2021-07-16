@@ -3,7 +3,9 @@ package ai.zipline.spark
 import ai.zipline.api.Constants
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -90,15 +92,37 @@ case class TableUtils(sparkSession: SparkSession) {
    */
   private def preWriteDataChecks(df: DataFrame): Unit = {
     // Check no null partitions.
-    println("Checking no null partitions")
+    println("..Checking against null partitions")
     val nullPartitions = df.where(df.col(Constants.PartitionColumn).isNull).count()
     if(nullPartitions > 0)
-      throw new RuntimeException("Null partitions where found in the output of query")
+      throw new RuntimeException("Null partitions were found in the output of query")
+    println("..Checking partition date format")
+    val validDatesDf = df
+      .select(Constants.PartitionColumn)
+      .filter(validateDateFormat(_))
+    val invalidFormatted = df
+      .select(Constants.PartitionColumn)
+      .except(validDatesDf)
+    if(invalidFormatted.count() > 0) {
+      println(s"There are ${invalidFormatted.count()} invalid partition(s). Expected format ${Constants.Partition.format}, found:")
+      invalidFormatted.show()
+      throw new RuntimeException(s"Invalid format of partitions.")
+    }
+  }
+
+  private def validateDateFormat(row: Row): Boolean = try {
+    LocalDate.parse(row.getString(0), DateTimeFormatter.ofPattern(Constants.Partition.format))
+    true
+  } catch {
+    case ex: Exception => {
+      false
+    }
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    println("Executing produced data checks.")
+    println(s"Executing pre-write data checks for $tableName")
     preWriteDataChecks(df)
+    println(s"Finished pre-write data checks for $tableName")
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
