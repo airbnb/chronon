@@ -5,7 +5,7 @@ import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions._
 import ai.zipline.spark.Extensions._
 import ai.zipline.api.{Builders, Constants, TimeUnit, Window}
-import ai.zipline.spark.{Comparison, PartitionRange, SparkSessionBuilder, StagingQuery, TableUtils}
+import ai.zipline.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -91,9 +91,6 @@ class StagingQueryChangedStartDate extends StagingQueryTestBase {
     val sixtyDaysAgo = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
     val stagingQuery = new StagingQuery(stagingQueryConf, sixtyDaysAgo, tableUtils)
     stagingQuery.computeStagingQuery()
-    println("Before")
-    tableUtils.sql(
-      s"show partitions ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName}").show(100)
 
     val newConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
@@ -102,9 +99,6 @@ class StagingQueryChangedStartDate extends StagingQueryTestBase {
     )
     val newStagingQuery = new StagingQuery(newConf, today, tableUtils)
     newStagingQuery.computeStagingQuery()
-    println("After")
-    tableUtils.sql(
-      s"show partitions ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName}").show(100)
 
     val expected = tableUtils.sql(s"select * from $viewName where ds between '$today' and '$today'")
     val computed = tableUtils.sql(
