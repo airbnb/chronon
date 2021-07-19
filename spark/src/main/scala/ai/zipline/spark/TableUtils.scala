@@ -90,27 +90,11 @@ case class TableUtils(sparkSession: SparkSession) {
   /* Specially with staging queries it is possible to receive malformed data.
    * In order to proactively prevent this we execute data checks pre-saving.
    */
-  private def preWriteDataChecks(df: DataFrame): Unit = {
-    // Check no null partitions.
-    println("..Checking against null partitions")
-    val nullPartitions = df.where(df.col(Constants.PartitionColumn).isNull).count()
-    if(nullPartitions > 0)
-      throw new RuntimeException("Null partitions were found in the output of query")
-    println("..Checking partition date format")
-    val validDatesDf = df
-      .select(Constants.PartitionColumn)
-      .filter(validateDateFormat(_))
-    val invalidFormatted = df
-      .select(Constants.PartitionColumn)
-      .except(validDatesDf)
-    if(invalidFormatted.count() > 0) {
-      println(s"There are ${invalidFormatted.count()} invalid partition(s). Expected format ${Constants.Partition.format}, found:")
-      invalidFormatted.show()
-      throw new RuntimeException(s"Invalid format of partitions.")
-    }
+  private def preWritePartitionChecks(row: Row): Boolean = {
+    (!validDateFormat(row) || row.anyNull)
   }
 
-  private def validateDateFormat(row: Row): Boolean = try {
+  private def validDateFormat(row: Row): Boolean = try {
     LocalDate.parse(row.getString(0), DateTimeFormatter.ofPattern(Constants.Partition.format))
     true
   } catch {
@@ -120,9 +104,14 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    println(s"Executing pre-write data checks for $tableName")
-    preWriteDataChecks(df)
-    println(s"Finished pre-write data checks for $tableName")
+    val invalidData = df
+      .select(Constants.PartitionColumn)
+      .filter(preWritePartitionChecks(_))
+    if(!invalidData.isEmpty) {
+      println("Found invalid data:")
+      invalidData.show()
+      throw new RuntimeException("Invalid partition data found.")
+    }
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
