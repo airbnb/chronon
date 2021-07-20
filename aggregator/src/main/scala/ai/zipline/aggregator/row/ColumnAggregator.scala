@@ -123,11 +123,11 @@ object ColumnAggregator {
       case Operation.COUNT => simple(new Count)
       case Operation.SUM =>
         inputType match {
-          case IntType    => simple(new Sum[Long], toLong[Int])
-          case LongType   => simple(new Sum[Long])
-          case ShortType  => simple(new Sum[Long], toLong[Short])
-          case DoubleType => simple(new Sum[Double])
-          case FloatType  => simple(new Sum[Double], toDouble[Float])
+          case IntType    => simple(new Sum[Long](inputType), toLong[Int])
+          case LongType   => simple(new Sum[Long](inputType))
+          case ShortType  => simple(new Sum[Long](inputType), toLong[Short])
+          case DoubleType => simple(new Sum[Double](inputType))
+          case FloatType  => simple(new Sum[Double](inputType), toDouble[Float])
           case _          => mismatchException
         }
       case Operation.UNIQUE_COUNT =>
