@@ -5,26 +5,26 @@ import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 import java.util
 import scala.reflect.ClassTag
 
-class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
-  private val numericImpl = implicitly[Numeric[I]]
+class Sum extends SimpleAggregator[Double, Double, Double] {
+  private val numericDoubleImpl = implicitly[Numeric[Double]]
 
-  override def outputType: DataType = inputType
+  override def outputType: DataType = DoubleType
 
-  override def irType: DataType = inputType
+  override def irType: DataType = DoubleType
 
-  override def prepare(input: I): I = input
+  override def prepare(input: Double): Double = input
 
-  override def update(ir: I, input: I): I = numericImpl.plus(ir, input)
+  override def update(ir: Double, input: Double): Double = numericDoubleImpl.plus(ir, input)
 
-  override def merge(ir1: I, ir2: I): I = numericImpl.plus(ir1, ir2)
+  override def merge(ir1: Double, ir2: Double): Double = numericDoubleImpl.plus(ir1, ir2)
 
-  override def finalize(ir: I): I = ir
+  override def finalize(ir: Double): Double = ir
 
-  override def delete(ir: I, input: I): I = numericImpl.minus(ir, input)
+  override def delete(ir: Double, input: Double): Double = numericDoubleImpl.minus(ir, input)
 
   override def isDeletable: Boolean = true
 
-  override def clone(ir: I): I = ir
+  override def clone(ir: Double): Double = ir
 }
 
 class Count extends SimpleAggregator[Any, Long, Long] {

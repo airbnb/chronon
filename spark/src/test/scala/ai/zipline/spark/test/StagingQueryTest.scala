@@ -3,8 +3,8 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.base.{IntType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions._
-import ai.zipline.spark.Extensions._
 import ai.zipline.api.{Builders, Constants, TimeUnit, Window}
+import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
@@ -53,6 +53,6 @@ class StagingQueryTest {
       println(s"diff result rows")
       diff.show()
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 }

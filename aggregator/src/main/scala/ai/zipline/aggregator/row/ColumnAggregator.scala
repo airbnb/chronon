@@ -111,7 +111,7 @@ object ColumnAggregator {
       throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.operation}")
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
-                                  toTypedInput: Any => Input = (cast[Input] _)): ColumnAggregator = {
+                                  toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
       fromSimple(agg, columnIndices, toTypedInput, bucketIndex)
     }
 
@@ -123,11 +123,11 @@ object ColumnAggregator {
       case Operation.COUNT => simple(new Count)
       case Operation.SUM =>
         inputType match {
-          case IntType    => simple(new Sum[Long](inputType), toLong[Int])
-          case LongType   => simple(new Sum[Long](inputType))
-          case ShortType  => simple(new Sum[Long](inputType), toLong[Short])
-          case DoubleType => simple(new Sum[Double](inputType))
-          case FloatType  => simple(new Sum[Double](inputType), toDouble[Float])
+          case IntType    => simple(new Sum, toDouble[Int])
+          case LongType   => simple(new Sum, toDouble[Long])
+          case ShortType  => simple(new Sum, toDouble[Short])
+          case DoubleType => simple(new Sum)
+          case FloatType  => simple(new Sum, toDouble[Float])
           case _          => mismatchException
         }
       case Operation.UNIQUE_COUNT =>

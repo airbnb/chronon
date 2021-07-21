@@ -1,6 +1,6 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{IntType, LongType, StringType}
+import ai.zipline.aggregator.base.{DoubleType, IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
@@ -51,14 +51,15 @@ class GroupByTest {
       diff.show()
       println("diff result rows")
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   @Test
   def testSnapshotEvents(): Unit = {
     val schema = List(
       Column("user", StringType, 10), // ts = last 10 days
-      Column("session_length", IntType, 2)
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
     )
 
     val outputDates = CStream.genPartitions(10)
@@ -92,7 +93,8 @@ class GroupByTest {
                                           |       COUNT(DISTINCT session_length) as session_length_unique_count,
                                           |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_approx_unique_count_10d,
                                           |       COUNT(DISTINCT IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) as session_length_unique_count_10d,
-                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d
+                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d,
+                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, rating, null)) AS rating_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 
                                           |group by user, $datesViewName.ds
@@ -103,7 +105,7 @@ class GroupByTest {
       diff.show()
       println("diff result rows")
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   @Test
@@ -236,7 +238,7 @@ class GroupByTest {
       diff.show()
       println("diff result rows")
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
