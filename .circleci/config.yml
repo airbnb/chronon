@@ -68,7 +68,22 @@ jobs:
                   command: |
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt test
+                      sbt jacocoAggregate
+            - store_test_results:
+                  path: /zipline/spark/target/test-reports
+            - store_test_results:
+                  path: /zipline/aggregator/target/test-reports
+            - store_artifacts:
+                  path: /zipline/target/scala-2.11/jacoco/report/html
+            - store_artifacts:
+                  path: /zipline/spark/target/scala-2.11/jacoco/report/html
+                  destination: spark-line-coverage
+            - store_artifacts:
+                  path: /zipline/fetcher/target/scala-2.11/jacoco/report/html
+                  destination: fetcher-line-coverage
+            - store_artifacts:
+                  path: /zipline/aggregator/target/scala-2.11/jacoco/report/html
+                  destination: aggregator-line-coverage
 
     "Zipline Python Lint":
         executor: docker_baseimg_executor
