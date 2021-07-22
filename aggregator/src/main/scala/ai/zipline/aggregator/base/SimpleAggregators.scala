@@ -5,28 +5,26 @@ import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 import java.util
 import scala.reflect.ClassTag
 
-// specializing underlying types for speed, and in-case of sum, the output type is
-// mostly independent of input type - to protect from overflow
-class Sum[I: Numeric] extends SimpleAggregator[I, Long, Long] {
+class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
   private val numericImpl = implicitly[Numeric[I]]
 
-  override def outputType: DataType = LongType
+  override def outputType: DataType = inputType
 
-  override def irType: DataType = LongType
+  override def irType: DataType = inputType
 
-  override def prepare(input: I): Long = numericImpl.toLong(input)
+  override def prepare(input: I): I = input
 
-  override def update(ir: Long, input: I): Long = ir + prepare(input)
+  override def update(ir: I, input: I): I = numericImpl.plus(ir, input)
 
-  override def merge(ir1: Long, ir2: Long): Long = ir1 + ir2
+  override def merge(ir1: I, ir2: I): I = numericImpl.plus(ir1, ir2)
 
-  override def finalize(ir: Long): Long = ir
+  override def finalize(ir: I): I = ir
 
-  override def delete(ir: Long, input: I): Long = ir - prepare(input)
+  override def delete(ir: I, input: I): I = numericImpl.minus(ir, input)
 
   override def isDeletable: Boolean = true
 
-  override def clone(ir: Long): Long = ir
+  override def clone(ir: I): I = ir
 }
 
 class Count extends SimpleAggregator[Any, Long, Long] {
