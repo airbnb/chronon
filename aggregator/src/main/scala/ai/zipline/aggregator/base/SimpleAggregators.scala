@@ -1,5 +1,6 @@
 package ai.zipline.aggregator.base
 
+import ai.zipline.api.{BinaryType, DataType, DoubleType, IntType, ListType, LongType, StructField, StructType}
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 
 import java.util

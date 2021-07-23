@@ -1,11 +1,10 @@
 package ai.zipline.fetcher
 
-import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Extensions._
-import ai.zipline.api._
-import ai.zipline.fetcher.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
+import ai.zipline.api.{StructType, _}
+import KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import org.apache.avro.Schema
 
 import java.util.concurrent.Executors
@@ -13,40 +12,6 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
-
-// the main system level api for online storage integration
-// used for fetcher + streaming + bulk uploads
-trait KVStore {
-  implicit val executionContext: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
-
-  def create(dataset: String): Unit
-  def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
-  def multiPut(keyValueDatasets: Seq[PutRequest]): Future[Seq[Boolean]]
-
-  def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
-
-  // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
-  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
-
-  def getString(key: String, dataset: String, timeoutMillis: Long)(implicit
-      executionContext: ExecutionContext): String = {
-    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
-    val responseFuture = get(fetchRequest)
-    val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    new String(response.values.head.bytes, Constants.UTF8)
-  }
-}
-
-object KVStore {
-  // a scan request essentially for the keyBytes
-  // afterTsMillis - is used to limit the scan to more recent data
-  case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
-  case class TimedValue(bytes: Array[Byte], millis: Long)
-  case class GetResponse(request: GetRequest, values: Seq[TimedValue])
-  case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
-}
 
 // mixin class - with schema
 class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)

@@ -1,6 +1,5 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{DoubleType, IntType, LongType, StringType}
 import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._

@@ -3,12 +3,11 @@ package ai.zipline.aggregator.windowing
 import java.util.Date
 import java.text.SimpleDateFormat
 import java.util
-
-import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.aggregator.windowing.HopsAggregator._
-import ai.zipline.api.{Aggregation, Window}
+import ai.zipline.api.{Aggregation, DataType, Window}
 import ai.zipline.api.Extensions._
+
 import scala.collection.JavaConverters._
 import java.lang.ClassCastException
 

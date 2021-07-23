@@ -1,12 +1,24 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{IntType, LongType, StringType, StructType}
+import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.KVStore.PutRequest
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
+import ai.zipline.api.KVStore.PutRequest
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase

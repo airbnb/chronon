@@ -1,8 +1,7 @@
 package ai.zipline.spark.test
 
-import ai.zipline.api.Constants
-import ai.zipline.fetcher.KVStore
-import ai.zipline.fetcher.KVStore.{PutRequest, TimedValue}
+import ai.zipline.api.{Constants, KVStore}
+import KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
 
 import java.util.Base64

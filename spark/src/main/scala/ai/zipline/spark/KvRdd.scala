@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
-import ai.zipline.aggregator.base.{DataType => ZDataType, StructType => ZStructType}
+import ai.zipline.api
+import ai.zipline.api.DataType
 import ai.zipline.fetcher.RowConversions.recursiveEdit
 import ai.zipline.fetcher.{AvroCodec, AvroUtils, RowConversions}
 import ai.zipline.spark.Extensions._
@@ -17,10 +18,10 @@ import scala.collection.mutable
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession) {
 
-  val keyZSchema: ZStructType = keySchema.toZiplineSchema("Key")
-  val valueZSchema: ZStructType = valueSchema.toZiplineSchema("Value")
+  val keyZSchema: api.StructType = keySchema.toZiplineSchema("Key")
+  val valueZSchema: api.StructType = valueSchema.toZiplineSchema("Value")
   val flatSchema: StructType = StructType(keySchema ++ valueSchema)
-  val flatZSchema: ZStructType = flatSchema.toZiplineSchema("Flat")
+  val flatZSchema: api.StructType = flatSchema.toZiplineSchema("Flat")
 
   def toAvroDf: DataFrame = {
     val rowSchema = StructType(
@@ -31,7 +32,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
         StructField("value_json", StringType)
       )
     )
-    def encodeBytes(schema: ZStructType): Any => Array[Byte] = {
+    def encodeBytes(schema: api.StructType): Any => Array[Byte] = {
       val codec: AvroCodec = new AvroCodec(AvroUtils.fromZiplineSchema(schema).toString(true));
       { data: Any =>
         val record = RowConversions.toAvroRecord(data, schema).asInstanceOf[GenericData.Record]
@@ -40,7 +41,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
       }
     }
 
-    def encodeJson(schema: ZStructType): Any => String = {
+    def encodeJson(schema: api.StructType): Any => String = {
       val codec: AvroCodec = new AvroCodec(AvroUtils.fromZiplineSchema(schema).toString(true));
       { data: Any =>
         val record = RowConversions.toAvroRecord(data, schema).asInstanceOf[GenericData.Record]
@@ -81,7 +82,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 }
 
 object KvRdd {
-  def toSparkRow(value: Any, dataType: ZDataType): Any = {
+  def toSparkRow(value: Any, dataType: DataType): Any = {
     recursiveEdit[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
       value,
       dataType,

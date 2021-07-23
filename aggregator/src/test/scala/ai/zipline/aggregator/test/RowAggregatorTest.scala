@@ -1,10 +1,9 @@
 package ai.zipline.aggregator.test
 
 import java.util
-
-import ai.zipline.aggregator.base.{FloatType, IntType, LongType, StringType}
+import ai.zipline.aggregator.base.StringType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
-import ai.zipline.api.{AggregationPart, Builders, Operation}
+import ai.zipline.api.{AggregationPart, Builders, FloatType, IntType, LongType, Operation, StringType}
 import junit.framework.TestCase
 
 import scala.collection.JavaConverters._

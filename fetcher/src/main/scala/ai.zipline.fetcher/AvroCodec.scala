@@ -1,9 +1,12 @@
 package ai.zipline.fetcher
 
 import java.io.ByteArrayOutputStream
-import ai.zipline.aggregator.base.{
+import ai.zipline.aggregator.base.StructType
+import ai.zipline.aggregator.row.Row
+import ai.zipline.api.{
   BinaryType,
   BooleanType,
+  Constants,
   DataType,
   DoubleType,
   FloatType,
@@ -15,8 +18,6 @@ import ai.zipline.aggregator.base.{
   StructField,
   StructType
 }
-import ai.zipline.aggregator.row.Row
-import ai.zipline.api.Constants
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput

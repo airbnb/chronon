@@ -1,6 +1,7 @@
 package ai.zipline.fetcher
 
 import ai.zipline.aggregator.base._
+import ai.zipline.api.{BinaryType, DataType, ListType, MapType, StringType, StructField, StructType}
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.util.Utf8
 

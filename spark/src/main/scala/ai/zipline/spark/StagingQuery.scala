@@ -42,7 +42,8 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
 
 object StagingQuery {
   def main(args: Array[String]): Unit = {
-    val parsedArgs = new BatchArgs(args)
+    val parsedArgs = new Args(args)
+    parsedArgs.verify()
     val stagingQueryConf = parsedArgs.parseConf[StagingQueryConf]
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,

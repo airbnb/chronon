@@ -2,7 +2,7 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.base._
 import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
-import ai.zipline.api.Constants
+import ai.zipline.api.{Constants, LongType, StringType}
 import ai.zipline.spark.Conversions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow

@@ -1,9 +1,9 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.aggregator.base.{DataType, ListType, LongType, StructType}
+import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.Extensions.{AggregationPartOps, WindowOps}
-import ai.zipline.api.{Aggregation, TimeUnit, Window}
+import ai.zipline.api.{Aggregation, DataType, ListType, LongType, StructType, TimeUnit, Window}
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)

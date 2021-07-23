@@ -1,7 +1,6 @@
 package ai.zipline.spark.test
 
 import scala.collection.JavaConverters._
-import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._

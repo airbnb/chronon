@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.aggregator.base.{DataType, StringType}
-import ai.zipline.api.AggregationPart
+import ai.zipline.aggregator.base.StringType
+import ai.zipline.api.{AggregationPart, DataType, StringType}
 import ai.zipline.api.Extensions._
 
 // The primary API of the aggregator package.
