@@ -135,7 +135,7 @@ class JoinTest {
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
-        |WITH 
+        |WITH
         |   queries AS (
         |     SELECT user_name,
         |         ts,
@@ -147,14 +147,14 @@ class JoinTest {
         |         AND ds >= '$start'
         |         and ds <= '$end'),
         |   grouped_transactions AS (
-        |      SELECT user, 
-        |             ds, 
+        |      SELECT user,
+        |             ds,
         |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
-        |      FROM 
+        |      FROM
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
         |          WHERE ds >= '$monthAgo'
-        |          UNION 
+        |          UNION
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
         |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
@@ -246,18 +246,18 @@ class JoinTest {
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     val expected = tableUtils.sql(s"""
-    |WITH 
+    |WITH
     |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
     |   grouped_weights AS (
-    |      SELECT country, 
-    |             ds, 
+    |      SELECT country,
+    |             ds,
     |             avg(weight) as team_a_unit_test_country_weights_weight_average
     |      FROM $weightTable
     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
     |      GROUP BY country, ds),
     |   grouped_heights AS (
-    |      SELECT country, 
-    |             ds, 
+    |      SELECT country,
+    |             ds,
     |             avg(height) as team_b_unit_test_country_heights_height_average
     |      FROM $heightTable
     |      WHERE ds >= '$monthAgo'
@@ -266,7 +266,7 @@ class JoinTest {
     |        countries.ds,
     |        grouped_weights.team_a_unit_test_country_weights_weight_average,
     |        grouped_heights.team_b_unit_test_country_heights_height_average
-    | FROM countries left outer join grouped_weights 
+    | FROM countries left outer join grouped_weights
     | ON countries.country = grouped_weights.country
     | AND countries.ds = grouped_weights.ds
     | left outer join grouped_heights
@@ -340,7 +340,7 @@ class JoinTest {
     computed.show()
 
     val expected = tableUtils.sql(s"""
-                                |WITH 
+                                |WITH
                                 |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
                                 | SELECT queries.item,
                                 |        queries.ts,
@@ -410,7 +410,7 @@ class JoinTest {
     computed.show()
 
     val expected = tableUtils.sql(s"""
-                                     |WITH 
+                                     |WITH
                                      |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
                                      | SELECT queries.item, queries.ts, queries.ds, part.user_unit_test_item_views_ts_min, part.user_unit_test_item_views_ts_max, part.user_unit_test_item_views_time_spent_ms_average
                                      | FROM (SELECT queries.item,
@@ -420,7 +420,7 @@ class JoinTest {
                                      |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_max,
                                      |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
                                      |     FROM queries left outer join $viewsTable
-                                     |     ON queries.item = $viewsTable.item  
+                                     |     ON queries.item = $viewsTable.item
                                      |     WHERE $viewsTable.item IS NOT NULL AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
                                      |     GROUP BY queries.item, queries.ts, queries.ds) as part
                                      | JOIN queries

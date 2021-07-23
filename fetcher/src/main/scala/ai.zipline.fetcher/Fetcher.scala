@@ -147,7 +147,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           val batchTime: Option[Long] = batchOption.map(_.millis)
 
           val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
-            println(s"""${request.name}'s value's batch timestamp of ${batchTime} is 
+            println(s"""${request.name}'s value's batch timestamp of ${batchTime} is
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                  |Forcing an update of schema.""".stripMargin)
             getGroupByServingInfo.force(request.name)
