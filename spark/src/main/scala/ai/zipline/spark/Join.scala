@@ -253,6 +253,25 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
+  def getJoinFirstUnavailablePartition: Option[PartitionRange] = {
+    val query = joinConf.left.query
+    val leftPartitions = tableUtils
+      .partitions(joinConf.left.table)
+      .filter(ds => ds >= query.startPartition && ds <= endPartition)
+    val outputPartitions = tableUtils.partitions(outputTable)
+
+    val missingPartitions = if (outputPartitions.isEmpty) {
+      leftPartitions
+    } else {
+      leftPartitions.filterNot(leftPart => outputPartitions.contains(leftPart))
+    }
+    if (missingPartitions.isEmpty) {
+      None
+    } else {
+      Some(PartitionRange(missingPartitions.min, endPartition))
+    }
+  }
+
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")

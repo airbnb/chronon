@@ -176,7 +176,8 @@ case class TableUtils(sparkSession: SparkSession) {
                |""".stripMargin)
     assert(
       Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),
-      s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis")
+      s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis"
+    )
     result
   }
 
@@ -193,6 +194,15 @@ case class TableUtils(sparkSession: SparkSession) {
     val command = s"DROP TABLE IF EXISTS $tableName"
     println(s"Dropping table with command: $command")
     sql(command)
+  }
+
+  def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {
+    val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
+    val partitionSpecs =
+      toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
+    val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+    println(s"Running drop partition command: $dropSql")
+    sql(dropSql)
   }
 
 }
