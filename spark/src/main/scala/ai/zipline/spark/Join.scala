@@ -284,10 +284,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       System.exit(0)
     }
     val leftUnfilledRange = leftUnfilledRangeOpt.get
-    println(s"Dropping left unfilled range from join output (and joinParts): $leftUnfilledRange")
+    println(s"Dropping left unfilled range $leftUnfilledRange from join output $outputTable")
     tableUtils.dropPartitionRange(outputTable, leftUnfilledRange.start, leftUnfilledRange.end)
-    joinConf.joinParts.asScala.foreach(joinPart =>
-      tableUtils.dropPartitionRange(getJoinPartTableName(joinPart), leftUnfilledRange.start, leftUnfilledRange.end))
+    joinConf.joinParts.asScala.foreach{ joinPart =>
+      val partTable = getJoinPartTableName(joinPart)
+      println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
+      tableUtils.dropPartitionRange(partTable, leftUnfilledRange.start, leftUnfilledRange.end)
+    }
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
