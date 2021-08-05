@@ -36,7 +36,6 @@ object SparkSessionBuilder {
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
 
     val builder = if (local) {
-      val metastore_db = new File("metastore_db")
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
