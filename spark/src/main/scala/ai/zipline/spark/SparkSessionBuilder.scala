@@ -37,8 +37,6 @@ object SparkSessionBuilder {
 
     val builder = if (local) {
       val metastore_db = new File("metastore_db")
-      cleanUp(warehouseDir)
-      cleanUp(metastore_db)
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
@@ -53,13 +51,5 @@ object SparkSessionBuilder {
     spark.sparkContext.setLogLevel("ERROR")
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
-  }
-
-  def cleanUp(file: File): Unit = {
-    if (file.exists() && file.isDirectory) {
-      println(s"cleaning ${file.getPath}")
-      val directory = new Directory(file)
-      directory.deleteRecursively()
-    }
   }
 }
