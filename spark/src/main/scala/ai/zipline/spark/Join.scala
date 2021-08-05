@@ -254,10 +254,14 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
   }
 
   def getJoinUnavailableRange: Option[PartitionRange] = {
-    val leftPartitions = tableUtils.partitions(joinConf.left.table)
-      .filter(ds => ds >= joinConf.left.query.startPartition && ds <= endPartition).toSet
+    val leftPartitions = tableUtils
+      .partitions(joinConf.left.table)
+      .filter(ds => ds >= joinConf.left.query.startPartition && ds <= endPartition)
+      .toSet
     val outputPartitions = tableUtils.partitions(outputTable).toSet
-    (leftPartitions -- outputPartitions).minOption.map(_ -> endPartition)
+    (leftPartitions -- outputPartitions)
+      .reduceLeftOption(Ordering[String].min)
+      .map(PartitionRange(_, endPartition))
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
