@@ -197,12 +197,14 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {
-    val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
-    val partitionSpecs =
-      toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
-    val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
-    println(s"Running drop partition command: $dropSql")
-    sql(dropSql)
+    if (sparkSession.catalog.tableExists(tableName)) {
+      val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
+      val partitionSpecs =
+        toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
+      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      sql(dropSql)
+    } else {
+      println(s"$tableName doesn't exist, please double check before drop partitions")
+    }
   }
-
 }

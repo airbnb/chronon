@@ -253,7 +253,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
-  def getJoinFirstUnavailablePartition: Option[PartitionRange] = {
+  def getJoinUnavailableRange: Option[PartitionRange] = {
     val query = joinConf.left.query
     val leftPartitions = tableUtils
       .partitions(joinConf.left.table)
@@ -285,12 +285,17 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-    val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
-      outputTable,
-      PartitionRange(joinConf.left.query.startPartition, endPartition),
-      Option(joinConf.left.table).toSeq)
 
+    val leftUnfilledRangeOpt = getJoinUnavailableRange
+    if (leftUnfilledRangeOpt.isEmpty || !leftUnfilledRangeOpt.get.valid) {
+      println(s"There is no data to compute based on the left unfilled range $leftUnfilledRangeOpt")
+      System.exit(0)
+    }
+    val leftUnfilledRange = leftUnfilledRangeOpt.get
     println(s"left unfilled range: $leftUnfilledRange")
+    tableUtils.dropPartitionRange(outputTable, leftUnfilledRange.start, leftUnfilledRange.end)
+    joinConf.joinParts.asScala.foreach(joinPart =>
+      tableUtils.dropPartitionRange(getJoinPartTableName(joinPart), leftUnfilledRange.start, leftUnfilledRange.end))
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)

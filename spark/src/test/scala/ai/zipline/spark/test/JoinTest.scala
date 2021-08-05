@@ -1,19 +1,19 @@
 package ai.zipline.spark.test
 
-import scala.collection.JavaConverters._
-
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
-import ai.zipline.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.zipline.spark.{Join => _, _}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
+
+import scala.collection.JavaConverters._
 
 class JoinTest {
 
@@ -113,11 +113,26 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
-    val runner1 = new Join(joinConf, end, tableUtils)
+    val runner1 = new Join(joinConf, Constants.Partition.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
+    runner1.computeJoin()
+    val dropStart = Constants.Partition.minus(today, new Window(55, TimeUnit.DAYS))
+    val dropEnd = Constants.Partition.minus(today, new Window(45, TimeUnit.DAYS))
+    tableUtils.dropPartitionRange(
+      s"$namespace.test_user_transaction_features",
+      dropStart,
+      dropEnd
+    )
+    println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
-    spark.sql(
-      s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
-    val computed = runner1.computeJoin(Some(3))
+    joinConf.joinParts.asScala
+      .map(jp => s"${runner1.getJoinPartTableName(jp)}")
+      .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
+
+    Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
+      .foreach(function => tableUtils.sql(s"DROP TEMPORARY FUNCTION IF EXISTS $function"))
+
+    val runner2 = new Join(joinConf, end, tableUtils)
+    val computed = runner2.computeJoin(Some(3))
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
