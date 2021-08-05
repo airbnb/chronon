@@ -124,7 +124,7 @@ class JoinTest {
     println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
     joinConf.joinParts.asScala
-      .map(jp => s"${runner1.getJoinPartTableName(jp)}")
+      .map(jp => runner1.getJoinPartTableName(jp))
       .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
 
     Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
