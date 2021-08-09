@@ -166,7 +166,7 @@ class FetcherTest extends TestCase {
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
     val queriesTable = s"$namespace.queries_table"
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, 10000, 4)
+      .events(spark, queryCols, 100000, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
     queriesDf.show()
@@ -219,32 +219,43 @@ class FetcherTest extends TestCase {
     def joinResponses = {
       var latencySum: Long = 0
       var latencyCount = 0
+      val blockStart = System.currentTimeMillis()
       val result = requests.iterator
         .grouped(chunkSize)
         .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
         .flatMap {
           case (start, future) =>
-            val result = Await.result(future, Duration(100000, MILLISECONDS))
+            val result = Await.result(future, Duration(10000, MILLISECONDS))
             val latency = System.currentTimeMillis() - start
             latencySum += latency
             latencyCount += 1
             result
         }
         .toList
-      println(s"Avg latency to fetch $chunkSize joins is ${latencySum.toFloat / latencyCount.toFloat}ms")
-      result
+      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
+      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
+      (latencyMillis, qps, result)
     }
 
-    var megaJoinResponses = 0
     // to overwhelm the profiler with fetching code path
-    // so as to make it prominent in the flamegraph
-    for (i <- 0 until 100) {
-      megaJoinResponses += joinResponses.size
+    // so as to make it prominent in the flamegraph & collect enough stats
+    val count = 10
+    var latencySum = 0.0
+    var qpsSum = 0.0
+    (0 until count).foreach { _ =>
+      val (latency, qps, _) = joinResponses
+      latencySum += latency
+      qpsSum += qps
     }
-    println(megaJoinResponses)
+    println(s"""
+         |Averaging fetching stats over ${requests.length} requests $count times
+         |with batch size: $chunkSize
+         |average qps: ${qpsSum / count}
+         |average latency: ${latencySum / count}
+         |""".stripMargin)
 
     val columns = todaysExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses.map { res =>
+    val responseRows: Seq[Row] = joinResponses._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
