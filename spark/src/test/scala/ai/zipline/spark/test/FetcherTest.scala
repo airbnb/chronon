@@ -216,22 +216,29 @@ class FetcherTest extends TestCase {
       .collect()
 
     val chunkSize = 100
-    def joinResponses =
-      requests.iterator
+    def joinResponses = {
+      var latencySum: Long = 0
+      var latencyCount = 0
+      val result = requests.iterator
         .grouped(chunkSize)
         .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
         .flatMap {
           case (start, future) =>
             val result = Await.result(future, Duration(100000, MILLISECONDS))
-            println(s"Fetching $chunkSize requests took ${System.currentTimeMillis() - start}ms")
+            val latency = System.currentTimeMillis() - start
+            latencySum += latency
+            latencyCount += 1
             result
         }
         .toList
+      println(s"Avg latency to fetch $chunkSize joins is ${latencySum.toFloat / latencyCount.toFloat}ms")
+      result
+    }
 
     var megaJoinResponses = 0
     // to overwhelm the profiler with fetching code path
     // so as to make it prominent in the flamegraph
-    for (i <- 0 until 300) {
+    for (i <- 0 until 100) {
       megaJoinResponses += joinResponses.size
     }
     println(megaJoinResponses)
