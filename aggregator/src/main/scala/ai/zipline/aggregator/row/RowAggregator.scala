@@ -1,6 +1,5 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.aggregator.base.StringType
 import ai.zipline.api.{AggregationPart, DataType, StringType}
 import ai.zipline.api.Extensions._
 
@@ -51,22 +50,32 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
 
   val isNotDeletable: Boolean = columnAggregators.forall(!_.isDeletable)
 
-  def update(ir: Array[Any], inputRow: Row): Unit =
-    columnAggregators.foreach(_.update(ir, inputRow))
+  def update(ir: Array[Any], inputRow: Row): Unit = {
+    var i = 0
+    while (i < columnAggregators.length) {
+      columnAggregators(i).update(ir, inputRow)
+      i += 1
+    }
+  }
 
-  def updateWindowed(ir: Array[Any], inputRow: Row, endTime: Long): Unit =
-    for (i <- columnAggregators.indices) {
+  def updateWindowed(ir: Array[Any], inputRow: Row, endTime: Long): Unit = {
+    var i = 0
+    while (i < columnAggregators.length) {
       val ts = inputRow.ts
       val windowStart = endTime - aggregationParts(i).window.millis
       if (ts < endTime && ts >= windowStart)
         columnAggregators(i).update(ir, inputRow)
+      i += 1
     }
+  }
 
   def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
     if (ir1 == null) return ir2
     if (ir2 == null) return ir1
-    for (i <- columnAggregators.indices) {
+    var i = 0
+    while (i < columnAggregators.length) {
       ir1.update(i, columnAggregators(i).merge(ir1(i), ir2(i)))
+      i += 1
     }
     ir1
   }
@@ -84,7 +93,11 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   def denormalize(ir: Array[Any]): Array[Any] = map(ir, _.denormalize)
 
   def denormalizeInPlace(ir: Array[Any]): Array[Any] = {
-    columnAggregators.indices.foreach(idx => ir.update(idx, columnAggregators(idx).denormalize(ir(idx))))
+    var idx = 0
+    while (idx < columnAggregators.length) {
+      ir.update(idx, columnAggregators(idx).denormalize(ir(idx)))
+      idx += 1
+    }
     ir
   }
 
@@ -94,8 +107,10 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
   // deep copies an IR ai.zipline.aggregator.row
   private def map(ir: Array[Any], f: ColumnAggregator => Any => Any): Array[Any] = {
     val result = new Array[Any](length)
-    for (i <- columnAggregators.indices) {
+    var i = 0
+    while (i < columnAggregators.length) {
       result.update(i, f(columnAggregators(i))(ir(i)))
+      i += 1
     }
     result
   }

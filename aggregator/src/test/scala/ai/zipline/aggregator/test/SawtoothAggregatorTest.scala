@@ -1,7 +1,6 @@
 package ai.zipline.aggregator.test
 
 import java.util
-import ai.zipline.aggregator.base.StringType
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.zipline.aggregator.windowing._

@@ -1,6 +1,5 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{
@@ -8,6 +7,7 @@ import ai.zipline.api.{
   Builders,
   Constants,
   IntType,
+  KVStore,
   LongType,
   Operation,
   StringType,
@@ -30,6 +30,7 @@ import org.junit.Assert.assertEquals
 import java.lang
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.asScalaBufferConverter
+import scala.collection.mutable
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -165,7 +166,7 @@ class FetcherTest extends TestCase {
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
     val queriesTable = s"$namespace.queries_table"
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, 1000, 4)
+      .events(spark, queryCols, 10000, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
     queriesDf.show()
@@ -202,7 +203,7 @@ class FetcherTest extends TestCase {
     val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
-    val metadataStore = new MetadataStore(inMemoryKvStore)
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create("ZIPLINE_METADATA")
     metadataStore.putJoinConf(joinConf)
 
@@ -213,8 +214,27 @@ class FetcherTest extends TestCase {
         Request(joinConf.metaData.name, keyMap, Some(ts))
       }
       .collect()
-    val joinResponseFuture = fetcher.fetchJoin(requests)
-    val joinResponses = Await.result(joinResponseFuture, Duration(10000, MILLISECONDS))
+
+    val chunkSize = 100
+    def joinResponses =
+      requests.iterator
+        .grouped(chunkSize)
+        .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
+        .flatMap {
+          case (start, future) =>
+            val result = Await.result(future, Duration(100000, MILLISECONDS))
+            println(s"Fetching $chunkSize requests took ${System.currentTimeMillis() - start}ms")
+            result
+        }
+        .toList
+
+    var megaJoinResponses = 0
+    // to overwhelm the profiler with fetching code path
+    // so as to make it prominent in the flamegraph
+    for (i <- 0 until 300) {
+      megaJoinResponses += joinResponses.size
+    }
+    println(megaJoinResponses)
 
     val columns = todaysExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] = joinResponses.map { res =>

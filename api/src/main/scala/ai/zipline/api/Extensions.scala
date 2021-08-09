@@ -27,13 +27,13 @@ object Extensions {
   implicit class WindowOps(window: Window) {
     private def unbounded: Boolean = window.length == Int.MaxValue || window.length < 0
 
-    val str: String =
+    def str: String =
       if (unbounded) "unbounded" else s"${window.length}${window.timeUnit.str}"
 
-    val suffix: String =
+    def suffix: String =
       if (unbounded) "" else s"_${window.length}${window.timeUnit.str}"
 
-    val millis: Long = window.length.toLong * window.timeUnit.millis
+    def millis: Long = window.length.toLong * window.timeUnit.millis
   }
 
   object WindowUtils {
@@ -60,7 +60,7 @@ object Extensions {
   }
 
   implicit class MetadataOps(metaData: MetaData) {
-    val cleanName: String = metaData.name.sanitize
+    def cleanName: String = metaData.name.sanitize
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -69,7 +69,7 @@ object Extensions {
       newMetaData
     }
 
-    val tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
+    def tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
   }
 
   // one per output column - so single window
@@ -207,7 +207,7 @@ object Extensions {
     }
   }
 
-  implicit class GroupByOps(groupBy: GroupBy) {
+  implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
@@ -224,7 +224,9 @@ object Extensions {
       models.head
     }
 
-    def inferredAccuracy: Accuracy = {
+    lazy val inferredAccuracy: Accuracy = inferredAccuracyImpl
+
+    private def inferredAccuracyImpl: Accuracy = {
       // if user specified something - respect it
       if (groupBy.accuracy != null) return groupBy.accuracy
       // if a topic is specified - then treat it as temporally accurate
@@ -245,8 +247,8 @@ object Extensions {
       newGroupBy
     }
 
-    def batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
-    def streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
+    lazy val batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
+    lazy val streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
     def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
 
     def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
@@ -256,8 +258,9 @@ object Extensions {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
   }
 
-  implicit class JoinPartOps(joinPart: JoinPart) {
-    def leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
+  implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
+    lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+    lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
     def rightToLeft: Map[String, String] = {
       val rightToRight = joinPart.groupBy.keyColumns.asScala.map { key => key -> key }.toMap
@@ -347,6 +350,8 @@ object Extensions {
       newJoin.unsetMetaData()
       newJoin
     }
+
+    lazy val joinPartOps: Seq[JoinPartOps] = join.joinParts.asScala.map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

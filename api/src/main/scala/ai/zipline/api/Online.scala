@@ -2,7 +2,7 @@ package ai.zipline.api
 
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{Executors, SynchronousQueue, ThreadPoolExecutor}
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -18,8 +18,7 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  implicit val executionContext: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(100))
+  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newWorkStealingPool())
 
   def create(dataset: String): Unit
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
@@ -31,8 +30,7 @@ trait KVStore {
   def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
-  def getString(key: String, dataset: String, timeoutMillis: Long)(implicit
-      executionContext: ExecutionContext): String = {
+  def getString(key: String, dataset: String, timeoutMillis: Long): String = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))

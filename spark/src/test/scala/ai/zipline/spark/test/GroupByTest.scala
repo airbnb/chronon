@@ -3,7 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.zipline.aggregator.windowing.FiveMinuteResolution
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, GroupBy => _, _}
+import ai.zipline.api.{Aggregation, StringType, GroupBy => _, _}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import com.google.gson.Gson

@@ -1,6 +1,5 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.zipline.api.{Aggregation, DataType, ListType, LongType, StructType, TimeUnit, Window}
@@ -8,7 +7,9 @@ import ai.zipline.api.{Aggregation, DataType, ListType, LongType, StructType, Ti
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
 
-class SawtoothOnlineAggregator(batchEndTs: Long,
+// batchEndTs = upload time of the batch data as derived from GroupByServingInfo & Cached
+// cache = Jul-22 / latest = Jul-23, streaming data = 22 - now (filter < jul 23)
+class SawtoothOnlineAggregator(val batchEndTs: Long,
                                aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],
                                resolution: Resolution = FiveMinuteResolution,
@@ -55,7 +56,8 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
   def update(batchIr: BatchIr, row: Row): BatchIr = {
     val rowTs = row.ts
     val updatedHop = Array.fill(hopSizes.length)(false)
-    for (i <- 0 until windowedAggregator.length) {
+    var i = 0
+    while (i < windowedAggregator.length) {
       if (batchEndTs > rowTs && tailTs(i).forall(rowTs > _)) { // relevant for the window
         if (tailTs(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
           windowedAggregator.columnAggregators(i).update(batchIr.collapsed, row)
@@ -71,6 +73,7 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
           }
         }
       }
+      i += 1
     }
     batchIr
   }
@@ -113,36 +116,43 @@ class SawtoothOnlineAggregator(batchEndTs: Long,
     val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
     // add head events
-    for (row <- headRows) {
+    while (headRows.hasNext) {
+      val row = headRows.next()
       val rowTs = row.ts // unbox long only once
       if (queryTs > rowTs && rowTs >= batchEndTs) {
-        for (i <- windowedAggregator.indices) {
+        var i: Int = 0
+        while (i < windowedAggregator.length) {
           val window = windowMappings(i).aggregationPart.window
           val hopIndex = tailHopIndices(i)
           if (window == null || rowTs >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))) {
             windowedAggregator(i).update(resultIr, row)
           }
+          i += 1
         }
       }
     }
 
     // add tail hopIrs
-    for (i <- 0 until windowedAggregator.length) {
+    var i: Int = 0
+    while (i < windowedAggregator.length) {
       val window = windowMappings(i).aggregationPart.window
       if (window != null) { // no hops for unwindowed
         val hopIndex = tailHopIndices(i)
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
         val hopIrs = batchIr.tailHops(hopIndex)
-        for (hopIr <- hopIrs) {
+        var idx: Int = 0
+        while (idx < hopIrs.length) {
+          val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
             val merged = windowedAggregator(i).merge(resultIr(i), hopIr(baseIrIndices(i)))
             resultIr.update(i, merged)
           }
+          idx += 1
         }
       }
+      i += 1
     }
-
     resultIr
   }
 

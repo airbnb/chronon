@@ -3,8 +3,13 @@ package ai.zipline.spark.test
 import ai.zipline.api.{Constants, KVStore}
 import KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
+import com.google.gson.Gson
+import org.apache.spark.sql.Row
+import org.jboss.netty.util.internal.ConcurrentHashMap
 
 import java.util.Base64
+import java.util.function.BiFunction
+import scala.collection.JavaConverters.asJavaIterableConverter
 import scala.collection.{mutable, parallel}
 import scala.concurrent.Future
 
@@ -14,8 +19,9 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   type Data = Array[Byte]
   type DataSet = String
   type Version = Long
-  type Table = parallel.mutable.ParHashMap[Key, mutable.Buffer[(Version, Data)]]
-  private val database = parallel.mutable.ParHashMap.empty[DataSet, Table]
+  type VersionedData = mutable.Buffer[(Version, Data)]
+  type Table = ConcurrentHashMap[Key, VersionedData]
+  private val database = new ConcurrentHashMap[DataSet, Table]
 
   private val encoder = Base64.getEncoder
   def encode(bytes: Array[Byte]): String = encoder.encodeToString(bytes)
@@ -23,34 +29,40 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   override def multiGet(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     Future {
       requests.map { req =>
-        assert(database.keys.exists(req.dataset == _), s"dataset ${req.dataset} doesn't exist")
-
-        val values = database(req.dataset) // table
-          .get(encode(req.keyBytes)) // values of key
-          .map { values =>
-            values
-              .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
-              .map { case (version, bytes) => TimedValue(bytes, version) }
-          }
-          .orNull
+        val values = Option(
+          database
+            .get(req.dataset) // table
+            .get(encode(req.keyBytes))
+        ) // values of key
+        .map { values =>
+          values
+            .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
+            .map { case (version, bytes) => TimedValue(bytes, version) }
+        }.orNull
         KVStore.GetResponse(req, values)
       }
     }
   }
 
+  private def putFunc(newData: (Version, Data)) =
+    new BiFunction[Key, VersionedData, VersionedData] {
+      override def apply(t: Key, u: VersionedData): VersionedData = {
+        val result = if (u == null) {
+          mutable.Buffer.empty[(Version, Data)]
+        } else u
+        result.append(newData)
+        result
+      }
+    }
+
   override def multiPut(putRequests: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     Future {
       putRequests.map {
         case PutRequest(keyBytes, valueBytes, dataset, millis) =>
-          val table = database(dataset)
+          val table = database.get(dataset)
           val key = encode(keyBytes)
-          synchronized {
-            if (!table.contains(key)) {
-              table.put(key, mutable.Buffer.empty[(Version, Data)])
-            }
-            table(key).append((millis.getOrElse(System.currentTimeMillis()), valueBytes))
-            true
-          }
+          table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
+          true
       }
     }
   }
@@ -60,15 +72,17 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val partitionFilter =
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
-    val df = tableUtils.sql(s"""SELECT key_bytes, value_bytes 
+    tableUtils.sql(s"SELECT * FROM $sourceOfflineTable").show()
+    val df = tableUtils.sql(s"""SELECT key_bytes, value_bytes, unix_timestamp(ds, 'yyyy-MM-dd') * 1000 as ts 
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd
       .collect()
-      .map { row =>
+      .map { row: Row =>
         val key = row.get(0).asInstanceOf[Array[Byte]]
         val value = row.get(1).asInstanceOf[Array[Byte]]
-        KVStore.PutRequest(key, value, destinationOnlineDataSet)
+        val timestamp = row.get(2).asInstanceOf[Long]
+        KVStore.PutRequest(key, value, destinationOnlineDataSet, Option(timestamp))
       }
 
     create(destinationOnlineDataSet)
@@ -76,6 +90,6 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   }
 
   override def create(dataset: String): Unit = {
-    database.put(dataset, parallel.mutable.ParHashMap.empty[Key, mutable.Buffer[(Version, Data)]])
+    database.put(dataset, new ConcurrentHashMap[Key, mutable.Buffer[(Version, Data)]])
   }
 }

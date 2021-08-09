@@ -1,12 +1,9 @@
 package ai.zipline.spark
 
-import java.util
-import ai.zipline.aggregator.base.UnknownType
 import ai.zipline.aggregator.row.{Row => MRow}
 import ai.zipline.api
 import ai.zipline.api.{IntType, ListType, UnknownType}
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 
 // wrapper class of spark ai.zipline.aggregator.row that the RowAggregator can work with
@@ -34,22 +31,22 @@ object Conversions {
     val typeName = name.capitalize
     dataType match {
       case IntegerType               => IntType
-      case LongType                  => ZLongType
-      case ShortType                 => ZShortType
-      case ByteType                  => ZByteType
-      case FloatType                 => ZFloatType
-      case DoubleType                => ZDoubleType
-      case StringType                => ZStringType
-      case BinaryType                => ZBinaryType
-      case BooleanType               => ZBooleanType
+      case LongType                  => api.LongType
+      case ShortType                 => api.ShortType
+      case ByteType                  => api.ByteType
+      case FloatType                 => api.FloatType
+      case DoubleType                => api.DoubleType
+      case StringType                => api.StringType
+      case BinaryType                => api.BinaryType
+      case BooleanType               => api.BooleanType
       case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
-        ZMapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
+        api.MapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
       case StructType(fields) =>
-        ZStructType(
+        api.StructType(
           s"${typeName}Struct",
           fields.map { field =>
-            ZStructField(field.name, toZiplineType(field.name, field.dataType))
+            api.StructField(field.name, toZiplineType(field.name, field.dataType))
           }
         )
       case other => UnknownType(other)
@@ -59,14 +56,14 @@ object Conversions {
   def fromZiplineType(zType: api.DataType): DataType =
     zType match {
       case IntType               => IntegerType
-      case ZLongType             => LongType
-      case ZShortType            => ShortType
-      case ZByteType             => ByteType
-      case ZFloatType            => FloatType
-      case ZDoubleType           => DoubleType
-      case ZStringType           => StringType
-      case ZBinaryType           => BinaryType
-      case ZBooleanType          => BooleanType
+      case api.LongType          => LongType
+      case api.ShortType         => ShortType
+      case api.ByteType          => ByteType
+      case api.FloatType         => FloatType
+      case api.DoubleType        => DoubleType
+      case api.StringType        => StringType
+      case api.BinaryType        => BinaryType
+      case api.BooleanType       => BooleanType
       case ListType(elementType) => ArrayType(fromZiplineType(elementType))
       case api.MapType(keyType, valueType) =>
         MapType(fromZiplineType(keyType), fromZiplineType(valueType))

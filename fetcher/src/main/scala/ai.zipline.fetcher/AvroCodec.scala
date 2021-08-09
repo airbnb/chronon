@@ -1,7 +1,6 @@
 package ai.zipline.fetcher
 
 import java.io.ByteArrayOutputStream
-import ai.zipline.aggregator.base.StructType
 import ai.zipline.aggregator.row.Row
 import ai.zipline.api.{
   BinaryType,
@@ -92,12 +91,9 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   def decode(bytes: Array[Byte]): GenericRecord = {
     if (bytes == null) return null
     val inputStream = new SeekableByteArrayInput(bytes)
-    decoder = DecoderFactory.get.binaryDecoder(inputStream, decoder)
-    if (!decoder.isEnd) {
-      datumReader.read(null, decoder)
-    } else {
-      null
-    }
+    inputStream.reset()
+    decoder = DecoderFactory.get.directBinaryDecoder(inputStream, decoder)
+    datumReader.read(null, decoder)
   }
 
   def decodeRow(bytes: Array[Byte], millis: Long): ArrayRow =
@@ -161,7 +157,7 @@ object AvroUtils {
         Schema.createRecord(
           name,
           "", // doc
-          "ai.zipline.data", // nameSpace
+          "ai.zipline.data", // namespace
           false, // isError
           fields
             .map { ziplineField =>
