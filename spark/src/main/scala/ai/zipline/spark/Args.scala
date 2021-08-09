@@ -22,9 +22,3 @@ class Args(args: Seq[String]) extends ScallopConf(args) {
        |skipEqualCheck = $skipEqualCheck""".stripMargin
   }
 }
-
-class StreamingArgs(args: Seq[String]) extends Args(args) {
-  val jar: ScallopOption[String] = opt[String](required = true)
-  val onlineClass: ScallopOption[String] = opt[String](required = true)
-  val properties = props[String](descr = "Passed transparently to the underlying implementation")
-}
