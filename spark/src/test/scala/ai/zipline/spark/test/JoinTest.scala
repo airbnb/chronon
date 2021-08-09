@@ -136,7 +136,16 @@ class JoinTest {
 
     val expected = spark.sql(s"""
         |WITH 
-        |   queries AS (SELECT user_name, ts, ds from $queryTable where ds >= '$start' and ds <= '$end'),
+        |   queries AS (
+        |     SELECT user_name,
+        |         ts,
+        |         ds
+        |     from $queryTable
+        |     where user_name IS NOT null
+        |         AND ts IS NOT NULL
+        |         AND ds IS NOT NULL
+        |         AND ds >= '$start'
+        |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
         |             ds, 
@@ -158,8 +167,10 @@ class JoinTest {
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
         |""".stripMargin)
-    val queries = tableUtils.sql(s"SELECT user_name, ts, ds from $queryTable where ds >= '$start'")
+    val queries = tableUtils.sql(
+      s"SELECT user_name, ts, ds from $queryTable where user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start'")
     val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts", "ds"))
+
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
@@ -168,7 +179,7 @@ class JoinTest {
       println(s"diff result rows")
       diff.show()
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   @Test
