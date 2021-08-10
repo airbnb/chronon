@@ -4,8 +4,6 @@ import ai.zipline.api.DataModel._
 import ai.zipline.api.Operation._
 
 import scala.collection.JavaConverters._
-import org.apache.thrift
-
 import scala.collection.mutable
 
 object Extensions {

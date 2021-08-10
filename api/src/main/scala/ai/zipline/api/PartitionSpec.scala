@@ -1,11 +1,11 @@
 package ai.zipline.api
 
+import ai.zipline.api.Extensions._
+
 import java.text.SimpleDateFormat
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneOffset}
 import java.util.{Locale, TimeZone}
-
-import ai.zipline.api.Extensions._
 
 case class PartitionSpec(format: String, spanMillis: Long) {
   private val partitionFormatter = DateTimeFormatter

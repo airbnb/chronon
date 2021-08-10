@@ -1,7 +1,5 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.aggregator.windowing.TsUtils
-
 trait Row {
   def get(index: Int): Any
 

@@ -1,33 +1,16 @@
 package ai.zipline.fetcher
 
-import java.io.ByteArrayOutputStream
 import ai.zipline.aggregator.row.Row
-import ai.zipline.api.{
-  BinaryType,
-  BooleanType,
-  Constants,
-  DataType,
-  DoubleType,
-  FloatType,
-  IntType,
-  ListType,
-  LongType,
-  MapType,
-  StringType,
-  StructField,
-  StructType
-}
+import ai.zipline.api._
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
-import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWriter, GenericRecord}
-import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, Encoder, EncoderFactory, JsonEncoder}
+import org.apache.avro.io._
 
-import java.nio.ByteBuffer
+import java.io.ByteArrayOutputStream
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import java.util
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()

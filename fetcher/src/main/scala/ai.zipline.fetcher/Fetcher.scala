@@ -10,7 +10,7 @@ import org.apache.avro.Schema
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function
 import scala.collection.JavaConverters._
-import scala.collection.parallel.{ExecutionContextTaskSupport, ParSeq}
+import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.{ExecutionContext, Future}
 
 // mixin class - with schema

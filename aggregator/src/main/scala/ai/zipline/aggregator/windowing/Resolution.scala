@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.api.{TimeUnit, Window}
 import ai.zipline.api.Extensions._
+import ai.zipline.api.{TimeUnit, Window}
 
 trait Resolution extends Serializable {
   // For a given window what is the resolution of the tail

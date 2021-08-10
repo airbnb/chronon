@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.api.{AggregationPart, DataType, StringType}
 import ai.zipline.api.Extensions._
+import ai.zipline.api.{AggregationPart, DataType, StringType}
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons

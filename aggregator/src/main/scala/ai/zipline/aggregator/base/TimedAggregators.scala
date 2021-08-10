@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.base
 
 import ai.zipline.aggregator.base.TimeTuple.typ
-import ai.zipline.api.{DataType, ListType, LongType, StructField, StructType}
+import ai.zipline.api._
 
 import java.util
 

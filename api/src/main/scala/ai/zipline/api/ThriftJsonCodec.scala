@@ -1,11 +1,9 @@
 package ai.zipline.api
 
-import org.apache.thrift.TBase
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
-import org.apache.thrift.TSerializer
+import org.apache.thrift.{TBase, TSerializer}
 import org.apache.thrift.protocol.TSimpleJSONProtocol
 
-import scala.reflect.runtime.universe._
 import scala.io.Source._
 import scala.reflect.ClassTag
 

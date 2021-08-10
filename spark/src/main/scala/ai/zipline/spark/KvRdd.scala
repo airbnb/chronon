@@ -2,10 +2,8 @@ package ai.zipline.spark
 
 import ai.zipline.api
 import ai.zipline.api.DataType
-import ai.zipline.fetcher.RowConversions
 import ai.zipline.fetcher.{AvroCodec, AvroUtils, RowConversions}
 import ai.zipline.spark.Extensions._
-import com.google.gson.Gson
 import org.apache.avro.generic.GenericData
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -13,7 +11,6 @@ import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructTy
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import java.util
-import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession) {

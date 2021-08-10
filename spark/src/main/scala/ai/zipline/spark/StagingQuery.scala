@@ -1,6 +1,6 @@
 package ai.zipline.spark
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{ThriftJsonCodec, StagingQuery => StagingQueryConf}
+import ai.zipline.api.{StagingQuery => StagingQueryConf}
 import ai.zipline.spark.Extensions._
 
 import scala.collection.JavaConverters._

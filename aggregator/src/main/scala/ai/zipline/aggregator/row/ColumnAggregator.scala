@@ -2,18 +2,7 @@ package ai.zipline.aggregator.row
 
 import ai.zipline.aggregator.base._
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{
-  AggregationPart,
-  BinaryType,
-  DataType,
-  DoubleType,
-  FloatType,
-  IntType,
-  LongType,
-  Operation,
-  ShortType,
-  StringType
-}
+import ai.zipline.api._
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType

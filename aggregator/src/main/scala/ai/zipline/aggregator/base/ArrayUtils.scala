@@ -1,7 +1,6 @@
 package ai.zipline.aggregator.base
 
 import java.util
-
 import scala.reflect.ClassTag
 
 // we are forced to use arrayList for sort-ability

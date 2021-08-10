@@ -6,8 +6,8 @@ import ai.zipline.fetcher.{AvroCodec, AvroUtils}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.types.{DataType, LongType, MapType, StructType}
 import org.apache.spark.sql.functions.{desc, from_unixtime, udf, unix_timestamp}
+import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util

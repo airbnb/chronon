@@ -2,7 +2,7 @@ package ai.zipline.api
 
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.concurrent.{Executors, SynchronousQueue, ThreadPoolExecutor}
+import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
