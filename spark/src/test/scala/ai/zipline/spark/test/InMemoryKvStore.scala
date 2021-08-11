@@ -3,13 +3,11 @@ package ai.zipline.spark.test
 import ai.zipline.api.{Constants, KVStore}
 import KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
-import com.google.gson.Gson
 import org.apache.spark.sql.Row
 import org.jboss.netty.util.internal.ConcurrentHashMap
 
 import java.util.Base64
 import java.util.function.BiFunction
-import scala.collection.JavaConverters.asJavaIterableConverter
 import scala.collection.{mutable, parallel}
 import scala.concurrent.Future
 

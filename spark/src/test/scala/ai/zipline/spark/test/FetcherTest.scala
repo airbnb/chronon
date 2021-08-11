@@ -4,20 +4,7 @@ import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.KVStore.{GetRequest, PutRequest}
-import ai.zipline.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  IntType,
-  KVStore,
-  LongType,
-  Operation,
-  StringType,
-  StructType,
-  TimeUnit,
-  Window,
-  GroupBy => GroupByConf
-}
+import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, JavaRequest, MetadataStore}
 import ai.zipline.spark.Extensions._
@@ -27,54 +14,41 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
-
 import java.lang
 import java.util.concurrent.Executors
+
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
 
+import ai.zipline.spark.Conversions.toZiplineSchema
+
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
 
   private val namespace = "fetcher_test"
+  private val topic = "test_topic"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
   def putStreaming(groupByConf: GroupByConf,
-                   fetcher: Fetcher,
                    kvStore: KVStore,
                    tableUtils: TableUtils,
                    ds: String): Unit = {
-    val servingInfo: GroupByServingInfoParsed = fetcher.getGroupByServingInfo(groupByConf.metaData.cleanName)
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
+    val inputDF = groupBy.inputDf
+    val schema: StructType = StructType.from(
+      "input", toZiplineSchema(inputDF.schema))
     // for events this will select ds-1 <= ts < ds
-    val selected = groupBy.inputDf.filter(s"ds='$ds'")
-    println("streaming inserts")
-    selected.show()
-    val keys = groupByConf.keyColumns.asScala.toArray
-    val values = groupBy.preAggSchema.fields.map(_.name)
-    val keyIndices = keys.map(selected.schema.fieldIndex)
-    val valueIndices = values.map(selected.schema.fieldIndex)
-    val tsIndex = selected.schema.fieldIndex(Constants.TimeColumn)
-    val keyValueTs =
-      selected.rdd
-        .map { row =>
-          val keys = keyIndices.map(row.get)
-          val keyBytes = servingInfo.keyCodec.encodeArray(keys)
-          val values = valueIndices.map(row.get)
-          val valueBytes = servingInfo.selectedCodec.encodeArray(values)
-          val ts = row.get(tsIndex).asInstanceOf[Long]
-          (keyBytes, valueBytes, ts)
-        }
-        .collect()
-    val puts = keyValueTs.map {
-      case (keyBytes, valueBytes, ts) =>
-        PutRequest(keyBytes, valueBytes, groupByConf.streamingDataset, Some(ts))
-    }
-    kvStore.multiPut(puts)
+    val inputStream = new InMemoryStream
+    val groupByStreaming = new GroupByStreaming(
+      inputStream.getInMemoryStreamDF(spark, groupBy.inputDf, schema),
+      spark,
+      groupByConf,
+      new MockOnlineImpl(kvStore, Map.empty))
+    groupByStreaming.run()
   }
 
   def testMetadataStore(): Unit = {
@@ -132,7 +106,7 @@ class FetcherTest extends TestCase {
     val paymentsTable = "payments_table"
     DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable)),
+      sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
       keyColumns = Seq("user"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.COUNT,
@@ -230,12 +204,11 @@ class FetcherTest extends TestCase {
     val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
 
     def serve(groupByConf: GroupByConf): Unit = {
-
       GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
       inMemoryKvStore.bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL) {
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, fetcher, inMemoryKvStore, tableUtils, today)
+        putStreaming(groupByConf, inMemoryKvStore, tableUtils, today)
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))

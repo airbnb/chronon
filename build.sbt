@@ -69,6 +69,7 @@ lazy val spark = project
       "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-core" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4" % "provided",
       "org.rogach" %% "scallop" % "4.0.1",
       "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
     ),

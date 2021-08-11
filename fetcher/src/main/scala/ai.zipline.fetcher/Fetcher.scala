@@ -24,10 +24,10 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
 
   // streaming starts scanning after batchEnd
   val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
+  @transient lazy val parser = new Schema.Parser()
 
   lazy val aggregator: SawtoothOnlineAggregator = {
-    val avroSchemaParser = new Schema.Parser()
-    val avroInputSchema = avroSchemaParser.parse(selectedAvroSchema)
+    val avroInputSchema = parser.parse(selectedAvroSchema)
     val ziplineInputSchema =
       AvroUtils.toZiplineSchema(avroInputSchema).asInstanceOf[StructType].unpack
     new SawtoothOnlineAggregator(batchEndTsMillis, groupByServingInfo.groupBy.aggregations.asScala, ziplineInputSchema)
@@ -35,6 +35,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
 
   // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy
   lazy val groupByOps = new GroupByOps(groupByServingInfo.groupBy)
+
   lazy val irZiplineSchema: StructType =
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
@@ -42,12 +43,23 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   def selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
   lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
+
   lazy val outputAvroSchema = {
     val outputZiplineSchema =
       StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
     AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
   }
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
+
+  def inputZiplineSchema: StructType = {
+    AvroUtils.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
+  }
+  def keyZiplineSchema: StructType = {
+    AvroUtils.toZiplineSchema(parser.parse(keyAvroSchema)).asInstanceOf[StructType]
+  }
+  def selectedZiplineSchema: StructType = {
+    AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
+  }
 }
 
 // can continuously grow
@@ -147,7 +159,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           val batchTime: Option[Long] = batchOption.map(_.millis)
 
           val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
-            println(s"""${request.name}'s value's batch timestamp of ${batchTime} is
+            println(s"""${request.name}'s value's batch timestamp of ${batchTime} is 
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                  |Forcing an update of schema.""".stripMargin)
             getGroupByServingInfo.force(request.name)

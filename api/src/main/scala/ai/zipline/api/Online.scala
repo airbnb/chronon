@@ -1,7 +1,6 @@
 package ai.zipline.api
 
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
-
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -15,6 +14,7 @@ object KVStore {
     def latest: Option[TimedValue] = if (values.isEmpty) None else Some(values.maxBy(_.millis))
   }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
+
 }
 
 // the main system level api for key value storage
@@ -31,11 +31,13 @@ trait KVStore {
   // helper methods to do single put and single get
   def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
+
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): String = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
+    assert (response.latest.isDefined, s"we should have a string response")
     new String(response.latest.get.bytes, Constants.UTF8)
   }
 }
@@ -73,16 +75,21 @@ trait KVStore {
   * StructType     Array[Any]
   */
 case class Mutation(schema: StructType = null, before: Array[AnyRef] = null, after: Array[AnyRef] = null)
+
 trait Decoder {
   def decode(bytes: Array[Byte]): Mutation
 }
-abstract class OnlineImpl(userConf: Map[String, String]) {
+
+
+abstract class OnlineImpl(userConf: Map[String, String]) extends Serializable {
   // helper method to access property
   // -Dkey1=value -Dkey2=value2  from scallop gets converted to userConf.
   def getProperty(key: String): String = userConf(key)
 
-  // users can use the source.query to limit to parsing only necessary fields
-  def genStreamDecoder(inputSchema: StructType, selectedSchema: StructType, source: Source): Decoder
-  // mussel host port
+  def genStreamDecoder(inputSchema: StructType): Decoder
+
+  // users can set transform input avro schema from batch source to streaming compatible schema
+  def batchInputAvroSchemaToStreaming(batchSchema: StructType): StructType
+
   def genKvStore: KVStore
 }

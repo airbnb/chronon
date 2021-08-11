@@ -1,50 +1,87 @@
 package ai.zipline.spark
 
-import org.apache.spark._
-import org.apache.spark.streaming._
+
+import scala.collection.JavaConverters._
+
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{
-  Accuracy,
-  Constants,
-  DataModel,
-  GroupByServingInfo,
-  OnlineImpl,
-  ThriftJsonCodec,
-  GroupBy => GroupByConf
-}
-import org.apache.spark.sql.Row
+import ai.zipline.api
+import ai.zipline.api.QueryUtils.buildStreamingQuery
+import ai.zipline.api.{Constants, QueryUtils}
+import org.apache.spark.sql.{Dataset, Encoders, Row, SparkSession}
+import ai.zipline.fetcher.{AvroUtils, Fetcher}
+import org.apache.avro.Schema
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.DataFrame
 
-class GroupByStreaming {
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new StreamingArgs(args)
-    parsedArgs.verify()
-    println(s"Parsed Args: $parsedArgs")
-    val groupByConf = parsedArgs.parseConf[GroupByConf]
-    val onlineImpl: OnlineImpl = ClassLoader.load[OnlineImpl](parsedArgs.jar(), parsedArgs.onlineClass())
+class GroupByStreaming(
+    inputStream: DataFrame,
+    session: SparkSession,
+    groupByConf: api.GroupBy,
+    onlineImpl: api.OnlineImpl,
+    additionalFilterClauses: Seq[String] = Seq.empty,
+    debug: Boolean = false) extends Serializable {
 
-    val session = SparkSessionBuilder.build("Zipline Streaming")
+  def run(): Unit = {
+    val kvStore = onlineImpl.genKvStore
+    val fetcher = new Fetcher(kvStore)
+    val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
+    val inputZiplineSchema = onlineImpl.batchInputAvroSchemaToStreaming(
+      groupByServingInfo.inputZiplineSchema)
+    val decoder = onlineImpl.genStreamDecoder(inputZiplineSchema)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
-    val topic = groupByConf.streamingSource.get.topic
-    val props = parsedArgs.properties
-    val df = session.readStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", props("kafka.bootstrap.servers"))
-      // init deserializer
-      .option("subscribe", topic)
-      .load()
-    val deserialized = df.rdd // key/value
-      .map { row: Row =>
-        val value = row(1).asInstanceOf[Array[Byte]]
-      // Array[AnyRef] - spark Array[AnyRef]
-      // -> apply sql
-      // -> convert row to avro binary
-      // -> put in kvStore
+    val streamingSource = groupByConf.streamingSource.get
+    val streamingQuery = buildStreamingQuery(groupByConf, additionalFilterClauses)
+
+    import session.implicits._
+    implicit val structTypeEncoder = Encoders.kryo[api.Mutation]
+
+    val deserialized: Dataset[api.Mutation] = inputStream
+      .as[Array[Byte]]
+      .map {
+        record =>
+          decoder.decode(record)
       }
+      .filter( mutation => mutation.before != mutation.after)
+
+    println(
+      s"""
+        | group by serving info: $groupByServingInfo
+        | Streaming source: $streamingSource
+        | Additional filter clauses: ${additionalFilterClauses.mkString(", ")}
+        | streaming Query: $streamingQuery
+        | streaming dataset: ${groupByConf.streamingDataset}
+        | input zipline schema: $inputZiplineSchema
+        |""".stripMargin)
+
+    val des = deserialized
+      .map {
+        mutation =>
+          Row.fromSeq(mutation.after)
+      }(RowEncoder(Conversions.fromZiplineSchema(inputZiplineSchema)))
+    des.createOrReplaceTempView(Constants.StreamingInputTable)
+    val selectedDf = session.sql(streamingQuery)
+
+    val fields = groupByServingInfo.selectedZiplineSchema.fields.map(_.name)
+    val keys = groupByConf.keyColumns.asScala.toArray
+    val keyIndices = keys.map(selectedDf.schema.fieldIndex)
+    val valueIndices = fields.map(selectedDf.schema.fieldIndex)
+    val tsIndex = selectedDf.schema.fieldIndex(Constants.TimeColumn)
+    val streamingDataset = groupByConf.streamingDataset
+
+    selectedDf
+      .map {
+        row =>
+          val keys = keyIndices.map(row.get)
+          val keyBytes = groupByServingInfo.keyCodec.encodeArray(keys)
+          val values = valueIndices.map(row.get)
+          val valueBytes = groupByServingInfo.selectedCodec.encodeArray(values)
+          val ts = row.get(tsIndex).asInstanceOf[Long]
+          api.KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
+      }
+      .writeStream
+      .outputMode("append")
+      .foreach(new StreamingDataWriter(onlineImpl, groupByServingInfo, debug))
+      .start()
   }
-
-}
-
-object ClassLoader {
-  def load[T](jar: String, cls: String): T = ???
 }

@@ -84,4 +84,10 @@ object Conversions {
       case (name, zType) =>
         StructField(name, fromZiplineType(zType))
     })
+
+  def fromZiplineSchema(schema: api.StructType): StructType =
+    StructType(schema.fields.map {
+      case api.StructField(name, zType) =>
+        StructField(name, fromZiplineType(zType))
+    })
 }

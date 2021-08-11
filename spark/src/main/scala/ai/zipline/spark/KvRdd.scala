@@ -48,9 +48,9 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
     }
 
     println(s"""
-         |key schema:
+         |key schema: 
          |  ${AvroUtils.fromZiplineSchema(keyZSchema).toString(true)}
-         |value schema:
+         |value schema: 
          |  ${AvroUtils.fromZiplineSchema(valueZSchema).toString(true)}
          |""".stripMargin)
     val keyToBytes = encodeBytes(keyZSchema)
