@@ -253,6 +253,17 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
+  def getJoinUnavailableRange: Option[PartitionRange] = {
+    val leftPartitions = tableUtils
+      .partitions(joinConf.left.table)
+      .filter(ds => ds >= joinConf.left.query.startPartition && ds <= endPartition)
+      .toSet
+    val outputPartitions = tableUtils.partitions(outputTable).toSet
+    (leftPartitions -- outputPartitions)
+      .reduceLeftOption(Ordering[String].min)
+      .map(PartitionRange(_, endPartition))
+  }
+
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -266,12 +277,20 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-    val leftUnfilledRange: PartitionRange = tableUtils.unfilledRange(
-      outputTable,
-      PartitionRange(joinConf.left.query.startPartition, endPartition),
-      Option(joinConf.left.table).toSeq)
 
-    println(s"left unfilled range: $leftUnfilledRange")
+    val leftUnfilledRangeOpt = getJoinUnavailableRange
+    if (leftUnfilledRangeOpt.isEmpty || !leftUnfilledRangeOpt.get.valid) {
+      println(s"There is no data to compute based on the left unfilled range $leftUnfilledRangeOpt")
+      System.exit(0)
+    }
+    val leftUnfilledRange = leftUnfilledRangeOpt.get
+    println(s"Dropping left unfilled range $leftUnfilledRange from join output $outputTable")
+    tableUtils.dropPartitionRange(outputTable, leftUnfilledRange.start, leftUnfilledRange.end)
+    joinConf.joinParts.asScala.foreach { joinPart =>
+      val partTable = getJoinPartTableName(joinPart)
+      println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
+      tableUtils.dropPartitionRange(partTable, leftUnfilledRange.start, leftUnfilledRange.end)
+    }
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)

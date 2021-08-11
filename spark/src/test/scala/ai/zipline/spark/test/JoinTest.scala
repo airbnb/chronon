@@ -1,7 +1,6 @@
 package ai.zipline.spark.test
 
 import scala.collection.JavaConverters._
-
 import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Builders, _}
@@ -113,16 +112,40 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "zipline")
     )
 
-    val runner1 = new Join(joinConf, end, tableUtils)
+    val runner1 = new Join(joinConf, Constants.Partition.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
+    runner1.computeJoin()
+    val dropStart = Constants.Partition.minus(today, new Window(55, TimeUnit.DAYS))
+    val dropEnd = Constants.Partition.minus(today, new Window(45, TimeUnit.DAYS))
+    tableUtils.dropPartitionRange(
+      s"$namespace.test_user_transaction_features",
+      dropStart,
+      dropEnd
+    )
+    println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
-    spark.sql(
-      s"DROP TABLE IF EXISTS test_namespace_jointest.test_user_transaction_features_10_unit_test_user_transactions")
-    val computed = runner1.computeJoin(Some(3))
+    joinConf.joinParts.asScala
+      .map(jp => runner1.getJoinPartTableName(jp))
+      .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
+
+    Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
+      .foreach(function => tableUtils.sql(s"DROP TEMPORARY FUNCTION IF EXISTS $function"))
+
+    val runner2 = new Join(joinConf, end, tableUtils)
+    val computed = runner2.computeJoin(Some(3))
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
         |WITH 
-        |   queries AS (SELECT user_name, ts, ds from $queryTable where ds >= '$start' and ds <= '$end'),
+        |   queries AS (
+        |     SELECT user_name,
+        |         ts,
+        |         ds
+        |     from $queryTable
+        |     where user_name IS NOT null
+        |         AND ts IS NOT NULL
+        |         AND ds IS NOT NULL
+        |         AND ds >= '$start'
+        |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
         |             ds, 
@@ -144,8 +167,10 @@ class JoinTest {
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
         |""".stripMargin)
-    val queries = tableUtils.sql(s"SELECT user_name, ts, ds from $queryTable where ds >= '$start'")
+    val queries = tableUtils.sql(
+      s"SELECT user_name, ts, ds from $queryTable where user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start'")
     val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts", "ds"))
+
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
@@ -154,7 +179,7 @@ class JoinTest {
       println(s"diff result rows")
       diff.show()
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   @Test
