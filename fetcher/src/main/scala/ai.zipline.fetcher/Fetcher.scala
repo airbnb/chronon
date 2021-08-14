@@ -141,8 +141,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeou
       val responsesMap = responsesFuture.iterator.map { response =>
         response.request -> response.values
       }.toMap
-      // Heaviest compute is decoding bytes and merging them. So we parallelize
-      // We want
+      // Heaviest compute is decoding bytes and merging them - so we parallelize
       val requestParFanout = groupByRequestToKvRequest.par
       requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
       val responses: Seq[Response] = requestParFanout.map {
