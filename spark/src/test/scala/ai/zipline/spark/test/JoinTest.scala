@@ -6,7 +6,7 @@ import ai.zipline.api
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.{spark => exec}
-import ai.zipline.spark.{Join, Join => _, _}
+import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
