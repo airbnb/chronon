@@ -1,6 +1,7 @@
 package ai.zipline.aggregator.row
 
-import ai.zipline.aggregator.base.{BaseAggregator, DataType}
+import ai.zipline.aggregator.base.BaseAggregator
+import ai.zipline.api.DataType
 
 class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
                                                 columnIndices: ColumnIndices,

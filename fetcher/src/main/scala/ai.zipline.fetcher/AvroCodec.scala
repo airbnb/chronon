@@ -1,33 +1,16 @@
 package ai.zipline.fetcher
 
-import java.io.ByteArrayOutputStream
-import ai.zipline.aggregator.base.{
-  BinaryType,
-  BooleanType,
-  DataType,
-  DoubleType,
-  FloatType,
-  IntType,
-  ListType,
-  LongType,
-  MapType,
-  StringType,
-  StructField,
-  StructType
-}
 import ai.zipline.aggregator.row.Row
-import ai.zipline.api.Constants
+import ai.zipline.api._
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
-import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWriter, GenericRecord}
-import org.apache.avro.io.{BinaryDecoder, BinaryEncoder, DecoderFactory, Encoder, EncoderFactory, JsonEncoder}
+import org.apache.avro.io._
 
-import java.nio.ByteBuffer
+import java.io.ByteArrayOutputStream
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import java.util
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
@@ -91,12 +74,9 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   def decode(bytes: Array[Byte]): GenericRecord = {
     if (bytes == null) return null
     val inputStream = new SeekableByteArrayInput(bytes)
-    decoder = DecoderFactory.get.binaryDecoder(inputStream, decoder)
-    if (!decoder.isEnd) {
-      datumReader.read(null, decoder)
-    } else {
-      null
-    }
+    inputStream.reset()
+    decoder = DecoderFactory.get.directBinaryDecoder(inputStream, decoder)
+    datumReader.read(null, decoder)
   }
 
   def decodeRow(bytes: Array[Byte], millis: Long): ArrayRow =
@@ -160,7 +140,7 @@ object AvroUtils {
         Schema.createRecord(
           name,
           "", // doc
-          "ai.zipline.data", // nameSpace
+          "ai.zipline.data", // namespace
           false, // isError
           fields
             .map { ziplineField =>

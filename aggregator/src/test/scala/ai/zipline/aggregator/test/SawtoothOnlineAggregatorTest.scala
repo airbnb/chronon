@@ -1,10 +1,9 @@
 package ai.zipline.aggregator.test
 
-import ai.zipline.aggregator.base.LongType
 import ai.zipline.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.zipline.aggregator.windowing.{FiveMinuteResolution, SawtoothOnlineAggregator, TsUtils}
 import ai.zipline.api.Extensions.{WindowOps, WindowUtils}
-import ai.zipline.api._
+import ai.zipline.api.{LongType, _}
 import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert.assertEquals

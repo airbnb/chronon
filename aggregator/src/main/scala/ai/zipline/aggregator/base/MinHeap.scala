@@ -1,7 +1,5 @@
 package ai.zipline.aggregator.base
 
-import com.google.gson.Gson
-
 import java.util
 
 // An implementation of a fast non-strict min-heap,

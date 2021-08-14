@@ -1,5 +1,7 @@
 package ai.zipline.aggregator.base
 
+import ai.zipline.api.DataType
+
 abstract class BaseAggregator[Input, IR, Output] extends Serializable {
   def outputType: DataType
   def irType: DataType

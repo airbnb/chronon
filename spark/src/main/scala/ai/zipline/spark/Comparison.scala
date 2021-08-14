@@ -1,11 +1,10 @@
 package ai.zipline.spark
 
-import org.apache.spark.sql.DataFrame
 import com.google.gson.Gson
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.MapType
 
 import java.util
-import scala.collection.JavaConverters.asJavaIterableConverter
 
 object Comparison {
 

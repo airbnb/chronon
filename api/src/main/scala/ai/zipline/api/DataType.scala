@@ -1,4 +1,4 @@
-package ai.zipline.aggregator.base
+package ai.zipline.api
 
 sealed trait DataType extends Serializable
 

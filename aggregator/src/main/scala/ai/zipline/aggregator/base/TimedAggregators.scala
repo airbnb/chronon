@@ -1,10 +1,9 @@
 package ai.zipline.aggregator.base
 
 import ai.zipline.aggregator.base.TimeTuple.typ
-import com.google.gson.Gson
+import ai.zipline.api._
 
 import java.util
-import java.util.PriorityQueue
 
 object TimeTuple extends Ordering[util.ArrayList[Any]] {
   type typ = util.ArrayList[Any]

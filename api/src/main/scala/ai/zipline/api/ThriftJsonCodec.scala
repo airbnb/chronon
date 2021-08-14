@@ -1,24 +1,23 @@
 package ai.zipline.api
 
-import org.apache.thrift.TBase
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
-import org.apache.thrift.TSerializer
+import org.apache.thrift.{TBase, TSerializer}
 import org.apache.thrift.protocol.TSimpleJSONProtocol
 
-import scala.reflect.runtime.universe._
 import scala.io.Source._
 import scala.reflect.ClassTag
 
 object ThriftJsonCodec {
-  val mapper = new ObjectMapper()
-  mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-  val serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
+
+  def serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
 
   def toJsonStr[T <: TBase[_, _]: Manifest](obj: T): String = {
     new String(serializer.serialize(obj))
   }
 
   def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[T]): T = {
+    val mapper = new ObjectMapper()
+    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
     val obj: T = mapper.readValue(jsonStr, clazz)
     if (check) {
       val whiteSpaceNormalizedInput = jsonStr.replaceAll("\\s", "")

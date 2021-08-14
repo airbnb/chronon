@@ -23,7 +23,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     extends Serializable {
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
-  protected val inputZiplineSchema = Conversions.toZiplineSchema(inputDf.schema)
+  protected val selectedSchema = Conversions.toZiplineSchema(inputDf.schema)
 
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
   implicit val sparkSession = inputDf.sparkSession
@@ -52,7 +52,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
-    new RowAggregator(inputZiplineSchema, aggregations.flatMap(_.unpack))
+    new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
@@ -93,7 +93,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
-    val sawtoothAggregator = new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
+    val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
 
     hops
@@ -147,7 +147,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     // otherwise we the mega-join will produce square number of rows.
 
     val sawtoothAggregator =
-      new SawtoothAggregator(aggregations, inputZiplineSchema, resolution)
+      new SawtoothAggregator(aggregations, selectedSchema, resolution)
 
     // create the IRs up to minHop accuracy
     val headStartsWithIrs = queriesByHeadStarts.keys
@@ -198,7 +198,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
   //  buildRddRow(GenericRowWithSchema) -> (keyWithHash, hopsOutput)
   def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
-      new HopsAggregator(minQueryTs, aggregations, inputZiplineSchema, resolution)
+      new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
@@ -385,7 +385,8 @@ object GroupBy {
   }
 
   def main(args: Array[String]): Unit = {
-    val parsedArgs = new BatchArgs(args)
+    val parsedArgs = new Args(args)
+    parsedArgs.verify()
     println(s"Parsed Args: $parsedArgs")
     val groupByConf = parsedArgs.parseConf[GroupByConf]
     computeBackfill(

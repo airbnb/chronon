@@ -1,16 +1,11 @@
 package ai.zipline.aggregator.windowing
 
-import java.util.Date
-import java.text.SimpleDateFormat
-import java.util
-
-import ai.zipline.aggregator.base.DataType
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.aggregator.windowing.HopsAggregator._
-import ai.zipline.api.{Aggregation, Window}
 import ai.zipline.api.Extensions._
-import scala.collection.JavaConverters._
-import java.lang.ClassCastException
+import ai.zipline.api.{Aggregation, DataType}
+
+import java.util
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution
 // we use minQueryTs to construct only the relevant hops for a given hop size.

@@ -333,7 +333,8 @@ object Join {
   //  that does group-by backfills/bulk uploads etc
   def main(args: Array[String]): Unit = {
     // args = conf path, end date
-    val parsedArgs = new BatchArgs(args)
+    val parsedArgs = new Args(args)
+    parsedArgs.verify()
     println(s"Parsed Args: $parsedArgs")
     val joinConf = parsedArgs.parseConf[JoinConf]
     val join = new Join(

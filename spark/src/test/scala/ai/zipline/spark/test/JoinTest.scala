@@ -1,18 +1,19 @@
 package ai.zipline.spark.test
 
-import scala.collection.JavaConverters._
-import ai.zipline.aggregator.base.{DoubleType, LongType, StringType}
 import ai.zipline.aggregator.test.Column
-import ai.zipline.api.{Builders, _}
+import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
+import ai.zipline.api
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
-import ai.zipline.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.zipline.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
+
+import scala.collection.JavaConverters._
 
 class JoinTest {
 
@@ -32,15 +33,15 @@ class JoinTest {
   def testEventsEntitiesSnapshot(): Unit = {
 
     val dollarTransactions = List(
-      Column("user", StringType, 100),
-      Column("ts", LongType, 200),
-      Column("amount_dollars", LongType, 1000)
+      Column("user", api.StringType, 100),
+      Column("ts", api.LongType, 200),
+      Column("amount_dollars", api.LongType, 1000)
     )
 
     val rupeeTransactions = List(
-      Column("user", StringType, 100),
-      Column("ts", LongType, 200),
-      Column("amount_rupees", LongType, 70000)
+      Column("user", api.StringType, 100),
+      Column("ts", api.LongType, 200),
+      Column("amount_rupees", api.LongType, 70000)
     )
 
     val dollarTable = s"$namespace.dollar_transactions"
@@ -80,13 +81,13 @@ class JoinTest {
       sources = Seq(dollarSource, rupeeSource),
       keyColumns = Seq("user"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.SUM,
+        Builders.Aggregation(operation = api.Operation.SUM,
                              inputColumn = "amount_dollars",
                              windows = Seq(new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "zipline")
     )
     val queriesSchema = List(
-      Column("user", StringType, 100)
+      Column("user", api.StringType, 100)
     )
 
     val queryTable = s"$namespace.queries"
@@ -187,9 +188,9 @@ class JoinTest {
     // untimned/unwindowed entities on right
     // right side
     val weightSchema = List(
-      Column("user", StringType, 1000),
-      Column("country", StringType, 100),
-      Column("weight", DoubleType, 500)
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("weight", api.DoubleType, 500)
     )
     val weightTable = s"$namespace.weights"
     DataFrameGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
@@ -209,9 +210,9 @@ class JoinTest {
     )
 
     val heightSchema = List(
-      Column("user", StringType, 1000),
-      Column("country", StringType, 100),
-      Column("height", LongType, 200)
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("height", api.LongType, 200)
     )
     val heightTable = s"$namespace.heights"
     DataFrameGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
@@ -228,7 +229,7 @@ class JoinTest {
     )
 
     // left side
-    val countrySchema = List(Column("country", StringType, 100))
+    val countrySchema = List(Column("country", api.StringType, 100))
     val countryTable = s"$namespace.countries"
     DataFrameGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
 
@@ -292,9 +293,9 @@ class JoinTest {
   @Test
   def testEventsEventsSnapshot(): Unit = {
     val viewsSchema = List(
-      Column("user", StringType, 10000),
-      Column("item", StringType, 100),
-      Column("time_spent_ms", LongType, 5000)
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view"
@@ -318,7 +319,7 @@ class JoinTest {
     )
 
     // left side
-    val itemQueries = List(Column("item", StringType, 100))
+    val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
@@ -367,9 +368,9 @@ class JoinTest {
 
     val joinConf = getEventsEventsTemporal()
     val viewsSchema = List(
-      Column("user", StringType, 10000),
-      Column("item", StringType, 100),
-      Column("time_spent_ms", LongType, 5000)
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view"
@@ -393,7 +394,7 @@ class JoinTest {
     )
 
     // left side
-    val itemQueries = List(Column("item", StringType, 100))
+    val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 10000, partitions = 100)
@@ -566,8 +567,8 @@ class JoinTest {
     // Left side entities, right side entities no agg
     // Also testing specific select statement (rather than select *)
     val namesSchema = List(
-      Column("user", StringType, 1000),
-      Column("name", StringType, 500)
+      Column("user", api.StringType, 1000),
+      Column("name", api.StringType, 500)
     )
     val namesTable = s"$namespace.names"
     DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
@@ -592,7 +593,7 @@ class JoinTest {
       .save(namesTable)
 
     // left side
-    val userSchema = List(Column("user", StringType, 100))
+    val userSchema = List(Column("user", api.StringType, 100))
     val usersTable = s"$namespace.users"
     DataFrameGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
@@ -734,9 +735,9 @@ class JoinTest {
 
   private def getViewsGroupBy(makeCumulative: Boolean = false) = {
     val viewsSchema = List(
-      Column("user", StringType, 10000),
-      Column("item", StringType, 100),
-      Column("time_spent_ms", LongType, 5000)
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view"
@@ -773,7 +774,7 @@ class JoinTest {
 
   private def getEventsEventsTemporal(nameSuffix: String = "") = {
     // left side
-    val itemQueries = List(Column("item", StringType, 100))
+    val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 10000, partitions = 100)

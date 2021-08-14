@@ -1,7 +1,7 @@
 package ai.zipline.spark
 
 import ai.zipline.aggregator.windowing._
-import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
@@ -95,6 +95,12 @@ object GroupByUpload {
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
+
+    // used by streaming jobs to deserialize from kafka/kinesis etc.
+    val inputTable = groupByConf.streamingSource.getOrElse(groupByConf.sources.get(0)).table
+    val inputSchema = tableUtils.sparkSession.table(inputTable).schema.toAvroSchema(name = "Input").toString(true)
+    groupByServingInfo.setInputAvroSchema(inputSchema)
+
     val metaRows = Seq(
       Row(
         Constants.GroupByServingInfoKey.getBytes(Constants.UTF8),
@@ -111,7 +117,8 @@ object GroupByUpload {
   }
 
   def main(args: Array[String]): Unit = {
-    val parsedArgs = new BatchArgs(args)
+    val parsedArgs = new Args(args)
+    parsedArgs.verify()
     assert(parsedArgs.stepDays.isEmpty, "Don't need to specify step days for GroupBy uploads")
     println(s"Parsed Args: $parsedArgs")
     run(parsedArgs.parseConf[GroupByConf], parsedArgs.endDate())

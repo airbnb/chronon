@@ -1,12 +1,24 @@
 package ai.zipline.spark.test
 
-import ai.zipline.aggregator.base.{IntType, LongType, StringType, StructType}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  KVStore,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.KVStore.PutRequest
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, KVStore, MetadataStore}
+import ai.zipline.api.KVStore.PutRequest
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -18,6 +30,7 @@ import org.junit.Assert.assertEquals
 import java.lang
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.asScalaBufferConverter
+import scala.collection.mutable
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -153,7 +166,7 @@ class FetcherTest extends TestCase {
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
     val queriesTable = s"$namespace.queries_table"
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, 1000, 4)
+      .events(spark, queryCols, 100000, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
     queriesDf.show()
@@ -190,7 +203,7 @@ class FetcherTest extends TestCase {
     val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
-    val metadataStore = new MetadataStore(inMemoryKvStore)
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create("ZIPLINE_METADATA")
     metadataStore.putJoinConf(joinConf)
 
@@ -201,11 +214,48 @@ class FetcherTest extends TestCase {
         Request(joinConf.metaData.name, keyMap, Some(ts))
       }
       .collect()
-    val joinResponseFuture = fetcher.fetchJoin(requests)
-    val joinResponses = Await.result(joinResponseFuture, Duration(10000, MILLISECONDS))
+
+    val chunkSize = 100
+    def joinResponses = {
+      var latencySum: Long = 0
+      var latencyCount = 0
+      val blockStart = System.currentTimeMillis()
+      val result = requests.iterator
+        .grouped(chunkSize)
+        .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
+        .flatMap {
+          case (start, future) =>
+            val result = Await.result(future, Duration(10000, MILLISECONDS))
+            val latency = System.currentTimeMillis() - start
+            latencySum += latency
+            latencyCount += 1
+            result
+        }
+        .toList
+      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
+      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
+      (latencyMillis, qps, result)
+    }
+
+    // to overwhelm the profiler with fetching code path
+    // so as to make it prominent in the flamegraph & collect enough stats
+    val count = 10
+    var latencySum = 0.0
+    var qpsSum = 0.0
+    (0 until count).foreach { _ =>
+      val (latency, qps, _) = joinResponses
+      latencySum += latency
+      qpsSum += qps
+    }
+    println(s"""
+         |Averaging fetching stats over ${requests.length} requests $count times
+         |with batch size: $chunkSize
+         |average qps: ${qpsSum / count}
+         |average latency: ${latencySum / count}
+         |""".stripMargin)
 
     val columns = todaysExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses.map { res =>
+    val responseRows: Seq[Row] = joinResponses._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
