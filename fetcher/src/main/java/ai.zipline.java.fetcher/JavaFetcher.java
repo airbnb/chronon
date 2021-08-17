@@ -12,6 +12,8 @@ import scala.concurrent.Future;
 import scala.compat.java8.FutureConverters;
 
 public class JavaFetcher  {
+  public static final String DEFAULT_METADATA_SET = "ZIPLINE_METADATA";
+  public static final Long DEFAULT_TIMEOUT = new Long(1000);
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis) {
@@ -19,15 +21,15 @@ public class JavaFetcher  {
   }
 
   public JavaFetcher(KVStore kvStore, String metaDataSet) {
-    this(kvStore, metaDataSet, new Long(1000));
+    this(kvStore, metaDataSet, DEFAULT_TIMEOUT);
   }
 
   public JavaFetcher(KVStore kvStore, Long timeoutMillis) {
-    this(kvStore, "ZIPLINE_METADATA", timeoutMillis);
+    this(kvStore, DEFAULT_METADATA_SET, timeoutMillis);
   }
 
   public JavaFetcher(KVStore kvStore) {
-    this(kvStore, "ZIPLINE_METADATA");
+    this(kvStore, DEFAULT_METADATA_SET);
   }
 
   private Seq<Request> ConvertRequests(List<Request> requests) {
@@ -58,8 +60,5 @@ public class JavaFetcher  {
     // Convert responses to CompletableFuture
     return ConvertResponses(responses);
   }
-
-
-
 
 }
