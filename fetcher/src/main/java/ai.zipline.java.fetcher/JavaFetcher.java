@@ -36,10 +36,6 @@ public class JavaFetcher  {
     return JavaConverters.asScalaIteratorConverter(requests.iterator()).asScala().toSeq();
   }
 
-  public List<Response> convertSeqResponse(Seq<Response> scalaResponse) {
-    return scala.collection.JavaConversions.seqAsJavaList(scalaResponse);
-  }
-
   private CompletableFuture<List<Response>> ConvertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
         .toJava(responses)
