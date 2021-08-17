@@ -38,7 +38,8 @@ lazy val fetcher = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
-      "org.apache.avro" % "avro" % "1.8.0"
+      "org.apache.avro" % "avro" % "1.8.0",
+      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
     )
   )
 
