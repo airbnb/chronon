@@ -1,10 +1,18 @@
 package ai.zipline.spark.test
 
+import java.lang
+import java.util.concurrent.Executors
+
+import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.compat.java8.FutureConverters
+import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.{Await, ExecutionContext}
+
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
+import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
@@ -13,15 +21,6 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
-import java.lang
-import java.util.concurrent.Executors
-
-import scala.collection.JavaConverters._
-import scala.collection.JavaConverters.asScalaBufferConverter
-import scala.collection.mutable
-import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS}
-import scala.concurrent.{Await, ExecutionContext}
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
