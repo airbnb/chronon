@@ -62,8 +62,7 @@ lazy val spark = project
       "org.apache.spark" %% "spark-hive" % "2.4.4" % "provided",
       "org.apache.spark" %% "spark-core" % "2.4.4" % "provided",
       "org.apache.spark" %% "spark-streaming" % "2.4.4" % "provided",
-      "org.rogach" %% "scallop" % "4.0.1",
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
+      "org.rogach" %% "scallop" % "4.0.1"
     ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)

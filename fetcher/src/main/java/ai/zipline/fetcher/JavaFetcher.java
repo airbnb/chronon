@@ -32,11 +32,11 @@ public class JavaFetcher  {
     this(kvStore, DEFAULT_METADATA_SET);
   }
 
-  private Seq<Request> ConvertRequests(List<Request> requests) {
+  private Seq<Request> convertRequests(List<Request> requests) {
     return JavaConverters.asScalaIteratorConverter(requests.iterator()).asScala().toSeq();
   }
 
-  private CompletableFuture<List<Response>> ConvertResponses(Future<Seq<Response>> responses) {
+  private CompletableFuture<List<Response>> convertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
         .toJava(responses)
         .toCompletableFuture()
@@ -45,16 +45,16 @@ public class JavaFetcher  {
 
   public CompletableFuture<List<Response>> fetchGroupBys(List<Request> requests) {
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(ConvertRequests(requests));
+    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertRequests(requests));
     // Convert responses to CompletableFuture
-    return ConvertResponses(responses);
+    return convertResponses(responses);
   }
 
   public CompletableFuture<List<Response>> fetchJoin(List<Request> requests) {
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchJoin(ConvertRequests(requests));
+    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertRequests(requests));
     // Convert responses to CompletableFuture
-    return ConvertResponses(responses);
+    return convertResponses(responses);
   }
 
 }
