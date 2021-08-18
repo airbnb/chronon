@@ -2,23 +2,10 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  IntType,
-  KVStore,
-  LongType,
-  Operation,
-  StringType,
-  StructType,
-  TimeUnit,
-  Window,
-  GroupBy => GroupByConf
-}
+import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, MetadataStore}
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -26,11 +13,13 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
-
 import java.lang
 import java.util.concurrent.Executors
+
+import scala.collection.JavaConverters._
 import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.collection.mutable
+import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 
@@ -75,12 +64,19 @@ class FetcherTest extends TestCase {
     kvStore.multiPut(puts)
   }
 
+  def getInMemKVStore() = {
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    new InMemoryKvStore()
+  }
+
   def testTemporalFetch(): Unit = {
 
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = new InMemoryKvStore()
     @transient lazy val fetcher = new Fetcher(inMemoryKvStore)
+    @transient lazy val javaFetcher = new JavaFetcher(inMemoryKvStore)
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
@@ -216,13 +212,20 @@ class FetcherTest extends TestCase {
       .collect()
 
     val chunkSize = 100
-    def joinResponses = {
+    def joinResponses(useJavaFetcher: Boolean = false) = {
       var latencySum: Long = 0
       var latencyCount = 0
       val blockStart = System.currentTimeMillis()
       val result = requests.iterator
         .grouped(chunkSize)
-        .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
+        .map { r =>
+          val responses = if (useJavaFetcher){
+            val javaResponse = javaFetcher.fetchJoin(r.asJava)
+            FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
+          } else {
+            fetcher.fetchJoin(r)
+          }
+          System.currentTimeMillis() -> responses }
         .flatMap {
           case (start, future) =>
             val result = Await.result(future, Duration(10000, MILLISECONDS))
@@ -239,23 +242,38 @@ class FetcherTest extends TestCase {
 
     // to overwhelm the profiler with fetching code path
     // so as to make it prominent in the flamegraph & collect enough stats
-    val count = 10
+    var count = 10
     var latencySum = 0.0
     var qpsSum = 0.0
     (0 until count).foreach { _ =>
-      val (latency, qps, _) = joinResponses
+      val (latency, qps, _) = joinResponses()
       latencySum += latency
       qpsSum += qps
     }
     println(s"""
-         |Averaging fetching stats over ${requests.length} requests $count times
+         |Averaging fetching stats (Scala Fetcher) over ${requests.length} requests $count times
          |with batch size: $chunkSize
          |average qps: ${qpsSum / count}
          |average latency: ${latencySum / count}
          |""".stripMargin)
 
+    count = 10
+    latencySum = 0.0
+    qpsSum = 0.0
+    (0 until count).foreach { _ =>
+      val (latency, qps, _) = joinResponses(true)
+      latencySum += latency
+      qpsSum += qps
+    }
+    println(s"""
+               |Averaging fetching stats (Java Fetcher) over ${requests.length} requests $count times
+               |with batch size: $chunkSize
+               |average qps: ${qpsSum / count}
+               |average latency: ${latencySum / count}
+               |""".stripMargin)
+
     val columns = todaysExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses._3.map { res =>
+    val responseRows: Seq[Row] = joinResponses()._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++

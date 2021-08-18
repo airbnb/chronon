@@ -1,4 +1,4 @@
-package ai.zipline.java.fetcher;
+package ai.zipline.fetcher;
 
 import ai.zipline.api.KVStore;
 import ai.zipline.fetcher.Fetcher;
