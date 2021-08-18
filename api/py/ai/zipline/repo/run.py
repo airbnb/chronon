@@ -7,9 +7,10 @@ import os
 import subprocess
 
 
+VERSION = "0.0.9"
 # TODO(Open Sourcing) this should be hard coded to mavencentral path
 JAR_URL = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
-          "spark_uber_2.11/0.0.4_nikhiltest/spark_uber_2.11-0.0.4_nikhiltest.jar "
+          "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(VERSION, VERSION)
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',

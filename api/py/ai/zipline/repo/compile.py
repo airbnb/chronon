@@ -33,7 +33,7 @@ def get_folder_name_from_class_name(class_name):
     '--zipline_root',
     envvar='ZIPLINE_ROOT',
     help='Path to the root zipline folder',
-    required=True)
+    default=os.getcwd())
 @click.option(
     '--input_path',
     help='Relative Path to the root zipline folder, which contains the objects to be serialized',
@@ -59,8 +59,6 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         log_level = logging.DEBUG
     else:
         log_level = logging.INFO
-    if not zipline_root:
-        zipline_root = os.getcwd()
     _print_highlighted("Using zipline root path", zipline_root)
     zipline_root_path = os.path.expanduser(zipline_root)
     path_split = input_path.split('/')

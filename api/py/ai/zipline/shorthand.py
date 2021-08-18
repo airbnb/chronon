@@ -139,8 +139,7 @@ def GroupBy(name: str,
     deps = utils.get_dependencies(source, dependencies)
 
     return api.GroupBy(
-        metaData=api.MetaData(name=name,
-                              production=production,
+        metaData=api.MetaData(production=production,
                               online=online,
                               tableProperties=table_properties,
                               outputNamespace=output_namespace,

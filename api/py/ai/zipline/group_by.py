@@ -50,14 +50,15 @@ def op_to_str(operation: OperationType):
 
 def Aggregation(input_column: str = None,
                 operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-                windows: List[ttypes.Window] = None) -> ttypes.Aggregation:
+                windows: List[ttypes.Window] = None,
+                buckets: List[str] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation else Operation.LAST
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
     assert input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT"
-    return ttypes.Aggregation(input_column, operation, arg_map, windows)
+    return ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
 
 
 def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
@@ -116,7 +117,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             online: bool = DEFAULT_ONLINE,
             production: bool = DEFAULT_PRODUCTION,
             backfill_start_date: str = None,
-            dependencies: List[str] = None) -> ttypes.GroupBy:
+            dependencies: List[str] = None,
+            env: Dict[str, Dict[str, str]] = None) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -137,7 +139,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
 
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps)
+    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, modeToEnvMap=env)
 
     return ttypes.GroupBy(
         sources=updated_sources,
