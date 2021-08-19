@@ -256,7 +256,6 @@ class FetcherTest extends TestCase {
          |average latency: ${latencySum / count}
          |""".stripMargin)
 
-    count = 10
     latencySum = 0.0
     qpsSum = 0.0
     (0 until count).foreach { _ =>
@@ -272,7 +271,7 @@ class FetcherTest extends TestCase {
                |""".stripMargin)
 
     val columns = todaysExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses()._3.map { res =>
+    val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
