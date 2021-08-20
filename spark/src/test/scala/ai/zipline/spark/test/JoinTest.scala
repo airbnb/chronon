@@ -158,7 +158,7 @@ class JoinTest {
         |          UNION 
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
-        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |      WHERE user IS NOT NULL AND unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
         |      GROUP BY user, ds)
         | SELECT queries.user_name,
         |        queries.ts,
