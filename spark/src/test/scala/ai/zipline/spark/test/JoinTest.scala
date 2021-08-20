@@ -31,7 +31,6 @@ class JoinTest {
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
-
     val dollarTransactions = List(
       Column("user", api.StringType, 100),
       Column("ts", api.LongType, 200),
@@ -145,7 +144,7 @@ class JoinTest {
         |     where user_name IS NOT null
         |         AND ts IS NOT NULL
         |         AND ds IS NOT NULL
-        |         AND ds >= '$start'
+        |         AND ds >= '$dropStart'
         |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
@@ -159,6 +158,8 @@ class JoinTest {
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
         |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |        AND user IS NOT NULL
+        |        AND ds IS NOT NULL
         |      GROUP BY user, ds)
         | SELECT queries.user_name,
         |        queries.ts,
