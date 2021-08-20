@@ -211,6 +211,23 @@ class FetcherTest extends TestCase {
       .collect()
 
     val chunkSize = 100
+
+    def printFetcherStats(useJavaFetcher: Boolean,
+        requests: Array[Request],
+        count: Int,
+        chunkSize: Int,
+        qpsSum: Double,
+        latencySum: Double): Unit = {
+
+      val fetcherNameString = if (useJavaFetcher) "Java Fetcher" else "Scala Fetcher"
+      println(s"""
+                 |Averaging fetching stats for $fetcherNameString over ${requests.length} requests $count times
+                 |with batch size: $chunkSize
+                 |average qps: ${qpsSum / count}
+                 |average latency: ${latencySum / count}
+                 |""".stripMargin)
+    }
+
     def joinResponses(useJavaFetcher: Boolean = false) = {
       var latencySum: Long = 0
       var latencyCount = 0
@@ -241,7 +258,7 @@ class FetcherTest extends TestCase {
 
     // to overwhelm the profiler with fetching code path
     // so as to make it prominent in the flamegraph & collect enough stats
-    var count = 10
+    val count = 10
     var latencySum = 0.0
     var qpsSum = 0.0
     (0 until count).foreach { _ =>
@@ -249,12 +266,7 @@ class FetcherTest extends TestCase {
       latencySum += latency
       qpsSum += qps
     }
-    println(s"""
-         |Averaging fetching stats (Scala Fetcher) over ${requests.length} requests $count times
-         |with batch size: $chunkSize
-         |average qps: ${qpsSum / count}
-         |average latency: ${latencySum / count}
-         |""".stripMargin)
+    printFetcherStats(false, requests, count, chunkSize, qpsSum, latencySum)
 
     latencySum = 0.0
     qpsSum = 0.0
@@ -263,12 +275,7 @@ class FetcherTest extends TestCase {
       latencySum += latency
       qpsSum += qps
     }
-    println(s"""
-               |Averaging fetching stats (Java Fetcher) over ${requests.length} requests $count times
-               |with batch size: $chunkSize
-               |average qps: ${qpsSum / count}
-               |average latency: ${latencySum / count}
-               |""".stripMargin)
+    printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
 
     val columns = todaysExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
