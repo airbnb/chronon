@@ -11,7 +11,20 @@ import scala.concurrent.{Await, ExecutionContext}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  KVStore,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
 import ai.zipline.spark.Extensions._
@@ -63,10 +76,18 @@ class FetcherTest extends TestCase {
     kvStore.multiPut(puts)
   }
 
-  def getInMemKVStore() = {
+  def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    new InMemoryKvStore()
+    val inMemoryKvStore = new InMemoryKvStore()
+
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create("ZIPLINE_METADATA")
+    val list = metadataStore.putZiplineConf()
+    list.foreach { v =>
+      println(v)
+      println("\n")
+    }
   }
 
   def testTemporalFetch(): Unit = {
@@ -213,11 +234,11 @@ class FetcherTest extends TestCase {
     val chunkSize = 100
 
     def printFetcherStats(useJavaFetcher: Boolean,
-        requests: Array[Request],
-        count: Int,
-        chunkSize: Int,
-        qpsSum: Double,
-        latencySum: Double): Unit = {
+                          requests: Array[Request],
+                          count: Int,
+                          chunkSize: Int,
+                          qpsSum: Double,
+                          latencySum: Double): Unit = {
 
       val fetcherNameString = if (useJavaFetcher) "Java Fetcher" else "Scala Fetcher"
       println(s"""
@@ -235,13 +256,14 @@ class FetcherTest extends TestCase {
       val result = requests.iterator
         .grouped(chunkSize)
         .map { r =>
-          val responses = if (useJavaFetcher){
+          val responses = if (useJavaFetcher) {
             val javaResponse = javaFetcher.fetchJoin(r.asJava)
             FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
           } else {
             fetcher.fetchJoin(r)
           }
-          System.currentTimeMillis() -> responses }
+          System.currentTimeMillis() -> responses
+        }
         .flatMap {
           case (start, future) =>
             val result = Await.result(future, Duration(10000, MILLISECONDS))
