@@ -31,7 +31,8 @@ class JoinTest {
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
-
+    spark.sql("DROP TABLE IF EXISTS unit_test.user_transactions")
+    spark.sql("DROP TABLE IF EXISTS test.user_transaction_features")
     val dollarTransactions = List(
       Column("user", api.StringType, 100),
       Column("ts", api.LongType, 200),
