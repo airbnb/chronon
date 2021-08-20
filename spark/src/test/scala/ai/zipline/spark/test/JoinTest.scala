@@ -159,6 +159,7 @@ class JoinTest {
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
         |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |        AND user is not null
         |      GROUP BY user, ds)
         | SELECT queries.user_name,
         |        queries.ts,
@@ -167,6 +168,7 @@ class JoinTest {
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
+        | WHERE user is not null
         |""".stripMargin)
     val queries = tableUtils.sql(
       s"SELECT user_name, ts, ds from $queryTable where user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start'")
