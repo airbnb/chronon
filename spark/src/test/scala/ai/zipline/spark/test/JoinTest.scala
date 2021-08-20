@@ -31,8 +31,6 @@ class JoinTest {
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
-    spark.sql("DROP TABLE IF EXISTS unit_test.user_transactions")
-    spark.sql("DROP TABLE IF EXISTS test.user_transaction_features")
     val dollarTransactions = List(
       Column("user", api.StringType, 100),
       Column("ts", api.LongType, 200),
@@ -146,7 +144,7 @@ class JoinTest {
         |     where user_name IS NOT null
         |         AND ts IS NOT NULL
         |         AND ds IS NOT NULL
-        |         AND ds >= '$start'
+        |         AND ds >= '$dropStart'
         |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
@@ -170,6 +168,7 @@ class JoinTest {
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
+        | WHERE queries.user_name IS NOT NULL
         |""".stripMargin)
     val queries = tableUtils.sql(
       s"SELECT user_name, ts, ds from $queryTable where user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start'")
