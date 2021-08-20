@@ -1,24 +1,19 @@
 package ai.zipline.spark.test
 
+import java.lang
+import java.util.concurrent.Executors
+
+import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.compat.java8.FutureConverters
+import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.{Await, ExecutionContext}
+
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  IntType,
-  KVStore,
-  LongType,
-  Operation,
-  StringType,
-  StructType,
-  TimeUnit,
-  Window,
-  GroupBy => GroupByConf
-}
-import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, MetadataStore}
+import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.fetcher.Fetcher.Request
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -26,13 +21,6 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
-
-import java.lang
-import java.util.concurrent.Executors
-import scala.collection.JavaConverters.asScalaBufferConverter
-import scala.collection.mutable
-import scala.concurrent.duration.{Duration, MILLISECONDS}
-import scala.concurrent.{Await, ExecutionContext}
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
@@ -75,12 +63,19 @@ class FetcherTest extends TestCase {
     kvStore.multiPut(puts)
   }
 
+  def getInMemKVStore() = {
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    new InMemoryKvStore()
+  }
+
   def testTemporalFetch(): Unit = {
 
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = new InMemoryKvStore()
     @transient lazy val fetcher = new Fetcher(inMemoryKvStore)
+    @transient lazy val javaFetcher = new JavaFetcher(inMemoryKvStore)
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
@@ -216,13 +211,37 @@ class FetcherTest extends TestCase {
       .collect()
 
     val chunkSize = 100
-    def joinResponses = {
+
+    def printFetcherStats(useJavaFetcher: Boolean,
+        requests: Array[Request],
+        count: Int,
+        chunkSize: Int,
+        qpsSum: Double,
+        latencySum: Double): Unit = {
+
+      val fetcherNameString = if (useJavaFetcher) "Java Fetcher" else "Scala Fetcher"
+      println(s"""
+                 |Averaging fetching stats for $fetcherNameString over ${requests.length} requests $count times
+                 |with batch size: $chunkSize
+                 |average qps: ${qpsSum / count}
+                 |average latency: ${latencySum / count}
+                 |""".stripMargin)
+    }
+
+    def joinResponses(useJavaFetcher: Boolean = false) = {
       var latencySum: Long = 0
       var latencyCount = 0
       val blockStart = System.currentTimeMillis()
       val result = requests.iterator
         .grouped(chunkSize)
-        .map { System.currentTimeMillis() -> fetcher.fetchJoin(_) }
+        .map { r =>
+          val responses = if (useJavaFetcher){
+            val javaResponse = javaFetcher.fetchJoin(r.asJava)
+            FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
+          } else {
+            fetcher.fetchJoin(r)
+          }
+          System.currentTimeMillis() -> responses }
         .flatMap {
           case (start, future) =>
             val result = Await.result(future, Duration(10000, MILLISECONDS))
@@ -243,19 +262,23 @@ class FetcherTest extends TestCase {
     var latencySum = 0.0
     var qpsSum = 0.0
     (0 until count).foreach { _ =>
-      val (latency, qps, _) = joinResponses
+      val (latency, qps, _) = joinResponses()
       latencySum += latency
       qpsSum += qps
     }
-    println(s"""
-         |Averaging fetching stats over ${requests.length} requests $count times
-         |with batch size: $chunkSize
-         |average qps: ${qpsSum / count}
-         |average latency: ${latencySum / count}
-         |""".stripMargin)
+    printFetcherStats(false, requests, count, chunkSize, qpsSum, latencySum)
+
+    latencySum = 0.0
+    qpsSum = 0.0
+    (0 until count).foreach { _ =>
+      val (latency, qps, _) = joinResponses(true)
+      latencySum += latency
+      qpsSum += qps
+    }
+    printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
 
     val columns = todaysExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses._3.map { res =>
+    val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
