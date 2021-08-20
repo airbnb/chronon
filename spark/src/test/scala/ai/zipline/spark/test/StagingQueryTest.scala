@@ -38,10 +38,10 @@ class StagingQueryTest {
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
-    val expected = tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today'")
+    val expected = tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today' AND user IS NOT NULL")
 
     val computed = tableUtils.sql(
-      s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName}")
+      s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName} WHERE user IS NOT NULL")
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${expected.count()}")

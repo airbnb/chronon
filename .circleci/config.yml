@@ -69,6 +69,10 @@ jobs:
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt test
+            - store_test_results:
+                  path: /zipline/spark/target/test-reports
+            - store_test_results:
+                  path: /zipline/aggregator/target/test-reports
 
     "Zipline Python Lint":
         executor: docker_baseimg_executor
