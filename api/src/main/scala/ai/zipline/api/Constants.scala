@@ -18,4 +18,5 @@ object Constants {
   val UTF8 = "UTF-8"
   val lineTab = "\n    "
   val JoinMetadataKey = "join"
+  val ZiplineMetadataKey = "ZIPLINE_METADATA"
 }
