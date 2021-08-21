@@ -2,15 +2,14 @@ package ai.zipline.spark.test
 
 import java.lang
 import java.util.concurrent.Executors
-
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
-
 import ai.zipline.aggregator.test.Column
+import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.KVStore.PutRequest
+import ai.zipline.api.KVStore.{GetRequest, PutRequest}
 import ai.zipline.api.{
   Accuracy,
   Builders,
@@ -34,6 +33,8 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
+
+import scala.io.Source
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
@@ -80,14 +81,19 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = new InMemoryKvStore()
-
-    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create("ZIPLINE_METADATA")
-    val list = metadataStore.putZiplineConf()
-    list.foreach { v =>
-      println(v)
-      println("\n")
+    val dataSet = ZiplineMetadataKey + "_Test"
+    val metadataStore = new MetadataStore(inMemoryKvStore, dataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(dataSet)
+    metadataStore.putZiplineConf("src/test/scala/ai/zipline/spark/test/resources/")
+    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), dataSet))
+    val res = Await.result(response, Duration.Inf)
+    val actual = new String(res.values.head.bytes)
+    val src = Source.fromFile("src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    val expected = {
+      try src.mkString
+      finally src.close()
     }
+    assertEquals(expected.replaceAll("\\s+", ""), actual.replaceAll("\\s+", ""))
   }
 
   def testTemporalFetch(): Unit = {
@@ -220,7 +226,7 @@ class FetcherTest extends TestCase {
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create("ZIPLINE_METADATA")
+    inMemoryKvStore.create(ZiplineMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
     val requests = todaysQueries.rdd

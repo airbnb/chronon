@@ -1,5 +1,6 @@
 package ai.zipline.fetcher
 
+import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, StringOps}
 import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api._
@@ -9,7 +10,7 @@ import java.io.File
 import scala.concurrent.ExecutionContext
 import scala.reflect.ClassTag
 
-class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long) {
+class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
     new JoinOps(
@@ -37,27 +38,35 @@ class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", 
 
   /**
     * This method uploads the materialized JSONs to KV store
+    * key = [joins|group_bys|staging_queries]/team_name/config_file_name
+    * value = json string
+    * data set = ZIPLINE_METADATA
     * @param configDirectoryPath the root directory file path includes all the materialized JSON configs, for example: zipline/production
     */
-  def putZiplineConf(configDirectoryPath: String = "/Users/pengyu_hou/workspace/ml_models/zipline/production/") = {
+  def putZiplineConf(configDirectoryPath: String): Unit = {
     val configDirectory = new File(configDirectoryPath)
     if (configDirectory.exists() && !configDirectory.isDirectory) {
       throw new IllegalArgumentException(
         s"the configDirectoryPath $configDirectoryPath is not a directory, please double check your config")
     }
     val fileList = listFiles(configDirectory)
-    val metadataList: List[Option[String]] = fileList.map { file =>
+    val metadataList = fileList.map { file =>
       val path = file.getPath
+      val key = path.split("/").takeRight(3).mkString("/")
       path match {
-        case value if value.contains("staging_queries") => loadJson[StagingQuery](value)
-        case value if value.contains("joins")           => loadJson[Join](value)
-        case value if value.contains("group_bys")       => loadJson[GroupBy](value)
+        case value if value.contains("staging_queries") => (key, loadJson[StagingQuery](value))
+        case value if value.contains("joins")           => (key, loadJson[Join](value))
+        case value if value.contains("group_bys")       => (key, loadJson[GroupBy](value))
         case _ =>
           println(s"unknown config type, file=$file")
-          None
+          (key, None)
       }
     }.toList
-    metadataList.filter(_.isDefined).map(_.get)
+    val puts = metadataList.filter(_._2.isDefined).map {
+      case (key, jsonStr) =>
+        PutRequest(keyBytes = key.getBytes(), valueBytes = jsonStr.get.getBytes(), dataset = dataset)
+    }
+    kvStore.multiPut(puts)
   }
 
   // list file recursively
@@ -71,7 +80,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", 
         .flatMap(listFiles(_, recursive))
   }
 
-  // process zipline v2.1 configs only. v2.0 will be ignored
+  // process zipline v2.1 configs only. others will be ignored
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
     try {
       val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)

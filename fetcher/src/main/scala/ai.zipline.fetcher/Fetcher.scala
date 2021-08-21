@@ -2,11 +2,13 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
+import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions._
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import ai.zipline.api.{StructType, _}
 import org.apache.avro.Schema
 import ai.zipline.fetcher.Fetcher._
+
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function
 import scala.collection.JavaConverters._
@@ -71,7 +73,7 @@ object Fetcher {
   case class Response(request: Request, values: Map[String, AnyRef])
 }
 
-class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 10000)
+class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(groupByServingInfoParsed: GroupByServingInfoParsed,
