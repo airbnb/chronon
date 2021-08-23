@@ -38,8 +38,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   /**
     * This method uploads the materialized JSONs to KV store
-    * key = [joins|group_bys|staging_queries]/team_name/config_file_name
-    * value = json string
+    * key = [joins|group_bys|staging_queries]/team_name/config_file_name in bytes
+    * value = json string in bytes
     * data set = ZIPLINE_METADATA
     * @param configDirectoryPath the root directory file path includes all the materialized JSON configs, for example: zipline/production
     */
