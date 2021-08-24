@@ -84,11 +84,13 @@ class FetcherTest extends TestCase {
     val dataSet = ZiplineMetadataKey + "_Test"
     val metadataStore = new MetadataStore(inMemoryKvStore, dataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(dataSet)
-    metadataStore.putZiplineConf("src/test/scala/ai/zipline/spark/test/resources/")
+    // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
+    metadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources/")
     val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), dataSet))
     val res = Await.result(response, Duration.Inf)
     val actual = new String(res.values.head.bytes)
-    val src = Source.fromFile("src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    val src =
+      Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
     val expected = {
       try src.mkString
       finally src.close()

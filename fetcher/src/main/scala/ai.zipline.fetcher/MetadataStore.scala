@@ -42,8 +42,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
   def putZiplineConf(configDirectoryPath: String): Unit = {
     val configDirectory = new File(configDirectoryPath)
-    assert(configDirectory.exists(),
-           s"$configDirectory does not exist, current path= ${System.getProperty("user.dir")}")
+    assert(configDirectory.exists(), s"$configDirectory does not exist")
     assert(configDirectory.isDirectory, s"$configDirectory is not a directory")
     val fileList = listFiles(configDirectory)
 
