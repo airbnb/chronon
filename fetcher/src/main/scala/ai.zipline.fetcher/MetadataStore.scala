@@ -46,10 +46,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     */
   def putZiplineConf(configDirectoryPath: String): Unit = {
     val configDirectory = new File(configDirectoryPath)
-    if (configDirectory.exists() && !configDirectory.isDirectory) {
-      throw new IllegalArgumentException(
-        s"the configDirectoryPath $configDirectoryPath is not a directory, please double check your config")
-    }
+    assert(configDirectory.exists(), s"$configDirectory does not exist")
+    assert(configDirectory.isDirectory, s"$configDirectory is not a directory")
     val fileList = listFiles(configDirectory)
 
     val puts = fileList.flatMap { file =>
