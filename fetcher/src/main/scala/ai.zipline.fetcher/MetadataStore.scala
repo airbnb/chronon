@@ -52,24 +52,23 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     }
     val fileList = listFiles(configDirectory)
 
-    val puts = fileList.map { file =>
+    val puts = fileList.flatMap { file =>
       val path = file.getPath
       if (JsonPath.read(file, "$.metaData.name") == null) {
         println(s"Ignoring file $path")
         return None
       }
-
-      // will capture <conf_type>/<team>/<conf_name> as key
+      // capture <conf_type>/<team>/<conf_name> as key
       val keyParts = path.split("/").takeRight(3)
-      val Array(confType, team, confName) = keyParts
       val confJsonOpt = path match {
         case value if value.startsWith("staging_queries/") => loadJson[StagingQuery](value)
         case value if value.startsWith("joins/")           => loadJson[Join](value)
         case value if value.startsWith("group_bys/")       => loadJson[GroupBy](value)
         case _                                             => println(s"unknown config type in file $path"); None
       }
-      confJsonOpt.map(
-        PutRequest(keyBytes = keyParts.mkString("/").getBytes(), valueBytes = _.getBytes(), dataset = dataset))
+      confJsonOpt
+        .map(conf =>
+          PutRequest(keyBytes = keyParts.mkString("/").getBytes(), valueBytes = conf.getBytes(), dataset = dataset))
     }
     kvStore.multiPut(puts)
   }
@@ -86,6 +85,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   }
 
   // process zipline v2.1 configs only. others will be ignored
+  // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
     try {
       val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
