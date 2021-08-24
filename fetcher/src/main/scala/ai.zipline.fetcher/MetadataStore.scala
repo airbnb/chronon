@@ -6,7 +6,8 @@ import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api._
 import org.apache.thrift.TBase
 import com.jayway.jsonpath.JsonPath
-
+import com.jayway.jsonpath.Configuration
+import com.jayway.jsonpath.{Option => JsonPathOption}
 import java.io.File
 import scala.concurrent.ExecutionContext
 import scala.reflect.ClassTag
@@ -50,25 +51,26 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     assert(configDirectory.isDirectory, s"$configDirectory is not a directory")
     val fileList = listFiles(configDirectory)
 
-    val puts = fileList.flatMap { file =>
-      val path = file.getPath
-      if (JsonPath.read(file, "$.metaData.name") == null) {
-        println(s"Ignoring file $path")
-        return None
+    val configuration = Configuration.builder.options(JsonPathOption.DEFAULT_PATH_LEAF_TO_NULL).build
+    val puts = fileList
+      .filter {
+        JsonPath.parse(_, configuration).read("$.metaData.name") != null
       }
-      // capture <conf_type>/<team>/<conf_name> as key
-      val keyParts = path.split("/").takeRight(3)
-      val confJsonOpt = path match {
-        case value if value.startsWith("staging_queries/") => loadJson[StagingQuery](value)
-        case value if value.startsWith("joins/")           => loadJson[Join](value)
-        case value if value.startsWith("group_bys/")       => loadJson[GroupBy](value)
-        case _                                             => println(s"unknown config type in file $path"); None
+      .flatMap { file =>
+        val path = file.getPath
+        // capture <conf_type>/<team>/<conf_name> as keyk e.g joins/team/team.example_join.v1
+        val key = path.split("/").takeRight(3).mkString("/")
+        val confJsonOpt = path match {
+          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
+          case value if value.contains("joins/")           => loadJson[Join](value)
+          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
+          case _                                           => println(s"unknown config type in file $path"); None
+        }
+        confJsonOpt
+          .map(conf => PutRequest(keyBytes = key.getBytes(), valueBytes = conf.getBytes(), dataset = dataset))
       }
-      confJsonOpt
-        .map(conf =>
-          PutRequest(keyBytes = keyParts.mkString("/").getBytes(), valueBytes = conf.getBytes(), dataset = dataset))
-    }
     kvStore.multiPut(puts)
+    println(s"Successfully put ${puts.size} config to KV Store")
   }
 
   // list file recursively
@@ -90,7 +92,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case _: Throwable =>
-        println(s"skip Zipline v2.0 configs, file path = $file")
+        println(s"Failed to parse JSON to v2.1 configs, file path = $file")
         None
     }
   }

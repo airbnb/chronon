@@ -1,11 +1,5 @@
 package ai.zipline.spark.test
 
-import java.lang
-import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
-import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS}
-import scala.concurrent.{Await, ExecutionContext}
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
@@ -34,6 +28,12 @@ import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 
+import java.lang
+import java.util.concurrent.Executors
+import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.compat.java8.FutureConverters
+import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
 
 class FetcherTest extends TestCase {
