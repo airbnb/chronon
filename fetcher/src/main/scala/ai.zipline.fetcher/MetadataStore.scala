@@ -5,6 +5,7 @@ import ai.zipline.api.Extensions.{JoinOps, StringOps}
 import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api._
 import org.apache.thrift.TBase
+import com.jayway.jsonpath.JsonPath
 
 import java.io.File
 import scala.concurrent.ExecutionContext
@@ -50,21 +51,25 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         s"the configDirectoryPath $configDirectoryPath is not a directory, please double check your config")
     }
     val fileList = listFiles(configDirectory)
-    val metadataList = fileList.map { file =>
+
+    val puts = fileList.map { file =>
       val path = file.getPath
-      val key = path.split("/").takeRight(3).mkString("/")
-      path match {
-        case value if value.contains("staging_queries") => (key, loadJson[StagingQuery](value))
-        case value if value.contains("joins")           => (key, loadJson[Join](value))
-        case value if value.contains("group_bys")       => (key, loadJson[GroupBy](value))
-        case _ =>
-          println(s"unknown config type, file=$file")
-          (key, None)
+      if (JsonPath.read(file, "$.metaData.name") == null) {
+        println(s"Ignoring file $path")
+        return None
       }
-    }.toList
-    val puts = metadataList.filter(_._2.isDefined).map {
-      case (key, jsonStr) =>
-        PutRequest(keyBytes = key.getBytes(), valueBytes = jsonStr.get.getBytes(), dataset = dataset)
+
+      // will capture <conf_type>/<team>/<conf_name> as key
+      val keyParts = path.split("/").takeRight(3)
+      val Array(confType, team, confName) = keyParts
+      val confJsonOpt = path match {
+        case value if value.startsWith("staging_queries/") => loadJson[StagingQuery](value)
+        case value if value.startsWith("joins/")           => loadJson[Join](value)
+        case value if value.startsWith("group_bys/")       => loadJson[GroupBy](value)
+        case _                                             => println(s"unknown config type in file $path"); None
+      }
+      confJsonOpt.map(
+        PutRequest(keyBytes = keyParts.mkString("/").getBytes(), valueBytes = _.getBytes(), dataset = dataset))
     }
     kvStore.multiPut(puts)
   }
