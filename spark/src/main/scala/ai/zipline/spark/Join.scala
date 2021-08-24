@@ -200,12 +200,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
   }
 
   def getLastRunJoinOpt: Option[JoinConf] = {
-    tableUtils.getTableProperties(outputTable).map { lastRunMetadata =>
-      // get the join object that was saved onto the table as part of the last run
-      val encodedMetadata = lastRunMetadata(Constants.JoinMetadataKey)
-      val joinJsonBytes = Base64.getDecoder.decode(encodedMetadata)
-      val joinJsonString = new String(joinJsonBytes)
-      ThriftJsonCodec.fromJsonStr(joinJsonString, check = !skipEqualCheck, classOf[JoinConf])
+    println(s"Fetching join from table props of $outputTable")
+    for (
+      props <- tableUtils.getTableProperties(outputTable);
+      joinBytes <- props.get(Constants.JoinMetadataKey)
+    ) yield {
+      val joinJson = new String(Base64.getDecoder.decode(joinBytes))
+      ThriftJsonCodec.fromJsonStr(joinJson, check = !skipEqualCheck, classOf[JoinConf])
     }
   }
 
