@@ -38,13 +38,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       new GroupByServingInfoParsed(groupByServingInfo)
     })
 
-  /**
-    * This method uploads the materialized JSONs to KV store
-    * key = [joins|group_bys|staging_queries]/team_name/config_file_name in bytes
-    * value = json string in bytes
-    * data set = ZIPLINE_METADATA
-    * @param configDirectoryPath the root directory file path includes all the materialized JSON configs, for example: zipline/production
-    */
+  // upload the materialized JSONs to KV store:
+  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
   def putZiplineConf(configDirectoryPath: String): Unit = {
     val configDirectory = new File(configDirectoryPath)
     assert(configDirectory.exists(), s"$configDirectory does not exist")
@@ -53,12 +48,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
     val configuration = Configuration.builder.options(JsonPathOption.DEFAULT_PATH_LEAF_TO_NULL).build
     val puts = fileList
-      .filter {
+      .filter(
+        // the current Zipline config should have metaData.name field
+        // if this field doesn't exist, we will simply skip for further parsing validation
         JsonPath.parse(_, configuration).read("$.metaData.name") != null
-      }
+      )
       .flatMap { file =>
         val path = file.getPath
-        // capture <conf_type>/<team>/<conf_name> as keyk e.g joins/team/team.example_join.v1
+        // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
         val key = path.split("/").takeRight(3).mkString("/")
         val confJsonOpt = path match {
           case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
@@ -84,7 +81,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         .flatMap(listFiles(_, recursive))
   }
 
-  // process zipline v2.1 configs only. others will be ignored
+  // process zipline configs only. others will be ignored
   // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
     try {
@@ -92,7 +89,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case _: Throwable =>
-        println(s"Failed to parse JSON to v2.1 configs, file path = $file")
+        println(s"Failed to parse JSON to Zipline configs, file path = $file")
         None
     }
   }
