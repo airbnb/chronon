@@ -8,8 +8,9 @@ import org.apache.thrift.TBase
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.{Option => JsonPathOption}
+
 import java.io.File
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
@@ -40,7 +41,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putZiplineConf(configPath: String): Unit = {
+  def putZiplineConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
     //    assert(configFile.isDirectory, s"$configFile is not a directory")
@@ -66,8 +67,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         confJsonOpt
           .map(conf => PutRequest(keyBytes = key.getBytes(), valueBytes = conf.getBytes(), dataset = dataset))
       }
+    println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     kvStore.multiPut(puts)
-    println(s"Successfully put ${puts.size} config to KV Store")
   }
 
   // list file recursively

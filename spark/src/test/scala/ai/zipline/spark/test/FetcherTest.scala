@@ -80,33 +80,39 @@ class FetcherTest extends TestCase {
   def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = new InMemoryKvStore()
-    val singleFileDataSet = ZiplineMetadataKey + "single_file_Test"
-    val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
-    inMemoryKvStore.create(singleFileDataSet)
-    // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
-    singleFileMetadataStore.putZiplineConf(
-      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
-    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), singleFileDataSet))
-    val res = Await.result(response, Duration.Inf)
-    val actual = new String(res.values.head.bytes)
+
     val src =
       Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
     val expected = {
       try src.mkString
       finally src.close()
-    }
-    assertEquals(expected.replaceAll("\\s+", ""), actual.replaceAll("\\s+", ""))
+    }.replaceAll("\\s+", "")
 
-    val directoryDataSetDataSet = ZiplineMetadataKey + "directory_Test"
+    val inMemoryKvStore = new InMemoryKvStore()
+    val singleFileDataSet = ZiplineMetadataKey + "_single_file_Test"
+    val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(singleFileDataSet)
+    // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
+    val singleFilePut = singleFileMetadataStore.putZiplineConf(
+      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    Await.result(singleFilePut, Duration.Inf)
+    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), singleFileDataSet))
+    val res = Await.result(response, Duration.Inf)
+    val actual = new String(res.values.head.bytes)
+
+    assertEquals(expected, actual.replaceAll("\\s+", ""))
+
+    val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_Test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     val dirActual = new String(dirRes.values.head.bytes)
-    assertEquals(expected.replaceAll("\\s+", ""), dirActual.replaceAll("\\s+", ""))
+
+    assertEquals(expected, dirActual.replaceAll("\\s+", ""))
   }
 
   def testTemporalFetch(): Unit = {
