@@ -81,12 +81,13 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = new InMemoryKvStore()
-    val dataSet = ZiplineMetadataKey + "_Test"
-    val metadataStore = new MetadataStore(inMemoryKvStore, dataSet, timeoutMillis = 10000)
-    inMemoryKvStore.create(dataSet)
+    val singleFileDataSet = ZiplineMetadataKey + "single_file_Test"
+    val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
-    metadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources/")
-    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), dataSet))
+    singleFileMetadataStore.putZiplineConf(
+      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     val actual = new String(res.values.head.bytes)
     val src =
@@ -96,6 +97,16 @@ class FetcherTest extends TestCase {
       finally src.close()
     }
     assertEquals(expected.replaceAll("\\s+", ""), actual.replaceAll("\\s+", ""))
+
+    val directoryDataSetDataSet = ZiplineMetadataKey + "directory_Test"
+    val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(directoryDataSetDataSet)
+    directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    val dirResponse =
+      inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), directoryDataSetDataSet))
+    val dirRes = Await.result(dirResponse, Duration.Inf)
+    val dirActual = new String(dirRes.values.head.bytes)
+    assertEquals(expected.replaceAll("\\s+", ""), dirActual.replaceAll("\\s+", ""))
   }
 
   def testTemporalFetch(): Unit = {

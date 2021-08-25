@@ -40,11 +40,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putZiplineConf(configDirectoryPath: String): Unit = {
-    val configDirectory = new File(configDirectoryPath)
-    assert(configDirectory.exists(), s"$configDirectory does not exist")
-    assert(configDirectory.isDirectory, s"$configDirectory is not a directory")
-    val fileList = listFiles(configDirectory)
+  def putZiplineConf(configPath: String): Unit = {
+    val configFile = new File(configPath)
+    assert(configFile.exists(), s"$configFile does not exist")
+    //    assert(configFile.isDirectory, s"$configFile is not a directory")
+    val fileList = listFiles(configFile)
 
     val configuration = Configuration.builder.options(JsonPathOption.DEFAULT_PATH_LEAF_TO_NULL).build
     val puts = fileList
@@ -72,15 +72,18 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   // list file recursively
   private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
-    val files = base.listFiles
-    val result = files.filter(_.isFile)
-    result ++
-      files
-        .filter(_.isDirectory)
-        .filter(_ => recursive)
-        .flatMap(listFiles(_, recursive))
+    if (base.isFile) {
+      Seq(base)
+    } else {
+      val files = base.listFiles
+      val result = files.filter(_.isFile)
+      result ++
+        files
+          .filter(_.isDirectory)
+          .filter(_ => recursive)
+          .flatMap(listFiles(_, recursive))
+    }
   }
-
   // process zipline configs only. others will be ignored
   // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
