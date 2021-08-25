@@ -120,7 +120,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         println(s"""Skew filtering left-df for
            |GroupBy: ${joinPart.groupBy.metaData.name}
            |filterClause: $sf
-           |filtered-count: ${filtered.count()}
            |""".stripMargin)
         filtered
       }
@@ -161,38 +160,40 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       leftDf
     }
 
-    val joined = joinConf.joinParts.asScala.foldLeft(leftTaggedDf) {
-      case (partialDf, joinPart) =>
-        val rightDf: DataFrame = if (joinPart.groupBy.aggregations != null) {
-          // compute only the missing piece
-          val joinPartTableName = getJoinPartTableName(joinPart)
-          val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
-          println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
+    // compute joinParts in parallel
+    val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
+      if (joinPart.groupBy.aggregations == null) {
+        // no need to generate join part cache if there are no aggregations
+        return computeJoinPart(leftTaggedDf, joinPart, leftRange)
+      }
+      // compute only the missing piece
+      val joinPartTableName = getJoinPartTableName(joinPart)
+      val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
+      println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
-          if (rightUnfilledRange.valid) {
-            try {
-              val rightDf = computeJoinPart(partialDf, joinPart, rightUnfilledRange)
-              // cache the join-part output into table partitions
-              rightDf.save(joinPartTableName, tableProps)
-            } catch {
-              case e: Exception =>
-                println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
-                throw e
-            }
-          }
-          val scanRange =
-            if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-              // the events of a ds will join with
-              leftDf.timeRange.toPartitionRange.shift(-1)
-            } else {
-              leftRange
-            }
-          tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
-        } else {
-          // no need to generate join part cache if there are no aggregations
-          computeJoinPart(partialDf, joinPart, leftRange)
+      if (rightUnfilledRange.valid) {
+        try {
+          val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange)
+          // cache the join-part output into table partitions
+          rightDf.save(joinPartTableName, tableProps)
+        } catch {
+          case e: Exception =>
+            println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
+            throw e
         }
-        joinWithLeft(partialDf, rightDf, joinPart)
+      }
+      val scanRange =
+        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+          // the events of a ds will join with
+          leftDf.timeRange.toPartitionRange.shift(-1)
+        } else {
+          leftRange
+        }
+      tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
+    }
+
+    val joined = rightDfs.zip(joinConf.joinParts.asScala).foldLeft(leftTaggedDf) {
+      case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
     joined.explain()
@@ -305,10 +306,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       skewFilter
         .map(sf => {
           println(s"left skew filter: $sf")
-          println(s"pre-skew-filter left count: ${df.count()}")
-          val filtered = df.filter(sf)
-          println(s"post-skew-filter left count: ${filtered.count()}")
-          filtered
+          df.filter(sf)
         })
         .getOrElse(df)
     }

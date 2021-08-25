@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -257,12 +257,10 @@ object GroupBy {
 
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
     val keyColumns = groupByConf.getKeyColumns.asScala
-    println(s"$logPrefix input data count: ${inputDf.count()}")
     val skewFilteredDf = skewFilter
       .map { sf =>
         println(s"$logPrefix filtering using skew filter:\n    $sf")
         val filtered = inputDf.filter(sf)
-        println(s"$logPrefix post skew filter count: ${filtered.count()}")
         filtered
       }
       .getOrElse(inputDf)
@@ -270,7 +268,6 @@ object GroupBy {
     val processedInputDf = bloomMapOpt
       .map { bloomMap =>
         val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-        println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
         bloomFilteredDf
       }
       .getOrElse { skewFilteredDf }
@@ -374,11 +371,13 @@ object GroupBy {
       case (range, index) =>
         println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
         val groupByBackfill = from(groupByConf, range, tableUtils)
-        (groupByConf.dataModel match {
-          // group by backfills have to be snapshot only
-          case Entities => groupByBackfill.snapshotEntities
-          case Events   => groupByBackfill.snapshotEvents(range)
-        }).save(outputTable, tableProps)
+        val backfilledDf = (groupByConf.dataModel, groupByConf.inferredAccuracy) match {
+          case (Entities, _)               => groupByBackfill.snapshotEntities
+          case (Events, Accuracy.SNAPSHOT) => groupByBackfill.snapshotEvents(range)
+          // temporal accuracy back-fills will do a self join.
+          case (Events, Accuracy.TEMPORAL) => groupByBackfill.temporalEvents(groupByBackfill.inputDf)
+        }
+        backfilledDf.save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range")
     }
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
