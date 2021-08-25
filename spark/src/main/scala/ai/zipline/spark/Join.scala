@@ -58,11 +58,15 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     val keys = partLeftKeys ++ additionalKeys
 
     val partName = joinPart.groupBy.metaData.name
-    println(s"Join keys for $partName: " + keys.mkString(", "))
-    println("Left Schema:")
-    println(leftDf.schema.pretty)
-    println(s"Right Schema for $partName: - this is the output of GroupBy")
-    println(prefixedRight.schema.pretty)
+
+    println(s"""Join keys for $partName: ${keys.mkString(", ")}
+         |Left Schema:
+         |  ${leftDf.schema.pretty}
+         |  
+         |Right Schema:
+         |  ${prefixedRight.schema.pretty}
+         |  
+         |""".stripMargin)
 
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
@@ -164,32 +168,34 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
-        return computeJoinPart(leftTaggedDf, joinPart, leftRange)
-      }
-      // compute only the missing piece
-      val joinPartTableName = getJoinPartTableName(joinPart)
-      val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
-      println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
+        computeJoinPart(leftTaggedDf, joinPart, leftRange)
+      } else {
 
-      if (rightUnfilledRange.valid) {
-        try {
-          val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange)
-          // cache the join-part output into table partitions
-          rightDf.save(joinPartTableName, tableProps)
-        } catch {
-          case e: Exception =>
-            println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
-            throw e
+        // compute only the missing piece
+        val joinPartTableName = getJoinPartTableName(joinPart)
+        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
+        println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
+
+        if (rightUnfilledRange.valid) {
+          try {
+            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange)
+            // cache the join-part output into table partitions
+            rightDf.save(joinPartTableName, tableProps)
+          } catch {
+            case e: Exception =>
+              println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
+              throw e
+          }
         }
+        val scanRange =
+          if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+            // the events of a ds will join with
+            leftDf.timeRange.toPartitionRange.shift(-1)
+          } else {
+            leftRange
+          }
+        tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
       }
-      val scanRange =
-        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-          // the events of a ds will join with
-          leftDf.timeRange.toPartitionRange.shift(-1)
-        } else {
-          leftRange
-        }
-      tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
     }
 
     val joined = rightDfs.zip(joinConf.joinParts.asScala).foldLeft(leftTaggedDf) {
