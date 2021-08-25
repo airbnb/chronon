@@ -7,7 +7,7 @@ import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import ai.zipline.api.{StructType, _}
 import org.apache.avro.Schema
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, Executors}
 import java.util.function
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
