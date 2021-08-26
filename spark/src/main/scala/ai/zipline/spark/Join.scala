@@ -133,7 +133,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       .map(_.asScala)
       .getOrElse(Map.empty)
       .foldLeft(skewFilteredLeft) {
-        case (left, (leftKey, rightKey)) => left.withColumnRenamed(leftKey, rightKey)
+        case (left, (leftKey, rightKey)) =>
+          val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
+          result.withColumnRenamed(leftKey, rightKey)
       }
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
@@ -158,6 +160,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+    println(s"""Computing Join with left schema
+         |${leftDf.schema.pretty}
+         |""".stripMargin)
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
