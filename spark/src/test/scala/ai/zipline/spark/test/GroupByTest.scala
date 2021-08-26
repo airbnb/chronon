@@ -255,7 +255,11 @@ class GroupByTest {
         s"SELECT * FROM ${backfill(name = "unit_test_item_views_no_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)}"),
       List("item", Constants.PartitionColumn)
     )
+    if (diff.count() != 0) {
+      diff.show(100)
+    }
     assertEquals(0, diff.count())
+
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
