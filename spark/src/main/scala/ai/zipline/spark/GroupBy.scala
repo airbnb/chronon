@@ -371,13 +371,10 @@ object GroupBy {
       case (range, index) =>
         println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
         val groupByBackfill = from(groupByConf, range, tableUtils)
-        val backfilledDf = (groupByConf.dataModel, groupByConf.inferredAccuracy) match {
-          case (Entities, _)               => groupByBackfill.snapshotEntities
-          case (Events, Accuracy.SNAPSHOT) => groupByBackfill.snapshotEvents(range)
-          // temporal accuracy back-fills will do a self join.
-          case (Events, Accuracy.TEMPORAL) => groupByBackfill.temporalEvents(groupByBackfill.inputDf)
-        }
-        backfilledDf.save(outputTable, tableProps)
+        (groupByConf.dataModel match {
+          case Entities => groupByBackfill.snapshotEntities
+          case Events   => groupByBackfill.snapshotEvents(range)
+        }).save(outputTable, tableProps)
         println(s"Wrote to table $outputTable, into partitions: $range")
     }
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
