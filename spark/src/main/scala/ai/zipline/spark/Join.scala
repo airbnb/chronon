@@ -160,9 +160,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
-    println(s"""Computing Join with left schema
-         |${leftDf.schema.pretty}
-         |""".stripMargin)
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
     } else {
