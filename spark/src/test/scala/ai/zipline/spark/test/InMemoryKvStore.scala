@@ -28,6 +28,7 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   def toStr(bytes: Array[Byte]): String = new String(bytes, Constants.UTF8)
   override def multiGet(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     Future {
+      // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
         val values = Option(
