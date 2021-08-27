@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -372,6 +372,7 @@ object GroupBy {
         println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
         val groupByBackfill = from(groupByConf, range, tableUtils)
         (groupByConf.dataModel match {
+          // group by backfills have to be snapshot only
           case Entities => groupByBackfill.snapshotEntities
           case Events   => groupByBackfill.snapshotEvents(range)
         }).save(outputTable, tableProps)
