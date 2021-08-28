@@ -277,10 +277,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     joinConf.setups.foreach(tableUtils.sql)
 
     val rangeToFill = PartitionRange(joinConf.left.query.startPartition, endPartition)
+    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
-    for (earliestHole <- earliestHoleOpt if earliestHole < rangeToFill.end) {
-      println(s"There is no data to compute based on end partition of $endPartition")
-      System.exit(0)
+    for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
+      println(s"\nThere is no data to compute based on end partition of $endPartition.\n\n Exiting..")
+      return finalResult
     }
 
     val leftUnfilledRange = PartitionRange(earliestHoleOpt.get, endPartition)
@@ -319,7 +320,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
-    tableUtils.sql(leftUnfilledRange.genScanQuery(null, outputTable))
+    finalResult
   }
 }
 

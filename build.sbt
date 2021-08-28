@@ -58,10 +58,10 @@ lazy val spark = project
       "ai.zipline.spark.Join"
     ),
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided",
-      "org.apache.spark" %% "spark-hive" % "2.4.4" % "provided",
-      "org.apache.spark" %% "spark-core" % "2.4.4" % "provided",
-      "org.apache.spark" %% "spark-streaming" % "2.4.4" % "provided",
+      "org.apache.spark" %% "spark-sql" % "2.4.0" % "provided",
+      "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
+      "org.apache.spark" %% "spark-core" % "2.4.0" % "provided",
+      "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
       "org.rogach" %% "scallop" % "4.0.1"
     ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
