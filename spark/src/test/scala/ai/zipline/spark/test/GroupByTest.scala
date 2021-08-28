@@ -212,7 +212,7 @@ class GroupByTest {
         }.toArray
       }
 
-    val eventsByKey: RDD[(KeyWithHash, Iterator[ArrayRow])] = eventDf.rdd
+    val eventsByKey: RDD[(KeyWithHash, Iterator[RowWrapper])] = eventDf.rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
         rowIter.map(Conversions.toZiplineRow(_, groupBy.tsIndex)).toIterator
@@ -223,7 +223,7 @@ class GroupByTest {
     val naiveAggregator =
       new NaiveAggregator(groupBy.windowAggregator, windows, tailHops)
     val naiveRdd = queriesByKey.leftOuterJoin(eventsByKey).flatMap {
-      case (key, (queries: Array[Long], events: Option[Iterator[ArrayRow]])) =>
+      case (key, (queries: Array[Long], events: Option[Iterator[RowWrapper]])) =>
         val irs = naiveAggregator.aggregate(events.map(_.toSeq).orNull, queries)
         queries.zip(irs).map {
           case (query: Long, ir: Array[Any]) =>
