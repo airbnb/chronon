@@ -19,7 +19,7 @@ import ai.zipline.api.{
   GroupBy => GroupByConf
 }
 import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
+import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, JavaRequest, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -282,7 +282,9 @@ class FetcherTest extends TestCase {
         .grouped(chunkSize)
         .map { r =>
           val responses = if (useJavaFetcher) {
-            val javaResponse = javaFetcher.fetchJoin(r.asJava)
+            // Converting to java request and using the toScalaRequest functionality to test conversion
+            val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
+            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
             FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
           } else {
             fetcher.fetchJoin(r)
