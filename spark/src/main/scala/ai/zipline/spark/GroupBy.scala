@@ -178,7 +178,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case ((keys: KeyWithHash, _: Long),
               ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
                eventsOpt: Option[Iterable[Row]])) =>
-          val inputsIt: Iterator[ArrayRow] = {
+          val inputsIt: Iterator[RowWrapper] = {
             eventsOpt.map(_.map(Conversions.toZiplineRow(_, tsIndex)).toIterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }

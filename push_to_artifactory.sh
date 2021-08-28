@@ -6,7 +6,7 @@ MINOR_VERSION=$1
 # TODO drop airbnb URL - migrate to maven central before open sourcing.
 REPO_URL=https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases
 REPO_ID=airbnb
-git checkout master && git pull
+# git checkout master && git pull
 BRANCH_GIT=$(git branch --show-current)
 BRANCH_GIT_SHA=$(git log --pretty=format:'%h' -n 1)
 NEW_TAG=release-0.0.$MINOR_VERSION

@@ -262,17 +262,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
-  def getJoinUnavailableRange: Option[PartitionRange] = {
-    val leftPartitions = tableUtils
-      .partitions(joinConf.left.table)
-      .filter(ds => ds >= joinConf.left.query.startPartition && ds <= endPartition)
-      .toSet
-    val outputPartitions = tableUtils.partitions(outputTable).toSet
-    (leftPartitions -- outputPartitions)
-      .reduceLeftOption(Ordering[String].min)
-      .map(PartitionRange(_, endPartition))
-  }
-
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -287,19 +276,20 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
     joinConf.setups.foreach(tableUtils.sql)
 
-    val leftUnfilledRangeOpt = getJoinUnavailableRange
-    if (leftUnfilledRangeOpt.isEmpty || !leftUnfilledRangeOpt.get.valid) {
-      println(s"There is no data to compute based on the left unfilled range $leftUnfilledRangeOpt")
+    val rangeToFill = PartitionRange(joinConf.left.query.startPartition, endPartition)
+    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
+    for (earliestHole <- earliestHoleOpt if earliestHole < rangeToFill.end) {
+      println(s"There is no data to compute based on end partition of $endPartition")
       System.exit(0)
     }
-    val leftUnfilledRange = leftUnfilledRangeOpt.get
-    println(s"Dropping left unfilled range $leftUnfilledRange from join output $outputTable")
-    tableUtils.dropPartitionRange(outputTable, leftUnfilledRange.start, leftUnfilledRange.end)
+
+    val leftUnfilledRange = PartitionRange(earliestHoleOpt.get, endPartition)
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = getJoinPartTableName(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
-      tableUtils.dropPartitionRange(partTable, leftUnfilledRange.start, leftUnfilledRange.end)
+      tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }
+
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
