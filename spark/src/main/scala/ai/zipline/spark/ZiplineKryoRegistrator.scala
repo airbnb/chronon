@@ -44,6 +44,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow",
       "org.apache.spark.sql.catalyst.expressions.GenericRow",
       "org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema",
+      "org.apache.spark.sql.catalyst.expressions.UnsafeRow",
       "org.apache.spark.sql.types.StructField",
       "org.apache.spark.sql.types.StructType",
       "org.apache.spark.sql.types.LongType$", // dollar stands for case objects
