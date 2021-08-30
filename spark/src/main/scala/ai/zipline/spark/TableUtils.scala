@@ -98,12 +98,11 @@ case class TableUtils(sparkSession: SparkSession) {
           Seq(Constants.PartitionColumn, saltCol)
         } else { Seq(saltCol) }
       saltedDf
-        .repartition(10000, repartitionCols.map(saltedDf.col): _*)
+        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
         .write
         .mode(saveMode)
         .insertInto(tableName)
-      df.unpersist()
       println(s"Finished writing to $tableName")
     }
   }
