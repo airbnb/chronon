@@ -44,7 +44,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   def putZiplineConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
-    //    assert(configFile.isDirectory, s"$configFile is not a directory")
+    println(s"Uploading Zipline configs from $configPath")
     val fileList = listFiles(configFile)
 
     val configuration = Configuration.builder.options(JsonPathOption.DEFAULT_PATH_LEAF_TO_NULL).build
