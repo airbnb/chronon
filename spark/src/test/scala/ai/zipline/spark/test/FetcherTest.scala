@@ -102,7 +102,7 @@ class FetcherTest extends TestCase {
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
-    val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_Test"
+    val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
     val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
