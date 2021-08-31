@@ -4,7 +4,6 @@ import ai.zipline.api.Constants
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-
 case class TableUtils(sparkSession: SparkSession) {
 
   sparkSession.sparkContext.setLogLevel("ERROR")
@@ -89,6 +88,7 @@ case class TableUtils(sparkSession: SparkSession) {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
+      // at-least a million rows per partition - or there will be too many files.
       val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
@@ -194,6 +194,38 @@ case class TableUtils(sparkSession: SparkSession) {
     val command = s"DROP TABLE IF EXISTS $tableName"
     println(s"Dropping table with command: $command")
     sql(command)
+  }
+
+  def dropPartitionsAfterHole(inputTable: String,
+                              outputTable: String,
+                              partitionRange: PartitionRange): Option[String] = {
+
+    def partitionsInRange(table: String): Set[String] = {
+      partitions(table)
+        .filter(ds => ds >= partitionRange.start && ds <= partitionRange.end)
+        .toSet
+    }
+
+    val inputPartitions = partitionsInRange(inputTable)
+    val outputPartitions = partitionsInRange(outputTable)
+    val earliestHoleOpt = (inputPartitions -- outputPartitions)
+      .reduceLeftOption(Ordering[String].min)
+    val maxOutputPartitionOpt = outputPartitions.reduceLeftOption(Ordering[String].max)
+
+    for (
+      earliestHole <- earliestHoleOpt;
+      maxOutputPartition <- maxOutputPartitionOpt if maxOutputPartition > earliestHole
+    ) {
+      println(s"""
+                 |Earliest hole at $earliestHole
+                 |In output table $outputTable (max partition: $maxOutputPartition)
+                 |Compared to input table $inputTable
+                 |Dropping table partitions in range: [$earliestHole - $maxOutputPartition] 
+          """.stripMargin)
+      dropPartitionRange(outputTable, earliestHole, maxOutputPartition)
+    }
+
+    earliestHoleOpt
   }
 
   def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {

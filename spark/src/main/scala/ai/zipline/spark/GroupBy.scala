@@ -178,7 +178,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case ((keys: KeyWithHash, _: Long),
               ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
                eventsOpt: Option[Iterable[Row]])) =>
-          val inputsIt: Iterator[ArrayRow] = {
+          val inputsIt: Iterator[RowWrapper] = {
             eventsOpt.map(_.map(Conversions.toZiplineRow(_, tsIndex)).toIterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
@@ -257,12 +257,10 @@ object GroupBy {
 
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
     val keyColumns = groupByConf.getKeyColumns.asScala
-    println(s"$logPrefix input data count: ${inputDf.count()}")
     val skewFilteredDf = skewFilter
       .map { sf =>
         println(s"$logPrefix filtering using skew filter:\n    $sf")
         val filtered = inputDf.filter(sf)
-        println(s"$logPrefix post skew filter count: ${filtered.count()}")
         filtered
       }
       .getOrElse(inputDf)
@@ -270,7 +268,6 @@ object GroupBy {
     val processedInputDf = bloomMapOpt
       .map { bloomMap =>
         val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-        println(s"$logPrefix bloom filtered data count: ${bloomFilteredDf.count()}")
         bloomFilteredDf
       }
       .getOrElse { skewFilteredDf }

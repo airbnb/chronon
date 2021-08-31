@@ -11,7 +11,9 @@ object KVStore {
   // afterTsMillis - is used to limit the scan to more recent data
   case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
   case class TimedValue(bytes: Array[Byte], millis: Long)
-  case class GetResponse(request: GetRequest, values: Seq[TimedValue])
+  case class GetResponse(request: GetRequest, values: Seq[TimedValue]) {
+    def latest: Option[TimedValue] = if (values.isEmpty) None else Some(values.maxBy(_.millis))
+  }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
 }
 
@@ -34,6 +36,6 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    new String(response.values.head.bytes, Constants.UTF8)
+    new String(response.latest.get.bytes, Constants.UTF8)
   }
 }

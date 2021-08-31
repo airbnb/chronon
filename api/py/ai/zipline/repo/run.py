@@ -7,10 +7,6 @@ import os
 import subprocess
 
 
-VERSION = "0.0.9"
-# TODO(Open Sourcing) this should be hard coded to mavencentral path
-JAR_URL = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
-          "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(VERSION, VERSION)
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
@@ -62,12 +58,14 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
-def download_jar():
-    url_jar_path = os.path.join('/tmp', JAR_URL.split('/')[-1])
+def download_jar(version):
     jar_path = os.environ.get('ZIPLINE_JAR_PATH', None)
     if jar_path is None:
-        jar_path = url_jar_path
-        download_only_once(JAR_URL, jar_path)
+        # TODO(Open Sourcing) this should be hard coded to mavencentral path
+        jar_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
+          "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
+        jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
+        download_only_once(jar_url, jar_path)
     return jar_path
 
 
@@ -126,4 +124,6 @@ if __name__ == "__main__":
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
-    Runner(parser.parse_args(), download_jar()).run()
+    parser.add_argument('--version', help='Zipline version to use.', default="0.0.14")
+    args = parser.parse_args()
+    Runner(args, download_jar(args.version)).run()

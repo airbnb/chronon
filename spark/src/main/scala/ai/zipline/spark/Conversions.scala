@@ -8,7 +8,7 @@ import org.apache.spark.sql.types._
 
 // wrapper class of spark ai.zipline.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.zipline.aggregator.row with an additional class
-class ArrayRow(val row: Row, val tsIndex: Int) extends MRow {
+class RowWrapper(val row: Row, val tsIndex: Int) extends MRow {
 
   override def get(index: Int): Any = row.get(index)
 
@@ -25,7 +25,7 @@ class ArrayRow(val row: Row, val tsIndex: Int) extends MRow {
 
 object Conversions {
 
-  def toZiplineRow(row: Row, tsIndex: Int): ArrayRow = new ArrayRow(row, tsIndex)
+  def toZiplineRow(row: Row, tsIndex: Int): RowWrapper = new RowWrapper(row, tsIndex)
 
   def toZiplineType(name: String, dataType: DataType): api.DataType = {
     val typeName = name.capitalize
