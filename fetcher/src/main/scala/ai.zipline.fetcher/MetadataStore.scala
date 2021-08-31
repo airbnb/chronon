@@ -47,7 +47,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     println(s"Uploading Zipline configs from $configPath")
     val fileList = listFiles(configFile)
 
-    val configuration = Configuration.builder.options(JsonPathOption.DEFAULT_PATH_LEAF_TO_NULL).build
+    val configuration = Configuration.builder.options(JsonPathOption.SUPPRESS_EXCEPTIONS).build
     val puts = fileList
       .filter(
         // the current Zipline config should have metaData.name field
@@ -65,7 +65,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           case _                                           => println(s"unknown config type in file $path"); None
         }
         confJsonOpt
-          .map(conf => PutRequest(keyBytes = key.getBytes(), valueBytes = conf.getBytes(), dataset = dataset))
+          .map(conf =>
+            PutRequest(keyBytes = key.getBytes(),
+                       valueBytes = conf.getBytes(),
+                       dataset = dataset,
+                       tsMillis = Some(System.currentTimeMillis())))
       }
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     kvStore.multiPut(puts)
