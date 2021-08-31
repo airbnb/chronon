@@ -7,31 +7,23 @@ MINOR_VERSION=$1
 REPO_URL=https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases
 REPO_ID=airbnb
 
-OLD_BRANCH=$(git branch --show-current)
+GIT_BRANCH=$(git branch --show-current)
 
-valid_version="(.*[tT]est.*|[1-9]*[0-9]+)"
-if [[ ! $MINOR_VERSION =~ $valid_version ]]
+if [[ "$GIT_BRANCH" != "master" && "$MINOR_VERSION" != *[tT]est* ]]
 then
-  echo "MINOR_VERSION argument $MINOR_VERSION should either be a number or should contain 'test'"
+  echo "Your branch($GIT_BRANCH) is not master, but the version doesn't contain 'test'"
   exit
 fi
 
-if [[ "$OLD_BRANCH" != "master" && "$MINOR_VERSION" != *[tT]est* ]]
-then
-  echo "Your branch($OLD_BRANCH) is not master, but the version doesn't contain 'test'"
-  exit
-fi
-
-if [[ "$OLD_BRANCH" == "master" && "$MINOR_VERSION" == [0-9]+ ]]
+if [[ "$GIT_BRANCH" == "master" && "$MINOR_VERSION" == [0-9]+ ]]
 then
   echo "Updating minor version on branch master with production version. So doing a git pull"
   git pull
 fi
 
-BRANCH_GIT=$(git branch --show-current)
-BRANCH_GIT_SHA=$(git log --pretty=format:'%h' -n 1)
+GIT_SHA=$(git log --pretty=format:'%h' -n 1)
 NEW_TAG=release-0.0.$MINOR_VERSION
-echo "Tagging $BRANCH_GIT@$BRANCH_GIT_SHA with $NEW_TAG (minor version incremented)"
+echo "Tagging $GIT_BRANCH@$GIT_SHA with $NEW_TAG (minor version incremented)"
 git tag -a -m '' $NEW_TAG
 git push origin $NEW_TAG
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
