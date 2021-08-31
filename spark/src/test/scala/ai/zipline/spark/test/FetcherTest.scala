@@ -89,7 +89,7 @@ class FetcherTest extends TestCase {
     }.replaceAll("\\s+", "")
 
     val inMemoryKvStore = new InMemoryKvStore()
-    val singleFileDataSet = ZiplineMetadataKey + "_single_file_Test"
+    val singleFileDataSet = ZiplineMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
