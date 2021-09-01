@@ -361,9 +361,16 @@ object GroupBy {
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
-    val inputTables = sources.map(_.table)
-    val groupByUnfilledRange: PartitionRange =
-      tableUtils.unfilledRange(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), inputTables)
+    val groupByUnfilledRangeOpt =
+      tableUtils.unfilledRange(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition))
+    if (groupByUnfilledRangeOpt.isEmpty) {
+      println(s"""Nothing to backfill for $outputTable - given 
+           |endPartition of $endPartition
+           |backfill start of ${groupByConf.backfillStartDate} 
+           |Exiting...""".stripMargin)
+      return
+    }
+    val groupByUnfilledRange = groupByUnfilledRangeOpt.get
     println(s"group by unfilled range: $groupByUnfilledRange")
     val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
     println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")

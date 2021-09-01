@@ -29,9 +29,6 @@ case class TableUtils(sparkSession: SparkSession) {
   def lastAvailablePartition(tableName: String): Option[String] =
     partitions(tableName).reduceOption(Ordering[String].max)
 
-  def firstUnavailablePartition(tableName: String): Option[String] =
-    lastAvailablePartition(tableName).map(Constants.Partition.after)
-
   def firstAvailablePartition(tableName: String): Option[String] =
     partitions(tableName)
       .reduceOption(Ordering[String].min)
@@ -151,34 +148,22 @@ case class TableUtils(sparkSession: SparkSession) {
     s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
   }
 
-  // logic for resuming computation from a previous job
-  // applicable to join, joinPart, groupBy, daily_cache
-  // TODO: Log each step - to make it easy to follow the range inference logic
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
-                    inputTables: Seq[String] = Seq.empty[String]): PartitionRange = {
-    val inputStart = inputTables
-      .flatMap(firstAvailablePartition)
-      .reduceLeftOption(Ordering[String].min)
-    val resumePartition = firstUnavailablePartition(outputTable)
-    val effectiveStart = (inputStart ++ resumePartition ++ Option(partitionRange.start))
-      .reduceLeftOption(Ordering[String].max)
-    val result = PartitionRange(effectiveStart.orNull, partitionRange.end)
-    // Using seconds rather than milis will result in bad dates close to start of epoch, Choosing 1980 as an arbitrary cutoff date, can be modified
+                    inputTable: Option[String] = None): Option[PartitionRange] = {
+    val fillablePartitions = partitionRange.partitions.toSet
+    val outputMissing = fillablePartitions -- partitions(outputTable)
+    val inputMissing = inputTable.map(partitions).flatMap(fillablePartitions -- _)
+    val missingPartitions = outputMissing -- inputMissing
     println(s"""
-               |Unfilled range computation:
-               |   Input start: $inputStart
-               |   From tables: $inputTables
-               |   first unavailable: $resumePartition
-               |   effective start: $effectiveStart
-               |   partition range: $partitionRange
-               |   result: $result
+               |Unfilled range computation:                             
+               |   Output table: $outputTable
+               |   Missing output partitions: $outputMissing
+               |   Missing input partitions: $inputMissing
+               |   Unfilled Partitions: $missingPartitions
                |""".stripMargin)
-    assert(
-      Option(result.start).map(_ > "1980").getOrElse(true) && Option(result.end).map(_ > "1980").getOrElse(true),
-      s"Unfilled range timestamps invalid for ${outputTable}: ${result.start}, ${result.end} consider applying * 1000 to your timestamp to convert to millis"
-    )
-    result
+    if (missingPartitions.isEmpty) return None
+    Some(PartitionRange(missingPartitions.min, missingPartitions.max))
   }
 
   def getTableProperties(tableName: String): Option[Map[String, String]] = {

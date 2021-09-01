@@ -175,12 +175,12 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
         // compute only the missing piece
         val joinPartTableName = getJoinPartTableName(joinPart)
-        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange)
+        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
         println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
-        if (rightUnfilledRange.valid) {
+        if (rightUnfilledRange.isDefined) {
           try {
-            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange)
+            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
           } catch {
