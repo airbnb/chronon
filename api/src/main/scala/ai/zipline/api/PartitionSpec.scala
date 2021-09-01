@@ -40,6 +40,11 @@ case class PartitionSpec(format: String, spanMillis: Long) {
 
   def before(millis: Long): String = of(millis - spanMillis)
 
-  def shift(date: String, days: Int): String =
-    partitionFormatter.format(Instant.ofEpochMilli(epochMillis(date) + days * spanMillis))
+  def shift(date: String, days: Int): String = {
+    try {
+      partitionFormatter.format(Instant.ofEpochMilli(epochMillis(date) + days * spanMillis))
+    } catch {
+      case e: Exception => println(s"Failed to parse $date"); throw e
+    }
+  }
 }
