@@ -153,7 +153,7 @@ case class TableUtils(sparkSession: SparkSession) {
                     inputTable: Option[String] = None): Option[PartitionRange] = {
     val fillablePartitions = partitionRange.partitions.toSet
     val outputMissing = fillablePartitions -- partitions(outputTable)
-    val inputMissing = inputTable.map(partitions).flatMap(fillablePartitions -- _)
+    val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
     val missingPartitions = outputMissing -- inputMissing
     println(s"""
                |Unfilled range computation:                             
