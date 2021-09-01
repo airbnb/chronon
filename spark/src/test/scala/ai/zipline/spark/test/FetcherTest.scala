@@ -1,17 +1,23 @@
 package ai.zipline.spark.test
 
-import java.lang
-import java.util.concurrent.Executors
-
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
-import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS}
-import scala.concurrent.{Await, ExecutionContext}
-
 import ai.zipline.aggregator.test.Column
+import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.KVStore.{GetRequest, PutRequest}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  KVStore,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, MetadataStore}
 import ai.zipline.spark.Extensions._
@@ -21,6 +27,14 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
+
+import java.lang
+import java.util.concurrent.Executors
+import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.compat.java8.FutureConverters
+import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.{Await, ExecutionContext}
+import scala.io.Source
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
@@ -63,10 +77,42 @@ class FetcherTest extends TestCase {
     kvStore.multiPut(puts)
   }
 
-  def getInMemKVStore() = {
+  def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    new InMemoryKvStore()
+
+    val src =
+      Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    val expected = {
+      try src.mkString
+      finally src.close()
+    }.replaceAll("\\s+", "")
+
+    val inMemoryKvStore = new InMemoryKvStore()
+    val singleFileDataSet = ZiplineMetadataKey + "_single_file_test"
+    val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(singleFileDataSet)
+    // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
+    val singleFilePut = singleFileMetadataStore.putZiplineConf(
+      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+    Await.result(singleFilePut, Duration.Inf)
+    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), singleFileDataSet))
+    val res = Await.result(response, Duration.Inf)
+    val actual = new String(res.values.head.bytes)
+
+    assertEquals(expected, actual.replaceAll("\\s+", ""))
+
+    val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
+    val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
+    inMemoryKvStore.create(directoryDataSetDataSet)
+    val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    Await.result(directoryPut, Duration.Inf)
+    val dirResponse =
+      inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), directoryDataSetDataSet))
+    val dirRes = Await.result(dirResponse, Duration.Inf)
+    val dirActual = new String(dirRes.values.head.bytes)
+
+    assertEquals(expected, dirActual.replaceAll("\\s+", ""))
   }
 
   def testTemporalFetch(): Unit = {
@@ -199,7 +245,7 @@ class FetcherTest extends TestCase {
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create("ZIPLINE_METADATA")
+    inMemoryKvStore.create(ZiplineMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
     val requests = todaysQueries.rdd
@@ -213,11 +259,11 @@ class FetcherTest extends TestCase {
     val chunkSize = 100
 
     def printFetcherStats(useJavaFetcher: Boolean,
-        requests: Array[Request],
-        count: Int,
-        chunkSize: Int,
-        qpsSum: Double,
-        latencySum: Double): Unit = {
+                          requests: Array[Request],
+                          count: Int,
+                          chunkSize: Int,
+                          qpsSum: Double,
+                          latencySum: Double): Unit = {
 
       val fetcherNameString = if (useJavaFetcher) "Java Fetcher" else "Scala Fetcher"
       println(s"""
@@ -235,13 +281,14 @@ class FetcherTest extends TestCase {
       val result = requests.iterator
         .grouped(chunkSize)
         .map { r =>
-          val responses = if (useJavaFetcher){
+          val responses = if (useJavaFetcher) {
             val javaResponse = javaFetcher.fetchJoin(r.asJava)
             FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
           } else {
             fetcher.fetchJoin(r)
           }
-          System.currentTimeMillis() -> responses }
+          System.currentTimeMillis() -> responses
+        }
         .flatMap {
           case (start, future) =>
             val result = Await.result(future, Duration(10000, MILLISECONDS))

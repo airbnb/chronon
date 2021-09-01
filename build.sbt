@@ -39,7 +39,8 @@ lazy val fetcher = project
   .settings(
     libraryDependencies ++= Seq(
       "org.apache.avro" % "avro" % "1.8.0",
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0"
+      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+      "com.jayway.jsonpath" % "json-path" % "2.6.0"
     )
   )
 

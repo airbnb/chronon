@@ -2,16 +2,18 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
+import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions._
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest, TimedValue}
 import ai.zipline.api.{StructType, _}
 import org.apache.avro.Schema
+import ai.zipline.fetcher.Fetcher._
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 // mixin class - with schema
 class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
@@ -66,40 +68,12 @@ class TTLCache[I, O](f: I => O,
   def force(i: I): O = cMap.put(i, nowFunc() -> f(i))._2
 }
 
-class MetadataStore(kvStore: KVStore, val dataset: String = "ZIPLINE_METADATA", timeoutMillis: Long) {
-  implicit val executionContext: ExecutionContext = kvStore.executionContext
-  lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
-    new JoinOps(
-      ThriftJsonCodec
-        .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
-  })
-
-  def putJoinConf(join: Join): Unit = {
-    kvStore.put(
-      PutRequest(s"joins/${join.metaData.name}".getBytes(Constants.UTF8),
-                 ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
-                 dataset))
-  }
-
-  lazy val getGroupByServingInfo: TTLCache[String, GroupByServingInfoParsed] =
-    new TTLCache[String, GroupByServingInfoParsed]({ name =>
-      val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
-      val metaData =
-        kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis)
-      println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
-      val groupByServingInfo = ThriftJsonCodec
-        .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
-      new GroupByServingInfoParsed(groupByServingInfo)
-    })
-}
-
 object Fetcher {
   case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
   case class Response(request: Request, values: Map[String, AnyRef])
 }
-import ai.zipline.fetcher.Fetcher._
 
-class Fetcher(kvStore: KVStore, metaDataSet: String = "ZIPLINE_METADATA", timeoutMillis: Long = 10000)
+class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(groupByServingInfoParsed: GroupByServingInfoParsed,
