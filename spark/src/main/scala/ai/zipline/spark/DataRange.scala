@@ -3,6 +3,7 @@ import ai.zipline.aggregator.windowing.TsUtils
 import ai.zipline.api.{Constants, Query, QueryUtils}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 sealed trait DataRange {
   def toTimePoints: Array[Long]
@@ -81,11 +82,10 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .map { step => PartitionRange(step.head, step.last) }
       .toSeq
 
-  def partitions: Array[String] =
+  def partitions: Seq[String] =
     Stream
       .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
-      .toArray
 
   def shift(days: Int): PartitionRange =
     PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))

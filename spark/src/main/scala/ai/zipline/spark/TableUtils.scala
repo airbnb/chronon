@@ -156,12 +156,12 @@ case class TableUtils(sparkSession: SparkSession) {
     val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
     val missingPartitions = outputMissing -- inputMissing
     println(s"""
-               |Unfilled range computation:                             
-               |   Output table: $outputTable
-               |   Missing output partitions: $outputMissing
-               |   Missing input partitions: $inputMissing
-               |   Unfilled Partitions: $missingPartitions
-               |""".stripMargin)
+                 |Unfilled range computation:                             
+                 |   Output table: $outputTable
+                 |   Missing output partitions: $outputMissing
+                 |   Missing input partitions: $inputMissing
+                 |   Unfilled Partitions: $missingPartitions
+                 |""".stripMargin)
     if (missingPartitions.isEmpty) return None
     Some(PartitionRange(missingPartitions.min, missingPartitions.max))
   }
