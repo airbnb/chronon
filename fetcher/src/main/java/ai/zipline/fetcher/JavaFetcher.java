@@ -7,13 +7,15 @@ import ai.zipline.fetcher.Fetcher.Request;
 import ai.zipline.fetcher.Fetcher.Response;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+
+import scala.collection.JavaConversions;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.concurrent.Future;
 import scala.compat.java8.FutureConverters;
 
 public class JavaFetcher  {
-  public static final Long DEFAULT_TIMEOUT = new Long(1000);
+  public static final Long DEFAULT_TIMEOUT = 10000L;
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis) {
@@ -40,7 +42,7 @@ public class JavaFetcher  {
     return FutureConverters
         .toJava(responses)
         .toCompletableFuture()
-        .thenApply(response -> scala.collection.JavaConversions.seqAsJavaList(response));
+        .thenApply(JavaConversions::seqAsJavaList);
   }
 
   public CompletableFuture<List<Response>> fetchGroupBys(List<Request> requests) {

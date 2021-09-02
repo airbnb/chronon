@@ -8,11 +8,15 @@ import java.time.{Instant, ZoneOffset}
 import java.util.{Locale, TimeZone}
 
 case class PartitionSpec(format: String, spanMillis: Long) {
-  private val partitionFormatter = DateTimeFormatter
-    .ofPattern(format, Locale.US)
-    .withZone(ZoneOffset.UTC)
-  val sdf = new SimpleDateFormat(format)
-  sdf.setTimeZone(TimeZone.getTimeZone("UTC"))
+  private def partitionFormatter =
+    DateTimeFormatter
+      .ofPattern(format, Locale.US)
+      .withZone(ZoneOffset.UTC)
+  private def sdf = {
+    val formatter = new SimpleDateFormat(format)
+    formatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+    formatter
+  }
 
   def epochMillis(partition: String): Long = {
     sdf.parse(partition).getTime

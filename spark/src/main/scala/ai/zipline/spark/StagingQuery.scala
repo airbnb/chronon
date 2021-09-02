@@ -18,9 +18,17 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
-    val stagingQueryUnfilledRange: PartitionRange =
+    val unfilledRange =
       tableUtils.unfilledRange(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
 
+    if (unfilledRange.isEmpty) {
+      println(s"""No unfilled range for $outputTable given
+           |start partition of ${stagingQueryConf.startPartition}
+           |end partition of $endPartition
+           |""".stripMargin)
+      return
+    }
+    val stagingQueryUnfilledRange = unfilledRange.get
     println(s"Staging Query unfilled range: $stagingQueryUnfilledRange")
     val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
     println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
