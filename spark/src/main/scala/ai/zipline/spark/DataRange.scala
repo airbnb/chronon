@@ -3,7 +3,6 @@ import ai.zipline.aggregator.windowing.TsUtils
 import ai.zipline.api.{Constants, Query, QueryUtils}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 sealed trait DataRange {
   def toTimePoints: Array[Long]
