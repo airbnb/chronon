@@ -81,12 +81,11 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .map { step => PartitionRange(step.head, step.last) }
       .toSeq
 
-  def partitions: Seq[String] = {
-    if (start > end) return Seq.empty[String]
+  def partitions: Array[String] =
     Stream
       .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
-  }
+      .toArray
 
   def shift(days: Int): PartitionRange =
     PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
