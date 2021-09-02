@@ -44,9 +44,12 @@ object CStream {
   def genPartitions(count: Int): Array[String] = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     Stream
-      .iterate(today) { Constants.Partition.before }
+      .iterate(today) {
+        Constants.Partition.before
+      }
       .take(count)
       .toArray
+  }
 
   class PartitionStream(count: Int) extends CStream[String] {
     val keys: Array[String] = genPartitions(count)
