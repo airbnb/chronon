@@ -53,7 +53,7 @@ def Aggregation(input_column: str = None,
                 windows: List[ttypes.Window] = None,
                 buckets: List[str] = None) -> ttypes.Aggregation:
     # Default to last
-    operation = operation if operation else Operation.LAST
+    operation = operation if operation != None else Operation.LAST
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
