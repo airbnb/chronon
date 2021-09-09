@@ -52,7 +52,8 @@ def Join(left: api.Source,
          online: bool = False,
          production: bool = False,
          output_namespace: str = None,
-         table_properties: Dict[str, str] = None) -> api.Join:
+         table_properties: Dict[str, str] = None,
+         env: Dict[str, Dict[str, str]] = None) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -98,7 +99,8 @@ def Join(left: api.Source,
         customJson=json.dumps(customJson),
         dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
         outputNamespace=output_namespace,
-        tableProperties=table_properties
+        tableProperties=table_properties,
+        modeToEnvMap=env
     )
 
     return api.Join(
