@@ -65,6 +65,10 @@ lazy val spark = project
       "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
       "org.rogach" %% "scallop" % "4.0.1"
     ),
+    cleanFiles ++= Seq(
+      baseDirectory.value / "spark-warehouse",
+      baseDirectory.value / "metastore_db"
+    ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
