@@ -144,7 +144,7 @@ class JoinTest {
         |     where user_name IS NOT null
         |         AND ts IS NOT NULL
         |         AND ds IS NOT NULL
-        |         AND ds >= '$dropStart'
+        |         AND ds >= '$start'
         |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user, 
