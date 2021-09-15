@@ -13,6 +13,8 @@ import java.util.concurrent.CompletableFuture;
 import scala.collection.JavaConversions;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
+import scala.collection.mutable.ArrayBuffer;
+import scala.collection.mutable.Buffer;
 import scala.concurrent.Future;
 import scala.compat.java8.FutureConverters;
 
@@ -45,12 +47,12 @@ public class JavaFetcher  {
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
-    List<Request> scalaRequests = new ArrayList<>();
+    ArrayBuffer<Request> scalaRequests = new ArrayBuffer<>();
     for (JavaRequest request : requests) {
       Request convertedRequest = request.toScalaRequest();
-      scalaRequests.add(convertedRequest);
+      scalaRequests.$plus$eq(convertedRequest);
     }
-    return JavaConverters.asScalaIteratorConverter(scalaRequests.iterator()).asScala().toSeq();
+    return scalaRequests.toSeq();
   }
 
   public CompletableFuture<List<Response>> fetchGroupBys(List<JavaRequest> requests) {
