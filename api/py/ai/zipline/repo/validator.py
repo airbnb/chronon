@@ -35,9 +35,10 @@ def extract_json_confs(obj_class: type, path: str) -> List[object]:
     result = []
     for sub_root, sub_dirs, sub_files in os.walk(path):
         for f in sub_files:
-            obj = file2thrift(os.path.join(sub_root, f), obj_class)
-            if is_valid_conf(obj):
-                result.append(obj)
+            if not f.startswith('.'):  # ignore hidden files - such as .DS_Store
+                obj = file2thrift(os.path.join(sub_root, f), obj_class)
+                if is_valid_conf(obj):
+                    result.append(obj)
     return result
 
 
