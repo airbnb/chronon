@@ -30,7 +30,9 @@ lazy val aggregator = project
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
-      "com.google.code.gson" % "gson" % "2.8.6"
+      "com.google.code.gson" % "gson" % "2.8.6" excludeAll (
+        ExclusionRule(organization = "org.ow2.asm")
+      )
     )
   )
 
@@ -40,7 +42,9 @@ lazy val fetcher = project
     libraryDependencies ++= Seq(
       "org.apache.avro" % "avro" % "1.8.0",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      "com.jayway.jsonpath" % "json-path" % "2.6.0"
+      "com.jayway.jsonpath" % "json-path" % "2.6.0" excludeAll (
+        ExclusionRule(organization = "org.ow2.asm")
+      )
     )
   )
 

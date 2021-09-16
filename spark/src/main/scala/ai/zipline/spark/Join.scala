@@ -285,7 +285,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       return finalResult
     }
 
-    val leftUnfilledRange = PartitionRange(earliestHoleOpt.get, endPartition)
+    val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), endPartition)
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = getJoinPartTableName(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
