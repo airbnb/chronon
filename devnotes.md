@@ -107,7 +107,7 @@ scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
 
 # Publishing project fat JAR to Artifactory
 
-0. Create MVN settings file under `~/mvn_settings.xml` in the repo root.
+0. Create MVN settings file `mvn_settings.xml` in the repo root.
 
 ```xml
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
