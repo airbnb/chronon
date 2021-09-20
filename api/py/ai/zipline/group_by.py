@@ -1,7 +1,9 @@
+import copy
+import json
+from typing import List, Optional, Union, Dict, Callable, Tuple
+
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
-import copy
-from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -118,7 +120,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             production: bool = DEFAULT_PRODUCTION,
             backfill_start_date: str = None,
             dependencies: List[str] = None,
-            env: Dict[str, Dict[str, str]] = None) -> ttypes.GroupBy:
+            env: Dict[str, Dict[str, str]] = None,
+            lag: int = 0) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -137,9 +140,18 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
-    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
+    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, modeToEnvMap=env)
+    custom_json = {
+        "lag": lag
+    }
+
+    metadata = ttypes.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(custom_json),
+        dependencies=deps,
+        modeToEnvMap=env)
 
     return ttypes.GroupBy(
         sources=updated_sources,
