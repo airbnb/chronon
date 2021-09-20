@@ -134,7 +134,11 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     return staging_query.metaData.name.replace('.', '_')
 
 
-def get_dependencies(src: api.Source, dependencies: List[str] = None, meta_data: api.MetaData = None, lag: int = 0) -> List[str]:
+def get_dependencies(
+        src: api.Source,
+        dependencies: List[str] = None,
+        meta_data: api.MetaData = None,
+        lag: int = 0) -> List[str]:
     if meta_data is not None:
         deps = meta_data.dependencies
     else:
