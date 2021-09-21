@@ -12,6 +12,7 @@ import ai.zipline.fetcher.{AvroUtils, Fetcher}
 import org.apache.avro.Schema
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.streaming.Trigger
 
 class GroupByStreaming(
     inputStream: DataFrame,
@@ -80,6 +81,7 @@ class GroupByStreaming(
           api.KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
       }
       .writeStream
+      .trigger(Trigger.ProcessingTime("60 seconds"))
       .outputMode("append")
       .foreach(new StreamingDataWriter(onlineImpl, groupByServingInfo, debug))
       .start()

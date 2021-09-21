@@ -21,12 +21,12 @@ object QueryUtils {
       case (Some(sels), Some(fills)) => (fills ++ sels)
       case (Some(sels), None)        => sels
       case (None, _) => {
-        assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
-               s"Please specify selects, when columns are being overriden is set")
+   /*     assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
+               s"Please specify selects, when columns are being overriden is set")*/
         Map("*" -> null)
       }
     }
-    val nonNullWheres = nonNullColumns.map(QueryUtils.generateNonNullFilterClause(finalSelects, _))
+    val nonNullWheres = nonNullColumns.flatMap(QueryUtils.generateNonNullFilterClause(finalSelects, _))
     val generatedWheres: Seq[String] = Option(wheres).map(_ ++ nonNullWheres).getOrElse(nonNullWheres) ++ additionalWheres
 
     s"""SELECT
@@ -80,10 +80,12 @@ object QueryUtils {
   private def generateNonNullFilterClause(
       selectClauses: Map[String, String],
       nonNullColumn: String
-  ): String = {
+  ): Option[String] = {
     val colName = selectClauses.get(nonNullColumn)
+    if (selectClauses == Map("*" -> null))
+      return None
     require(colName.isDefined, s"column $nonNullColumn is not present in select clauses $selectClauses")
-    s"${colName.get} IS NOT NULL"
+    Some(s"${colName.get} IS NOT NULL")
   }
 
 }

@@ -38,13 +38,12 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
-    val inputDF = groupBy.inputDf
-    val schema: StructType = StructType.from(
-      "input", toZiplineSchema(inputDF.schema))
+    val selected = groupBy.inputDf.filter(s"ds='$ds'")
+    println("put streaming")
     // for events this will select ds-1 <= ts < ds
     val inputStream = new InMemoryStream
     val groupByStreaming = new GroupByStreaming(
-      inputStream.getInMemoryStreamDF(spark, groupBy.inputDf, schema),
+      inputStream.getInMemoryStreamDF(spark, selected),
       spark,
       groupByConf,
       new MockOnlineImpl(kvStore, Map.empty))

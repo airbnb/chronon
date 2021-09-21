@@ -19,8 +19,8 @@ object KVStore {
 
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
-trait KVStore {
-  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newWorkStealingPool())
+trait KVStore extends Serializable {
+  @transient implicit lazy val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newWorkStealingPool())
 
   def create(dataset: String): Unit
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
@@ -76,7 +76,7 @@ trait KVStore {
   */
 case class Mutation(schema: StructType = null, before: Array[AnyRef] = null, after: Array[AnyRef] = null)
 
-trait Decoder {
+trait Decoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
 }
 

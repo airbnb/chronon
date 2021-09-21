@@ -93,3 +93,15 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
     database.put(dataset, new ConcurrentHashMap[Key, mutable.Buffer[(Version, Data)]])
   }
 }
+
+object InMemoryKvStore {
+  val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[
+    String, InMemoryKvStore]
+
+  def apply(testName: String, tableUtils: TableUtils): InMemoryKvStore = {
+    implicit val tu: TableUtils = tableUtils
+    val inMemoryKvStore = new InMemoryKvStore()
+    stores.put(testName, inMemoryKvStore)
+    inMemoryKvStore
+  }
+}
