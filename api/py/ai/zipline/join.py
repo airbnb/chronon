@@ -96,9 +96,8 @@ def Join(left: api.Source,
     if additional_env:
         customJson["additional_env"] = additional_env
 
-    customJson = {
-        "lag": lag
-    }
+    customJson["lag"] = lag
+
     metadata = api.MetaData(
         online=online,
         production=production,
