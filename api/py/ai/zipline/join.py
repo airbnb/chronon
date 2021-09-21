@@ -55,7 +55,6 @@ def Join(left: api.Source,
          output_namespace: str = None,
          table_properties: Dict[str, str] = None,
          env: Dict[str, Dict[str, str]] = None,
-         # todo: add lag for join job in the future if needed
          lag: int = 0) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
@@ -83,8 +82,8 @@ def Join(left: api.Source,
     right_sources = [join_part.groupBy.sources for join_part in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
-    left_dependencies = utils.get_dependencies(left, dependencies)
-    right_dependencies = [dep for source in right_sources for dep in utils.get_dependencies(source, dependencies)]
+    left_dependencies = utils.get_dependencies(left, dependencies, lag=lag)
+    right_dependencies = [dep for source in right_sources for dep in utils.get_dependencies(source, dependencies, lag=lag)]
 
     customJson = {
         "check_consistency": check_consistency
@@ -96,6 +95,9 @@ def Join(left: api.Source,
     if additional_env:
         customJson["additional_env"] = additional_env
 
+    customJson = {
+        "lag": lag
+    }
     metadata = api.MetaData(
         online=online,
         production=production,
