@@ -73,6 +73,14 @@ jobs:
                   path: /zipline/spark/target/test-reports
             - store_test_results:
                   path: /zipline/aggregator/target/test-reports
+            - run: |
+                  tar -czvf /tmp/spark-warehouse.tar.gz /zipline/spark/spark-warehouse
+                  tar -czvf /tmp/metastore_db.tar.gz /zipline/spark/metastore_db
+            # For reproducing failures.
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+            - store_artifacts:
+                  path: /tmp/metastore_db.tar.gz
 
     "Zipline Python Lint":
         executor: docker_baseimg_executor
