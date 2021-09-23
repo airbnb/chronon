@@ -66,8 +66,7 @@ lazy val spark = project
       "org.rogach" %% "scallop" % "4.0.1",
       "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
     ),
-    testOptions in Test += Tests.Setup(() => cleanSparkMeta),
-    testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
+    testOptions in Test += Tests.Setup(() => cleanSparkMeta)
   )
 
 exportJars := true
