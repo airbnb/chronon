@@ -1,9 +1,5 @@
 package ai.zipline.api
 
-import scala.collection.JavaConverters._
-
-import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-
 
 // utilized by both streaming and batch
 object QueryUtils {
@@ -21,8 +17,8 @@ object QueryUtils {
       case (Some(sels), Some(fills)) => (fills ++ sels)
       case (Some(sels), None)        => sels
       case (None, _) => {
-   /*     assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
-               s"Please specify selects, when columns are being overriden is set")*/
+        assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
+          s"Please specify selects, when columns are being overriden is set")
         Map("*" -> null)
       }
     }
@@ -32,27 +28,6 @@ object QueryUtils {
     s"""SELECT
        |  ${toProjections(finalSelects).mkString(",\n  ")}
        |FROM $from ${toWhereClause(generatedWheres ++ additionalWheres)}""".stripMargin
-  }
-
-  def buildStreamingQuery(
-      groupBy: GroupBy,
-      additionalFilterClauses: Seq[String] = Seq.empty
-  ): String = {
-    val streamingSource = groupBy.streamingSource.get
-    val query = streamingSource.query
-    val selects = Option(query.selects).map(_.asScala.toMap).orNull
-    val keys = groupBy.getKeyColumns.asScala
-    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val metaColumns: Map[String, String] =
-      Option(timeColumn).map { case c => Map(Constants.TimeColumn -> c) }.getOrElse(Map.empty)
-    QueryUtils.build(
-      selects,
-      Constants.StreamingInputTable,
-      Option(query.wheres).map(_.asScala).orNull,
-      metaColumns,
-      additionalWheres = additionalFilterClauses,
-      nonNullColumns = keys ++ Seq(Constants.TimeColumn)
-    )
   }
 
   private def toProjections(m: Map[String, String]) =
@@ -81,10 +56,9 @@ object QueryUtils {
       selectClauses: Map[String, String],
       nonNullColumn: String
   ): Option[String] = {
-    val colName = selectClauses.get(nonNullColumn)
     if (selectClauses == Map("*" -> null))
       return None
-    require(colName.isDefined, s"column $nonNullColumn is not present in select clauses $selectClauses")
+    val colName = selectClauses.get(nonNullColumn)
     Some(s"${colName.get} IS NOT NULL")
   }
 

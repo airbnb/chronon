@@ -23,7 +23,14 @@ import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
 
-import ai.zipline.spark.Conversions.toZiplineSchema
+import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
+
+object FetcherTest {
+
+  def buildInMemoryKVStore() = {
+    InMemoryKvStore("FetcherTest", { () => TableUtils(SparkSessionBuilder.build("FetcherTest", local = true)) })
+  }
+}
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
@@ -34,7 +41,7 @@ class FetcherTest extends TestCase {
 
   // TODO: Pull the code here into what streaming can use.
   def putStreaming(groupByConf: GroupByConf,
-                   kvStore: KVStore,
+                   kvStore: () => KVStore,
                    tableUtils: TableUtils,
                    ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
@@ -61,7 +68,7 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
-    val inMemoryKvStore = new InMemoryKvStore()
+    val inMemoryKvStore = buildInMemoryKVStore()
     val singleFileDataSet = ZiplineMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
@@ -92,7 +99,7 @@ class FetcherTest extends TestCase {
 
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = new InMemoryKvStore()
+    val inMemoryKvStore = buildInMemoryKVStore()
     @transient lazy val fetcher = new Fetcher(inMemoryKvStore)
     @transient lazy val javaFetcher = new JavaFetcher(inMemoryKvStore)
 
@@ -204,10 +211,10 @@ class FetcherTest extends TestCase {
 
     def serve(groupByConf: GroupByConf): Unit = {
       GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
-      inMemoryKvStore.bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
+      buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
       if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, inMemoryKvStore, tableUtils, today)
+        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, today)
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))

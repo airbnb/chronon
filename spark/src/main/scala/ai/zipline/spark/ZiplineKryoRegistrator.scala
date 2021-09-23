@@ -33,6 +33,7 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.datasources.BasicWriteTaskStats",
       "org.apache.spark.sql.execution.datasources.WriteTaskResult",
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex",
+      "org.apache.spark.sql.execution.streaming.sources.ForeachWriterCommitMessage$",
       "org.apache.spark.sql.types.Metadata",
       "ai.zipline.spark.KeyWithHash",
       "ai.zipline.aggregator.windowing.BatchIr",

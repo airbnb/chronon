@@ -5,13 +5,14 @@ import KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
 import org.apache.spark.sql.Row
 import org.jboss.netty.util.internal.ConcurrentHashMap
-
 import java.util.Base64
-import java.util.function.BiFunction
+import java.util.function
+
 import scala.collection.{mutable, parallel}
 import scala.concurrent.Future
 
-class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
+
+class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
@@ -31,7 +32,7 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
       requests.map { req =>
         val values = Option(
           database
-            .get(req.dataset) // table
+            .get(req.dataset)// table
             .get(encode(req.keyBytes))
         ) // values of key
         .map { values =>
@@ -45,7 +46,7 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   }
 
   private def putFunc(newData: (Version, Data)) =
-    new BiFunction[Key, VersionedData, VersionedData] {
+    new function.BiFunction[Key, VersionedData, VersionedData] {
       override def apply(t: Key, u: VersionedData): VersionedData = {
         val result = if (u == null) {
           mutable.Buffer.empty[(Version, Data)]
@@ -70,10 +71,11 @@ class InMemoryKvStore(implicit tableUtils: TableUtils) extends KVStore {
   // the table is assumed to be encoded with two columns - `key` and `value` as Array[Bytes]
   // one of the keys should be "group_by_serving_info" as bytes with value as TSimpleJsonEncoded String
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
+    val tableUtilInst = tableUtils()
     val partitionFilter =
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
-    tableUtils.sql(s"SELECT * FROM $sourceOfflineTable").show()
-    val df = tableUtils.sql(s"""SELECT key_bytes, value_bytes, unix_timestamp(ds, 'yyyy-MM-dd') * 1000 as ts 
+    tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show()
+    val df = tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, unix_timestamp(ds, 'yyyy-MM-dd') * 1000 as ts
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd
@@ -98,10 +100,9 @@ object InMemoryKvStore {
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[
     String, InMemoryKvStore]
 
-  def apply(testName: String, tableUtils: TableUtils): InMemoryKvStore = {
-    implicit val tu: TableUtils = tableUtils
-    val inMemoryKvStore = new InMemoryKvStore()
-    stores.put(testName, inMemoryKvStore)
-    inMemoryKvStore
+  def apply(testName: String, tableUtils: () =>TableUtils): InMemoryKvStore = {
+    stores.computeIfAbsent(testName, new function.Function[String, InMemoryKvStore] {
+      override def apply(name: String): InMemoryKvStore = new InMemoryKvStore((tableUtils))
+    })
   }
 }

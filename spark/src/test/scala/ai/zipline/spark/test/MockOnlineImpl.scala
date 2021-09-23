@@ -29,7 +29,7 @@ class MockDecoder(schema: StructType) extends Decoder {
   }
 }
 
-class MockOnlineImpl(kvStore: KVStore, userConf: Map[String, String]) extends OnlineImpl(userConf = userConf) {
+class MockOnlineImpl(kvStore: () => KVStore, userConf: Map[String, String]) extends OnlineImpl(userConf = userConf) {
 
   override def genStreamDecoder(inputSchema: StructType): Decoder = {
     new MockDecoder(inputSchema)
@@ -39,7 +39,7 @@ class MockOnlineImpl(kvStore: KVStore, userConf: Map[String, String]) extends On
   override def batchInputAvroSchemaToStreaming(batchSchema: StructType): StructType = batchSchema
 
   override def genKvStore: KVStore = {
-    kvStore
+    kvStore()
   }
 }
 
