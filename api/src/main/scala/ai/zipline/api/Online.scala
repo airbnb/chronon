@@ -29,13 +29,14 @@ trait KVStore {
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
-  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
+  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.headOption.orNull)
+  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.headOption.getOrElse(false))
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): String = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
+    assert(response.latest.isDefined, s"Failed to fetch key $key from dataset $dataset")
     new String(response.latest.get.bytes, Constants.UTF8)
   }
 }
