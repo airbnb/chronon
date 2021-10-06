@@ -19,7 +19,8 @@ class GroupByStreaming(
     groupByConf: api.GroupBy,
     onlineImpl: api.OnlineImpl,
     additionalFilterClauses: Seq[String] = Seq.empty,
-    debug: Boolean = false) extends Serializable {
+    debug: Boolean = false,
+    mockWrites: Boolean = false) extends Serializable {
 
   private def buildStreamingQuery(
       groupBy: api.GroupBy,
@@ -107,7 +108,7 @@ class GroupByStreaming(
       }
       .writeStream
       .outputMode("append")
-      .foreach(new StreamingDataWriter(onlineImpl, groupByServingInfo, context, debug))
+      .foreach(new StreamingDataWriter(onlineImpl, groupByServingInfo, context, debug, mockWrites))
       .start()
   }
 }

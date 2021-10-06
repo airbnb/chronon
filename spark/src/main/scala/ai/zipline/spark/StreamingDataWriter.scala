@@ -1,17 +1,22 @@
 package ai.zipline.spark
 
 import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.api.{KVStore, OnlineImpl, StructType}
-import ai.zipline.fetcher.{AvroCodec, GroupByServingInfoParsed, RowConversions}
+import ai.zipline.lib.Metrics.Context
+import ai.zipline.api.{KVStore, OnlineImpl}
+import ai.zipline.fetcher.{AvroCodec, GroupByServingInfoParsed}
 import ai.zipline.lib.StreamingMetrics
 import org.apache.spark.sql.ForeachWriter
 import java.util.Base64
 
-import ai.zipline.lib.Metrics.Context
+import com.google.gson.Gson
 
 
-
-class StreamingDataWriter(onlineImpl: OnlineImpl, groupByServingInfoParsed: GroupByServingInfoParsed, context: Context, debug: Boolean = false) extends ForeachWriter[PutRequest] {
+class StreamingDataWriter(
+    onlineImpl: OnlineImpl,
+    groupByServingInfoParsed: GroupByServingInfoParsed,
+    context: Context,
+    debug: Boolean = false,
+    mockWrites: Boolean = false) extends ForeachWriter[PutRequest] {
 
   var kvStore : KVStore = _
 
@@ -33,15 +38,25 @@ class StreamingDataWriter(onlineImpl: OnlineImpl, groupByServingInfoParsed: Grou
     val valueB64 = Base64.getEncoder.encodeToString(input.valueBytes)
     val keys = decodeAvroRecord(input.keyBytes, groupByServingInfoParsed.keyCodec, input.tsMillis.get)
     val values = decodeAvroRecord(input.valueBytes, groupByServingInfoParsed.selectedCodec, input.tsMillis.get)
-    println(s"Writing key:[$keyB64],  value:[$valueB64], ts:[${input.tsMillis.get}] keys:[${keys.mkString(", ")}] values:[${values.mkString(", ")}]")
+    val gson = new Gson()
+    println(s"""
+        | Writing keyBytes: $keyB64
+        | valueBytes: $valueB64
+        | ts:        ${input.tsMillis.get}
+        | keys:    ${gson.toJson(keys)}
+        | values: ${gson.toJson(values)}""".stripMargin)
   }
 
   override def process(putRequest: PutRequest): Unit = {
     if (debug) print(putRequest)
-    kvStore.put(putRequest)
-    putRequest.tsMillis.map {
-      case ts: Long => StreamingMetrics.Egress.reportLatency(System.currentTimeMillis() - ts,
-        metricsContext = context)
+    if (mockWrites) {
+      println("Skipping writing to Mussel in mock writes mode")
+    } else {
+      kvStore.put(putRequest)
+      putRequest.tsMillis.map {
+        case ts: Long => StreamingMetrics.Egress.reportLatency(System.currentTimeMillis() - ts,
+          metricsContext = context)
+      }
     }
   }
 

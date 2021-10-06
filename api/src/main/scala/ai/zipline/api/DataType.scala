@@ -27,23 +27,6 @@ case class MapType(keyType: DataType, valueType: DataType) extends DataType
 
 case class StructField(name: String, fieldType: DataType)
 
-object DataType {
-   def of(x: Any): DataType = x match {
-    case _: String => StringType
-    case _: Boolean => BooleanType
-    case _: Byte => ByteType
-    case _: Short => ShortType
-    case _: Int => IntType
-    case _: Long => LongType
-    case _: Float => FloatType
-    case _: Double => DoubleType
-    case arr: Array[Any] => ListType(of(arr.headOption.orNull))
-    case map: Map[Any, Any] => MapType(of(map.keys.headOption.orNull), of(map.values.headOption.orNull))
-    // TODO: Add support for struct
-    case _ => throw new Exception(s"Unsupported type ${x.getClass.toString} for object ${x.toString}")
-  }
-}
-
 // maps to Array[Any]
 case class StructType(name: String, fields: Array[StructField]) extends DataType with Seq[StructField] {
   def unpack: Seq[(String, DataType)] = fields.map { field => field.name -> field.fieldType }

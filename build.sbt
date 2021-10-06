@@ -4,11 +4,8 @@ ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark)
-  .settings(
-    name := "zipline",
-    skip in publish := true
-  )
+  .aggregate(api, aggregator, spark, fetcher)
+  .settings(name := "zipline")
 
 lazy val api = project
   .settings(
@@ -76,13 +73,6 @@ lazy val spark = project
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
-
-artifact in (Compile, assembly) := {
-  val art = (artifact in (Compile, assembly)).value
-  art.withClassifier(Some("assembly"))
-}
-
-addArtifact(artifact in (Compile, assembly), assembly)
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b
