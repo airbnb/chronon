@@ -8,7 +8,7 @@ import org.jboss.netty.util.internal.ConcurrentHashMap
 import java.util.Base64
 import java.util.function
 
-import scala.collection.{mutable, parallel}
+import scala.collection.mutable
 import scala.concurrent.Future
 
 
@@ -32,7 +32,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       requests.map { req =>
         val values = Option(
           database
-            .get(req.dataset)// table
+            .get(req.dataset) // table
             .get(encode(req.keyBytes))
         ) // values of key
         .map { values =>
@@ -100,9 +100,12 @@ object InMemoryKvStore {
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[
     String, InMemoryKvStore]
 
-  def apply(testName: String, tableUtils: () =>TableUtils): InMemoryKvStore = {
+  // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
+  // across them. Since SparkContext is not serializable,  we wrap TableUtils that has SparkContext
+  // in a closure and pass it around.
+  def apply(testName: String, tableUtils: () => TableUtils): InMemoryKvStore = {
     stores.computeIfAbsent(testName, new function.Function[String, InMemoryKvStore] {
-      override def apply(name: String): InMemoryKvStore = new InMemoryKvStore((tableUtils))
+      override def apply(name: String): InMemoryKvStore = new InMemoryKvStore(tableUtils)
     })
   }
 }

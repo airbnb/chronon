@@ -4,11 +4,10 @@ package ai.zipline.spark
 import scala.collection.JavaConverters._
 
 import ai.zipline.api
-import ai.zipline.api.{Constants, QueryUtils}
-import org.apache.spark.sql.{Dataset, Encoders, Row, SparkSession}
+import ai.zipline.api.{Constants, Mutation, QueryUtils}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
 import ai.zipline.fetcher.Fetcher
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.DataFrame
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.lib.Metrics
 
@@ -22,25 +21,21 @@ class GroupByStreaming(
     debug: Boolean = false,
     mockWrites: Boolean = false) extends Serializable {
 
-  private def buildStreamingQuery(
-      groupBy: api.GroupBy,
-      additionalFilterClauses: Seq[String] = Seq.empty
-  ): String = {
-    val streamingSource = groupBy.streamingSource.get
+  private def buildStreamingQuery(): String = {
+    val streamingSource = groupByConf.streamingSource.get
     val query = streamingSource.query
     val selects = Option(query.selects).map(_.asScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
     val fillIfAbsent = if (selects == null)
       null
-    else Option(timeColumn).map { case c => Map(Constants.TimeColumn -> c) }.getOrElse(Map.empty)
+    else Option(timeColumn).map(c => Map(Constants.TimeColumn -> c)).getOrElse(Map.empty)
 
-    val keys = groupBy.getKeyColumns.asScala
+    val keys = groupByConf.getKeyColumns.asScala
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
-      Option(query.wheres).map(_.asScala).orNull,
+      Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ additionalFilterClauses      ,
       fillIfAbsent = fillIfAbsent,
-      additionalWheres = additionalFilterClauses,
       nonNullColumns = keys ++ Seq(Constants.TimeColumn)
     )
   }
@@ -55,12 +50,12 @@ class GroupByStreaming(
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
-    val streamingQuery = buildStreamingQuery(groupByConf, additionalFilterClauses)
+    val streamingQuery = buildStreamingQuery()
 
     val context = Metrics.Context(groupBy = groupByConf.getMetaData.getName)
 
     import session.implicits._
-    implicit val structTypeEncoder = Encoders.kryo[api.Mutation]
+    implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[api.Mutation]
 
     val deserialized: Dataset[api.Mutation] = inputStream
       .as[Array[Byte]]
@@ -68,7 +63,7 @@ class GroupByStreaming(
         record =>
           decoder.decode(record)
       }
-      .filter( mutation => mutation.before != mutation.after)
+      .filter( mutation => !(mutation.before sameElements mutation.after))
 
     println(
       s"""

@@ -1,7 +1,6 @@
 package ai.zipline.spark.test
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream}
-import java.nio.charset.StandardCharsets
+import java.io.{ByteArrayInputStream, InputStream}
 
 import ai.zipline.api.{Decoder, KVStore, Mutation, OnlineImpl, StructType}
 import ai.zipline.fetcher.AvroUtils
@@ -9,14 +8,13 @@ import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
 import org.apache.avro.specific.SpecificDatumReader
-import org.apache.spark.sql.execution.command.ResetCommand.output
 
 class MockDecoder(schema: StructType) extends Decoder {
 
   private def byteArrayToAvro(avro: Array[Byte], schema: Schema): GenericRecord = {
     val reader = new SpecificDatumReader[GenericRecord](schema)
     val input: InputStream = new ByteArrayInputStream(avro)
-    val decoder: BinaryDecoder = DecoderFactory.get().binaryDecoder(input, null);
+    val decoder: BinaryDecoder = DecoderFactory.get().binaryDecoder(input, null)
     reader.read(null, decoder)
   }
 

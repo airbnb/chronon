@@ -53,9 +53,10 @@ class StreamingDataWriter(
       println("Skipping writing to Mussel in mock writes mode")
     } else {
       kvStore.put(putRequest)
-      putRequest.tsMillis.map {
-        case ts: Long => StreamingMetrics.Egress.reportLatency(System.currentTimeMillis() - ts,
-          metricsContext = context)
+      putRequest.tsMillis.foreach {
+        ts: Long =>
+          StreamingMetrics.Egress.reportLatency(System.currentTimeMillis() - ts,
+            metricsContext = context)
       }
     }
   }

@@ -14,7 +14,6 @@ object KVStore {
     def latest: Option[TimedValue] = if (values.isEmpty) None else Some(values.maxBy(_.millis))
   }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
-
 }
 
 // the main system level api for key value storage

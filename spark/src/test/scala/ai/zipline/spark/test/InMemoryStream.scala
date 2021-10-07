@@ -1,8 +1,7 @@
 package ai.zipline.spark.test
 
-import ai.zipline.api.{Mutation, StructType}
+import ai.zipline.api.StructType
 import ai.zipline.fetcher.AvroUtils
-import ai.zipline.spark.Conversions
 import ai.zipline.spark.Conversions.toZiplineSchema
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
@@ -24,8 +23,7 @@ class InMemoryStream {
   writer.write(gr, encoder)
   encoder.flush()
   out.close()
-
-  out.toByteArray()
+  out.toByteArray
 }
 
   // encode input as avro byte array and insert into memory stream.

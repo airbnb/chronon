@@ -7,17 +7,15 @@ object StreamingMetrics {
   object Name {
     val Stream = "stream"
     val RowCount = "row_count"
-    val V21prefix = "v21"
 
-    val Egress = s"$V21prefix.${Stream}_egress"
+    val Egress = s"${Stream}_egress"
     val EgressDataSize = s"$Egress.data_size_bytes"
     val EgressLatencyMillis = s"$Egress.latency_millis"
     val EgressRowCount = s"$Egress.$RowCount"
 
-    val Ingress = s"$V21prefix${Stream}_ingress"
+    val Ingress = s"${Stream}_ingress"
     val IngressRowCount = s"$Ingress.$RowCount"
     val IngressDataSize = s"$Ingress.data_size_bytes"
-
   }
 
 

@@ -9,12 +9,10 @@ object QueryUtils {
             from: String,
             wheres: Seq[String],
             fillIfAbsent: Map[String, String] = null,
-            nonNullColumns: Seq[String] = Seq.empty,
-            additionalWheres: Seq[String] = Seq.empty
-  ): String = {
+            nonNullColumns: Seq[String] = Seq.empty): String = {
 
     val finalSelects = (Option(selects), Option(fillIfAbsent)) match {
-      case (Some(sels), Some(fills)) => (fills ++ sels)
+      case (Some(sels), Some(fills)) => fills ++ sels
       case (Some(sels), None)        => sels
       case (None, _) => {
         assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
@@ -22,12 +20,21 @@ object QueryUtils {
         Map("*" -> null)
       }
     }
-    val nonNullWheres = nonNullColumns.flatMap(QueryUtils.generateNonNullFilterClause(finalSelects, _))
-    val generatedWheres: Seq[String] = Option(wheres).map(_ ++ nonNullWheres).getOrElse(nonNullWheres) ++ additionalWheres
+
+    val nonNullWheres: Seq[String] = nonNullColumns.flatMap {
+      col =>
+        if (Option(selects).isEmpty) None
+        else {
+          assert(finalSelects.contains(col),
+            s"Specified Non-Null column $col does not exist in Selects: ${finalSelects.mkString(", ")}")
+          Some(finalSelects(col))
+        }
+    }
+    val generatedWheres: Seq[String] = Option(wheres).map(_ ++ nonNullWheres).getOrElse(nonNullWheres)
 
     s"""SELECT
        |  ${toProjections(finalSelects).mkString(",\n  ")}
-       |FROM $from ${toWhereClause(generatedWheres ++ additionalWheres)}""".stripMargin
+       |FROM $from ${toWhereClause(generatedWheres)}""".stripMargin
   }
 
   private def toProjections(m: Map[String, String]) =
@@ -51,15 +58,4 @@ object QueryUtils {
       }
       .getOrElse("")
   }
-
-  private def generateNonNullFilterClause(
-      selectClauses: Map[String, String],
-      nonNullColumn: String
-  ): Option[String] = {
-    if (selectClauses == Map("*" -> null))
-      return None
-    val colName = selectClauses.get(nonNullColumn)
-    Some(s"${colName.get} IS NOT NULL")
-  }
-
 }

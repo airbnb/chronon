@@ -2,11 +2,11 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.KVStore.{GetRequest, PutRequest}
+import ai.zipline.api.Extensions.GroupByOps
+import ai.zipline.api.KVStore.GetRequest
 import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
 import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.{Fetcher, GroupByServingInfoParsed, JavaFetcher, JavaRequest, MetadataStore}
+import ai.zipline.fetcher.{Fetcher, JavaFetcher, JavaRequest, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -27,7 +27,7 @@ import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 
 object FetcherTest {
 
-  def buildInMemoryKVStore() = {
+  def buildInMemoryKVStore(): InMemoryKvStore = {
     InMemoryKvStore("FetcherTest", { () => TableUtils(SparkSessionBuilder.build("FetcherTest", local = true)) })
   }
 }
@@ -45,9 +45,8 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
-    val selected = groupBy.inputDf.filter(s"ds='$ds'")
-    println("put streaming")
     // for events this will select ds-1 <= ts < ds
+    val selected = groupBy.inputDf.filter(s"ds='$ds'")
     val inputStream = new InMemoryStream
     val groupByStreaming = new GroupByStreaming(
       inputStream.getInMemoryStreamDF(spark, selected),

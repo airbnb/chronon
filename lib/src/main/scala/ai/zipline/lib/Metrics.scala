@@ -9,7 +9,6 @@ object Metrics {
   val statsd: StatsDClient = new NonBlockingStatsDClient("zipline", "localhost", 8125)
 
   object Tag {
-
     val GroupBy = "group_by"
     val Join = "join"
     val Streaming = "streaming"
@@ -22,6 +21,7 @@ object Metrics {
     val Team = "team"
     val Exception = "exception"
   }
+
   case class Context(join: String = null,
                      groupBy: String = null,
                      production: Boolean = false,
