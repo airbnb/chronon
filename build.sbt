@@ -2,6 +2,7 @@ import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
+ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark, fetcher)
@@ -59,8 +60,10 @@ def cleanSparkMeta: Unit = {
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"), fetcher, lib)
   .settings(
-    mainClass in (Compile, run) := Some("ai.zipline.spark.Join"),
-    assemblyJarName in assembly := "zipline-spark.jar",
+    assembly / test := {},
+    mainClass in (Compile, run) := Some(
+      "ai.zipline.spark.Join"
+    ),
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
@@ -73,6 +76,8 @@ lazy val spark = project
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
+
+exportJars := true
 
 // TODO add benchmarks - follow this example
 // https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b

@@ -31,7 +31,7 @@ class StreamingDataWriter(
 
   def print(input: PutRequest): Unit = {
     if (input.tsMillis.isEmpty) {
-      println("no ts defined")
+      println("ts is not defined")
       return
     }
     val keyB64 = Base64.getEncoder.encodeToString(input.keyBytes)
@@ -40,17 +40,17 @@ class StreamingDataWriter(
     val values = decodeAvroRecord(input.valueBytes, groupByServingInfoParsed.selectedCodec, input.tsMillis.get)
     val gson = new Gson()
     println(s"""
-        | Writing keyBytes: $keyB64
-        | valueBytes: $valueB64
-        | ts:        ${input.tsMillis.get}
-        | keys:    ${gson.toJson(keys)}
-        | values: ${gson.toJson(values)}""".stripMargin)
+        | Writing keyBytes:	$keyB64
+        | valueBytes:	$valueB64
+        | ts:	${input.tsMillis.get}
+        | keys:	${gson.toJson(keys)}
+        | values:	${gson.toJson(values)}""".stripMargin)
   }
 
   override def process(putRequest: PutRequest): Unit = {
     if (debug) print(putRequest)
     if (mockWrites) {
-      println("Skipping writing to Mussel in mock writes mode")
+      println("Skipping writing to KVStore in mock writes mode")
     } else {
       kvStore.put(putRequest)
       putRequest.tsMillis.foreach {
