@@ -30,11 +30,15 @@ class GroupByStreaming(
       null
     else Option(timeColumn).map(c => Map(Constants.TimeColumn -> c)).getOrElse(Map.empty)
 
+    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) 
+    val keyWheres = keys.map(key => s"($key is NOT NULL)").mkString(" OR ")
+    val timeWhere = s"${Constants.TimeColumn} is NOT NULL"
+   
     val keys = groupByConf.getKeyColumns.asScala
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
-      Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ additionalFilterClauses      ,
+      baseWheres ++ additionalWheres ++ keyWheres ++ timeWhere,
       fillIfAbsent = fillIfAbsent,
       nonNullColumns = keys ++ Seq(Constants.TimeColumn)
     )
