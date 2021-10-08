@@ -26,21 +26,19 @@ class GroupByStreaming(
     val query = streamingSource.query
     val selects = Option(query.selects).map(_.asScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val fillIfAbsent = if (selects == null)
-      null
-    else Option(timeColumn).map(c => Map(Constants.TimeColumn -> c)).getOrElse(Map.empty)
-
-    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) 
-    val keyWheres = keys.map(key => s"($key is NOT NULL)").mkString(" OR ")
-    val timeWhere = s"${Constants.TimeColumn} is NOT NULL"
-   
+    val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
     val keys = groupByConf.getKeyColumns.asScala
+
+    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+    val keyWhereOption = Option(selects).map(
+      selectsMap => keys.map(key => s"(${selectsMap(key)} is NOT NULL)").mkString(" OR "))
+    val timeWheres = Seq(s"$timeColumn is NOT NULL")
+   
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
-      baseWheres ++ additionalWheres ++ keyWheres ++ timeWhere,
-      fillIfAbsent = fillIfAbsent,
-      nonNullColumns = keys ++ Seq(Constants.TimeColumn)
+      baseWheres ++ additionalFilterClauses ++ timeWheres ++ keyWhereOption,
+      fillIfAbsent = fillIfAbsent
     )
   }
 

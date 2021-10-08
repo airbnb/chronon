@@ -13,6 +13,8 @@ import org.apache.spark.sql.execution.streaming.MemoryStream
 
 class InMemoryStream {
 
+  private val MemoryStreamID = 42
+
   private def encode(schema: org.apache.avro.Schema)(row: Row): Array[Byte] = {
   val gr: GenericRecord = new GenericData.Record(schema)
   row.schema.fieldNames.foreach(name => gr.put(name, row.getAs(name)))
@@ -31,7 +33,7 @@ class InMemoryStream {
     val schema: StructType = StructType.from("input", toZiplineSchema(inputDf.schema))
     val avroSchema = AvroUtils.fromZiplineSchema(schema)
     import spark.implicits._
-    val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](42, spark.sqlContext)
+    val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](MemoryStreamID, spark.sqlContext)
     input.addData(
       inputDf.collect.map {
         row: Row =>

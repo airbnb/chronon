@@ -45,7 +45,7 @@ mvn_deploy() {
     -DrepositoryId=$REPO_ID
 }
 
-mvn_deploy spark_uber_2.11 spark/target/scala-2.11/spark-assembly-0.1-SNAPSHOT.jar
-mvn_deploy fetcher_2.11 fetcher/target/scala-2.11/fetcher_2.11-0.1-SNAPSHOT.jar
-mvn_deploy api_2.11 api/target/scala-2.11/api_2.11-0.1-SNAPSHOT.jar
-mvn_deploy aggregator_2.11 aggregator/target/scala-2.11/aggregator_2.11-0.1-SNAPSHOT.jar
+mvn_deploy spark_uber_2.11 spark/target/scala-2.11/spark-assembly-0.1.0-SNAPSHOT.jar
+mvn_deploy fetcher_2.11 fetcher/target/scala-2.11/fetcher_2.11-0.1.0-SNAPSHOT.jar
+mvn_deploy api_2.11 api/target/scala-2.11/api_2.11-0.1.0-SNAPSHOT.jar
+mvn_deploy aggregator_2.11 aggregator/target/scala-2.11/aggregator_2.11-0.1.0-SNAPSHOT.jar

@@ -44,7 +44,7 @@ object Metrics {
     def toTags(tags: (String, Any)*): Seq[String] = {
       assert(join != null || groupBy != null,
         "Either Join, groupBy should be set.")
-      val result = mutable. HashMap.empty[String, String]
+      val result = mutable.HashMap.empty[String, String]
       if (join != null) {
         result.update(Tag.Join, join)
       }
