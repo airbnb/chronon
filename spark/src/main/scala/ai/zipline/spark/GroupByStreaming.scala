@@ -65,7 +65,7 @@ class GroupByStreaming(
         record =>
           decoder.decode(record)
       }
-      .filter( mutation => !(mutation.before sameElements mutation.after))
+      .filter( mutation => mutation.before != mutation.after)
 
     println(
       s"""
