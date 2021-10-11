@@ -139,6 +139,31 @@ git tag -a -m '<tag message>' release-zl-X.X.X
 ./push_to_artifactory.sh <tag-message>
 ```
 
+### Using Maven local repository to test Zipline changes with your local treehouse changes
+
+0. Make sure `mvn` is on your `PATH` e.g. `export PATH=/opt/apache-maven-3.8.2/bin:$PATH`
+
+1. Push JARs to local Maven local repository
+``` shell
+./push_to_mvn_local.sh
+```
+
+2. Point to local JARs in Maven local repository in your `build.gradle` file e.g.
+
+``` shell
+dependencies {
+    ...
+    implementation 'ai.zipline:spark_uber_2.11:local'
+```
+
+3. Add Maven local repository to your `build.gradle` file's `repositories` (remove this before checking in)
+
+``` shell
+repositories {
+  mavenLocal()
+}
+ ```
+
 ### Install specific version of thrift
 ```shell
 brew tap-new $USER/local-thrift
