@@ -10,6 +10,7 @@ def Query(selects: Dict[str, str] = None,
           end_partition: str = None,
           time_column: str = None,
           setups: List[str] = [],
+          dependencies: List[str] = [],
           mutation_time_column: str = None,
           reversal_column: str = None) -> api.Query:
 
@@ -21,7 +22,8 @@ def Query(selects: Dict[str, str] = None,
         time_column,
         setups,
         mutation_time_column,
-        reversal_column)
+        reversal_column,
+        dependencies)
 
 
 def select(*args, **kwargs):

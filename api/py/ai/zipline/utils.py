@@ -146,30 +146,33 @@ def get_dependencies(
     ds_string = "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag)
     table = get_table(src)
     query = get_query(src)
-    if deps:
-        result = [{
-            "name": wait_for_name(dep, table),
-            "spec": dep,
+    result = []
+    combined_deps = (deps or [f"{table}/ds={ds_string}"]) + (query.dependencies or [])
+    # spec does not specify table if the first spec has "="
+    specs = [f"{table}/{dep}" if "=" in dep.split('/')[0] else dep for dep in combined_deps]
+    result = [{
+            "name": safe_name(spec),
+            "spec": spec,
             "start": query.startPartition,
             "end": query.endPartition
-        } for dep in deps]
-    else:
-        result = [{
-            "name": f"wait_for_{table}_ds",
-            "spec": f"{table}/ds={ds_string}",
-            "start": query.startPartition,
-            "end": query.endPartition
-        }]
+        } for spec in specs]
     return [json.dumps(res) for res in result]
-
-
-def wait_for_name(dep, table):
-    replace_nonalphanumeric = re.sub('[^a-zA-Z0-9]', '_', dep)
-    name = f"wait_for_{table}_{replace_nonalphanumeric}"
-    return re.sub('_+', '_', name).rstrip('_')
 
 
 def dedupe_in_order(seq):
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not (x in seen or seen_add(x))]
+
+
+def safe_name(dep):
+    time_parts = ["ds", "ts", "hr"]
+
+    def safe_part(p):
+        return not any([
+                p.startswith("{}=".format(time_part))
+                for time_part in time_parts
+            ])
+    return "__".join(filter(safe_part, dep.split("/"))).replace(".", "__")
+    safe_name = "__".join(filter(safe_part, dep.split("/")))
+    return re.sub("[^A-Za-z0-9_-.]", "__", safe_name)

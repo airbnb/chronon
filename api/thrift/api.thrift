@@ -13,6 +13,8 @@ struct Query {
     6: optional list<string> setups = []
     7: optional string mutationTimeColumn
     8: optional string reversalColumn
+    // Used to specify custom dependencies for online offline consistency query.
+    9: optional list<string> dependencies
 }
 
 
