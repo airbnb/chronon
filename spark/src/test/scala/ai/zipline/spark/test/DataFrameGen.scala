@@ -52,11 +52,13 @@ object DataFrameGen {
                 count: Int,
                 partitions: Int,
                 mutationProbability: Double,
-                mutationColumnIdx: Int): (DataFrame, DataFrame) = {
+                mutationColumnIdx: Int,
+                keyColumnName: String = "listing_id"): (DataFrame, DataFrame) = {
     val mutationColumn = columns(mutationColumnIdx)
     // Randomly generated some entity data, store them as inserts w/ mutation_ts = ts and partition = dsOf[ts].
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
-
+      .withColumn("created_at", col(Constants.TimeColumn))
+      .withColumn("updated_at", col(Constants.TimeColumn))
     val withInserts = generated
       .withColumn(Constants.ReversalColumn, lit(false))
       .withColumn(Constants.MutationTimeColumn, col(Constants.TimeColumn))
@@ -105,7 +107,7 @@ object DataFrameGen {
       .dropDuplicates()
 
     // Given expanded events aggregate data such that the snapshot data is consistent with the mutations from the day.
-    val aggregator = new SnapshotAggregator(expandedEventsDf.schema, mutationColumn.name, "listing_id")
+    val aggregator = new SnapshotAggregator(expandedEventsDf.schema, mutationColumn.name, keyColumnName)
     val snapshotRdd = expandedEventsDf.rdd
       .keyBy(aggregator.aggregatorKey(_))
       .aggregateByKey(aggregator.init)(aggregator.update, aggregator.merge)

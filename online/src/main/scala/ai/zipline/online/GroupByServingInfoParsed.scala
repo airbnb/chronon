@@ -2,7 +2,7 @@ package ai.zipline.online
 
 import ai.zipline.aggregator.windowing.SawtoothOnlineAggregator
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.api.{Constants, GroupByServingInfo, StructType}
+import ai.zipline.api.{Constants, GroupByServingInfo, StructField, StructType, DataModel}
 import org.apache.avro.Schema
 
 import scala.collection.JavaConverters.asScalaBufferConverter
@@ -58,5 +58,35 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
 
   def selectedZiplineSchema: StructType = {
     AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
+  }
+
+  /**
+    * For mutations there are a few changes.
+    * Keys: Same.
+    * Values: Same as events for batch, streaming requires timestamp and reversal column in the values the time in
+    *   the kv store is the mutation_ts
+    * Input/Selected: For batch is the same as events, streaming
+    * MutationValueAvroSchema is associated to the stored streaming data.
+    * MutationAvroSchema is associated to streaming query
+    */
+  lazy val mutationValueAvroSchema: String = {
+    val fields = valueZiplineSchema ++ Constants.MutationAvroFields
+    AvroUtils
+      .fromZiplineSchema(StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", fields.toArray))
+      .toString
+  }
+
+  def mutationValueAvroCodec: AvroCodec = AvroCodec.of(mutationValueAvroSchema)
+
+  def mutationZiplineSchema: StructType = {
+    val fields: Seq[StructField] = inputZiplineSchema ++ Constants.MutationFields
+    StructType("MUTATION_SCHEMA", fields.toArray)
+  }
+
+  def streamZiplineSchema: StructType = {
+    groupByOps.dataModel match {
+      case DataModel.Events   => inputZiplineSchema
+      case DataModel.Entities => mutationZiplineSchema
+    }
   }
 }

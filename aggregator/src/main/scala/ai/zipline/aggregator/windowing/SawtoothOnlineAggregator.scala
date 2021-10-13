@@ -53,11 +53,10 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   //   - we would need to cache (tailHops, collapsed,  cumulative_streamingRows, latestStreamingTs)
   //   - upon a cache hit we would need to
   //        1. Scan everything from streaming only after latestStreamingTs
-  //        2. just update the cumulative part and sum with batch IR again
-  // TODO: Account for deletions
-  //    - row needs to have a concept of "reversal_flag"
-  //    - call delete instead of update when reversal_flag is true.
-  def lambdaAggregateIr(finalBatchIr: FinalBatchIr, streamingRows: Iterator[Row], queryTs: Long): Array[Any] = {
+  def lambdaAggregateIr(finalBatchIr: FinalBatchIr,
+                        streamingRows: Iterator[Row],
+                        queryTs: Long,
+                        hasReversal: Boolean = false): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingRows == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(finalizeTail(init))
@@ -75,15 +74,20 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       val row = headRows.next()
       val rowTs = row.ts // unbox long only once
       if (queryTs > rowTs && rowTs >= batchEndTs) {
-        updateIr(resultIr, row, queryTs, false)
+        // When a request with afterTsMillis is passed, we don't consider mutations with mutationTs past the tsMillis
+        if ((hasReversal && queryTs >= row.mutationTs) || !hasReversal)
+          updateIr(resultIr, row, queryTs, hasReversal)
       }
     }
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
     resultIr
   }
 
-  def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr, streamingRows: Iterator[Row], ts: Long): Array[Any] = {
-    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts))
+  def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
+                               streamingRows: Iterator[Row],
+                               ts: Long,
+                               hasReversal: Boolean = false): Array[Any] = {
+    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
   }
 
 }

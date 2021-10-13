@@ -376,7 +376,7 @@ object GroupBy {
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
-    val mutationsColumnOrder = inputDf.columns ++ Array(Constants.MutationTimeColumn, Constants.ReversalColumn)
+    val mutationsColumnOrder = inputDf.columns ++ Constants.MutationColumns
     val mutationDf =
       if (groupByConf.accuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
         mutationSources

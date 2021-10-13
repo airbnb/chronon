@@ -20,4 +20,12 @@ object Constants {
   val JoinMetadataKey = "join"
   val StreamingInputTable = "input_table"
   val ZiplineMetadataKey = "ZIPLINE_METADATA"
+  // Order is important when serializing deserializing mutation data.
+  val TimeField = StructField(TimeColumn, LongType)
+  val ReversalField = StructField(ReversalColumn, BooleanType)
+  val MutationTimeField = StructField(MutationTimeColumn, LongType)
+  val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
+  val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
+  val MutationColumns: Seq[String] = MutationFields.map(_.name)
+  val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
 }
