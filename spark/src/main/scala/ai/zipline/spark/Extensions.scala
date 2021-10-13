@@ -6,8 +6,8 @@ import ai.zipline.online.{AvroCodec, AvroUtils}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.{desc, from_unixtime, udf, unix_timestamp}
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
+import org.apache.spark.sql.functions.{date_add, date_format, desc, from_unixtime, udf, unix_timestamp}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
@@ -151,8 +151,11 @@ object Extensions {
     def withTimestampBasedPartition(columnName: String): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
 
-    def withPartitionBasedTimestamp(colName: String): DataFrame =
-      df.withColumn(colName, unix_timestamp(df.col(Constants.PartitionColumn), Constants.Partition.format) * 1000)
+    def withPartitionBasedTimestamp(colName: String, inputColumn: String = Constants.PartitionColumn): DataFrame =
+      df.withColumn(colName, unix_timestamp(df.col(inputColumn), Constants.Partition.format) * 1000)
+
+    def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
+      df.withColumn(colName, date_format(date_add(df.col(Constants.PartitionColumn), days), Constants.Partition.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>

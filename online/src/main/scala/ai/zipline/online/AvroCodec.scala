@@ -96,6 +96,10 @@ class ArrayRow(values: Array[Any], millis: Long) extends Row {
 
   override def ts: Long = millis
 
+  override def isBefore: Boolean = false
+
+  override def mutationTs: Long = millis
+
   override val length: Int = values.length
 }
 
