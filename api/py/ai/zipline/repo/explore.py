@@ -1,4 +1,5 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+
 import json
 import os
 import subprocess
@@ -110,10 +111,12 @@ def prettify_entry(entry, target, show):
             values = [value for value in set(values) if target in value]
             if(len(values) > show):
                 truncated = ', '.join(values[:show])
-                values = f"[{truncated} ... {GREY}{UNDERLINE}{len(values) - show} more{NORMAL}]"
+                remaining = len(values) - show
+                values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"
         if column == "file":
+            rel_path = values[len(CWD)+1:]
             modification = git_info(values)
-            values = f"{BOLD}{values[len(CWD)+1:]} {modification}{NORMAL}"
+            values = f"{BOLD}{rel_path} {modification}{NORMAL}"
         lines.append(f"{BOLD}{ORANGE}{name}{NORMAL} - {values}")
     content = "\n" + "\n".join(lines)
     return (modification, content)
