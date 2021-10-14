@@ -18,7 +18,7 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    scripts=['ai/zipline/repo/compile.py', 'ai/zipline/repo/run.py'],
+    scripts=['ai/zipline/repo/explore.py', 'ai/zipline/repo/compile.py', 'ai/zipline/repo/run.py'],
     description="Zipline python API library",
     include_package_data=True,
     install_requires=basic_requirements,
