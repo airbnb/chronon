@@ -63,25 +63,20 @@ def extract_json(json_path, conf_json):
 
 
 def build_entry(conf_path, index_spec):
-    try:
-        with open(conf_path) as conf_file:
-            conf_json = json.load(conf_file)
-            entry = [("file", conf_path)]
-            for column, paths in index_spec.items():
-                result = []
-                for path in paths:
-                    result.extend(extract_json(path, conf_json))
-                entry.append((column, result))
-            return entry
-    except BaseException as err:
-        print(f"Unexpected {err=}, {type(err)=}")
-        raise err
-        return None
+    with open(conf_path) as conf_file:
+        conf_json = json.load(conf_file)
+        entry = [("file", conf_path)]
+        for column, paths in index_spec.items():
+            result = []
+            for path in paths:
+                result.extend(extract_json(path, conf_json))
+            entry.append((column, result))
+        return entry
 
 
-def git_info(file):
+def git_info(file_path):
     return subprocess.check_output(
-        f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file})",
+        f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})",
         shell=True
     ).decode("utf-8").strip()
 
