@@ -7,7 +7,6 @@ import sys
 
 
 CWD = os.getcwd()
-semantic_delimiter = "_"
 GB_INDEX_SPEC = {
     "sources": [
         "sources[].events.table",
