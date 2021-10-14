@@ -19,7 +19,8 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newWorkStealingPool())
+  private val threadPool = Executors.newWorkStealingPool()
+  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(threadPool)
 
   def create(dataset: String): Unit
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
@@ -30,6 +31,10 @@ trait KVStore {
   // helper methods to do single put and single get
   def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
+
+  def close(): Unit = {
+    threadPool.shutdown()
+  }
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): String = {

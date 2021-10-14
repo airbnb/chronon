@@ -15,11 +15,14 @@ import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.collection.mutable.Buffer;
+import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.compat.java8.FutureConverters;
+import scala.concurrent.duration.Duration;
 
 public class JavaFetcher  {
   public static final Long DEFAULT_TIMEOUT = 10000L;
+
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis) {
@@ -39,11 +42,12 @@ public class JavaFetcher  {
   }
 
 
-  private CompletableFuture<List<Response>> convertResponses(Future<Seq<Response>> responses) {
-    return FutureConverters
-        .toJava(responses)
-        .toCompletableFuture()
-        .thenApply(JavaConversions::seqAsJavaList);
+  private List<Response> convertResponses(Future<Seq<Response>> responses) throws Exception {
+    return JavaConversions.seqAsJavaList(Await.result(responses, Duration.Inf()));
+//    return FutureConverters
+//        .toJava(responses)
+//        .toCompletableFuture()
+//        .thenApply(JavaConversions::seqAsJavaList);
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
@@ -55,14 +59,14 @@ public class JavaFetcher  {
     return scalaRequests.toSeq();
   }
 
-  public CompletableFuture<List<Response>> fetchGroupBys(List<JavaRequest> requests) {
+  public List<Response> fetchGroupBys(List<JavaRequest> requests) throws Exception {
     // Get responses from the fetcher
     Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
 
-  public CompletableFuture<List<Response>> fetchJoin(List<JavaRequest> requests) {
+  public List<Response> fetchJoin(List<JavaRequest> requests) throws Exception {
     Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
