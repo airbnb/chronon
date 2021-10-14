@@ -13,9 +13,6 @@ import ai.zipline.lib.Metrics.{Context, statsd}
      val ResponseSize = s"$fetcher.response.size"
      val EmptyResponseCount = s"$fetcher.empty_response.count"
 
-     val SuccessByJoin: String = s"$fetcher.join.$success"
-     val SuccessByGroupBy: String = s"$fetcher.group_by.$success"
-
      val FailureByGroupBy = s"$fetcher.group_by.$failure"
      val FailureByJoin = s"$fetcher.join.$failure"
 
@@ -24,14 +21,6 @@ import ai.zipline.lib.Metrics.{Context, statsd}
      val Latency = s"$fetcher.latency_ms"
      val FinalLatency = s"$fetcher.final_latency_ms"
      val StreamingRowSize: String = s"$fetcher.streaming.row_size"
-   }
-
-   def reportSuccess(context: Context): Unit = {
-     val metricName =
-       if (context.groupBy != null) Name.SuccessByGroupBy
-       else if (context.join != null) Name.SuccessByJoin
-       else throw new RuntimeException("context must be set with either join or group by")
-     statsd.increment(metricName, context.toTags(): _*)
    }
 
    def reportRequestBatchSize(size: Int, metricsContext: Context): Unit = {

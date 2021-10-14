@@ -99,16 +99,21 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                                         batchRequest: GetRequest,
                                         streamingRequestOpt: Option[GetRequest],
                                         endTs: Option[Long])
+
+  private def reportRequestBatchSize(requests: Seq[Request], withTag: String => Metrics.Context, context: Metrics.Context): Unit = {
+    val batchContext =
+      if (requests.forall(_.name == requests.head.name)) withTag(requests.head.name)
+      else context
+    FetcherMetrics.reportRequestBatchSize(requests.size, batchContext)
+  }
+
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
     val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
-    val batchContext =
-      if (requests.forall(_.name == requests.head.name)) context.withGroupBy(requests.head.name)
-      else context
-    FetcherMetrics.reportRequestBatchSize(requests.size, batchContext)
+    reportRequestBatchSize(requests, context.withGroupBy, context)
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest = requests.iterator.map { request =>
@@ -164,7 +169,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             FetcherMetrics.reportDataFreshness(value.millis, groupByContext.asBatch)
             FetcherMetrics.reportResponseBytesSize(value.bytes.length, groupByContext.asBatch)
           }
-          FetcherMetrics.reportResponseNumRows(if (batchValueOption.isDefined) 1 else 0, batchContext)
+          FetcherMetrics.reportResponseNumRows(if (batchValueOption.isDefined) 1 else 0, groupByContext.asBatch)
           val batchBytes: Array[Byte] = batchOption
           // bulk upload didn't remove an older batch value - so we manually discard
             .filter(_.millis >= servingInfo.batchEndTsMillis)
@@ -196,7 +201,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTs)
             servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
           }
-          FetcherMetrics.reportSuccess(groupByContext)
           FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
           Response(request, responseMap)
       }.toList
@@ -207,11 +211,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       responses
     }.recover {
       case e: Exception =>
-        requests.foreach { req =>
-          val groupByContext = context.withGroupBy(req.name)
-          FetcherMetrics.reportFailure(e, groupByContext)
-        }
-      throw e
+        reportFailure(requests, context.withGroupBy, e)
+        throw e
     }
   }
 
@@ -235,10 +236,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
 
   def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
     val context = Metrics.Context(method = "fetchJoin")
-    val batchContext =
-      if (requests.forall(_.name == requests.head.name)) context.withJoin(requests.head.name)
-      else context
-    FetcherMetrics.reportRequestBatchSize(requests.size, batchContext)
+    reportRequestBatchSize(requests, context.withJoin, context)
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: Seq[(Request, (Seq[PrefixedRequest], Metrics.Context))] =
@@ -272,7 +270,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                 }
                 .getOrElse(Seq.empty)
           }.toMap
-          FetcherMetrics.reportSuccess(joinContext)
           FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, joinContext)
           Response(joinRequest, joinValues)
       }.toSeq
@@ -283,11 +280,15 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       responses
     }.recover {
       case e: Exception =>
-        requests.foreach { req =>
-          val joinContext = context.withJoin(req.name)
-          FetcherMetrics.reportFailure(e, joinContext)
-        }
+        reportFailure(requests, context.withJoin, e)
       throw e
+    }
+  }
+
+  private def reportFailure(requests: Seq[Request], withTag: String => Metrics.Context, e: Exception) = {
+    requests.foreach { req =>
+      val context = withTag(req.name)
+      FetcherMetrics.reportFailure(e, context)
     }
   }
 }
