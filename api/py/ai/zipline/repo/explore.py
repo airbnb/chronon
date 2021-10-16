@@ -15,15 +15,35 @@ GB_INDEX_SPEC = {
         "sources[].entities.topic",
         "sources[].events.topic",
     ],
-    "aggregations": [
+    "aggregation_base": [
         "aggregations[].inputColumn"
     ],
     "keys": [
         "keyColumns"
+    ],
+    "name": [
+        "metaData.name",
+        "name"
+    ]
+}
+
+JOIN_INDEX_SPEC = {
+    "input_table": [
+        "left.entities.snapshotTable",
+        "left.events.table",
+    ],
+    "group_bys": [
+        "joinParts[].groupBy.metaData.name",
+        "rightParts[].groupBy.name",
+    ],
+    "name": [
+        "metaData.name",
+        "name"
     ]
 }
 GB_REL_PATH = "production/group_bys"
-FILTER_COLUMNS = ["aggregations", "keys"]
+JOIN_REL_PATH = "production/joins"
+FILTER_COLUMNS = ["aggregation_base", "keys"]
 
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
@@ -64,14 +84,18 @@ def extract_json(json_path, conf_json):
 
 def build_entry(conf_path, index_spec):
     with open(conf_path) as conf_file:
-        conf_json = json.load(conf_file)
-        entry = [("file", conf_path)]
-        for column, paths in index_spec.items():
-            result = []
-            for path in paths:
-                result.extend(extract_json(path, conf_json))
-            entry.append((column, result))
-        return entry
+        try:
+            conf_json = json.load(conf_file)
+            entry = {"file": conf_path}
+            for column, paths in index_spec.items():
+                result = []
+                for path in paths:
+                    result.extend(extract_json(path, conf_json))
+                entry[column] = result
+            return entry
+        except BaseException as ex:
+            print(f"Failed to parse {conf_path} due to :: {ex}")
+            # traceback.print_exc()
 
 
 def git_info(file_path):
@@ -93,14 +117,16 @@ def build_index(relative_path, index_spec):
     gb_path = os.path.join(CWD, relative_path)
     gb_meta_table = []
     for path in walk_files(gb_path):
-        gb_meta_table.append(build_entry(path, index_spec))
+        index_entry = build_entry(path, index_spec)
+        if index_entry is not None:
+            gb_meta_table.append(index_entry)
     return gb_meta_table
 
 
-def prettify_entry(entry, target, show):
+def prettify_entry(entry, target, show=10):
     lines = []
     modification = ""
-    for column, values in entry:
+    for column, values in entry.items():
         name = " "*(15 - len(column)) + column
         if column in FILTER_COLUMNS and len(values) > show:
             values = [value for value in set(values) if target in value]
@@ -117,26 +143,45 @@ def prettify_entry(entry, target, show):
     return (modification, content)
 
 
-def find_in_index(index_table, target, show=10):
-    entries = []
-    for entry in index_table:
-        found = any([
+def find_in_index(index_table, target):
+    def valid_entry(entry):
+        return any([
             target in value.split("_")
-            for column, values in entry
+            for column, values in entry.items()
             if column in FILTER_COLUMNS
             for value in values
         ])
-        if found:
-            entries.append(prettify_entry(entry, target, show))
-    sorted_entries = sorted(entries, key=lambda pr: pr[0], reverse=True)
-    for (modification, pretty_entry) in sorted_entries:
+    return [entry for entry in index_table if valid_entry(entry)]
+
+
+def display_entries(entries, target):
+    # sort by modification time and display
+    sorted_entries = sorted(
+        map(lambda e: prettify_entry(e, target), entries),
+        key=lambda pr: pr[0], reverse=True
+    )
+
+    for (_, pretty_entry) in sorted_entries:
         print(pretty_entry)
 
 
+def enrich_with_joins(group_bys, join_index):
+    for group_by in group_bys:
+        group_by["joins"] = []
+        for join in join_index:
+            if group_by["name"][0] in join["group_bys"]:
+                group_by["joins"].append(join["name"][0])
+        yield group_by
+
+
 if __name__ == "__main__":
-    index_table = build_index(GB_REL_PATH, GB_INDEX_SPEC)
+    gb_index = build_index(GB_REL_PATH, GB_INDEX_SPEC)
+    join_index = build_index(JOIN_REL_PATH, JOIN_INDEX_SPEC)
+
     if len(sys.argv) != 2:
         print("This script takes just one argument, the keyword to lookup keys or features by")
         print("Eg., explore.py price")
         sys.exit(1)
-    find_in_index(index_table, sys.argv[1])
+    group_bys = find_in_index(gb_index, sys.argv[1])
+    enriched = list(enrich_with_joins(group_bys, join_index))
+    display_entries(enriched, sys.argv[1])
