@@ -15,7 +15,7 @@ GB_INDEX_SPEC = {
         "sources[].entities.topic",
         "sources[].events.topic",
     ],
-    "aggregation_base": [
+    "aggregation": [
         "aggregations[].inputColumn"
     ],
     "keys": [
@@ -39,11 +39,15 @@ JOIN_INDEX_SPEC = {
     "name": [
         "metaData.name",
         "name"
+    ],
+    "_group_bys": [
+        "joinParts[].groupBy",
+        "rightParts[].groupBy"
     ]
 }
 GB_REL_PATH = "production/group_bys"
 JOIN_REL_PATH = "production/joins"
-FILTER_COLUMNS = ["aggregation_base", "keys"]
+FILTER_COLUMNS = ["aggregation", "keys", "name", "sources"]
 
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
@@ -82,20 +86,28 @@ def extract_json(json_path, conf_json):
     return []
 
 
-def build_entry(conf_path, index_spec):
-    with open(conf_path) as conf_file:
-        try:
-            conf_json = json.load(conf_file)
-            entry = {"file": conf_path}
-            for column, paths in index_spec.items():
-                result = []
-                for path in paths:
-                    result.extend(extract_json(path, conf_json))
-                entry[column] = result
-            return entry
-        except BaseException as ex:
-            print(f"Failed to parse {conf_path} due to :: {ex}")
-            # traceback.print_exc()
+def build_entry(conf, index_spec, conf_type):
+    conf_dict = conf
+    if isinstance(conf, str):
+        with open(conf) as conf_file:
+            try:
+                conf_dict = json.load(conf_file)
+            except BaseException as ex:
+                print(f"Failed to parse {conf} due to :: {ex}")
+                return
+    entry = {"file": None}
+    for column, paths in index_spec.items():
+        result = []
+        for path in paths:
+            result.extend(extract_json(path, conf_dict))
+        entry[column] = result
+
+    # derive python file path from the name & conf_type
+    (team, conf_module) = entry["name"][0].split(".", 1)
+    py_file = "/".join(conf_module.split(".")[:-1]) + ".py"
+    conf_path = os.path.join(conf_type, team, py_file)
+    entry["file"] = conf_path
+    return entry
 
 
 def git_info(file_path):
@@ -111,16 +123,14 @@ def walk_files(path):
             yield os.path.join(root, file)
 
 
-def build_index(relative_path, index_spec):
-    error_msg = "Either pass the path to index over, or run this script from the zipline root"
-    assert CWD.endswith("zipline"), error_msg
-    gb_path = os.path.join(CWD, relative_path)
-    gb_meta_table = []
-    for path in walk_files(gb_path):
-        index_entry = build_entry(path, index_spec)
+def build_index(conf_type, index_spec):
+    rel_path = os.path.join(CWD, "production", conf_type)
+    index_table = {}
+    for path in walk_files(rel_path):
+        index_entry = build_entry(path, index_spec, conf_type)
         if index_entry is not None:
-            gb_meta_table.append(index_entry)
-    return gb_meta_table
+            index_table[index_entry["name"][0]] = index_entry
+    return index_table
 
 
 def prettify_entry(entry, target, show=10):
@@ -135,9 +145,8 @@ def prettify_entry(entry, target, show=10):
                 remaining = len(values) - show
                 values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"
         if column == "file":
-            rel_path = values[len(CWD)+1:]
             modification = git_info(values)
-            values = f"{BOLD}{rel_path} {modification}{NORMAL}"
+            values = f"{BOLD}{values} {modification}{NORMAL}"
         lines.append(f"{BOLD}{ORANGE}{name}{NORMAL} - {values}")
     content = "\n" + "\n".join(lines)
     return (modification, content)
@@ -151,7 +160,7 @@ def find_in_index(index_table, target):
             if column in FILTER_COLUMNS
             for value in values
         ])
-    return [entry for entry in index_table if valid_entry(entry)]
+    return [entry for _, entry in index_table.items() if valid_entry(entry)]
 
 
 def display_entries(entries, target):
@@ -168,16 +177,21 @@ def display_entries(entries, target):
 def enrich_with_joins(group_bys, join_index):
     for group_by in group_bys:
         group_by["joins"] = []
-        for join in join_index:
+        for _, join in join_index.items():
             if group_by["name"][0] in join["group_bys"]:
                 group_by["joins"].append(join["name"][0])
         yield group_by
 
 
 if __name__ == "__main__":
-    gb_index = build_index(GB_REL_PATH, GB_INDEX_SPEC)
-    join_index = build_index(JOIN_REL_PATH, JOIN_INDEX_SPEC)
-
+    if not CWD.endswith("zipline"):
+        print("This script needs to be run from zipline conf root - with folder named 'zipline'")
+    gb_index = build_index("group_bys", GB_INDEX_SPEC)
+    join_index = build_index("joins", JOIN_INDEX_SPEC)
+    for name, join_entry in join_index.items():
+        for gb in join_entry["_group_bys"]:
+            entry = build_entry(gb, GB_INDEX_SPEC, "group_bys")
+            gb_index[entry["name"][0]] = entry
     if len(sys.argv) != 2:
         print("This script takes just one argument, the keyword to lookup keys or features by")
         print("Eg., explore.py price")
