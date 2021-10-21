@@ -47,7 +47,7 @@ JOIN_INDEX_SPEC = {
 }
 GB_REL_PATH = "production/group_bys"
 JOIN_REL_PATH = "production/joins"
-FILTER_COLUMNS = ["aggregation", "keys", "name", "sources"]
+FILTER_COLUMNS = ["aggregation", "keys", "name", "sources", "joins"]
 
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
@@ -174,13 +174,19 @@ def display_entries(entries, target):
         print(pretty_entry)
 
 
-def enrich_with_joins(group_bys, join_index):
-    for group_by in group_bys:
+def enrich_with_joins(gb_index, join_index):
+    # nested gb entries
+    for _, join_entry in join_index.items():
+        for gb in join_entry["_group_bys"]:
+            entry = build_entry(gb, GB_INDEX_SPEC, "group_bys")
+            gb_index[entry["name"][0]] = entry
+    # lineage -> reverse index from gb -> join
+    for _, group_by in gb_index.items():
         group_by["joins"] = []
-        for _, join in join_index.items():
-            if group_by["name"][0] in join["group_bys"]:
-                group_by["joins"].append(join["name"][0])
-        yield group_by
+    for _, join in join_index.items():
+        for gb_name in join["group_bys"]:
+            if gb_name in gb_index:
+                gb_index[gb_name]["joins"].append(join["name"][0])
 
 
 if __name__ == "__main__":
@@ -188,14 +194,10 @@ if __name__ == "__main__":
         print("This script needs to be run from zipline conf root - with folder named 'zipline'")
     gb_index = build_index("group_bys", GB_INDEX_SPEC)
     join_index = build_index("joins", JOIN_INDEX_SPEC)
-    for name, join_entry in join_index.items():
-        for gb in join_entry["_group_bys"]:
-            entry = build_entry(gb, GB_INDEX_SPEC, "group_bys")
-            gb_index[entry["name"][0]] = entry
+    enrich_with_joins(gb_index, join_index)
     if len(sys.argv) != 2:
         print("This script takes just one argument, the keyword to lookup keys or features by")
         print("Eg., explore.py price")
         sys.exit(1)
     group_bys = find_in_index(gb_index, sys.argv[1])
-    enriched = list(enrich_with_joins(group_bys, join_index))
-    display_entries(enriched, sys.argv[1])
+    display_entries(group_bys, sys.argv[1])
