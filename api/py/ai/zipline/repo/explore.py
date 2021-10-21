@@ -155,7 +155,7 @@ def prettify_entry(entry, target, show=10):
 def find_in_index(index_table, target):
     def valid_entry(entry):
         return any([
-            target in value.split("_")
+            target in value
             for column, values in entry.items()
             if column in FILTER_COLUMNS
             for value in values
