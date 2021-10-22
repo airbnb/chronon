@@ -51,13 +51,16 @@ FILTER_COLUMNS = ["aggregation", "keys", "name", "sources", "joins"]
 
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
+NORMAL = '\033[0m'
 BOLD = '\033[1m'
+ITALIC = '\033[3m'
 UNDERLINE = '\033[4m'
+RED = '\033[38;5;160m'
 GREEN = '\033[38;5;28m'
 ORANGE = '\033[38;5;130m'
-NORMAL = '\033[0m'
 BLUE = '\033[38;5;27m'
 GREY = '\033[38;5;246m'
+HIGHLIGHT = BOLD+ITALIC+RED
 
 
 # walks the json nodes recursively collecting all values that match the path
@@ -110,11 +113,20 @@ def build_entry(conf, index_spec, conf_type):
     return entry
 
 
-def git_info(file_path):
-    return subprocess.check_output(
-        f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})",
-        shell=True
-    ).decode("utf-8").strip()
+# git_info is the most expensive part of the entire script - so we will have to parallelize
+def git_info(file_paths):
+    procs = []
+    for file_path in file_paths:
+        args = f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})"
+        procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
+
+    result = {}
+    for file_path, proc in procs:
+        lines = []
+        for line in proc.stdout.readlines():
+            lines.append(line.decode("utf-8").strip())
+        result[file_path] = lines[0]
+    return result
 
 
 def walk_files(path):
@@ -133,9 +145,25 @@ def build_index(conf_type, index_spec):
     return index_table
 
 
-def prettify_entry(entry, target, show=10):
+def find_string(text, word):
+    start = text.find(word)
+    while start > -1:
+        yield start
+        start = text.find(word, start + 1)
+
+
+def highlight(text, word):
+    result = ""
+    prev_idx = 0
+    for idx in find_string(text, word):
+        result = result + text[prev_idx:idx] + HIGHLIGHT + word + NORMAL
+        prev_idx = idx + len(word)
+    result += text[prev_idx:len(text)]
+    return result
+
+
+def prettify_entry(entry, target, modification, show=10):
     lines = []
-    modification = ""
     for column, values in entry.items():
         name = " "*(15 - len(column)) + column
         if column in FILTER_COLUMNS and len(values) > show:
@@ -145,11 +173,12 @@ def prettify_entry(entry, target, show=10):
                 remaining = len(values) - show
                 values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"
         if column == "file":
-            modification = git_info(values)
             values = f"{BOLD}{values} {modification}{NORMAL}"
+        else:
+            values = highlight(str(values), target)
         lines.append(f"{BOLD}{ORANGE}{name}{NORMAL} - {values}")
     content = "\n" + "\n".join(lines)
-    return (modification, content)
+    return content
 
 
 def find_in_index(index_table, target):
@@ -164,13 +193,15 @@ def find_in_index(index_table, target):
 
 
 def display_entries(entries, target):
-    # sort by modification time and display
-    sorted_entries = sorted(
-        map(lambda e: prettify_entry(e, target), entries),
-        key=lambda pr: pr[0], reverse=True
-    )
+    git_infos = git_info([entry["file"] for entry in entries])
+    print(git_infos)
+    display = []
+    for entry in entries:
+        info = git_infos[entry["file"]]
+        pretty = prettify_entry(entry, target, info)
+        display.append((info, pretty))
 
-    for (_, pretty_entry) in sorted_entries:
+    for (_, pretty_entry) in sorted(display):
         print(pretty_entry)
 
 
