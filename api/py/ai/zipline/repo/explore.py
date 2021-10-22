@@ -107,8 +107,12 @@ def build_entry(conf, index_spec, conf_type):
 
     # derive python file path from the name & conf_type
     (team, conf_module) = entry["name"][0].split(".", 1)
-    py_file = "/".join(conf_module.split(".")[:-1]) + ".py"
-    conf_path = os.path.join(conf_type, team, py_file)
+    file_base = "/".join(conf_module.split(".")[:-1])
+    py_file = file_base + ".py"
+    init_file = file_base + "/__init__.py"
+    py_path = os.path.join(conf_type, team, py_file)
+    init_path = os.path.join(conf_type, team, init_file)
+    conf_path = py_path if os.path.exists(py_path) else init_path
     entry["file"] = conf_path
     return entry
 
@@ -194,7 +198,6 @@ def find_in_index(index_table, target):
 
 def display_entries(entries, target):
     git_infos = git_info([entry["file"] for entry in entries])
-    print(git_infos)
     display = []
     for entry in entries:
         info = git_infos[entry["file"]]
