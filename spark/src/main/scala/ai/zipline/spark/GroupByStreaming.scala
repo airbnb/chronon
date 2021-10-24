@@ -42,6 +42,15 @@ class GroupByStreaming(
     )
   }
 
+  class UnCopyableRow(zrow: api.Row) extends Row {
+    override def length: Int = zrow.length
+
+    override def get(i: Int): Any = zrow.get(i)
+    // the row inside
+    override def copy(): Row = new UnCopyableRow(zrow)
+  }
+
+
   def run(): Unit = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
@@ -79,8 +88,7 @@ class GroupByStreaming(
 
     val des = deserialized
       .map {
-        mutation =>
-          Row.fromSeq(mutation.after)
+        mutation => new UnCopyableRow(mutation.after).asInstanceOf[Row]
       }(RowEncoder(Conversions.fromZiplineSchema(inputZiplineSchema)))
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
