@@ -73,7 +73,7 @@ trait KVStore {
   * MapType        java.util.Map[Byte]
   * StructType     Array[Any]
   */
-case class Mutation(schema: StructType = null, before: Array[AnyRef] = null, after: Array[AnyRef] = null)
+case class Mutation(schema: StructType = null, before: Row = null, after: Row = null)
 
 trait Decoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
