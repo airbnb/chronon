@@ -1,10 +1,9 @@
 package ai.zipline.aggregator.test
 
 import ai.zipline.aggregator.base._
-import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.test.CStream._
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Constants, DataType, DoubleType, IntType, LongType, StringType, TimeUnit, Window}
+import ai.zipline.api.{Constants, DataType, DoubleType, IntType, LongType, Row, StringType, TimeUnit, Window}
 
 import scala.reflect.ClassTag
 import scala.util.Random
