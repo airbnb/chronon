@@ -1,16 +1,15 @@
 package ai.zipline.fetcher
 
-import ai.zipline.aggregator.row.Row
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions._
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, TimedValue}
-import ai.zipline.api.{StructType, _}
+import ai.zipline.api.{Row, StructType, _}
 import org.apache.avro.Schema
 import ai.zipline.fetcher.Fetcher._
+
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function
-
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future

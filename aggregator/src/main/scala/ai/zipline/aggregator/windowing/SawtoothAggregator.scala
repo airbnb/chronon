@@ -1,8 +1,8 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.aggregator.row.{Row, RowAggregator}
+import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, AggregationPart, DataType}
+import ai.zipline.api.{Aggregation, AggregationPart, DataType, Row}
 
 import java.util
 
