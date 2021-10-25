@@ -8,7 +8,7 @@ import ai.zipline.spark.Extensions._
 import ai.zipline.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
-import org.junit.{Before, Ignore, Test}
+import org.junit.Test
 
 import scala.collection.JavaConversions._
 

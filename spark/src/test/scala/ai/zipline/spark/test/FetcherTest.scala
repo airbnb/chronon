@@ -113,7 +113,7 @@ class FetcherTest extends TestCase {
     // temporal events
     val paymentCols =
       Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("payment", LongType, 100))
-    val paymentsTable = "payments_table"
+    val paymentsTable = s"$namespace.payments_table"
     DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
@@ -131,7 +131,7 @@ class FetcherTest extends TestCase {
           Column("vendor", StringType, 10),
           Column("rating", IntType, 5),
           Column("bucket", StringType, 5))
-    val ratingsTable = "ratings_table"
+    val ratingsTable = s"$namespace.ratings_table"
     DataFrameGen.events(spark, ratingCols, 100000, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = ratingsTable)),
@@ -153,7 +153,7 @@ class FetcherTest extends TestCase {
     // no-agg
     val userBalanceCols =
       Seq(Column("user", StringType, 10), Column("balance", IntType, 5000))
-    val balanceTable = "balance_table"
+    val balanceTable = s"$namespace.balance_table"
     DataFrameGen
       .entities(spark, userBalanceCols, 100000, 180)
       .groupBy("user", "ds")
@@ -171,7 +171,7 @@ class FetcherTest extends TestCase {
           Column("vendor", StringType, 10), // will be renamed
           Column("credit", IntType, 500),
           Column("ts", LongType, 100))
-    val creditTable = "credit_table"
+    val creditTable = s"$namespace.credit_table"
     DataFrameGen
       .entities(spark, userVendorCreditCols, 100000, 100)
       .withColumnRenamed("vendor", "vendor_id")
