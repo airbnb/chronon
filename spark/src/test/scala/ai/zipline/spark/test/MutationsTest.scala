@@ -21,10 +21,9 @@ class MutationsTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("MutationsTest", local = true)
 
-  private val namespace = "test_mutations"
-  private val groupByName = s"$namespace.group_by_test.v0"
-  private val joinName = s"$namespace.join_test.v0"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  private def namespace(suffix: String) = s"test_mutations_$suffix"
+  private val groupByName = s"group_by_test.v0"
+  private val joinName = s"join_test.v0"
 
   private val tableUtils = TableUtils(spark)
 
@@ -62,11 +61,11 @@ class MutationsTest {
     StructField("ds", StringType, false)
   ))
 
-  val snapshotTable = s"$namespace.listing_ratings_snapshot_v0"
-  val mutationTable = s"$namespace.listing_ratings_mutations_v0"
-  val eventTable = s"$namespace.listing_events"
-  val joinTable = s"$namespace.${joinName.replace(".","_")}"
-  val groupByTable = s"$namespace.${joinName.replace(".","_")}_${groupByName.replace(".","_")}"
+  val snapshotTable = s"listing_ratings_snapshot_v0"
+  val mutationTable = s"listing_ratings_mutations_v0"
+  val eventTable = s"listing_events"
+  val joinTable = s"${joinName.replace(".","_")}"
+  val groupByTable = s"${joinName.replace(".","_")}_${groupByName.replace(".","_")}"
 
   /**
    * Join the expected rows against the computed DataFrame and check the row count is exact.
@@ -128,15 +127,17 @@ class MutationsTest {
     spark.sql(s"DROP TABLE IF EXISTS $groupByTable")
   }
 
-  def computeTemporalTestJoin(eventData: Seq[Row], snapshotData: Seq[Row], mutationData: Seq[Row], endPartition: String, startPartition: String, windows: Seq[Window] = null, operation: Operation = Operation.AVERAGE): DataFrame = {
+  def computeTemporalTestJoin(suffix: String, eventData: Seq[Row], snapshotData: Seq[Row], mutationData: Seq[Row], endPartition: String, startPartition: String, windows: Seq[Window] = null, operation: Operation = Operation.AVERAGE): DataFrame = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS ${namespace(suffix)}")
+    spark.sql(s"USE ${namespace(suffix)}")
     dropTables()
     spark.createDataFrame(eventData, leftSchema).save(eventTable)
     spark.createDataFrame(snapshotData, snapshotSchema).save(snapshotTable)
     spark.createDataFrame(mutationData, mutationSchema).save(mutationTable)
-    computeJoinFromTables(startPartition, endPartition, windows, operation)
+    computeJoinFromTables(suffix, startPartition, endPartition, windows, operation)
   }
 
-  def computeJoinFromTables(startPartition: String, endPartition: String, windows: Seq[Window], operation: Operation): DataFrame = {
+  def computeJoinFromTables(suffix: String, startPartition: String, endPartition: String, windows: Seq[Window], operation: Operation): DataFrame = {
     val rightSource = Builders.Source.entities(
       query = Builders.Query(
         selects = Builders.Selects("listing_id", "ts", "rating"),
@@ -169,13 +170,13 @@ class MutationsTest {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = groupByName, namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = groupByName, namespace = namespace(suffix), team = "zipline")
     )
 
     val joinConf = Builders.Join(
       left = leftSource,
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = Builders.MetaData(name = joinName, namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = joinName, namespace = namespace(suffix), team = "zipline")
     )
 
     val runner = new Join(joinConf, endPartition, tableUtils)
@@ -428,7 +429,7 @@ class MutationsTest {
       Row(3, TsUtils.datetimeToTs("2021-04-10 23:00:00"), 4, TsUtils.datetimeToTs("2021-04-10 02:15:00"), false, "2021-04-10")
     )
     val (startPartition, endPartition) = ("2021-04-08", "2021-04-10")
-    val result = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
+    val result = computeTemporalTestJoin("simple", eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
     val expected = Seq(
       // {listing_id, ts (query), event, rating_average, ds}
       Row(1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), 1, 4.5, "2021-04-10"),
@@ -437,7 +438,7 @@ class MutationsTest {
     )
     assert(compareResult(result, expected))
     compareAgainstSql(result, Operation.AVERAGE, startPartition, endPartition)
-    val resultLast = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition, operation = Operation.LAST)
+    val resultLast = computeTemporalTestJoin("simple", eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition, operation = Operation.LAST)
     compareAgainstSql(resultLast, Operation.LAST, startPartition, endPartition)
   }
 
@@ -477,7 +478,7 @@ class MutationsTest {
       Row(3, TsUtils.datetimeToTs("2021-04-10 23:00:00"), 4, TsUtils.datetimeToTs("2021-04-10 02:15:00"), false, "2021-04-10")
     )
     val (startPartition, endPartition) = ("2021-04-08", "2021-04-10")
-    val result = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
+    val result = computeTemporalTestJoin("update_value", eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
     val expected = Seq(
       // {listing_id, ts (query), event, rating_average, ds}
       Row(1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), 1, 4.5, "2021-04-10"),
@@ -486,8 +487,6 @@ class MutationsTest {
     )
     assert(compareResult(result, expected))
     compareAgainstSql(result, Operation.AVERAGE, startPartition, endPartition)
-    //val resultLast = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition, operation = Operation.LAST)
-    //compareAgainstSql(resultLast, Operation.LAST, startPartition, endPartition)
   }
 
   /** Simple Key Update Case
@@ -526,7 +525,7 @@ class MutationsTest {
       Row(3, TsUtils.datetimeToTs("2021-04-10 23:00:00"), 4, TsUtils.datetimeToTs("2021-04-10 02:15:00"), false, "2021-04-10")
     )
     val (startPartition, endPartition) = ("2021-04-08", "2021-04-10")
-    val result = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
+    val result = computeTemporalTestJoin("update_key", eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
     val expected = Seq(
       // {listing_id, ts (query), event, rating_average, ds}
       Row(1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), 1, 4.0, "2021-04-10"),
@@ -535,8 +534,6 @@ class MutationsTest {
     )
     assert(compareResult(result, expected))
     compareAgainstSql(result, Operation.AVERAGE, startPartition, endPartition)
-    //val resultLast = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition, operation = Operation.LAST)
-    //compareAgainstSql(resultLast, Operation.LAST, startPartition, endPartition)
   }
 
   /** Case where left has a inconsistent ds/ts combination (i.e. ds contains ts outside of ds range)
@@ -596,7 +593,7 @@ class MutationsTest {
     )
 
     val (startPartition, endPartition) = ("2021-04-08", "2021-04-10")
-    val result = computeTemporalTestJoin(eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
+    val result = computeTemporalTestJoin("inconsistent_ts", eventData, snapshotData, mutationData, startPartition = startPartition, endPartition = endPartition)
     val expected = Seq(
       // {listing_id, ts (query), event, rating_average, ds}
       Row(1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), 1, 4.4, "2021-04-10"),
@@ -658,7 +655,7 @@ class MutationsTest {
     )
 
     val result = computeTemporalTestJoin(
-      eventData, snapshotData, mutationData,
+      "decayed", eventData, snapshotData, mutationData,
       startPartition = "2021-04-08", endPartition = "2021-04-10",
       windows = Seq(new Window(4, TimeUnit.DAYS)))
     val expected = Seq(
@@ -716,7 +713,7 @@ class MutationsTest {
     )
 
     val result = computeTemporalTestJoin(
-      eventData, snapshotData, mutationData,
+      "decayed_v2", eventData, snapshotData, mutationData,
       startPartition = "2021-04-09", endPartition = "2021-04-10",
       windows = Seq(new Window(4, TimeUnit.DAYS)))
     val expected = Seq(
@@ -763,7 +760,7 @@ class MutationsTest {
     )
 
     val result = computeTemporalTestJoin(
-      eventData, snapshotData, mutationData,
+      "no_mutation", eventData, snapshotData, mutationData,
       startPartition = "2021-04-09", endPartition = "2021-04-10",
       windows = Seq(new Window(4, TimeUnit.DAYS)))
     val expected = Seq(
@@ -793,11 +790,14 @@ class MutationsTest {
     val leftDf = DataFrameGen.events(spark, events, 100, 15)
       .drop()
       .withShiftedPartition(Constants.PartitionColumn, -1)
+    val suffix = "generated"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS ${namespace(suffix)}")
+    spark.sql(s"USE ${namespace(suffix)}")
     dropTables()
     snapshotDf.save(snapshotTable)
     mutationsDf.save(mutationTable)
     leftDf.save(eventTable)
-    val result = computeJoinFromTables(minDs, maxDs, null, Operation.AVERAGE)
+    val result = computeJoinFromTables(suffix, minDs, maxDs, null, Operation.AVERAGE)
     val expected = computeSimpleAverageThroughSql(minDs, maxDs)
     val diff = Comparison.sideBySide(result, expected, List("listing_id", "ts", "ds"))
     if (diff.count() > 0) {
@@ -808,7 +808,7 @@ class MutationsTest {
       diff.show()
       // Trying a rerun
       dropTables(only_outputs = true)
-      val recomputedResult = computeJoinFromTables(minDs, maxDs, null, Operation.AVERAGE)
+      val recomputedResult = computeJoinFromTables(suffix, minDs, maxDs, null, Operation.AVERAGE)
       val recomputedDiff = Comparison.sideBySide(recomputedResult, expected, List("listing_id", "ts", "ds"))
       println("Checking second run of the same data.")
       assert(recomputedDiff.count() == 0)

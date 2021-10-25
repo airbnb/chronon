@@ -21,12 +21,6 @@ object TsUtils {
     formatter.parse(desiredTime).getTime
   }
 
-  def dsToTs(ds: String): Long = {
-    val dsFormatter = new SimpleDateFormat("yyyy-MM-dd")
-    dsFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
-    dsFormatter.parse(ds).getTime
-  }
-
   def round(epochMillis: Long, roundMillis: Long): Long =
     (epochMillis / roundMillis) * roundMillis
 }

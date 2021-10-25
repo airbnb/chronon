@@ -200,7 +200,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
           val finalizedEodIr = eodIr.orNull
 
           val irs = sawtoothAggregator.lambdaAggregateIrMany(
-            TsUtils.dsToTs(ds), finalizedEodIr, sortedInputsIt, sortedQueries, true)
+            Constants.Partition.epochMillis(ds), finalizedEodIr, sortedInputsIt, sortedQueries, true)
           ((keyWithHash, ds), (timeQueries, sortedQueries.indices.map(i => normalizeOrFinalize(irs(i)))))
     }
 
