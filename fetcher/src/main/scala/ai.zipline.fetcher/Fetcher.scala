@@ -184,6 +184,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
             val streamingResponses: Seq[TimedValue] =
               responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
+
             val selectedCodec = servingInfo.selectedCodec
             val streamingRows: Iterator[Row] =
               streamingResponses.iterator
@@ -192,9 +193,9 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             if (streamingResponses.length > 0) {
               val streamingContext = groupByContext.asStreaming
               // report streaming metrics.
-              FetcherMetrics.reportDataFreshness(streamingResponses.map(_.millis).max - startTimeMs, streamingContext)
-              FetcherMetrics.reportResponseBytesSize(streamingResponses.map(_.bytes.length).sum, streamingContext)
-              FetcherMetrics.reportResponseNumRows(streamingRows.length, streamingContext)
+              FetcherMetrics.reportDataFreshness(streamingResponses.iterator.map(_.millis).max - startTimeMs, streamingContext)
+              FetcherMetrics.reportResponseBytesSize(streamingResponses.iterator.map(_.bytes.length).sum, streamingContext)
+              FetcherMetrics.reportResponseNumRows(streamingResponses.length, streamingContext)
             }
             val batchIr = toBatchIr(batchBytes, servingInfo)
             val queryTs = atMillis.getOrElse(System.currentTimeMillis())
