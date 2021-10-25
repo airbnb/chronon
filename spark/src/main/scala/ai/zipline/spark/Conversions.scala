@@ -22,16 +22,12 @@ class RowWrapper(val row: Row, val tsIndex: Int, val reversalIndex: Int = -1, va
   }
 
   override def isBefore: Boolean = {
-    require(
-      reversalIndex > -1
-    )
+    require(reversalIndex > -1)
     getAs[Boolean](reversalIndex)
   }
 
   override def mutationTs: Long = {
-    require(
-      mutationTsIndex > -1
-    )
+    require(mutationTsIndex > -1)
     getAs[Long](mutationTsIndex)
   }
 }
