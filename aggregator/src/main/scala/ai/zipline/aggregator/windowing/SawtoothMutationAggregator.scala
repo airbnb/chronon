@@ -19,10 +19,6 @@ case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputAr
  * data is created to be processed with the mutations rows.
  * Since the dataframe inputs are aligned between mutations and snapshot (input) no additional schema is needed.
  *
- * @param aggregations Aggregations to Process
- * @param inputSchema Schema for rows processed when building the end of day FinalBatchIR.
- * @param resolution
- * @param tailBufferMillis
  */
 class SawtoothMutationAggregator(
                                aggregations: Seq[Aggregation],
@@ -91,10 +87,6 @@ class SawtoothMutationAggregator(
   /**
    * Go through the aggregators and update or delete the intermediate with the information of the row if relevant.
    * Useful for both online and mutations
-   * @param ir Intermediate result to update
-   * @param row Mutation row being processed
-   * @param queryTs Time for the query
-   * @param hasReversal Does the row data contain reversal column [mutation].
    */
   def updateIntermediateResult(ir: Array[Any], row: Row, queryTs: Long, hasReversal: Boolean = false) = {
     var i: Int = 0
