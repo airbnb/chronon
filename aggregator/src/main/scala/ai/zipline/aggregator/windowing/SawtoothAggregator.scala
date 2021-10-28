@@ -2,7 +2,7 @@ package ai.zipline.aggregator.windowing
 
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, AggregationPart, Constants, DataType}
+import ai.zipline.api.{Accuracy, Aggregation, AggregationPart, Constants, DataType}
 
 import java.util
 
@@ -44,7 +44,9 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient private lazy val arena =
     Array.fill(resolution.hopSizes.length)(Array.fill[Entry](windowedAggregator.length)(null))
 
-  def computeWindows(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Array[Array[Any]] = {
+  def computeWindows(hops: HopsAggregator.OutputArrayType,
+                     endTimes: Array[Long],
+                     accuracy: Accuracy = Accuracy.SNAPSHOT): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result
@@ -52,7 +54,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
     for (i <- endTimes.indices) {
       for (col <- windowedAggregator.indices) {
-        result(i).update(col, genIr(cache, col, endTimes(i)))
+        result(i).update(col, genIr(cache, col, endTimes(i), accuracy))
       }
     }
     cache.reset()
@@ -60,16 +62,17 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   }
 
   // stitches multiple hops into a continuous window
-  private def genIr(cache: HopRangeCache, col: Int, endTime: Long): Any = {
+  private def genIr(cache: HopRangeCache, col: Int, endTime: Long, accuracy: Accuracy): Any = {
     val window = perWindowAggs(col).window
     var hopIndex = tailHopIndices(col)
     val hopMillis = hopSizes(hopIndex)
     var baseIr: Any = null
-    var start: Long = {
-      TsUtils.round(endTime - window.millis, hopMillis)
-      // minus Constants.Partition.spanMillis for snapshot case, otherwise 0
-      //    - (if (hopMillis == Constants.Partition.spanMillis) hopMillis else 0L)
+    val shift = accuracy match {
+      // shift one day back for snapshot case, otherwise 0
+      case Accuracy.SNAPSHOT => Constants.Partition.spanMillis
+      case Accuracy.TEMPORAL => 0L
     }
+    var start: Long = TsUtils.round(endTime - window.millis, hopMillis) - shift
     while (hopIndex < hopSizes.length) {
       val end: Long = TsUtils.round(endTime, hopSizes(hopIndex))
       baseIr = windowedAggregator(col).merge(baseIr, cache.merge(hopIndex, col, start, end))

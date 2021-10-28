@@ -77,7 +77,7 @@ class SawtoothAggregatorTest extends TestCase {
     assertEquals(mergedStr, rawStr)
 
     timer.start()
-    val sawtoothIrs = sawtoothAggregator.computeWindows(rawHops, queries)
+    val sawtoothIrs = sawtoothAggregator.computeWindows(rawHops, queries, Accuracy.TEMPORAL)
     timer.publish("sawtooth/ComputeWindows")
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
@@ -192,7 +192,7 @@ object SawtoothAggregatorTest {
     val headStartTimes = groupedQueries.keys.toArray
     util.Arrays.sort(headStartTimes)
     // compute windows up-to 5min accuracy for the queries
-    val nonRealtimeIrs = sawtoothAggregator.computeWindows(hops, headStartTimes)
+    val nonRealtimeIrs = sawtoothAggregator.computeWindows(hops, headStartTimes, Accuracy.TEMPORAL)
 
     val result = mutable.ArrayBuffer.empty[Array[Any]]
     // STEP-4. join tailAccurate - Irs with headTimeStamps and headEvents

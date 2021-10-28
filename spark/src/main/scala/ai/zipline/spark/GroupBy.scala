@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -161,7 +161,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case (keys, (headStarts, hopsOpt)) =>
           val headStartsArray = headStarts.toArray
           util.Arrays.sort(headStartsArray)
-          val headStartIrs = sawtoothAggregator.computeWindows(hopsOpt.orNull, headStartsArray)
+          val headStartIrs = sawtoothAggregator.computeWindows(hopsOpt.orNull, headStartsArray, Accuracy.TEMPORAL)
           headStartsArray.indices.map { i => (keys, headStartsArray(i)) -> headStartIrs(i) }
       }
 
