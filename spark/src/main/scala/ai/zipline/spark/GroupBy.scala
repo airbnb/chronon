@@ -161,7 +161,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case (keys, (headStarts, hopsOpt)) =>
           val headStartsArray = headStarts.toArray
           util.Arrays.sort(headStartsArray)
-          val headStartIrs = sawtoothAggregator.computeWindows(hopsOpt.orNull, headStartsArray, Accuracy.TEMPORAL)
+          val headStartIrs = sawtoothAggregator.computeWindows(hopsOpt.orNull, headStartsArray)
           headStartsArray.indices.map { i => (keys, headStartsArray(i)) -> headStartIrs(i) }
       }
 
