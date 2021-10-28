@@ -97,13 +97,15 @@ class GroupBy(val aggregations: Seq[Aggregation],
          |partition range ${partitionRange.toString}
          |end times ${endTimes.mkString(",")}""".stripMargin)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
-    val hops = hopsAggregate(endTimes.min, resolution)
+    // shift one day back for the min query ts as we added one day for end times
+    val hops = hopsAggregate(endTimes.min - Constants.Partition.spanMillis, resolution)
 
     hops
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes, Accuracy.SNAPSHOT)
           irs.indices.map { i =>
+            // shift one day back for the partition column because we added one day for end times
             (keys.data :+ Constants.Partition.at(endTimes(i) - Constants.Partition.spanMillis),
              normalizeOrFinalize(irs(i)))
           }
@@ -359,7 +361,6 @@ object GroupBy {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
-    val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
     val tableProps = Option(groupByConf.metaData.tableProperties)

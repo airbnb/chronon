@@ -28,9 +28,8 @@ object DataFrameGen {
   //  The main api: that generates dataframes given certain properties of data
   def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
-    generated.withColumn(
-      Constants.PartitionColumn,
-      from_unixtime((generated.col(Constants.TimeColumn) / 1000) + 86400, Constants.Partition.format))
+    generated.withColumn(Constants.PartitionColumn,
+                         from_unixtime((generated.col(Constants.TimeColumn) / 1000), Constants.Partition.format))
   }
 
   //  Generates Entity data
