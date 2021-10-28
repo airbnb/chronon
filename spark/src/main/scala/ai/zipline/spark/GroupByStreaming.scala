@@ -1,6 +1,5 @@
 package ai.zipline.spark
 
-
 import scala.collection.JavaConverters._
 
 import ai.zipline.api
@@ -11,15 +10,14 @@ import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.lib.Metrics
 
-
-class GroupByStreaming(
-    inputStream: DataFrame,
-    session: SparkSession,
-    groupByConf: api.GroupBy,
-    onlineImpl: api.OnlineImpl,
-    additionalFilterClauses: Seq[String] = Seq.empty,
-    debug: Boolean = false,
-    mockWrites: Boolean = false) extends Serializable {
+class GroupByStreaming(inputStream: DataFrame,
+                       session: SparkSession,
+                       groupByConf: api.GroupBy,
+                       onlineImpl: api.OnlineImpl,
+                       additionalFilterClauses: Seq[String] = Seq.empty,
+                       debug: Boolean = false,
+                       mockWrites: Boolean = false)
+    extends Serializable {
 
   private def buildStreamingQuery(): String = {
     val streamingSource = groupByConf.streamingSource.get
@@ -30,10 +28,10 @@ class GroupByStreaming(
     val keys = groupByConf.getKeyColumns.asScala
 
     val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
-    val keyWhereOption = Option(selects).map(
-      selectsMap => keys.map(key => s"(${selectsMap(key)} is NOT NULL)").mkString(" OR "))
+    val keyWhereOption =
+      Option(selects).map(selectsMap => keys.map(key => s"(${selectsMap(key)} is NOT NULL)").mkString(" OR "))
     val timeWheres = Seq(s"$timeColumn is NOT NULL")
-   
+
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
@@ -42,21 +40,21 @@ class GroupByStreaming(
     )
   }
 
-  class UnCopyableRow(zrow: api.Row) extends Row {
-    override def length: Int = zrow.length
+  class UnCopyableRow(row: api.Row) extends Row {
+    override def length: Int = row.length
 
-    override def get(i: Int): Any = zrow.get(i)
-    // the row inside
-    override def copy(): Row = new UnCopyableRow(zrow)
+    override def get(i: Int): Any = row.get(i)
+
+    // copy is shallow, so real mutations to the contents are not allowed
+    // There is no copy requirement in streaming.
+    override def copy(): Row = new UnCopyableRow(row)
   }
-
 
   def run(): Unit = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
     val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
-    val inputZiplineSchema = onlineImpl.batchInputAvroSchemaToStreaming(
-      groupByServingInfo.inputZiplineSchema)
+    val inputZiplineSchema = onlineImpl.batchInputAvroSchemaToStreaming(groupByServingInfo.inputZiplineSchema)
     val decoder = onlineImpl.genStreamDecoder(inputZiplineSchema)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
@@ -70,14 +68,10 @@ class GroupByStreaming(
 
     val deserialized: Dataset[api.Mutation] = inputStream
       .as[Array[Byte]]
-      .map {
-        record =>
-          decoder.decode(record)
-      }
-      .filter( mutation => mutation.before != mutation.after)
+      .map { decoder.decode }
+      .filter(mutation => mutation.before != mutation.after)
 
-    println(
-      s"""
+    println(s"""
         | group by serving info: $groupByServingInfo
         | Streaming source: $streamingSource
         | Additional filter clauses: ${additionalFilterClauses.mkString(", ")}
@@ -87,13 +81,13 @@ class GroupByStreaming(
         |""".stripMargin)
 
     val des = deserialized
-      .map {
-        mutation => new UnCopyableRow(mutation.after).asInstanceOf[Row]
+      .map { mutation =>
+        new UnCopyableRow(mutation.after).asInstanceOf[Row]
       }(RowEncoder(Conversions.fromZiplineSchema(inputZiplineSchema)))
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
-      s"time column ${Constants.TimeColumn} must be included in the selects")
+           s"time column ${Constants.TimeColumn} must be included in the selects")
     val fields = groupByServingInfo.selectedZiplineSchema.fields.map(_.name)
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
@@ -102,14 +96,13 @@ class GroupByStreaming(
     val streamingDataset = groupByConf.streamingDataset
 
     selectedDf
-      .map {
-        row =>
-          val keys = keyIndices.map(row.get)
-          val keyBytes = groupByServingInfo.keyCodec.encodeArray(keys)
-          val values = valueIndices.map(row.get)
-          val valueBytes = groupByServingInfo.selectedCodec.encodeArray(values)
-          val ts = row.get(tsIndex).asInstanceOf[Long]
-          api.KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
+      .map { row =>
+        val keys = keyIndices.map(row.get)
+        val keyBytes = groupByServingInfo.keyCodec.encodeArray(keys)
+        val values = valueIndices.map(row.get)
+        val valueBytes = groupByServingInfo.selectedCodec.encodeArray(values)
+        val ts = row.get(tsIndex).asInstanceOf[Long]
+        api.KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
       }
       .writeStream
       .outputMode("append")
