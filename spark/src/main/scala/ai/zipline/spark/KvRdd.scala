@@ -80,7 +80,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
 object KvRdd {
   def toSparkRow(value: Any, dataType: DataType): Any = {
-    RowConversions.recursiveEdit[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
+    api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
       value,
       dataType,
       { (data: Iterator[Any], _) => new GenericRow(data.toArray) },

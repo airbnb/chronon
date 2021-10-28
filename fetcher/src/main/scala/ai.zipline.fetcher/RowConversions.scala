@@ -12,7 +12,6 @@ import scala.collection.JavaConverters._
 
 object RowConversions {
   def toAvroRecord(value: Any, dataType: DataType): Any = {
-    // TODO: avoid schema generation multiple times
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
