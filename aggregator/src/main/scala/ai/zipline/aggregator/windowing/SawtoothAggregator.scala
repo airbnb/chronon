@@ -46,7 +46,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
 
   def computeWindows(hops: HopsAggregator.OutputArrayType,
                      endTimes: Array[Long],
-                     accuracy: Accuracy = Accuracy.SNAPSHOT): Array[Array[Any]] = {
+                     accuracy: Accuracy = Accuracy.TEMPORAL): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result

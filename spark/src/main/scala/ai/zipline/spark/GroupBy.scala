@@ -102,7 +102,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     hops
       .flatMap {
         case (keys, hopsArrays) =>
-          val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
+          val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes, Accuracy.SNAPSHOT)
           irs.indices.map { i =>
             (keys.data :+ Constants.Partition.at(endTimes(i) - Constants.Partition.spanMillis),
              normalizeOrFinalize(irs(i)))
