@@ -93,6 +93,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
+    println(s"""
+         |partition range ${partitionRange.toString}
+         |end times ${endTimes.mkString(",")}""".stripMargin)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
 
@@ -101,7 +104,8 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
-            (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
+            (keys.data :+ Constants.Partition.at(endTimes(i) - Constants.Partition.spanMillis),
+             normalizeOrFinalize(irs(i)))
           }
       }
   }

@@ -95,7 +95,7 @@ class GroupByTest {
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, rating, null)) AS rating_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
-                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000
+                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + 86400 * 1000
                                           |group by user, $datesViewName.ds
                                           |""".stripMargin)
 

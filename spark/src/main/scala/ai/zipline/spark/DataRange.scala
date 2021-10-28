@@ -47,7 +47,7 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     Stream
       .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
-      .map(Constants.Partition.epochMillis)
+      .map(Constants.Partition.epochMillis(_) + Constants.Partition.spanMillis)
       .toArray
   }
 

@@ -2,7 +2,7 @@ package ai.zipline.aggregator.windowing
 
 import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, AggregationPart, DataType}
+import ai.zipline.api.{Aggregation, AggregationPart, Constants, DataType}
 
 import java.util
 
@@ -65,9 +65,13 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     var hopIndex = tailHopIndices(col)
     val hopMillis = hopSizes(hopIndex)
     var baseIr: Any = null
-    var start = TsUtils.round(endTime - window.millis, hopMillis)
+    var start: Long = {
+      TsUtils.round(endTime - window.millis, hopMillis)
+      // minus Constants.Partition.spanMillis for snapshot case, otherwise 0
+      //    - (if (hopMillis == Constants.Partition.spanMillis) hopMillis else 0L)
+    }
     while (hopIndex < hopSizes.length) {
-      val end = TsUtils.round(endTime, hopSizes(hopIndex))
+      val end: Long = TsUtils.round(endTime, hopSizes(hopIndex))
       baseIr = windowedAggregator(col).merge(baseIr, cache.merge(hopIndex, col, start, end))
       start = end
       hopIndex += 1
