@@ -152,7 +152,8 @@ object Extensions {
       df.withColumn(columnName, from_unixtime(df.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
 
     def withPartitionBasedTimestamp(colName: String): DataFrame =
-      df.withColumn(colName, unix_timestamp(df.col(Constants.PartitionColumn), Constants.Partition.format) * 1000)
+      df.withColumn(colName,
+                    unix_timestamp(df.col(Constants.PartitionColumn), Constants.Partition.format) * 1000 + 86400 * 1000)
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>

@@ -41,7 +41,7 @@ class GroupByTest {
                                           |       AVG(IF(ts  >= (unix_timestamp(ds, 'yyyy-MM-dd') - (86400*10)) * 1000, session_length, null)) AS session_length_average_10d,
                                           |       AVG(session_length) as session_length_average
                                           |FROM $viewName
-                                          |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000
+                                          |WHERE ts < unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + 86400 * 1000
                                           |GROUP BY user, ds
                                           |""".stripMargin)
 
@@ -95,7 +95,7 @@ class GroupByTest {
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, session_length, null)) AS session_length_sum_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*10) * 1000, rating, null)) AS rating_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
-                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + 86400 * 1000
+                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis}
                                           |group by user, $datesViewName.ds
                                           |""".stripMargin)
 
@@ -257,6 +257,11 @@ class GroupByTest {
     )
     if (diff.count() != 0) {
       diff.show(100)
+      val itemList = diff.head(5).map(_(0)).map(v => s"'$v'").mkString(",")
+      tableUtils
+        .sql(
+          s"select * from zipline_test.test_group_by_steps where item in ($itemList) and ts < unix_timestamp('2021-09-29', 'yyyy-MM-dd') * 1000 order by item")
+        .show(false)
     }
     assertEquals(0, diff.count())
 

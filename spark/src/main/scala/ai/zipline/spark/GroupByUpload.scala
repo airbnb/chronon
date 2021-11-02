@@ -35,7 +35,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     fromBase(groupBy.snapshotEventsBase(PartitionRange(endPartition, endPartition)))
 
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
-    val endTs = Constants.Partition.epochMillis(endPartition)
+    val endTs = Constants.Partition.epochMillis(endPartition) + Constants.Partition.spanMillis
     println(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(endTs,
                                                                 groupBy.aggregations,
@@ -80,6 +80,7 @@ object GroupByUpload {
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
          |Data Model: ${groupByConf.dataModel}
+         |endDs: $endDs
          |""".stripMargin)
 
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
