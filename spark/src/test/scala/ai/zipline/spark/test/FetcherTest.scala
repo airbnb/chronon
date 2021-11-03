@@ -215,7 +215,7 @@ class FetcherTest extends TestCase {
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
-    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
+    val yesterdayExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
 
     def serve(groupByConf: GroupByConf): Unit = {
       GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
@@ -227,15 +227,15 @@ class FetcherTest extends TestCase {
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
 
-    val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$yesterday'")
-    val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
-    val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
-    val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
+    val yesterdayQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$yesterday'")
+    val keys = yesterdayQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
+    val keyIndices = keys.map(yesterdayQueries.schema.fieldIndex)
+    val tsIndex = yesterdayQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ZiplineMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
-    val requests = todaysQueries.rdd
+    val requests = yesterdayQueries.rdd
       .map { row =>
         val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
         val ts = row.get(tsIndex).asInstanceOf[Long]
@@ -313,7 +313,7 @@ class FetcherTest extends TestCase {
     }
     printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
 
-    val columns = todaysExpected.schema.fields.map(_.name)
+    val columns = yesterdayExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
@@ -322,28 +322,26 @@ class FetcherTest extends TestCase {
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
       KvRdd
-        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(todaysExpected.schema)))
+        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(yesterdayExpected.schema)))
         .asInstanceOf[GenericRow]
     }
 
-    println(todaysExpected.schema.pretty)
+    println(yesterdayExpected.schema.pretty)
     val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
-    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
+    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, yesterdayExpected.schema)
     println("queries:")
-    todaysQueries.order(keyishColumns).show()
+    yesterdayQueries.order(keyishColumns).show()
     println("expected:")
-    todaysExpected.order(keyishColumns).show()
+    yesterdayExpected.order(keyishColumns).show()
     println("response:")
     responseDf.order(keyishColumns).show()
-    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
-    assertEquals(todaysQueries.count(), responseDf.count())
+    val diff = Comparison.sideBySide(responseDf, yesterdayExpected, keyishColumns)
+    assertEquals(yesterdayQueries.count(), responseDf.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
       diff.show()
-
-      println(s"actual df count ${responseDf.count()}, expected df count ${todaysExpected.count()}")
     }
     assertEquals(diff.count(), 0)
   }
