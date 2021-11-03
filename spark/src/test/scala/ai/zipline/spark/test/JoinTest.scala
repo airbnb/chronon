@@ -145,7 +145,7 @@ class JoinTest {
         |         AND ts IS NOT NULL
         |         AND ds IS NOT NULL
         |         AND ds >= '$start'
-        |         and ds <= '${Constants.Partition.after(end)}'),
+        |         and ds <= '$end'),
         |   grouped_transactions AS (
         |      SELECT user,
         |             ds,
