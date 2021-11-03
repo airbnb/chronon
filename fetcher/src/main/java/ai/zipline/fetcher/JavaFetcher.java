@@ -57,7 +57,7 @@ public class JavaFetcher  {
 
   public CompletableFuture<List<Response>> fetchGroupBys(List<JavaRequest> requests) {
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests));
+    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests), scala.Option.apply(null));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }

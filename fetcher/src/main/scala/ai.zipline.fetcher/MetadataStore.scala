@@ -8,17 +8,23 @@ import org.apache.thrift.TBase
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.{Option => JsonPathOption}
-
 import java.io.File
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
+import ai.zipline.lib.{MetadataMetrics, Metrics}
+
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
+
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
-    new JoinOps(
+   val startTimeMs = System.currentTimeMillis()
+    val joinOps: JoinOps = new JoinOps(
       ThriftJsonCodec
         .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
+    MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
+    joinOps
   })
 
   def putJoinConf(join: Join): Unit = {
@@ -30,12 +36,15 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   lazy val getGroupByServingInfo: TTLCache[String, GroupByServingInfoParsed] =
     new TTLCache[String, GroupByServingInfoParsed]({ name =>
+      val startTimeMs = System.currentTimeMillis()
       val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
       val metaData =
         kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis)
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
       val groupByServingInfo = ThriftJsonCodec
         .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
+      MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(
+        groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
       new GroupByServingInfoParsed(groupByServingInfo)
     })
 
