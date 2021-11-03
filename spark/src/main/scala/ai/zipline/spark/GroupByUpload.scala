@@ -113,7 +113,7 @@ object GroupByUpload {
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     kvDf
       .union(metaDf)
-      .withColumn("ds", lit(Constants.Partition.before(endDs)))
+      .withColumn("ds", lit(endDs))
       .saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
   }
 

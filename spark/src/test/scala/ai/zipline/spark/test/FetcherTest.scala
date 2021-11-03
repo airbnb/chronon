@@ -113,7 +113,6 @@ class FetcherTest extends TestCase {
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
-    val theDayBeforeYesterday = Constants.Partition.before(yesterday)
 
     // temporal events
     val paymentCols =
@@ -203,34 +202,32 @@ class FetcherTest extends TestCase {
     queriesDf.save(queriesTable)
 
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = yesterday), table = queriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor"))
-        // wrong
-//        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user"))
-//        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user"))
-        // correct
-//        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-//        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
+        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
+        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
-    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
+    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
 
     def serve(groupByConf: GroupByConf): Unit = {
-      GroupByUpload.run(groupByConf, today, Some(tableUtils))
+      GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
       buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
       if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, today)
+        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, yesterday)
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
 
-    val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
+    val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$yesterday'")
     val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
     val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
     val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
@@ -321,7 +318,7 @@ class FetcherTest extends TestCase {
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
-          Map(Constants.PartitionColumn -> today) ++
+          Map(Constants.PartitionColumn -> yesterday) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
       KvRdd
