@@ -4,7 +4,20 @@ import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.GroupByOps
 import ai.zipline.api.KVStore.GetRequest
-import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  KVStore,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.{Fetcher, JavaFetcher, JavaRequest, MetadataStore}
 import ai.zipline.spark.Extensions._
@@ -40,19 +53,15 @@ class FetcherTest extends TestCase {
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
-  def putStreaming(groupByConf: GroupByConf,
-                   kvStore: () => KVStore,
-                   tableUtils: TableUtils,
-                   ds: String): Unit = {
+  def putStreaming(groupByConf: GroupByConf, kvStore: () => KVStore, tableUtils: TableUtils, ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
     val selected = groupBy.inputDf.filter(s"ds='$ds'")
     val inputStream = new InMemoryStream
-    val groupByStreaming = new GroupByStreaming(
-      inputStream.getInMemoryStreamDF(spark, selected),
-      spark,
-      groupByConf,
-      new MockOnlineImpl(kvStore, Map.empty))
+    val groupByStreaming = new GroupByStreaming(inputStream.getInMemoryStreamDF(spark, selected),
+                                                spark,
+                                                groupByConf,
+                                                new MockOnlineImpl(kvStore, Map.empty))
     groupByStreaming.run()
   }
 
@@ -104,6 +113,7 @@ class FetcherTest extends TestCase {
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
+    val theDayBeforeYesterday = Constants.Partition.before(yesterday)
 
     // temporal events
     val paymentCols =
@@ -195,11 +205,13 @@ class FetcherTest extends TestCase {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
-        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
+        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor"))
+        // wrong
+//        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user"))
+//        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user"))
+        // correct
+//        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
+//        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
@@ -209,7 +221,7 @@ class FetcherTest extends TestCase {
     val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
 
     def serve(groupByConf: GroupByConf): Unit = {
-      GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
+      GroupByUpload.run(groupByConf, today, Some(tableUtils))
       buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
       if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)
@@ -333,6 +345,8 @@ class FetcherTest extends TestCase {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
       diff.show()
+
+      println(s"actual df count ${responseDf.count()}, expected df count ${todaysExpected.count()}")
     }
     assertEquals(diff.count(), 0)
   }
