@@ -62,7 +62,7 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
     var i = 0
     while (i < columnAggregators.length) {
       val ts = inputRow.ts
-      val windowStart = endTime - aggregationParts(i).window.millis - 86400 * 1000
+      val windowStart = endTime - aggregationParts(i).window.millis
       if (ts < endTime && ts >= windowStart)
         columnAggregators(i).update(ir, inputRow)
       i += 1

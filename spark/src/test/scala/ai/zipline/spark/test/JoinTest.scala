@@ -145,11 +145,11 @@ class JoinTest {
         |         AND ts IS NOT NULL
         |         AND ds IS NOT NULL
         |         AND ds >= '$start'
-        |         and ds <= '$end'),
+        |         and ds <= '${Constants.Partition.after(end)}'),
         |   grouped_transactions AS (
         |      SELECT user,
         |             ds,
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*29)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
         |      FROM
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
@@ -157,7 +157,7 @@ class JoinTest {
         |          UNION
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
-        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 + 86400*1000> ts
         |        AND user IS NOT NULL
         |        AND ds IS NOT NULL
         |      GROUP BY user, ds)
@@ -335,7 +335,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     computed.show()
 
@@ -351,7 +351,7 @@ class JoinTest {
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
-                                | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+                                | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000 + 86400, 'yyyy-MM-dd')
                                 |""".stripMargin)
     expected.show()
 

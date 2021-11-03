@@ -61,8 +61,10 @@ class GroupBy(val aggregations: Seq[Aggregation],
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
       val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
       val updateFunc = (ir: Array[Any], row: Row) => {
-        // update when ts < tsOf(ds)
-        windowAggregator.updateWindowed(ir, Conversions.toZiplineRow(row, tsIndex), row.getLong(partitionTsIndex))
+        // update when ts < tsOf(ds + 1)
+        windowAggregator.updateWindowed(ir,
+                                        Conversions.toZiplineRow(row, tsIndex),
+                                        row.getLong(partitionTsIndex) + Constants.Partition.spanMillis)
         ir
       }
       inputWithPartitionTs -> updateFunc
@@ -92,20 +94,18 @@ class GroupBy(val aggregations: Seq[Aggregation],
 
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
+    // partition range = 2021-10-31, 2021-11-02
+    // end times = 2021-10-31, 2021-11-01, 2021-11-02
+    // shifted end times =  2021-11-01, 2021-11-02,  2021-11-03
     val endTimes: Array[Long] = partitionRange.toTimePoints
-    println(s"""
-         |partition range ${partitionRange.toString}
-         |end times ${endTimes.mkString(",")}""".stripMargin)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
-    // shift one day back for the min query ts as we added one day for end times
-    val hops = hopsAggregate(endTimes.min - Constants.Partition.spanMillis, resolution)
+    val hops = hopsAggregate(endTimes.min - Constants.Partition.spanMillis, resolution) // 2021-11-01
 
     hops
       .flatMap {
         case (keys, hopsArrays) =>
-          val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes, Accuracy.SNAPSHOT)
+          val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
-            // shift one day back for the partition column because we added one day for end times
             (keys.data :+ Constants.Partition.at(endTimes(i) - Constants.Partition.spanMillis),
              normalizeOrFinalize(irs(i)))
           }
@@ -292,11 +292,9 @@ object GroupBy {
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
-    val effectiveEnd = Option(source.query.endPartition)
-      .map { endPartition =>
-        Seq(endPartition, queryRange.end).min
-      }
-      .getOrElse(queryRange.end)
+    val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
+      .reduceLeftOption(Ordering[String].min)
+      .orNull
 
     // Need to use a case class here to allow null matching
     case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)

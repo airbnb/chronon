@@ -35,7 +35,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     fromBase(groupBy.snapshotEventsBase(PartitionRange(endPartition, endPartition)))
 
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
-    val endTs = Constants.Partition.epochMillis(endPartition) + Constants.Partition.spanMillis
+    val endTs = Constants.Partition.epochMillis(endPartition)
     println(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(endTs,
                                                                 groupBy.aggregations,
@@ -113,7 +113,7 @@ object GroupByUpload {
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     kvDf
       .union(metaDf)
-      .withColumn("ds", lit(endDs))
+      .withColumn("ds", lit(Constants.Partition.before(endDs)))
       .saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
   }
 
