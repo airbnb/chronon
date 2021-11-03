@@ -57,12 +57,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       .flatMap { file =>
         val path = file.getPath
         // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-        val key = path.split("/").takeRight(3).mkString("/")
-        val confJsonOpt = path match {
-          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => println(s"unknown config type in file $path"); None
+        val name: String = JsonPath.parse(file, configuration).read("$.metaData.name")
+        val (key, confJsonOpt) = path match {
+          case value if value.contains("staging_queries/") => (s"staging_queries/$name", loadJson[StagingQuery](value))
+          case value if value.contains("joins/")           => (s"joins/$name", loadJson[Join](value))
+          case value if value.contains("group_bys/")       => (s"group_bys/$name", loadJson[GroupBy](value))
+          case _                                           => println(s"unknown config type in file $path"); ("", None)
         }
         confJsonOpt
           .map(conf =>

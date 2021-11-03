@@ -129,7 +129,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       val responses: Seq[Response] = requestParFanout.map {
         case (request, GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
          // pick the batch version with highest timestamp
-          val batchOption = Option(responsesMap(batchRequest)).map(_.maxBy(_.millis))
+          val batchOption = responsesMap.get(batchRequest).flatMap(Option(_)).map(_.maxBy(_.millis))
           val batchTime: Option[Long] = batchOption.map(_.millis)
 
           val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
