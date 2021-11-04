@@ -95,16 +95,24 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       .withTeam(groupBy.getMetaData.getTeam)
   }
 
-  private case class GroupByRequestMeta(groupByServingInfoParsed: GroupByServingInfoParsed,
-                                        batchRequest: GetRequest,
-                                        streamingRequestOpt: Option[GetRequest],
-                                        endTs: Option[Long])
+  private case class GroupByRequestMeta(
+      groupByServingInfoParsed: GroupByServingInfoParsed,
+      batchRequest: GetRequest,
+      streamingRequestOpt: Option[GetRequest],
+      endTs: Option[Long]
+  )
+
+  private def getRequestContext(requests: Seq[Request], withTag: String => Metrics.Context, context: Metrics.Context) = {
+    if (requests.forall(_.name == requests.head.name)) withTag(requests.head.name)
+    else context
+  }
 
   private def reportRequestBatchSize(requests: Seq[Request], withTag: String => Metrics.Context, context: Metrics.Context): Unit = {
-    val batchContext =
-      if (requests.forall(_.name == requests.head.name)) withTag(requests.head.name)
-      else context
-    FetcherMetrics.reportRequestBatchSize(requests.size, batchContext)
+    FetcherMetrics.reportRequestBatchSize(requests.size, getRequestContext(requests, withTag, context))
+  }
+
+  private def reportKVLatency(requests: Seq[Request], latencyMs: Long, withTag: String => Metrics.Context, context: Metrics.Context): Unit = {
+    FetcherMetrics.reportKVLatency(requests.size, getRequestContext(requests, withTag, context))
   }
 
   // 1. fetches GroupByServingInfo
@@ -113,7 +121,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
     val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
-    reportRequestBatchSize(requests, context.withGroupBy, context)
+    reportRequestBatchSize(requests, withTag = context.withGroupBy, context)
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest = requests.iterator.map { request =>
@@ -139,9 +147,10 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     }
 
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
-
+    val kvRequestStartTimeMs = System.currentTimeMillis()
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
+      reportKVLatency(requests, System.currentTimeMillis() - kvRequestStartTimeMs, context.withGroupBy, context)
       val responsesMap = responsesFuture.iterator.map { response =>
         response.request -> response.values
       }.toMap
@@ -157,7 +166,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
             println(s"""${request.name}'s value's batch timestamp of $batchTime is
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-                 |Forcing an update of schema.""".stripMargin)
+                 |FoRcing update of schema.""".stripMargin)
             getGroupByServingInfo.force(request.name)
           } else {
             groupByServingInfo
