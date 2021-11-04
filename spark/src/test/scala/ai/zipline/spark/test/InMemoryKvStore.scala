@@ -11,7 +11,6 @@ import java.util.function
 import scala.collection.mutable
 import scala.concurrent.Future
 
-
 class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   //type aliases for readability
   type Key = String
@@ -75,7 +74,8 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
     val partitionFilter =
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
     tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show()
-    val df = tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, unix_timestamp(ds, 'yyyy-MM-dd') * 1000 as ts
+    val df =
+      tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, (unix_timestamp(ds, 'yyyy-MM-dd') + 86400) * 1000 as ts
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd
@@ -97,15 +97,15 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
 }
 
 object InMemoryKvStore {
-  val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[
-    String, InMemoryKvStore]
+  val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
   // across them. Since SparkContext is not serializable,  we wrap TableUtils that has SparkContext
   // in a closure and pass it around.
   def apply(testName: String, tableUtils: () => TableUtils): InMemoryKvStore = {
-    stores.computeIfAbsent(testName, new function.Function[String, InMemoryKvStore] {
-      override def apply(name: String): InMemoryKvStore = new InMemoryKvStore(tableUtils)
-    })
+    stores.computeIfAbsent(testName,
+                           new function.Function[String, InMemoryKvStore] {
+                             override def apply(name: String): InMemoryKvStore = new InMemoryKvStore(tableUtils)
+                           })
   }
 }

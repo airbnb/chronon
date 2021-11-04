@@ -204,8 +204,10 @@ class FetcherTest extends TestCase {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        // temporal
         Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
+        // snapshot
+        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
@@ -218,7 +220,7 @@ class FetcherTest extends TestCase {
     val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
 
     def serve(groupByConf: GroupByConf): Unit = {
-      GroupByUpload.run(groupByConf, today, Some(tableUtils))
+      GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
       buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
       if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)

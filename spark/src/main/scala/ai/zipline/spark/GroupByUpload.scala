@@ -73,29 +73,32 @@ object GroupByUpload {
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
+
+    val batchEndDate = Constants.Partition.after(endDs)
+
     val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     val groupByUpload = new GroupByUpload(endDs, groupBy)
 
-    val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(-1), tableUtils)
-    val shiftedGroupByUpload = new GroupByUpload(Constants.Partition.before(endDs), shiftedGroupBy)
+    val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
+    val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
 
     println(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
          |Data Model: ${groupByConf.dataModel}
-         |endDs: $endDs
+         |endDs: $batchEndDate
          |""".stripMargin)
 
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
-      case (Accuracy.SNAPSHOT, DataModel.Events)   => shiftedGroupByUpload.snapshotEvents
-      case (Accuracy.SNAPSHOT, DataModel.Entities) => shiftedGroupByUpload.snapshotEntities
-      case (Accuracy.TEMPORAL, DataModel.Events)   => groupByUpload.temporalEvents()
+      case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
+      case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
+      case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }).toAvroDf
 
     val groupByServingInfo = new GroupByServingInfo()
-    groupByServingInfo.setBatchEndDate(endDs)
+    groupByServingInfo.setBatchEndDate(batchEndDate)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
