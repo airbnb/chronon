@@ -166,7 +166,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           // batch request has only one value per key.
           val batchValueOption: Option[TimedValue] = Option(responsesMap(batchRequest)).flatMap(_.headOption)
           batchValueOption.foreach { value =>
-            FetcherMetrics.reportDataFreshness(value.millis, groupByContext.asBatch)
+            FetcherMetrics.reportDataFreshness(startTimeMs - value.millis, groupByContext.asBatch)
             FetcherMetrics.reportResponseBytesSize(value.bytes.length, groupByContext.asBatch)
           }
           FetcherMetrics.reportResponseNumRows(if (batchValueOption.isDefined) 1 else 0, groupByContext.asBatch)
@@ -193,7 +193,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             if (streamingResponses.length > 0) {
               val streamingContext = groupByContext.asStreaming
               // report streaming metrics.
-              FetcherMetrics.reportDataFreshness(streamingResponses.iterator.map(_.millis).max - startTimeMs, streamingContext)
+              FetcherMetrics.reportDataFreshness(startTimeMs - streamingResponses.iterator.map(_.millis).max, streamingContext)
               FetcherMetrics.reportResponseBytesSize(streamingResponses.iterator.map(_.bytes.length).sum, streamingContext)
               FetcherMetrics.reportResponseNumRows(streamingResponses.length, streamingContext)
             }
@@ -205,10 +205,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
           Response(request, responseMap)
       }.toList
-      // report latency of each group by as the maximum of the latency of the group bys in the request batch.
-      responses.foreach { resp =>
-        FetcherMetrics.reportFinalLatency(System.currentTimeMillis() - startTimeMs, context.withGroupBy(resp.request.name))
-      }
       responses
     }.recover {
       case e: Exception =>
@@ -274,10 +270,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, joinContext)
           Response(joinRequest, joinValues)
       }.toSeq
-      // report latency of each join as the maximum of the latency of the joins in the request batch.
-      responses.foreach { resp =>
-        FetcherMetrics.reportFinalLatency(System.currentTimeMillis() - startTimeMs, context.withJoin(resp.request.name))
-      }
       responses
     }.recover {
       case e: Exception =>

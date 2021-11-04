@@ -54,10 +54,5 @@ import ai.zipline.lib.Metrics.{Context, statsd}
 
    def reportLatency(millis: Long, metricsContext: Context): Unit = {
      statsd.histogram(Name.Latency, millis, metricsContext.toTags(): _*)
-    }
-
-   // report latency as the maximum latency of all group bys / joins included in multiGet requests.
-   def reportFinalLatency(millis: Long, metricsContext: Context): Unit = {
-     statsd.histogram(Name.FinalLatency, millis, metricsContext.toTags(): _*)
    }
  }
