@@ -132,6 +132,7 @@ class JoinTest {
 
     val runner2 = new Join(joinConf, end, tableUtils)
     val computed = runner2.computeJoin(Some(3))
+//    val computed = runner2.computeJoin()
     println(s"join start = $start")
 
     val expected = spark.sql(s"""
@@ -167,7 +168,7 @@ class JoinTest {
         |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
-        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
+        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = date_add(grouped_transactions.ds, 1)
         | WHERE queries.user_name IS NOT NULL
         |""".stripMargin)
     val queries = tableUtils.sql(
@@ -181,6 +182,27 @@ class JoinTest {
       println(s"Queries count: ${queries.count()}")
       println(s"diff result rows")
       diff.show()
+      tableUtils
+        .sql(
+          s"""select user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars  from $rupeeTable where user='${diff
+            .head()(0)}' and ds <= '${diff.head()(2)}' and ds >= '${Constants.Partition
+            .minus(diff.head()(2).toString, new Window(30, TimeUnit.DAYS))}'
+           """)
+        .show(false)
+      tableUtils
+        .sql(s"""select user, ts, ds, amount_dollars from $dollarTable where user='${diff.head()(0)}' and ds <= '${diff
+          .head()(2)}' and ds >= '${Constants.Partition.minus(diff.head()(2).toString,
+                                                              new Window(30, TimeUnit.DAYS))}'""".stripMargin)
+        .show(false)
+
+      tableUtils
+        .sql(
+          s"""select * from test_namespace_jointest.test_user_transaction_features_unit_test_user_transactions where ds='${Constants.Partition
+            .before(
+              diff
+                .head()(2)
+                .toString)}'""")
+        .show(false)
     }
     assertEquals(0, diff.count())
   }
@@ -341,17 +363,18 @@ class JoinTest {
 
     val expected = tableUtils.sql(s"""
                                 |WITH
-                                |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+                                |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo')
                                 | SELECT queries.item,
                                 |        queries.ts,
-                                |        queries.ds,
-                                |        MIN(IF(CAST(queries.ts/(86400*1000) + 1 AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
-                                |        MAX(IF(CAST(queries.ts/(86400*1000) + 1 AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
-                                |        AVG(IF(CAST(queries.ts/(86400*1000) + 1 AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
+                                |        from_unixtime(queries.ts/1000, 'yyyy-MM-dd') as ds,
+                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
+                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
+                                |        AVG(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
+                                
                                 | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
-                                | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000 + 86400, 'yyyy-MM-dd')
+                                | GROUP BY queries.item, queries.ts, from_unixtime(queries.ts/1000 , 'yyyy-MM-dd')
                                 |""".stripMargin)
     expected.show()
 
@@ -361,6 +384,22 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff.show()
+
+      tableUtils
+        .sql(s"""select *  from $viewsTable where item='${diff
+          .head()(0)}' and ds <= '${diff.head()(2)}' 
+           """)
+        .show(false)
+
+      tableUtils
+        .sql(
+          s"""select * from test_namespace_jointest.test_item_snapshot_features_2__userunit_test_item_views where item='${diff
+            .head()(0)}' and ds='${Constants.Partition
+            .before(
+              diff
+                .head()(2)
+                .toString)}'""")
+        .show(false)
     }
     assertEquals(diff.count(), 0)
   }

@@ -68,8 +68,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
          |  
          |""".stripMargin)
 
+    import org.apache.spark.sql.functions.{date_add, date_format, col}
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-      prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.TimePartitionColumn)
+      // increment one day to align with left side ts_ds
+      prefixedRight
+        .withColumn(Constants.TimePartitionColumn,
+                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
+        .drop(Constants.PartitionColumn)
     } else {
       prefixedRight
     }
