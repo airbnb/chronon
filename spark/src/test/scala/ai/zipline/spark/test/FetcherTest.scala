@@ -84,7 +84,7 @@ class FetcherTest extends TestCase {
     val singleFilePut = singleFileMetadataStore.putZiplineConf(
       "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
-    val response = inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), singleFileDataSet))
+    val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     val actual = new String(res.values.head.bytes)
 
@@ -96,7 +96,7 @@ class FetcherTest extends TestCase {
     val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
-      inMemoryKvStore.get(GetRequest("joins/team/team.example_join.v1".getBytes(), directoryDataSetDataSet))
+      inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     val dirActual = new String(dirRes.values.head.bytes)
 
@@ -204,10 +204,8 @@ class FetcherTest extends TestCase {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
-        // temporal
-        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
-        // snapshot
         Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
+        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
