@@ -103,6 +103,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
           irs.indices.map { i =>
+            // minus 1 day to reflect the original ds as 1 day was added earlier to end times
             (keys.data :+ Constants.Partition.at(endTimes(i) - Constants.Partition.spanMillis),
              normalizeOrFinalize(irs(i)))
           }

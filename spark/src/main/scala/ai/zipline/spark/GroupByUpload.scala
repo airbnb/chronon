@@ -73,12 +73,12 @@ object GroupByUpload {
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
-
+    // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = Constants.Partition.after(endDs)
-
+    // for snapshot accuracy
     val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     val groupByUpload = new GroupByUpload(endDs, groupBy)
-
+    // for temporal accuracy
     val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
     val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
 
