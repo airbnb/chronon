@@ -94,12 +94,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
 
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
-    // partition range = 2021-10-31, 2021-11-02
-    // end times = 2021-10-31, 2021-11-01, 2021-11-02
-    // shifted end times =  2021-11-01, 2021-11-02,  2021-11-03
     val endTimes: Array[Long] = partitionRange.toTimePoints
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
-    val hops = hopsAggregate(endTimes.min - Constants.Partition.spanMillis, resolution) // 2021-11-01
+    val hops = hopsAggregate(endTimes.min - Constants.Partition.spanMillis, resolution)
 
     hops
       .flatMap {

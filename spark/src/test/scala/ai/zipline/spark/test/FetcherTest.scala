@@ -202,7 +202,7 @@ class FetcherTest extends TestCase {
     queriesDf.save(queriesTable)
 
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = yesterday), table = queriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
       joinParts = Seq(
         Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
         Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
@@ -215,27 +215,27 @@ class FetcherTest extends TestCase {
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
-    val yesterdayExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$yesterday'")
+    val todaysExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$today'")
 
     def serve(groupByConf: GroupByConf): Unit = {
-      GroupByUpload.run(groupByConf, yesterday, Some(tableUtils))
+      GroupByUpload.run(groupByConf, today, Some(tableUtils))
       buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
       if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
         inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, yesterday)
+        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, today)
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
 
-    val yesterdayQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$yesterday'")
-    val keys = yesterdayQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
-    val keyIndices = keys.map(yesterdayQueries.schema.fieldIndex)
-    val tsIndex = yesterdayQueries.schema.fieldIndex(Constants.TimeColumn)
+    val todaysQueries = tableUtils.sql(s"SELECT * FROM $queriesTable WHERE ds='$today'")
+    val keys = todaysQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
+    val keyIndices = keys.map(todaysQueries.schema.fieldIndex)
+    val tsIndex = todaysQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ZiplineMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
-    val requests = yesterdayQueries.rdd
+    val requests = todaysQueries.rdd
       .map { row =>
         val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
         val ts = row.get(tsIndex).asInstanceOf[Long]
@@ -313,31 +313,31 @@ class FetcherTest extends TestCase {
     }
     printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
 
-    val columns = yesterdayExpected.schema.fields.map(_.name)
+    val columns = todaysExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
           res.values ++
-          Map(Constants.PartitionColumn -> yesterday) ++
+          Map(Constants.PartitionColumn -> today) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
       KvRdd
-        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(yesterdayExpected.schema)))
+        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(todaysExpected.schema)))
         .asInstanceOf[GenericRow]
     }
 
-    println(yesterdayExpected.schema.pretty)
+    println(todaysExpected.schema.pretty)
     val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
-    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, yesterdayExpected.schema)
+    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
     println("queries:")
-    yesterdayQueries.order(keyishColumns).show()
+    todaysQueries.order(keyishColumns).show()
     println("expected:")
-    yesterdayExpected.order(keyishColumns).show()
+    todaysExpected.order(keyishColumns).show()
     println("response:")
     responseDf.order(keyishColumns).show()
-    val diff = Comparison.sideBySide(responseDf, yesterdayExpected, keyishColumns)
-    assertEquals(yesterdayQueries.count(), responseDf.count())
+    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
+    assertEquals(todaysQueries.count(), responseDf.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")

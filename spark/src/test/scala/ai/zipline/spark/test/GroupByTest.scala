@@ -258,11 +258,6 @@ class GroupByTest {
     )
     if (diff.count() != 0) {
       diff.show(100)
-      val itemList = diff.head(5).map(_(0)).map(v => s"'$v'").mkString(",")
-      tableUtils
-        .sql(
-          s"select * from zipline_test.test_group_by_steps where item in ($itemList) and ts < unix_timestamp('2021-09-29', 'yyyy-MM-dd') * 1000 order by item")
-        .show(false)
     }
     assertEquals(0, diff.count())
 

@@ -132,7 +132,6 @@ class JoinTest {
 
     val runner2 = new Join(joinConf, end, tableUtils)
     val computed = runner2.computeJoin(Some(3))
-//    val computed = runner2.computeJoin()
     println(s"join start = $start")
 
     val expected = spark.sql(s"""

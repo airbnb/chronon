@@ -76,6 +76,9 @@ object GroupByUpload {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     val groupByUpload = new GroupByUpload(endDs, groupBy)
 
+    val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(-1), tableUtils)
+    val shiftedGroupByUpload = new GroupByUpload(Constants.Partition.before(endDs), shiftedGroupBy)
+
     println(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
@@ -84,8 +87,8 @@ object GroupByUpload {
          |""".stripMargin)
 
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
-      case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
-      case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
+      case (Accuracy.SNAPSHOT, DataModel.Events)   => shiftedGroupByUpload.snapshotEvents
+      case (Accuracy.SNAPSHOT, DataModel.Entities) => shiftedGroupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => groupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
