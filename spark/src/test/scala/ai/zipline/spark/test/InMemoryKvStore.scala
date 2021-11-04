@@ -75,7 +75,8 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
     tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show()
     val df =
-      tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, (unix_timestamp(ds, 'yyyy-MM-dd') + 86400) * 1000 as ts
+      tableUtilInst.sql(
+        s"""SELECT key_bytes, value_bytes, (unix_timestamp(ds, 'yyyy-MM-dd') + ${Constants.Partition.spanMillis}) * 1000 as ts
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd

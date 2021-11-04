@@ -86,7 +86,6 @@ object GroupByUpload {
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
          |Data Model: ${groupByConf.dataModel}
-         |endDs: $batchEndDate
          |""".stripMargin)
 
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {

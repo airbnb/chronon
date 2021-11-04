@@ -149,7 +149,7 @@ class JoinTest {
         |   grouped_transactions AS (
         |      SELECT user,
         |             ds,
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*29)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*(30-1))) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
         |      FROM
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
