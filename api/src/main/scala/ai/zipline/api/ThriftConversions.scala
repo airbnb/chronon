@@ -8,21 +8,24 @@ import java.nio.ByteBuffer
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
 
+// Utility methods to convert thrift objects into zipline rows.
+// The main purpose of which is to handle streams of data encoded in thrift and convert them to thrift.
+// Long term, we could use this to execute sql over service responses.
 object ThriftConversions {
 
-  def structMetaData(className: String): StructMetaData = {
+  def buildStructMetaData(className: String): StructMetaData = {
     val clazz = Class
       .forName(className)
-      .asInstanceOf[Class[_ <: TBase[_ <: TBase[_, _], _ <: TFieldIdEnum]]]
+      .asInstanceOf[Class[_ <: TBase[T, F] forSome { type T <: TBase[T, F]; type F <: TFieldIdEnum }]]
     new StructMetaData(TType.STRUCT, clazz)
   }
-
-  def extractSchema(className: String, tokens: util.Set[String] = null): StructType = {
-    toZType(structMetaData(className), tokens).asInstanceOf[StructType]
+// Class[_ <: TBase[?0(in trait TBase),?1] forSome { type ?0(in trait TBase) <: TBase[?0(in trait TBase),?1]; type ?1 <: TFieldIdEnum }]
+  def extractSchema(structMetaData: StructMetaData, tokens: util.Set[String] = null): StructType = {
+    toZType(structMetaData, tokens).asInstanceOf[StructType]
   }
 
-  def extractRow(obj: Any, className: String, tokens: util.Set[String] = null): Any = {
-    toZValue(obj, structMetaData(className), tokens)
+  def extractRow(obj: Any, structMetaData: StructMetaData, tokens: util.Set[String] = null): Any = {
+    toZValue(obj, structMetaData, tokens)
   }
 
   def tokenize(query: String): util.Set[String] = {
@@ -82,7 +85,7 @@ object ThriftConversions {
         val structMeta = valueMetaData.asInstanceOf[StructMetaData]
         val metaMap = FieldMetaData.getStructMetaDataMap(structMeta.structClass)
         val result = new util.ArrayList[Any]()
-        val value = obj.asInstanceOf[TBase[TBase[_, _], TFieldIdEnum]]
+        val value = obj.asInstanceOf[TBase[_, TFieldIdEnum]]
         metaMap.entrySet().iterator().asScala.foreach { entry =>
           val fieldName = entry.getKey.getFieldName
           val fieldId = entry.getKey.getThriftFieldId

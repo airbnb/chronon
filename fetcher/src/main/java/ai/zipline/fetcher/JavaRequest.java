@@ -23,7 +23,10 @@ public class JavaRequest {
   public JavaRequest(Fetcher.Request scalaRequest) {
     this.name = scalaRequest.name();
     this.keys = JavaConverters.mapAsJavaMapConverter(scalaRequest.keys()).asJava();
-    this.atMillis = scalaRequest.atMillis().getOrElse(null);
+    Option<Object> millisOpt = scalaRequest.atMillis();
+    if (millisOpt.isDefined()) {
+      this.atMillis = (Long) millisOpt.get();
+    }
   }
 
   public Fetcher.Request toScalaRequest() {
@@ -35,3 +38,5 @@ public class JavaRequest {
         Option.apply(this.atMillis));
   }
 }
+
+

@@ -16,7 +16,7 @@ trait Row {
 }
 
 object Row {
-  // recursively traverse external data, and convert it zipline's row type
+  // recursively traverse a logical struct, and convert it zipline's row type
   def from[CompositeType, BinaryType, ArrayType, StringType](
       value: Any,
       dataType: DataType,

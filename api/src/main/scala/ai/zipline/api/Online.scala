@@ -1,6 +1,7 @@
 package ai.zipline.api
 
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
+
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -36,7 +37,7 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    assert (response.latest.isDefined, s"we should have a string response")
+    assert(response.latest.isDefined, s"we should have a string response")
     new String(response.latest.get.bytes, Constants.UTF8)
   }
 }
@@ -58,7 +59,7 @@ trait KVStore {
   * For the entities case, `mutation_ts` when absent will use `ts` as a replacement
 
   * ==== TYPE CONVERSIONS ====
-  * Java types corresponding to the schema types. Stream [[Decoder]] should produce mutations that comply.
+  * Java types corresponding to the schema types. [[StreamDecoder]] should produce mutations that comply.
   * NOTE: everything is nullable (hence boxed)
   * IntType        java.lang.Integer
   * LongType       java.lang.Long
@@ -75,20 +76,12 @@ trait KVStore {
   */
 case class Mutation(schema: StructType = null, before: Row = null, after: Row = null)
 
-trait Decoder extends Serializable {
+abstract class StreamDecoder {
   def decode(bytes: Array[Byte]): Mutation
+  def schema: StructType
 }
 
-
 abstract class OnlineImpl(userConf: Map[String, String]) extends Serializable {
-  // helper method to access property
-  // -Dkey1=value -Dkey2=value2  from scallop gets converted to userConf.
-  def getProperty(key: String): String = userConf(key)
-
-  def genStreamDecoder(inputSchema: StructType): Decoder
-
-  // users can set transform input avro schema from batch source to streaming compatible schema
-  def batchInputAvroSchemaToStreaming(batchSchema: StructType): StructType
-
+  def streamDecoder(groupBy: GroupBy, batchInputSchema: StructType): StreamDecoder
   def genKvStore: KVStore
 }

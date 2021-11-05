@@ -2,16 +2,15 @@ package ai.zipline.fetcher
 
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.Extensions._
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.zipline.api.{StructType, _}
-import ai.zipline.lib.{FetcherMetrics, Metrics}
 import org.apache.avro.Schema
+import ai.zipline.api.{Row, _}
 import ai.zipline.fetcher.Fetcher._
+import com.google.gson.GsonBuilder
+import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.function
-import scala.collection.JavaConverters._
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
 
@@ -81,6 +80,9 @@ object Fetcher {
   case class Response(request: Request, values: Map[String, AnyRef])
 }
 
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
+
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
@@ -144,20 +146,19 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     val kvRequestStartTimeMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     // map all the kv store responses back to groupBy level responses
-    kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
-      FetcherMetrics.reportMultiGetLatency(System.currentTimeMillis() - kvRequestStartTimeMs, getRequestContext(requests, context.withGroupBy, context))
-      val responsesMap = responsesFuture.iterator.map { response =>
-        response.request -> response.values
-      }.toMap
-      // Heaviest compute is decoding bytes and merging them - so we parallelize
-      val requestParFanout = groupByRequestToKvRequest.par
-      requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
-      val responses: Seq[Response] = requestParFanout.map {
-        case (request, GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
-         // pick the batch version with highest timestamp
-          val batchOption = responsesMap.get(batchRequest).flatMap(Option(_)).map(_.maxBy(_.millis))
-          val batchTime: Option[Long] = batchOption.map(_.millis)
-
+    kvResponseFuture
+      .map { responsesFuture: Seq[GetResponse] =>
+        val responsesMap = responsesFuture.iterator.map { response =>
+          response.request -> response.values
+        }.toMap
+        // Heaviest compute is decoding bytes and merging them - so we parallelize
+        val requestParFanout = groupByRequestToKvRequest.par
+        requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
+        val responses: Seq[Response] = requestParFanout.map {
+          case (request, GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
+            // pick the batch version with highest timestamp
+            val batchOption = responsesMap.get(batchRequest).flatMap(Option(_)).map(_.maxBy(_.millis))
+            val batchTime: Option[Long] = batchOption.map(_.millis)
             val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
               println(s"""${request.name}'s value's batch timestamp of $batchTime is
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
@@ -293,5 +294,61 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       val context = withTag(req.name)
       FetcherMetrics.reportFailure(e, context)
     }
+  }
+}
+
+object Fetcher {
+  case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
+  case class Response(request: Request, values: Map[String, AnyRef])
+
+  class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
+    val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
+    val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
+    val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
+    verify()
+  }
+
+  def run(args: Args, onlineImpl: OnlineImpl): Unit = {
+    val gson = (new GsonBuilder()).setPrettyPrinting().create()
+    val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+
+    val fetcher = new Fetcher(onlineImpl.genKvStore)
+    val startNs = System.nanoTime
+    val requests = Seq(Fetcher.Request(args.name(), keyMap))
+    val resultFuture = if (args.`type`() == "join") {
+      fetcher.fetchJoin(requests)
+    } else {
+      fetcher.fetchGroupBys(requests)
+    }
+    val result = Await.result(resultFuture, 1.minute)
+    val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
+
+    // treeMap to produce a sorted result
+    val tMap = new java.util.TreeMap[String, AnyRef]()
+    result.head.values.foreach { case (k, v) => tMap.put(k, v) }
+    println(gson.toJson(tMap))
+    println(s"Fetched in: $awaitTimeMs ms")
+
+    sys.exit(0)
+  }
+
+  def main(args: Array[String]): Unit = {
+    val gson = (new GsonBuilder()).setPrettyPrinting().create()
+    val keyMap = gson
+      .fromJson(
+        """{
+          |"key1": "value1", "key2": 3748, "key3": 0.42389, 
+          |"key4": [0, 1, 2, 3], 
+          |"key5": {"sub1": "val1", "sub2": "val2"}}
+          |""".stripMargin,
+        classOf[java.util.Map[String, AnyRef]]
+      )
+      .asScala
+      .toMap
+
+    // treeMap to produce a sorted result
+    val tMap = new java.util.TreeMap[String, AnyRef]()
+    val resultMap = keyMap.foreach { case (k, v) => tMap.put(k, v) }
+    println(gson.toJson(tMap))
   }
 }
