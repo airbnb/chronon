@@ -5,21 +5,22 @@ import ai.zipline.api.Extensions.{JoinOps, StringOps}
 import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api._
 import org.apache.thrift.TBase
+import org.rogach.scallop._
+import scala.concurrent.duration._
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.{Option => JsonPathOption}
+
 import java.io.File
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.reflect.ClassTag
-
-import ai.zipline.lib.{MetadataMetrics, Metrics}
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
-   val startTimeMs = System.currentTimeMillis()
+    val startTimeMs = System.currentTimeMillis()
     val joinOps: JoinOps = new JoinOps(
       ThriftJsonCodec
         .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
@@ -43,14 +44,15 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
       val groupByServingInfo = ThriftJsonCodec
         .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
-      MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(
-        groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
+      MetadataMetrics.reportJoinConfRequestMetric(
+        System.currentTimeMillis() - startTimeMs,
+        Metrics.Context(groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
       new GroupByServingInfoParsed(groupByServingInfo)
     })
 
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putZiplineConf(configPath: String): Future[Seq[Boolean]] = {
+  def putConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
     println(s"Uploading Zipline configs from $configPath")
@@ -98,6 +100,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           .flatMap(listFiles(_, recursive))
     }
   }
+
   // process zipline configs only. others will be ignored
   // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
@@ -109,5 +112,21 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         println(s"Failed to parse JSON to Zipline configs, file path = $file")
         None
     }
+  }
+}
+
+object MetadataUploader {
+  class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
+    val confPath: ScallopOption[String] =
+      opt[String](required = true, descr = "Path to the Zipline config file or directory")
+    verify()
+  }
+
+  def run(args: Args, onlineImpl: OnlineImpl): Unit = {
+    val metadataStore = new MetadataStore(onlineImpl.genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+    val putRequest = metadataStore.putConf(args.confPath())
+    val res = Await.result(putRequest, 1.hour)
+    println(
+      s"Uploaded Zipline Configs to Mussel, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
   }
 }

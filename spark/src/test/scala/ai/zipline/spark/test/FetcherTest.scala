@@ -4,7 +4,20 @@ import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.GroupByOps
 import ai.zipline.api.KVStore.GetRequest
-import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  KVStore,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
 import ai.zipline.fetcher.Fetcher.Request
 import ai.zipline.fetcher.{Fetcher, JavaFetcher, JavaRequest, MetadataStore}
 import ai.zipline.spark.Extensions._
@@ -14,15 +27,14 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
+
 import java.lang
 import java.util.concurrent.Executors
-
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 
 object FetcherTest {
@@ -40,19 +52,15 @@ class FetcherTest extends TestCase {
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
-  def putStreaming(groupByConf: GroupByConf,
-                   kvStore: () => KVStore,
-                   tableUtils: TableUtils,
-                   ds: String): Unit = {
+  def putStreaming(groupByConf: GroupByConf, kvStore: () => KVStore, tableUtils: TableUtils, ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
     val selected = groupBy.inputDf.filter(s"ds='$ds'")
     val inputStream = new InMemoryStream
-    val groupByStreaming = new GroupByStreaming(
-      inputStream.getInMemoryStreamDF(spark, selected),
-      spark,
-      groupByConf,
-      new MockOnlineImpl(kvStore, Map.empty))
+    val groupByStreaming = new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected),
+                                                 spark,
+                                                 groupByConf,
+                                                 new MockOnlineImpl(kvStore, Map.empty))
     groupByStreaming.run()
   }
 
@@ -72,7 +80,7 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putZiplineConf(
+    val singleFilePut = singleFileMetadataStore.putConf(
       "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
@@ -84,7 +92,7 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))

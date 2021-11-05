@@ -23,13 +23,6 @@ lazy val api = project
     )
   )
 
-lazy val lib = project
-  .settings(
-    libraryDependencies ++= Seq(
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7"
-    )
-  )
-
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
@@ -41,12 +34,14 @@ lazy val aggregator = project
   )
 
 lazy val fetcher = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), lib)
+  .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
-      "org.apache.avro" % "avro" % "1.8.0",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
+      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided",
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      "org.rogach" %% "scallop" % "4.0.1",
+      "org.apache.avro" % "avro" % "1.8.0"
     )
   )
 
@@ -58,7 +53,7 @@ def cleanSparkMeta: Unit = {
 }
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher, lib)
+  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
   .settings(
     assembly / test := {},
     mainClass in (Compile, run) := Some(
@@ -70,7 +65,6 @@ lazy val spark = project
       "org.apache.spark" %% "spark-core" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4" % "provided",
-      "org.rogach" %% "scallop" % "4.0.1",
       "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
     ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),

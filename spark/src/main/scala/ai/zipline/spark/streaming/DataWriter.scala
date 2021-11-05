@@ -1,24 +1,22 @@
-package ai.zipline.spark
+package ai.zipline.spark.streaming
 
 import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.lib.Metrics.Context
 import ai.zipline.api.{KVStore, OnlineImpl}
+import ai.zipline.fetcher.Metrics.Context
 import ai.zipline.fetcher.{AvroCodec, GroupByServingInfoParsed}
-import ai.zipline.lib.StreamingMetrics
+import com.google.gson.Gson
 import org.apache.spark.sql.ForeachWriter
+
 import java.util.Base64
 
-import com.google.gson.Gson
+class DataWriter(onlineImpl: OnlineImpl,
+                 groupByServingInfoParsed: GroupByServingInfoParsed,
+                 context: Context,
+                 debug: Boolean = false,
+                 mockWrites: Boolean = false)
+    extends ForeachWriter[PutRequest] {
 
-
-class StreamingDataWriter(
-    onlineImpl: OnlineImpl,
-    groupByServingInfoParsed: GroupByServingInfoParsed,
-    context: Context,
-    debug: Boolean = false,
-    mockWrites: Boolean = false) extends ForeachWriter[PutRequest] {
-
-  var kvStore : KVStore = _
+  var kvStore: KVStore = _
 
   override def open(partitionId: Long, epochId: Long): Boolean = {
     kvStore = onlineImpl.genKvStore
@@ -53,14 +51,11 @@ class StreamingDataWriter(
       println("Skipping writing to KVStore in mock writes mode")
     } else {
       kvStore.put(putRequest)
-      putRequest.tsMillis.foreach {
-        ts: Long =>
-          StreamingMetrics.Egress.reportLatency(System.currentTimeMillis() - ts,
-            metricsContext = context)
+      putRequest.tsMillis.foreach { ts: Long =>
+        Metrics.Egress.reportLatency(System.currentTimeMillis() - ts, metricsContext = context)
       }
     }
   }
 
-  override def close(errorOrNull: Throwable): Unit = {
-  }
+  override def close(errorOrNull: Throwable): Unit = {}
 }
