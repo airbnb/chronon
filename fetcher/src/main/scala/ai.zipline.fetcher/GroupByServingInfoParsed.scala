@@ -14,7 +14,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
 
   // streaming starts scanning after batchEnd
   val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
-  def parser = new Schema.Parser()
+  private def parser = new Schema.Parser()
 
   lazy val aggregator: SawtoothOnlineAggregator = {
     val avroInputSchema = parser.parse(selectedAvroSchema)
@@ -40,9 +40,11 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
       StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
     AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
   }
+
   def inputZiplineSchema: StructType = {
     AvroUtils.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
   }
+
   def selectedZiplineSchema: StructType = {
     AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
   }
