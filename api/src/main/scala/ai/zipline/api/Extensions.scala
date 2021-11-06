@@ -253,19 +253,7 @@ object Extensions {
     // last source with a topic but without an end partition is selected for streaming.
     // when such a source doesn't exist, we sort by endPartition and pick the one that has
     // the largest endDate
-    def streamingSource: Option[Source] = {
-      val sourcesWithTopics = groupBy.sources.asScala.filter(_.topic != null)
-      val endless = sourcesWithTopics.reverse.find(_.query.endPartition == null)
-      val today = Constants.Partition.of(System.currentTimeMillis())
-      val withEnd = sourcesWithTopics.filter { src =>
-        val end = src.query.endPartition
-        end != null && end > today
-      }
-      endless match {
-        case Some(x) => Some(x)
-        case None    => if (withEnd.isEmpty) None else Some(withEnd.maxBy(_.query.endPartition))
-      }
-    }
+    def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
   }
 
   implicit class StringOps(string: String) {
