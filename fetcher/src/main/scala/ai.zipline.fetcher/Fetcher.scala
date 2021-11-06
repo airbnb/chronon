@@ -3,86 +3,15 @@ package ai.zipline.fetcher
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.KVStore.{GetRequest, GetResponse, TimedValue}
-import ai.zipline.api.{StructType, _}
-import org.apache.avro.Schema
 import ai.zipline.api.{Row, _}
 import ai.zipline.fetcher.Fetcher._
 import com.google.gson.GsonBuilder
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.Future
-
-// mixin class - with schema
-class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
-    extends GroupByServingInfo(groupByServingInfo)
-    with Serializable {
-
-  // streaming starts scanning after batchEnd
-  val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
-  @transient lazy val parser = new Schema.Parser()
-
-  lazy val aggregator: SawtoothOnlineAggregator = {
-    val avroInputSchema = parser.parse(selectedAvroSchema)
-    val ziplineInputSchema =
-      AvroUtils.toZiplineSchema(avroInputSchema).asInstanceOf[StructType].unpack
-    new SawtoothOnlineAggregator(batchEndTsMillis, groupByServingInfo.groupBy.aggregations.asScala, ziplineInputSchema)
-  }
-
-  // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy
-  lazy val groupByOps = new GroupByOps(groupByServingInfo.groupBy)
-
-  lazy val irZiplineSchema: StructType =
-    StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
-
-  def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
-  def selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
-  lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
-  def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
-  def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
-
-  lazy val outputAvroSchema: String = {
-    val outputZiplineSchema =
-      StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
-    AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
-  }
-  def inputZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
-  }
-  def selectedZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
-  }
-}
-
-// can continuously grow
-class TTLCache[I, O](f: I => O,
-                     ttlMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
-                     nowFunc: () => Long = { () => System.currentTimeMillis() }) {
-  val func: function.BiFunction[I, (Long, O), (Long, O)] = new function.BiFunction[I, (Long, O), (Long, O)] {
-    override def apply(t: I, u: (Long, O)): (Long, O) = {
-      val now = nowFunc()
-      if (u == null || now - u._1 > ttlMillis) {
-        now -> f(t)
-      } else {
-        u
-      }
-    }
-  }
-
-  val cMap = new ConcurrentHashMap[I, (Long, O)]()
-  def apply(i: I): O = cMap.compute(i, func)._2
-  def force(i: I): O = cMap.put(i, nowFunc() -> f(i))._2
-}
-
-object Fetcher {
-  case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
-  case class Response(request: Request, values: Map[String, AnyRef])
-}
-=======
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
->>>>>>> 6433b92 (so far)
 
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
@@ -145,7 +74,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
 
     // map all the kv store responses back to groupBy level responses
-<<<<<<< HEAD
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
         val responsesMap = responsesFuture.iterator.map { response =>
@@ -161,24 +89,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             val batchTime: Option[Long] = batchOption.map(_.millis)
 
             val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
-              println(s"""${request.name}'s value's batch timestamp of $batchTime is
-=======
-    kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
-      val responsesMap = responsesFuture.iterator.map { response =>
-        response.request -> response.values
-      }.toMap
-      // Heaviest compute is decoding bytes and merging them - so we parallelize
-      val requestParFanout = groupByRequestToKvRequest.par
-      requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
-      val responses: Seq[Response] = requestParFanout.map {
-        case (request, GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, atMillis)) =>
-          // pick the batch version with highest timestamp
-          val batchOption = Option(responsesMap(batchRequest)).map(_.maxBy(_.millis))
-          val batchTime: Option[Long] = batchOption.map(_.millis)
+              println(s"""${request.name}'s value's batch timestamp of ${batchTime.get} is 
 
-          val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
-            println(s"""${request.name}'s value's batch timestamp of ${batchTime.get} is 
->>>>>>> 6433b92 (so far)
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                  |Forcing an update of schema.""".stripMargin)
               getGroupByServingInfo.force(request.name)
@@ -375,7 +287,7 @@ object Fetcher {
 
     // treeMap to produce a sorted result
     val tMap = new java.util.TreeMap[String, AnyRef]()
-    val resultMap = keyMap.foreach { case (k, v) => tMap.put(k, v) }
+    keyMap.foreach { case (k, v) => tMap.put(k, v) }
     println(gson.toJson(tMap))
   }
 }
