@@ -56,7 +56,7 @@ import ai.zipline.lib.Metrics.{Context, statsd}
      statsd.histogram(Name.Latency, millis, metricsContext.toTags(): _*)
    }
 
-   def reportKVLatency(millis: Long, metricsContext: Context): Unit = {
+   def reportMultiGetLatency(millis: Long, metricsContext: Context): Unit = {
      statsd.histogram(Name.MultiGetLatency, millis, metricsContext.toTags(): _*)
    }
  }
