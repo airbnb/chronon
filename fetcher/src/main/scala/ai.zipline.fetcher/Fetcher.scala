@@ -111,10 +111,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     FetcherMetrics.reportRequestBatchSize(requests.size, getRequestContext(requests, withTag, context))
   }
 
-  private def reportKVLatency(requests: Seq[Request], latencyMs: Long, withTag: String => Metrics.Context, context: Metrics.Context): Unit = {
-    FetcherMetrics.reportKVLatency(requests.size, getRequestContext(requests, withTag, context))
-  }
-
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
@@ -146,11 +142,12 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         Some(batchRequest) ++ streamingRequestOpt
     }
 
-    val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     val kvRequestStartTimeMs = System.currentTimeMillis()
+    val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture.map { responsesFuture: Seq[GetResponse] =>
-      reportKVLatency(requests, System.currentTimeMillis() - kvRequestStartTimeMs, context.withGroupBy, context)
+      FetcherMetrics.reportMultiGetLatency(System.currentTimeMillis() - kvRequestStartTimeMs, getRequestContext(requests, context.withGroupBy, context))
+
       val responsesMap = responsesFuture.iterator.map { response =>
         response.request -> response.values
       }.toMap
@@ -166,7 +163,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           val servingInfo = if (batchTime.exists(_ > groupByServingInfo.batchEndTsMillis)) {
             println(s"""${request.name}'s value's batch timestamp of $batchTime is
                  |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-                 |FoRcing update of schema.""".stripMargin)
+                 |Forcing update of schema.""".stripMargin)
             getGroupByServingInfo.force(request.name)
           } else {
             groupByServingInfo
