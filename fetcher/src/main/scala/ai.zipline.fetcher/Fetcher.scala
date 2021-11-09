@@ -16,29 +16,10 @@ import scala.concurrent.{Await, Future}
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
-  private def getGroupByContext(groupByServingInfo: GroupByServingInfo,
-                                contextOption: Option[Metrics.Context] = None): Metrics.Context = {
-    val context = contextOption.getOrElse(Metrics.Context())
-    val groupBy = groupByServingInfo.getGroupBy
-    context
-      .withGroupBy(groupBy.getMetaData.getName)
-      .withProduction(groupBy.getMetaData.isProduction)
-      .withTeam(groupBy.getMetaData.getTeam)
-  }
-
   private case class GroupByRequestMeta(groupByServingInfoParsed: GroupByServingInfoParsed,
                                         batchRequest: GetRequest,
                                         streamingRequestOpt: Option[GetRequest],
                                         endTs: Option[Long])
-
-  private def reportRequestBatchSize(requests: Seq[Request],
-                                     withTag: String => Metrics.Context,
-                                     context: Metrics.Context): Unit = {
-    val batchContext =
-      if (requests.forall(_.name == requests.head.name)) withTag(requests.head.name)
-      else context
-    FetcherMetrics.reportRequestBatchSize(requests.size, batchContext)
-  }
 
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
@@ -46,7 +27,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
     val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
-    reportRequestBatchSize(requests, context.withGroupBy, context)
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest = requests.iterator.map { request =>
@@ -97,7 +77,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             } else {
               groupByServingInfo
             }
-            val groupByContext = getGroupByContext(groupByServingInfo, Some(context))
+            val groupByContext = FetcherMetrics.getGroupByContext(groupByServingInfo, Some(context))
             // batch request has only one value per key.
             val batchValueOption: Option[TimedValue] = Option(responsesMap(batchRequest)).flatMap(_.headOption)
             batchValueOption.foreach { value =>
@@ -125,8 +105,9 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                 streamingResponses.iterator
                   .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
                   .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis))
-              if (streamingResponses.length > 0) {
+              if (streamingResponses.nonEmpty) {
                 val streamingContext = groupByContext.asStreaming
+                // report streaming metrics.
                 // report streaming metrics.
                 FetcherMetrics.reportDataFreshness(streamingResponses.iterator.map(_.millis).max - startTimeMs,
                                                    streamingContext)
@@ -176,7 +157,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
 
   def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
     val context = Metrics.Context(method = "fetchJoin")
-    reportRequestBatchSize(requests, context.withJoin, context)
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: Seq[(Request, (Seq[PrefixedRequest], Metrics.Context))] =

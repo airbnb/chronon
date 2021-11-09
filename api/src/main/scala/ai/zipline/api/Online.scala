@@ -76,7 +76,7 @@ trait KVStore {
   */
 case class Mutation(schema: StructType = null, before: Row = null, after: Row = null)
 
-abstract class StreamDecoder {
+abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
   def schema: StructType
 }

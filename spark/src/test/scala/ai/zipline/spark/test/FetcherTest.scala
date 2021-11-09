@@ -32,7 +32,7 @@ import java.lang
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.duration.{Duration, MILLISECONDS, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
@@ -279,7 +279,7 @@ class FetcherTest extends TestCase {
         }
         .flatMap {
           case (start, future) =>
-            val result = Await.result(future, Duration(10000, MILLISECONDS))
+            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
             val latency = System.currentTimeMillis() - start
             latencySum += latency
             latencyCount += 1
@@ -326,7 +326,7 @@ class FetcherTest extends TestCase {
     }
 
     println(todaysExpected.schema.pretty)
-    val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
+    val keyishColumns = List("ts", "vendor_id", "user_id", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
     println("queries:")
@@ -335,7 +335,8 @@ class FetcherTest extends TestCase {
     todaysExpected.order(keyishColumns).show()
     println("response:")
     responseDf.order(keyishColumns).show()
-    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
+
+    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns, aName = "online", bName = "offline")
     assertEquals(todaysQueries.count(), responseDf.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")

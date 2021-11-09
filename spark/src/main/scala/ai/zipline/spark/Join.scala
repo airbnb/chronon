@@ -276,8 +276,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-
-    val rangeToFill = PartitionRange(joinConf.left.query.startPartition, endPartition)
+    val leftStart = joinConf.left.query.startPartition
+    val rangeToFill = PartitionRange(leftStart, endPartition)
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
@@ -285,7 +285,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       return finalResult
     }
 
-    val leftUnfilledRange = PartitionRange(earliestHoleOpt.get, endPartition)
+    val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(leftStart), endPartition)
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = getJoinPartTableName(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
