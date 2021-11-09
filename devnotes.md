@@ -1,6 +1,8 @@
 # Intro
 
-Brain dump of commands used to do various things
+Brain dump of commands used to do various things. For a complete devnotes with Airbnb-specific commands go to this Quip [doc](https://airbnb.quip.com/3ZTyABbDwDUZ/Zipline-V21-dev-notes).
+
+
 
 ## Commands
 
@@ -81,88 +83,6 @@ sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark :=
 ```
 
 ^ The above is the most common command for iteration
-
-
-### Push the fat jar to afdev
-
-For running backfills
-```shell
-sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean 'spark/assembly'
-scp spark/target/scala-2.11/zipline-spark.jar $USER@$AFDEV_HOST:~/
-```
-
-on afdev box:
-```shell
-APP_NAME=search_bench3_3 ./spark_submit.sh --class ai.zipline.spark.Join zipline-spark.jar --conf-path bench3_3.json --end-date 2021-01-01 --namespace search_ranking_training --step-days 30
-```
-
-### Generate benchmark json
-```shell
-python ~/repos/ml_models/zipline/joins/new_algo/search_benchmarks.py > ~/bench3_4.json
-```
-```shell
-scp ~/repos/ml_models/zipline/joins/new_algo/spark_submit.sh $AFDEV_HOST:~/
-```
-
-
-# Publishing project fat JAR to Artifactory
-
-0. Create MVN settings file under `~/mvn_settings.xml` in the repo root.
-
-```xml
-<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                          https://maven.apache.org/xsd/settings-1.0.0.xsd">
-    <servers>
-        <server>
-            <id>airbnb</id>
-            <username>ARTIFACTORY_USERNAME</username>
-            <password>ARTIFACTORY_PASSWORD</password>
-        </server>
-    </servers>
-</settings>
-```
-
-Replace `ARTIFACTORY_USERNAME` and `ARTIFACTORY_PASSWORD` with your username and API key from [Artifactory](https://artifactory.d.musta.ch/artifactory/webapp/#/profile).
-
-1. After you merge your PR, check out and pull `master` branch.
-2. Create a tag named `release-zl-X.X.X`. Check `git tag` to find out the next version.
-
-```shell
-git tag -a -m '<tag message>' release-zl-X.X.X
-```
-
-3. Publish to artifactory
-
-```shell
-./push_to_artifactory.sh <tag-message>
-```
-
-### Using Maven local repository to test Zipline changes with your local treehouse changes
-
-0. Make sure `mvn` is on your `PATH` e.g. `export PATH=/opt/apache-maven-3.8.2/bin:$PATH`
-
-1. Push JARs to local Maven local repository
-``` shell
-./push_to_mvn_local.sh
-```
-
-2. Point to local JARs in Maven local repository in your `build.gradle` file e.g.
-
-``` shell
-dependencies {
-    ...
-    implementation 'ai.zipline:spark_uber_2.11:local'
-```
-
-3. Add Maven local repository to your `build.gradle` file's `repositories` (remove this before checking in)
-
-``` shell
-repositories {
-  mavenLocal()
-}
- ```
 
 ### Install specific version of thrift
 ```shell

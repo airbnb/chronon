@@ -288,6 +288,14 @@ object Extensions {
         .toArray
     }
 
+    def isProduction: Boolean = {
+      join.getMetaData.isProduction
+    }
+
+    def team: String = {
+      join.getMetaData.getTeam
+    }
+
     private def generateSkewFilterSql(key: String, values: Seq[String]): String = {
       val nulls = Seq("null", "Null", "NULL")
       val nonNullFilters = Some(s"$key NOT IN (${values.filterNot(nulls.contains).mkString(", ")})")
