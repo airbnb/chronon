@@ -282,8 +282,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-
-    val rangeToFill = PartitionRange(joinConf.left.query.startPartition, endPartition)
+    val leftStart = joinConf.left.query.startPartition
+    val rangeToFill = PartitionRange(leftStart, endPartition)
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
