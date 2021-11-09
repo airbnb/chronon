@@ -181,27 +181,6 @@ class JoinTest {
       println(s"Queries count: ${queries.count()}")
       println(s"diff result rows")
       diff.show()
-      tableUtils
-        .sql(
-          s"""select user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars  from $rupeeTable where user='${diff
-            .head()(0)}' and ds <= '${diff.head()(2)}' and ds >= '${Constants.Partition
-            .minus(diff.head()(2).toString, new Window(30, TimeUnit.DAYS))}'
-           """)
-        .show(false)
-      tableUtils
-        .sql(s"""select user, ts, ds, amount_dollars from $dollarTable where user='${diff.head()(0)}' and ds <= '${diff
-          .head()(2)}' and ds >= '${Constants.Partition.minus(diff.head()(2).toString,
-                                                              new Window(30, TimeUnit.DAYS))}'""".stripMargin)
-        .show(false)
-
-      tableUtils
-        .sql(
-          s"""select * from test_namespace_jointest.test_user_transaction_features_unit_test_user_transactions where ds='${Constants.Partition
-            .before(
-              diff
-                .head()(2)
-                .toString)}'""")
-        .show(false)
     }
     assertEquals(0, diff.count())
   }
@@ -382,22 +361,6 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff.show()
-
-      tableUtils
-        .sql(s"""select *  from $viewsTable where item='${diff
-          .head()(0)}' and ds <= '${diff.head()(2)}' 
-           """)
-        .show(false)
-
-      tableUtils
-        .sql(
-          s"""select * from test_namespace_jointest.test_item_snapshot_features_2__userunit_test_item_views where item='${diff
-            .head()(0)}' and ds='${Constants.Partition
-            .before(
-              diff
-                .head()(2)
-                .toString)}'""")
-        .show(false)
     }
     assertEquals(diff.count(), 0)
   }

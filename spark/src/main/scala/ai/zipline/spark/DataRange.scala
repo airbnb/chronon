@@ -47,8 +47,7 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     Stream
       .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
-      // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
-      .map(Constants.Partition.epochMillis(_) + Constants.Partition.spanMillis)
+      .map(Constants.Partition.epochMillis)
       .toArray
   }
 
