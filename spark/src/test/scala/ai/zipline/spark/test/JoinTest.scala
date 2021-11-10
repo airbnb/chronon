@@ -149,7 +149,7 @@ class JoinTest {
         |   grouped_transactions AS (
         |      SELECT user,
         |             ds,
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*30)) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
+        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*(30-1))) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
         |             SUM(amount_dollars) AS amount_dollars_sum
         |      FROM
         |         (SELECT user, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
@@ -157,7 +157,7 @@ class JoinTest {
         |          UNION
         |          SELECT user, ts, ds, amount_dollars from $dollarTable
         |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
-        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 > ts
+        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 + 86400*1000> ts
         |        AND user IS NOT NULL
         |        AND ds IS NOT NULL
         |      GROUP BY user, ds)
@@ -167,7 +167,7 @@ class JoinTest {
         |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
         | FROM queries left outer join grouped_transactions
         | ON queries.user_name = grouped_transactions.user
-        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = grouped_transactions.ds
+        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = date_add(grouped_transactions.ds, 1)
         | WHERE queries.user_name IS NOT NULL
         |""".stripMargin)
     val queries = tableUtils.sql(
@@ -335,13 +335,13 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "zipline")
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     computed.show()
 
     val expected = tableUtils.sql(s"""
                                 |WITH
-                                |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+                                |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo')
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
