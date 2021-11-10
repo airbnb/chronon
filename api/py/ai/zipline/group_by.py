@@ -36,6 +36,33 @@ class Operation():
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
 
 
+def Aggregations(**agg_dict):
+    assert all(isinstance(agg, ttypes.Aggregation) for agg in agg_dict.values())
+    return agg_dict.values()
+
+
+def DefaultAggregation(keys, sources):
+    aggregate_columns = []
+    for source in sources:
+        query = utils.get_query(source)
+        columns = utils.get_columns(source)
+        non_aggregate_columns = keys + [
+            "ts",
+            query.timeColumn,
+            query.partitionColumn
+        ]
+        aggregate_columns += [
+            column
+            for column in columns
+            if column not in non_aggregate_columns
+        ]
+    return [
+        Aggregation(
+            operation=Operation.LAST,
+            input_column=column) for column in aggregate_columns
+    ]
+
+
 class TimeUnit():
     HOURS = ttypes.TimeUnit.HOURS
     DAYS = ttypes.TimeUnit.DAYS
