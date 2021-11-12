@@ -33,11 +33,11 @@ v1 = Join(
             key_mapping={'subject': 'group_by_subject'},
         )
     ],
-    # additional_args={
-    #     'custom_arg': 'custom_value'
-    # },
-    # additional_env={
-    #     'custom_env': 'custom_env_value'
-    # },
+    additional_args={
+        'custom_arg': 'custom_value'
+    },
+    additional_env={
+        'custom_env': 'custom_env_value'
+    },
     online=True
 )
