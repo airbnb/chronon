@@ -3,9 +3,13 @@
     "name": "sample_team.event_sample_group_by.v1",
     "online": 1,
     "production": 0,
+    "customJson": "{\"lag\": 0}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
     ],
+    "tableProperties": {
+      "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+    },
     "outputNamespace": "sample_namespace",
     "team": "sample_team"
   },

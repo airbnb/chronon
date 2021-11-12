@@ -1,7 +1,7 @@
 import copy
+import inspect
 import json
 from typing import List, Optional, Union, Dict, Callable, Tuple
-import inspect
 
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
@@ -150,6 +150,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             dependencies: List[str] = None,
             env: Dict[str, Dict[str, str]] = None,
             table_properties: Dict[str, str] = None,
+            output_namespace: str = None,
             lag: int = 0) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
@@ -180,6 +181,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
     metadata = ttypes.MetaData(
         online=online,
         production=production,
+        outputNamespace=output_namespace,
         customJson=json.dumps(custom_json),
         dependencies=deps,
         modeToEnvMap=env,

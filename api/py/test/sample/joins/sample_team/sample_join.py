@@ -1,14 +1,14 @@
 """
 Sample Join
 """
-from ai.zipline.api.ttypes import Query
-from ai.zipline.shorthand import *
-from ai.zipline.utils import get_staging_query_output_table_name
-from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import sample_group_by
+from staging_queries.sample_team import sample_staging_query
+
+from ai.zipline.api import ttypes as api
+from ai.zipline.utils import get_staging_query_output_table_name
 
 v1 = api.Join(
-    left = api.Source(
+    left=api.Source(
         entities=api.EntitySource(
             snapshotTable="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),
             query=api.Query(

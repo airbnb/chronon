@@ -3,7 +3,7 @@
     "name": "sample_team.sample_join_from_shorthand.v1",
     "online": 0,
     "production": 0,
-    "customJson": "{\"check_consistency\": false}",
+    "customJson": "{\"check_consistency\": false, \"lag\": 0}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_sample_namespace_sample_table_v2_ds_ds\", \"spec\": \"sample_namespace.sample_table_v2/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
