@@ -1,4 +1,4 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function

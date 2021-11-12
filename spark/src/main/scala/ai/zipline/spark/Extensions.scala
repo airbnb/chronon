@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import ai.zipline.api
 import ai.zipline.api._
-import ai.zipline.fetcher.{AvroCodec, AvroUtils}
+import ai.zipline.online.{AvroCodec, AvroUtils}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction

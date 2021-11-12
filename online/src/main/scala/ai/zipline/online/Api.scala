@@ -1,6 +1,7 @@
-package ai.zipline.api
+package ai.zipline.online
 
-import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
+import ai.zipline.api.{Constants, GroupByServingInfo, Row, StructType}
+import KVStore.{GetRequest, GetResponse, PutRequest}
 
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, MILLISECONDS}
@@ -81,7 +82,7 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
-abstract class OnlineImpl(userConf: Map[String, String]) extends Serializable {
-  def streamDecoder(groupBy: GroupBy, batchInputSchema: StructType): StreamDecoder
+abstract class Api(userConf: Map[String, String]) extends Serializable {
+  def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
 }

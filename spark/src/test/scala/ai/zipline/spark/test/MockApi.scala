@@ -1,8 +1,17 @@
 package ai.zipline.spark.test
 
 import java.io.{ByteArrayInputStream, InputStream}
-import ai.zipline.api.{Constants, KVStore, Mutation, OnlineImpl, StreamDecoder, StructType}
-import ai.zipline.fetcher.{ArrayRow, AvroUtils, RowConversions}
+import ai.zipline.api.{Constants, GroupByServingInfo, StructType}
+import ai.zipline.online.{
+  Api,
+  ArrayRow,
+  AvroUtils,
+  GroupByServingInfoParsed,
+  KVStore,
+  Mutation,
+  RowConversions,
+  StreamDecoder
+}
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
@@ -32,10 +41,10 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
   override def schema: StructType = inputSchema
 }
 
-class MockOnlineImpl(kvStore: () => KVStore, userConf: Map[String, String]) extends OnlineImpl(userConf = userConf) {
+class MockApi(kvStore: () => KVStore, userConf: Map[String, String]) extends Api(userConf = userConf) {
 
-  override def streamDecoder(groupBy: api.GroupBy, batchInputSchema: api.StructType): StreamDecoder = {
-    new MockDecoder(batchInputSchema)
+  override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
+    new MockDecoder(parsedInfo.inputZiplineSchema)
   }
 
   override def genKvStore: KVStore = {

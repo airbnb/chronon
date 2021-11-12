@@ -1,16 +1,16 @@
 package ai.zipline.spark.test
 
-import ai.zipline.api.{Constants, KVStore}
-import KVStore.{PutRequest, TimedValue}
+import ai.zipline.api.Constants
+import ai.zipline.online.KVStore
+import ai.zipline.online.KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
 import org.apache.spark.sql.Row
 import org.jboss.netty.util.internal.ConcurrentHashMap
+
 import java.util.Base64
 import java.util.function
-
 import scala.collection.mutable
 import scala.concurrent.Future
-
 
 class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   //type aliases for readability
@@ -97,15 +97,15 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
 }
 
 object InMemoryKvStore {
-  val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[
-    String, InMemoryKvStore]
+  val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
   // across them. Since SparkContext is not serializable,  we wrap TableUtils that has SparkContext
   // in a closure and pass it around.
   def apply(testName: String, tableUtils: () => TableUtils): InMemoryKvStore = {
-    stores.computeIfAbsent(testName, new function.Function[String, InMemoryKvStore] {
-      override def apply(name: String): InMemoryKvStore = new InMemoryKvStore(tableUtils)
-    })
+    stores.computeIfAbsent(testName,
+                           new function.Function[String, InMemoryKvStore] {
+                             override def apply(name: String): InMemoryKvStore = new InMemoryKvStore(tableUtils)
+                           })
   }
 }

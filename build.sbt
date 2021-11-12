@@ -5,7 +5,7 @@ ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark, fetcher)
+  .aggregate(api, aggregator, spark, online)
   .settings(name := "zipline")
 
 lazy val api = project
@@ -33,7 +33,7 @@ lazy val aggregator = project
     )
   )
 
-lazy val fetcher = project
+lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
@@ -53,7 +53,7 @@ def cleanSparkMeta: Unit = {
 }
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     assembly / test := {},
     mainClass in (Compile, run) := Some(

@@ -1,6 +1,6 @@
 package ai.zipline.spark.streaming
 
-import ai.zipline.fetcher.Metrics.{Context, statsd}
+import ai.zipline.online.Metrics.{Context, statsd}
 
 object Metrics {
 

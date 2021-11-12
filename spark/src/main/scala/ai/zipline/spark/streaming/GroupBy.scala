@@ -2,8 +2,8 @@ package ai.zipline.spark.streaming
 
 import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.{Constants, Mutation, OnlineImpl, QueryUtils, ThriftJsonCodec}
-import ai.zipline.fetcher.{Metrics => FetcherMetrics, Fetcher}
+import ai.zipline.api.{Constants, QueryUtils, ThriftJsonCodec}
+import ai.zipline.online.{Api, Fetcher, KVStore, Mutation, Metrics => FetcherMetrics}
 import ai.zipline.spark.Conversions
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
@@ -13,66 +13,10 @@ import org.rogach.scallop.{ScallopConf, ScallopOption}
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 
-class StreamingArgs(args: Seq[String]) extends ScallopConf(args) {
-  val userConf: Map[String, String] = props[String]('D')
-  val confPath: ScallopOption[String] = opt[String](required = true)
-  val kafkaHost: ScallopOption[String] = opt[String](required = true)
-  val mockWrites: ScallopOption[Boolean] = opt[Boolean](required = false, default = Some(false))
-  val debug: ScallopOption[Boolean] = opt[Boolean](required = false, default = Some(false))
-  val local: ScallopOption[Boolean] = opt[Boolean](required = false, default = Some(false))
-  def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
-    ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
-}
-
-object GroupBy {
-  def buildSession(appName: String, local: Boolean): SparkSession = {
-    val baseBuilder = SparkSession
-      .builder()
-      .appName(appName)
-      .config("spark.sql.session.timeZone", "UTC")
-      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
-      .config("spark.kryoserializer.buffer.max", "2000m")
-      .config("spark.kryo.referenceTracking", "false")
-
-    val builder = if (local) {
-      baseBuilder
-      // use all threads - or the tests will be slow
-        .master("local[*]")
-        .config("spark.local.dir", s"/tmp/zipline-spark-streaming")
-        .config("spark.kryo.registrationRequired", "true")
-    } else {
-      baseBuilder
-    }
-    builder.getOrCreate()
-  }
-
-  def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
-    session.readStream
-      .format("kafka")
-      .option("kafka.bootstrap.servers", host)
-      .option("subscribe", topic)
-      .option("enable.auto.commit", "true")
-      .load()
-      .selectExpr("value")
-  }
-
-  def run(streamingArgs: StreamingArgs, onlineImpl: OnlineImpl): Unit = {
-    val groupByConf: api.GroupBy = streamingArgs.parseConf[api.GroupBy]
-    val session: SparkSession = buildSession(groupByConf.metaData.name, streamingArgs.local())
-    val streamingSource = groupByConf.streamingSource
-    assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-    val inputStream: DataFrame = dataStream(session, streamingArgs.kafkaHost(), streamingSource.get.topic)
-    val streamingRunner =
-      new GroupBy(inputStream, session, groupByConf, onlineImpl, streamingArgs.debug(), streamingArgs.mockWrites())
-    streamingRunner.run()
-  }
-}
-
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
               groupByConf: api.GroupBy,
-              onlineImpl: api.OnlineImpl,
+              onlineImpl: Api,
               debug: Boolean = false,
               mockWrites: Boolean = false)
     extends Serializable {
@@ -117,7 +61,7 @@ class GroupBy(inputStream: DataFrame,
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
     val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
-    val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo.groupBy, groupByServingInfo.inputZiplineSchema)
+    val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
@@ -126,9 +70,9 @@ class GroupBy(inputStream: DataFrame,
     val context = FetcherMetrics.Context(groupBy = groupByConf.getMetaData.getName)
 
     import session.implicits._
-    implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[api.Mutation]
+    implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
 
-    val deserialized: Dataset[api.Mutation] = inputStream
+    val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { streamDecoder.decode }
       .filter(mutation => mutation.before != mutation.after)
@@ -162,7 +106,7 @@ class GroupBy(inputStream: DataFrame,
         val values = valueIndices.map(row.get)
         val valueBytes = groupByServingInfo.selectedCodec.encodeArray(values)
         val ts = row.get(tsIndex).asInstanceOf[Long]
-        api.KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
+        KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
       }
       .writeStream
       .outputMode("append")
