@@ -1,9 +1,14 @@
 {
   "metaData": {
     "name": "sample_team.entity_sample_group_by_from_module.v1",
+    "customJson": "{\"lag\": 0}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
+    "tableProperties": {
+      "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+    },
+    "outputNamespace": "sample_team_namespace",
     "team": "sample_team"
   },
   "sources": [

@@ -3,6 +3,9 @@
 import json
 import logging
 import os
+from collections import defaultdict
+from typing import List, Dict
+
 from ai.zipline.api.ttypes import \
     GroupBy, Join
 from ai.zipline.logger import get_logger
@@ -10,8 +13,6 @@ from ai.zipline.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
 from ai.zipline.repo.serializer import \
     thrift_simple_json, file2thrift
-from collections import defaultdict
-from typing import List, Dict
 
 # Fields that indicate stutus of the entities.
 SKIPPED_FIELDS = frozenset(['metaData'])
@@ -124,7 +125,7 @@ class ZiplineRepoValidator(object):
             self,
             obj: object,
             old_obj: object,
-            skipped_fields=SKIPPED_FIELDS) -> str:
+            skipped_fields=SKIPPED_FIELDS) -> bool:
         new_json = {k: v for k, v in json.loads(thrift_simple_json(obj)).items()
                     if k not in skipped_fields}
         old_json = {k: v for k, v in json.loads(thrift_simple_json(old_obj)).items()

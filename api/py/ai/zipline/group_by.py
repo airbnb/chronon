@@ -1,4 +1,5 @@
 import copy
+import inspect
 import json
 from typing import List, Optional, Union, Dict, Callable, Tuple
 
@@ -148,6 +149,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             backfill_start_date: str = None,
             dependencies: List[str] = None,
             env: Dict[str, Dict[str, str]] = None,
+            table_properties: Dict[str, str] = None,
+            output_namespace: str = None,
             lag: int = 0) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
@@ -172,13 +175,18 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
     custom_json = {
         "lag": lag
     }
+    # get caller's filename to assign team
+    team = inspect.stack()[1].filename.split("/")[-2]
 
     metadata = ttypes.MetaData(
         online=online,
         production=production,
+        outputNamespace=output_namespace,
         customJson=json.dumps(custom_json),
         dependencies=deps,
-        modeToEnvMap=env)
+        modeToEnvMap=env,
+        tableProperties=table_properties,
+        team=team)
 
     return ttypes.GroupBy(
         sources=updated_sources,
