@@ -1,18 +1,18 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, StringOps}
-import ai.zipline.api.KVStore.PutRequest
+import KVStore.PutRequest
 import ai.zipline.api._
 import org.apache.thrift.TBase
 import org.rogach.scallop._
+
 import scala.concurrent.duration._
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.{Option => JsonPathOption}
 
 import java.io.File
-
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.reflect.ClassTag
 
@@ -112,21 +112,5 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         println(s"Failed to parse JSON to Zipline configs, file path = $file")
         None
     }
-  }
-}
-
-object MetadataUploader {
-  class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
-    val confPath: ScallopOption[String] =
-      opt[String](required = true, descr = "Path to the Zipline config file or directory")
-    verify()
-  }
-
-  def run(args: Args, onlineImpl: OnlineImpl): Unit = {
-    val metadataStore = new MetadataStore(onlineImpl.genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
-    val putRequest = metadataStore.putConf(args.confPath())
-    val res = Await.result(putRequest, 1.hour)
-    println(
-      s"Uploaded Zipline Configs to Mussel, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
   }
 }

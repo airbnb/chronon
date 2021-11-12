@@ -1,15 +1,14 @@
 package ai.zipline.spark.streaming
 
-import ai.zipline.api.KVStore.PutRequest
-import ai.zipline.api.{KVStore, OnlineImpl}
-import ai.zipline.fetcher.Metrics.Context
-import ai.zipline.fetcher.{AvroCodec, GroupByServingInfoParsed}
+import ai.zipline.online.KVStore.PutRequest
+import ai.zipline.online.Metrics.Context
+import ai.zipline.online.{Api, AvroCodec, GroupByServingInfoParsed, KVStore}
 import com.google.gson.Gson
 import org.apache.spark.sql.ForeachWriter
 
 import java.util.Base64
 
-class DataWriter(onlineImpl: OnlineImpl,
+class DataWriter(onlineImpl: Api,
                  groupByServingInfoParsed: GroupByServingInfoParsed,
                  context: Context,
                  debug: Boolean = false,

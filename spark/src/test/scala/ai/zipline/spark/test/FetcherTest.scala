@@ -3,13 +3,12 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.GroupByOps
-import ai.zipline.api.KVStore.GetRequest
+import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.api.{
   Accuracy,
   Builders,
   Constants,
   IntType,
-  KVStore,
   LongType,
   Operation,
   StringType,
@@ -18,8 +17,8 @@ import ai.zipline.api.{
   Window,
   GroupBy => GroupByConf
 }
-import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.{Fetcher, JavaFetcher, JavaRequest, MetadataStore}
+import ai.zipline.online.Fetcher.Request
+import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -60,7 +59,7 @@ class FetcherTest extends TestCase {
     val groupByStreaming = new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected),
                                                  spark,
                                                  groupByConf,
-                                                 new MockOnlineImpl(kvStore, Map.empty))
+                                                 new MockApi(kvStore, Map.empty))
     groupByStreaming.run()
   }
 

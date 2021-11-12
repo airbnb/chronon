@@ -1,7 +1,7 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.api.GroupByServingInfo
-import ai.zipline.fetcher.Metrics.{Context, statsd}
+import ai.zipline.online.Metrics.{Context, statsd}
 import com.timgroup.statsd.{NonBlockingStatsDClient, StatsDClient}
 
 import scala.collection.mutable

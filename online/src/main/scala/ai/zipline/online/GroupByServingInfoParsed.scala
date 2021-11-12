@@ -1,4 +1,4 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.aggregator.windowing.SawtoothOnlineAggregator
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}

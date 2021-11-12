@@ -1,4 +1,4 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.api.{Row, _}
 import org.apache.avro.Schema

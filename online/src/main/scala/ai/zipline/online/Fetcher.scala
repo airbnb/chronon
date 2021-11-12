@@ -1,10 +1,10 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.zipline.api.{Row, _}
-import ai.zipline.fetcher.Fetcher._
+import ai.zipline.online.Fetcher._
+import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import com.google.gson.GsonBuilder
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
@@ -237,55 +237,4 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
 object Fetcher {
   case class Request(name: String, keys: Map[String, AnyRef], atMillis: Option[Long] = None)
   case class Response(request: Request, values: Map[String, AnyRef])
-
-  class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
-    val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
-    val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
-    val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
-    verify()
-  }
-
-  def run(args: Args, onlineImpl: OnlineImpl): Unit = {
-    val gson = (new GsonBuilder()).setPrettyPrinting().create()
-    val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
-
-    val fetcher = new Fetcher(onlineImpl.genKvStore)
-    val startNs = System.nanoTime
-    val requests = Seq(Fetcher.Request(args.name(), keyMap))
-    val resultFuture = if (args.`type`() == "join") {
-      fetcher.fetchJoin(requests)
-    } else {
-      fetcher.fetchGroupBys(requests)
-    }
-    val result = Await.result(resultFuture, 1.minute)
-    val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
-
-    // treeMap to produce a sorted result
-    val tMap = new java.util.TreeMap[String, AnyRef]()
-    result.head.values.foreach { case (k, v) => tMap.put(k, v) }
-    println(gson.toJson(tMap))
-    println(s"Fetched in: $awaitTimeMs ms")
-
-    sys.exit(0)
-  }
-
-  def main(args: Array[String]): Unit = {
-    val gson = (new GsonBuilder()).setPrettyPrinting().create()
-    val keyMap = gson
-      .fromJson(
-        """{
-          |"key1": "value1", "key2": 3748, "key3": 0.42389, 
-          |"key4": [0, 1, 2, 3], 
-          |"key5": {"sub1": "val1", "sub2": "val2"}}
-          |""".stripMargin,
-        classOf[java.util.Map[String, AnyRef]]
-      )
-      .asScala
-      .toMap
-
-    // treeMap to produce a sorted result
-    val tMap = new java.util.TreeMap[String, AnyRef]()
-    keyMap.foreach { case (k, v) => tMap.put(k, v) }
-    println(gson.toJson(tMap))
-  }
 }

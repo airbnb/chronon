@@ -1,20 +1,17 @@
-package ai.zipline.fetcher;
+package ai.zipline.online;
 
-import ai.zipline.api.KVStore;
+import ai.zipline.online.KVStore;
 import ai.zipline.api.Constants;
-import ai.zipline.fetcher.Fetcher;
-import ai.zipline.fetcher.Fetcher.Request;
-import ai.zipline.fetcher.Fetcher.Response;
-import java.util.ArrayList;
+import ai.zipline.online.Fetcher;
+import ai.zipline.online.Fetcher.Request;
+import ai.zipline.online.Fetcher.Response;
+
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import scala.collection.JavaConversions;
-import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
-import scala.collection.mutable.Buffer;
 import scala.concurrent.Future;
 import scala.compat.java8.FutureConverters;
 

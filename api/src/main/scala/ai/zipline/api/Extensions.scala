@@ -249,11 +249,33 @@ object Extensions {
     lazy val streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
     def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
 
-    // we treat one source as the streaming source.
-    // last source with a topic but without an end partition is selected for streaming.
-    // when such a source doesn't exist, we sort by endPartition and pick the one that has
-    // the largest endDate
     def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
+
+    def buildStreamingQuery: String = {
+      assert(streamingSource.isDefined, "You should probably define a topic in one of your sources")
+      val query = streamingSource.get.query
+      val selects = Option(query.selects).map(_.asScala.toMap).orNull
+      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+      val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
+      val keys = groupBy.getKeyColumns.asScala
+
+      val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+      val keyWhereOption =
+        Option(selects)
+          .map { selectsMap =>
+            keys
+              .map(key => s"(${selectsMap(key)} is NOT NULL)")
+              .mkString(" OR ")
+          }
+      val timeWheres = Seq(s"$timeColumn is NOT NULL")
+
+      QueryUtils.build(
+        selects,
+        Constants.StreamingInputTable,
+        baseWheres ++ timeWheres ++ keyWhereOption,
+        fillIfAbsent = fillIfAbsent
+      )
+    }
   }
 
   implicit class StringOps(string: String) {
