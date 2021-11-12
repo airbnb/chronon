@@ -53,8 +53,7 @@ def test_validate_group_by_prod_promotes_on_prod_join(zvalidator, valid_online_g
 def test_validate_join_prod_join_non_prod_group_by(zvalidator, valid_online_join, valid_online_group_by):
     assert not zvalidator._validate_join(valid_online_join)
     valid_online_join.metaData.production = True
-    valid_online_group_by.production = False
-    print(zvalidator._validate_join(valid_online_join))
+    valid_online_group_by.metaData.production = False
     assert zvalidator._validate_join(valid_online_join)
 
 
