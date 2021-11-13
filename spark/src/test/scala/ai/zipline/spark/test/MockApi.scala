@@ -41,7 +41,7 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
   override def schema: StructType = inputSchema
 }
 
-class MockApi(kvStore: () => KVStore, userConf: Map[String, String]) extends Api(userConf = userConf) {
+class MockApi(kvStore: () => KVStore) extends Api(null) {
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
     new MockDecoder(parsedInfo.inputZiplineSchema)

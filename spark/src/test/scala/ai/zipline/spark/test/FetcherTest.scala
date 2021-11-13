@@ -56,10 +56,8 @@ class FetcherTest extends TestCase {
     // for events this will select ds-1 <= ts < ds
     val selected = groupBy.inputDf.filter(s"ds='$ds'")
     val inputStream = new InMemoryStream
-    val groupByStreaming = new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected),
-                                                 spark,
-                                                 groupByConf,
-                                                 new MockApi(kvStore, Map.empty))
+    val groupByStreaming =
+      new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
     groupByStreaming.run()
   }
 

@@ -9,10 +9,12 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
+import java.io.File
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
+import scala.reflect.internal.util.ScalaClassLoader
 
 // CLI for fetching, metadataupload
 object OnlineCli {
@@ -128,8 +130,11 @@ object OnlineCli {
 
   class Args(args: Array[String]) extends ScallopConf(args) {
     val userConf: Map[String, String] = props[String]('D')
+    val onlineJar: ScallopOption[String] =
+      opt[String](required = true, descr = "Path to the jar contain the implementation of Online.Api class")
     val onlineClass: ScallopOption[String] =
-      opt[String](descr = "Fully qualified OnlineImpl class. We expect the jar to be on the class path")
+      opt[String](required = true,
+                  descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
     object FetcherCliArgs extends FetcherCli.Args
     addSubcommand(FetcherCliArgs)
     object MetadataUploaderArgs extends MetadataUploader.Args
@@ -140,16 +145,18 @@ object OnlineCli {
     verify()
   }
 
-  def onlineBuilder(userConf: Map[String, String], onlineClass: String): Api = {
-    val cls = Class.forName(onlineClass)
-    val constructor = cls.getConstructor(classOf[Map[String, String]])
+  def onlineBuilder(userConf: Map[String, String], onlineJar: String, onlineClass: String): Api = {
+    val urls = Array(new File(onlineJar).toURI.toURL)
+    val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
+    val cls = cl.loadClass(onlineClass)
+    val constructor = cls.getConstructors.apply(0)
     val onlineImpl = constructor.newInstance(userConf)
     onlineImpl.asInstanceOf[Api]
   }
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
-    val onlineImpl = onlineBuilder(args.userConf, args.onlineClass())
+    val onlineImpl = onlineBuilder(args.userConf, args.onlineJar(), args.onlineClass())
     args.subcommand match {
       case Some(x) =>
         x match {
@@ -160,5 +167,6 @@ object OnlineCli {
         }
       case None => println(s"specify a subcommand please")
     }
+    System.exit(0)
   }
 }

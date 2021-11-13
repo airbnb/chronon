@@ -3,7 +3,9 @@ package ai.zipline.online
 import ai.zipline.api.{Constants, GroupByServingInfo, Row, StructType}
 import KVStore.{GetRequest, GetResponse, PutRequest}
 
+import java.util.Properties
 import java.util.concurrent.Executors
+import scala.collection.immutable.HashMap
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -83,6 +85,17 @@ abstract class StreamDecoder extends Serializable {
 }
 
 abstract class Api(userConf: Map[String, String]) extends Serializable {
+
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
+
+//  def getProperty(str: String): Option[String] = props.get(str)
+//  private val props = Option(userConf)
+//    .map {
+//      _.split(",").map { prop =>
+//        val kv = prop.split("=")
+//        kv(0) -> kv(1)
+//      }.toMap
+//    }
+//    .getOrElse(new HashMap[String, String])
 }
