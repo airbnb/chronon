@@ -1,4 +1,5 @@
 import sbt.Keys._
+import xerial.sbt.pack.PackPlugin._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
@@ -54,7 +55,10 @@ def cleanSparkMeta: Unit = {
 
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .enablePlugins(PackPlugin)
+  .settings(publishPackArchives)
   .settings(
+    packMain := Map("ztool" -> "ai.zipline.spark.OnlineCli"),
     assembly / test := {},
     mainClass in (Compile, run) := Some(
       "ai.zipline.spark.Join"

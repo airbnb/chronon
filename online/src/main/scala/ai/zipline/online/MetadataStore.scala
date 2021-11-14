@@ -60,11 +60,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
     val configuration = Configuration.builder.options(JsonPathOption.SUPPRESS_EXCEPTIONS).build
     val puts = fileList
-      .filter(
-        // the current Zipline config should have metaData.name field
-        // if this field doesn't exist, we will simply skip for further parsing validation
-        JsonPath.parse(_, configuration).read("$.metaData.name") != null
-      )
+      .filter { file =>
+        val valid = JsonPath.parse(file, configuration).read("$.metaData.name") != null
+        if (!valid) println(s"Skipping invalid file ${file.getPath}")
+        valid
+      }
       .flatMap { file =>
         val path = file.getPath
         // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
