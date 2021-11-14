@@ -19,19 +19,38 @@ import scala.reflect.internal.util.ScalaClassLoader
 // CLI for fetching, metadataupload
 object OnlineCli {
 
+  // common arguments to all online commands
+  trait OnlineSubcommand { s: ScallopConf =>
+    val props: Map[String, String] = props[String]('Z')
+    val onlineJar: ScallopOption[String] =
+      opt[String](required = true, descr = "Path to the jar contain the implementation of Online.Api class")
+    val onlineClass: ScallopOption[String] =
+      opt[String](required = true,
+                  descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
+
+    lazy val impl: Api = {
+      val urls = Array(new File(onlineJar()).toURI.toURL)
+      val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
+      val cls = cl.loadClass(onlineClass())
+      val constructor = cls.getConstructors.apply(0)
+      val onlineImpl = constructor.newInstance(props)
+      onlineImpl.asInstanceOf[Api]
+    }
+  }
+
   object FetcherCli {
 
-    class Args extends Subcommand("fetch") {
+    class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
     }
 
-    def run(args: Args, onlineImpl: Api): Unit = {
+    def run(args: Args): Unit = {
       val gson = (new GsonBuilder()).setPrettyPrinting().create()
       val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
 
-      val fetcher = new Fetcher(onlineImpl.genKvStore)
+      val fetcher = new Fetcher(args.impl.genKvStore)
       val startNs = System.nanoTime
       val requests = Seq(Fetcher.Request(args.name(), keyMap))
       val resultFuture = if (args.`type`() == "join") {
@@ -51,13 +70,13 @@ object OnlineCli {
   }
 
   object MetadataUploader {
-    class Args extends Subcommand("upload-metadata") {
+    class Args extends Subcommand("upload-metadata") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Zipline config file or directory")
     }
 
-    def run(args: Args, onlineImpl: Api): Unit = {
-      val metadataStore = new MetadataStore(onlineImpl.genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+    def run(args: Args): Unit = {
+      val metadataStore = new MetadataStore(args.impl.genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
       val putRequest = metadataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
       println(
@@ -98,7 +117,7 @@ object OnlineCli {
         .selectExpr("value")
     }
 
-    class Args extends Subcommand("stream-group-by") {
+    class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
       val kafkaBootstrap: ScallopOption[String] =
         opt[String](required = true, descr = "host:port of a kafka bootstrap server")
@@ -116,25 +135,20 @@ object OnlineCli {
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
 
-    def run(args: Args, onlineImpl: Api): Unit = {
+    def run(args: Args): Unit = {
       val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
       val session: SparkSession = buildSession(groupByConf.metaData.name, args.local())
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       val inputStream: DataFrame = dataStream(session, args.kafkaBootstrap(), streamingSource.get.topic)
       val streamingRunner =
-        new streaming.GroupBy(inputStream, session, groupByConf, onlineImpl, args.debug(), args.mockWrites())
+        new streaming.GroupBy(inputStream, session, groupByConf, args.impl, args.debug(), args.mockWrites())
       streamingRunner.run()
     }
   }
 
   class Args(args: Array[String]) extends ScallopConf(args) {
-    val userConf: Map[String, String] = props[String]('D')
-    val onlineJar: ScallopOption[String] =
-      opt[String](required = true, descr = "Path to the jar contain the implementation of Online.Api class")
-    val onlineClass: ScallopOption[String] =
-      opt[String](required = true,
-                  descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
+
     object FetcherCliArgs extends FetcherCli.Args
     addSubcommand(FetcherCliArgs)
     object MetadataUploaderArgs extends MetadataUploader.Args
@@ -156,13 +170,12 @@ object OnlineCli {
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
-    val onlineImpl = onlineBuilder(args.userConf, args.onlineJar(), args.onlineClass())
     args.subcommand match {
       case Some(x) =>
         x match {
-          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs, onlineImpl)
-          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs, onlineImpl)
-          case args.GroupByStreamingArgs => GroupByStreaming.run(args.GroupByStreamingArgs, onlineImpl)
+          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
+          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.GroupByStreamingArgs => GroupByStreaming.run(args.GroupByStreamingArgs)
           case _                         => println(s"Unknown subcommand: ${x}")
         }
       case None => println(s"specify a subcommand please")
