@@ -355,7 +355,6 @@ object GroupBy {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
-    val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
     val tableProps = Option(groupByConf.metaData.tableProperties)

@@ -327,8 +327,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
 // the driver
 object Join {
-  // TODO: make joins a subcommand of a larger driver
-  //  that does group-by backfills/bulk uploads etc
+  // TODO: deprecate - instead use `ztool join-backfill ...`
   def main(args: Array[String]): Unit = {
     // args = conf path, end date
     val parsedArgs = new Args(args)

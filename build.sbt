@@ -58,7 +58,7 @@ lazy val spark = project
   .enablePlugins(PackPlugin)
   .settings(publishPackArchives)
   .settings(
-    packMain := Map("ztool" -> "ai.zipline.spark.OnlineCli"),
+    packMain := Map("ztool" -> "ai.zipline.spark.ZTool"),
     assembly / test := {},
     mainClass in (Compile, run) := Some(
       "ai.zipline.spark.Join"

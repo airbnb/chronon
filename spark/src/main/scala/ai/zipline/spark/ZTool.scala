@@ -16,11 +16,67 @@ import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 
-// CLI for fetching, metadataupload
-object OnlineCli {
+// The mega zipline cli
+object ZTool {
+
+  def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
+    ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
+
+  trait OfflineSubcommand { this: ScallopConf =>
+    val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
+    val endDate: ScallopOption[String] =
+      opt[String](required = false, descr = "End date to compute as of, start date is taken from conf.")
+  }
+
+  object JoinBackfill {
+    class Args extends Subcommand("join") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false, descr = "Runs backfill in steps, step-days at a time")
+      val skipEqualCheck: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     default = Some(false),
+                     descr = "Check if this join has already run with a different conf, if so it will fail the job")
+    }
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      val join = new Join(
+        joinConf,
+        args.endDate(),
+        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}")),
+        args.skipEqualCheck()
+      )
+      join.computeJoin(args.stepDays.toOption)
+    }
+  }
+
+  object GroupByBackfill {
+    class Args extends Subcommand("group-by-backfill") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false, descr = "Runs backfill in steps, step-days at a time")
+    }
+    def run(args: Args): Unit = {
+      val groupByConf = parseConf[api.GroupBy](args.confPath())
+      GroupBy.computeBackfill(
+        groupByConf,
+        args.endDate(),
+        TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
+        args.stepDays.toOption
+      )
+    }
+  }
+
+  object GroupByUploader {
+    class Args extends Subcommand("group-by-upload") with OfflineSubcommand {}
+
+    def run(args: Args): Unit = {
+      GroupByUpload.run(parseConf[api.GroupBy](args.confPath()), args.endDate())
+    }
+  }
 
   // common arguments to all online commands
   trait OnlineSubcommand { s: ScallopConf =>
+    // this is `-Z` and not `-D` because sbt-pack plugin uses that for JAVA_OPTS
     val props: Map[String, String] = props[String]('Z')
     val onlineJar: ScallopOption[String] =
       opt[String](required = true, descr = "Path to the jar contain the implementation of Online.Api class")
@@ -148,7 +204,12 @@ object OnlineCli {
   }
 
   class Args(args: Array[String]) extends ScallopConf(args) {
-
+    object JoinBackFillArgs extends JoinBackfill.Args
+    addSubcommand(JoinBackFillArgs)
+    object GroupByBackfillArgs extends GroupByBackfill.Args
+    addSubcommand(GroupByBackfillArgs)
+    object GroupByUploadArgs extends GroupByUploader.Args
+    addSubcommand(GroupByUploadArgs)
     object FetcherCliArgs extends FetcherCli.Args
     addSubcommand(FetcherCliArgs)
     object MetadataUploaderArgs extends MetadataUploader.Args
@@ -173,9 +234,12 @@ object OnlineCli {
     args.subcommand match {
       case Some(x) =>
         x match {
-          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
-          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.JoinBackFillArgs     => JoinBackfill.run(args.JoinBackFillArgs)
+          case args.GroupByBackfillArgs  => GroupByBackfill.run(args.GroupByBackfillArgs)
+          case args.GroupByUploadArgs    => GroupByUploader.run(args.GroupByUploadArgs)
           case args.GroupByStreamingArgs => GroupByStreaming.run(args.GroupByStreamingArgs)
+          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case _                         => println(s"Unknown subcommand: ${x}")
         }
       case None => println(s"specify a subcommand please")
