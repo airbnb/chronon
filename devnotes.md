@@ -158,4 +158,68 @@ $> cd spark/target/pack; make archive
 Users should be able to: 
  1. download this archive - `wget https://github.com/airbnb/zipline/releases/download/vx.x.x/ztool.tar.gz`
  2. untar it, `tar -xvzf ztool.tar.gz`
- 3. `cd ztool` and `make install` to put the ztool in their bin path.  
+ 3. `cd ztool` and `make install` to put the ztool in their bin path.
+
+
+### ztool man page 
+
+```
+-h, --help   Show help message
+
+Subcommand: join
+  -c, --conf-path  <arg>   Path to conf
+  -e, --end-date  <arg>    End date to compute as of, start date is taken from
+                           conf.
+      --skip-equal-check   Check if this join has already run with a different
+                           conf, if so it will fail the job
+  -s, --step-days  <arg>   Runs backfill in steps, step-days at a time
+  -h, --help               Show help message
+
+Subcommand: group-by-backfill
+  -c, --conf-path  <arg>   Path to conf
+  -e, --end-date  <arg>    End date to compute as of, start date is taken from
+                           conf.
+  -s, --step-days  <arg>   Runs backfill in steps, step-days at a time
+  -h, --help               Show help message
+
+Subcommand: group-by-upload
+  -c, --conf-path  <arg>   Path to conf
+  -e, --end-date  <arg>    End date to compute as of, start date is taken from
+                           conf.
+  -h, --help               Show help message
+
+Subcommand: fetch
+  -k, --key-json  <arg>        json of the keys to fetch
+  -n, --name  <arg>            name of the join/group-by to fetch
+      --online-class  <arg>    Fully qualified Online.Api based class. We expect
+                               the jar to be on the class path
+  -o, --online-jar  <arg>      Path to the jar contain the implementation of
+                               Online.Api class
+  -t, --type  <arg>            the type of conf to fetch Choices: join, group-by
+  -Zkey=value [key=value]...
+  -h, --help                   Show help message
+
+Subcommand: upload-metadata
+  -c, --conf-path  <arg>       Path to the Zipline config file or directory
+      --online-class  <arg>    Fully qualified Online.Api based class. We expect
+                               the jar to be on the class path
+  -o, --online-jar  <arg>      Path to the jar contain the implementation of
+                               Online.Api class
+  -Zkey=value [key=value]...
+  -h, --help                   Show help message
+
+Subcommand: group-by-streaming
+  -c, --conf-path  <arg>         path to groupBy conf
+  -d, --debug                    Prints details of data flowing through the
+                                 streaming job
+  -k, --kafka-bootstrap  <arg>   host:port of a kafka bootstrap server
+  -l, --local                    Launches the job locally
+  -m, --mock-writes              flag - to ignore writing to the underlying kv
+                                 store
+      --online-class  <arg>      Fully qualified Online.Api based class. We
+                                 expect the jar to be on the class path
+  -o, --online-jar  <arg>        Path to the jar contain the implementation of
+                                 Online.Api class
+  -Zkey=value [key=value]...
+  -h, --help                     Show help message
+```
