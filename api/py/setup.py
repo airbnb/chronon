@@ -9,7 +9,7 @@ with open("requirements/base.in", "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.17"
+__version__ = "0.0.18"
 
 
 setup(
