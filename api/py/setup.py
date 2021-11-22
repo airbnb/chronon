@@ -9,7 +9,7 @@ with open("requirements/base.in", "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.4"
+__version__ = "0.0.17"
 
 
 setup(
@@ -18,7 +18,7 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    scripts=['ai/zipline/repo/compile.py', 'ai/zipline/repo/run.py'],
+    scripts=['ai/zipline/repo/explore.py', 'ai/zipline/repo/compile.py', 'ai/zipline/repo/run.py'],
     description="Zipline python API library",
     include_package_data=True,
     install_requires=basic_requirements,

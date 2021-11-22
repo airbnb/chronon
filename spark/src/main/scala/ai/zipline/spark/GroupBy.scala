@@ -5,7 +5,7 @@ import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
+import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -61,8 +61,10 @@ class GroupBy(val aggregations: Seq[Aggregation],
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
       val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
       val updateFunc = (ir: Array[Any], row: Row) => {
-        // update when ts < tsOf(ds)
-        windowAggregator.updateWindowed(ir, Conversions.toZiplineRow(row, tsIndex), row.getLong(partitionTsIndex))
+        // update when ts < tsOf(ds + 1)
+        windowAggregator.updateWindowed(ir,
+                                        Conversions.toZiplineRow(row, tsIndex),
+                                        row.getLong(partitionTsIndex) + Constants.Partition.spanMillis)
         ir
       }
       inputWithPartitionTs -> updateFunc
@@ -93,13 +95,15 @@ class GroupBy(val aggregations: Seq[Aggregation],
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
+    // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
+    val shiftedEndTimes = endTimes.map(_ + Constants.Partition.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
 
     hops
       .flatMap {
         case (keys, hopsArrays) =>
-          val irs = sawtoothAggregator.computeWindows(hopsArrays, endTimes)
+          val irs = sawtoothAggregator.computeWindows(hopsArrays, shiftedEndTimes)
           irs.indices.map { i =>
             (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
@@ -247,10 +251,11 @@ object GroupBy {
         df1.union(df2.selectExpr(columns1: _*))
       }
 
+    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp)
+    def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
     assert(
-      !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp) || inputDf.schema.names
-        .contains(Constants.TimeColumn),
-      s"Time column, ts doesn't exists for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
+      doesNotNeedTime || hasValidTimeColumn,
+      s"Time column, ts doesn't exists (or is not a LONG type) for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
@@ -286,11 +291,9 @@ object GroupBy {
                             window: Option[Window]): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
-    val effectiveEnd = Option(source.query.endPartition)
-      .map { endPartition =>
-        Seq(endPartition, queryRange.end).min
-      }
-      .getOrElse(queryRange.end)
+    val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
+      .reduceLeftOption(Ordering[String].min)
+      .orNull
 
     // Need to use a case class here to allow null matching
     case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
@@ -355,7 +358,6 @@ object GroupBy {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
-    val sources = groupByConf.sources.asScala
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
     val tableProps = Option(groupByConf.metaData.tableProperties)

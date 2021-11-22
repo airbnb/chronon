@@ -2,7 +2,7 @@ import sbt.Keys._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
-ThisBuild / version := "0.1-SNAPSHOT"
+ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark, fetcher)
@@ -23,28 +23,30 @@ lazy val api = project
     )
   )
 
+lazy val lib = project
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7"
+    )
+  )
+
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
-    assembly / test := {},
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
-      "com.google.code.gson" % "gson" % "2.8.6" excludeAll (
-        ExclusionRule(organization = "org.ow2.asm")
-      )
+      "com.google.code.gson" % "gson" % "2.8.6"
     )
   )
 
 lazy val fetcher = project
-  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), lib)
   .settings(
     libraryDependencies ++= Seq(
       "org.apache.avro" % "avro" % "1.8.0",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      "com.jayway.jsonpath" % "json-path" % "2.6.0" excludeAll (
-        ExclusionRule(organization = "org.ow2.asm")
-      )
+      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
     )
   )
 
@@ -56,7 +58,7 @@ def cleanSparkMeta: Unit = {
 }
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher)
+  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher, lib)
   .settings(
     assembly / test := {},
     mainClass in (Compile, run) := Some(
@@ -67,7 +69,9 @@ lazy val spark = project
       "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-core" % "2.4.0" % "provided",
       "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
-      "org.rogach" %% "scallop" % "4.0.1"
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4" % "provided",
+      "org.rogach" %% "scallop" % "4.0.1",
+      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
     ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)

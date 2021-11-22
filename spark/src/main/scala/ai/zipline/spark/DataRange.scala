@@ -16,7 +16,7 @@ case class TimeRange(start: Long, end: Long) extends DataRange {
   }
 
   def toPartitionRange: PartitionRange = {
-    PartitionRange(Constants.Partition.of(start), Constants.Partition.of(end))
+    PartitionRange(Constants.Partition.at(start), Constants.Partition.at(end))
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"

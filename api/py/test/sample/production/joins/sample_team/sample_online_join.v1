@@ -3,7 +3,7 @@
     "name": "sample_team.sample_online_join.v1",
     "online": 1,
     "production": 0,
-    "customJson": "{\"check_consistency\": false, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}}",
+    "customJson": "{\"check_consistency\": false, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}, \"lag\": 0}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_ds\", \"spec\": \"sample_namespace.sample_table/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
@@ -36,7 +36,7 @@
         "metaData": {
           "name": "sample_team.event_sample_group_by.v1",
           "online": 1,
-          "production": 0,
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
@@ -50,9 +50,11 @@
               "query": {
                 "selects": {
                   "event": "event_expr",
-                  "group_by_subject": "group_by_expr"
+                  "group_by_subject": "group_by_expr",
+                  "ts": "ts"
                 },
                 "startPartition": "2021-04-09",
+                "timeColumn": "ts",
                 "setups": []
               }
             }
@@ -86,6 +88,7 @@
       "groupBy": {
         "metaData": {
           "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],

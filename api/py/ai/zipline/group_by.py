@@ -1,7 +1,10 @@
+import copy
+import inspect
+import json
+from typing import List, Optional, Union, Dict, Callable, Tuple
+
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
-import copy
-from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -32,6 +35,33 @@ class Operation():
     LAST_K = collector(ttypes.Operation.LAST_K)
     TOP_K = collector(ttypes.Operation.TOP_K)
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
+
+
+def Aggregations(**agg_dict):
+    assert all(isinstance(agg, ttypes.Aggregation) for agg in agg_dict.values())
+    return agg_dict.values()
+
+
+def DefaultAggregation(keys, sources):
+    aggregate_columns = []
+    for source in sources:
+        query = utils.get_query(source)
+        columns = utils.get_columns(source)
+        non_aggregate_columns = keys + [
+            "ts",
+            query.timeColumn,
+            query.partitionColumn
+        ]
+        aggregate_columns += [
+            column
+            for column in columns
+            if column not in non_aggregate_columns
+        ]
+    return [
+        Aggregation(
+            operation=Operation.LAST,
+            input_column=column) for column in aggregate_columns
+    ]
 
 
 class TimeUnit():
@@ -118,7 +148,10 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             production: bool = DEFAULT_PRODUCTION,
             backfill_start_date: str = None,
             dependencies: List[str] = None,
-            env: Dict[str, Dict[str, str]] = None) -> ttypes.GroupBy:
+            env: Dict[str, Dict[str, str]] = None,
+            table_properties: Dict[str, str] = None,
+            output_namespace: str = None,
+            lag: int = 0) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -137,9 +170,23 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             if src.entities.query.timeColumn:
                 src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
 
-    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
+    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
-    metadata = ttypes.MetaData(online=online, production=production, dependencies=deps, modeToEnvMap=env)
+    custom_json = {
+        "lag": lag
+    }
+    # get caller's filename to assign team
+    team = inspect.stack()[1].filename.split("/")[-2]
+
+    metadata = ttypes.MetaData(
+        online=online,
+        production=production,
+        outputNamespace=output_namespace,
+        customJson=json.dumps(custom_json),
+        dependencies=deps,
+        modeToEnvMap=env,
+        tableProperties=table_properties,
+        team=team)
 
     return ttypes.GroupBy(
         sources=updated_sources,

@@ -20,8 +20,8 @@
     {
       "groupBy": {
         "metaData": {
-          "name": "sample_group_by",
           "production": 0,
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_team_sample_staging_query_v1_ds\", \"spec\": \"sample_namespace.sample_team_sample_staging_query_v1/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],

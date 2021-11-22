@@ -20,6 +20,7 @@ api/py/dist/
 api/py/eggs/
 api/py/sdist/
 api/py/build/
+api/py/ai/zipline/thrift/
 api/py/*.egg-info/
 *.egg
 

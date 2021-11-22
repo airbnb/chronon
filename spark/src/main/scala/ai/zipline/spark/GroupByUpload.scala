@@ -73,8 +73,14 @@ object GroupByUpload {
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
-    val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
-    val groupByUpload = new GroupByUpload(endDs, groupBy)
+    // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
+    val batchEndDate = Constants.Partition.after(endDs)
+    // for snapshot accuracy
+    lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
+    lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
+    // for temporal accuracy
+    lazy val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
+    lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
 
     println(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
@@ -85,13 +91,13 @@ object GroupByUpload {
     val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
-      case (Accuracy.TEMPORAL, DataModel.Events)   => groupByUpload.temporalEvents()
+      case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) =>
         throw new UnsupportedOperationException("Mutations are not yet supported")
     }).toAvroDf
 
     val groupByServingInfo = new GroupByServingInfo()
-    groupByServingInfo.setBatchEndDate(endDs)
+    groupByServingInfo.setBatchEndDate(batchEndDate)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))

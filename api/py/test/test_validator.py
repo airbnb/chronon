@@ -1,9 +1,9 @@
 """
 Forcing validator to fail some tests
 """
-from ai.zipline.repo import validator
 import pytest
-import copy
+
+from ai.zipline.repo import validator
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def test_validate_group_by_prod_promotes_on_prod_join(zvalidator, valid_online_g
 def test_validate_join_prod_join_non_prod_group_by(zvalidator, valid_online_join, valid_online_group_by):
     assert not zvalidator._validate_join(valid_online_join)
     valid_online_join.metaData.production = True
-    valid_online_group_by.production = False
+    valid_online_group_by.metaData.production = False
     assert zvalidator._validate_join(valid_online_join)
 
 
