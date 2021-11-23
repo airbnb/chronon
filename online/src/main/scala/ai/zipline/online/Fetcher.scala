@@ -17,32 +17,12 @@ import scala.concurrent.{Await, Future}
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
-  private def getGroupByContext(groupByServingInfo: GroupByServingInfo,
-                                contextOption: Option[Metrics.Context] = None): Metrics.Context = {
-    val context = contextOption.getOrElse(Metrics.Context())
-    val groupBy = groupByServingInfo.getGroupBy
-    context
-      .withGroupBy(groupBy.getMetaData.getName)
-      .withProduction(groupBy.getMetaData.isProduction)
-      .withTeam(groupBy.getMetaData.getTeam)
-  }
-
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
       batchRequest: GetRequest,
       streamingRequestOpt: Option[GetRequest],
       endTs: Option[Long]
   )
-
-  private def getRequestContext(requests: Seq[Request], withTag: String => Metrics.Context, context: Metrics.Context) = {
-    if (requests.forall(_.name == requests.head.name)) withTag(requests.head.name)
-    else context
-  }
-
-  private def reportRequestBatchSize(requests: Seq[Request], withTag: String => Metrics.Context, context: Metrics.Context): Unit = {
-    FetcherMetrics.reportRequestBatchSize(requests.size, getRequestContext(requests, withTag, context))
-  }
-
 
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema)
@@ -120,7 +100,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
               val streamingResponses: Seq[TimedValue] =
                 responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
-              val selectedCodec = servingInfo.selectedCodec
+              val selectedCodec = servingInfo.valueAvroCodec
               val streamingRows: Iterator[Row] =
                 streamingResponses.iterator
                   .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
@@ -139,20 +119,16 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTs)
               servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
             }
-            val batchIr = toBatchIr(batchBytes, servingInfo)
-            val queryTs = atMillis.getOrElse(System.currentTimeMillis())
-            val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTs)
-            servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
-          }
-          FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
-          Response(request, responseMap)
-      }.toList
-      responses
-    }.recover {
-      case e: Exception =>
-        reportFailure(requests, context.withGroupBy, e)
-        throw e
-    }
+            FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
+            Response(request, responseMap)
+        }.toList
+        responses
+      }
+      .recover {
+        case e: Exception =>
+          reportFailure(requests, context.withGroupBy, e)
+          throw e
+      }
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {

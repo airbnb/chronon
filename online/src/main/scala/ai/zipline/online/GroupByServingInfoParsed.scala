@@ -17,10 +17,9 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   private def parser = new Schema.Parser()
 
   lazy val aggregator: SawtoothOnlineAggregator = {
-    val avroInputSchema = parser.parse(selectedAvroSchema)
-    val ziplineInputSchema =
-      AvroUtils.toZiplineSchema(avroInputSchema).asInstanceOf[StructType].unpack
-    new SawtoothOnlineAggregator(batchEndTsMillis, groupByServingInfo.groupBy.aggregations.asScala, ziplineInputSchema)
+    new SawtoothOnlineAggregator(batchEndTsMillis,
+                                 groupByServingInfo.groupBy.aggregations.asScala,
+                                 valueZiplineSchema.fields.map(sf => (sf.name, sf.fieldType)))
   }
 
   // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy
@@ -30,6 +29,18 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
+
+  lazy val valueZiplineSchema: StructType = {
+    val valueFields = groupBy.aggregationInputs
+      .flatMap(inp => selectedZiplineSchema.fields.find(_.name == inp))
+    StructType(s"${groupBy.metaData.cleanName}_INPUT_COLS", valueFields)
+  }
+
+  lazy val valueAvroSchema: String = {
+    AvroUtils.fromZiplineSchema(valueZiplineSchema).toString()
+  }
+
+  def valueAvroCodec: AvroCodec = AvroCodec.of(valueAvroSchema)
   def selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
   lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)

@@ -109,10 +109,9 @@ class GroupBy(inputStream: DataFrame,
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
            s"time column ${Constants.TimeColumn} must be included in the selects")
-    val fields = selectedDf.schema.fieldNames
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
-    val valueIndices = fields.map(selectedDf.schema.fieldIndex)
+    val valueIndices = groupByConf.aggregationInputs.map(selectedDf.schema.fieldIndex)
     val tsIndex = selectedDf.schema.fieldIndex(Constants.TimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 

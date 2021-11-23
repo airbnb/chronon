@@ -276,6 +276,12 @@ object Extensions {
         fillIfAbsent = fillIfAbsent
       )
     }
+
+    def aggregationInputs: Array[String] =
+      groupBy.aggregations.asScala
+        .flatMap(agg => Option(agg.buckets).map(_.asScala).getOrElse(Seq.empty) :+ agg.inputColumn)
+        .distinct
+        .toArray
   }
 
   implicit class StringOps(string: String) {

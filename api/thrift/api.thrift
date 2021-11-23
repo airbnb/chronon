@@ -183,8 +183,13 @@ struct GroupByServingInfo {
     //                         the fetcher further aggregates irs and inputs into outputs
     //  2. snapshot accurate - batch uploads outputs, fetcher doesn't do any further aggregation
     // irSchema and outputSchema are derivable once inputSchema is known
-    2: optional string inputAvroSchema // will be used by streaming
+
+
+    // schema before applying select expressions
+    2: optional string inputAvroSchema
+    // schema after applying select expressions
     3: optional string selectedAvroSchema
+    // schema of the keys in kv store
     4: optional string keyAvroSchema
     // "date", in 'yyyy-MM-dd' format, the bulk-upload data corresponds to
     // we need to scan streaming events only starting this timestamp
