@@ -38,6 +38,8 @@ object Conversions {
       case StringType                => api.StringType
       case BinaryType                => api.BinaryType
       case BooleanType               => api.BooleanType
+      case DateType                  => api.DateType
+      case TimestampType             => api.TimestampType
       case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
         api.MapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
@@ -63,6 +65,8 @@ object Conversions {
       case api.StringType        => StringType
       case api.BinaryType        => BinaryType
       case api.BooleanType       => BooleanType
+      case api.DateType          => DateType
+      case api.TimestampType     => TimestampType
       case ListType(elementType) => ArrayType(fromZiplineType(elementType))
       case api.MapType(keyType, valueType) =>
         MapType(fromZiplineType(keyType), fromZiplineType(valueType))

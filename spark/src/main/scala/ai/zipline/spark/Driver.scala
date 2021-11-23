@@ -11,13 +11,14 @@ import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
 import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 
 // The mega zipline cli
-object ZTool {
+object Driver {
 
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
@@ -77,14 +78,21 @@ object ZTool {
   // common arguments to all online commands
   trait OnlineSubcommand { s: ScallopConf =>
     // this is `-Z` and not `-D` because sbt-pack plugin uses that for JAVA_OPTS
-    val props: Map[String, String] = props[String]('Z')
+    val propsInner: Map[String, String] = props[String]('Z')
     val onlineJar: ScallopOption[String] =
       opt[String](required = true, descr = "Path to the jar contain the implementation of Online.Api class")
     val onlineClass: ScallopOption[String] =
       opt[String](required = true,
                   descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
 
-    lazy val impl: Api = {
+    // hashmap implements serializable
+    def serializableProps = {
+      val map = new mutable.HashMap[String, String]()
+      propsInner.foreach { case (key, value) => map.update(key, value) }
+      map.toMap
+    }
+
+    def impl(props: Map[String, String]): Api = {
       val urls = Array(new File(onlineJar()).toURI.toURL)
       val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
       val cls = cl.loadClass(onlineClass())
@@ -106,7 +114,7 @@ object ZTool {
       val gson = (new GsonBuilder()).setPrettyPrinting().create()
       val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
 
-      val fetcher = new Fetcher(args.impl.genKvStore)
+      val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
       val startNs = System.nanoTime
       val requests = Seq(Fetcher.Request(args.name(), keyMap))
       val resultFuture = if (args.`type`() == "join") {
@@ -126,13 +134,14 @@ object ZTool {
   }
 
   object MetadataUploader {
-    class Args extends Subcommand("upload-metadata") with OnlineSubcommand {
+    class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Zipline config file or directory")
     }
 
     def run(args: Args): Unit = {
-      val metadataStore = new MetadataStore(args.impl.genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+      val metadataStore =
+        new MetadataStore(args.impl(args.serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
       val putRequest = metadataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
       println(
@@ -181,25 +190,24 @@ object ZTool {
                                                             default = Some(false),
                                                             descr =
                                                               "flag - to ignore writing to the underlying kv store")
-      val debug: ScallopOption[Boolean] = opt[Boolean](required = false,
-                                                       default = Some(false),
-                                                       descr =
-                                                         "Prints details of data flowing through the streaming job")
-      val local: ScallopOption[Boolean] =
-        opt[Boolean](required = false, default = Some(false), descr = "Launches the job locally")
+      val debug: ScallopOption[Boolean] = opt[Boolean](
+        required = false,
+        default = Some(false),
+        descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
 
     def run(args: Args): Unit = {
       val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
-      val session: SparkSession = buildSession(groupByConf.metaData.name, args.local())
+      val session: SparkSession = buildSession(groupByConf.metaData.name, args.debug())
+      session.sparkContext.addJar(args.onlineJar())
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       val inputStream: DataFrame = dataStream(session, args.kafkaBootstrap(), streamingSource.get.topic)
       val streamingRunner =
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl, args.debug(), args.mockWrites())
-      streamingRunner.run()
+        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
+      streamingRunner.run(args.debug())
     }
   }
 
@@ -244,6 +252,6 @@ object ZTool {
         }
       case None => println(s"specify a subcommand please")
     }
-    System.exit(0)
+    // System.exit(0) (spark streaming will exit immediately if this isn't set).
   }
 }

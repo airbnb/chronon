@@ -1,4 +1,5 @@
 **/target/
+**/target-ztool/
 *.class
 *.jar
 *.war

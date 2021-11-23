@@ -2,18 +2,15 @@ package ai.zipline.online
 
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, StringOps}
-import KVStore.PutRequest
 import ai.zipline.api._
+import ai.zipline.online.KVStore.PutRequest
+import ai.zipline.online.MetadataStore.parseName
+import com.google.gson.Gson
 import org.apache.thrift.TBase
-import org.rogach.scallop._
-
-import scala.concurrent.duration._
-import com.jayway.jsonpath.JsonPath
-import com.jayway.jsonpath.Configuration
-import com.jayway.jsonpath.{Option => JsonPathOption}
 
 import java.io.File
-import scala.concurrent.{Await, ExecutionContext, Future}
+import java.nio.file.{Files, Paths}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
@@ -58,17 +55,16 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     println(s"Uploading Zipline configs from $configPath")
     val fileList = listFiles(configFile)
 
-    val configuration = Configuration.builder.options(JsonPathOption.SUPPRESS_EXCEPTIONS).build
     val puts = fileList
       .filter { file =>
-        val valid = JsonPath.parse(file, configuration).read("$.metaData.name") != null
-        if (!valid) println(s"Skipping invalid file ${file.getPath}")
-        valid
+        val name = parseName(file.getPath)
+        if (name.isEmpty) println(s"Skipping invalid file ${file.getPath}")
+        name.isDefined
       }
       .flatMap { file =>
         val path = file.getPath
         // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-        val name: String = JsonPath.parse(file, configuration).read("$.metaData.name")
+        val name: String = parseName(file.getPath).get
         val (key, confJsonOpt) = path match {
           case value if value.contains("staging_queries/") => (s"staging_queries/$name", loadJson[StagingQuery](value))
           case value if value.contains("joins/")           => (s"joins/$name", loadJson[Join](value))
@@ -112,5 +108,25 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         println(s"Failed to parse JSON to Zipline configs, file path = $file")
         None
     }
+  }
+
+}
+
+object MetadataStore {
+  def parseName(path: String): Option[String] = {
+    val gson = new Gson()
+    val reader = Files.newBufferedReader(Paths.get(path))
+    val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
+    Option(map.get("metaData"))
+      .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
+      .map(_.get("name"))
+      .flatMap(Option(_))
+      .map(_.asInstanceOf[String])
+  }
+  def main(args: Array[String]): Unit = {
+    println(parseName("/Users/nikhil_simha/repos/ml_models/zipline/production/group_bys/examples/bucketed.v1"))
+    println(
+      parseName(
+        "/Users/nikhil_simha/repos/ml_models/zipline/production/group_bys/payments_risk/cb_meta_model.cb_m37_guest"))
   }
 }

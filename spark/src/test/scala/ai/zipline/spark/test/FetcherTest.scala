@@ -17,7 +17,7 @@ import ai.zipline.api.{
   Window,
   GroupBy => GroupByConf
 }
-import ai.zipline.online.Fetcher.Request
+import ai.zipline.online.Fetcher.{Request, Response}
 import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
@@ -268,7 +268,11 @@ class FetcherTest extends TestCase {
             // Converting to java request and using the toScalaRequest functionality to test conversion
             val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
             val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
-            FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
+            FutureConverters
+              .toScala(javaResponse)
+              .map(_.asScala.map(jres =>
+                Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                         jres.values.asScala.toMap)))
           } else {
             fetcher.fetchJoin(r)
           }

@@ -6,9 +6,12 @@ import ai.zipline.online.Fetcher;
 import ai.zipline.online.Fetcher.Request;
 import ai.zipline.online.Fetcher.Response;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import scala.Function1;
+import scala.collection.Iterator;
 import scala.collection.JavaConversions;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
@@ -35,12 +38,20 @@ public class JavaFetcher  {
     this(kvStore, Constants.ZiplineMetadataKey());
   }
 
+  public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
+    List<JavaResponse> result = new ArrayList<>(responseSeq.size());
+    Iterator<Response> it = responseSeq.iterator();
+    while(it.hasNext()) {
+      result.add(new JavaResponse(it.next()));
+    }
+    return result;
+  }
 
-  private CompletableFuture<List<Response>> convertResponses(Future<Seq<Response>> responses) {
+  private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
         .toJava(responses)
         .toCompletableFuture()
-        .thenApply(JavaConversions::seqAsJavaList);
+        .thenApply(JavaFetcher::toJavaResponses);
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
@@ -52,14 +63,14 @@ public class JavaFetcher  {
     return scalaRequests.toSeq();
   }
 
-  public CompletableFuture<List<Response>> fetchGroupBys(List<JavaRequest> requests) {
+  public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
     // Get responses from the fetcher
     Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests), scala.Option.apply(null));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
 
-  public CompletableFuture<List<Response>> fetchJoin(List<JavaRequest> requests) {
+  public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
     Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);

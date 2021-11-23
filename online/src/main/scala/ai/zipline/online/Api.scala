@@ -77,25 +77,16 @@ trait KVStore {
   * MapType        java.util.Map[Byte]
   * StructType     Array[Any]
   */
-case class Mutation(schema: StructType = null, before: Row = null, after: Row = null)
+case class Mutation(schema: StructType = null, before: Array[Any] = null, after: Array[Any] = null)
 
 abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
   def schema: StructType
 }
 
+// the implementer of this class should take a single argument, a scala map of string to string
+// zipline framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
-
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
-
-//  def getProperty(str: String): Option[String] = props.get(str)
-//  private val props = Option(userConf)
-//    .map {
-//      _.split(",").map { prop =>
-//        val kv = prop.split("=")
-//        kv(0) -> kv(1)
-//      }.toMap
-//    }
-//    .getOrElse(new HashMap[String, String])
 }

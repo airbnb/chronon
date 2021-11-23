@@ -27,15 +27,13 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
     reader.read(null, decoder)
   }
 
-  private val tsIndex = schema.indexWhere(_.name == Constants.TimeColumn)
-
   override def decode(bytes: Array[Byte]): Mutation = {
     val avroSchema = AvroUtils.fromZiplineSchema(schema)
     val avroRecord = byteArrayToAvro(bytes, avroSchema)
     val after: Array[Any] = schema.fields.map { f =>
       RowConversions.fromAvroRecord(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
     }
-    Mutation(schema, null, new ArrayRow(after, after(tsIndex).asInstanceOf[Long]))
+    Mutation(schema, null, after)
   }
 
   override def schema: StructType = inputSchema

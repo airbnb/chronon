@@ -29,6 +29,12 @@ case class MapType(keyType: DataType, valueType: DataType) extends DataType
 
 case class StructField(name: String, fieldType: DataType)
 
+// maps to java.sql.Date
+case object DateType extends DataType
+
+// maps to java.sql.Timestamp
+case object TimestampType extends DataType
+
 // maps to Array[Any]
 case class StructType(name: String, fields: Array[StructField]) extends DataType with Seq[StructField] {
   def unpack: Seq[(String, DataType)] = fields.map { field => field.name -> field.fieldType }

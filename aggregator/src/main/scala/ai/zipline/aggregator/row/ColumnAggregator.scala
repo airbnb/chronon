@@ -4,6 +4,8 @@ import ai.zipline.aggregator.base._
 import ai.zipline.api.Extensions._
 import ai.zipline.api._
 
+import java.sql.{Date, Timestamp}
+
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
 
@@ -107,6 +109,15 @@ object ColumnAggregator {
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices,
                 bucketIndex: Option[Int]): ColumnAggregator = {
+    inputType match {
+      case DateType | TimestampType =>
+        throw new IllegalArgumentException(
+          s"Error while aggregating over '${aggregationPart.inputColumn}'. " +
+            s"Date type and Timestamp time should not be aggregated over (They don't serialize well in avro either). " +
+            s"Please use Query's Select expressions to transform them into Long.")
+      case _ =>
+    }
+
     def mismatchException =
       throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.operation}")
 

@@ -13,7 +13,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     with Serializable {
 
   // streaming starts scanning after batchEnd
-  val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
+  lazy val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
   private def parser = new Schema.Parser()
 
   lazy val aggregator: SawtoothOnlineAggregator = {

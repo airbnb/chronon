@@ -2,23 +2,32 @@ package ai.zipline.spark.streaming
 
 import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.{Constants, QueryUtils, ThriftJsonCodec}
-import ai.zipline.online.{Api, Fetcher, KVStore, Mutation, Metrics => FetcherMetrics}
-import ai.zipline.spark.Conversions
+import ai.zipline.api.{Constants, GroupByServingInfo, QueryUtils}
+import ai.zipline.online.{
+  Api,
+  AvroCodec,
+  AvroUtils,
+  Fetcher,
+  GroupByServingInfoParsed,
+  KVStore,
+  Mutation,
+  Metrics => FetcherMetrics
+}
+import ai.zipline.spark.{Conversions, KvRdd}
+import com.google.gson.Gson
+import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
-import org.apache.thrift.TBase
-import org.rogach.scallop.{ScallopConf, ScallopOption}
 
+import java.time.format.DateTimeFormatter
+import java.time.{Instant, ZoneId, ZoneOffset}
+import java.util.Base64
 import scala.collection.JavaConverters._
-import scala.reflect.ClassTag
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
               groupByConf: api.GroupBy,
               onlineImpl: Api,
-              debug: Boolean = false,
-              mockWrites: Boolean = false)
+              debug: Boolean = false)
     extends Serializable {
 
   private def buildStreamingQuery(): String = {
@@ -47,20 +56,27 @@ class GroupBy(inputStream: DataFrame,
     )
   }
 
-  class UnCopyableRow(row: api.Row) extends Row {
-    override def length: Int = row.length
-
-    override def get(i: Int): Any = row.get(i)
-
-    // copy is shallow, so real mutations to the contents are not allowed
-    // There is no copy requirement in streaming.
-    override def copy(): Row = new UnCopyableRow(row)
-  }
-
-  def run(): Unit = {
+  def run(local: Boolean = false): Unit = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
-    val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
+    val groupByServingInfo = if (local) {
+      // don't talk to kv store - instead make a dummy ServingInfo
+      val gb = new GroupByServingInfo()
+      gb.setGroupBy(groupByConf)
+      new GroupByServingInfoParsed(gb)
+    } else {
+      try {
+        fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
+      } catch {
+        case e: Exception => {
+          println(
+            "Fetching groupBy batch upload's metadata failed. " +
+              "Either Batch upload didn't succeed or we are unable to talk to mussel due to network issues.")
+          throw e
+        }
+      }
+    }
+
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
@@ -83,34 +99,59 @@ class GroupBy(inputStream: DataFrame,
         | Streaming source: $streamingSource
         | streaming Query: $streamingQuery
         | streaming dataset: ${groupByConf.streamingDataset}
-        | input zipline schema: ${groupByServingInfo.inputZiplineSchema}
+        | stream schema: ${streamSchema}
         |""".stripMargin)
 
     val des = deserialized
-      .map { mutation => new UnCopyableRow(mutation.after).asInstanceOf[Row] }(RowEncoder(streamSchema))
+      .map { mutation => KvRdd.toSparkRow(mutation.after, streamDecoder.schema).asInstanceOf[Row] }(
+        RowEncoder(streamSchema))
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
            s"time column ${Constants.TimeColumn} must be included in the selects")
-    val fields = groupByServingInfo.selectedZiplineSchema.fields.map(_.name)
+    val fields = selectedDf.schema.fieldNames
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
     val valueIndices = fields.map(selectedDf.schema.fieldIndex)
     val tsIndex = selectedDf.schema.fieldIndex(Constants.TimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
+    def schema(indices: Seq[Int], name: String): AvroCodec = {
+      val fields = indices
+        .map(Conversions.toZiplineSchema(selectedDf.schema))
+        .map { case (f, d) => api.StructField(f, d) }
+        .toArray
+      AvroCodec.of(AvroUtils.fromZiplineSchema(api.StructType(name, fields)).toString())
+    }
+
+    val keyCodec = schema(keyIndices, "key")
+    val valueCodec = schema(valueIndices, "selected")
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
-        val keyBytes = groupByServingInfo.keyCodec.encodeArray(keys)
         val values = valueIndices.map(row.get)
-        val valueBytes = groupByServingInfo.selectedCodec.encodeArray(values)
+
         val ts = row.get(tsIndex).asInstanceOf[Long]
+        val keyBytes = keyCodec.encodeArray(keys)
+        val valueBytes = valueCodec.encodeArray(values)
+        if (debug) {
+          val gson = new Gson()
+          val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
+          val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))
+          println(s"""
+               |keys: ${gson.toJson(keys)}
+               |values: ${gson.toJson(values)}
+               |keyBytes: ${Base64.getEncoder.encodeToString(keyBytes)}
+               |valueBytes: ${Base64.getEncoder.encodeToString(valueBytes)}
+               |ts: $ts  |  UTC: ${formatter.format(Instant.ofEpochMilli(ts))} | PST: ${pstFormatter.format(
+            Instant.ofEpochMilli(ts))}
+               |""".stripMargin)
+        }
         KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
       }
       .writeStream
       .outputMode("append")
-      .foreach(new DataWriter(onlineImpl, groupByServingInfo, context, debug, mockWrites))
+      .foreach(new DataWriter(onlineImpl, context, debug))
       .start()
   }
 }

@@ -199,7 +199,7 @@ Subcommand: fetch
   -Zkey=value [key=value]...
   -h, --help                   Show help message
 
-Subcommand: upload-metadata
+Subcommand: metadata-upload
   -c, --conf-path  <arg>       Path to the Zipline config file or directory
       --online-class  <arg>    Fully qualified Online.Api based class. We expect
                                the jar to be on the class path
