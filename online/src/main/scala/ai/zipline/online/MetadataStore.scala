@@ -123,10 +123,4 @@ object MetadataStore {
       .flatMap(Option(_))
       .map(_.asInstanceOf[String])
   }
-  def main(args: Array[String]): Unit = {
-    println(parseName("/Users/nikhil_simha/repos/ml_models/zipline/production/group_bys/examples/bucketed.v1"))
-    println(
-      parseName(
-        "/Users/nikhil_simha/repos/ml_models/zipline/production/group_bys/payments_risk/cb_meta_model.cb_m37_guest"))
-  }
 }

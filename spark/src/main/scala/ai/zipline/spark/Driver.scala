@@ -239,19 +239,25 @@ object Driver {
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
+    var shouldExit = true
     args.subcommand match {
       case Some(x) =>
         x match {
-          case args.JoinBackFillArgs     => JoinBackfill.run(args.JoinBackFillArgs)
-          case args.GroupByBackfillArgs  => GroupByBackfill.run(args.GroupByBackfillArgs)
-          case args.GroupByUploadArgs    => GroupByUploader.run(args.GroupByUploadArgs)
-          case args.GroupByStreamingArgs => GroupByStreaming.run(args.GroupByStreamingArgs)
+          case args.JoinBackFillArgs    => JoinBackfill.run(args.JoinBackFillArgs)
+          case args.GroupByBackfillArgs => GroupByBackfill.run(args.GroupByBackfillArgs)
+          case args.GroupByUploadArgs   => GroupByUploader.run(args.GroupByUploadArgs)
+          case args.GroupByStreamingArgs => {
+            shouldExit = false
+            GroupByStreaming.run(args.GroupByStreamingArgs)
+          }
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case _                         => println(s"Unknown subcommand: ${x}")
         }
       case None => println(s"specify a subcommand please")
     }
-    // System.exit(0) (spark streaming will exit immediately if this isn't set).
+    if (shouldExit) {
+      System.exit(0)
+    }
   }
 }
