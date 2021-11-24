@@ -46,7 +46,7 @@ jobs:
                 name: Build docker image
                 command: |
                     set +o pipefail
-                    docker build -t patyoon/zipline-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f docker/Dockerfile .
+                    docker build -t patyoon/zipline-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
             - deploy:
                 name: Push docker image
                 command: |

@@ -1,6 +1,5 @@
 package ai.zipline.spark
 
-import ai.zipline.aggregator.row.{Row => MRow}
 import ai.zipline.api
 import ai.zipline.api.{IntType, ListType, UnknownType}
 import org.apache.spark.sql.Row
@@ -8,7 +7,7 @@ import org.apache.spark.sql.types._
 
 // wrapper class of spark ai.zipline.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.zipline.aggregator.row with an additional class
-class RowWrapper(val row: Row, val tsIndex: Int) extends MRow {
+class RowWrapper(val row: Row, val tsIndex: Int) extends api.Row {
 
   override def get(index: Int): Any = row.get(index)
 
@@ -39,6 +38,8 @@ object Conversions {
       case StringType                => api.StringType
       case BinaryType                => api.BinaryType
       case BooleanType               => api.BooleanType
+      case DateType                  => api.DateType
+      case TimestampType             => api.TimestampType
       case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
         api.MapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
@@ -64,6 +65,8 @@ object Conversions {
       case api.StringType        => StringType
       case api.BinaryType        => BinaryType
       case api.BooleanType       => BooleanType
+      case api.DateType          => DateType
+      case api.TimestampType     => TimestampType
       case ListType(elementType) => ArrayType(fromZiplineType(elementType))
       case api.MapType(keyType, valueType) =>
         MapType(fromZiplineType(keyType), fromZiplineType(valueType))

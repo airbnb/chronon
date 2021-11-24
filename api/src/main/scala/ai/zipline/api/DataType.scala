@@ -18,14 +18,22 @@ case object ByteType extends DataType
 
 case object StringType extends DataType
 
+// maps to Array[Byte]
 case object BinaryType extends DataType
 
 // maps to java.util.ArrayList[ElementType]
 case class ListType(elementType: DataType) extends DataType
 
+// maps to java.util.Map[KeyType, ValueType]
 case class MapType(keyType: DataType, valueType: DataType) extends DataType
 
 case class StructField(name: String, fieldType: DataType)
+
+// maps to java.sql.Date
+case object DateType extends DataType
+
+// maps to java.sql.Timestamp
+case object TimestampType extends DataType
 
 // maps to Array[Any]
 case class StructType(name: String, fields: Array[StructField]) extends DataType with Seq[StructField] {

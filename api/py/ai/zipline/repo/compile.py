@@ -96,7 +96,8 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
             if _write_obj(full_output_root, validator, name, obj, log_level, force_compile=True):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
-    print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
+    if num_written_objs > 0:
+        print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
@@ -139,9 +140,9 @@ def _write_obj(full_output_root: str,
                      ', '.join(validation_errors))
         return False
     if force_overwrite:
-        _print_warning(f"force overwrite {class_name} {name}")
+        _print_warning(f"Force overwrite {class_name} {name}")
     elif not validator.safe_to_overwrite(obj):
-        _print_warning(f"cannot overwrite {class_name} {name} with existing online conf")
+        _print_warning(f"Cannot overwrite {class_name} {name} with existing online conf")
         return False
     _write_obj_as_json(name, obj, output_file, obj_class)
     return True

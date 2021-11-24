@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import ai.zipline.api
 import ai.zipline.api.DataType
-import ai.zipline.fetcher.{AvroCodec, AvroUtils, RowConversions}
+import ai.zipline.online.{AvroCodec, AvroUtils, RowConversions}
 import ai.zipline.spark.Extensions._
 import org.apache.avro.generic.GenericData
 import org.apache.spark.rdd.RDD
@@ -80,7 +80,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
 object KvRdd {
   def toSparkRow(value: Any, dataType: DataType): Any = {
-    RowConversions.recursiveEdit[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
+    api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
       value,
       dataType,
       { (data: Iterator[Any], _) => new GenericRow(data.toArray) },

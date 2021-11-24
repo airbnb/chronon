@@ -1,7 +1,6 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
-import ai.zipline.aggregator.row.Row
-import ai.zipline.api._
+import ai.zipline.api.{Row, _}
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput

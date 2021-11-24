@@ -35,13 +35,17 @@ object Comparison {
 
   // Produces a "comparison" dataframe - given two dataframes that are supposed to have same data
   // The result contains the differing rows of the same key
-  def sideBySide(a: DataFrame, b: DataFrame, keys: List[String]): DataFrame = {
+  def sideBySide(a: DataFrame,
+                 b: DataFrame,
+                 keys: List[String],
+                 aName: String = "a",
+                 bName: String = "b"): DataFrame = {
 
-    val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), "a_")
-    val prefixedOutputDf = prefixColumnName(stringifyMaps(b), "b_")
+    val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
+    val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
 
     val joinExpr = keys
-      .map(key => prefixedExpectedDf(s"a_$key") <=> prefixedOutputDf(s"b_$key"))
+      .map(key => prefixedExpectedDf(s"${aName}_$key") <=> prefixedOutputDf(s"${bName}_$key"))
       .reduce((col1, col2) => col1.and(col2))
     val joined = prefixedExpectedDf.join(
       prefixedOutputDf,
@@ -53,16 +57,16 @@ object Comparison {
     val comparisonColumns =
       a.schema.fieldNames.toSet.diff(keys.toSet).toList.sorted
     val colOrder =
-      keys.map(key => { finalDf(s"a_$key").as(key) }) ++
+      keys.map(key => { finalDf(s"${aName}_$key").as(key) }) ++
         comparisonColumns.flatMap { col =>
-          List(finalDf(s"a_$col"), finalDf(s"b_$col"))
+          List(finalDf(s"${aName}_$col"), finalDf(s"${bName}_$col"))
         }
     finalDf = finalDf.select(colOrder: _*)
     finalDf = finalDf.filter(
       s"${comparisonColumns
         .flatMap { col =>
-          val left = s"a_$col"
-          val right = s"b_$col"
+          val left = s"${aName}_$col"
+          val right = s"${bName}_$col"
           Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR ($left <> $right))")
         }
         .mkString(" or ")}"

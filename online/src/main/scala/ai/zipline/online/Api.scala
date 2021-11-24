@@ -1,7 +1,11 @@
-package ai.zipline.api
+package ai.zipline.online
 
-import ai.zipline.api.KVStore.{GetRequest, GetResponse, PutRequest}
+import ai.zipline.api.{Constants, GroupByServingInfo, Row, StructType}
+import KVStore.{GetRequest, GetResponse, PutRequest}
+
+import java.util.Properties
 import java.util.concurrent.Executors
+import scala.collection.immutable.HashMap
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -36,7 +40,7 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFuture = get(fetchRequest)
     val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    assert (response.latest.isDefined, s"we should have a string response")
+    assert(response.latest.isDefined, s"we should have a string response")
     new String(response.latest.get.bytes, Constants.UTF8)
   }
 }
@@ -58,7 +62,7 @@ trait KVStore {
   * For the entities case, `mutation_ts` when absent will use `ts` as a replacement
 
   * ==== TYPE CONVERSIONS ====
-  * Java types corresponding to the schema types. Stream [[Decoder]] should produce mutations that comply.
+  * Java types corresponding to the schema types. [[StreamDecoder]] should produce mutations that comply.
   * NOTE: everything is nullable (hence boxed)
   * IntType        java.lang.Integer
   * LongType       java.lang.Long
@@ -73,22 +77,16 @@ trait KVStore {
   * MapType        java.util.Map[Byte]
   * StructType     Array[Any]
   */
-case class Mutation(schema: StructType = null, before: Array[AnyRef] = null, after: Array[AnyRef] = null)
+case class Mutation(schema: StructType = null, before: Array[Any] = null, after: Array[Any] = null)
 
-trait Decoder extends Serializable {
+abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
+  def schema: StructType
 }
 
-
-abstract class OnlineImpl(userConf: Map[String, String]) extends Serializable {
-  // helper method to access property
-  // -Dkey1=value -Dkey2=value2  from scallop gets converted to userConf.
-  def getProperty(key: String): String = userConf(key)
-
-  def genStreamDecoder(inputSchema: StructType): Decoder
-
-  // users can set transform input avro schema from batch source to streaming compatible schema
-  def batchInputAvroSchemaToStreaming(batchSchema: StructType): StructType
-
+// the implementer of this class should take a single argument, a scala map of string to string
+// zipline framework will construct this object with user conf supplied via CLI
+abstract class Api(userConf: Map[String, String]) extends Serializable {
+  def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
 }

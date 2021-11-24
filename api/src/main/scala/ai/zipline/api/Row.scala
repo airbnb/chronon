@@ -1,67 +1,23 @@
-package ai.zipline.fetcher
+package ai.zipline.api
 
-import ai.zipline.api._
-import org.apache.avro.generic.{GenericData, GenericRecord}
-import org.apache.avro.util.Utf8
-
-import java.nio.ByteBuffer
 import java.util
-import scala.collection.AbstractIterator
-import scala.collection.JavaConverters._
+import scala.collection.JavaConverters.asScalaIteratorConverter
 
-object RowConversions {
-  def toAvroRecord(value: Any, dataType: DataType): Any = {
-    // TODO: avoid schema generation multiple times
-    // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
-    recursiveEdit[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
-      value,
-      dataType,
-      { (data: Iterator[Any], elemDataType: DataType) =>
-        val schema = AvroUtils.fromZiplineSchema(elemDataType)
-        val record = new GenericData.Record(schema)
-        data.zipWithIndex.foreach { case (value, idx) => record.put(idx, value) }
-        record
-      },
-      ByteBuffer.wrap,
-      { (elems: Iterator[Any], size: Int) =>
-        val result = new util.ArrayList[Any](size)
-        elems.foreach(result.add)
-        result
-      },
-      { m: util.Map[Any, Any] => m }
-    )
-  }
+trait Row {
+  def get(index: Int): Any
 
-  def fromAvroRecord(value: Any, dataType: DataType): Any = {
-    inverseEdit[GenericRecord, ByteBuffer, GenericData.Array[Any], Utf8](
-      value,
-      dataType,
-      { (record: GenericRecord, fields: Seq[StructField]) =>
-        new AbstractIterator[Any]() {
-          var idx = 0
-          override def next(): Any = {
-            val res = record.get(idx)
-            idx += 1
-            res
-          }
-          override def hasNext: Boolean = idx < fields.size
-        }
-      },
-      { (byteBuffer: ByteBuffer) => byteBuffer.array() },
-      { (garr: GenericData.Array[Any]) =>
-        val arr = new Array[Any](garr.size)
-        var idx = 0
-        while (idx < garr.size()) {
-          arr.update(idx, garr.get(idx))
-          idx += 1
-        }
-        arr
-      },
-      { (avString: Utf8) => avString.toString }
-    )
-  }
+  def ts: Long
 
-  def inverseEdit[CompositeType, BinaryType, ArrayType, StringType](
+  val length: Int
+
+  def getAs[T](index: Int): T = get(index).asInstanceOf[T]
+
+  def values: Array[Any] = (0 until length).map(get).toArray
+}
+
+object Row {
+  // recursively traverse a logical struct, and convert it zipline's row type
+  def from[CompositeType, BinaryType, ArrayType, StringType](
       value: Any,
       dataType: DataType,
       decomposer: (CompositeType, Seq[StructField]) => Iterator[Any],
@@ -70,7 +26,7 @@ object RowConversions {
       deStringer: StringType => String): Any = {
     if (value == null) return null
     def edit(value: Any, dataType: DataType): Any =
-      inverseEdit(value, dataType, decomposer, debinarizer, delister, deStringer)
+      from(value, dataType, decomposer, debinarizer, delister, deStringer)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -113,18 +69,17 @@ object RowConversions {
     }
   }
 
-  // compositor converts a bare array of java types into a format specific row/record type
-  // recursively explore the ZDataType to explore where composition/record building happens
-  def recursiveEdit[StructType, BinaryType, ListType, MapType](value: Any,
-                                                               dataType: DataType,
-                                                               composer: (Iterator[Any], DataType) => StructType,
-                                                               binarizer: Array[Byte] => BinaryType,
-                                                               collector: (Iterator[Any], Int) => ListType,
-                                                               mapper: (util.Map[Any, Any] => MapType)): Any = {
+  // recursively traverse a zipline dataType value, and convert it to an external type
+  def to[StructType, BinaryType, ListType, MapType](value: Any,
+                                                    dataType: DataType,
+                                                    composer: (Iterator[Any], DataType) => StructType,
+                                                    binarizer: Array[Byte] => BinaryType,
+                                                    collector: (Iterator[Any], Int) => ListType,
+                                                    mapper: (util.Map[Any, Any] => MapType)): Any = {
 
     if (value == null) return null
     def edit(value: Any, dataType: DataType): Any =
-      recursiveEdit(value, dataType, composer, binarizer, collector, mapper)
+      to(value, dataType, composer, binarizer, collector, mapper)
     dataType match {
       case StructType(_, fields) =>
         value match {

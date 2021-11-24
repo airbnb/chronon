@@ -1,11 +1,12 @@
 import sbt.Keys._
+import xerial.sbt.pack.PackPlugin._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark, fetcher)
+  .aggregate(api, aggregator, spark, online)
   .settings(name := "zipline")
 
 lazy val api = project
@@ -23,13 +24,6 @@ lazy val api = project
     )
   )
 
-lazy val lib = project
-  .settings(
-    libraryDependencies ++= Seq(
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7"
-    )
-  )
-
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
@@ -40,13 +34,15 @@ lazy val aggregator = project
     )
   )
 
-lazy val fetcher = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), lib)
+lazy val online = project
+  .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
-      "org.apache.avro" % "avro" % "1.8.0",
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      "org.rogach" %% "scallop" % "4.0.1",
+      "org.apache.avro" % "avro" % "1.8.0",
+      "net.jodah" % "typetools" % "0.4.1"
     )
   )
 
@@ -58,23 +54,40 @@ def cleanSparkMeta: Unit = {
 }
 
 lazy val spark = project
-  .dependsOn(aggregator.%("compile->compile;test->test"), fetcher, lib)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     assembly / test := {},
     mainClass in (Compile, run) := Some(
-      "ai.zipline.spark.Join"
+      "ai.zipline.spark.Driver"
     ),
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "2.4.0" % "provided",
-      "org.apache.spark" %% "spark-hive" % "2.4.0" % "provided",
-      "org.apache.spark" %% "spark-core" % "2.4.0" % "provided",
-      "org.apache.spark" %% "spark-streaming" % "2.4.0" % "provided",
-      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4" % "provided",
-      "org.rogach" %% "scallop" % "4.0.1",
-      "com.jayway.jsonpath" % "json-path" % "2.6.0" % "provided"
-    ),
+      "org.apache.spark" %% "spark-sql" % "2.4.0",
+      "org.apache.spark" %% "spark-hive" % "2.4.0",
+      "org.apache.spark" %% "spark-core" % "2.4.0",
+      "org.apache.spark" %% "spark-streaming" % "2.4.0",
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+    ).map(_ % "provided"), // TODO: toggle provided conditionally
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
+  )
+
+// Project for running with embedded spark for local testing
+lazy val embedded = (project in file("spark"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .enablePlugins(PackPlugin)
+  .settings(publishPackArchives)
+  .settings(
+    packMain := Map("ztool" -> "ai.zipline.spark.Driver"),
+    target := target.value.toPath.resolveSibling("target-embedded").toFile,
+    assembly / test := {},
+    mainClass in (Compile, run) := Some("ai.zipline.spark.Driver"),
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-sql" % "2.4.0",
+      "org.apache.spark" %% "spark-hive" % "2.4.0",
+      "org.apache.spark" %% "spark-core" % "2.4.0",
+      "org.apache.spark" %% "spark-streaming" % "2.4.0",
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+    ) // .map(_ % "provided")
   )
 
 exportJars := true

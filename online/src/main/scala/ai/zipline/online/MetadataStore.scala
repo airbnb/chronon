@@ -1,25 +1,23 @@
-package ai.zipline.fetcher
+package ai.zipline.online
 
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, StringOps}
-import ai.zipline.api.KVStore.PutRequest
 import ai.zipline.api._
+import ai.zipline.online.KVStore.PutRequest
+import ai.zipline.online.MetadataStore.parseName
+import com.google.gson.Gson
 import org.apache.thrift.TBase
-import com.jayway.jsonpath.JsonPath
-import com.jayway.jsonpath.Configuration
-import com.jayway.jsonpath.{Option => JsonPathOption}
-import java.io.File
 
+import java.io.File
+import java.nio.file.{Files, Paths}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
-
-import ai.zipline.lib.{MetadataMetrics, Metrics}
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
-   val startTimeMs = System.currentTimeMillis()
+    val startTimeMs = System.currentTimeMillis()
     val joinOps: JoinOps = new JoinOps(
       ThriftJsonCodec
         .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
@@ -43,30 +41,30 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
       val groupByServingInfo = ThriftJsonCodec
         .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
-      MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(
-        groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
+      MetadataMetrics.reportJoinConfRequestMetric(
+        System.currentTimeMillis() - startTimeMs,
+        Metrics.Context(groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
       new GroupByServingInfoParsed(groupByServingInfo)
     })
 
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putZiplineConf(configPath: String): Future[Seq[Boolean]] = {
+  def putConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
     println(s"Uploading Zipline configs from $configPath")
     val fileList = listFiles(configFile)
 
-    val configuration = Configuration.builder.options(JsonPathOption.SUPPRESS_EXCEPTIONS).build
     val puts = fileList
-      .filter(
-        // the current Zipline config should have metaData.name field
-        // if this field doesn't exist, we will simply skip for further parsing validation
-        JsonPath.parse(_, configuration).read("$.metaData.name") != null
-      )
+      .filter { file =>
+        val name = parseName(file.getPath)
+        if (name.isEmpty) println(s"Skipping invalid file ${file.getPath}")
+        name.isDefined
+      }
       .flatMap { file =>
         val path = file.getPath
         // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-        val name: String = JsonPath.parse(file, configuration).read("$.metaData.name")
+        val name: String = parseName(file.getPath).get
         val (key, confJsonOpt) = path match {
           case value if value.contains("staging_queries/") => (s"staging_queries/$name", loadJson[StagingQuery](value))
           case value if value.contains("joins/")           => (s"joins/$name", loadJson[Join](value))
@@ -98,6 +96,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           .flatMap(listFiles(_, recursive))
     }
   }
+
   // process zipline configs only. others will be ignored
   // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
@@ -109,5 +108,19 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         println(s"Failed to parse JSON to Zipline configs, file path = $file")
         None
     }
+  }
+
+}
+
+object MetadataStore {
+  def parseName(path: String): Option[String] = {
+    val gson = new Gson()
+    val reader = Files.newBufferedReader(Paths.get(path))
+    val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
+    Option(map.get("metaData"))
+      .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
+      .map(_.get("name"))
+      .flatMap(Option(_))
+      .map(_.asInstanceOf[String])
   }
 }

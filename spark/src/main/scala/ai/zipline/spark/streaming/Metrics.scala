@@ -1,8 +1,8 @@
-package ai.zipline.lib
+package ai.zipline.spark.streaming
 
-import ai.zipline.lib.Metrics.{Context, statsd}
+import ai.zipline.online.Metrics.{Context, statsd}
 
-object StreamingMetrics {
+object Metrics {
 
   object Name {
     val Stream = "stream"
@@ -18,31 +18,27 @@ object StreamingMetrics {
     val IngressDataSize = s"$Ingress.data_size_bytes"
   }
 
-
   object Egress {
-
-
     def reportDataSize(sizeBytes: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.EgressDataSize, sizeBytes, metricsContext.toTags() : _*)
+      statsd.histogram(Name.EgressDataSize, sizeBytes, metricsContext.toTags(): _*)
     }
 
     def reportLatency(millis: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.EgressLatencyMillis, millis, metricsContext.toTags() : _*)
+      statsd.histogram(Name.EgressLatencyMillis, millis, metricsContext.toTags(): _*)
     }
 
     def reportRowCount(metricsContext: Context): Unit = {
-      statsd.increment(Name.EgressRowCount, metricsContext.toTags() : _*)
+      statsd.increment(Name.EgressRowCount, metricsContext.toTags(): _*)
     }
   }
 
   object Ingress {
-
     def reportRowCount(metricsContext: Context): Unit = {
-      statsd.increment(Name.IngressRowCount, metricsContext.toTags() : _*)
+      statsd.increment(Name.IngressRowCount, metricsContext.toTags(): _*)
     }
 
     def reportDataSize(sizeBytes: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.IngressDataSize, sizeBytes, metricsContext.toTags() : _*)
+      statsd.histogram(Name.IngressDataSize, sizeBytes, metricsContext.toTags(): _*)
     }
   }
 }

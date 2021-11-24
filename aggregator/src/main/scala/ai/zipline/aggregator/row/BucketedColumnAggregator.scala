@@ -1,7 +1,7 @@
 package ai.zipline.aggregator.row
 
 import ai.zipline.aggregator.base.BaseAggregator
-import ai.zipline.api.{DataType, MapType, StringType}
+import ai.zipline.api.{DataType, MapType, Row, StringType}
 
 import java.util
 import scala.collection.mutable

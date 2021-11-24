@@ -1,13 +1,14 @@
 package ai.zipline.spark.test
 
-import ai.zipline.api.{Constants, KVStore}
-import KVStore.{PutRequest, TimedValue}
+import ai.zipline.api.Constants
+import ai.zipline.online.KVStore
+import ai.zipline.online.KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
 import org.apache.spark.sql.Row
 import org.jboss.netty.util.internal.ConcurrentHashMap
+
 import java.util.Base64
 import java.util.function
-
 import scala.collection.mutable
 import scala.concurrent.Future
 

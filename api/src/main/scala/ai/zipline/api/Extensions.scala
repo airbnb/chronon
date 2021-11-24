@@ -250,6 +250,38 @@ object Extensions {
     def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
 
     def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
+
+    def buildStreamingQuery: String = {
+      assert(streamingSource.isDefined, "You should probably define a topic in one of your sources")
+      val query = streamingSource.get.query
+      val selects = Option(query.selects).map(_.asScala.toMap).orNull
+      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+      val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
+      val keys = groupBy.getKeyColumns.asScala
+
+      val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+      val keyWhereOption =
+        Option(selects)
+          .map { selectsMap =>
+            keys
+              .map(key => s"(${selectsMap(key)} is NOT NULL)")
+              .mkString(" OR ")
+          }
+      val timeWheres = Seq(s"$timeColumn is NOT NULL")
+
+      QueryUtils.build(
+        selects,
+        Constants.StreamingInputTable,
+        baseWheres ++ timeWheres ++ keyWhereOption,
+        fillIfAbsent = fillIfAbsent
+      )
+    }
+
+    def aggregationInputs: Array[String] =
+      groupBy.aggregations.asScala
+        .flatMap(agg => Option(agg.buckets).map(_.asScala).getOrElse(Seq.empty) :+ agg.inputColumn)
+        .distinct
+        .toArray
   }
 
   implicit class StringOps(string: String) {

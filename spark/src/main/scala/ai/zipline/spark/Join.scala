@@ -282,8 +282,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-
-    val rangeToFill = PartitionRange(joinConf.left.query.startPartition, endPartition)
+    val leftStart = joinConf.left.query.startPartition
+    val rangeToFill = PartitionRange(leftStart, endPartition)
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
@@ -333,8 +333,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
 // the driver
 object Join {
-  // TODO: make joins a subcommand of a larger driver
-  //  that does group-by backfills/bulk uploads etc
+  // TODO: deprecate - instead use `ztool join-backfill ...`
   def main(args: Array[String]): Unit = {
     // args = conf path, end date
     val parsedArgs = new Args(args)

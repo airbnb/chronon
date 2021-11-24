@@ -3,10 +3,22 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.GroupByOps
-import ai.zipline.api.KVStore.GetRequest
-import ai.zipline.api.{Accuracy, Builders, Constants, IntType, KVStore, LongType, Operation, StringType, StructType, TimeUnit, Window, GroupBy => GroupByConf}
-import ai.zipline.fetcher.Fetcher.Request
-import ai.zipline.fetcher.{Fetcher, JavaFetcher, JavaRequest, MetadataStore}
+import ai.zipline.online.KVStore.GetRequest
+import ai.zipline.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  IntType,
+  LongType,
+  Operation,
+  StringType,
+  StructType,
+  TimeUnit,
+  Window,
+  GroupBy => GroupByConf
+}
+import ai.zipline.online.Fetcher.{Request, Response}
+import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import junit.framework.TestCase
@@ -14,15 +26,14 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
+
 import java.lang
 import java.util.concurrent.Executors
-
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS}
+import scala.concurrent.duration.{Duration, MILLISECONDS, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 
 object FetcherTest {
@@ -40,19 +51,13 @@ class FetcherTest extends TestCase {
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
-  def putStreaming(groupByConf: GroupByConf,
-                   kvStore: () => KVStore,
-                   tableUtils: TableUtils,
-                   ds: String): Unit = {
+  def putStreaming(groupByConf: GroupByConf, kvStore: () => KVStore, tableUtils: TableUtils, ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
     val selected = groupBy.inputDf.filter(s"ds='$ds'")
     val inputStream = new InMemoryStream
-    val groupByStreaming = new GroupByStreaming(
-      inputStream.getInMemoryStreamDF(spark, selected),
-      spark,
-      groupByConf,
-      new MockOnlineImpl(kvStore, Map.empty))
+    val groupByStreaming =
+      new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
     groupByStreaming.run()
   }
 
@@ -72,7 +77,7 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putZiplineConf(
+    val singleFilePut = singleFileMetadataStore.putConf(
       "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
@@ -84,7 +89,7 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putZiplineConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
+    val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))
@@ -263,7 +268,11 @@ class FetcherTest extends TestCase {
             // Converting to java request and using the toScalaRequest functionality to test conversion
             val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
             val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
-            FutureConverters.toScala(javaResponse).map(_.asScala.toSeq)
+            FutureConverters
+              .toScala(javaResponse)
+              .map(_.asScala.map(jres =>
+                Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                         jres.values.asScala.toMap)))
           } else {
             fetcher.fetchJoin(r)
           }
@@ -271,7 +280,7 @@ class FetcherTest extends TestCase {
         }
         .flatMap {
           case (start, future) =>
-            val result = Await.result(future, Duration(10000, MILLISECONDS))
+            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
             val latency = System.currentTimeMillis() - start
             latencySum += latency
             latencyCount += 1
@@ -318,7 +327,7 @@ class FetcherTest extends TestCase {
     }
 
     println(todaysExpected.schema.pretty)
-    val keyishColumns = List("vendor_id", "user_id", "ts", "ds")
+    val keyishColumns = List("ts", "vendor_id", "user_id", "ds")
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, todaysExpected.schema)
     println("queries:")
@@ -327,7 +336,8 @@ class FetcherTest extends TestCase {
     todaysExpected.order(keyishColumns).show()
     println("response:")
     responseDf.order(keyishColumns).show()
-    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns)
+
+    val diff = Comparison.sideBySide(responseDf, todaysExpected, keyishColumns, aName = "online", bName = "offline")
     assertEquals(todaysQueries.count(), responseDf.count())
     if (diff.count() > 0) {
       println(s"Diff count: ${diff.count()}")
