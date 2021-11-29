@@ -1,6 +1,5 @@
 package ai.zipline.aggregator.windowing
 
-import ai.zipline.aggregator.row.{Row, RowAggregator}
 import ai.zipline.api.Extensions.WindowOps
 import ai.zipline.api._
 
