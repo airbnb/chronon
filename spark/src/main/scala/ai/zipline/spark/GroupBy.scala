@@ -11,9 +11,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
-import java.util
 
-import com.google.gson.Gson
+import java.util
 
 import scala.collection.JavaConverters._
 

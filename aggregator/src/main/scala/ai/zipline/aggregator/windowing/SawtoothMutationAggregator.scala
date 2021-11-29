@@ -105,11 +105,6 @@ class SawtoothMutationAggregator(
 
   /**
    * Update the intermediate results with tail hops data from a FinalBatchIr.
-   * @param ir Intermediate results
-   * @param queryTs Time that the IR aggregation value is requested
-   * @param batchEndTs EndTs for the batch IR
-   * @param batchIr Aggregated data up to batchEndTs
-   * @return updated IR
    */
   def mergeTailHops(ir: Array[Any], queryTs: Long, batchEndTs: Long, batchIr: FinalBatchIr): Array[Any] = {
     var i: Int = 0
@@ -139,11 +134,6 @@ class SawtoothMutationAggregator(
    * Given aggregations FinalBatchIRs at the end of the Snapshot (batchEndTs) and mutation and query times,
    * determine the values at the query times for the aggregations.
    * This is pretty much a mix of online with extra work for multiple queries ts support.
-   * @param batchEndTs End time covered by the final Batch IR aggregations.
-   * @param finalBatchIr Data extracted from the previous snapshot. Collapsed -> lifetime, tailHops -> windows
-   * @param sortedInputs Mutations sorted by time.
-   * @param sortedEndTimes End times to get the intermediate result value at.
-   * @return
    */
   def lambdaAggregateIrMany(batchEndTs: Long, finalBatchIr: FinalBatchIr, sortedInputs: Iterator[Row], sortedEndTimes: Array[Long], hasReversal: Boolean = false): Array[Array[Any]] = {
     if (finalBatchIr == null && sortedInputs == null) return null

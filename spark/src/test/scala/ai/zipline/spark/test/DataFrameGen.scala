@@ -45,10 +45,6 @@ object DataFrameGen {
    * the mutation and before the end of the day.
    * Finally process each snapshot with a group by to generate the snapshot data.
    * This ensures mutations end state and snapshot data is consistent.
-   * @param spark Spark session
-   * @param columns dataset columns without partition column or reversal column.
-   * @param count Number of events to create
-   * @param partitions
    * @return (SnapshotDf, MutationDf)
    */
   def mutations(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int, mutationProbability: Double,
