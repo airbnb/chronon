@@ -11,9 +11,9 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
                                resolution: Resolution = FiveMinuteResolution,
                                tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
     extends SawtoothMutationAggregator(aggregations: Seq[Aggregation],
-                               inputSchema: Seq[(String, DataType)],
-                               resolution: Resolution,
-                               tailBufferMillis: Long) {
+                                       inputSchema: Seq[(String, DataType)],
+                                       resolution: Resolution,
+                                       tailBufferMillis: Long) {
 
   // logically, batch response is arranged like so
   // sum-90d =>  sum_ir_88d, [(sum_ir_1d, ts)] -> 1d is the hopSize for 90d
@@ -75,7 +75,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       val row = headRows.next()
       val rowTs = row.ts // unbox long only once
       if (queryTs > rowTs && rowTs >= batchEndTs) {
-        updateIntermediateResult(resultIr, row, queryTs, false)
+        updateIr(resultIr, row, queryTs, false)
       }
     }
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)

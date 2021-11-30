@@ -1,5 +1,6 @@
 package ai.zipline.spark
 
+import ai.zipline.api.{Row => ZRow}
 import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
@@ -13,7 +14,6 @@ import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
-
 import scala.collection.JavaConverters._
 
 class GroupBy(val aggregations: Seq[Aggregation],
@@ -118,15 +118,14 @@ class GroupBy(val aggregations: Seq[Aggregation],
     toDf(snapshotEventsBase(partitionRange), Seq((Constants.PartitionColumn, StringType)))
 
   /**
-   * Support for entities mutations.
-   * Three way join between:
-   *   Queries: grouped by key and dsOf[ts]
-   *   Snapshot[InputDf]: Grouped by key and ds providing a FinalBatchIR to be extended.
-   *   Mutations[MutationDf]: Grouped by key and dsOf[MutationTs] providing an array of updates/deletes to be done
-   * With this process the components (final batch ir + mutation_ts before query ts -> output)
-   */
-  def entitiesMutations(queriesUnfilteredDf: DataFrame,
-                        resolution: Resolution = FiveMinuteResolution): DataFrame = {
+    * Support for entities mutations.
+    * Three way join between:
+    *   Queries: grouped by key and dsOf[ts]
+    *   Snapshot[InputDf]: Grouped by key and ds providing a FinalBatchIR to be extended.
+    *   Mutations[MutationDf]: Grouped by key and dsOf[MutationTs] providing an array of updates/deletes to be done
+    * With this process the components (end of day batchIr + day's mutations + day's queries -> output)
+    */
+  def entitiesMutations(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
     // Add extra column to the queries and generate the key hash.
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
@@ -134,14 +133,15 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val queriesWithTimeBasedPartition = queriesDf.withTimestampBasedPartition(timeBasedPartitionColumn)
     val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
 
-    val queriesByKeys = queriesWithTimeBasedPartition.rdd.map {
-      row =>
+    val queriesByKeys = queriesWithTimeBasedPartition.rdd
+      .map { row =>
         val ts = row.getAs[Long](Constants.TimeColumn)
         val partition = row.getAs[String](Constants.PartitionColumn)
         (
           (queriesKeyHashFx(row), row.getAs[String](timeBasedPartitionColumn)),
           TimeTuple.make(ts, partition)
-        )}
+        )
+      }
       .groupByKey()
       .mapValues { _.toArray.uniqSort(TimeTuple) }
 
@@ -154,12 +154,10 @@ class GroupBy(val aggregations: Seq[Aggregation],
       .withShiftedPartition(shiftedColumnName)
       .withPartitionBasedTimestamp(shiftedColumnNameTs, shiftedColumnName)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
-    val sawtoothAggregator = new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
+    val sawtoothAggregator =
+      new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(
-        row.getAs[Long](shiftedColumnNameTs),
-        ir,
-        Conversions.toZiplineRow(row, tsIndex))
+      sawtoothAggregator.update(row.getAs[Long](shiftedColumnNameTs), ir, Conversions.toZiplineRow(row, tsIndex))
       ir
     }
     val snapshotByKeys = expandedInputDf.rdd
@@ -171,49 +169,44 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
     val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
-    val mutationsByKeys = mutationDf.rdd.map {
-      row =>
+    val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = mutationDf.rdd
+      .map { row =>
         (
           (mutationsHashFx(row), row.getAs[String](Constants.PartitionColumn)),
-          TimeTuple.make(row.getAs[Long](Constants.MutationTimeColumn), row)
-        )}
+          row
+        )
+      }
       .groupByKey()
-      .mapValues { _.toArray }
+      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)))
+      .mapValues(_.toArray.sortWith(_.ts < _.ts).toIterator)
+
     // Having the final IR of previous day + mutations (if any), build the array of finalized IR for each query.
     val queryValuesRDD = queriesByKeys
       .leftOuterJoin(snapshotByKeys)
       .leftOuterJoin(mutationsByKeys)
       .map {
-        case ((keyWithHash: KeyWithHash, ds: String), ((timeQueries, eodIr), mutations)) =>
-          val dayMutations = mutations.getOrElse(Array[util.ArrayList[Any]]())
-          val sortedInputsIt: Iterator[RowWrapper] = {
-            dayMutations.map(tt =>
-              Conversions.toZiplineRow(
-                tt.get(1).asInstanceOf[Row],
-                mTsIndex,
-                mutationsReversalIndex,
-                mutationsTsIndex
-              )
-            ).sortWith(_.ts < _.ts).toIterator}
+        case ((keyWithHash: KeyWithHash, ds: String), ((timeQueries, eodIr), dayMutations)) =>
           val sortedQueries = timeQueries.map { TimeTuple.getTs }
           val finalizedEodIr = eodIr.orNull
 
-          val irs = sawtoothAggregator.lambdaAggregateIrMany(
-            Constants.Partition.epochMillis(ds), finalizedEodIr, sortedInputsIt, sortedQueries, true)
+          val irs = sawtoothAggregator.lambdaAggregateIrMany(Constants.Partition.epochMillis(ds),
+                                                             finalizedEodIr,
+                                                             dayMutations.orNull,
+                                                             sortedQueries,
+                                                             true)
           ((keyWithHash, ds), (timeQueries, sortedQueries.indices.map(i => normalizeOrFinalize(irs(i)))))
-    }
+      }
 
     val outputRdd = queryValuesRDD
       .flatMap {
-      case ((keyHasher, _), (queriesTimeTuple, finalizedAggregations)) =>
-        val queries = queriesTimeTuple.map{ TimeTuple.getTs }
-        queries.indices.map {
-          idx => (keyHasher.data ++ queriesTimeTuple(idx).toArray, finalizedAggregations(idx))
-        }
+        case ((keyHasher, _), (queriesTimeTuple, finalizedAggregations)) =>
+          val queries = queriesTimeTuple.map { TimeTuple.getTs }
+          queries.indices.map { idx =>
+            (keyHasher.data ++ queriesTimeTuple(idx).toArray, finalizedAggregations(idx))
+          }
       }
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
   }
-
 
   // Use another dataframe with the same key columns and time columns to
   // generate aggregates within the Sawtooth of the time points
@@ -382,23 +375,32 @@ object GroupBy {
     val nullFiltered = processedInputDf.filter(nullFilterClause)
 
     // Generate mutation Df if required
-
-    val mutationSources = groupByConf.sources.asScala.filter{
-      _.isSetEntities
-    }
+    val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Array(Constants.MutationTimeColumn, Constants.ReversalColumn)
-    val mutationDf = if (groupByConf.accuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty) mutationSources
-      .map {
-        renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange.shift(1), tableUtils, groupByConf.maxWindow, mutations = true)
-      }
-      .map { tableUtils.sql }
-      .reduce { (df1, df2) =>
-          val columns1 = df1.schema.fields.map(_.name)
-          df1.union(df2.selectExpr(columns1: _*))
-        // Need to reorder columns to align the input on the aggregators for both mutations and snapshot data.
-      }.selectExpr(mutationsColumnOrder: _*) else null
+    val mutationDf =
+      if (groupByConf.accuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
+        mutationSources
+          .map {
+            renderDataSourceQuery(_,
+                                  groupByConf.getKeyColumns.asScala,
+                                  queryRange.shift(1),
+                                  tableUtils,
+                                  groupByConf.maxWindow,
+                                  mutations = true)
+          }
+          .map { tableUtils.sql }
+          .reduce { (df1, df2) =>
+            val columns1 = df1.schema.fields.map(_.name)
+            df1.union(df2.selectExpr(columns1: _*))
+          // Need to reorder columns to align the input on the aggregators for both mutations and snapshot data.
+          }
+          .selectExpr(mutationsColumnOrder: _*)
+      else null
 
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull, keyColumns, nullFiltered, Option(mutationDf).orNull)
+    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
+                keyColumns,
+                nullFiltered,
+                Option(mutationDf).orNull)
   }
 
   def renderDataSourceQuery(source: Source,

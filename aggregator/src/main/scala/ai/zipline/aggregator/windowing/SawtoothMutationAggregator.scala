@@ -3,27 +3,25 @@ package ai.zipline.aggregator.windowing
 import ai.zipline.api.Extensions.WindowOps
 import ai.zipline.api._
 
-
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
 
 /**
- * Mutations processing starts with an end of the day snapshot FinalBatchIR.
- * On top of this FinalBatchIR mutations are processed.
- *
- *
- * update/merge/finalize are related to snapshot data. As such they follow the snapshot Schema
- * and aggregators.
- * However mutations come into play later in the group by and a finalized version of the snapshot
- * data is created to be processed with the mutations rows.
- * Since the dataframe inputs are aligned between mutations and snapshot (input) no additional schema is needed.
- *
- */
-class SawtoothMutationAggregator(
-                               aggregations: Seq[Aggregation],
-                               inputSchema: Seq[(String, DataType)],
-                               resolution: Resolution = FiveMinuteResolution,
-                               tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
+  * Mutations processing starts with an end of the day snapshot FinalBatchIR.
+  * On top of this FinalBatchIR mutations are processed.
+  *
+  *
+  * update/merge/finalize are related to snapshot data. As such they follow the snapshot Schema
+  * and aggregators.
+  * However mutations come into play later in the group by and a finalized version of the snapshot
+  * data is created to be processed with the mutations rows.
+  * Since the dataframe inputs are aligned between mutations and snapshot (input) no additional schema is needed.
+  *
+  */
+class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
+                                 inputSchema: Seq[(String, DataType)],
+                                 resolution: Resolution = FiveMinuteResolution,
+                                 tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
     extends SawtoothAggregator(aggregations: Seq[Aggregation],
                                inputSchema: Seq[(String, DataType)],
                                resolution: Resolution) {
@@ -34,16 +32,13 @@ class SawtoothMutationAggregator(
     val collapsedSchema = windowedAggregator.irSchema
     val hopFields = baseAggregator.irSchema :+ ("ts", LongType)
     Array("collapsedIr" -> StructType.from("WindowedIr", collapsedSchema),
-      "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
+          "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
   }
 
-  def tailTs(batchEndTs: Long): Array[Option[Long]] = windowMappings.map { mapping =>
-      Option(mapping.aggregationPart.window).map { batchEndTs - _.millis }
-  }
+  def tailTs(batchEndTs: Long): Array[Option[Long]] =
+    windowMappings.map { mapping => Option(mapping.aggregationPart.window).map { batchEndTs - _.millis } }
 
-  def init: BatchIr = {
-    BatchIr(Array.fill(windowedAggregator.length)(null), hopsAggregator.init())
-  }
+  def init: BatchIr = BatchIr(Array.fill(windowedAggregator.length)(null), hopsAggregator.init())
 
   def update(batchEndTs: Long, batchIr: BatchIr, row: Row): BatchIr = {
     val rowTs = row.ts
@@ -76,18 +71,13 @@ class SawtoothMutationAggregator(
 
   // Ready the snapshot aggregated data to be merged with mutations data.
   def finalizeSnapshot(batchIr: BatchIr): FinalBatchIr =
-    FinalBatchIr(
-      batchIr.collapsed,
-      Option(batchIr.tailHops)
-        .map(hopsAggregator.toTimeSortedArray)
-        .orNull
-    )
+    FinalBatchIr(batchIr.collapsed, Option(batchIr.tailHops).map(hopsAggregator.toTimeSortedArray).orNull)
 
   /**
-   * Go through the aggregators and update or delete the intermediate with the information of the row if relevant.
-   * Useful for both online and mutations
-   */
-  def updateIntermediateResult(ir: Array[Any], row: Row, queryTs: Long, hasReversal: Boolean = false) = {
+    * Go through the aggregators and update or delete the intermediate with the information of the row if relevant.
+    * Useful for both online and mutations
+    */
+  def updateIr(ir: Array[Any], row: Row, queryTs: Long, hasReversal: Boolean = false) = {
     var i: Int = 0
     while (i < windowedAggregator.length) {
       val window = windowMappings(i).aggregationPart.window
@@ -104,8 +94,8 @@ class SawtoothMutationAggregator(
   }
 
   /**
-   * Update the intermediate results with tail hops data from a FinalBatchIr.
-   */
+    * Update the intermediate results with tail hops data from a FinalBatchIr.
+    */
   def mergeTailHops(ir: Array[Any], queryTs: Long, batchEndTs: Long, batchIr: FinalBatchIr): Array[Any] = {
     var i: Int = 0
     while (i < windowedAggregator.length) {
@@ -131,15 +121,20 @@ class SawtoothMutationAggregator(
   }
 
   /**
-   * Given aggregations FinalBatchIRs at the end of the Snapshot (batchEndTs) and mutation and query times,
-   * determine the values at the query times for the aggregations.
-   * This is pretty much a mix of online with extra work for multiple queries ts support.
-   */
-  def lambdaAggregateIrMany(batchEndTs: Long, finalBatchIr: FinalBatchIr, sortedInputs: Iterator[Row], sortedEndTimes: Array[Long], hasReversal: Boolean = false): Array[Array[Any]] = {
-    if (finalBatchIr == null && sortedInputs == null) return null
+    * Given aggregations FinalBatchIRs at the end of the Snapshot (batchEndTs) and mutation and query times,
+    * determine the values at the query times for the aggregations.
+    * This is pretty much a mix of online with extra work for multiple queries ts support.
+    */
+  def lambdaAggregateIrMany(batchEndTs: Long,
+                            finalBatchIr: FinalBatchIr,
+                            sortedInputs: Iterator[Row],
+                            sortedEndTimes: Array[Long],
+                            hasReversal: Boolean = false): Array[Array[Any]] = {
+    if (sortedEndTimes == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(finalizeSnapshot(init))
     val result = Array.fill[Array[Any]](sortedEndTimes.length)(windowedAggregator.clone(batchIr.collapsed))
-
+    // Early exit. No mutations, no snapshot data.
+    if (finalBatchIr == null && sortedInputs == null) return result
     val headRows = Option(sortedInputs).getOrElse(Array.empty[Row].iterator)
     // Go through mutations as they come. Then update all the aggregators that are in row.ts
     while (headRows.hasNext) {
@@ -150,7 +145,7 @@ class SawtoothMutationAggregator(
         val queryTs = sortedEndTimes(i)
         // Since mutationTs is always after rowTs then mutationTs before queryTs implies rowTs before query Ts as well
         if (batchEndTs <= mutationTs && mutationTs < queryTs) {
-          updateIntermediateResult(result(i), row, queryTs, hasReversal)
+          updateIr(result(i), row, queryTs, hasReversal)
         }
         i += 1
       }
