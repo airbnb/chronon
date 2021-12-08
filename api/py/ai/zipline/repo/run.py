@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-from datetime import datetime
 import json
 import os
 import subprocess
-
+from datetime import datetime
 
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds} --step-days={step_days}',
