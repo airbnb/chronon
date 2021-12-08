@@ -8,7 +8,7 @@ import subprocess
 
 
 MODE_ARGS = {
-    'backfill': '--conf-path={conf_path} --end-date={ds}',
+    'backfill': '--conf-path={conf_path} --end-date={ds} --step-days={step_days}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
     'streaming': '--conf-path={conf_path} --user-jar={user_jar}'
 }
@@ -30,12 +30,12 @@ ROUTES = {
 
 def check_call(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_call(cmd, shell=True)
+    return subprocess.check_call(cmd.split())
 
 
 def check_output(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_output(cmd, shell=True).strip()
+    return subprocess.check_output(cmd.split()).strip()
 
 
 def download_only_once(url, path):
@@ -63,7 +63,7 @@ def download_jar(version):
     if jar_path is None:
         # TODO(Open Sourcing) this should be hard coded to mavencentral path
         jar_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
-          "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
+                  "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
         jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
         download_only_once(jar_url, jar_path)
     return jar_path
@@ -73,7 +73,7 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        self.context, self.conf_type, self.team = self.conf.split('/')[:3]
+        self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
         possible_modes = ROUTES[self.conf_type].keys()
         assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
             args.mode, self.conf, self.conf_type, possible_modes)
@@ -82,6 +82,7 @@ class Runner:
         self.jar_path = jar_path
         self.args = args.args
         self.user_jar = args.user_jar
+        self.step_days = args.step_days
 
     def set_env(self):
         with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
@@ -105,7 +106,7 @@ class Runner:
     def run(self):
         self.set_env()
         additional_args = (MODE_ARGS[self.mode] + self.args).format(
-            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
+            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar, step_days=self.step_days)
         command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
             script=os.path.join(self.repo, 'spark_submit.sh'),
             jar=self.jar_path,
@@ -124,6 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
-    parser.add_argument('--version', help='Zipline version to use.', default="0.0.14")
+    parser.add_argument('--version', help='Zipline version to use.', default="0.0.27")
+    parser.add_argument('--step_days', help='Step days to backfill', default=30)
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
