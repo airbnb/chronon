@@ -374,7 +374,7 @@ object GroupBy {
     val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
 
-    // Generate mutation Df if required
+    // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Array(Constants.MutationTimeColumn, Constants.ReversalColumn)
     val mutationDf =
@@ -392,7 +392,6 @@ object GroupBy {
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
-          // Need to reorder columns to align the input on the aggregators for both mutations and snapshot data.
           }
           .selectExpr(mutationsColumnOrder: _*)
       else null
