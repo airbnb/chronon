@@ -17,6 +17,10 @@ object TsUtils {
     }
   }
 
+  def datetimeToTs(desiredTime: String): Long = {
+    formatter.parse(desiredTime).getTime
+  }
+
   def round(epochMillis: Long, roundMillis: Long): Long =
     (epochMillis / roundMillis) * roundMillis
 }

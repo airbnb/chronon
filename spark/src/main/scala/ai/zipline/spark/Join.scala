@@ -155,8 +155,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
-      case (Events, Entities, Accuracy.TEMPORAL) =>
-        throw new UnsupportedOperationException("Mutations are not yet supported")
+      case (Events, Entities, Accuracy.TEMPORAL) => {
+        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
+        genGroupBy(unfilledTimeRange.toPartitionRange.shift(-1)).entitiesMutations(renamedLeftDf)
+      }
     }
   }
 

@@ -18,6 +18,10 @@ class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
 
   override def ts: Long = timeStamp
 
+  override def isBefore: Boolean = false
+
+  override def mutationTs: Long = timeStamp
+
   def print(): Unit = println(fieldsSeq)
 }
 

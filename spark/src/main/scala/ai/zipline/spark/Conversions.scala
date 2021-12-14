@@ -7,7 +7,8 @@ import org.apache.spark.sql.types._
 
 // wrapper class of spark ai.zipline.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.zipline.aggregator.row with an additional class
-class RowWrapper(val row: Row, val tsIndex: Int) extends api.Row {
+class RowWrapper(val row: Row, val tsIndex: Int, val reversalIndex: Int = -1, val mutationTsIndex: Int = -1)
+    extends api.Row {
 
   override def get(index: Int): Any = row.get(index)
 
@@ -16,15 +17,27 @@ class RowWrapper(val row: Row, val tsIndex: Int) extends api.Row {
   override def ts: Long = {
     require(
       tsIndex > -1,
-      "Requested timestamp from a ai.zipline.aggregator.row with missing `ts` column"
+      "Requested timestamp from a ai.zipline.api.Row with missing `ts` column"
     )
     getAs[Long](tsIndex)
+  }
+
+  override def isBefore: Boolean = {
+    require(reversalIndex > -1, "Requested is_before from a ai.zipline.api.Row with missing `reversal` column")
+    getAs[Boolean](reversalIndex)
+  }
+
+  override def mutationTs: Long = {
+    require(mutationTsIndex > -1,
+            "Requested mutation timestamp from a ai.zipline.api.Row with missing `mutation_ts` column")
+    getAs[Long](mutationTsIndex)
   }
 }
 
 object Conversions {
 
-  def toZiplineRow(row: Row, tsIndex: Int): RowWrapper = new RowWrapper(row, tsIndex)
+  def toZiplineRow(row: Row, tsIndex: Int, reversalIndex: Int = -1, mutationTsIndex: Int = -1): RowWrapper =
+    new RowWrapper(row, tsIndex, reversalIndex, mutationTsIndex)
 
   def toZiplineType(name: String, dataType: DataType): api.DataType = {
     val typeName = name.capitalize

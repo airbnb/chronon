@@ -67,6 +67,10 @@ lazy val spark = project
       "org.apache.spark" %% "spark-streaming" % "2.4.0",
       "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
     ).map(_ % "provided"), // TODO: toggle provided conditionally
+    cleanFiles ++= Seq(
+      baseDirectory.value / "spark-warehouse",
+      baseDirectory.value / "metastore_db",
+    ),
     testOptions in Test += Tests.Setup(() => cleanSparkMeta),
     testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
   )
