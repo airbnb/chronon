@@ -115,8 +115,7 @@ class Runner:
             main=ROUTES[self.conf_type][self.mode],
             args=additional_args
         )
-        print(command)
-        # check_call(command)
+        check_call(command)
 
 
 if __name__ == "__main__":
