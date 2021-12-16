@@ -3,9 +3,9 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
-import re
 
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds} --step-days={step_days}',
@@ -43,7 +43,7 @@ def download_only_once(url, path):
     path = path.strip()
     if os.path.exists(path):
         content_output = check_output("curl -sI " + url).decode('utf-8')
-        content_length = re.search("(Content-Length:\s)(\d+)", content_output)
+        content_length = re.search("(Content-Length:\\s)(\\d+)", content_output)
         remote_size = int(content_length.group().split()[-1])
         local_size = int(check_output("wc -c " + path).split()[0])
         print("""Files sizes of {url} vs. {path}
