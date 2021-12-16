@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from datetime import datetime
+import re
 
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds} --step-days={step_days}',
@@ -41,8 +42,10 @@ def download_only_once(url, path):
     should_download = True
     path = path.strip()
     if os.path.exists(path):
-        remote_size = int(check_output("curl -sI " + url + " | grep -i Content-Length | awk '{print $2}'"))
-        local_size = int(check_output("wc -c <" + path))
+        content_output = check_output("curl -sI " + url).decode('utf-8')
+        content_length = re.search("(Content-Length:\s)(\d+)", content_output)
+        remote_size = int(content_length.group().split()[-1])
+        local_size = int(check_output("wc -c " + path).split()[0])
         print("""Files sizes of {url} vs. {path}
     Remote size: {remote_size}
     Local size : {local_size}""".format(**locals()))
@@ -107,12 +110,13 @@ class Runner:
         additional_args = (MODE_ARGS[self.mode] + self.args).format(
             conf_path=self.conf, ds=self.ds, user_jar=self.user_jar, step_days=self.step_days)
         command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
-            script=os.path.join(self.repo, 'spark_submit.sh'),
+            script=os.path.join(self.repo, 'scripts/spark_submit.sh'),
             jar=self.jar_path,
             main=ROUTES[self.conf_type][self.mode],
             args=additional_args
         )
-        check_call(command)
+        print(command)
+        # check_call(command)
 
 
 if __name__ == "__main__":
