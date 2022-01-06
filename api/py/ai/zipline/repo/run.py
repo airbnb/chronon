@@ -8,7 +8,7 @@ import subprocess
 from datetime import datetime
 
 MODE_ARGS = {
-    'backfill': '--conf-path={conf_path} --end-date={ds} --step-days={step_days}',
+    'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
     'streaming': '--conf-path={conf_path} --user-jar={user_jar}'
 }
@@ -84,7 +84,6 @@ class Runner:
         self.jar_path = jar_path
         self.args = args.args
         self.user_jar = args.user_jar
-        self.step_days = args.step_days
 
     def set_env(self):
         with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
@@ -108,7 +107,7 @@ class Runner:
     def run(self):
         self.set_env()
         additional_args = (MODE_ARGS[self.mode] + self.args).format(
-            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar, step_days=self.step_days)
+            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
         command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
             script=os.path.join(self.repo, 'scripts/spark_submit.sh'),
             jar=self.jar_path,
@@ -128,6 +127,5 @@ if __name__ == "__main__":
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.27")
-    parser.add_argument('--step_days', help='Step days to backfill', default=30)
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
