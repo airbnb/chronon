@@ -126,6 +126,6 @@ if __name__ == "__main__":
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
-    parser.add_argument('--version', help='Zipline version to use.', default="0.0.27")
+    parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
