@@ -10,21 +10,26 @@ from datetime import datetime
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
-    'streaming': '--conf-path={conf_path} --user-jar={user_jar}'
+    'streaming': '--conf-path={conf_path} --user-jar={user_jar}',
+    'metadata-upload': '--conf-path={conf_path}'
 }
+
 ROUTES = {
     'group_bys': {
         'upload': 'GroupByUpload',
         'backfill': 'GroupBy',
-        'streaming': 'GroupByStreaming'  # TODO
+        'streaming': 'GroupByStreaming',
+        'metadata-upload': 'MetadataUploader',
     },
     'joins': {
         'backfill': 'Join',
-        'streaming': 'JoinStreaming'  # TODO
+        'streaming': 'JoinStreaming',
+        'metadata-upload': 'MetadataUploader',
     },
     'staging_queries': {
-        'backfill': 'StagingQuery'
-    }
+        'backfill': 'StagingQuery',
+        'metadata-upload': 'MetadataUploader',
+    },
 }
 
 
@@ -75,10 +80,11 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
-        possible_modes = ROUTES[self.conf_type].keys()
-        assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
-            args.mode, self.conf, self.conf_type, possible_modes)
+        if args.mode != 'metadata-upload':
+            self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
+            possible_modes = ROUTES[self.conf_type].keys()
+            assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
+                args.mode, self.conf, self.conf_type, possible_modes)
         self.mode = args.mode
         self.ds = args.ds
         self.jar_path = jar_path
@@ -105,15 +111,21 @@ class Runner:
             os.environ[key] = value
 
     def run(self):
-        self.set_env()
-        additional_args = (MODE_ARGS[self.mode] + self.args).format(
+        additional_args = (MODE_ARGS[self.mode] + ' ' + self.args).format(
             conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
-        command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
-            script=os.path.join(self.repo, 'scripts/spark_submit.sh'),
-            jar=self.jar_path,
-            main=ROUTES[self.conf_type][self.mode],
-            args=additional_args
-        )
+        if self.mode == 'metadata-upload':
+            command = 'java -cp {jar} ai.zipline.spark.Driver metadata-upload {args}'.format(
+                jar=self.jar_path,
+                args=additional_args
+            )
+        else:
+            self.set_env()
+            command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
+                script=os.path.join(self.repo, 'spark_submit.sh'),
+                jar=self.jar_path,
+                main=ROUTES[self.conf_type][self.mode],
+                args=additional_args
+            )
         check_call(command)
 
 
@@ -121,7 +133,7 @@ if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of zipline jobs')
     parser.add_argument('--conf', required=True)
-    parser.add_argument('--mode', choices=['backfill', 'streaming', 'upload'], default='backfill')
+    parser.add_argument('--mode', choices=['backfill', 'streaming', 'upload', 'metadata-upload'], default='backfill')
     parser.add_argument('--ds', default=today)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
