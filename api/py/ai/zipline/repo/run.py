@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-from datetime import datetime
 import json
 import os
+import re
 import subprocess
-
+from datetime import datetime
 
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
@@ -30,20 +30,22 @@ ROUTES = {
 
 def check_call(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_call(cmd, shell=True)
+    return subprocess.check_call(cmd.split())
 
 
 def check_output(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_output(cmd, shell=True).strip()
+    return subprocess.check_output(cmd.split()).strip()
 
 
 def download_only_once(url, path):
     should_download = True
     path = path.strip()
     if os.path.exists(path):
-        remote_size = int(check_output("curl -sI " + url + " | grep -i Content-Length | awk '{print $2}'"))
-        local_size = int(check_output("wc -c <" + path))
+        content_output = check_output("curl -sI " + url).decode('utf-8')
+        content_length = re.search("(Content-Length:\\s)(\\d+)", content_output)
+        remote_size = int(content_length.group().split()[-1])
+        local_size = int(check_output("wc -c " + path).split()[0])
         print("""Files sizes of {url} vs. {path}
     Remote size: {remote_size}
     Local size : {local_size}""".format(**locals()))
@@ -63,7 +65,7 @@ def download_jar(version):
     if jar_path is None:
         # TODO(Open Sourcing) this should be hard coded to mavencentral path
         jar_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
-          "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
+                  "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
         jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
         download_only_once(jar_url, jar_path)
     return jar_path
@@ -73,7 +75,7 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        self.context, self.conf_type, self.team = self.conf.split('/')[:3]
+        self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
         possible_modes = ROUTES[self.conf_type].keys()
         assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
             args.mode, self.conf, self.conf_type, possible_modes)
@@ -107,7 +109,7 @@ class Runner:
         additional_args = (MODE_ARGS[self.mode] + self.args).format(
             conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
         command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
-            script=os.path.join(self.repo, 'spark_submit.sh'),
+            script=os.path.join(self.repo, 'scripts/spark_submit.sh'),
             jar=self.jar_path,
             main=ROUTES[self.conf_type][self.mode],
             args=additional_args
@@ -124,6 +126,6 @@ if __name__ == "__main__":
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
-    parser.add_argument('--version', help='Zipline version to use.', default="0.0.14")
+    parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
