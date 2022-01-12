@@ -10,25 +10,25 @@ from datetime import datetime
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
-    'streaming': '--conf-path={conf_path} --user-jar={user_jar}',
-    'metadata-upload': '--conf-path={conf_path}'
+    'streaming': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
+    'metadata-upload': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
 }
 
 ROUTES = {
     'group_bys': {
-        'upload': 'GroupByUpload',
-        'backfill': 'GroupBy',
-        'streaming': 'GroupByStreaming',
-        'metadata-upload': 'MetadataUploader',
+        'upload': 'group-by-upload',
+        'backfill': 'group-by-backfill',
+        'streaming': 'group-by-streaming',
+        'metadata-upload': 'metadata-upload',
     },
     'joins': {
         'backfill': 'Join',
-        'streaming': 'JoinStreaming',
-        'metadata-upload': 'MetadataUploader',
+        'metadata-upload': 'metadata-upload',
     },
     'staging_queries': {
-        'backfill': 'StagingQuery',
-        'metadata-upload': 'MetadataUploader',
+        # TODO: Implement staging query subcommand.
+        # 'backfill': 'StagingQuery',
+        'metadata-upload': 'metadata-upload',
     },
 }
 
@@ -89,7 +89,8 @@ class Runner:
         self.ds = args.ds
         self.jar_path = jar_path
         self.args = args.args
-        self.user_jar = args.user_jar
+        self.online_jar = args.online_jar
+        self.online_class = args.online_class
 
     def set_env(self):
         with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
@@ -111,20 +112,20 @@ class Runner:
             os.environ[key] = value
 
     def run(self):
-        additional_args = (MODE_ARGS[self.mode] + ' ' + self.args).format(
-            conf_path=self.conf, ds=self.ds, user_jar=self.user_jar)
+        final_args = (MODE_ARGS[self.mode] + ' ' + self.args).format(
+            conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
         if self.mode == 'metadata-upload':
             command = 'java -cp {jar} ai.zipline.spark.Driver metadata-upload {args}'.format(
                 jar=self.jar_path,
-                args=additional_args
+                args=final_args
             )
         else:
             self.set_env()
-            command = 'bash {script} --class ai.zipline.spark.Driver {mode} {jar} {args}'.format(
+            command = 'bash {script} --class ai.zipline.spark.Driver {jar} {subcommand} {args}'.format(
                 script=os.path.join(self.repo, 'spark_submit.sh'),
                 jar=self.jar_path,
-                mode=self.mode,
-                args=additional_args
+                subcommand=ROUTES[self.conf_type][self.mode],
+                args=final_args
             )
         check_call(command)
 
@@ -137,7 +138,8 @@ if __name__ == "__main__":
     parser.add_argument('--ds', default=today)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
-    parser.add_argument('--user_jar', help='Jar containing KvStore & Deserializer Impl', default=None)
+    parser.add_argument('--online_jar', help='Jar containing Online KvStore & Deserializer Impl', default=None)
+    parser.add_argument('--online_class', help='Class Name of Online Impl', default=None)
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
