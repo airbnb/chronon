@@ -120,10 +120,10 @@ class Runner:
             )
         else:
             self.set_env()
-            command = 'bash {script} --class ai.zipline.spark.{main} {jar} {args}'.format(
+            command = 'bash {script} --class ai.zipline.spark.Driver {mode} {jar} {args}'.format(
                 script=os.path.join(self.repo, 'spark_submit.sh'),
                 jar=self.jar_path,
-                main=ROUTES[self.conf_type][self.mode],
+                mode=self.mode,
                 args=additional_args
             )
         check_call(command)
