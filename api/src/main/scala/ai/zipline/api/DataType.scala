@@ -2,6 +2,29 @@ package ai.zipline.api
 
 sealed trait DataType extends Serializable
 
+object DataType {
+
+  def toString(dataType: DataType): String = {
+    dataType match {
+      case IntType                     => "int"
+      case LongType                    => "long"
+      case DoubleType                  => "double"
+      case FloatType                   => "float"
+      case ShortType                   => "short"
+      case BooleanType                 => "bool"
+      case ByteType                    => "byte"
+      case StringType                  => "string"
+      case BinaryType                  => "binary"
+      case ListType(elementType)       => s"list_${toString(elementType)}"
+      case MapType(keyType, valueType) => s"map_${toString(keyType)}_${toString(valueType)}"
+      case DateType                    => "date"
+      case TimestampType               => "timestamp"
+      case StructType(name, _)         => s"struct_$name"
+      case UnknownType(any)            => "unknown_type"
+    }
+  }
+}
+
 case object IntType extends DataType
 
 case object LongType extends DataType
