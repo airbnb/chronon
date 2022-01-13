@@ -22,7 +22,7 @@ ROUTES = {
         'metadata-upload': 'metadata-upload',
     },
     'joins': {
-        'backfill': 'Join',
+        'backfill': 'join',
         'metadata-upload': 'metadata-upload',
     },
     'staging_queries': {
@@ -31,6 +31,8 @@ ROUTES = {
         'metadata-upload': 'metadata-upload',
     },
 }
+
+APP_NAME_TEMPLATE = "zipline_{conf_type}_{mode}_{context}_{name}"
 
 
 def check_call(cmd):
@@ -91,13 +93,21 @@ class Runner:
         self.args = args.args
         self.online_jar = args.online_jar
         self.online_class = args.online_class
+        self.app_name = args.app_name
 
     def set_env(self):
         with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
             conf_json = json.load(conf_file)
         with open(os.path.join(self.repo, 'teams.json'), 'r') as teams_file:
             teams_json = json.load(teams_file)
-        app_name = conf_json['metaData']['name']
+
+        if not self.app_name:
+            self.app_name = APP_NAME_TEMPLATE.format(
+                mode=self.mode,
+                conf_type=self.conf_type,
+                context=self.context,
+                name=conf_json['metaData']['name'])
+
         # env priority conf.metaData.modeToEnvMap >> team.env >> default_team.env
         # default env & conf env are optional, team env is not.
         env = teams_json.get('default', {}).get(self.context, {}).get(self.mode, {})
@@ -105,7 +115,7 @@ class Runner:
         conf_env = conf_json.get('metaData').get('modeToEnvMap', {}).get(self.mode, {})
         env.update(team_env)
         env.update(conf_env)
-        env["APP_NAME"] = app_name
+        env["APP_NAME"] = self.app_name
         print("Setting env variables:")
         for key, value in env.items():
             print("    " + key + "=" + value)
@@ -136,6 +146,7 @@ if __name__ == "__main__":
     parser.add_argument('--conf', required=True)
     parser.add_argument('--mode', choices=['backfill', 'streaming', 'upload', 'metadata-upload'], default='backfill')
     parser.add_argument('--ds', default=today)
+    parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
     parser.add_argument('--online_jar', help='Jar containing Online KvStore & Deserializer Impl', default=None)
