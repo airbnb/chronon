@@ -10,7 +10,7 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
 
   def `type`(inputType: DataType): DataType =
     StructType(
-      "TimePair",
+      s"TimePair_${DataType.toString(inputType)}",
       Array(
         StructField("epochMillis", LongType),
         StructField("payload", inputType)

@@ -112,7 +112,10 @@ class FetcherTest extends TestCase {
 
     // temporal events
     val paymentCols =
-      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10), Column("payment", LongType, 100))
+      Seq(Column("user", StringType, 10),
+          Column("vendor", StringType, 10),
+          Column("payment", LongType, 100),
+          Column("notes", StringType, 20))
     val paymentsTable = s"$namespace.payments_table"
     DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
@@ -121,7 +124,11 @@ class FetcherTest extends TestCase {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.COUNT,
                              inputColumn = "payment",
-                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
+        Builders.Aggregation(operation = Operation.LAST, inputColumn = "notes"),
+        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes")
+      ),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
 
