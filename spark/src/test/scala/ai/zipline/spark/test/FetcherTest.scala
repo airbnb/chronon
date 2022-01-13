@@ -126,7 +126,8 @@ class FetcherTest extends TestCase {
                              inputColumn = "payment",
                              windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
-        Builders.Aggregation(operation = Operation.LAST, inputColumn = "notes")
+        Builders.Aggregation(operation = Operation.LAST, inputColumn = "notes"),
+        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes")
       ),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
