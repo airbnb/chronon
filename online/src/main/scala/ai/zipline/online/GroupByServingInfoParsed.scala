@@ -53,7 +53,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   }
 
   def inputZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
+    AvroUtils.toZiplineSchema(parser.parse(inputSparkSchema)).asInstanceOf[StructType]
   }
 
   def selectedZiplineSchema: StructType = {

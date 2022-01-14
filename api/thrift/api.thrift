@@ -186,7 +186,7 @@ struct GroupByServingInfo {
 
 
     // schema before applying select expressions
-    2: optional string inputAvroSchema
+    2: optional string inputSparkSchema
     // schema after applying select expressions
     3: optional string selectedAvroSchema
     // schema of the keys in kv store

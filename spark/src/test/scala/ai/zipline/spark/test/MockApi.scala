@@ -1,7 +1,7 @@
 package ai.zipline.spark.test
 
 import java.io.{ByteArrayInputStream, InputStream}
-import ai.zipline.api.{Constants, GroupByServingInfo, StructType}
+import ai.zipline.api.{Constants, GroupByServingInfo, StructField, StructType}
 import ai.zipline.online.{
   Api,
   ArrayRow,
@@ -17,6 +17,9 @@ import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
 import org.apache.avro.specific.SpecificDatumReader
 import ai.zipline.api
+import ai.zipline.api.Extensions.MetadataOps
+import ai.zipline.spark.Conversions
+import org.apache.spark.sql.types
 
 class MockDecoder(inputSchema: StructType) extends StreamDecoder {
 
@@ -42,7 +45,10 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
 class MockApi(kvStore: () => KVStore) extends Api(null) {
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
-    new MockDecoder(parsedInfo.inputZiplineSchema)
+    //TODO: mutation streaming would need to do something similar
+    val sparkSchema = types.DataType.fromJson(parsedInfo.inputSparkSchema).asInstanceOf[types.StructType]
+    val ziplineSchema = Conversions.toZiplineSchema(sparkSchema).map(tup => StructField(tup._1, tup._2))
+    new MockDecoder(StructType(parsedInfo.groupBy.metaData.cleanName + "_inputSchema", ziplineSchema))
   }
 
   override def genKvStore: KVStore = {

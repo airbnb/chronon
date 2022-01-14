@@ -102,8 +102,11 @@ object GroupByUpload {
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
 
-    val inputSchema = groupBy.inputDf.schema.toAvroSchema(name = "Input").toString(true)
-    groupByServingInfo.setInputAvroSchema(inputSchema)
+    // used by streaming jobs to deserialize from kafka/kinesis etc.
+    val inputTable = groupByConf.streamingSource.getOrElse(groupByConf.sources.get(0)).table
+    // we can parse it back by org.apache.spark.sql.StructType::fromJson
+    val inputSchema = tableUtils.sparkSession.table(inputTable).schema.prettyJson
+    groupByServingInfo.setInputSparkSchema(inputSchema)
 
     val metaRows = Seq(
       Row(
