@@ -52,10 +52,6 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
   }
 
-  def inputZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(inputSparkSchema)).asInstanceOf[StructType]
-  }
-
   def selectedZiplineSchema: StructType = {
     AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
   }
