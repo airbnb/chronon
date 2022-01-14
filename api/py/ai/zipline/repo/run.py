@@ -19,16 +19,13 @@ ROUTES = {
         'upload': 'group-by-upload',
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
-        'metadata-upload': 'metadata-upload',
     },
     'joins': {
         'backfill': 'join',
-        'metadata-upload': 'metadata-upload',
     },
     'staging_queries': {
         # TODO: Implement staging query subcommand.
         # 'backfill': 'StagingQuery',
-        'metadata-upload': 'metadata-upload',
     },
 }
 
@@ -82,6 +79,8 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
+        assert(args.mode not in ['streaming', 'metadata-upload'] or args.online_class and args.online_jar,
+               "must specify online-jar and online-class for streaming mode or metadata-upload mode")
         if args.mode != 'metadata-upload':
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
             possible_modes = ROUTES[self.conf_type].keys()
@@ -149,8 +148,12 @@ if __name__ == "__main__":
     parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
-    parser.add_argument('--online_jar', help='Jar containing Online KvStore & Deserializer Impl', default=None)
-    parser.add_argument('--online_class', help='Class Name of Online Impl', default=None)
+    parser.add_argument('--online_jar',
+                        help='Jar containing Online KvStore & Deserializer Impl.'
+                        'Used for streaming and metadata-upload mode.', default=None)
+    parser.add_argument('--online_class',
+                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.', default=None)
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
+
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
