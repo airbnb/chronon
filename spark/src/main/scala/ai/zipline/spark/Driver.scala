@@ -150,10 +150,9 @@ object Driver {
   }
 
   object GroupByStreaming {
-    def buildSession(appName: String, local: Boolean): SparkSession = {
+    def buildSession(local: Boolean): SparkSession = {
       val baseBuilder = SparkSession
         .builder()
-        .appName(appName)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
@@ -200,7 +199,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
-      val session: SparkSession = buildSession(groupByConf.metaData.name, args.debug())
+      val session: SparkSession = buildSession(args.debug())
       session.sparkContext.addJar(args.onlineJar())
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
