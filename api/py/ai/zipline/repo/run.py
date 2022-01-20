@@ -93,6 +93,10 @@ class Runner:
         self.online_jar = args.online_jar
         self.online_class = args.online_class
         self.app_name = args.app_name
+        if self.mode == 'streaming':
+            self.spark_submit = args.spark_streaming_submit_path
+        else:
+            self.spark_submit = args.spark_submit_path
 
     def set_env(self):
         with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
@@ -131,7 +135,7 @@ class Runner:
         else:
             self.set_env()
             command = 'bash {script} --class ai.zipline.spark.Driver {jar} {subcommand} {args}'.format(
-                script=os.path.join(self.repo, 'spark_submit.sh'),
+                script=self.spark_submit,
                 jar=self.jar_path,
                 subcommand=ROUTES[self.conf_type][self.mode],
                 args=final_args
@@ -143,7 +147,7 @@ if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of zipline jobs')
     parser.add_argument('--conf', required=True)
-    parser.add_argument('--mode', choices=['backfill', 'streaming', 'upload', 'metadata-upload'], default='backfill')
+    parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
     parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
@@ -154,6 +158,12 @@ if __name__ == "__main__":
     parser.add_argument('--online_class',
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.', default=None)
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
+    parser.add_argument('--spark-submit-path',
+                        help='Path to spark-submit',
+                        default=os.path.join('ZIPLINE_REPO_PATH', 'scripts/spark-submit.sh'))
+    parser.add_argument('--spark-streaming-submit-path',
+                        help='Path to spark-submit for streaming',
+                        default=os.path.join('ZIPLINE_REPO_PATH', 'scripts/spark-streaming.sh'))
 
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
