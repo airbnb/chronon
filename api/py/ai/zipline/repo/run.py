@@ -145,12 +145,13 @@ class Runner:
 if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of zipline jobs')
+    zipline_repo_path = os.getenv('ZIPLINE_REPO_PATH', '.')
     parser.add_argument('--conf', required=True)
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
     parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
-    parser.add_argument('--repo', help='Path to zipline repo', default=os.getenv('ZIPLINE_REPO_PATH', '.'))
+    parser.add_argument('--repo', help='Path to zipline repo', default=zipline_repo_path)
     parser.add_argument('--online_jar',
                         help='Jar containing Online KvStore & Deserializer Impl.'
                         'Used for streaming and metadata-upload mode.', default=None)
@@ -159,10 +160,10 @@ if __name__ == "__main__":
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
-                        default=os.path.join('ZIPLINE_REPO_PATH', 'scripts/spark-submit.sh'))
+                        default=os.path.join(zipline_repo_path, 'scripts/spark_submit.sh'))
     parser.add_argument('--spark-streaming-submit-path',
                         help='Path to spark-submit for streaming',
-                        default=os.path.join('ZIPLINE_REPO_PATH', 'scripts/spark-streaming.sh'))
+                        default=os.path.join(zipline_repo_path, 'scripts/spark_streaming.sh'))
 
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
