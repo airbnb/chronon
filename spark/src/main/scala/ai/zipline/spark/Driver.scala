@@ -32,7 +32,9 @@ object Driver {
   object JoinBackfill {
     class Args extends Subcommand("join") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Runs backfill in steps, step-days at a time")
+        opt[Int](required = false,
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
       val skipEqualCheck: ScallopOption[Boolean] =
         opt[Boolean](required = false,
                      default = Some(false),
@@ -54,7 +56,9 @@ object Driver {
   object GroupByBackfill {
     class Args extends Subcommand("group-by-backfill") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Runs backfill in steps, step-days at a time")
+        opt[Int](required = false,
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
     }
     def run(args: Args): Unit = {
       val groupByConf = parseConf[api.GroupBy](args.confPath())
@@ -64,6 +68,24 @@ object Driver {
         TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
         args.stepDays.toOption
       )
+    }
+  }
+
+  object StagingQueryBackfill {
+    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
+    }
+    def run(args: Args): Unit = {
+      val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
+      val stagingQueryJob = new StagingQuery(
+        stagingQueryConf,
+        args.endDate(),
+        TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}_backfill"))
+      )
+      stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
     }
   }
 
@@ -215,6 +237,8 @@ object Driver {
     addSubcommand(JoinBackFillArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
     addSubcommand(GroupByBackfillArgs)
+    object StagingQueryBackfillArgs extends StagingQueryBackfill.Args
+    addSubcommand(StagingQueryBackfillArgs)
     object GroupByUploadArgs extends GroupByUploader.Args
     addSubcommand(GroupByUploadArgs)
     object FetcherCliArgs extends FetcherCli.Args
@@ -242,9 +266,10 @@ object Driver {
     args.subcommand match {
       case Some(x) =>
         x match {
-          case args.JoinBackFillArgs    => JoinBackfill.run(args.JoinBackFillArgs)
-          case args.GroupByBackfillArgs => GroupByBackfill.run(args.GroupByBackfillArgs)
-          case args.GroupByUploadArgs   => GroupByUploader.run(args.GroupByUploadArgs)
+          case args.JoinBackFillArgs         => JoinBackfill.run(args.JoinBackFillArgs)
+          case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
+          case args.StagingQueryBackfillArgs => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
+          case args.GroupByUploadArgs        => GroupByUploader.run(args.GroupByUploadArgs)
           case args.GroupByStreamingArgs => {
             shouldExit = false
             GroupByStreaming.run(args.GroupByStreamingArgs)

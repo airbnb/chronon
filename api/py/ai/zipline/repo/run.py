@@ -24,8 +24,7 @@ ROUTES = {
         'backfill': 'join',
     },
     'staging_queries': {
-        # TODO: Implement staging query subcommand.
-        # 'backfill': 'StagingQuery',
+        'backfill': 'staging-query-backfill',
     },
 }
 
