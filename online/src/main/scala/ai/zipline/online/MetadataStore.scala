@@ -16,8 +16,6 @@ import scala.reflect.ClassTag
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
-  class MetadataException(message: String) extends RuntimeException(message)
-
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
     val startTimeMs = System.currentTimeMillis()
     val joinOps: JoinOps = new JoinOps(
@@ -73,15 +71,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           case value if value.contains("group_bys/")       => (s"group_bys/$name", loadJson[GroupBy](value))
           case _                                           => println(s"unknown config type in file $path"); ("", None)
         }
-        confJsonOpt
-          .map { conf =>
+        confJsonOpt.map { conf =>
             println(s"Putting metadata for $key to KV store")
             PutRequest(keyBytes = key.getBytes(),
-              valueBytes = conf.getBytes(),
-              dataset = dataset,
-              tsMillis = Some(System.currentTimeMillis()))
-          }
-      }
+                       valueBytes = conf.getBytes(),
+                       dataset = dataset,
+                       tsMillis = Some(System.currentTimeMillis()))
+        }
+    }
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     kvStore.multiPut(puts)
   }
