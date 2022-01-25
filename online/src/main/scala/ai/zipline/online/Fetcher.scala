@@ -17,6 +17,8 @@ import scala.concurrent.{Await, Future}
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
+  private class FetcherException(message: String) extends Exception(message)
+
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
       batchRequest: GetRequest,
@@ -80,6 +82,10 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             }
             val groupByContext = FetcherMetrics.getGroupByContext(groupByServingInfo, Some(context))
             // batch request has only one value per key.
+            if (!responsesMap.contains(batchRequest)) {
+              throw new FetcherException(
+                s"batch response for ${batchRequest.dataset} is not in KVStore. Check if GroupByUpload job was run for this dataset")
+            }
             val batchValueOption: Option[TimedValue] = Option(responsesMap(batchRequest)).flatMap(_.headOption)
             batchValueOption.foreach { value =>
               FetcherMetrics.reportDataFreshness(value.millis, groupByContext.asBatch)
@@ -155,7 +161,15 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     // convert join requests to groupBy requests
     val joinDecomposed: Seq[(Request, (Seq[PrefixedRequest], Metrics.Context))] =
       requests.iterator.map { request =>
-        val join = getJoinConf(request.name)
+        val join = try {
+          getJoinConf(request.name)
+        } catch {
+          case e: Exception =>
+            val exception = new MetadataException(s"Failed to retrieve metadata for join ${request.name}:  ${e.toString}")
+            FetcherMetrics.reportFailure(exception, context.withJoin(request.name))
+            throw exception
+        }
+
         val prefixedRequests = join.joinPartOps.map { part =>
           val groupByName = part.groupBy.getMetaData.getName
           val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }

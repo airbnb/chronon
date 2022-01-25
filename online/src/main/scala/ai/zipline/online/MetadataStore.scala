@@ -16,6 +16,8 @@ import scala.reflect.ClassTag
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
+  private class MetadataException(message: String) extends Exception(message)
+
   lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
     val startTimeMs = System.currentTimeMillis()
     val joinOps: JoinOps = new JoinOps(
@@ -36,8 +38,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     new TTLCache[String, GroupByServingInfoParsed]({ name =>
       val startTimeMs = System.currentTimeMillis()
       val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
-      val metaData =
+      val metaData = try {
         kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis)
+      } catch {
+          case e: Exception =>
+            val exception = new MetadataException(s"Failed to retrieve GroupbyServingInfo for group_by ${name}:  ${e.toString}")
+            FetcherMetrics.reportFailure(exception,  Metrics.Context(groupBy = name))
+            throw exception
+      }
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
       val groupByServingInfo = ThriftJsonCodec
         .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
@@ -77,7 +85,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
                        valueBytes = conf.getBytes(),
                        dataset = dataset,
                        tsMillis = Some(System.currentTimeMillis())))
-      }
+    }
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     kvStore.multiPut(puts)
   }
@@ -116,11 +124,16 @@ object MetadataStore {
   def parseName(path: String): Option[String] = {
     val gson = new Gson()
     val reader = Files.newBufferedReader(Paths.get(path))
-    val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-    Option(map.get("metaData"))
-      .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-      .map(_.get("name"))
-      .flatMap(Option(_))
-      .map(_.asInstanceOf[String])
+    try {
+      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
+      Option(map.get("metaData"))
+        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
+        .map(_.get("name"))
+        .flatMap(Option(_))
+        .map(_.asInstanceOf[String])
+    } catch {
+      case _: Throwable => println(s"Failed to parse JSON to Zipline configs, file path = $path")
+        None
+    }
   }
 }

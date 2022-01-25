@@ -91,7 +91,6 @@ object FetcherMetrics {
 
   object Name {
     private val fetcher = "fetcher"
-    private val success = "success"
     private val failure = "failure"
 
     val RequestBatchSize = s"$fetcher.request_batch.size"
