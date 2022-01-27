@@ -82,7 +82,7 @@ class FetcherTest extends TestCase {
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
-    assertTrue(res.isDefined)
+    assertTrue(res.get.latest.isDefined)
     val actual = new String(res.get.values.head.bytes)
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
@@ -95,7 +95,7 @@ class FetcherTest extends TestCase {
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
-    assertTrue(dirRes.isDefined)
+    assertTrue(dirRes.get.latest.isDefined)
     val dirActual = new String(dirRes.get.values.head.bytes)
 
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
