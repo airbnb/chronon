@@ -6,6 +6,10 @@ import ai.zipline.repo.extract_objects as eo
 import click
 import logging
 import os
+import pkg_resources
+import subprocess
+
+from ai.zipline import PY_PACKAGE_NAME, PACKAGE_INDEX_URL
 from ai.zipline.api.ttypes import GroupBy, Join, StagingQuery
 from ai.zipline.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
@@ -22,7 +26,6 @@ FOLDER_NAME_TO_CLASS = {
 }
 
 DEFAULT_TEAM_NAME = "default"
-
 
 def get_folder_name_from_class_name(class_name):
     return {v.__name__: k for k, v in FOLDER_NAME_TO_CLASS.items()}[class_name]
@@ -176,5 +179,24 @@ def _print_warning(string):
     print(f"\u001b[33m{string}\u001b[0m")
 
 
+def latest_remote_version(package_name):
+    # TODO: Switch to json PyPI API once we switch off from Artifactory
+    # (Artifactory does not have json API)
+    command = f"""
+    pip3 install {PY_PACKAGE_NAME}== --index-url {PACKAGE_INDEX_URL} 2>&1 \
+    | grep -oE '(\(.*\))' \
+    | awk -F:\  '{{print$NF}}' \
+    | sed -E 's/( |\))//g'
+    """
+    version = subprocess.run(
+        command, shell=True, capture_output=True, text=True).stdout.strip().split(',')[-1]
+    return version
+
+
 if __name__ == '__main__':
+    local_version = pkg_resources.get_distribution(PY_PACKAGE_NAME).version
+    remote_version = latest_remote_version(PY_PACKAGE_NAME)
+    if local_version != remote_version:
+        _print_warning(f"Latest {PY_PACKAGE_NAME} version is {remote_version} but you have {local_version}. "
+                       f"Upgrade to latest version by running 'pip install --upgrade {PY_PACKAGE_NAME}  --index-url {PACKAGE_INDEX_URL}'")
     extract_and_convert()

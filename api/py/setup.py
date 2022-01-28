@@ -1,5 +1,5 @@
 from setuptools import find_packages, setup
-
+from ai.zipline import PY_PACKAGE_NAME
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -22,7 +22,7 @@ setup(
     description="Zipline python API library",
     include_package_data=True,
     install_requires=basic_requirements,
-    name="zipline-ai-dev",
+    name=PY_PACKAGE_NAME,
     packages=find_packages(),
     python_requires=">=3.7",
     url=None,
