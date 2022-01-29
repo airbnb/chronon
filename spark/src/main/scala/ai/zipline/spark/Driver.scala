@@ -149,8 +149,15 @@ object Driver {
 
       // treeMap to produce a sorted result
       val tMap = new java.util.TreeMap[String, AnyRef]()
-      result.head.values.foreach { case (k, v) => tMap.put(k, v) }
-      println(gson.toJson(tMap))
+      println(result)
+      result.foreach(r =>
+        r.values match {
+          case valMap: Map[String, AnyRef] => {
+            valMap.foreach { case (k, v) => tMap.put(k, v) }
+          }
+          case _ => println(s"${r.request} has no values")
+        })
+      println(s"the returned values are: ${gson.toJson(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")
     }
   }

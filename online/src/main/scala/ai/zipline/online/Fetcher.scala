@@ -5,14 +5,9 @@ import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.{Row, _}
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
-import com.google.gson.GsonBuilder
-import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.collection.JavaConverters._
 import scala.collection.parallel.ExecutionContextTaskSupport
-
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Future
 
 class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
@@ -80,7 +75,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             }
             val groupByContext = FetcherMetrics.getGroupByContext(groupByServingInfo, Some(context))
             // batch request has only one value per key.
-            val batchValueOption: Option[TimedValue] = Option(responsesMap(batchRequest)).flatMap(_.headOption)
+            val batchValueOption: Option[TimedValue] = responsesMap.get(batchRequest).flatMap(Option(_)).map(_.head)
             batchValueOption.foreach { value =>
               FetcherMetrics.reportDataFreshness(value.millis, groupByContext.asBatch)
               FetcherMetrics.reportResponseBytesSize(value.bytes.length, groupByContext.asBatch)

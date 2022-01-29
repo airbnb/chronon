@@ -3,7 +3,6 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.GroupByOps
-import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.api.{
   Accuracy,
   Builders,
@@ -18,23 +17,24 @@ import ai.zipline.api.{
   GroupBy => GroupByConf
 }
 import ai.zipline.online.Fetcher.{Request, Response}
-import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
+import ai.zipline.online.KVStore.GetRequest
+import ai.zipline.online._
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
+import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.{Row, SparkSession}
-import org.junit.Assert.assertEquals
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
 import java.lang
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, MILLISECONDS, SECONDS}
+import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 
 object FetcherTest {
 
@@ -82,7 +82,8 @@ class FetcherTest extends TestCase {
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
-    val actual = new String(res.values.head.bytes)
+    assertTrue(res.get.latest.isDefined)
+    val actual = new String(res.get.values.head.bytes)
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
@@ -94,9 +95,15 @@ class FetcherTest extends TestCase {
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
-    val dirActual = new String(dirRes.values.head.bytes)
+    assertTrue(dirRes.get.latest.isDefined)
+    val dirActual = new String(dirRes.get.values.head.bytes)
 
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
+
+    val emptyResponse =
+      inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
+    val emptyRes = Await.result(emptyResponse, Duration.Inf)
+    assertFalse(emptyRes.get.latest.isDefined)
   }
 
   def testTemporalFetch(): Unit = {

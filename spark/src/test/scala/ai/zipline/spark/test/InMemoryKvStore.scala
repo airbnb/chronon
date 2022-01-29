@@ -7,8 +7,7 @@ import ai.zipline.spark.TableUtils
 import org.apache.spark.sql.Row
 import org.jboss.netty.util.internal.ConcurrentHashMap
 
-import java.util.Base64
-import java.util.function
+import java.util.{Base64, function}
 import scala.collection.mutable
 import scala.concurrent.Future
 
@@ -30,16 +29,14 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
-        val values = Option(
-          database
-            .get(req.dataset) // table
-            .get(encode(req.keyBytes))
-        ) // values of key
-        .map { values =>
-          values
-            .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
-            .map { case (version, bytes) => TimedValue(bytes, version) }
-        }.orNull
+        val values = Option(database.get(req.dataset)) // table
+          .flatMap { ds => Option(ds.get(encode(req.keyBytes))) } // values of key
+          .map { values =>
+            values
+              .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
+              .map { case (version, bytes) => TimedValue(bytes, version) }
+          }
+          .orNull
         KVStore.GetResponse(req, values)
       }
     }

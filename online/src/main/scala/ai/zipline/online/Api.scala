@@ -1,11 +1,9 @@
 package ai.zipline.online
 
-import ai.zipline.api.{Constants, GroupByServingInfo, Row, StructType}
-import KVStore.{GetRequest, GetResponse, PutRequest}
+import ai.zipline.api.{Constants, StructType}
+import ai.zipline.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.Properties
 import java.util.concurrent.Executors
-import scala.collection.immutable.HashMap
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -15,7 +13,7 @@ object KVStore {
   case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
   case class TimedValue(bytes: Array[Byte], millis: Long)
   case class GetResponse(request: GetRequest, values: Seq[TimedValue]) {
-    def latest: Option[TimedValue] = if (values.isEmpty) None else Some(values.maxBy(_.millis))
+    def latest: Option[TimedValue] = if (Option(values).isEmpty) None else Some(values.maxBy(_.millis))
   }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
 }
@@ -32,16 +30,20 @@ trait KVStore {
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
+  def get(request: GetRequest): Future[Option[GetResponse]] = multiGet(Seq(request)).map(_.headOption)
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): String = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
-    val responseFuture = get(fetchRequest)
-    val response = Await.result(responseFuture, Duration(timeoutMillis, MILLISECONDS))
-    assert(response.latest.isDefined, s"we should have a string response")
-    new String(response.latest.get.bytes, Constants.UTF8)
+    val responseFutureOpt = get(fetchRequest)
+    val responseOpt = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+    assert(
+      responseOpt.isDefined && responseOpt.get.latest.isDefined,
+      s"we should have a string response for metadata request $fetchRequest" +
+        s"It could be caused by failure of batch upload job or the missing of metadata for this config"
+    )
+    new String(responseOpt.get.latest.get.bytes, Constants.UTF8)
   }
 }
 
