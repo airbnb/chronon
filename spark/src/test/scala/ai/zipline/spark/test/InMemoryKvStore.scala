@@ -29,10 +29,8 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
-        val values = Option(
-          database
-            .get(req.dataset) // table
-        ).map(_.get(encode(req.keyBytes))) // values of key
+        val values = Option(database.get(req.dataset)) // table
+          .flatMap { ds => Option(ds.get(encode(req.keyBytes))) } // values of key
           .map { values =>
             values
               .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
