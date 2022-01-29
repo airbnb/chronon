@@ -38,8 +38,11 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFutureOpt = get(fetchRequest)
     val responseOpt = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
-    assert(responseOpt.isDefined && responseOpt.get.latest.isDefined,
-           s"we should have a string response for metadata request $fetchRequest")
+    assert(
+      responseOpt.isDefined && responseOpt.get.latest.isDefined,
+      s"we should have a string response for metadata request $fetchRequest" +
+        s"It could be caused by failure of batch upload job or the missing of metadata for this config"
+    )
     new String(responseOpt.get.latest.get.bytes, Constants.UTF8)
   }
 }
