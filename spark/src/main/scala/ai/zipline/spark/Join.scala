@@ -11,7 +11,6 @@ import scala.collection.JavaConverters._
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
 
   // Get table properties from config
   private val confTableProps = Option(joinConf.metaData.tableProperties)
@@ -164,7 +163,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
   def getJoinPartTableName(joinPart: JoinPart): String = {
     val joinPartPrefix = Option(joinPart.prefix).map(prefix => s"_$prefix").getOrElse("")
-    s"${outputTable}_$joinPartPrefix${joinPart.groupBy.metaData.cleanName}"
+    s"${joinConf.outputTable}_$joinPartPrefix${joinPart.groupBy.metaData.cleanName}"
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
@@ -217,9 +216,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
   }
 
   def getLastRunJoinOpt: Option[JoinConf] = {
-    println(s"Fetching join from table props of $outputTable")
+    println(s"Fetching join from table props of ${joinConf.outputTable}")
     for (
-      props <- tableUtils.getTableProperties(outputTable);
+      props <- tableUtils.getTableProperties(joinConf.outputTable);
       joinBytes <- props.get(Constants.JoinMetadataKey)
     ) yield {
       val joinJson = new String(Base64.getDecoder.decode(joinBytes))
@@ -267,7 +266,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       // If anything changed, then we also need to recompute the join to the final table
       // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
       // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
-      tableUtils.dropTableIfExists(outputTable)
+      tableUtils.dropTableIfExists(joinConf.outputTable)
     }
   }
 
@@ -286,8 +285,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = joinConf.left.query.startPartition
     val rangeToFill = PartitionRange(leftStart, endPartition)
-    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
+    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, joinConf.outputTable))
+    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, joinConf.outputTable, rangeToFill)
     for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
       println(s"\nThere is no data to compute based on end partition of $endPartition.\n\n Exiting..")
       return finalResult
@@ -325,10 +324,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
-        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+        computeRange(leftDfFull.prunePartition(range), range).save(joinConf.outputTable, tableProps)
+        println(s"Wrote to table $joinConf.outputTable, into partitions: $range $progress")
     }
-    println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
+    println(s"Wrote to table ${joinConf.outputTable}, into partitions: $leftUnfilledRange")
     finalResult
   }
 }

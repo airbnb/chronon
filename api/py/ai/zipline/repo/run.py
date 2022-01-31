@@ -11,7 +11,8 @@ MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
     'upload': '--conf-path={conf_path} --end-date={ds}',
     'streaming': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
-    'metadata-upload': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
+    'metadata-upload': '--conf-path {conf_path} --online-jar {online_jar} --online-class={online_class}',
+    'offline-parity': '--conf-path={conf_path} --end-date={ds}'
 }
 
 ROUTES = {
@@ -19,9 +20,11 @@ ROUTES = {
         'upload': 'group-by-upload',
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
+        'offline-parity': 'offline-parity',
     },
     'joins': {
         'backfill': 'join',
+        'offline-parity': 'offline-parity',
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',

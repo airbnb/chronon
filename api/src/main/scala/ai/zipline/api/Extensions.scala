@@ -320,6 +320,8 @@ object Extensions {
         .toArray
     }
 
+    def outputTable = s"${join.metaData.outputNamespace}.${join.metaData.cleanName}"
+
     def isProduction: Boolean = {
       join.getMetaData.isProduction
     }

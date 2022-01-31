@@ -1,16 +1,16 @@
 package ai.zipline.spark
 
 import ai.zipline.api
-import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.ThriftJsonCodec
+import ai.zipline.api.Extensions.{GroupByOps, JoinOps, SourceOps}
+import ai.zipline.api.{BooleanType, DoubleType, FloatType, IntType, LongType, ShortType, StructField, StructType, ThriftJsonCodec}
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
 import com.google.gson.GsonBuilder
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.io.File
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+
+import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
@@ -155,6 +155,43 @@ object Driver {
     }
   }
 
+  object OfflineParity {
+
+    private def compareOutputTable(outputNamespace: String, confName: String) =
+      s"$outputNamespace.${confName}_offline_parity"
+
+    class Args extends Subcommand("offline-parity") with OfflineSubcommand {
+      val comparedTable: ScallopOption[String] =
+        opt[String](required = true, descr = "V2.0 output table to compare")
+      val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
+      def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
+        ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
+    }
+    def run(args: Args): Unit = {
+      val (namespace, name, table, keyColumns, ds): (String, String, String, Seq[String], Option[String]) = if (args.`type`() == "group-by") {
+        val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
+        (groupByConf.metaData.outputNamespace, groupByConf.metaData.name, groupByConf.kvTable, groupByConf.keyColumns.asScala, None)
+      } else {
+        val joinConf: api.Join = args.parseConf[api.Join]
+        (joinConf.metaData.outputNamespace, joinConf.metaData.name, joinConf.outputTable, joinConf.leftKeyCols, Some(args.endDate()))
+      }
+      val session = SparkSessionBuilder.build(s"zipline_offline_parity_${name}")
+      val (select1, select2): (String, String) = if (ds.isDefined) {
+        (s"SELECT * from $table where ds = '$ds'",
+          s"SELECT * from ${args.comparedTable()} where ds = '$ds'")
+      } else{
+        (s"SELECT * from $table", s"SELECT * from ${args.comparedTable()}'")
+      }
+
+      val comparedDf = Comparison.sideBySide(session.sql(select1), session.sql(select2), keyColumns.toList, name, s"${name}_v2")
+      val tableUtils = TableUtils(session)
+      val outputTable = compareOutputTable(namespace, name)
+      tableUtils.insertPartitions(comparedDf, outputTable)
+      println(s"successfully wrote compare output to ${outputTable} with ${comparedDf.collect().size} mismatches")
+    }
+  }
+
+
   object MetadataUploader {
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
@@ -247,6 +284,8 @@ object Driver {
     addSubcommand(MetadataUploaderArgs)
     object GroupByStreamingArgs extends GroupByStreaming.Args
     addSubcommand(GroupByStreamingArgs)
+    object OfflineParityArgs extends OfflineParity.Args
+    addSubcommand(OfflineParityArgs)
     requireSubcommand()
     verify()
   }
@@ -276,6 +315,7 @@ object Driver {
           }
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
+          case args.OfflineParityArgs => OfflineParity.run(args.OfflineParityArgs)
           case _                         => println(s"Unknown subcommand: ${x}")
         }
       case None => println(s"specify a subcommand please")
