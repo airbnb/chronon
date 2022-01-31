@@ -106,22 +106,24 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case _: Throwable =>
-        println(s"Failed to parse JSON to Zipline configs, file path = $file")
+        println(s"Failed to parse Zipline config as JSON: file path = $file")
         None
     }
   }
 
-}
-
-object MetadataStore {
   def parseName(path: String): Option[String] = {
     val gson = new Gson()
     val reader = Files.newBufferedReader(Paths.get(path))
-    val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-    Option(map.get("metaData"))
-      .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-      .map(_.get("name"))
-      .flatMap(Option(_))
-      .map(_.asInstanceOf[String])
+    try {
+      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
+      Option(map.get("metaData"))
+        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
+        .map(_.get("name"))
+        .flatMap(Option(_))
+        .map(_.asInstanceOf[String])
+    } catch {
+      case _: Throwable => println(s"Failed to parse Zipline config as JSON: file path = $path")
+  None
+    }
   }
 }
