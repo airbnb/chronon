@@ -106,7 +106,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case _: Throwable =>
-        println(s"Failed to parse Zipline config as JSON: file path = $file")
+        println(s"Failed to parse compiled Zipline config file: $file")
         None
     }
   }
