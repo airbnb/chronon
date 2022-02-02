@@ -14,6 +14,10 @@ MODE_ARGS = {
     'metadata-upload': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
 }
 
+ONLINE_JAR_PATH_ENV_VAR = "ZIPLINE_ONLINE_JAR_PATH"
+ONLINE_CLASS_ENV_VAR = "ZIPLINE_ONLINE_CLASS"
+DEFAULT_ARGS_ENV_VAR = "ZIPLINE_DEFAULT_ARGS"
+
 ROUTES = {
     'group_bys': {
         'upload': 'group-by-upload',
@@ -88,9 +92,9 @@ class Runner:
         self.mode = args.mode
         self.ds = args.ds
         self.jar_path = jar_path
-        self.args = args.args
-        self.online_jar = args.online_jar
-        self.online_class = args.online_class
+        self.args = args.args + os.getenv(DEFAULT_ARGS_ENV_VAR, "")
+        self.online_jar = args.online_jar if args.online_jar else os.getenv(ONLINE_JAR_PATH_ENV_VAR)
+        self.online_class = args.online_class if args.online_class else os.getenv(ONLINE_CLASS_ENV_VAR)
         self.app_name = args.app_name
         if self.mode == 'streaming':
             self.spark_submit = args.spark_streaming_submit_path
