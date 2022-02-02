@@ -92,7 +92,7 @@ class Runner:
         self.mode = args.mode
         self.ds = args.ds
         self.jar_path = jar_path
-        self.args = args.args + os.getenv(DEFAULT_ARGS_ENV_VAR, "")
+        self.args = args.args + " " + os.getenv(DEFAULT_ARGS_ENV_VAR, "")
         self.online_jar = args.online_jar if args.online_jar else os.getenv(ONLINE_JAR_PATH_ENV_VAR)
         self.online_class = args.online_class if args.online_class else os.getenv(ONLINE_CLASS_ENV_VAR)
         self.app_name = args.app_name
