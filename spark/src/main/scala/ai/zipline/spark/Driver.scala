@@ -254,7 +254,6 @@ object Driver {
     addSubcommand(MetadataUploaderArgs)
     object GroupByStreamingArgs extends GroupByStreaming.Args
     addSubcommand(GroupByStreamingArgs)
-    requireSubcommand()
     verify()
   }
 
@@ -285,7 +284,7 @@ object Driver {
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case _                         => println(s"Unknown subcommand: ${x}")
         }
-      case None => println(s"specify a subcommand please")
+      case None => args.printHelp()
     }
     if (shouldExit) {
       System.exit(0)
