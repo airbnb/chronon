@@ -153,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
     parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
-    parser.add_argument('--args', help='quoted string of any relevant additional args.', default="")
+    parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=zipline_repo_path)
     parser.add_argument('--online_jar',
                         help='Jar containing Online KvStore & Deserializer Impl, defaults to the `ZIPLINE_ONLINE_JAR` environment variable.'
