@@ -1,34 +1,21 @@
 """
 Sample group by
 """
-from ai.zipline.api import ttypes as api
-from ai.zipline.group_by import GroupBy
+from sources import test_sources
+from ai.zipline.group_by import (
+    GroupBy,
+    Aggregation,
+    Operation,
+    Window,
+    TimeUnit,
+)
 
 
 v1 = GroupBy(
-    sources=api.Source(
-        entities=api.EntitySource(
-            snapshotTable="sample_table.sample_entity_snapshot",
-            query=api.Query(
-                startPartition='2021-03-01',
-                selects={
-                    'group_by_subject': 'group_by_subject_expr',
-                    'entity': 'entity_expr',
-                },
-                timeColumn="ts"
-            ),
-        ),
-    ),
+    sources=test_sources.entity_source,
     keys=["group_by_subject"],
     aggregations=[
-        api.Aggregation(
-            inputColumn="entity",
-            operation=api.Operation.LAST
-        ),
-        api.Aggregation(
-            inputColumn="entity",
-            operation=api.Operation.LAST,
-            windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)],
-        ),
+        Aggregation(input_column="entity", operation=Operation.LAST),
+        Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)]),
     ],
 )

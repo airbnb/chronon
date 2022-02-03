@@ -5,7 +5,7 @@
     "production": 0,
     "customJson": "{\"check_consistency\": false, \"lag\": 0}",
     "dependencies": [
-      "{\"name\": \"wait_for_sample_namespace.sample_table_sample_namespace_sample_table_v2_ds_ds\", \"spec\": \"sample_namespace.sample_table_v2/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
+      "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
     "tableProperties": {
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
@@ -14,16 +14,15 @@
     "team": "sample_team"
   },
   "left": {
-    "events": {
-      "table": "sample_namespace.sample_table",
+    "entities": {
+      "snapshotTable": "sample_table.sample_entity_snapshot",
       "query": {
         "selects": {
-          "subject": "subject_expr",
-          "event": "event_expr",
-          "ts": "UNIX_TIMESTAMP(ts) * 1000"
+          "group_by_subject": "group_by_subject_expr",
+          "entity": "entity_expr"
         },
         "startPartition": "2021-03-01",
-        "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
+        "timeColumn": "ts",
         "setups": []
       }
     }

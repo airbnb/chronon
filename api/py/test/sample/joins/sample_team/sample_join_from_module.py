@@ -1,10 +1,8 @@
 """
 Sample Join
 """
-from ai.zipline.api import ttypes as api
+from sources import test_sources
 from ai.zipline.join import Join, JoinPart
-from ai.zipline.utils import get_staging_query_output_table_name
-from staging_queries.sample_team import sample_staging_query
 from group_bys.sample_team import (
     sample_group_by_from_module,
     entity_sample_group_by_from_module,
@@ -12,19 +10,7 @@ from group_bys.sample_team import (
 
 
 v1 = Join(
-    left = api.Source(
-        events=api.EventSource(
-            table="sample_namespace.sample_table",
-            query=api.Query(
-                startPartition='2021-03-01',
-                selects={
-                    'subject': 'subject_expr',
-                    'event': 'event_expr',
-                },
-                timeColumn="UNIX_TIMESTAMP(ts) * 1000"
-            ),
-        ),
-    ),
+    left = test_sources.staging_entities,
     right_parts=[
         JoinPart(
             group_by=sample_group_by_from_module.v1,

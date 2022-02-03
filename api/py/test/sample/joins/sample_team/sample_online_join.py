@@ -1,28 +1,18 @@
 """
 Sample Join
 """
+from sources import test_sources
 from group_bys.sample_team import (
     event_sample_group_by,
     entity_sample_group_by_from_module,
+    group_by_with_kwargs,
 )
 
-from ai.zipline.api import ttypes as api
 from ai.zipline.join import Join, JoinPart
 
+
 v1 = Join(
-    left=api.Source(
-        events=api.EventSource(
-            table="sample_namespace.sample_table",
-            query=api.Query(
-                startPartition='2021-03-01',
-                selects={
-                    'subject': 'subject_expr',
-                    'event': 'event_expr',
-                },
-                timeColumn="UNIX_TIMESTAMP(ts) * 1000"
-            ),
-        ),
-    ),
+    left=test_sources.event_source,
     right_parts=[
         JoinPart(
             group_by=event_sample_group_by.v1,
@@ -31,7 +21,11 @@ v1 = Join(
         JoinPart(
             group_by=entity_sample_group_by_from_module.v1,
             key_mapping={'subject': 'group_by_subject'},
-        )
+        ),
+        JoinPart(
+            group_by=group_by_with_kwargs.v1,
+            key_mapping={'subject': 'group_by_subject'},
+        ),
     ],
     additional_args={
         'custom_arg': 'custom_value'
