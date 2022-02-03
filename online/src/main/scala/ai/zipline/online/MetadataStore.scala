@@ -4,7 +4,6 @@ import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, StringOps}
 import ai.zipline.api._
 import ai.zipline.online.KVStore.PutRequest
-import ai.zipline.online.MetadataStore.parseName
 import com.google.gson.Gson
 import org.apache.thrift.TBase
 
@@ -71,12 +70,13 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           case value if value.contains("group_bys/")       => (s"group_bys/$name", loadJson[GroupBy](value))
           case _                                           => println(s"unknown config type in file $path"); ("", None)
         }
-        confJsonOpt
-          .map(conf =>
-            PutRequest(keyBytes = key.getBytes(),
-                       valueBytes = conf.getBytes(),
-                       dataset = dataset,
-                       tsMillis = Some(System.currentTimeMillis())))
+        confJsonOpt.map { conf =>
+          println(s"Putting metadata for $key to KV store")
+          PutRequest(keyBytes = key.getBytes(),
+                     valueBytes = conf.getBytes(),
+                     dataset = dataset,
+                     tsMillis = Some(System.currentTimeMillis()))
+        }
       }
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     kvStore.multiPut(puts)
@@ -105,22 +105,25 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case _: Throwable =>
-        println(s"Failed to parse JSON to Zipline configs, file path = $file")
+        println(s"Failed to parse compiled Zipline config file: $file")
         None
     }
   }
 
-}
-
-object MetadataStore {
   def parseName(path: String): Option[String] = {
     val gson = new Gson()
     val reader = Files.newBufferedReader(Paths.get(path))
-    val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-    Option(map.get("metaData"))
-      .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-      .map(_.get("name"))
-      .flatMap(Option(_))
-      .map(_.asInstanceOf[String])
+    try {
+      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
+      Option(map.get("metaData"))
+        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
+        .map(_.get("name"))
+        .flatMap(Option(_))
+        .map(_.asInstanceOf[String])
+    } catch {
+      case _: Throwable =>
+        println(s"Failed to parse Zipline config as JSON: file path = $path")
+        None
+    }
   }
 }
