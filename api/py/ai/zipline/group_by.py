@@ -151,7 +151,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             env: Dict[str, Dict[str, str]] = None,
             table_properties: Dict[str, str] = None,
             output_namespace: str = None,
-            lag: int = 0) -> ttypes.GroupBy:
+            lag: int = 0,
+            **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
     if isinstance(sources, ttypes.Source):
@@ -172,9 +173,9 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
-    custom_json = {
+    kwargs.update({
         "lag": lag
-    }
+    })
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
@@ -182,7 +183,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         online=online,
         production=production,
         outputNamespace=output_namespace,
-        customJson=json.dumps(custom_json),
+        customJson=json.dumps(kwargs),
         dependencies=deps,
         modeToEnvMap=env,
         tableProperties=table_properties,

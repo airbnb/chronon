@@ -34,11 +34,13 @@
   "aggregations": [
     {
       "inputColumn": "entity",
-      "operation": 3
+      "operation": 3,
+      "argMap": {}
     },
     {
       "inputColumn": "entity",
       "operation": 3,
+      "argMap": {},
       "windows": [
         {
           "length": 7,

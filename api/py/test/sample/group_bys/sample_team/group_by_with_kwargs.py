@@ -1,3 +1,6 @@
+"""
+Sample group by
+"""
 from sources import test_sources
 from ai.zipline.group_by import (
     GroupBy,
@@ -9,13 +12,14 @@ from ai.zipline.group_by import (
 
 
 v1 = GroupBy(
-    sources=test_sources.event_source,
+    sources=[
+        test_sources.events_until_20210409,
+        test_sources.events_after_20210409,
+    ],
     keys=["group_by_subject"],
     aggregations=[
+        Aggregation(input_column="event", operation=Operation.SUM),
         Aggregation(input_column="event", operation=Operation.SUM, windows=[Window(7, TimeUnit.DAYS)]),
-        Aggregation(input_column="event", operation=Operation.SUM)
     ],
-    online=False,
-    production=False,
-    output_namespace="sample_namespace"
+    additional_argument="To be placed in customJson",
 )

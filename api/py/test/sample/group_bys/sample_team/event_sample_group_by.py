@@ -1,32 +1,27 @@
-from ai.zipline.api import ttypes as api
-from ai.zipline.group_by import GroupBy
+from sources import test_sources
+from ai.zipline.group_by import (
+    GroupBy,
+    Aggregation,
+    Operation,
+    TimeUnit,
+    Window,
+)
+
 
 v1 = GroupBy(
-    sources=[api.Source(
-        events=api.EventSource(
-            table="sample_namespace.sample_table_group_by",
-            query=api.Query(
-                selects={
-                    "event": "event_expr",
-                    "group_by_subject": "group_by_expr"
-                },
-                startPartition="2021-04-09",
-                timeColumn="ts"
-            )
-        )
-    )],
+    sources=test_sources.event_source,
     keys=["group_by_subject"],
     aggregations=[
-        api.Aggregation(
-            inputColumn="event",
-            operation=api.Operation.SUM,
-            windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)]
+        Aggregation(
+            input_column="event",
+            operation=Operation.SUM,
+            windows=[Window(length=7, timeUnit=TimeUnit.DAYS)]
         ),
-        api.Aggregation(
-            inputColumn="event",
-            operation=api.Operation.SUM
+        Aggregation(
+            input_column="event",
+            operation=Operation.SUM
         )
     ],
     online=True,
-    output_namespace="sample_namespace"
+    output_namespace="sample_namespace",
 )
