@@ -92,9 +92,9 @@ class Runner:
         self.mode = args.mode
         self.ds = args.ds
         self.jar_path = jar_path
-        self.args = args.args + " " + os.getenv(DEFAULT_ARGS_ENV_VAR, "")
-        self.online_jar = args.online_jar if args.online_jar else os.getenv(ONLINE_JAR_PATH_ENV_VAR)
-        self.online_class = args.online_class if args.online_class else os.getenv(ONLINE_CLASS_ENV_VAR)
+        self.args = args.args
+        self.online_jar = args.online_jar
+        self.online_class = args.online_class
         self.app_name = args.app_name
         if self.mode == 'streaming':
             self.spark_submit = args.spark_streaming_submit_path
@@ -154,13 +154,15 @@ if __name__ == "__main__":
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
     parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
-    parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
+    parser.add_argument('--args', help='quoted string of any relevant additional args, defaults to the `ZIPLINE_DEFAULT_ARGS` environment variable.', 
+                        default=os.getenv(DEFAULT_ARGS_ENV_VAR, ""))
     parser.add_argument('--repo', help='Path to zipline repo', default=zipline_repo_path)
     parser.add_argument('--online_jar',
-                        help='Jar containing Online KvStore & Deserializer Impl.'
-                        'Used for streaming and metadata-upload mode.', default=None)
+                        help='Jar containing Online KvStore & Deserializer Impl, defaults to the `ZIPLINE_ONLINE_JAR` environment variable.'
+                        'Used for streaming and metadata-upload mode.', default=os.getenv(ONLINE_JAR_PATH_ENV_VAR))
     parser.add_argument('--online_class',
-                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.', default=None)
+                        help='Class name of Online Impl. Used for streaming and metadata-upload mode, defaults to the `ZIPLINE_ONLINE_CLASS` environment variable.',
+                        default=os.getenv(ONLINE_CLASS_ENV_VAR))
     parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
