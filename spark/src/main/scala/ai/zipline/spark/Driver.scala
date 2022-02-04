@@ -132,22 +132,22 @@ object Driver {
       val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
     }
 
-    private def castedKeyValue(field: StructField, key: String, valueString: String): (String, AnyRef) = {
+    private def castValue(field: StructField, key: String, value: String): Any = {
       val casted = field.fieldType match {
-        case IntType => valueString.toInt.asInstanceOf[AnyRef]
-        case LongType => valueString.toLong.asInstanceOf[AnyRef]
-        case DoubleType => valueString.toDouble.asInstanceOf[AnyRef]
-        case FloatType => valueString.toFloat.asInstanceOf[AnyRef]
-        case ShortType => valueString.toShort.asInstanceOf[AnyRef]
-        case BooleanType => valueString.toBoolean.asInstanceOf[AnyRef]
-        case _ => valueString.asInstanceOf[AnyRef]
+        case IntType => value.toInt
+        case LongType => value.toLong
+        case DoubleType => value.toDouble
+        case FloatType => value.toFloat
+        case ShortType => value.toShort
+        case BooleanType => value.toBoolean
+        case _ => value
       }
-      key -> casted
+      casted
     }
 
     def run(args: Args): Unit = {
       val gson = (new GsonBuilder()).setPrettyPrinting().create()
-      val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, String]]).asScala.toMap
+      val keyMap: Map[String, String] = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, String]]).asScala.toMap
 
       val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
 
@@ -161,7 +161,8 @@ object Driver {
             field =>
               val leftKey = rightToLeftMap(field.name)
               assert(keyMap.contains(leftKey), s"input key-json must contain field $leftKey")
-              castedKeyValue(field, leftKey, keyMap(leftKey))
+              println(castValue(field, leftKey, keyMap(leftKey)).getClass)
+              leftKey -> castValue(field, leftKey, keyMap(leftKey)).asInstanceOf[AnyRef]
           }
         }.toMap
         fetcher.fetchJoin(Seq(Fetcher.Request(args.name(), finalKeyMap)))
@@ -171,7 +172,8 @@ object Driver {
         val finalKeyMap: Map[String, AnyRef] = groupByServingInfo.keyZiplineSchema.fields.map {
           field =>
             assert(keyMap.contains(field.name), s"input key-json must contain field ${field.name}")
-            castedKeyValue(field, field.name, keyMap(field.name))
+            println(castValue(field, field.name, keyMap(field.name)).getClass)
+            field.name -> castValue(field, field.name, keyMap(field.name)).asInstanceOf[AnyRef]
         }.toMap
         fetcher.fetchGroupBys(Seq(Fetcher.Request(args.name(), finalKeyMap)))
       }
