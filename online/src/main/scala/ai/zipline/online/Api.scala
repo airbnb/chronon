@@ -10,7 +10,9 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 object KVStore {
   // a scan request essentially for the keyBytes
   // afterTsMillis - is used to limit the scan to more recent data
-  case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
+  case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None) {
+    override def toString: String = s"{key=${new String(keyBytes)}, dataset=$dataset, afterTsMillis=$afterTsMillis"
+  }
   case class TimedValue(bytes: Array[Byte], millis: Long)
   case class GetResponse(request: GetRequest, values: Seq[TimedValue]) {
     def latest: Option[TimedValue] = if (Option(values).isEmpty) None else Some(values.maxBy(_.millis))
@@ -38,11 +40,10 @@ trait KVStore {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFutureOpt = get(fetchRequest)
     val responseOpt = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
-    assert(
-      responseOpt.isDefined && responseOpt.get.latest.isDefined,
-      s"we should have a string response for metadata request $fetchRequest" +
-        s"It could be caused by failure of batch upload job or the missing of metadata for this config"
-    )
+    if (responseOpt.isEmpty || responseOpt.get.latest.isEmpty)
+      throw new IllegalArgumentException(
+        s"we should have a string response for metadata request $fetchRequest" +
+          s". It could be caused by failure of batch upload job or the missing of metadata for this config")
     new String(responseOpt.get.latest.get.bytes, Constants.UTF8)
   }
 }
