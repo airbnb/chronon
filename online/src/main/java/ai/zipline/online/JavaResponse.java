@@ -5,7 +5,6 @@ import scala.collection.JavaConverters;
 
 import java.util.Map;
 
-;
 
 public class JavaResponse {
     public JavaRequest request;
