@@ -1,6 +1,6 @@
 from ai.zipline.join import Join
 from ai.zipline.api import ttypes as api
-
+from ai.zipline.source import Source
 import pytest
 
 
@@ -8,7 +8,7 @@ def event_source(table):
     """
     Sample left join
     """
-    return api.Source(
+    return Source(
         events=api.EventSource(
             table=table,
             query=api.Query(

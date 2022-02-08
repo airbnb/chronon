@@ -8,6 +8,7 @@ from typing import List, Dict
 import ai.zipline.api.ttypes as api
 import ai.zipline.repo.extract_objects as eo
 import ai.zipline.utils as utils
+from ai.zipline.source import Source
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,7 +45,7 @@ def JoinPart(group_by: api.GroupBy,
     return join_part
 
 
-def Join(left: api.Source,
+def Join(left: Source,
          right_parts: List[api.JoinPart],
          check_consistency: bool = False,
          additional_args: List[str] = None,
@@ -89,12 +90,13 @@ def Join(left: api.Source,
     customJson = {
         "check_consistency": check_consistency
     }
-
     if additional_args:
         customJson["additional_args"] = additional_args
 
     if additional_env:
         customJson["additional_env"] = additional_env
+    if left.extra_args:
+        customJson[left.table] = left.extra_args
 
     customJson["lag"] = lag
 

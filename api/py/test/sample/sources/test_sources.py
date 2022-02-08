@@ -4,11 +4,12 @@ from ai.zipline.query import (
 )
 from ai.zipline.utils import get_staging_query_output_table_name
 from ai.zipline.api import ttypes
+from ai.zipline.source import Source
 
 from staging_queries.sample_team import sample_staging_query
 
 # Sample Event Source used in tests.
-event_source = ttypes.Source(events=ttypes.EventSource(
+event_source = Source(events=ttypes.EventSource(
     table="sample_namespace.sample_table_group_by",
     query=Query(
         selects=select(
@@ -18,10 +19,10 @@ event_source = ttypes.Source(events=ttypes.EventSource(
         start_partition="2021-04-09",
         time_column="ts",
     ),
-))
+), schema='eventDeserializer.class', kafka_cluster='somecluster:9999')
 
 # Sample Entity Source
-entity_source = ttypes.Source(entities=ttypes.EntitySource(
+entity_source = Source(entities=ttypes.EntitySource(
     snapshotTable="sample_table.sample_entity_snapshot",
     query=Query(
         start_partition='2021-03-01',
@@ -34,7 +35,7 @@ entity_source = ttypes.Source(entities=ttypes.EntitySource(
 ))
 
 # Sample Entity Source derived from a staging query.
-staging_entities=ttypes.Source(entities=ttypes.EntitySource(
+staging_entities=Source(entities=ttypes.EntitySource(
     snapshotTable="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),
     query=Query(
         start_partition='2021-03-01',
@@ -49,7 +50,7 @@ staging_entities=ttypes.Source(entities=ttypes.EntitySource(
 
 
 # A Source that was deprecated but still relevant (requires stitching).
-events_until_20210409 = ttypes.Source(events=ttypes.EventSource(
+events_until_20210409 = Source(events=ttypes.EventSource(
     table="sample_namespace.sample_table_group_by",
     query=Query(
         start_partition='2021-03-01',
@@ -63,7 +64,7 @@ events_until_20210409 = ttypes.Source(events=ttypes.EventSource(
 ))
 
 # The new source
-events_after_20210409 = ttypes.Source(events=ttypes.EventSource(
+events_after_20210409 = Source(events=ttypes.EventSource(
     table="sample_namespace.another_sample_table_group_by",
     query=Query(
         start_partition='2021-03-01',

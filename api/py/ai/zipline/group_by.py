@@ -6,6 +6,9 @@ from typing import List, Optional, Union, Dict, Callable, Tuple
 import ai.zipline.api.ttypes as ttypes
 import ai.zipline.utils as utils
 
+from ai.zipline.source import Source
+
+
 OperationType = int  # type(zthrift.Operation.FIRST)
 
 #  The GroupBy's default online/production status is None and it will inherit
@@ -141,7 +144,7 @@ Keys {unselected_keys}, are unselected in source
         assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
 
 
-def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
+def GroupBy(sources: Union[List[Source], Source],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
@@ -155,8 +158,10 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
-    if isinstance(sources, ttypes.Source):
+    if isinstance(sources, Source):
         sources = [sources]
+
+    source_args = {source.table: source.extra_args for source in sources if source.extra_args}
 
     validate_group_by(sources, keys, aggregations)
     # create a deep copy for case: multiple group_bys use the same sources,
@@ -176,6 +181,8 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
     kwargs.update({
         "lag": lag
     })
+    if source_args:
+        kwargs.update(source_args)
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
