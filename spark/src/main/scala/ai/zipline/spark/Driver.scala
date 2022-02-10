@@ -144,7 +144,7 @@ object Driver {
       } else {
         fetcher.fetchGroupBys(requests)
       }
-      val result = Await.result(resultFuture, 1.minute)
+      val result = Await.result(resultFuture, 5.seconds)
       val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
 
       // treeMap to produce a sorted result
@@ -155,7 +155,7 @@ object Driver {
           case valMap: Map[String, AnyRef] => {
             valMap.foreach { case (k, v) => tMap.put(k, v) }
           }
-          case _ => println(s"${r.request} has no values")
+          case null => println(s"${r.request} returns null values")
         })
       println(s"the returned values are: ${gson.toJson(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")
