@@ -96,8 +96,6 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         validator.load_objs()
         for name, obj in extra_online_group_bys.items():
             _set_team_level_metadata(obj, teams_path, team_name)
-            # Make sure we set these to online, since the Join is online
-            obj.metaData.online = True
             if _write_obj(full_output_root, validator, name, obj, log_level, force_compile=True):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
