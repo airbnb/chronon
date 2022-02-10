@@ -81,12 +81,15 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
     for name, obj in results.items():
         _set_team_level_metadata(obj, teams_path, team_name)
+        # In case of online join, we need to materialize the underlying group_bys. But first validate that they're all set to online.
+        if obj_class is Join and obj.metaData.online:
+            online_group_bys = {rt.groupBy.metaData.name: rt.groupBy for rt in obj.joinParts}
+            group_bys_not_online = [x[0] for x in online_group_bys.items() if not x[1].metaData.online]
+            assert len(group_bys_not_online) == 0, "You're attempting to materialize an Online Join, but it uses the following GroupBys which are not yet online: {}".format(
+                ", ".join(group_bys_not_online))
+            extra_online_group_bys.update(online_group_bys)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
-            # In case of online join, we need to materialize the underlying online group_bys.
-            if obj_class is Join and obj.metaData.online:
-                online_group_bys = {rt.groupBy.metaData.name: rt.groupBy for rt in obj.joinParts}
-                extra_online_group_bys.update(online_group_bys)
     if extra_online_group_bys:
         num_written_group_bys = 0
         # load materialized joins to validate the additional group_bys against.
