@@ -195,6 +195,27 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
     }
 
+    /**
+      * If the streaming topic has additional args. Parse them to be used by streamingImpl.
+      * Example: kafkatopic/schema=deserializationClass/version=2.0/host=host_url/port=9999
+      *  -> Map(schema -> deserializationClass, version -> 2.0, host -> host_url, port -> 9999)
+      */
+    def topicTokens: Map[String, String] = {
+      source.topic
+        .split("/")
+        .drop(1)
+        .map { tok =>
+          val tokens = tok.split("=", 2)
+          tokens(0) -> tokens(1)
+        }
+        .toMap
+    }
+
+    /**
+      * Topic without kwargs
+      */
+    def cleanTopic: String = source.topic.split("/").head
+
     def copyForVersioningComparison: Source = {
       // Makes a copy of the source and unsets date fields, used to compute equality on sources while ignoring these fields
       val newSource = source.deepCopy()

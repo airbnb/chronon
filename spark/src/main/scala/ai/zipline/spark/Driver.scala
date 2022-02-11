@@ -213,7 +213,7 @@ object Driver {
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
       val kafkaBootstrap: ScallopOption[String] =
-        opt[String](required = true, descr = "host:port of a kafka bootstrap server")
+        opt[String](required = false, descr = "host:port of a kafka bootstrap server")
       val mockWrites: ScallopOption[Boolean] = opt[Boolean](required = false,
                                                             default = Some(false),
                                                             descr =
@@ -232,7 +232,14 @@ object Driver {
       session.sparkContext.addJar(args.onlineJar())
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-      val inputStream: DataFrame = dataStream(session, args.kafkaBootstrap(), streamingSource.get.topic)
+      lazy val host = streamingSource.get.topicTokens.get("host")
+      lazy val port = streamingSource.get.topicTokens.get("port")
+      if (!args.kafkaBootstrap.isDefined)
+        assert(
+          host.isDefined && port.isDefined,
+          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+      val inputStream: DataFrame =
+        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
       streamingRunner.run(args.debug())
