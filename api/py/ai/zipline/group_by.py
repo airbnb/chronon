@@ -152,6 +152,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             table_properties: Dict[str, str] = None,
             output_namespace: str = None,
             lag: int = 0,
+            accuracy: ttype.Acccuracy = None,
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
@@ -194,5 +195,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata,
-        backfillStartDate=backfill_start_date
+        backfillStartDate=backfill_start_date,
+        accuracy=accuracy
     )
