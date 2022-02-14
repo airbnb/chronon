@@ -142,8 +142,9 @@ class OrderByLimitTimed(
       ir: util.ArrayList[TimeTuple.typ]
   ): util.ArrayList[Array[Any]] = {
     val result = new util.ArrayList[Array[Any]](ir.size())
-    for (i <- 0 until ir.size()) {
-      result.set(i, ArrayUtils.toArray(ir.get(i)))
+    val it = ir.iterator()
+    while (it.hasNext) {
+      result.add(ArrayUtils.toArray(it.next))
     }
     result
   }
@@ -151,8 +152,9 @@ class OrderByLimitTimed(
   override def denormalize(ir: Any): util.ArrayList[TimeTuple.typ] = {
     val irCast = ir.asInstanceOf[util.ArrayList[Array[Any]]]
     val result = new util.ArrayList[TimeTuple.typ](irCast.size())
-    for (i <- 0 until irCast.size()) {
-      result.set(i, ArrayUtils.fromArray(irCast.get(i)))
+    val it = irCast.iterator()
+    while (it.hasNext) {
+      result.add(ArrayUtils.fromArray(it.next()))
     }
     result
   }
