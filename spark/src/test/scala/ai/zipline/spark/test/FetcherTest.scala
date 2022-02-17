@@ -2,7 +2,7 @@ package ai.zipline.spark.test
 
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.Extensions.GroupByOps
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
 import ai.zipline.api.{
   Accuracy,
   Builders,
@@ -66,7 +66,7 @@ class FetcherTest extends TestCase {
     implicit val tableUtils: TableUtils = TableUtils(spark)
 
     val src =
-      Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+      Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/example_join.v1")
     val expected = {
       try src.mkString
       finally src.close()
@@ -78,9 +78,9 @@ class FetcherTest extends TestCase {
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
     val singleFilePut = singleFileMetadataStore.putConf(
-      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/team.example_join.v1")
+      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
-    val response = inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), singleFileDataSet))
+    val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.get.latest.isDefined)
     val actual = new String(res.get.values.head.bytes)
@@ -93,7 +93,7 @@ class FetcherTest extends TestCase {
     val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
-      inMemoryKvStore.get(GetRequest("joins/team.example_join.v1".getBytes(), directoryDataSetDataSet))
+      inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.get.latest.isDefined)
     val dirActual = new String(dirRes.get.values.head.bytes)
@@ -222,6 +222,8 @@ class FetcherTest extends TestCase {
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
+    println(s"join metadata conf ${joinConf.metaData.nameToFilePath}")
+
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
@@ -249,7 +251,7 @@ class FetcherTest extends TestCase {
       .map { row =>
         val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
         val ts = row.get(tsIndex).asInstanceOf[Long]
-        Request(joinConf.metaData.name, keyMap, Some(ts))
+        Request(joinConf.metaData.nameToFilePath, keyMap, Some(ts))
       }
       .collect()
 
