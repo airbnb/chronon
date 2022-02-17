@@ -68,6 +68,8 @@ object Extensions {
     }
 
     def tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
+
+    def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
   }
 
   // one per output column - so single window

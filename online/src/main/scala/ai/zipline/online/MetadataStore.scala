@@ -1,7 +1,7 @@
 package ai.zipline.online
 
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.Extensions.{JoinOps, StringOps}
+import ai.zipline.api.Extensions.{JoinOps, MetadataOps, StringOps}
 import ai.zipline.api._
 import ai.zipline.online.KVStore.PutRequest
 import com.google.gson.Gson
@@ -26,7 +26,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   def putJoinConf(join: Join): Unit = {
     kvStore.put(
-      PutRequest(s"joins/${join.metaData.name}".getBytes(Constants.UTF8),
+      PutRequest(s"joins/${join.metaData.nameToFilePath}".getBytes(Constants.UTF8),
                  ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
                  dataset))
   }
@@ -61,14 +61,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         name.isDefined
       }
       .flatMap { file =>
-        val path = file.getPath
         // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-        val name: String = parseName(file.getPath).get
-        val (key, confJsonOpt) = path match {
-          case value if value.contains("staging_queries/") => (s"staging_queries/$name", loadJson[StagingQuery](value))
-          case value if value.contains("joins/")           => (s"joins/$name", loadJson[Join](value))
-          case value if value.contains("group_bys/")       => (s"group_bys/$name", loadJson[GroupBy](value))
-          case _                                           => println(s"unknown config type in file $path"); ("", None)
+        val path = file.getPath
+        val key = path.split("/").takeRight(3).mkString("/")
+        val confJsonOpt = path match {
+          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
+          case value if value.contains("joins/")           => loadJson[Join](value)
+          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
+          case _                                           => println(s"unknown config type in file $path"); None
         }
         confJsonOpt.map { conf =>
           println(s"Putting metadata for $key to KV store")
@@ -104,8 +104,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
-      case _: Throwable =>
-        println(s"Failed to parse compiled Zipline config file: $file")
+      case e: Throwable =>
+        println(s"Failed to parse compiled Zipline config file: $file, \nerror=${e.getMessage}")
         None
     }
   }
