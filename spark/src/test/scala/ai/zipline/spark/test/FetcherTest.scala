@@ -222,8 +222,6 @@ class FetcherTest extends TestCase {
       ),
       metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
     )
-    println(s"join metadata conf ${joinConf.metaData.nameToFilePath}")
-
     val joinedDf = new Join(joinConf, today, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected"
     joinedDf.save(joinTable)
