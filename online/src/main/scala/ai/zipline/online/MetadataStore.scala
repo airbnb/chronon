@@ -61,10 +61,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         name.isDefined
       }
       .flatMap { file =>
+        // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
         val path = file.getPath
         val key = path.split("/").takeRight(3).mkString("/")
-        // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-        val name: String = file.getPath
         val confJsonOpt = path match {
           case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
           case value if value.contains("joins/")           => loadJson[Join](value)
