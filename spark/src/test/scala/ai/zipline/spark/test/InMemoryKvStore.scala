@@ -10,6 +10,7 @@ import org.jboss.netty.util.internal.ConcurrentHashMap
 import java.util.{Base64, function}
 import scala.collection.mutable
 import scala.concurrent.Future
+import scala.util.{Failure, Success, Try}
 
 class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   //type aliases for readability
@@ -29,14 +30,13 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
-        val values = Option(database.get(req.dataset)) // table
-          .flatMap { ds => Option(ds.get(encode(req.keyBytes))) } // values of key
-          .map { values =>
-            values
-              .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
-              .map { case (version, bytes) => TimedValue(bytes, version) }
-          }
-          .orNull
+        val values = Try {
+          database
+            .get(req.dataset) // table
+            .get(encode(req.keyBytes)) // values of key
+            .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
+            .map { case (version, bytes) => TimedValue(bytes, version) }
+        }
         KVStore.GetResponse(req, values)
       }
     }

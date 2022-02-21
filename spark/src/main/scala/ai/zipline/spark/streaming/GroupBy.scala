@@ -65,16 +65,7 @@ class GroupBy(inputStream: DataFrame,
       gb.setGroupBy(groupByConf)
       new GroupByServingInfoParsed(gb)
     } else {
-      try {
-        fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
-      } catch {
-        case e: Exception => {
-          println(
-            "Fetching groupBy batch upload's metadata failed. " +
-              "Either Batch upload didn't succeed or we are unable to talk to mussel due to network issues.")
-          throw e
-        }
-      }
+      fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
     }
 
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)

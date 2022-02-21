@@ -11,17 +11,25 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
-  lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
+  lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
-    val joinOps: JoinOps = new JoinOps(
-      ThriftJsonCodec
-        .fromJsonStr[Join](kvStore.getString(s"joins/$name", dataset, timeoutMillis), check = true, classOf[Join]))
-    MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
-    joinOps
+    val joinConf = kvStore.getString(s"joins/$name", dataset, timeoutMillis)
+    if (joinConf.isFailure) {
+      Failure(
+        new RuntimeException(
+          s"Couldn't fetch join conf for $name, please make sure that metadata-upload was successful",
+          joinConf.failed.get))
+    } else {
+      val joinOps: JoinOps = new JoinOps(ThriftJsonCodec.fromJsonStr[Join](joinConf.get, check = true, classOf[Join]))
+      MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs,
+                                                  Metrics.Context(join = name))
+      Success(joinOps)
+    }
   })
 
   def putJoinConf(join: Join): Unit = {
@@ -31,19 +39,26 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
                  dataset))
   }
 
-  lazy val getGroupByServingInfo: TTLCache[String, GroupByServingInfoParsed] =
-    new TTLCache[String, GroupByServingInfoParsed]({ name =>
+  lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
+    new TTLCache[String, Try[GroupByServingInfoParsed]]({ name =>
       val startTimeMs = System.currentTimeMillis()
       val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
       val metaData =
         kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis)
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
-      val groupByServingInfo = ThriftJsonCodec
-        .fromJsonStr[GroupByServingInfo](metaData, check = true, classOf[GroupByServingInfo])
-      MetadataMetrics.reportJoinConfRequestMetric(
-        System.currentTimeMillis() - startTimeMs,
-        Metrics.Context(groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
-      new GroupByServingInfoParsed(groupByServingInfo)
+      if (metaData.isFailure) {
+        Failure(
+          new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
+                                 s"please make sure a batch upload was successful",
+                               metaData.failed.get))
+      } else {
+        val groupByServingInfo = ThriftJsonCodec
+          .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
+        MetadataMetrics.reportJoinConfRequestMetric(
+          System.currentTimeMillis() - startTimeMs,
+          Metrics.Context(groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
+        Success(new GroupByServingInfoParsed(groupByServingInfo))
+      }
     })
 
   // upload the materialized JSONs to KV store:
@@ -121,8 +136,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         .flatMap(Option(_))
         .map(_.asInstanceOf[String])
     } catch {
-      case _: Throwable =>
-        println(s"Failed to parse Zipline config as JSON: file path = $path")
+      case ex: Throwable =>
+        println(s"Failed to parse Zipline config file at $path as JSON with error: ${ex.getMessage}")
+        ex.printStackTrace()
         None
     }
   }

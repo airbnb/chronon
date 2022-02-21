@@ -16,6 +16,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
+import scala.util.{Failure, Success}
 
 // The mega zipline cli
 object Driver {
@@ -152,10 +153,8 @@ object Driver {
       println(result)
       result.foreach(r =>
         r.values match {
-          case valMap: Map[String, AnyRef] => {
-            valMap.foreach { case (k, v) => tMap.put(k, v) }
-          }
-          case null => println(s"${r.request} returns null values")
+          case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
+          case Failure(exception) => throw exception
         })
       println(s"the returned values are: ${gson.toJson(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")

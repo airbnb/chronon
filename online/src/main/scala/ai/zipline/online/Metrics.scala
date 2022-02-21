@@ -126,7 +126,7 @@ object FetcherMetrics {
     statsd.histogram(Name.ResponseSize, size, metricsContext.toTags(): _*)
   }
 
-  def reportFailure(exception: Exception, metricsContext: Context): Unit = {
+  def reportFailure(exception: Throwable, metricsContext: Context): Unit = {
     val metricName =
       if (metricsContext.groupBy != null) Name.FailureByGroupBy
       else if (metricsContext.join != null) Name.FailureByJoin
