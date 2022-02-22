@@ -6,14 +6,14 @@ import ai.zipline.api.{Constants, GroupByServingInfo, QueryUtils}
 import ai.zipline.online.{
   Api,
   AvroCodec,
-  AvroUtils,
+  AvroConversions,
   Fetcher,
   GroupByServingInfoParsed,
   KVStore,
   Mutation,
   Metrics => FetcherMetrics
 }
-import ai.zipline.spark.{Conversions, KvRdd}
+import ai.zipline.spark.Conversions
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
@@ -92,23 +92,25 @@ class GroupBy(inputStream: DataFrame,
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { streamDecoder.decode }
-      .filter(mutation => mutation.before != mutation.after)
+      .filter(mutation =>
+        !(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after))
 
     val streamSchema = Conversions.fromZiplineSchema(streamDecoder.schema)
     println(s"""
         | group by serving info: $groupByServingInfo
-        | Streaming source: ${streamingSource}
+        | Streaming source: $streamingSource
         | streaming Query: $streamingQuery
         | streaming dataset: ${groupByConf.streamingDataset}
-        | stream schema: ${streamSchema}
+        | stream schema: $streamSchema
         |""".stripMargin)
 
     val des = deserialized
       .flatMap { mutation =>
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
-          .map(KvRdd.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
+          .map(Conversions.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
+
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
@@ -132,7 +134,7 @@ class GroupBy(inputStream: DataFrame,
         .map(Conversions.toZiplineSchema(selectedDf.schema))
         .map { case (f, d) => api.StructField(f, d) }
         .toArray
-      AvroCodec.of(AvroUtils.fromZiplineSchema(api.StructType(name, fields)).toString())
+      AvroCodec.of(AvroConversions.fromZiplineSchema(api.StructType(name, fields)).toString())
     }
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")

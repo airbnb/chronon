@@ -129,7 +129,7 @@ object GroupByUpload {
     kvDf
       .union(metaDf)
       .withColumn("ds", lit(endDs))
-      .saveUnPartitioned(groupByConf.kvTable, groupByConf.metaData.tableProps)
+      .saveUnPartitioned(groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
   }
 
   def main(args: Array[String]): Unit = {

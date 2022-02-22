@@ -3,8 +3,7 @@ package ai.zipline.api
 sealed trait DataType extends Serializable
 
 object DataType {
-
-  def toString(dataType: DataType): String = {
+  def toString(dataType: DataType): String =
     dataType match {
       case IntType                     => "int"
       case LongType                    => "long"
@@ -22,7 +21,24 @@ object DataType {
       case StructType(name, _)         => s"struct_$name"
       case UnknownType(any)            => "unknown_type"
     }
-  }
+
+  def isNumeric(dt: DataType): Boolean =
+    dt match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | ByteType => true
+      case _                                                                  => false
+    }
+
+  def isList(dt: DataType): Boolean =
+    dt match {
+      case ListType(_) => true
+      case _           => false
+    }
+
+  def isMap(dt: DataType): Boolean =
+    dt match {
+      case MapType(_, _) => true
+      case _             => false
+    }
 }
 
 case object IntType extends DataType

@@ -166,7 +166,8 @@ object Builders {
         customJson: String = null,
         dependencies: Seq[String] = null,
         namespace: String = null,
-        team: String = null
+        team: String = null,
+        samplePercent: Double = 0
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -177,6 +178,8 @@ object Builders {
       result.setTeam(Option(team).getOrElse("zipline"))
       if (dependencies != null)
         result.setDependencies(dependencies.asJava)
+      if (samplePercent > 0)
+        result.setSamplePercent(samplePercent)
       result
     }
   }

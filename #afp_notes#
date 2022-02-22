@@ -1,0 +1,22 @@
+What trust does very well?
+Data ownership
+Label joins
+Feature drift monitoring
+Feature quality
+Service call features
+What zipline(v21) does well?
+Feature backfills (aggregations, windowing etc on large data)
+Real time feature refresh.
+Low latency serving
+Training-serving skew measurement (OOC).
+There are still gaps:
+Sharing & reuse
+Lineage information - what other models use a feature I want to re-use, where does the underlying data for this feature come from?
+Show feature correlation
+show feature importance (needs model integration)
+Latency and throughput metrics (current values)
+In the future automatically recommend features
+Multi level features
+Embeddings - need to be async (write side computed)
+Should be easy to compose embeddings over towers of models
+Zipline team tends to think of gaps from a v21 perspective. Trust team tends to think of gaps from v2 perspective. So there is friction when communicating. (edited) 

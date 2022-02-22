@@ -4,8 +4,6 @@ import ai.zipline.api.GroupByServingInfo
 import ai.zipline.online.Metrics.{Context, statsd}
 import com.timgroup.statsd.{NonBlockingStatsDClient, StatsDClient}
 
-import scala.collection.mutable
-
 object Metrics {
 
   val statsd: StatsDClient = new NonBlockingStatsDClient("zipline", "localhost", 8125)
@@ -49,10 +47,10 @@ object Metrics {
     // This simply creates "key:value"
     // The optimization shaves about 2ms of 6ms of e2e overhead for 500 batch size.
     def buildTag(key: String, value: String): String = {
-      val charBuf = new Array[Char](key.size + value.size + 1)
-      key.getChars(0, key.size, charBuf, 0)
-      value.getChars(0, value.size, charBuf, key.size + 1)
-      charBuf.update(key.size, ':')
+      val charBuf = new Array[Char](key.length + value.length + 1)
+      key.getChars(0, key.length, charBuf, 0)
+      value.getChars(0, value.length, charBuf, key.length + 1)
+      charBuf.update(key.length, ':')
       new String(charBuf)
     }
 
@@ -62,7 +60,7 @@ object Metrics {
       var counter = 0
       def addTag(key: String, value: String): Unit = {
         if (value == null) return
-        assert(counter < buffer.size, "array overflow")
+        assert(counter < buffer.length, "array overflow")
         buffer.update(counter, buildTag(key, value))
         counter += 1
       }
@@ -91,7 +89,6 @@ object FetcherMetrics {
 
   object Name {
     private val fetcher = "fetcher"
-    private val success = "success"
     private val failure = "failure"
 
     val RequestBatchSize = s"$fetcher.request_batch.size"

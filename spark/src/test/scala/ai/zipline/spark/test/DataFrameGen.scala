@@ -3,7 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.base._
 import ai.zipline.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.zipline.api.{Constants, LongType, StringType}
-import ai.zipline.spark.Conversions
+import ai.zipline.spark.{Conversions, KvRdd}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{col, from_unixtime, lit, udf, unix_timestamp}

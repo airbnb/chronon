@@ -1,16 +1,25 @@
 package ai.zipline.spark
 
-import ai.zipline.api.{Row => ZRow}
+import ai.zipline.api.{
+  Accuracy,
+  Aggregation,
+  Constants,
+  QueryUtils,
+  Source,
+  Window,
+  GroupBy => GroupByConf,
+  Row => ZRow
+}
 import ai.zipline.aggregator.base.TimeTuple
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.aggregator.windowing._
+import ai.zipline.api
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Accuracy, Aggregation, Constants, QueryUtils, Source, Window, GroupBy => GroupByConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.temporal.Temporal
@@ -26,10 +35,10 @@ class GroupBy(val aggregations: Seq[Aggregation],
     extends Serializable {
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
-  protected val selectedSchema = Conversions.toZiplineSchema(inputDf.schema)
+  protected val selectedSchema: Array[(String, api.DataType)] = Conversions.toZiplineSchema(inputDf.schema)
 
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
-  implicit val sparkSession = inputDf.sparkSession
+  implicit val sparkSession: SparkSession = inputDf.sparkSession
   // distinct inputs to aggregations - post projection types that needs to match with
   // streaming's post projection types etc.,
   val preAggSchema: StructType = if (aggregations != null) {
@@ -48,7 +57,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     StructType(valuesIndices.map(inputDf.schema))
   }
 
-  lazy val postAggSchema = {
+  lazy val postAggSchema: StructType = {
     val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
     Conversions.fromZiplineSchema(valueZiplineSchema)
   }
@@ -131,7 +140,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     // Add extra column to the queries and generate the key hash.
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
     val timeBasedPartitionColumn = "ds_of_ts"
-    val queriesWithTimeBasedPartition = queriesDf.withTimestampBasedPartition(timeBasedPartitionColumn)
+    val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(timeBasedPartitionColumn)
     val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
 
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
@@ -427,19 +436,16 @@ object GroupBy {
     val dataProfile: SourceDataProfile = source.dataModel match {
       case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
       case Events =>
-        Option(source.getEvents.isCumulative).getOrElse(false) match {
-          case false =>
-            // normal events case, shift queryStart by window
-            val minQuery = Constants.Partition.before(queryStart)
-            val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
-            lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
-            val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
-            SourceDataProfile(windowStart, sourceStart, effectiveEnd)
-          case true =>
-            // Cumulative case - pick only a single partition for the entire range
-            lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
-            val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
-            SourceDataProfile(latestValid, latestValid, latestValid)
+        if (Option(source.getEvents.isCumulative).getOrElse(false)) {
+          lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
+          val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
+          SourceDataProfile(latestValid, latestValid, latestValid)
+        } else {
+          val minQuery = Constants.Partition.before(queryStart)
+          val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
+          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
+          val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
+          SourceDataProfile(windowStart, sourceStart, effectiveEnd)
         }
     }
 
@@ -497,7 +503,7 @@ object GroupBy {
       groupByConf.backfillStartDate != null,
       s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
-    val outputTable = s"${groupByConf.metaData.outputNamespace}.${groupByConf.metaData.cleanName}"
+    val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull

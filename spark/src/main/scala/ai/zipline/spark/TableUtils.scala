@@ -67,7 +67,14 @@ case class TableUtils(sparkSession: SparkSession) {
     }
 
     if (!sparkSession.catalog.tableExists(tableName)) {
-      sql(createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat))
+      val creationSql = createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat)
+      try {
+        sql(creationSql)
+      } catch {
+        case e: Exception =>
+          println(s"Failed to create table $tableName with error: ${e.getMessage}")
+          throw e
+      }
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
@@ -153,7 +160,7 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       ""
     }
-    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
+    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat" /*, propertiesFragment*/ ).mkString("\n")
   }
 
   private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
@@ -170,7 +177,20 @@ case class TableUtils(sparkSession: SparkSession) {
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
                     inputTable: Option[String] = None): Option[PartitionRange] = {
-    val fillablePartitions = partitionRange.partitions.toSet
+    val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
+      val inputStart = inputTable.flatMap(firstAvailablePartition)
+      assert(
+        inputStart.isDefined,
+        s"""Either partition range needs to have a valid start or 
+           |an input table with valid data needs to be present
+           |inputTable: ${inputTable}, partitionRange: ${partitionRange}
+           |""".stripMargin
+      )
+      partitionRange.copy(start = inputStart.get)
+    } else {
+      partitionRange
+    }
+    val fillablePartitions = validPartitionRange.partitions.toSet
     val outputMissing = fillablePartitions -- partitions(outputTable)
     val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
     val missingPartitions = outputMissing -- inputMissing
@@ -205,6 +225,7 @@ case class TableUtils(sparkSession: SparkSession) {
                               partitionRange: PartitionRange): Option[String] = {
 
     def partitionsInRange(table: String): Set[String] = {
+      if (partitionRange.start == null || partitionRange.end == null) return Set.empty[String]
       partitions(table)
         .filter(ds => ds >= partitionRange.start && ds <= partitionRange.end)
         .toSet

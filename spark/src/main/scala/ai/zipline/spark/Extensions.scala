@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import ai.zipline.api
 import ai.zipline.api._
-import ai.zipline.online.{AvroCodec, AvroUtils}
+import ai.zipline.online.{AvroCodec, AvroConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -32,7 +32,7 @@ object Extensions {
 
     def toZiplineSchema(name: String = null): api.StructType =
       api.StructType.from(name, Conversions.toZiplineSchema(schema))
-    def toAvroSchema(name: String = null): Schema = AvroUtils.fromZiplineSchema(toZiplineSchema(name))
+    def toAvroSchema(name: String = null): Schema = AvroConversions.fromZiplineSchema(toZiplineSchema(name))
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
@@ -74,8 +74,6 @@ object Extensions {
 
     def typeOf(col: String): DataType = df.schema(df.schema.fieldIndex(col)).dataType
 
-    // partitionRange is a hint to figure out the cardinality if repartitioning to control number of output files
-    // use sparingly/in tests.
     def save(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties)
     }
@@ -148,8 +146,17 @@ object Extensions {
       }
     }
 
-    def withTimestampBasedPartition(columnName: String): DataFrame =
-      df.withColumn(columnName, from_unixtime(df.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
+    // convert a millisecond timestamp to string with the specified format
+    def withTimeBasedColumn(columnName: String,
+                            timeColumn: String = Constants.TimeColumn,
+                            format: String = Constants.Partition.format): DataFrame =
+      df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
+
+    private def camelToSnake(name: String) =
+      "[A-Z\\d]".r.replaceAllIn(name, { m => "_" + m.group(0).toLowerCase() })
+
+    def camelToSnake: DataFrame =
+      df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))
 
     def withPartitionBasedTimestamp(colName: String, inputColumn: String = Constants.PartitionColumn): DataFrame =
       df.withColumn(colName, unix_timestamp(df.col(inputColumn), Constants.Partition.format) * 1000)

@@ -1,9 +1,12 @@
 package ai.zipline.spark
 
 import ai.zipline.api
-import ai.zipline.api.{IntType, ListType, UnknownType}
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
+
+import java.util
+import scala.collection.mutable
 
 // wrapper class of spark ai.zipline.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.zipline.aggregator.row with an additional class
@@ -42,7 +45,7 @@ object Conversions {
   def toZiplineType(name: String, dataType: DataType): api.DataType = {
     val typeName = name.capitalize
     dataType match {
-      case IntegerType               => IntType
+      case IntegerType               => api.IntType
       case LongType                  => api.LongType
       case ShortType                 => api.ShortType
       case ByteType                  => api.ByteType
@@ -53,7 +56,7 @@ object Conversions {
       case BooleanType               => api.BooleanType
       case DateType                  => api.DateType
       case TimestampType             => api.TimestampType
-      case ArrayType(elementType, _) => ListType(toZiplineType(s"${typeName}Element", elementType))
+      case ArrayType(elementType, _) => api.ListType(toZiplineType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
         api.MapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
       case StructType(fields) =>
@@ -63,31 +66,31 @@ object Conversions {
             api.StructField(field.name, toZiplineType(field.name, field.dataType))
           }
         )
-      case other => UnknownType(other)
+      case other => api.UnknownType(other)
     }
   }
 
   def fromZiplineType(zType: api.DataType): DataType =
     zType match {
-      case IntType               => IntegerType
-      case api.LongType          => LongType
-      case api.ShortType         => ShortType
-      case api.ByteType          => ByteType
-      case api.FloatType         => FloatType
-      case api.DoubleType        => DoubleType
-      case api.StringType        => StringType
-      case api.BinaryType        => BinaryType
-      case api.BooleanType       => BooleanType
-      case api.DateType          => DateType
-      case api.TimestampType     => TimestampType
-      case ListType(elementType) => ArrayType(fromZiplineType(elementType))
+      case api.IntType               => IntegerType
+      case api.LongType              => LongType
+      case api.ShortType             => ShortType
+      case api.ByteType              => ByteType
+      case api.FloatType             => FloatType
+      case api.DoubleType            => DoubleType
+      case api.StringType            => StringType
+      case api.BinaryType            => BinaryType
+      case api.BooleanType           => BooleanType
+      case api.DateType              => DateType
+      case api.TimestampType         => TimestampType
+      case api.ListType(elementType) => ArrayType(fromZiplineType(elementType))
       case api.MapType(keyType, valueType) =>
         MapType(fromZiplineType(keyType), fromZiplineType(valueType))
       case api.StructType(_, fields) =>
         StructType(fields.map { field =>
           StructField(field.name, fromZiplineType(field.fieldType))
         })
-      case UnknownType(other) => other.asInstanceOf[DataType]
+      case api.UnknownType(other) => other.asInstanceOf[DataType]
     }
 
   def toZiplineSchema(schema: StructType): Array[(String, api.DataType)] =
@@ -106,4 +109,27 @@ object Conversions {
       case api.StructField(name, zType) =>
         StructField(name, fromZiplineType(zType))
     })
+
+  def toSparkRow(value: Any, dataType: api.DataType): Any = {
+    api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
+      value,
+      dataType,
+      { (data: Iterator[Any], _) => new GenericRow(data.toArray) },
+      { bytes: Array[Byte] => bytes },
+      { (elems: Iterator[Any], size: Int) =>
+        val result = new Array[Any](size)
+        elems.zipWithIndex.foreach { case (elem, idx) => result.update(idx, elem) }
+        result
+      },
+      { m: util.Map[Any, Any] =>
+        val result = new mutable.HashMap[Any, Any]
+        val it = m.entrySet().iterator()
+        while (it.hasNext) {
+          val entry = it.next()
+          result.update(entry.getKey, entry.getValue)
+        }
+        result
+      }
+    )
+  }
 }

@@ -3,7 +3,11 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.aggregator.windowing.TsUtils
 import ai.zipline.api.Constants.ZiplineMetadataKey
+
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+
+import ai.zipline.api.Extensions._
+
 import ai.zipline.api.{
   Accuracy,
   BooleanType,
@@ -20,19 +24,21 @@ import ai.zipline.api.{
   StructType,
   TimeUnit,
   Window,
-  GroupBy => GroupByConf
+  GroupBy => GroupByConf,
+  Join => JoinConf
 }
 import ai.zipline.online.Fetcher.{Request, Response}
 import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.online._
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
+import ai.zipline.spark.consistency.ConsistencyJob
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.{avg, column}
+import org.apache.spark.sql.functions.avg
 import org.apache.spark.sql.streaming.Trigger
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
 import java.lang
@@ -48,24 +54,25 @@ import scala.util.Try
 object FetcherTest {
 
   def buildInMemoryKVStore(): InMemoryKvStore = {
-    InMemoryKvStore("FetcherTest", { () => TableUtils(SparkSessionBuilder.build("FetcherTest", local = true)) })
+    InMemoryKvStore.build("FetcherTest", { () => TableUtils(SparkSessionBuilder.build("FetcherTest", local = true)) })
   }
 }
 
 class FetcherTest extends TestCase {
   val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
 
-  private val namespace = "fetcher_test"
   private val topic = "test_topic"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val yesterday = Constants.Partition.before(today)
 
   // TODO: Pull the code here into what streaming can use.
   def putStreaming(groupByConf: GroupByConf,
                    kvStore: () => KVStore,
                    tableUtils: TableUtils,
                    ds: String,
-                   previous_ds: String): Unit = {
+                   previousDs: String,
+                   namespace: String): Unit = {
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
         val entity = groupByConf.streamingSource.get
@@ -77,12 +84,10 @@ class FetcherTest extends TestCase {
         tableUtils.sql(s"SELECT * FROM $table WHERE ds >= '$ds'")
     }
     val inputStream = new InMemoryStream
+    val mockApi = new MockApi(kvStore, namespace)
+    mockApi.streamSchema = StructType.from("Stream", Conversions.toZiplineSchema(inputStreamDf.schema))
     val groupByStreaming =
-      new streaming.GroupBy(
-        inputStream.getInMemoryStreamDF(spark, inputStreamDf),
-        spark,
-        groupByConf,
-        new MockApi(kvStore, StructType.from("Stream", Conversions.toZiplineSchema(inputStreamDf.schema))))
+      new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, inputStreamDf), spark, groupByConf, mockApi)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
     val dataStream = groupByStreaming.buildDataStream()
     val query = dataStream.trigger(Trigger.Once()).start()
@@ -110,8 +115,8 @@ class FetcherTest extends TestCase {
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
-    assertTrue(res.get.latest.isSuccess)
-    val actual = new String(res.get.values.get.head.bytes)
+    assertTrue(res.latest.isSuccess)
+    val actual = new String(res.values.get.head.bytes)
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
@@ -123,21 +128,22 @@ class FetcherTest extends TestCase {
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
-    assertTrue(dirRes.get.latest.isSuccess)
-    val dirActual = new String(dirRes.get.values.get.head.bytes)
+    assertTrue(dirRes.latest.isSuccess)
+    val dirActual = new String(dirRes.values.get.head.bytes)
 
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
     val emptyRes = Await.result(emptyResponse, Duration.Inf)
-    assertFalse(emptyRes.get.latest.isSuccess)
+    assertFalse(emptyRes.latest.isSuccess)
   }
 
   /**
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
-  def generateMutationData(): ai.zipline.api.Join = {
+  def generateMutationData(namespace: String): ai.zipline.api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
       Row(2, toTs("2021-04-10 09:00:00"), "2021-04-10"),
@@ -206,9 +212,9 @@ class FetcherTest extends TestCase {
     )
 
     sourceData.foreach {
-      case (schema, rows) => {
+      case (schema, rows) =>
         spark.createDataFrame(rows.asJava, Conversions.fromZiplineSchema(schema)).save(s"$namespace.${schema.name}")
-      }
+
     }
 
     val startPartition = "2021-04-08"
@@ -257,17 +263,19 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateRandomData(): ai.zipline.api.Join = {
-    val today = Constants.Partition.at(System.currentTimeMillis())
-    val yesterday = Constants.Partition.before(today)
-    val rowCount = 10000
-    val userCol = Column("user", StringType, 10)
-    val vendorCol = Column("vendor", StringType, 10)
+  def generateRandomData(namespace: String): JoinConf = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val keyCount = 100
+    val rowCount = 1000 * keyCount
+    val userCol = Column("user", StringType, keyCount)
+    val vendorCol = Column("vendor", StringType, keyCount)
     // temporal events
-    val paymentCols =
-      Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
+    val paymentCols = Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
     val paymentsTable = s"$namespace.payments_table"
-    DataFrameGen.events(spark, paymentCols, rowCount, 60).save(paymentsTable)
+    val paymentsDf = DataFrameGen.events(spark, paymentCols, rowCount, 60)
+    val tsColString = "ts_string"
+
+    paymentsDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
       keyColumns = Seq("user"),
@@ -277,7 +285,9 @@ class FetcherTest extends TestCase {
                              windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
-        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes")
+        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes"),
+        Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
+        Builders.Aggregation(operation = Operation.LAST, inputColumn = tsColString)
       ),
       metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
     )
@@ -400,77 +410,24 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
-      metaData = Builders.MetaData(name = "test.payments_join", namespace = namespace, team = "zipline")
+      metaData =
+        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "zipline", samplePercent = 30)
     )
     joinConf
   }
 
-  /**
-    * Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
-    */
-  def compareTemporalFetch(joinConf: ai.zipline.api.Join, endDs: String): Unit = {
-
-    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    implicit val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = buildInMemoryKVStore()
-    @transient lazy val fetcher = new Fetcher(inMemoryKvStore)
-    @transient lazy val javaFetcher = new JavaFetcher(inMemoryKvStore)
-    val joinedDf = new Join(joinConf, endDs, tableUtils).computeJoin()
-    val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
-    joinedDf.save(joinTable)
-    val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
-    val prevDs = Constants.Partition.before(endDs)
-
-    def serve(groupByConf: GroupByConf): Unit = {
-      GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
-      buildInMemoryKVStore().bulkPut(groupByConf.kvTable, groupByConf.batchDataset, null)
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
-        inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, endDs, prevDs)
-      }
-    }
-    joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
-    // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
-    val endDsEvents = {
-      tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
-    }
-    val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("unit_test")): _*)
-    val keys = endDsQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
-    val keyIndices = keys.map(endDsQueries.schema.fieldIndex)
-    val tsIndex = endDsQueries.schema.fieldIndex(Constants.TimeColumn)
-    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create(ZiplineMetadataKey)
-    metadataStore.putJoinConf(joinConf)
-
-    val requests = endDsQueries.rdd
-      .map { row =>
-        val keyMap = keys.zipWithIndex.map {
-          case (keyName, idx) =>
-            keyName -> row.get(keyIndices(idx)).asInstanceOf[AnyRef]
-        }.toMap
-        val ts = row.get(tsIndex).asInstanceOf[Long]
-        Request(joinConf.metaData.nameToFilePath, keyMap, Some(ts))
-      }
-      .collect()
+  def joinResponses(requests: Array[Request],
+                    mockApi: MockApi,
+                    useJavaFetcher: Boolean = false,
+                    runCount: Int = 1,
+                    samplePercent: Double = -1,
+                    logToHive: Boolean = false,
+                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
     val chunkSize = 100
+    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
 
-    def printFetcherStats(useJavaFetcher: Boolean,
-                          requests: Array[Request],
-                          count: Int,
-                          chunkSize: Int,
-                          qpsSum: Double,
-                          latencySum: Double): Unit = {
-
-      val fetcherNameString = if (useJavaFetcher) "Java Fetcher" else "Scala Fetcher"
-      println(s"""
-                 |Averaging fetching stats for $fetcherNameString over ${requests.length} requests $count times
-                 |with batch size: $chunkSize
-                 |average qps: ${qpsSum / count}
-                 |average latency: ${latencySum / count}
-                 |""".stripMargin)
-    }
-
-    def joinResponses(useJavaFetcher: Boolean = false) = {
+    def fetchOnce = {
       var latencySum: Long = 0
       var latencyCount = 0
       val blockStart = System.currentTimeMillis()
@@ -507,39 +464,122 @@ class FetcherTest extends TestCase {
 
     // to overwhelm the profiler with fetching code path
     // so as to make it prominent in the flamegraph & collect enough stats
-    val count = 10
+
     var latencySum = 0.0
     var qpsSum = 0.0
-    (0 until count).foreach { _ =>
-      val (latency, qps, _) = joinResponses()
+    var loggedValues: Seq[LoggableResponse] = null
+    var result: List[Response] = null
+    (0 until runCount).foreach { _ =>
+      val (latency, qps, resultVal) = fetchOnce
+      result = resultVal
+      loggedValues = mockApi.flushLoggedValues
       latencySum += latency
       qpsSum += qps
     }
-    printFetcherStats(false, requests, count, chunkSize, qpsSum, latencySum)
+    val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
 
-    latencySum = 0.0
-    qpsSum = 0.0
-    (0 until count).foreach { _ =>
-      val (latency, qps, _) = joinResponses(true)
-      latencySum += latency
-      qpsSum += qps
+    println(s"""
+               |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
+               |with batch size: $chunkSize
+               |average qps: ${qpsSum / runCount}
+               |average latency: ${latencySum / runCount}
+               |""".stripMargin)
+    val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
+    if (logToHive) {
+      TableUtils(spark).insertPartitions(
+        loggedDf,
+        mockApi.logTable,
+        partitionColumns = Seq("join_name", "ds")
+      )
     }
-    printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
+    if (samplePercent > 0) {
+      println(s"logged count: ${loggedDf.count()}")
+      loggedDf.show()
+    }
 
+    result -> loggedDf
+  }
+
+  // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
+  def compareTemporalFetch(joinConf: ai.zipline.api.Join, endDs: String, namespace: String): Unit = {
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val inMemoryKvStore = buildInMemoryKVStore()
+    val mockApi = new MockApi(buildInMemoryKVStore, namespace)
+
+    val joinedDf = new Join(joinConf, endDs, tableUtils).computeJoin()
+    val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
+    joinedDf.save(joinTable)
+    val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
+    val prevDs = Constants.Partition.before(endDs)
+
+    def serve(groupByConf: GroupByConf): Unit = {
+      GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
+      inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
+        inMemoryKvStore.create(groupByConf.streamingDataset)
+        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, endDs, prevDs, namespace)
+      }
+    }
+    joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
+
+    // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
+    val endDsEvents = {
+      tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
+    }
+    val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("unit_test")): _*)
+    val keys = endDsQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
+    val keyIndices = keys.map(endDsQueries.schema.fieldIndex)
+    val tsIndex = endDsQueries.schema.fieldIndex(Constants.TimeColumn)
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ZiplineMetadataKey)
+    metadataStore.putJoinConf(joinConf)
+
+    def buildRequests(lagMs: Int = 0): Array[Request] =
+      endDsQueries.rdd
+        .map { row =>
+          val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
+          val ts = row.get(tsIndex).asInstanceOf[Long]
+          Request(joinConf.metaData.nameToFilePath, keyMap, Some(ts - lagMs))
+        }
+        .collect()
+
+    val requests = buildRequests()
+
+    val lagMs = -100000
+    val laggedRequests = buildRequests(lagMs)
+    val laggedResponseDf = joinResponses(laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
+    val correctedLaggedResponse = laggedResponseDf
+      .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
+      .drop("ts_millis")
+      .withColumnRenamed("ts_lagged", "ts_millis")
+    println("corrected lagged response")
+    correctedLaggedResponse.show()
+    correctedLaggedResponse.save(mockApi.logTable)
+
+    // build consistency metrics
+    val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
+    val metrics = consistencyJob.buildConsistencyMetrics()
+    println(metrics)
+
+    // benchmark
+    joinResponses(requests, mockApi, useJavaFetcher = true)
+    joinResponses(requests, mockApi)
+
+    // comparison
     val columns = endDsExpected.schema.fields.map(_.name)
-    val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
-      val all: Map[String, AnyRef] =
-        res.request.keys ++
-          res.values.get ++
-          Map(Constants.PartitionColumn -> endDs) ++
-          Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
-      val values: Array[Any] = columns.map(all.get(_).orNull)
-      KvRdd
-        .toSparkRow(
-          values,
-          StructType.from(s"record_${joinConf.metaData.cleanName}", Conversions.toZiplineSchema(endDsExpected.schema)))
-        .asInstanceOf[GenericRow]
-    }
+    val responseRows: Seq[Row] =
+      joinResponses(requests, mockApi, useJavaFetcher = true, debug = true)._1.map { res =>
+        val all: Map[String, AnyRef] =
+          res.request.keys ++
+            res.values.get ++
+            Map(Constants.PartitionColumn -> today) ++
+            Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
+        val values: Array[Any] = columns.map(all.get(_).orNull)
+        Conversions
+          .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(endDsExpected.schema)))
+          .asInstanceOf[GenericRow]
+      }
 
     println(endDsExpected.schema.pretty)
     val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
@@ -565,12 +605,14 @@ class FetcherTest extends TestCase {
   }
 
   def testTemporalFetchJoinDeterministic(): Unit = {
-    val joinConf = generateMutationData()
-    compareTemporalFetch(joinConf, "2021-04-10")
+    val namespace = "deterministic_fetch"
+    val joinConf = generateMutationData(namespace)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace)
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
-    val joinConf = generateRandomData()
-    compareTemporalFetch(joinConf, Constants.Partition.at(System.currentTimeMillis()))
+    val namespace = "generated_fetch"
+    val joinConf = generateRandomData(namespace)
+    compareTemporalFetch(joinConf, Constants.Partition.at(System.currentTimeMillis()), namespace)
   }
 }
