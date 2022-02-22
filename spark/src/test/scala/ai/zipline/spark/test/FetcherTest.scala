@@ -119,7 +119,7 @@ class FetcherTest extends TestCase {
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
-    val rowCount = 10000
+    val rowCount = 100000
     val userCol = Column("user", StringType, 10)
     val vendorCol = Column("vendor", StringType, 10)
     // temporal events
