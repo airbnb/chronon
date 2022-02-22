@@ -6,6 +6,7 @@ import ai.zipline.api.{Row, _}
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 
+import java.io.{ByteArrayOutputStream, PrintStream}
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -225,12 +226,10 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                         _.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
                       } // prefix feature names
                       .recover { // capture exception as a key
-                        case ex: Exception =>
-                          Map(
-                            groupByRequest.name + "_exception" -> (Option(ex.getMessage).getOrElse(
-                              "") :+ ex.getStackTrace
-                              .filter(_.toString != null)
-                              .map(_.toString)))
+                        case ex: Throwable =>
+                          val baos = new ByteArrayOutputStream()
+                          ex.printStackTrace(new PrintStream(baos, true))
+                          Map(groupByRequest.name + "_exception" -> baos.toString)
                       }
                       .get
                 }.toMap

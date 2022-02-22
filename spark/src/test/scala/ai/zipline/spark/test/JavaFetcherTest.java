@@ -17,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import static org.junit.Assert.assertTrue;
 import static scala.compat.java8.JFunction.func;
 
 public class JavaFetcherTest {
@@ -40,5 +42,6 @@ public class JavaFetcherTest {
         Gson gson = new Gson();
         String responseValues = gson.toJson(responses.get(0).values);
         System.out.println(responseValues);
+        assertTrue(responses.get(0).values.containsKey("non_existent_exception"));
     }
 }
