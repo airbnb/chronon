@@ -30,11 +30,15 @@ public class JavaRequest {
   }
 
   public Fetcher.Request toScalaRequest() {
+    scala.collection.immutable.Map<String, Object> scalaKeys = null;
+    if (keys != null) {
+      scalaKeys = JavaConverters.mapAsScalaMapConverter(keys)
+              .asScala()
+              .toMap(Predef.conforms());
+    }
     return new Fetcher.Request(
         this.name,
-        JavaConverters.mapAsScalaMapConverter(keys)
-            .asScala()
-            .toMap(Predef.conforms()),
+        scalaKeys,
         Option.apply(this.atMillis));
   }
 }

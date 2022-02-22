@@ -29,12 +29,14 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
 import java.lang
+import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
+import scala.util.Try
 
 object FetcherTest {
 
@@ -48,13 +50,14 @@ class FetcherTest extends TestCase {
 
   private val namespace = "fetcher_test"
   private val topic = "test_topic"
+  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
   def putStreaming(groupByConf: GroupByConf, kvStore: () => KVStore, tableUtils: TableUtils, ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
-    val selected = groupBy.inputDf.filter(s"ds='$ds'")
+    val selected = groupBy.inputDf.filter(s"ds>='$ds'")
     val inputStream = new InMemoryStream
     val groupByStreaming =
       new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
@@ -82,8 +85,8 @@ class FetcherTest extends TestCase {
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
-    assertTrue(res.get.latest.isDefined)
-    val actual = new String(res.get.values.head.bytes)
+    assertTrue(res.get.latest.isSuccess)
+    val actual = new String(res.get.values.get.head.bytes)
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
@@ -95,15 +98,15 @@ class FetcherTest extends TestCase {
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
-    assertTrue(dirRes.get.latest.isDefined)
-    val dirActual = new String(dirRes.get.values.head.bytes)
+    assertTrue(dirRes.get.latest.isSuccess)
+    val dirActual = new String(dirRes.get.values.get.head.bytes)
 
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
     val emptyRes = Await.result(emptyResponse, Duration.Inf)
-    assertFalse(emptyRes.get.latest.isDefined)
+    assertFalse(emptyRes.get.latest.isSuccess)
   }
 
   def testTemporalFetch(): Unit = {
@@ -116,15 +119,14 @@ class FetcherTest extends TestCase {
 
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
-
+    val rowCount = 100000
+    val userCol = Column("user", StringType, 10)
+    val vendorCol = Column("vendor", StringType, 10)
     // temporal events
     val paymentCols =
-      Seq(Column("user", StringType, 10),
-          Column("vendor", StringType, 10),
-          Column("payment", LongType, 100),
-          Column("notes", StringType, 20))
+      Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
     val paymentsTable = s"$namespace.payments_table"
-    DataFrameGen.events(spark, paymentCols, 100000, 60).save(paymentsTable)
+    DataFrameGen.events(spark, paymentCols, rowCount, 60).save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
       keyColumns = Seq("user"),
@@ -141,12 +143,9 @@ class FetcherTest extends TestCase {
 
     // snapshot events
     val ratingCols =
-      Seq(Column("user", StringType, 10),
-          Column("vendor", StringType, 10),
-          Column("rating", IntType, 5),
-          Column("bucket", StringType, 5))
+      Seq(userCol, vendorCol, Column("rating", IntType, 5), Column("bucket", StringType, 5))
     val ratingsTable = s"$namespace.ratings_table"
-    DataFrameGen.events(spark, ratingCols, 100000, 180).save(ratingsTable)
+    DataFrameGen.events(spark, ratingCols, rowCount, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = ratingsTable)),
       keyColumns = Seq("vendor"),
@@ -165,11 +164,10 @@ class FetcherTest extends TestCase {
     )
 
     // no-agg
-    val userBalanceCols =
-      Seq(Column("user", StringType, 10), Column("balance", IntType, 5000))
+    val userBalanceCols = Seq(userCol, Column("balance", IntType, 5000))
     val balanceTable = s"$namespace.balance_table"
     DataFrameGen
-      .entities(spark, userBalanceCols, 100000, 180)
+      .entities(spark, userBalanceCols, rowCount, 180)
       .groupBy("user", "ds")
       .agg(avg("balance") as "avg_balance")
       .save(balanceTable)
@@ -182,12 +180,12 @@ class FetcherTest extends TestCase {
     // snapshot-entities
     val userVendorCreditCols =
       Seq(Column("account", StringType, 100),
-          Column("vendor", StringType, 10), // will be renamed
+          vendorCol, // will be renamed
           Column("credit", IntType, 500),
           Column("ts", LongType, 100))
     val creditTable = s"$namespace.credit_table"
     DataFrameGen
-      .entities(spark, userVendorCreditCols, 100000, 100)
+      .entities(spark, userVendorCreditCols, rowCount, 100)
       .withColumnRenamed("vendor", "vendor_id")
       .save(creditTable)
     val creditGroupBy = Builders.GroupBy(
@@ -201,11 +199,10 @@ class FetcherTest extends TestCase {
     )
 
     // queries
-    val queryCols =
-      Seq(Column("user", StringType, 10), Column("vendor", StringType, 10))
+    val queryCols = Seq(userCol, vendorCol)
     val queriesTable = s"$namespace.queries_table"
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, 100000, 4)
+      .events(spark, queryCols, rowCount, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
     queriesDf.show()
@@ -286,7 +283,7 @@ class FetcherTest extends TestCase {
               .toScala(javaResponse)
               .map(_.asScala.map(jres =>
                 Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
-                         jres.values.asScala.toMap)))
+                         Try(jres.values.asScala.toMap))))
           } else {
             fetcher.fetchJoin(r)
           }
@@ -331,7 +328,7 @@ class FetcherTest extends TestCase {
     val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
-          res.values ++
+          res.values.get ++
           Map(Constants.PartitionColumn -> today) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)

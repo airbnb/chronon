@@ -6,6 +6,7 @@ import ai.zipline.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 object KVStore {
   // a scan request essentially for the keyBytes
@@ -14,8 +15,8 @@ object KVStore {
     override def toString: String = s"{key=${new String(keyBytes)}, dataset=$dataset, afterTsMillis=$afterTsMillis"
   }
   case class TimedValue(bytes: Array[Byte], millis: Long)
-  case class GetResponse(request: GetRequest, values: Seq[TimedValue]) {
-    def latest: Option[TimedValue] = if (Option(values).isEmpty) None else Some(values.maxBy(_.millis))
+  case class GetResponse(request: GetRequest, values: Try[Seq[TimedValue]]) {
+    def latest: Try[TimedValue] = values.map(_.maxBy(_.millis))
   }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
 }
@@ -32,19 +33,25 @@ trait KVStore {
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods to do single put and single get
-  def get(request: GetRequest): Future[Option[GetResponse]] = multiGet(Seq(request)).map(_.headOption)
+  def get(request: GetRequest): Future[Option[GetResponse]] = {
+    val result = multiGet(Seq(request)).map(_.headOption)
+    result
+  }
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
-  def getString(key: String, dataset: String, timeoutMillis: Long): String = {
+  def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFutureOpt = get(fetchRequest)
     val responseOpt = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
-    if (responseOpt.isEmpty || responseOpt.get.latest.isEmpty)
-      throw new IllegalArgumentException(
-        s"we should have a string response for metadata request $fetchRequest" +
-          s". It could be caused by failure of batch upload job or the missing of metadata for this config")
-    new String(responseOpt.get.latest.get.bytes, Constants.UTF8)
+    if (responseOpt.isEmpty) {
+      Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} is empty"))
+    } else if (responseOpt.get.values.isFailure) {
+      Failure(
+        new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", responseOpt.get.values.failed.get))
+    } else {
+      Success(new String(responseOpt.get.latest.get.bytes, Constants.UTF8))
+    }
   }
 }
 
