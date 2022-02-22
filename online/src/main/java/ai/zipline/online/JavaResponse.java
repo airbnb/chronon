@@ -17,7 +17,11 @@ public class JavaResponse {
         if (scalaResponse.values().isFailure()) {
             values = new HashMap<>();
             Throwable t = scalaResponse.values().failed().get();
-            values.put(request.name + "_exception", t);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PrintStream ps = new PrintStream(baos, true);
+            t.printStackTrace(ps);
+            String data = baos.toString();
+            values.put(request.name + "_exception", data);
         } else if (scalaResponse.values().get() == null || scalaResponse.values().get().isEmpty()) {
             this.values = Collections.emptyMap();
         } else {

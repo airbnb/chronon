@@ -29,6 +29,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
 import java.lang
+import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
@@ -49,13 +50,14 @@ class FetcherTest extends TestCase {
 
   private val namespace = "fetcher_test"
   private val topic = "test_topic"
+  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   // TODO: Pull the code here into what streaming can use.
   def putStreaming(groupByConf: GroupByConf, kvStore: () => KVStore, tableUtils: TableUtils, ds: String): Unit = {
     val groupBy = GroupBy.from(groupByConf, PartitionRange(ds, ds), tableUtils)
     // for events this will select ds-1 <= ts < ds
-    val selected = groupBy.inputDf.filter(s"ds='$ds'")
+    val selected = groupBy.inputDf.filter(s"ds>='$ds'")
     val inputStream = new InMemoryStream
     val groupByStreaming =
       new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
@@ -303,7 +305,7 @@ class FetcherTest extends TestCase {
 
     // to overwhelm the profiler with fetching code path
     // so as to make it prominent in the flamegraph & collect enough stats
-    val count = 100
+    val count = 10
     var latencySum = 0.0
     var qpsSum = 0.0
     (0 until count).foreach { _ =>
