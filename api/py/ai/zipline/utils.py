@@ -146,6 +146,8 @@ def get_dependencies(
     ds_string = "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag)
     table = get_table(src)
     query = get_query(src)
+    start = query.startPartition
+    end = query.endPartition
     if deps:
         result = [{
             "name": wait_for_name(dep, table),
@@ -154,13 +156,24 @@ def get_dependencies(
             "end": query.endPartition
         } for dep in deps]
     else:
-        result = [{
-            "name": f"wait_for_{table}_ds",
-            "spec": f"{table}/ds={ds_string}",
-            "start": query.startPartition,
-            "end": query.endPartition
-        }]
+        if src.entities and src.entities.mutationTable:
+            result = list(filter(None, [
+                wait_for_simple_schema(src.entities.snapshotTable, 1, start, end),
+                wait_for_simple_schema(src.entities.mutationTable, 0, start, end)]))
+        elif src.entities:
+            result = [wait_for_simple_schema(src.entities.snapshotTable, 0, start, end)]
+        else:
+            result = [wait_for_simple_schema(src.events.table, 0, start, end)]
     return [json.dumps(res) for res in result]
+
+
+def wait_for_simple_schema(table, lag, start, end):
+    return {
+        "name": "wait_for_{}_ds{}".format(table, "" if lag == 0 else f"_minus_{lag}"),
+        "spec": "{}/ds={}".format(table, "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag)),
+        "start": start,
+        "end": end,
+    } if table else None
 
 
 def wait_for_name(dep, table):
