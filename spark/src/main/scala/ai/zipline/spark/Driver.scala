@@ -2,14 +2,24 @@ package ai.zipline.spark
 
 import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.{BooleanType, DoubleType, FloatType, IntType, LongType, ShortType, StructField, StructType, ThriftJsonCodec}
-import ai.zipline.online.{Api, Fetcher, MetadataStore}
+import ai.zipline.api.{
+  BooleanType,
+  DoubleType,
+  FloatType,
+  IntType,
+  LongType,
+  ShortType,
+  StructField,
+  StructType,
+  ThriftJsonCodec
+}
+import ai.zipline.online.{Api, Fetcher, GroupByServingInfoParsed, MetadataStore}
 import com.google.gson.GsonBuilder
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-import java.io.File
 
+import java.io.File
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -135,46 +145,55 @@ object Driver {
 
     private def castedKeyValue(field: StructField, key: String, valueString: String): (String, AnyRef) = {
       val casted = field.fieldType match {
-        case IntType => valueString.toInt.asInstanceOf[AnyRef]
-        case LongType => valueString.toLong.asInstanceOf[AnyRef]
-        case DoubleType => valueString.toDouble.asInstanceOf[AnyRef]
-        case FloatType => valueString.toFloat.asInstanceOf[AnyRef]
-        case ShortType => valueString.toShort.asInstanceOf[AnyRef]
+        case IntType     => valueString.toInt.asInstanceOf[AnyRef]
+        case LongType    => valueString.toLong.asInstanceOf[AnyRef]
+        case DoubleType  => valueString.toDouble.asInstanceOf[AnyRef]
+        case FloatType   => valueString.toFloat.asInstanceOf[AnyRef]
+        case ShortType   => valueString.toShort.asInstanceOf[AnyRef]
         case BooleanType => valueString.toBoolean.asInstanceOf[AnyRef]
-        case _ => valueString.asInstanceOf[AnyRef]
+        case _           => valueString.asInstanceOf[AnyRef]
       }
       key -> casted
     }
 
+    def castKeysForGroupBy(servingInfo: GroupByServingInfoParsed,
+                           keyMap: Map[String, String],
+                           rightToLeftMap: Map[String, String] = null): Map[String, AnyRef] = {
+      servingInfo.keyZiplineSchema.map { field =>
+        val leftKey = if (rightToLeftMap != null) rightToLeftMap(field.name) else field.name
+        assert(keyMap.contains(leftKey), s"input key-json must contain field $leftKey")
+        castedKeyValue(field, leftKey, keyMap(leftKey))
+      }.toMap
+    }
+
     def run(args: Args): Unit = {
       val gson = (new GsonBuilder()).setPrettyPrinting().create()
-      val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, String]]).asScala.toMap
+      val keyMap: Map[String, String] =
+        gson.fromJson(args.keyJson(), classOf[java.util.Map[String, String]]).asScala.toMap
 
       val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
 
       val startNs = System.nanoTime
       val resultFuture = if (args.`type`() == "join") {
         val joinMetadata = fetcher.getJoinConf(args.name())
-        val finalKeyMap: Map[String, AnyRef] = joinMetadata.joinPartOps.flatMap { part =>
+        joinMetadata match {
+          case Failure(e) =>
+            println(s"Failed to retrieve metadata for the join ${args.name}")
+        }
+        val castedKeyMap: Map[String, AnyRef] = joinMetadata.get.joinPartOps.flatMap { part =>
           val groupByName = part.groupBy.getMetaData.getName
-          val rightToLeftMap = part.rightToLeft
-          fetcher.getGroupByServingInfo(groupByName).keyZiplineSchema.map {
-            field =>
-              val leftKey = rightToLeftMap(field.name)
-              assert(keyMap.contains(leftKey), s"input key-json must contain field $leftKey")
-              castedKeyValue(field, leftKey, keyMap(leftKey))
-          }
+          castKeysForGroupBy(fetcher.getGroupByServingInfo(groupByName).get, keyMap, part.rightToLeft)
         }.toMap
-        fetcher.fetchJoin(Seq(Fetcher.Request(args.name(), finalKeyMap)))
+        fetcher.fetchJoin(Seq(Fetcher.Request(args.name(), castedKeyMap)))
       } else {
         // group bys
         val groupByServingInfo = fetcher.getGroupByServingInfo(args.name())
-        val finalKeyMap: Map[String, AnyRef] = groupByServingInfo.keyZiplineSchema.fields.map {
-          field =>
-            assert(keyMap.contains(field.name), s"input key-json must contain field ${field.name}")
-            castedKeyValue(field, field.name, keyMap(field.name))
-        }.toMap
-        fetcher.fetchGroupBys(Seq(Fetcher.Request(args.name(), finalKeyMap)))
+        groupByServingInfo match {
+          case Failure(ex) =>
+            println(s"Failed to find groupByServingInfo for ${args.name}")
+            println(ex.getMessage)
+        }
+        fetcher.fetchGroupBys(Seq(Fetcher.Request(args.name(), castKeysForGroupBy(groupByServingInfo.get, keyMap))))
       }
       val result = Await.result(resultFuture, 5.seconds)
       val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
