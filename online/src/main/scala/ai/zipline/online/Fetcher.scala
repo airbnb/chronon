@@ -47,18 +47,21 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       .filter(_.millis >= servingInfo.batchEndTsMillis)
       .map(_.bytes)
       .getOrElse(null)
-
     val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
       servingInfo.selectedCodec.decodeMap(batchBytes)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
       servingInfo.outputCodec.decodeMap(batchBytes)
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
+      val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      val selectedCodec = servingInfo.valueAvroCodec
+      val selectedCodec = servingInfo.groupByOps.dataModel match {
+        case DataModel.Events   => servingInfo.valueAvroCodec
+        case DataModel.Entities => servingInfo.mutationValueAvroCodec
+      }
       val streamingRows: Iterator[Row] = streamingResponses.iterator
         .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-        .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis))
+        .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
       if (streamingResponses.nonEmpty) {
         val streamingContext = groupByContext.asStreaming
         // report streaming metrics.
@@ -67,7 +70,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         FetcherMetrics.reportResponseNumRows(streamingResponses.length, streamingContext)
       }
       val batchIr = toBatchIr(batchBytes, servingInfo)
-      val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs)
+      val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
       servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
     }
     FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
@@ -162,54 +165,6 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             }
             responseMapTry.failed.map(ex => reportFailure(requests, context.withGroupBy, ex))
             Response(request, responseMapTry)
-          /*
-            FetcherMetrics.reportResponseNumRows(if (batchValueOption.isDefined) 1 else 0, groupByContext.asBatch)
-            val batchBytes: Array[Byte] = batchOption
-            // bulk upload didn't remove an older batch value - so we manually discard
-              .filter(_.millis >= servingInfo.batchEndTsMillis)
-              .map(_.bytes)
-              .orNull
-
-            val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
-              servingInfo.selectedCodec.decodeMap(batchBytes)
-            } else if (streamingRequestOpt.isEmpty) { // snapshot accurate
-              servingInfo.outputCodec.decodeMap(batchBytes)
-            } else { // temporal accurate
-              val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-              val streamingResponses: Seq[TimedValue] =
-                responsesMap.get(streamingRequestOpt.get).flatMap(Option(_)).getOrElse(Seq.empty)
-              val selectedCodec = servingInfo.groupByOps.dataModel match {
-                case DataModel.Events   => servingInfo.valueAvroCodec
-                case DataModel.Entities => servingInfo.mutationValueAvroCodec
-              }
-              val streamingRows: Iterator[Row] =
-                streamingResponses.iterator
-                  .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-                  .map(tVal =>
-                    selectedCodec.decodeRow(tVal.bytes,
-                                            tVal.millis,
-                                            servingInfo.groupByOps.dataModel == DataModel.Entities))
-              if (streamingResponses.nonEmpty) {
-                val streamingContext = groupByContext.asStreaming
-                // report streaming metrics.
-                FetcherMetrics.reportDataFreshness(streamingResponses.iterator.map(_.millis).max - startTimeMs,
-                                                   streamingContext)
-                FetcherMetrics.reportResponseBytesSize(streamingResponses.iterator.map(_.bytes.length).sum,
-                                                       streamingContext)
-                FetcherMetrics.reportResponseNumRows(streamingResponses.length, streamingContext)
-              }
-              val batchIr = toBatchIr(batchBytes, servingInfo)
-              val queryTs = atMillis.getOrElse(System.currentTimeMillis())
-              val output = aggregator.lambdaAggregateFinalized(
-                batchIr,
-                streamingRows,
-                queryTs,
-                hasReversal = groupByServingInfo.groupByOps.dataModel == DataModel.Entities)
-              servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
-            }
-            FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
-            Response(request, responseMap)
-           */
         }.toList
         responses
       }

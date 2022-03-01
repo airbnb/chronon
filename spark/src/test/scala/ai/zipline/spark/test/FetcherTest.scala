@@ -85,7 +85,7 @@ class FetcherTest extends TestCase {
     implicit val tableUtils: TableUtils = TableUtils(spark)
 
     val src =
-      Source.fromURL(getClass.getResource("/joins/team/team.example_join.v1"))
+      Source.fromFile("./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/example_join.v1")
     val expected = {
       try src.mkString
       finally src.close()
@@ -96,8 +96,8 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /zipline instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut =
-      singleFileMetadataStore.putConf(getClass.getResource("/joins/team/team.example_join.v1").getPath)
+    val singleFilePut = singleFileMetadataStore.putConf(
+      "./spark/src/test/scala/ai/zipline/spark/test/resources/joins/team/example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
@@ -109,7 +109,7 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(getClass.getResource("/joins").getPath)
+    val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/zipline/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
@@ -517,7 +517,7 @@ class FetcherTest extends TestCase {
     val responseRows: Seq[Row] = joinResponses(true)._3.map { res =>
       val all: Map[String, AnyRef] =
         res.request.keys ++
-          res.values ++
+          res.values.get ++
           Map(Constants.PartitionColumn -> endDs) ++
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
