@@ -187,13 +187,8 @@ object Driver {
         fetcher.fetchJoin(Seq(Fetcher.Request(args.name(), castedKeyMap)))
       } else {
         // group bys
-        val groupByServingInfo = fetcher.getGroupByServingInfo(args.name())
-        groupByServingInfo match {
-          case Failure(ex) =>
-            println(s"Failed to find groupByServingInfo for ${args.name}")
-            println(ex.getMessage)
-        }
-        fetcher.fetchGroupBys(Seq(Fetcher.Request(args.name(), castKeysForGroupBy(groupByServingInfo.get, keyMap))))
+        val groupByServingInfo = fetcher.getGroupByServingInfo(args.name()).get
+        fetcher.fetchGroupBys(Seq(Fetcher.Request(args.name(), castKeysForGroupBy(groupByServingInfo, keyMap))))
       }
       val result = Await.result(resultFuture, 5.seconds)
       val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
