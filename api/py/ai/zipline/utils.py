@@ -143,7 +143,6 @@ def get_dependencies(
         deps = meta_data.dependencies
     else:
         deps = dependencies
-    ds_string = "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag)
     table = get_table(src)
     query = get_query(src)
     start = query.startPartition
