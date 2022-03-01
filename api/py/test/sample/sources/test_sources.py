@@ -23,6 +23,8 @@ event_source = ttypes.Source(events=ttypes.EventSource(
 # Sample Entity Source
 entity_source = ttypes.Source(entities=ttypes.EntitySource(
     snapshotTable="sample_table.sample_entity_snapshot",
+    mutationTable="sample_table.sample_entity_mutations",
+    mutationTopic="sample_topic",
     query=Query(
         start_partition='2021-03-01',
         selects=select(
