@@ -99,16 +99,12 @@ class GroupBy(inputStream: DataFrame,
         |""".stripMargin)
 
     val des = deserialized
-      .flatMap {
-        case mutation =>
-          val after =
-            if (mutation.after != null) Seq(KvRdd.toSparkRow(mutation.after, streamDecoder.schema).asInstanceOf[Row])
-            else Seq.empty
-          val before =
-            if (mutation.before != null) Seq(KvRdd.toSparkRow(mutation.before, streamDecoder.schema).asInstanceOf[Row])
-            else Seq.empty
-          after ++ before
+      .flatMap { mutation =>
+        Seq(mutation.after, mutation.before)
+          .filter(_ != null)
+          .map(KvRdd.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
+
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
@@ -118,17 +114,13 @@ class GroupBy(inputStream: DataFrame,
     }
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
-    val valueColumns = groupByConf.dataModel match {
-      case api.DataModel.Entities =>
-        groupByConf.aggregationInputs ++ Seq(Constants.TimeColumn, Constants.ReversalColumn)
-      case api.DataModel.Events => groupByConf.aggregationInputs
+    val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
+      case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
+      case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
     }
+    val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
     val valueIndices = valueColumns.map(selectedDf.schema.fieldIndex)
-    val kvTsColumn = groupByConf.dataModel match {
-      case api.DataModel.Entities => Constants.MutationTimeColumn
-      case api.DataModel.Events   => Constants.TimeColumn
-    }
-    val tsIndex = selectedDf.schema.fieldIndex(kvTsColumn)
+    val tsIndex = selectedDf.schema.fieldIndex(eventTimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
     def schema(indices: Seq[Int], name: String): AvroCodec = {
