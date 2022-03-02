@@ -165,7 +165,7 @@ class FetcherTest extends TestCase {
     )
     // Schemas
     val snapshotSchema = StructType(
-      "listing_ratings_snapshot_v0",
+      "listing_ratings_snapshot_fetcher",
       Array(StructField("listing_id", IntType),
             StructField("ts", LongType),
             StructField("rating", IntType),
@@ -175,7 +175,7 @@ class FetcherTest extends TestCase {
     // {..., mutation_ts (timestamp of mutation), is_before (previous value or the updated value),...}
     // Change the names to make sure mappings work properly
     val mutationSchema = StructType(
-      "listing_ratings_mutations_v0",
+      "listing_ratings_mutations_fetcher",
       snapshotSchema.fields ++ Seq(
         StructField("mutation_time", LongType),
         StructField("is_before_reversal", BooleanType)
@@ -183,7 +183,7 @@ class FetcherTest extends TestCase {
     )
 
     // {..., event (generic event column), ...}
-    val eventSchema = StructType("listing_events",
+    val eventSchema = StructType("listing_events_fetcher",
                                  Array(
                                    StructField("listing_id", IntType),
                                    StructField("ts", LongType),
@@ -197,9 +197,9 @@ class FetcherTest extends TestCase {
     )
     val tablesToDrop = sourceData.keySet.map(_.name) ++ Seq(
       "join_test_expected",
-      "unit_test_mutations_join_unit_test_mutations_gb",
-      "unit_test_mutations_join",
-      "unit_test_mutations_gb_upload"
+      "unit_test_fetcher_mutations_join_unit_test_mutations_gb",
+      "unit_test_fetcher_mutations_join",
+      "unit_test_fetcher_mutations_gb_upload"
     )
     tablesToDrop.foreach(table => spark.sql(s"DROP TABLE IF EXISTS $namespace.$table"))
 
@@ -244,13 +244,13 @@ class FetcherTest extends TestCase {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = "unit_test.mutations_gb", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test.fetcher_mutations_gb", namespace = namespace, team = "zipline")
     )
 
     val joinConf = Builders.Join(
       left = leftSource,
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = Builders.MetaData(name = "unit_test.mutations_join", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test.fetcher_mutations_join", namespace = namespace, team = "zipline")
     )
     joinConf
   }
@@ -384,7 +384,7 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
         Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
-        // Builders.JoinPart(groupBy = reviewGroupBy)
+        Builders.JoinPart(groupBy = reviewGroupBy),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
@@ -522,7 +522,9 @@ class FetcherTest extends TestCase {
           Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
       val values: Array[Any] = columns.map(all.get(_).orNull)
       KvRdd
-        .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(endDsExpected.schema)))
+        .toSparkRow(
+          values,
+          StructType.from(s"record_${joinConf.metaData.cleanName}", Conversions.toZiplineSchema(endDsExpected.schema)))
         .asInstanceOf[GenericRow]
     }
 
@@ -530,22 +532,22 @@ class FetcherTest extends TestCase {
     val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
-    println("queries:")
-    endDsQueries.show()
-    println("expected:")
-    endDsExpected.show()
-    println("response:")
-    responseDf.show()
 
     val diff = Comparison.sideBySide(responseDf, endDsExpected, keyishColumns, aName = "online", bName = "offline")
     assertEquals(endDsQueries.count(), responseDf.count())
     if (diff.count() > 0) {
+      println("queries:")
+      endDsQueries.show()
+      println("expected:")
+      endDsExpected.show()
+      println("response:")
+      responseDf.show()
       println(s"Total count: ${responseDf.count()}")
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
       diff.show()
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(0, diff.count())
   }
 
   def testTemporalFetchJoinDeterministic(): Unit = {
