@@ -195,13 +195,6 @@ class FetcherTest extends TestCase {
       mutationSchema -> mutationData,
       snapshotSchema -> snapshotData
     )
-    val tablesToDrop = sourceData.keySet.map(_.name) ++ Seq(
-      "join_test_expected",
-      "unit_test_fetcher_mutations_join_unit_test_mutations_gb",
-      "unit_test_fetcher_mutations_join",
-      "unit_test_fetcher_mutations_gb_upload"
-    )
-    tablesToDrop.foreach(table => spark.sql(s"DROP TABLE IF EXISTS $namespace.$table"))
 
     sourceData.foreach {
       case (schema, rows) => {
@@ -433,12 +426,14 @@ class FetcherTest extends TestCase {
 
     val requests = endDsQueries.rdd
       .map { row =>
-        val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
+        val keyMap = keys.zipWithIndex.map {
+          case (keyName, idx) =>
+            keyName -> row.get(keyIndices(idx)).asInstanceOf[AnyRef]
+        }.toMap
         val ts = row.get(tsIndex).asInstanceOf[Long]
         Request(joinConf.metaData.nameToFilePath, keyMap, Some(ts))
       }
       .collect()
-
     val chunkSize = 100
 
     def printFetcherStats(useJavaFetcher: Boolean,

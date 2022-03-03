@@ -43,13 +43,13 @@ class GroupBy(inputStream: DataFrame,
     val keys = groupByConf.getKeyColumns.asScala
 
     val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
-    val keyWhereOption =
-      Option(selects)
-        .map { selectsMap =>
-          keys
-            .map(key => s"(${selectsMap(key)} is NOT NULL)")
-            .mkString(" OR ")
+    val selectMap = Option(selects).getOrElse(Map.empty[String, String])
+    val keyWhereOption = Seq(
+      keys
+        .map { key =>
+          s"${selectMap.getOrElse(key, key)} IS NOT NULL"
         }
+        .mkString(" OR "))
     val timeWheres = groupByConf.dataModel match {
       case api.DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
       case api.DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
@@ -104,7 +104,6 @@ class GroupBy(inputStream: DataFrame,
           .filter(_ != null)
           .map(KvRdd.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
-
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
