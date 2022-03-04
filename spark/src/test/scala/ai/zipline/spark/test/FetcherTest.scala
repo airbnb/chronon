@@ -4,7 +4,6 @@ import ai.zipline.aggregator.test.Column
 import ai.zipline.aggregator.windowing.TsUtils
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-
 import ai.zipline.api.{
   Accuracy,
   BooleanType,
@@ -22,8 +21,6 @@ import ai.zipline.api.{
   Window,
   GroupBy => GroupByConf
 }
-import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
-import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.online.Fetcher.{Request, Response}
 import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.online._
@@ -33,6 +30,8 @@ import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.avg
+import org.apache.spark.sql.streaming.Trigger
+
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
@@ -77,7 +76,10 @@ class FetcherTest extends TestCase {
     val inputStream = new InMemoryStream
     val groupByStreaming =
       new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
-    groupByStreaming.run()
+    // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
+    val dataStream = groupByStreaming.buildDataStream()
+    val query = dataStream.trigger(Trigger.Once()).start()
+    query.awaitTermination()
   }
 
   def testMetadataStore(): Unit = {
@@ -251,7 +253,7 @@ class FetcherTest extends TestCase {
   def generateRandomData(): ai.zipline.api.Join = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
-    val rowCount = 100000
+    val rowCount = 10000
     val userCol = Column("user", StringType, 10)
     val vendorCol = Column("vendor", StringType, 10)
     // temporal events

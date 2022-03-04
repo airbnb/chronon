@@ -17,6 +17,7 @@ import ai.zipline.spark.{Conversions, KvRdd}
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.streaming.DataStreamWriter
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
@@ -63,6 +64,10 @@ class GroupBy(inputStream: DataFrame,
   }
 
   def run(local: Boolean = false): Unit = {
+    buildDataStream(local).start()
+  }
+
+  def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
     val groupByServingInfo = if (local) {
@@ -157,6 +162,5 @@ class GroupBy(inputStream: DataFrame,
       .writeStream
       .outputMode("append")
       .foreach(new DataWriter(onlineImpl, context, debug))
-      .start()
   }
 }
