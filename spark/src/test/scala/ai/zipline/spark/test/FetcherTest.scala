@@ -563,8 +563,8 @@ class FetcherTest extends TestCase {
     println(metrics)
 
     // benchmark
-    joinResponses(requests, mockApi, useJavaFetcher = true)
-    joinResponses(requests, mockApi)
+    joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
+    joinResponses(requests, mockApi, runCount = 10)
 
     // comparison
     val columns = endDsExpected.schema.fields.map(_.name)
@@ -599,7 +599,10 @@ class FetcherTest extends TestCase {
       println(s"Total count: ${responseDf.count()}")
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
-      diff.show()
+      diff
+        .withTimeBasedColumn("ts_string", "ts", "yy-MM-dd HH:mm")
+        .select("ts_string", diff.schema.fieldNames: _*)
+        .show()
     }
     assertEquals(0, diff.count())
   }

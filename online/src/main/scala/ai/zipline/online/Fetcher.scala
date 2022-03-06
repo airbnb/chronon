@@ -181,7 +181,8 @@ class BaseFetcher(kvStore: KVStore,
                              s"Couldn't find corresponding response for $batchRequest in responseMap")))
                 .map(_.maxBy(_.millis))
               val batchEndTs = batchResponseTry.map { timedVal => Some(timedVal.millis) }.getOrElse(None)
-              val streamingResponsesOpt = streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).get)
+              val streamingResponsesOpt =
+                streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
                 constructGroupByResponse(batchResponseTry,
