@@ -119,7 +119,7 @@ class GroupBy(inputStream: DataFrame,
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
     val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
-      case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
+      case api.DataModel.Entities => groupByServingInfo.MutationAvroColumns -> Constants.MutationTimeColumn
       case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
     }
     val valueColumns = groupByConf.aggregationInputs ++ additionalColumns

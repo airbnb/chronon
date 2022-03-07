@@ -34,6 +34,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
   def snapshotEvents: KvRdd =
     fromBase(groupBy.snapshotEventsBase(PartitionRange(endPartition, endPartition)))
 
+  // Shared between events and mutations (temporal entities).
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
     val endTs = Constants.Partition.epochMillis(endPartition)
     println(s"TemporalEvents upload end ts: $endTs")
@@ -62,7 +63,6 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     KvRdd(outputRdd, groupBy.keySchema, irSchema)
   }
 
-  def temporalEntities(resolution: Resolution = FiveMinuteResolution): KvRdd = temporalEvents(resolution)
 }
 
 object GroupByUpload {
@@ -93,7 +93,7 @@ object GroupByUpload {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
-      case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEntities()
+      case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
     }).toAvroDf
 
     val groupByServingInfo = new GroupByServingInfo()

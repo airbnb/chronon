@@ -953,7 +953,7 @@ class MutationsTest {
       Column("listing_id", api.StringType, 100),
       Column("event", api.IntType, 6)
     )
-    val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1)
+    val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1, "listing_id")
     val (_, maxDs) = mutationsDf.range[String](Constants.PartitionColumn)
     val (minDs, _) = snapshotDf.range[String](Constants.PartitionColumn)
     val leftDf = DataFrameGen

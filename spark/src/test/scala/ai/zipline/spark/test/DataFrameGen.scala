@@ -53,7 +53,7 @@ object DataFrameGen {
                 partitions: Int,
                 mutationProbability: Double,
                 mutationColumnIdx: Int,
-                keyColumnName: String = "listing_id"): (DataFrame, DataFrame) = {
+                keyColumnName: String): (DataFrame, DataFrame) = {
     val mutationColumn = columns(mutationColumnIdx)
     // Randomly generated some entity data, store them as inserts w/ mutation_ts = ts and partition = dsOf[ts].
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)

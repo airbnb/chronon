@@ -11,9 +11,7 @@ import scala.util.{Failure, Success, Try}
 object KVStore {
   // a scan request essentially for the keyBytes
   // afterTsMillis - is used to limit the scan to more recent data
-  case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None) {
-    override def toString: String = s"{key=$keyBytes, dataset=$dataset, afterTsMillis=$afterTsMillis}"
-  }
+  case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
   case class TimedValue(bytes: Array[Byte], millis: Long)
   case class GetResponse(request: GetRequest, values: Try[Seq[TimedValue]]) {
     def latest: Try[TimedValue] = values.map(_.maxBy(_.millis))
