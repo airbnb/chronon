@@ -21,6 +21,11 @@ def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes
     return lambda k: (op, {"k": str(k)})
 
 
+# To simplify imports
+class Accuracy(ttypes.Accuracy):
+    pass
+
+
 class Operation():
     MIN = ttypes.Operation.MIN
     MAX = ttypes.Operation.MAX
@@ -152,7 +157,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             table_properties: Dict[str, str] = None,
             output_namespace: str = None,
             lag: int = 0,
-            accuracy: ttypes.Acccuracy = None,
+            accuracy: ttypes.Accuracy = None,
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
