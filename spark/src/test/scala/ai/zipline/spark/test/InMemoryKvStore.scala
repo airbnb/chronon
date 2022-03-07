@@ -34,7 +34,9 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
           database
             .get(req.dataset) // table
             .get(encode(req.keyBytes)) // values of key
-            .filter { case (version, _) => req.afterTsMillis.forall(version >= _) } // filter version
+            .filter {
+              case (version, _) => req.afterTsMillis.forall(version >= _)
+            } // filter version
             .map { case (version, bytes) => TimedValue(bytes, version) }
         }
         KVStore.GetResponse(req, values)
@@ -71,7 +73,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
     val tableUtilInst = tableUtils()
     val partitionFilter =
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
-    tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show()
+    tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show(false)
     val df =
       tableUtilInst.sql(
         s"""SELECT key_bytes, value_bytes, (unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis}) as ts

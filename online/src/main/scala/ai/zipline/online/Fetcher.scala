@@ -47,18 +47,21 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       .filter(_.millis >= servingInfo.batchEndTsMillis)
       .map(_.bytes)
       .getOrElse(null)
-
     val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
       servingInfo.selectedCodec.decodeMap(batchBytes)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
       servingInfo.outputCodec.decodeMap(batchBytes)
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
+      val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      val selectedCodec = servingInfo.valueAvroCodec
+      val selectedCodec = servingInfo.groupByOps.dataModel match {
+        case DataModel.Events   => servingInfo.valueAvroCodec
+        case DataModel.Entities => servingInfo.mutationValueAvroCodec
+      }
       val streamingRows: Iterator[Row] = streamingResponses.iterator
         .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-        .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis))
+        .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
       if (streamingResponses.nonEmpty) {
         val streamingContext = groupByContext.asStreaming
         // report streaming metrics.
@@ -67,7 +70,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         FetcherMetrics.reportResponseNumRows(streamingResponses.length, streamingContext)
       }
       val batchIr = toBatchIr(batchBytes, servingInfo)
-      val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs)
+      val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
       servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
     }
     FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)

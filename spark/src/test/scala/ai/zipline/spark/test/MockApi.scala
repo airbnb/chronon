@@ -30,10 +30,16 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
   override def decode(bytes: Array[Byte]): Mutation = {
     val avroSchema = AvroUtils.fromZiplineSchema(schema)
     val avroRecord = byteArrayToAvro(bytes, avroSchema)
-    val after: Array[Any] = schema.fields.map { f =>
+    val row: Array[Any] = schema.fields.map { f =>
       RowConversions.fromAvroRecord(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
     }
-    Mutation(schema, null, after)
+    if (schema.fields.contains(Constants.ReversalColumn)) {
+      val isBefore: Boolean = row(schema.indexOf(Constants.ReversalColumn)).asInstanceOf[Boolean]
+      if (isBefore) {
+        return Mutation(schema, row, null)
+      }
+    }
+    Mutation(schema, null, row)
   }
 
   override def schema: StructType = inputSchema
@@ -42,7 +48,7 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
 class MockApi(kvStore: () => KVStore) extends Api(null) {
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
-    new MockDecoder(parsedInfo.inputZiplineSchema)
+    new MockDecoder(parsedInfo.streamZiplineSchema)
   }
 
   override def genKvStore: KVStore = {

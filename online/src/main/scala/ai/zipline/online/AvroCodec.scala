@@ -78,8 +78,8 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     datumReader.read(null, decoder)
   }
 
-  def decodeRow(bytes: Array[Byte], millis: Long): ArrayRow =
-    new ArrayRow(RowConversions.fromAvroRecord(decode(bytes), ziplineSchema).asInstanceOf[Array[Any]], millis)
+  def decodeRow(bytes: Array[Byte], millis: Long, mutation: Boolean = false): ArrayRow =
+    new ArrayRow(RowConversions.fromAvroRecord(decode(bytes), ziplineSchema).asInstanceOf[Array[Any]], millis, mutation)
 
   def decodeMap(bytes: Array[Byte]): Map[String, AnyRef] = {
     if (bytes == null) return null
@@ -90,13 +90,22 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   }
 }
 
-// to be consumed by RowAggregator
-class ArrayRow(values: Array[Any], millis: Long) extends Row {
+/**
+  * Consumed by row aggregator after decoding.
+  * Mutations follow the same schema as input for value indices. However there are two main differences.
+  *  * ts and reversal columns are required for computation
+  *  * Mutation ts takes on the role of ts.
+  * Since the schema is the same with the sole difference of the added columns, we add these columns on the tail
+  * of the Array and extract them accordingly.
+  * i.e. for mutations: reversal index = ArrayRow.length - (Constants.MutationAvroColumns.length - (index of reversal in Constants.MutationAvroColumns)
+  *
+  */
+class ArrayRow(values: Array[Any], millis: Long, mutation: Boolean = false) extends Row {
   override def get(index: Int): Any = values(index)
 
-  override def ts: Long = millis
+  override def ts: Long = if (mutation) values(values.length - 2).asInstanceOf[Long] else millis
 
-  override def isBefore: Boolean = false
+  override def isBefore: Boolean = if (mutation) values(values.length - 1).asInstanceOf[Boolean] else false
 
   override def mutationTs: Long = millis
 

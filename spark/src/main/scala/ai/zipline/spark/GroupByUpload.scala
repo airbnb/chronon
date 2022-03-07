@@ -34,6 +34,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
   def snapshotEvents: KvRdd =
     fromBase(groupBy.snapshotEventsBase(PartitionRange(endPartition, endPartition)))
 
+  // Shared between events and mutations (temporal entities).
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
     val endTs = Constants.Partition.epochMillis(endPartition)
     println(s"TemporalEvents upload end ts: $endTs")
@@ -62,8 +63,6 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     KvRdd(outputRdd, groupBy.keySchema, irSchema)
   }
 
-  // TODO
-  def temporalEntities: KvRdd = ???
 }
 
 object GroupByUpload {
@@ -81,6 +80,8 @@ object GroupByUpload {
     // for temporal accuracy
     lazy val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
+    // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
+    lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
 
     println(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
@@ -92,8 +93,7 @@ object GroupByUpload {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
-      case (Accuracy.TEMPORAL, DataModel.Entities) =>
-        throw new UnsupportedOperationException("Mutations are not yet supported")
+      case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
     }).toAvroDf
 
     val groupByServingInfo = new GroupByServingInfo()

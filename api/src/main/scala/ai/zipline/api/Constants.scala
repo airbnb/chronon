@@ -20,4 +20,8 @@ object Constants {
   val JoinMetadataKey = "join"
   val StreamingInputTable = "input_table"
   val ZiplineMetadataKey = "ZIPLINE_METADATA"
+  val TimeField = StructField(TimeColumn, LongType)
+  val ReversalField = StructField(ReversalColumn, BooleanType)
+  val MutationTimeField = StructField(MutationTimeColumn, LongType)
+  val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
 }

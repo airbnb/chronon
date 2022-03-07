@@ -17,6 +17,7 @@ import ai.zipline.spark.{Conversions, KvRdd}
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.streaming.DataStreamWriter
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
@@ -35,28 +36,38 @@ class GroupBy(inputStream: DataFrame,
     val query = streamingSource.query
     val selects = Option(query.selects).map(_.asScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
+    val fillIfAbsent = groupByConf.dataModel match {
+      case api.DataModel.Entities =>
+        Map(Constants.TimeColumn -> timeColumn, Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
+      case api.DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+    }
     val keys = groupByConf.getKeyColumns.asScala
 
     val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
-    val keyWhereOption =
-      Option(selects)
-        .map { selectsMap =>
-          keys
-            .map(key => s"(${selectsMap(key)} is NOT NULL)")
-            .mkString(" OR ")
+    val selectMap = Option(selects).getOrElse(Map.empty[String, String])
+    val keyWhereOption = Seq(
+      keys
+        .map { key =>
+          s"${selectMap.getOrElse(key, key)} IS NOT NULL"
         }
-    val timeWheres = Seq(s"$timeColumn is NOT NULL")
-
+        .mkString(" OR "))
+    val timeWheres = groupByConf.dataModel match {
+      case api.DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
+      case api.DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
+    }
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
       baseWheres ++ timeWheres ++ keyWhereOption,
-      fillIfAbsent = fillIfAbsent
+      fillIfAbsent = if (selects == null) null else fillIfAbsent
     )
   }
 
   def run(local: Boolean = false): Unit = {
+    buildDataStream(local).start()
+  }
+
+  def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
     val groupByServingInfo = if (local) {
@@ -78,7 +89,6 @@ class GroupBy(inputStream: DataFrame,
 
     import session.implicits._
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
-
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { streamDecoder.decode }
@@ -87,23 +97,34 @@ class GroupBy(inputStream: DataFrame,
     val streamSchema = Conversions.fromZiplineSchema(streamDecoder.schema)
     println(s"""
         | group by serving info: $groupByServingInfo
-        | Streaming source: $streamingSource
+        | Streaming source: ${streamingSource}
         | streaming Query: $streamingQuery
         | streaming dataset: ${groupByConf.streamingDataset}
         | stream schema: ${streamSchema}
         |""".stripMargin)
 
     val des = deserialized
-      .map { mutation => KvRdd.toSparkRow(mutation.after, streamDecoder.schema).asInstanceOf[Row] }(
-        RowEncoder(streamSchema))
+      .flatMap { mutation =>
+        Seq(mutation.after, mutation.before)
+          .filter(_ != null)
+          .map(KvRdd.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
+      }(RowEncoder(streamSchema))
     des.createOrReplaceTempView(Constants.StreamingInputTable)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
            s"time column ${Constants.TimeColumn} must be included in the selects")
+    if (groupByConf.dataModel == api.DataModel.Entities) {
+      assert(selectedDf.schema.fieldNames.contains(Constants.MutationTimeColumn), "Required Mutation ts")
+    }
     val keys = groupByConf.keyColumns.asScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
-    val valueIndices = groupByConf.aggregationInputs.map(selectedDf.schema.fieldIndex)
-    val tsIndex = selectedDf.schema.fieldIndex(Constants.TimeColumn)
+    val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
+      case api.DataModel.Entities => groupByServingInfo.MutationAvroColumns -> Constants.MutationTimeColumn
+      case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
+    }
+    val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
+    val valueIndices = valueColumns.map(selectedDf.schema.fieldIndex)
+    val tsIndex = selectedDf.schema.fieldIndex(eventTimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
     def schema(indices: Seq[Int], name: String): AvroCodec = {
@@ -113,7 +134,6 @@ class GroupBy(inputStream: DataFrame,
         .toArray
       AvroCodec.of(AvroUtils.fromZiplineSchema(api.StructType(name, fields)).toString())
     }
-
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")
     selectedDf
@@ -142,6 +162,5 @@ class GroupBy(inputStream: DataFrame,
       .writeStream
       .outputMode("append")
       .foreach(new DataWriter(onlineImpl, context, debug))
-      .start()
   }
 }
