@@ -29,7 +29,7 @@ git push origin $NEW_TAG
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 echo "Building jars"
-sbt clean package assembly
+sbt +clean +package +assembly
 
 mvn_deploy() {
   local ARTIFACT_ID=$1
@@ -49,3 +49,7 @@ mvn_deploy spark_uber_2.11 spark/target/scala-2.11/spark-assembly-0.1.0-SNAPSHOT
 mvn_deploy online_2.11 online/target/scala-2.11/online_2.11-0.1.0-SNAPSHOT.jar
 mvn_deploy api_2.11 api/target/scala-2.11/api_2.11-0.1.0-SNAPSHOT.jar
 mvn_deploy aggregator_2.11 aggregator/target/scala-2.11/aggregator_2.11-0.1.0-SNAPSHOT.jar
+
+mvn_deploy online_2.13 online/target/scala-2.13/online_2.13-0.1.0-SNAPSHOT.jar
+mvn_deploy api_2.13 api/target/scala-2.13/api_2.13-0.1.0-SNAPSHOT.jar
+mvn_deploy aggregator_2.13 aggregator/target/scala-2.13/aggregator_2.13-0.1.0-SNAPSHOT.jar
