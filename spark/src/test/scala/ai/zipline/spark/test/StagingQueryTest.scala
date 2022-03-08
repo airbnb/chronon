@@ -23,7 +23,9 @@ class StagingQueryTest {
       Column("session_length", IntType, 1000)
     )
 
-    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+    val df = DataFrameGen
+      .events(spark, schema, count = 100000, partitions = 100)
+      .dropDuplicates("ts") // duplicates can create issues in comparisons
     println("Generated staging query data:")
     df.show()
     val viewName = s"$namespace.test_staging_query_compare"
@@ -38,7 +40,8 @@ class StagingQueryTest {
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
-    val expected = tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today' AND user IS NOT NULL")
+    val expected =
+      tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today' AND user IS NOT NULL")
 
     val computed = tableUtils.sql(
       s"select * from ${stagingQueryConf.metaData.outputNamespace}.${stagingQueryConf.metaData.cleanName} WHERE user IS NOT NULL")
