@@ -230,7 +230,7 @@ object Extensions {
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
-      val allWindowsOpt = Option(AggregationsOps(groupBy.aggregations.asScala.toSeq)).flatMap(_.allWindowsOpt)
+      val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.toSeq.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
