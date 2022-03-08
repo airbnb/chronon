@@ -3,7 +3,7 @@ package ai.zipline.api
 import ai.zipline.api.DataModel._
 import ai.zipline.api.Operation._
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 
 object Extensions {
@@ -105,8 +105,8 @@ object Extensions {
     // one agg part per bucket per window
     // unspecified windows are translated to one unbounded window
     def unpack: Seq[AggregationPart] = {
-      val windows = Option(aggregation.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded))
-      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      val windows = Option(aggregation.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded)).toSeq
+      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null)).toSeq
       for (bucket <- buckets; window <- windows) yield {
         Builders.AggregationPart(aggregation.operation,
                                  aggregation.inputColumn,
@@ -119,7 +119,7 @@ object Extensions {
     // one agg part per bucket
     // ignoring the windowing
     def unWindowed: Seq[AggregationPart] = {
-      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null)).toSeq
       for (bucket <- buckets) yield {
         Builders.AggregationPart(aggregation.operation,
                                  aggregation.inputColumn,
@@ -230,7 +230,7 @@ object Extensions {
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
-      val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.allWindowsOpt)
+      val allWindowsOpt = Option(AggregationsOps(groupBy.aggregations.asScala.toSeq)).flatMap(_.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
@@ -259,7 +259,7 @@ object Extensions {
 
     def setups: Seq[String] = {
       val sources = groupBy.sources.asScala
-      sources.flatMap(_.query.setupsSeq).distinct
+      sources.flatMap(_.query.setupsSeq).toSeq.distinct
     }
 
     def copyForVersioningComparison: GroupBy = {
@@ -295,7 +295,7 @@ object Extensions {
       QueryUtils.build(
         selects,
         Constants.StreamingInputTable,
-        baseWheres ++ timeWheres ++ keyWhereOption,
+        baseWheres.toSeq ++ timeWheres.toSeq ++ keyWhereOption.toSeq,
         fillIfAbsent = fillIfAbsent
       )
     }
@@ -370,7 +370,7 @@ object Extensions {
                 s"specified skew filter for $leftKey is not used as a key in any join part. " +
                   s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
-              generateSkewFilterSql(leftKey, values.asScala)
+              generateSkewFilterSql(leftKey, values.asScala.toSeq)
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -388,7 +388,7 @@ object Extensions {
                 .map { _.asScala.getOrElse(leftKey, leftKey) }
                 .getOrElse(leftKey)
               if (joinPart.groupBy.keyColumns.contains(replacedKey))
-                Some(generateSkewFilterSql(replacedKey, values.asScala))
+                Some(generateSkewFilterSql(replacedKey, values.asScala.toSeq))
               else None
           }
           .filter(_.nonEmpty)
@@ -412,7 +412,7 @@ object Extensions {
       newJoin
     }
 
-    lazy val joinPartOps: Seq[JoinPartOps] = join.joinParts.asScala.map(new JoinPartOps(_))
+    lazy val joinPartOps: Seq[JoinPartOps] = join.joinParts.asScala.toSeq.map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

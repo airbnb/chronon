@@ -3,6 +3,7 @@ package ai.zipline.online
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.{Row, _}
+import ai.zipline.online.CompatParColls.Converters._
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 
@@ -103,7 +104,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   // 2. encodes keys as keyAvroSchema)
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
-  def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
+  def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context] = None): Future[scala.collection.Seq[Response]] = {
     val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
@@ -184,11 +185,11 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     FinalBatchIr(collapsed, tailHops)
   }
 
-  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).mapValues(_.map(_._2))
+  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).map{case (k,v) => (k, v.map(_._2))}.toMap
 
   private case class PrefixedRequest(prefix: String, request: Request)
 
-  def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val context = Metrics.Context(method = "fetchJoin")
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
@@ -255,7 +256,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       }
   }
 
-  private def reportFailure(requests: Seq[Request], withTag: String => Metrics.Context, e: Throwable) = {
+  private def reportFailure(requests: scala.collection.Seq[Request], withTag: String => Metrics.Context, e: Throwable) = {
     requests.foreach { req =>
       val context = withTag(req.name)
       FetcherMetrics.reportFailure(e, context)
