@@ -34,8 +34,8 @@ class ApproxPercentilesTest extends TestCase {
   }
 
   def testBasic: Unit = {
-    testBasicImpl(3000, 5, 100, 31, errorPercent = 2)
-    testBasicImpl(30000, 50, 200, 31, errorPercent = 1)
-    testBasicImpl(30000, 50, 50, 31, errorPercent = 3)
+    testBasicImpl(3000, 5, 100, 31, errorPercent = 4)
+    testBasicImpl(30000, 50, 200, 31, errorPercent = 2)
+    testBasicImpl(30000, 50, 50, 31, errorPercent = 5)
   }
 }

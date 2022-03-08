@@ -160,7 +160,7 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       ""
     }
-    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat" /*, propertiesFragment*/ ).mkString("\n")
+    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
   }
 
   private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
