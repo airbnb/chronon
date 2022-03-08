@@ -3,7 +3,7 @@ package ai.zipline.online;
 import java.util.Map;
 import scala.Option;
 import scala.Predef;
-import scala.collection.JavaConverters;
+import scala.util.ScalaVersionSpecificCollectionsConverter;
 
 public class JavaRequest {
   public String name;
@@ -22,7 +22,7 @@ public class JavaRequest {
 
   public JavaRequest(Fetcher.Request scalaRequest) {
     this.name = scalaRequest.name();
-    this.keys = JavaConverters.mapAsJavaMapConverter(scalaRequest.keys()).asJava();
+    this.keys = ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(scalaRequest.keys());
     Option<Object> millisOpt = scalaRequest.atMillis();
     if (millisOpt.isDefined()) {
       this.atMillis = (Long) millisOpt.get();
@@ -32,9 +32,7 @@ public class JavaRequest {
   public Fetcher.Request toScalaRequest() {
     scala.collection.immutable.Map<String, Object> scalaKeys = null;
     if (keys != null) {
-      scalaKeys = JavaConverters.mapAsScalaMapConverter(keys)
-              .asScala()
-              .toMap(Predef.conforms());
+      scalaKeys = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(keys);
     }
     return new Fetcher.Request(
         this.name,
