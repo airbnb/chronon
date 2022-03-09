@@ -8,8 +8,10 @@ import ai.zipline.api.ttypes as ttypes
 # Remaining args will end up in object.metaData.customJson
 def _metadata_shim(conf_class):
     constructor_params = list(inspect.signature(conf_class.__init__).parameters.keys())
-    assert constructor_params[0] == "self", "First param should be 'self', found {}".format(constructor_params[0])
-    assert constructor_params[1] == "metaData", "Second param should be 'metaData', found {}".format(constructor_params[1])
+    assert constructor_params[0] == "self", "First param should be 'self', found {}".format(
+        constructor_params[0])
+    assert constructor_params[1] == "metaData", "Second param should be 'metaData', found {}".format(
+        constructor_params[1])
     outer_params = constructor_params[2:]
     metadata_params = list(inspect.signature(ttypes.MetaData.__init__).parameters.keys())[1:]
     intersected_params = set(outer_params) & set(metadata_params)
