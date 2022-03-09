@@ -92,7 +92,7 @@ def Aggregation(input_column: str = None,
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    assert input_column or operation == Operation.COUNT, "inputColumn is required for all operations except COUNT"
+    assert input_column or operation == Operation.COUNT, "input_column is required for all operations except COUNT"
     return ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
 
 
