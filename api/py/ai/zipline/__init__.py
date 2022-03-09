@@ -19,7 +19,7 @@ def _metadata_shim(conf_class):
     err_msg = "Cannot shim {}, because params: {} are intersecting with MetaData's params".format(
         conf_class, intersected_params)
     assert len(intersected_params) == 0, err_msg
-    
+
     def shimmed_func(**kwargs):
         meta_kwargs = {key: value for key, value in kwargs.items() if key in metadata_params}
         outer_kwargs = {key: value for key, value in kwargs.items() if key in outer_params}
