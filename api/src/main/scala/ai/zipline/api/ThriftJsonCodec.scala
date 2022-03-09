@@ -1,6 +1,6 @@
 package ai.zipline.api
 
-import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
+import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
 import org.apache.thrift.{TBase, TSerializer}
 import org.apache.thrift.protocol.TSimpleJSONProtocol
 
@@ -20,13 +20,13 @@ object ThriftJsonCodec {
     mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
     val obj: T = mapper.readValue(jsonStr, clazz)
     if (check) {
-      val whiteSpaceNormalizedInput = jsonStr.replaceAll("\\s", "")
-      val reSerializedInput = toJsonStr(obj).replaceAll("\\s", "")
+      val inputNode: JsonNode = mapper.readTree(jsonStr)
+      val reSerializedInput: JsonNode = mapper.readTree(toJsonStr(obj))
       assert(
-        whiteSpaceNormalizedInput == reSerializedInput,
+        inputNode.equals(reSerializedInput),
         message = s"""
      Parsed Json object isn't reversible.
-     Original JSON String:  $whiteSpaceNormalizedInput
+     Original JSON String:  $jsonStr
      JSON produced by serializing object: $reSerializedInput"""
       )
     }
