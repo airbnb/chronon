@@ -16,9 +16,10 @@ def _metadata_shim(conf_class):
     metadata_params = list(inspect.signature(ttypes.MetaData.__init__).parameters.keys())[1:]
     intersected_params = set(outer_params) & set(metadata_params)
     unioned_params = set(outer_params) | set(metadata_params)
-    assert len(intersected_params) == 0, "Cannot shim {}, because params: {} are intersecting with MetaData's params".format(
+    err_msg = "Cannot shim {}, because params: {} are intersecting with MetaData's params".format(
         conf_class, intersected_params)
-
+    assert len(intersected_params) == 0, err_msg
+    
     def shimmed_func(**kwargs):
         meta_kwargs = {key: value for key, value in kwargs.items() if key in metadata_params}
         outer_kwargs = {key: value for key, value in kwargs.items() if key in outer_params}
