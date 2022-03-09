@@ -56,6 +56,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST):
             "ts",
             "is_before",
             "mutation_ts",
+            "ds",
             query.timeColumn
         ]
         aggregate_columns += [
