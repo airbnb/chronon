@@ -47,15 +47,17 @@ def Aggregations(**agg_dict):
     return agg_dict.values()
 
 
-def DefaultAggregation(keys, sources):
+def DefaultAggregation(keys, sources, operation=Operation.LAST):
     aggregate_columns = []
     for source in sources:
         query = utils.get_query(source)
         columns = utils.get_columns(source)
         non_aggregate_columns = keys + [
             "ts",
-            query.timeColumn,
-            query.partitionColumn
+            "is_before",
+            "mutation_ts",
+            "ds",
+            query.timeColumn
         ]
         aggregate_columns += [
             column
@@ -64,7 +66,7 @@ def DefaultAggregation(keys, sources):
         ]
     return [
         Aggregation(
-            operation=Operation.LAST,
+            operation=operation,
             input_column=column) for column in aggregate_columns
     ]
 
