@@ -10,6 +10,7 @@ import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
+import java.util.logging.Logger
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -196,7 +197,11 @@ object Driver {
       } else {
         baseBuilder
       }
-      builder.getOrCreate()
+      val spark = builder.getOrCreate()
+      // disable log spam
+      spark.sparkContext.setLogLevel("ERROR")
+      Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
+      spark
     }
 
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
