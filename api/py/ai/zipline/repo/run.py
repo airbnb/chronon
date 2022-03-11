@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from datetime import datetime
+import xml.etree.ElementTree as ET
 
 MODE_ARGS = {
     'backfill': '--conf-path={conf_path} --end-date={ds}',
@@ -63,12 +64,27 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
+# TODO(Open Sourcing) this should be hard coded to mavencentral path
+BASE_URL = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/spark_uber_2.11"
+
+
+def find_latest_master_version():
+    metadata_content = check_output("curl -s {}/maven-metadata.xml".format(BASE_URL))
+    meta_tree = ET.fromstring(metadata_content)
+    versions = [
+        node.text
+        for node in meta_tree.findall("./versioning/versions/")
+        if re.search(r"^\d+\.\d+\.\d+$", node.text)
+    ]
+    return versions[-1]
+
+
 def download_jar(version):
     jar_path = os.environ.get('ZIPLINE_JAR_PATH', None)
     if jar_path is None:
-        # TODO(Open Sourcing) this should be hard coded to mavencentral path
-        jar_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/" \
-                  "spark_uber_2.11/{}/spark_uber_2.11-{}.jar".format(version, version)
+        if version is None:
+            version = find_latest_master_version()
+        jar_url = "{}/{}/spark_uber_2.11-{}.jar".format(BASE_URL, version, version)
         jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
         download_only_once(jar_url, jar_path)
     return jar_path
@@ -157,7 +173,7 @@ if __name__ == "__main__":
                         'Used for streaming and metadata-upload mode.', default=None)
     parser.add_argument('--online_class',
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.', default=None)
-    parser.add_argument('--version', help='Zipline version to use.', default="0.0.29")
+    parser.add_argument('--version', help='Zipline version to use.', default=None)
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
                         default=os.path.join(zipline_repo_path, 'scripts/spark_submit.sh'))
