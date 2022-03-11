@@ -55,7 +55,8 @@ def Join(left: api.Source,
          output_namespace: str = None,
          table_properties: Dict[str, str] = None,
          env: Dict[str, Dict[str, str]] = None,
-         lag: int = 0) -> api.Join:
+         lag: int = 0,
+         skew_keys: Dict[str, List[str]] = None) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -111,5 +112,6 @@ def Join(left: api.Source,
     return api.Join(
         left=updated_left,
         joinParts=right_parts,
-        metaData=metadata
+        metaData=metadata,
+        skewKeys=skew_keys
     )
