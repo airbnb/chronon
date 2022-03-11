@@ -88,7 +88,8 @@ lazy val spark = project
       "org.apache.spark" %% "spark-hive" % "2.4.0",
       "org.apache.spark" %% "spark-core" % "2.4.0",
       "org.apache.spark" %% "spark-streaming" % "2.4.0",
-      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4",
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
     ).map(_ % "provided"), // TODO: toggle provided conditionally
     cleanFiles ++= Seq(
       baseDirectory.value / "spark-warehouse",
@@ -113,7 +114,8 @@ lazy val embedded = (project in file("spark"))
       "org.apache.spark" %% "spark-hive" % "2.4.0",
       "org.apache.spark" %% "spark-core" % "2.4.0",
       "org.apache.spark" %% "spark-streaming" % "2.4.0",
-      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4",
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
     ) // .map(_ % "provided")
   )
 
