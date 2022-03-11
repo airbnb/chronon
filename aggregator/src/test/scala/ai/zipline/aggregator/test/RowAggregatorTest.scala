@@ -2,7 +2,7 @@ package ai.zipline.aggregator.test
 
 import java.util
 import ai.zipline.aggregator.row.RowAggregator
-import ai.zipline.api.{AggregationPart, Builders, FloatType, IntType, LongType, Operation, Row, StringType}
+import ai.zipline.api.{AggregationPart, Builders, FloatType, IntType, ListType, LongType, Operation, Row, StringType}
 import junit.framework.TestCase
 
 import scala.collection.JavaConverters._
@@ -32,11 +32,11 @@ object TestRow {
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A"),
-      TestRow(2L, 3, 4.0f, "B"),
-      TestRow(3L, 5, 7.0f, "D"),
-      TestRow(4L, 7, 1.0f, "A"),
-      TestRow(5L, 3, 1.0f, "B")
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4)),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null)),
+      TestRow(3L, 5, 7.0f, "D", null),
+      TestRow(4L, 7, 1.0f, "A", Seq()),
+      TestRow(5L, 3, 1.0f, "B", Seq(null))
     )
 
     val rowsToDelete = List(
@@ -48,8 +48,13 @@ class RowAggregatorTest extends TestCase {
       "ts" -> LongType,
       "views" -> IntType,
       "rating" -> FloatType,
-      "title" -> StringType
+      "title" -> StringType,
+      "session_lengths" -> ListType(IntType)
     )
+
+    val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
+    sessionLengthAvgByTitle.put("A", 4)
+    sessionLengthAvgByTitle.put("B", 6)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
@@ -63,7 +68,9 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
-      Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L
+      Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
+      Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 5.0,
+      Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip
