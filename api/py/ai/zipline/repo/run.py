@@ -74,7 +74,7 @@ def find_latest_master_version():
     versions = [
         node.text
         for node in meta_tree.findall("./versioning/versions/")
-        if re.search(r"^\d+\.\d+\.\d+$", node.text)  # filter out test versions allow X.X.X
+        if re.search(r"^\d+\.\d+\.\d+$", node.text)
     ]
     return versions[-1]
 
