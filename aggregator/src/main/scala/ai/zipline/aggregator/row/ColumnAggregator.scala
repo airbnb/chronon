@@ -5,6 +5,8 @@ import ai.zipline.api.Extensions._
 import ai.zipline.api._
 
 import java.sql.{Date, Timestamp}
+import java.util
+import scala.collection.JavaConverters.asScalaIteratorConverter
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -41,7 +43,7 @@ trait Dispatcher[Input, IR] {
 class SimpleDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
                                   columnIndices: ColumnIndices,
                                   toTypedInput: Any => Input)
-    extends Dispatcher[Input, IR]
+    extends Dispatcher[Input, Any]
     with Serializable {
   override def prepare(inputRow: Row): IR =
     agg.prepare(toTypedInput(inputRow.get(columnIndices.input)))
@@ -49,24 +51,63 @@ class SimpleDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
   override def inversePrepare(inputRow: Row): IR =
     agg.inversePrepare(toTypedInput(inputRow.get(columnIndices.input)))
 
-  override def deleteColumn(ir: IR, inputRow: Row): IR =
-    agg.delete(ir, toTypedInput(inputRow.get(columnIndices.input)))
+  override def deleteColumn(ir: Any, inputRow: Row): IR =
+    agg.delete(ir.asInstanceOf[IR], toTypedInput(inputRow.get(columnIndices.input)))
 
-  override def updateColumn(ir: IR, inputRow: Row): IR =
-    agg.update(ir, toTypedInput(inputRow.get(columnIndices.input)))
+  override def updateColumn(ir: Any, inputRow: Row): IR =
+    agg.update(ir.asInstanceOf[IR], toTypedInput(inputRow.get(columnIndices.input)))
+}
+
+class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
+                                  columnIndices: ColumnIndices,
+                                  toTypedInput: Any => Input)
+    extends Dispatcher[Input, Any]
+    with Serializable {
+
+  def toInputIterator(inputRow: Row): Iterator[Input] = {
+    val inputVal = inputRow.get(columnIndices.input)
+    if (inputVal == null) return null
+    val anyIterator = inputRow match {
+      case inputSeq: Seq[Any]             => inputSeq.iterator
+      case inputList: util.ArrayList[Any] => inputList.iterator().asScala
+    }
+    anyIterator.filter { _ != null }.map { toTypedInput }
+  }
+
+  def guardedApply(inputRow: Row, prepare: Input => IR, update: (IR, Input) => IR, baseIr: Any = null): Any = {
+    val it = toInputIterator(inputRow)
+    if (it == null) return baseIr
+    var result = baseIr
+    while (it.hasNext) {
+      if (result == null) {
+        result = prepare(it.next())
+      } else {
+        result = update(result.asInstanceOf[IR], it.next())
+      }
+    }
+    result
+  }
+  override def prepare(inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update)
+
+  override def updateColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update, ir)
+
+  override def inversePrepare(inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete)
+
+  override def deleteColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete, ir)
+
 }
 
 class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndices: ColumnIndices)
-    extends Dispatcher[Input, IR] {
+    extends Dispatcher[Input, Any] {
   override def prepare(inputRow: Row): IR =
     agg.prepare(inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
 
-  override def updateColumn(ir: IR, inputRow: Row): IR =
-    agg.update(ir, inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
+  override def updateColumn(ir: Any, inputRow: Row): IR =
+    agg.update(ir.asInstanceOf[IR], inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
 
   override def inversePrepare(inputRow: Row): IR = ???
 
-  override def deleteColumn(ir: IR, inputRow: Row): IR = ???
+  override def deleteColumn(ir: Any, inputRow: Row): IR = ???
 }
 
 case class ColumnIndices(input: Int, output: Int)
@@ -79,8 +120,13 @@ object ColumnAggregator {
   def fromSimple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                     columnIndices: ColumnIndices,
                                     toTypedInput: Any => Input,
-                                    bucketIndex: Option[Int] = None): ColumnAggregator = {
-    val dispatcher = new SimpleDispatcher(agg, columnIndices, toTypedInput)
+                                    bucketIndex: Option[Int] = None,
+                                    isVector: Boolean = false): ColumnAggregator = {
+    val dispatcher = if (isVector) {
+      new VectorDispatcher(agg, columnIndices, toTypedInput)
+    } else {
+      new SimpleDispatcher(agg, columnIndices, toTypedInput)
+    }
     if (bucketIndex.isEmpty) {
       new DirectColumnAggregator(agg, columnIndices, dispatcher)
     } else {
@@ -105,11 +151,11 @@ object ColumnAggregator {
   private def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
   private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
 
-  def construct(inputType: DataType,
+  def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices,
                 bucketIndex: Option[Int]): ColumnAggregator = {
-    inputType match {
+    baseInputType match {
       case DateType | TimestampType =>
         throw new IllegalArgumentException(
           s"Error while aggregating over '${aggregationPart.inputColumn}'. " +
@@ -119,11 +165,23 @@ object ColumnAggregator {
     }
 
     def mismatchException =
-      throw new UnsupportedOperationException(s"$inputType is incompatible with ${aggregationPart.operation}")
+      throw new UnsupportedOperationException(s"$baseInputType is incompatible with ${aggregationPart.operation}")
+
+    // to support vector aggregations when input column is an array.
+    // avg of [1, 2, 3], [3, 4], [5] = 18 / 6 => 3
+    val vectorElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
+      case (true, ListType(elementType)) =>
+        elementType match {
+          case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
+            Some(elementType)
+        }
+      case _ => None
+    }
+    val inputType = vectorElementType.getOrElse(baseInputType)
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg, columnIndices, toTypedInput, bucketIndex)
+      fromSimple(agg, columnIndices, toTypedInput, bucketIndex, isVector = vectorElementType.isDefined)
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {

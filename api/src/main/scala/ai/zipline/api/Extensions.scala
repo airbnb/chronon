@@ -22,6 +22,14 @@ object Extensions {
       }
   }
 
+  implicit class OperationOps(operation: Operation) {
+    def isSimple: Boolean =
+      operation match {
+        case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
+        case _                                                                       => true
+      }
+  }
+
   implicit class WindowOps(window: Window) {
     private def unbounded: Boolean = window.length == Int.MaxValue || window.length < 0
 
