@@ -10,6 +10,15 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
   override def outputType: DataType = agg.outputType
   override def irType: DataType = agg.irType
 
+  override def merge(ir1: Any, ir2: Any): Any = {
+    if (ir2 == null) return ir1
+    // we need to clone here because the contract is to only mutate ir1
+    // ir2 can it self be expected to mutate later - and hence has to retain it's value
+    // this is a critical assumption of the rest of the code
+    if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
+    agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
+  }
+
   // non bucketed update
   override def update(ir: Array[Any], inputRow: Row): Unit = {
     val inputVal = inputRow.get(columnIndices.input)
@@ -36,15 +45,6 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
     val previous = previousVal.asInstanceOf[IR]
     val deleted = dispatcher.deleteColumn(previous, inputRow)
     ir.update(columnIndices.output, deleted)
-  }
-
-  override def merge(ir1: Any, ir2: Any): Any = {
-    if (ir2 == null) return ir1
-    // we need to clone here because the contract is to only mutate ir1
-    // ir2 can it self be expected to mutate later - and hence has to retain it's value
-    // this is a critical assumption of the rest of the code
-    if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
-    agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
   }
 
   override def finalize(ir: Any): Any = guardedApply(agg.finalize, ir)
