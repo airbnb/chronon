@@ -4,6 +4,8 @@ import java.util
 import ai.zipline.aggregator.row.RowAggregator
 import ai.zipline.api.{AggregationPart, Builders, FloatType, IntType, ListType, LongType, Operation, Row, StringType}
 import junit.framework.TestCase
+import org.junit.Test
+import org.junit.Assert._
 
 import scala.collection.JavaConverters._
 
@@ -40,8 +42,8 @@ class RowAggregatorTest extends TestCase {
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A"),
-      TestRow(5L, 1, 2.0f, "H")
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null)),
+      TestRow(5L, 1, 2.0f, "H", Seq(1))
     )
 
     val schema = List(
@@ -53,8 +55,9 @@ class RowAggregatorTest extends TestCase {
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
-    sessionLengthAvgByTitle.put("A", 4)
+    sessionLengthAvgByTitle.put("A", 5.5)
     sessionLengthAvgByTitle.put("B", 6)
+    sessionLengthAvgByTitle.put("H", 1) // 0-1 / 0-1
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
@@ -69,7 +72,7 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
-      Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 5.0,
+      Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle
     )
 
@@ -102,8 +105,10 @@ class RowAggregatorTest extends TestCase {
     }
     val finalized = rowAggregator.finalize(forDeletion)
 
-    assert(expectedVals.zip(finalized).forall {
-      case (expected: Any, actual: Any) => expected == actual
-    })
+    expectedVals.zip(finalized).zip(rowAggregator.outputSchema.map(_._1)).foreach {
+      case ((expected, actual), name) =>
+        println(s"name: $name")
+        assertEquals(expected, actual)
+    }
   }
 }

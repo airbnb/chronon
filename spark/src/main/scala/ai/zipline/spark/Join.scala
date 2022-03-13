@@ -18,12 +18,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
-  // Serialize the join object json to put on tableProperties (used to detect semantic changes from last run)
-  private val confJson = ThriftJsonCodec.serializer.toString(joinConf)
-  private val confJsonBase64 = Base64.getEncoder.encodeToString(confJson.getBytes("UTF-8"))
-
   // Combine tableProperties set on conf with encoded Join
-  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> confJsonBase64)
+  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> ThriftJsonCodec.toCompactBase64(joinConf))
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -220,10 +216,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     println(s"Fetching join from table props of $outputTable")
     for (
       props <- tableUtils.getTableProperties(outputTable);
-      joinBytes <- props.get(Constants.JoinMetadataKey)
+      joinBase64 <- props.get(Constants.JoinMetadataKey)
     ) yield {
-      val joinJson = new String(Base64.getDecoder.decode(joinBytes))
-      ThriftJsonCodec.fromJsonStr(joinJson, check = !skipEqualCheck, classOf[JoinConf])
+      ThriftJsonCodec.fromCompactBase64(new JoinConf(), joinBase64)
     }
   }
 

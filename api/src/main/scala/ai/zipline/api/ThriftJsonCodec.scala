@@ -1,9 +1,10 @@
 package ai.zipline.api
 
 import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
-import org.apache.thrift.{TBase, TSerializer}
-import org.apache.thrift.protocol.TSimpleJSONProtocol
+import org.apache.thrift.{TBase, TDeserializer, TSerializer}
+import org.apache.thrift.protocol.{TCompactProtocol, TSimpleJSONProtocol}
 
+import java.util.Base64
 import scala.io.Source._
 import scala.reflect.ClassTag
 
@@ -13,6 +14,18 @@ object ThriftJsonCodec {
 
   def toJsonStr[T <: TBase[_, _]: Manifest](obj: T): String = {
     new String(serializer.serialize(obj))
+  }
+
+  def toCompactBase64[T <: TBase[_, _]: Manifest](obj: T): String = {
+    val compactSerializer = new TSerializer(new TCompactProtocol.Factory())
+    Base64.getEncoder.encodeToString(compactSerializer.serialize(obj))
+  }
+
+  def fromCompactBase64[T <: TBase[_, _]: Manifest](base: T, base64: String): T = {
+    val compactDeserializer = new TDeserializer(new TCompactProtocol.Factory())
+    val bytes = Base64.getDecoder.decode(base64)
+    compactDeserializer.deserialize(base, bytes)
+    base
   }
 
   def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[T]): T = {

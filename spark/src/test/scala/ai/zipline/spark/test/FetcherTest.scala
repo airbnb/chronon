@@ -12,6 +12,7 @@ import ai.zipline.api.{
   DataModel,
   DoubleType,
   IntType,
+  ListType,
   LongType,
   Operation,
   StringType,
@@ -29,9 +30,8 @@ import ai.zipline.spark._
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.avg
+import org.apache.spark.sql.functions.{avg, column}
 import org.apache.spark.sql.streaming.Trigger
-
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
@@ -277,7 +277,11 @@ class FetcherTest extends TestCase {
 
     // snapshot events
     val ratingCols =
-      Seq(userCol, vendorCol, Column("rating", IntType, 5), Column("bucket", StringType, 5))
+      Seq(userCol,
+          vendorCol,
+          Column("rating", IntType, 5),
+          Column("bucket", StringType, 5),
+          Column("sub_rating", ListType(DoubleType), 5))
     val ratingsTable = s"$namespace.ratings_table"
     DataFrameGen.events(spark, ratingCols, rowCount, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
@@ -287,6 +291,10 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.AVERAGE,
                              inputColumn = "rating",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
+                             buckets = Seq("bucket")),
+        Builders.Aggregation(operation = Operation.AVERAGE,
+                             inputColumn = "sub_rating",
+                             windows = Seq(new Window(3, TimeUnit.DAYS)),
                              buckets = Seq("bucket")),
         Builders.Aggregation(operation = Operation.LAST_K,
                              argMap = Map("k" -> "300"),
@@ -530,15 +538,16 @@ class FetcherTest extends TestCase {
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
 
+    println("expected:")
+    endDsExpected.show()
+    println("response:")
+    responseDf.show()
+
     val diff = Comparison.sideBySide(responseDf, endDsExpected, keyishColumns, aName = "online", bName = "offline")
     assertEquals(endDsQueries.count(), responseDf.count())
     if (diff.count() > 0) {
       println("queries:")
       endDsQueries.show()
-      println("expected:")
-      endDsExpected.show()
-      println("response:")
-      responseDf.show()
       println(s"Total count: ${responseDf.count()}")
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows:")
