@@ -135,6 +135,61 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def isDeletable: Boolean = true
 }
 
+class Histogram extends SimpleAggregator[String, util.Map[String, Int], util.Map[String, Int]] {
+  type IrMap = util.Map[String, Int]
+  override def outputType: DataType = MapType(StringType, IntType)
+
+  override def irType: DataType = outputType
+
+  override def prepare(input: String): IrMap = {
+    val result = new util.HashMap[String, Int]()
+    result.put(input, 1)
+    result
+  }
+
+  def incrementInMap(ir: IrMap, input: String, count: Int = 1): IrMap = {
+    val old = ir.get(input)
+    val newVal = if (old == null) count else old + count
+    if (newVal == 0) {
+      ir.remove(input)
+    } else {
+      ir.put(input, newVal)
+    }
+    ir
+  }
+
+  // mutating
+  override def update(ir: IrMap, input: String): IrMap = {
+    incrementInMap(ir, input)
+  }
+
+  // mutating
+  override def merge(ir1: IrMap, ir2: IrMap): IrMap = {
+    val it = ir2.entrySet().iterator()
+    while (it.hasNext) {
+      val entry = it.next()
+      val key = entry.getKey
+      val value = entry.getValue
+      incrementInMap(ir1, key, value)
+    }
+    ir1
+  }
+
+  override def finalize(ir: IrMap): IrMap = ir
+
+  override def delete(ir: IrMap, input: String): IrMap = {
+    incrementInMap(ir, input, -1)
+  }
+
+  override def clone(ir: IrMap): IrMap = {
+    val result = new util.HashMap[String, Int]();
+    result.putAll(ir);
+    result
+  }
+
+  override def isDeletable: Boolean = true
+}
+
 trait CpcFriendly[Input] {
   def update(sketch: CpcSketch, input: Input): Unit
 }

@@ -277,11 +277,14 @@ class FetcherTest extends TestCase {
 
     // snapshot events
     val ratingCols =
-      Seq(userCol,
-          vendorCol,
-          Column("rating", IntType, 5),
-          Column("bucket", StringType, 5),
-          Column("sub_rating", ListType(DoubleType), 5))
+      Seq(
+        userCol,
+        vendorCol,
+        Column("rating", IntType, 5),
+        Column("bucket", StringType, 5),
+        Column("sub_rating", ListType(DoubleType), 5),
+        Column("txn_types", ListType(StringType), 5)
+      )
     val ratingsTable = s"$namespace.ratings_table"
     DataFrameGen.events(spark, ratingCols, rowCount, 180).save(ratingsTable)
     val vendorRatingsGroupBy = Builders.GroupBy(
@@ -292,10 +295,9 @@ class FetcherTest extends TestCase {
                              inputColumn = "rating",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
                              buckets = Seq("bucket")),
-        Builders.Aggregation(operation = Operation.AVERAGE,
-                             inputColumn = "sub_rating",
-                             windows = Seq(new Window(3, TimeUnit.DAYS)),
-                             buckets = Seq("bucket")),
+        Builders.Aggregation(operation = Operation.HISTOGRAM,
+                             inputColumn = "txn_types",
+                             windows = Seq(new Window(3, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.LAST_K,
                              argMap = Map("k" -> "300"),
                              inputColumn = "user",

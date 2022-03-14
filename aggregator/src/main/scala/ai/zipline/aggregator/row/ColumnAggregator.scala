@@ -189,7 +189,8 @@ object ColumnAggregator {
     }
 
     aggregationPart.operation match {
-      case Operation.COUNT => simple(new Count)
+      case Operation.COUNT     => simple(new Count)
+      case Operation.HISTOGRAM => simple(new Histogram)
       case Operation.SUM =>
         inputType match {
           case IntType    => simple(new Sum[Long](LongType), toLong[Int])
