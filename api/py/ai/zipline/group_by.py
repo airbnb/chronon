@@ -165,7 +165,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             output_namespace: str = None,
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
-            accuracy: ttypes.Accuracy = None,
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 

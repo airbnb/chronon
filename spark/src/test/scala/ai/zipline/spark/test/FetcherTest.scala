@@ -252,13 +252,13 @@ class FetcherTest extends TestCase {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = "unit_test.fetcher_mutations_gb", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "zipline")
     )
 
     val joinConf = Builders.Join(
       left = leftSource,
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = Builders.MetaData(name = "unit_test.fetcher_mutations_join", namespace = namespace, team = "zipline")
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_join", namespace = namespace, team = "zipline")
     )
     joinConf
   }
@@ -289,7 +289,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = tsColString)
       ),
-      metaData = Builders.MetaData(name = "unit_test.user_payments", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/user_payments", namespace = namespace)
     )
 
     // snapshot events
@@ -320,7 +320,7 @@ class FetcherTest extends TestCase {
                              inputColumn = "user",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
       ),
-      metaData = Builders.MetaData(name = "unit_test.vendor_ratings", namespace = namespace),
+      metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -335,7 +335,7 @@ class FetcherTest extends TestCase {
     val userBalanceGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = balanceTable)),
       keyColumns = Seq("user"),
-      metaData = Builders.MetaData(name = "unit_test.user_balance", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/user_balance", namespace = namespace)
     )
 
     // snapshot-entities
@@ -356,7 +356,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "credit",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.vendor_credit", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
     )
 
     // temporal-entities
@@ -386,7 +386,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "review",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.vendor_review", namespace = namespace),
+      metaData = Builders.MetaData(name = "unit_test/vendor_review", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
@@ -501,7 +501,10 @@ class FetcherTest extends TestCase {
   }
 
   // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
-  def compareTemporalFetch(joinConf: ai.zipline.api.Join, endDs: String, namespace: String): Unit = {
+  def compareTemporalFetch(joinConf: ai.zipline.api.Join,
+                           endDs: String,
+                           namespace: String,
+                           consistencyCheck: Boolean): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val inMemoryKvStore = buildInMemoryKVStore()
@@ -538,7 +541,9 @@ class FetcherTest extends TestCase {
     def buildRequests(lagMs: Int = 0): Array[Request] =
       endDsQueries.rdd
         .map { row =>
-          val keyMap = keyIndices.map { idx => keys(idx) -> row.get(idx).asInstanceOf[AnyRef] }.toMap
+          val keyMap = keyIndices.indices.map { idx =>
+            keys(idx) -> row.get(keyIndices(idx)).asInstanceOf[AnyRef]
+          }.toMap
           val ts = row.get(tsIndex).asInstanceOf[Long]
           Request(joinConf.metaData.nameToFilePath, keyMap, Some(ts - lagMs))
         }
@@ -546,22 +551,23 @@ class FetcherTest extends TestCase {
 
     val requests = buildRequests()
 
-    val lagMs = -100000
-    val laggedRequests = buildRequests(lagMs)
-    val laggedResponseDf = joinResponses(laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
-    val correctedLaggedResponse = laggedResponseDf
-      .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
-      .drop("ts_millis")
-      .withColumnRenamed("ts_lagged", "ts_millis")
-    println("corrected lagged response")
-    correctedLaggedResponse.show()
-    correctedLaggedResponse.save(mockApi.logTable)
+    if (consistencyCheck) {
+      val lagMs = -100000
+      val laggedRequests = buildRequests(lagMs)
+      val laggedResponseDf = joinResponses(laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
+      val correctedLaggedResponse = laggedResponseDf
+        .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
+        .drop("ts_millis")
+        .withColumnRenamed("ts_lagged", "ts_millis")
+      println("corrected lagged response")
+      correctedLaggedResponse.show()
+      correctedLaggedResponse.save(mockApi.logTable)
 
-    // build consistency metrics
-    val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
-    val metrics = consistencyJob.buildConsistencyMetrics()
-    println(metrics)
-
+      // build consistency metrics
+      val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
+      val metrics = consistencyJob.buildConsistencyMetrics()
+      println(s"ooc metrics: $metrics".stripMargin)
+    }
     // benchmark
     joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
     joinResponses(requests, mockApi, runCount = 10)
@@ -610,12 +616,15 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_fetch"
     val joinConf = generateMutationData(namespace)
-    compareTemporalFetch(joinConf, "2021-04-10", namespace)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
-    compareTemporalFetch(joinConf, Constants.Partition.at(System.currentTimeMillis()), namespace)
+    compareTemporalFetch(joinConf,
+                         Constants.Partition.at(System.currentTimeMillis()),
+                         namespace,
+                         consistencyCheck = true)
   }
 }
