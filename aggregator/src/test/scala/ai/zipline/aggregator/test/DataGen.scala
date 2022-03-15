@@ -3,7 +3,7 @@ package ai.zipline.aggregator.test
 import ai.zipline.aggregator.base._
 import ai.zipline.aggregator.test.CStream._
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Constants, DataType, DoubleType, IntType, LongType, Row, StringType, TimeUnit, Window}
+import ai.zipline.api.{Constants, DataType, DoubleType, IntType, ListType, LongType, Row, StringType, TimeUnit, Window}
 
 import scala.reflect.ClassTag
 import scala.util.Random
@@ -27,6 +27,20 @@ abstract class CStream[+T: ClassTag] {
 
   def gen(count: Int): Seq[T] = {
     Stream.fill(count)(next())
+  }
+
+  def chunk(minSize: Long = 0, maxSize: Long = 10, nullRate: Double = 0.1): CStream[Seq[T]] = {
+    def innerNext(): T = next()
+    new CStream[Seq[T]] {
+      override def next(): Seq[T] = {
+        val size = roll(minSize, maxSize, nullRate)
+        if (size != null) {
+          (0 until size.toInt).map { _ => innerNext() }
+        } else {
+          null
+        }
+      }
+    }
   }
 }
 
@@ -105,9 +119,9 @@ object CStream {
   }
 }
 
-case class Column(name: String, `type`: DataType, cardinality: Int) {
-  def gen: CStream[Any] =
-    `type` match {
+case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10) {
+  def genImpl(dtype: DataType): CStream[Any] =
+    dtype match {
       case StringType =>
         name match {
           case Constants.PartitionColumn => new PartitionStream(cardinality)
@@ -120,9 +134,11 @@ case class Column(name: String, `type`: DataType, cardinality: Int) {
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
           case _                    => new LongStream(cardinality)
         }
-      case otherType => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
+      case ListType(elementType) => genImpl(elementType).chunk(chunkSize)
+      case otherType             => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
     }
 
+  def gen: CStream[Any] = genImpl(`type`)
   def schema: (String, DataType) = name -> `type`
 }
 case class RowsWithSchema(rows: Array[TestRow], schema: Seq[(String, DataType)])

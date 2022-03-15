@@ -5,7 +5,7 @@ import ai.zipline.api.{DataType, Row}
 
 class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
                                                 columnIndices: ColumnIndices,
-                                                dispatcher: Dispatcher[Input, IR])
+                                                dispatcher: Dispatcher[Input, Any])
     extends ColumnAggregator {
   override def outputType: DataType = agg.outputType
   override def irType: DataType = agg.irType
