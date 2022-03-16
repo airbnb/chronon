@@ -26,7 +26,15 @@ lazy val api = project
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
-    )
+    ),
+    unmanagedSourceDirectories in Compile ++= {
+      (unmanagedSourceDirectories in Compile).value.map { dir =>
+        CrossVersion.partialVersion(scalaVersion.value) match {
+          case Some((2, 13)) => file(dir.getPath ++ "-2.13")
+          case _             => file(dir.getPath ++ "-2.11")
+        }
+      }
+    }
   )
 
 lazy val aggregator = project
@@ -57,14 +65,6 @@ lazy val online = project
           Seq()
         case _ =>
           Seq("org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4")
-      }
-    },
-    unmanagedSourceDirectories in Compile ++= {
-      (unmanagedSourceDirectories in Compile).value.map { dir =>
-        CrossVersion.partialVersion(scalaVersion.value) match {
-          case Some((2, 13)) => file(dir.getPath ++ "-2.13")
-          case _             => file(dir.getPath ++ "-2.11")
-        }
       }
     }
   )
