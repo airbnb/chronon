@@ -24,11 +24,18 @@ object ThriftJsonCodec {
   def fromCompactBase64[T <: TBase[_, _]: Manifest](base: T, base64: String): T = {
     val compactDeserializer = new TDeserializer(new TCompactProtocol.Factory())
     val bytes = Base64.getDecoder.decode(base64)
-    compactDeserializer.deserialize(base, bytes)
-    base
+    try {
+      compactDeserializer.deserialize(base, bytes)
+      base
+    } catch {
+      case e: Exception => {
+        println("Failed to deserialize using compact protocol, trying Json.")
+        fromJsonStr(new String(bytes), check = false, base.getClass)
+      }
+    }
   }
 
-  def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[T]): T = {
+  def fromJsonStr[T <: TBase[_, _]: Manifest](jsonStr: String, check: Boolean = true, clazz: Class[_ <: T]): T = {
     val mapper = new ObjectMapper()
     mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
     val obj: T = mapper.readValue(jsonStr, clazz)
