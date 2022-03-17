@@ -38,7 +38,9 @@ class GroupBy(inputStream: DataFrame,
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
     val fillIfAbsent = groupByConf.dataModel match {
       case api.DataModel.Entities =>
-        Map(Constants.TimeColumn -> timeColumn, Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
+        Map(Constants.TimeColumn -> timeColumn,
+            Constants.ReversalColumn -> query.reversalColumn,
+            Constants.MutationTimeColumn -> query.mutationTimeColumn)
       case api.DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
     }
     val keys = groupByConf.getKeyColumns.asScala
