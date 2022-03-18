@@ -314,7 +314,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         })
         .getOrElse(df)
 
-      if (filteredDf.take(1).isEmpty) {
+      if (filteredDf.isEmpty) {
         println(s"Left side query produced 0 rows, exiting... Please check source data or filter logic: $scanQuery")
         // Exit 0 here because the job is functioning correctly
         sys.exit(0)
