@@ -107,7 +107,7 @@ class HopsAggregator(minQueryTs: Long,
       if (hopSize > maxHopSize) { // this hop size is not relevant
         None
       } else {
-        (windowBasedLeftBoundary ++ largerWindowBasedLeftBoundary).reduceOption((a: Long, b: Long) => Ordering[Long].min(a,b))
+        (windowBasedLeftBoundary ++ largerWindowBasedLeftBoundary).reduceOption(Ordering[Long].min)
       }
     }.toArray
 
