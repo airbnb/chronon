@@ -5,9 +5,10 @@ import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonCodec, Join => JoinConf}
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
-
 import java.util.Base64
+
 import scala.collection.JavaConverters._
+import scala.sys
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -301,17 +302,25 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       } else {
         Seq()
       }
-      val df = tableUtils.sql(
-        leftUnfilledRange.genScanQuery(joinConf.left.query,
-                                       joinConf.left.table,
-                                       fillIfAbsent = Map(Constants.PartitionColumn -> null) ++ timeProjection))
+      val scanQuery = leftUnfilledRange.genScanQuery(joinConf.left.query,
+        joinConf.left.table,
+        fillIfAbsent = Map(Constants.PartitionColumn -> null) ++ timeProjection)
+      val df = tableUtils.sql(scanQuery)
       val skewFilter = joinConf.skewFilter()
-      skewFilter
+      val filteredDf = skewFilter
         .map(sf => {
           println(s"left skew filter: $sf")
           df.filter(sf)
         })
         .getOrElse(df)
+
+      if (filteredDf.take(1).isEmpty) {
+        println(s"Left side query produced 0 rows, exiting... Please check source data or filter logic: $scanQuery")
+        // Exit 0 here because the job is functioning correctly
+        sys.exit(0)
+      }
+
+      filteredDf
     }
 
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
