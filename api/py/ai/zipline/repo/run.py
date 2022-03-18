@@ -8,11 +8,16 @@ import subprocess
 from datetime import datetime
 import xml.etree.ElementTree as ET
 
+ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class}'
+OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds}'
+ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 MODE_ARGS = {
-    'backfill': '--conf-path={conf_path} --end-date={ds}',
-    'upload': '--conf-path={conf_path} --end-date={ds}',
-    'streaming': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
-    'metadata-upload': '--conf-path={conf_path} --online-jar={online_jar} --online-class={online_class}',
+    'backfill': OFFLINE_ARGS,
+    'upload': OFFLINE_ARGS,
+    'streaming': ONLINE_WRITE_ARGS,
+    'metadata-upload': ONLINE_WRITE_ARGS,
+    'fetch': ONLINE_ARGS,
+    'local-streaming': ONLINE_WRITE_ARGS + ' -d'
 }
 
 ROUTES = {
@@ -20,9 +25,11 @@ ROUTES = {
         'upload': 'group-by-upload',
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
+        'local-streaming': 'group-by-streaming'
     },
     'joins': {
         'backfill': 'join',
+        'metadata-upload': 'metadata-upload'
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
@@ -94,8 +101,9 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        assert(args.mode not in ['streaming', 'metadata-upload'] or args.online_class and args.online_jar,
-               "must specify online-jar and online-class for streaming mode or metadata-upload mode")
+        self.online_modes = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
+        are_args_valid = (args.mode not in online_modes) or (args.online_class and args.online_jar)
+        assert are_args_valid, "must specify online-jar and online-class for online modes."
         if args.mode != 'metadata-upload':
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
             possible_modes = ROUTES[self.conf_type].keys()
@@ -142,7 +150,7 @@ class Runner:
     def run(self):
         final_args = (MODE_ARGS[self.mode] + ' ' + self.args).format(
             conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
-        if self.mode == 'metadata-upload':
+        if self.mode in self.online_modes:
             command = 'java -cp {jar} ai.zipline.spark.Driver metadata-upload {args}'.format(
                 jar=self.jar_path,
                 args=final_args
@@ -169,10 +177,12 @@ if __name__ == "__main__":
     parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
     parser.add_argument('--repo', help='Path to zipline repo', default=zipline_repo_path)
     parser.add_argument('--online_jar',
-                        help='Jar containing Online KvStore & Deserializer Impl.'
-                        'Used for streaming and metadata-upload mode.', default=None)
+                        help='Jar containing Online KvStore & Deserializer Impl. ' +
+                             'Used for streaming and metadata-upload mode.',
+                        default=os.environ.get('ZIPLINE_ONLINE_JAR', None))
     parser.add_argument('--online_class',
-                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.', default=None)
+                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
+                        default=os.environ.get('ZIPLINE_ONLINE_CLASS', None))
     parser.add_argument('--version', help='Zipline version to use.', default=None)
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
@@ -180,6 +190,10 @@ if __name__ == "__main__":
     parser.add_argument('--spark-streaming-submit-path',
                         help='Path to spark-submit for streaming',
                         default=os.path.join(zipline_repo_path, 'scripts/spark_streaming.sh'))
+    parser.add_argument('--online-jar-fetch',
+                        help='Path to script that can pull online jar. ' +
+                             'This will run only when a file doesn\'t exist at location specified by online_jar',
+                        default=os.path.join(zipline_repo_path, 'scripts/fetch_online_jar.sh'))
 
     args = parser.parse_args()
     Runner(args, download_jar(args.version)).run()
