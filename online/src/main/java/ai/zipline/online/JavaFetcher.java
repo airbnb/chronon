@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 
 import scala.Function1;
 import scala.collection.Iterator;
-import scala.jdk.CollectionConverters;
+import scala.collection.JavaConversions;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.concurrent.Future;
@@ -47,14 +47,14 @@ public class JavaFetcher  {
     return result;
   }
 
-  private CompletableFuture<List<JavaResponse>> convertResponses(Future<scala.collection.Seq<Response>> responses) {
+  private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
         .toJava(responses)
         .toCompletableFuture()
         .thenApply(JavaFetcher::toJavaResponses);
   }
 
-  private scala.collection.Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
+  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
     ArrayBuffer<Request> scalaRequests = new ArrayBuffer<>();
     for (JavaRequest request : requests) {
       Request convertedRequest = request.toScalaRequest();
@@ -65,13 +65,13 @@ public class JavaFetcher  {
 
   public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
     // Get responses from the fetcher
-    Future<scala.collection.Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests), scala.Option.apply(null));
+    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests), scala.Option.apply(null));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
 
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
-    Future<scala.collection.Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
+    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }

@@ -22,7 +22,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
 
   lazy val aggregator: SawtoothOnlineAggregator = {
     new SawtoothOnlineAggregator(batchEndTsMillis,
-                                 groupByServingInfo.groupBy.aggregations.asScala.toSeq,
+                                 groupByServingInfo.groupBy.aggregations.asScala,
                                  valueZiplineSchema.fields.map(sf => (sf.name, sf.fieldType)))
   }
 
