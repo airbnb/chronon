@@ -137,7 +137,6 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val gson = (new GsonBuilder()).setPrettyPrinting().create()
       val objectMapper = new ObjectMapper()
       val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
 
@@ -154,7 +153,6 @@ object Driver {
 
       // treeMap to produce a sorted result
       val tMap = new java.util.TreeMap[String, AnyRef]()
-      println(result)
       result.foreach(r =>
         r.values match {
           case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
