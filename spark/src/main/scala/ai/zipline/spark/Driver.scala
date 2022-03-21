@@ -131,7 +131,8 @@ object Driver {
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
-      val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
+      val `type`: ScallopOption[String] =
+        choice(Seq("join", "group-by"), descr = "the type of conf to fetch", default = Some("join"))
     }
 
     def run(args: Args): Unit = {

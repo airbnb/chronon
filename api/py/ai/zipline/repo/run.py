@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class}'
 OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds}'
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
+ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
@@ -25,11 +26,13 @@ ROUTES = {
         'upload': 'group-by-upload',
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
-        'local-streaming': 'group-by-streaming'
+        'local-streaming': 'group-by-streaming',
+        'fetch': 'fetch'
     },
     'joins': {
         'backfill': 'join',
-        'metadata-upload': 'metadata-upload'
+        'metadata-upload': 'metadata-upload',
+        'fetch': 'fetch'
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
@@ -71,27 +74,26 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
-# TODO(Open Sourcing) this should be hard coded to mavencentral path
-BASE_URL = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/spark_uber_2.11"
-
-
-def find_latest_master_version():
-    metadata_content = check_output("curl -s {}/maven-metadata.xml".format(BASE_URL))
-    meta_tree = ET.fromstring(metadata_content)
-    versions = [
-        node.text
-        for node in meta_tree.findall("./versioning/versions/")
-        if re.search(r"^\d+\.\d+\.\d+$", node.text)
-    ]
-    return versions[-1]
-
-
-def download_jar(version):
+def download_jar(version, jar_type='uber'):
+    # TODO(Open Sourcing) this should be hard coded to mavencentral path
+    base_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/spark_{}_2.11".format(
+        jar_type)
     jar_path = os.environ.get('ZIPLINE_JAR_PATH', None)
     if jar_path is None:
         if version is None:
-            version = find_latest_master_version()
-        jar_url = "{}/{}/spark_uber_2.11-{}.jar".format(BASE_URL, version, version)
+            metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
+            meta_tree = ET.fromstring(metadata_content)
+            versions = [
+                node.text
+                for node in meta_tree.findall("./versioning/versions/")
+                if re.search(r"^\d+\.\d+\.\d+$", node.text)
+            ]
+            version = versions[-1]
+        jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}.jar".format(
+            base_url=base_url,
+            version=version,
+            jar_type=jar_type
+        )
         jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
         download_only_once(jar_url, jar_path)
     return jar_path
@@ -101,19 +103,31 @@ class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
         self.conf = args.conf
-        self.online_modes = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
-        are_args_valid = (args.mode not in online_modes) or (args.online_class and args.online_jar)
-        assert are_args_valid, "must specify online-jar and online-class for online modes."
-        if args.mode != 'metadata-upload':
+        self.sub_help = args.sub_help
+        self.mode = args.mode
+        self.online_jar = args.online_jar
+        valid_jar = args.online_jar and os.path.exists(args.online_jar)
+        # fetch online jar if necessary
+        if (self.mode in ONLINE_MODES) and (not args.sub_help) and not valid_jar:
+            print("Downloading online_jar")
+            self.online_jar = check_output("{}".format(args.online_jar_fetch)).decode("utf-8")
+            print("Downloaded jar to {}".format(self.online_jar))
+
+        self.spark_modes = ['backfill', 'upload', 'streaming']
+        if (not self.sub_help) and (args.mode in ONLINE_MODES):
+            assert args.online_class, "must specify online-class or set ZIPLINE_ONLINE_CLASS envvar"
+            assert self.online_jar, "must specify online-jar set ZIPLINE_ONLINE_JAR envvar"
+
+        if self.conf:
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
             possible_modes = ROUTES[self.conf_type].keys()
             assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
                 args.mode, self.conf, self.conf_type, possible_modes)
-        self.mode = args.mode
+        else:
+            self.conf_type = args.conf_type
         self.ds = args.ds
         self.jar_path = jar_path
-        self.args = args.args
-        self.online_jar = args.online_jar
+        self.args = args.args if args.args else ''
         self.online_class = args.online_class
         self.app_name = args.app_name
         if self.mode == 'streaming':
@@ -148,19 +162,22 @@ class Runner:
             os.environ[key] = value
 
     def run(self):
-        final_args = (MODE_ARGS[self.mode] + ' ' + self.args).format(
+        base_args = MODE_ARGS[self.mode].format(
             conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
-        if self.mode in self.online_modes:
-            command = 'java -cp {jar} ai.zipline.spark.Driver metadata-upload {args}'.format(
+        final_args = base_args + ' ' + str(self.args)
+        subcommand = ROUTES[self.conf_type][self.mode]
+        if self.sub_help or (self.mode not in self.spark_modes):
+            command = 'java -cp {jar} ai.zipline.spark.Driver {subcommand} {args}'.format(
                 jar=self.jar_path,
-                args=final_args
+                args='--help' if self.sub_help else final_args,
+                subcommand=subcommand
             )
         else:
             self.set_env()
             command = 'bash {script} --class ai.zipline.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
-                subcommand=ROUTES[self.conf_type][self.mode],
+                subcommand=subcommand,
                 args=final_args
             )
         check_call(command)
@@ -170,17 +187,16 @@ if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of zipline jobs')
     zipline_repo_path = os.getenv('ZIPLINE_REPO_PATH', '.')
-    parser.add_argument('--conf', required=True)
+    parser.add_argument('--conf', required=False, help='Conf param - required for every mode except fetch')
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
-    parser.add_argument('--app_name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
-    parser.add_argument('--args', help='quoted string of any relevant additional args', default='')
+    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
     parser.add_argument('--repo', help='Path to zipline repo', default=zipline_repo_path)
-    parser.add_argument('--online_jar',
+    parser.add_argument('--online-jar',
                         help='Jar containing Online KvStore & Deserializer Impl. ' +
                              'Used for streaming and metadata-upload mode.',
                         default=os.environ.get('ZIPLINE_ONLINE_JAR', None))
-    parser.add_argument('--online_class',
+    parser.add_argument('--online-class',
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
                         default=os.environ.get('ZIPLINE_ONLINE_CLASS', None))
     parser.add_argument('--version', help='Zipline version to use.', default=None)
@@ -193,7 +209,18 @@ if __name__ == "__main__":
     parser.add_argument('--online-jar-fetch',
                         help='Path to script that can pull online jar. ' +
                              'This will run only when a file doesn\'t exist at location specified by online_jar',
-                        default=os.path.join(zipline_repo_path, 'scripts/fetch_online_jar.sh'))
+                        default=os.path.join(zipline_repo_path, 'scripts/fetch_online_jar.py'))
+    parser.add_argument('--sub-help', action='store_true', help='print help command of the underlying jar and exit')
+    parser.add_argument('--conf-type', default='group_bys',
+                        help='related to sub-help - no need to set unless you are not working with a conf')
+    parser.add_argument('--online-args', default=os.getenv('ZIPLINE_ONLINE_ARGS', ''),
+                        help='Basic arguments that need to be supplied to all online modes')
 
-    args = parser.parse_args()
-    Runner(args, download_jar(args.version)).run()
+    args, unknown_args = parser.parse_known_args()
+    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
+    extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
+    args.args = ' '.join(unknown_args) + extra_args
+    print(args.online_args)
+    print(args.args)
+    jar_path = download_jar(args.version, jar_type)
+    Runner(args, jar_path).run()
