@@ -138,7 +138,8 @@ object Driver {
 
     def run(args: Args): Unit = {
       val gson = (new GsonBuilder()).setPrettyPrinting().create()
-      val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+      val objectMapper = new ObjectMapper()
+      val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
 
       val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
       val startNs = System.nanoTime
@@ -159,7 +160,7 @@ object Driver {
           case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
           case Failure(exception) => throw exception
         })
-      println(s"the returned values are: ${gson.toJson(tMap)}")
+      println(s"the returned values are: ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")
     }
   }
