@@ -215,12 +215,12 @@ if __name__ == "__main__":
                         help='related to sub-help - no need to set unless you are not working with a conf')
     parser.add_argument('--online-args', default=os.getenv('ZIPLINE_ONLINE_ARGS', ''),
                         help='Basic arguments that need to be supplied to all online modes')
-
+    parser.add_argument('--zipline-jar', default=None, help='Path to zipline OS jar')
     args, unknown_args = parser.parse_known_args()
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     print(args.online_args)
     print(args.args)
-    jar_path = download_jar(args.version, jar_type)
+    jar_path = args.zipline_jar if args.zipline_jar else download_jar(args.version, jar_type)
     Runner(args, jar_path).run()

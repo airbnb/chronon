@@ -13,7 +13,7 @@ import scala.collection.mutable
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
-  @transient private lazy val schema = parser.parse(schemaStr)
+  @transient lazy val schema = parser.parse(schemaStr)
 
   // we reuse a lot of intermediate
   // lazy vals so that spark can serialize & ship the codec to executors

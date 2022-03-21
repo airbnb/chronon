@@ -113,6 +113,39 @@ class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndic
 case class ColumnIndices(input: Int, output: Int)
 
 object ColumnAggregator {
+
+  //force numeric widening
+  def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
+  def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
+
+  def castToLong(value: AnyRef): AnyRef =
+    value match {
+      case i: java.lang.Integer => new java.lang.Long(i.longValue())
+      case i: java.lang.Short   => new java.lang.Long(i.longValue())
+      case i: java.lang.Byte    => new java.lang.Long(i.longValue())
+      case i: java.lang.Double  => new java.lang.Long(i.longValue())
+      case i: java.lang.Float   => new java.lang.Long(i.longValue())
+      case _                    => value
+    }
+
+  def castToDouble(value: AnyRef): AnyRef =
+    value match {
+      case i: java.lang.Integer => new java.lang.Double(i.doubleValue())
+      case i: java.lang.Short   => new java.lang.Double(i.doubleValue())
+      case i: java.lang.Byte    => new java.lang.Double(i.doubleValue())
+      case i: java.lang.Float   => new java.lang.Double(i.doubleValue())
+      case i: java.lang.Long    => new java.lang.Double(i.doubleValue())
+      case _                    => value
+    }
+
+  def castTo(value: AnyRef, typ: DataType): AnyRef =
+    typ match {
+      // TODO this might need more type handling
+      case LongType   => castToLong(value)
+      case DoubleType => castToDouble(value)
+      case _          => value
+    }
+
   private def cast[T](any: Any): T = any.asInstanceOf[T]
 
   // does null checks and up casts types to feed into typed aggregators
@@ -146,10 +179,6 @@ object ColumnAggregator {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     }
   }
-
-  //force numeric widening
-  private def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
-  private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
 
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,

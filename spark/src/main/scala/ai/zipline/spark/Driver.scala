@@ -4,6 +4,7 @@ import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.gson.GsonBuilder
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
