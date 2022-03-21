@@ -1,2 +1,2 @@
-click
-thrift
+click==7.1.2
+thrift==0.13.0

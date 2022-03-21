@@ -1,5 +1,6 @@
 package ai.zipline.online
 
+import ai.zipline.aggregator.row.ColumnAggregator
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.{Row, _}
@@ -100,7 +101,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   }
 
   // 1. fetches GroupByServingInfo
-  // 2. encodes keys as keyAvroSchema)
+  // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
@@ -111,7 +112,22 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       val groupByName = request.name
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(groupByName)
         .map { groupByServingInfo =>
-          val keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
+          var keyBytes: Array[Byte] = null
+          try {
+            keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
+          } catch {
+            case ex: Exception =>
+              val castedKeys = groupByServingInfo.keyZiplineSchema.fields.map {
+                case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
+              }.toMap
+              try {
+                keyBytes = groupByServingInfo.keyCodec.encode(castedKeys)
+              } catch {
+                case exInner: Exception =>
+                  exInner.addSuppressed(ex)
+                  throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
+              }
+          }
           val batchRequest = GetRequest(keyBytes, groupByServingInfo.groupByOps.batchDataset)
           val streamingRequestOpt = groupByServingInfo.groupByOps.inferredAccuracy match {
             // fetch batch(ir) and streaming(input) and aggregate

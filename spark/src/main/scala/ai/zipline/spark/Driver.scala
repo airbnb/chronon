@@ -4,6 +4,7 @@ import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.gson.GsonBuilder
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
@@ -131,12 +132,13 @@ object Driver {
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
-      val `type`: ScallopOption[String] = choice(Seq("join", "group-by"), descr = "the type of conf to fetch")
+      val `type`: ScallopOption[String] =
+        choice(Seq("join", "group-by"), descr = "the type of conf to fetch", default = Some("join"))
     }
 
     def run(args: Args): Unit = {
-      val gson = (new GsonBuilder()).setPrettyPrinting().create()
-      val keyMap = gson.fromJson(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+      val objectMapper = new ObjectMapper()
+      val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
 
       val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
       val startNs = System.nanoTime
@@ -151,13 +153,12 @@ object Driver {
 
       // treeMap to produce a sorted result
       val tMap = new java.util.TreeMap[String, AnyRef]()
-      println(result)
       result.foreach(r =>
         r.values match {
           case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
           case Failure(exception) => throw exception
         })
-      println(s"the returned values are: ${gson.toJson(tMap)}")
+      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")
     }
   }

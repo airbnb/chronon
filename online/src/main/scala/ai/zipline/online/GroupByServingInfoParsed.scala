@@ -33,6 +33,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
+  @transient lazy val keyZiplineSchema: StructType = AvroUtils.toZiplineSchema(keyCodec.schema).asInstanceOf[StructType]
 
   lazy val valueZiplineSchema: StructType = {
     val valueFields = groupBy.aggregationInputs

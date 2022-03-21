@@ -53,68 +53,46 @@ def cleanSparkMeta: Unit = {
                file(".") / "metastore_db")
 }
 
+val sparkLibs = Seq(
+  "org.apache.spark" %% "spark-sql" % "2.4.0",
+  "org.apache.spark" %% "spark-hive" % "2.4.0",
+  "org.apache.spark" %% "spark-core" % "2.4.0",
+  "org.apache.spark" %% "spark-streaming" % "2.4.0",
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+)
+
+val sparkBaseSettings: Seq[Setting[_]] = Seq(
+  assembly / test := {},
+  mainClass in (Compile, run) := Some(
+    "ai.zipline.spark.Driver"
+  ),
+  cleanFiles ++= Seq(
+    baseDirectory.value / "spark-warehouse",
+    baseDirectory.value / "metastore_db"
+  ),
+  testOptions in Test += Tests.Setup(() => cleanSparkMeta),
+  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
+)
+
+val providedLibs: Setting[_] = (libraryDependencies ++= sparkLibs.map(_ % "provided"))
+val embeddedLibs: Setting[_] = (libraryDependencies ++= sparkLibs)
+val embeddedTarget: Setting[_] = (target := target.value.toPath.resolveSibling("target-embedded").toFile)
+val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := {
+  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+  case PathList("META-INF", xs @ _*)       => MergeStrategy.filterDistinctLines
+  case "plugin.xml"                        => MergeStrategy.last
+  case _                                   => MergeStrategy.first
+}
+val sparkProvided: Seq[Setting[_]] = sparkBaseSettings :+ providedLibs
+val sparkEmbedded: Seq[Setting[_]] = sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy
+
 lazy val spark = project
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(
-    assembly / test := {},
-    mainClass in (Compile, run) := Some(
-      "ai.zipline.spark.Driver"
-    ),
-    libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "2.4.0",
-      "org.apache.spark" %% "spark-hive" % "2.4.0",
-      "org.apache.spark" %% "spark-core" % "2.4.0",
-      "org.apache.spark" %% "spark-streaming" % "2.4.0",
-      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
-    ).map(_ % "provided"), // TODO: toggle provided conditionally
-    cleanFiles ++= Seq(
-      baseDirectory.value / "spark-warehouse",
-      baseDirectory.value / "metastore_db",
-    ),
-    testOptions in Test += Tests.Setup(() => cleanSparkMeta),
-    testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
-  )
+  .settings(sparkProvided)
 
 // Project for running with embedded spark for local testing
-lazy val embedded = (project in file("spark"))
+lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .enablePlugins(PackPlugin)
-  .settings(publishPackArchives)
-  .settings(
-    packMain := Map("ztool" -> "ai.zipline.spark.Driver"),
-    target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    assembly / test := {},
-    mainClass in (Compile, run) := Some("ai.zipline.spark.Driver"),
-    libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "2.4.0",
-      "org.apache.spark" %% "spark-hive" % "2.4.0",
-      "org.apache.spark" %% "spark-core" % "2.4.0",
-      "org.apache.spark" %% "spark-streaming" % "2.4.0",
-      "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
-    ) // .map(_ % "provided")
-  )
+  .settings(sparkEmbedded)
 
 exportJars := true
-
-// TODO add benchmarks - follow this example
-// https://github.com/sksamuel/avro4s/commit/781aa424f4affc2b8dfa35280c583442960df08b
-//assemblyMergeStrategy in assembly := {
-//  case PathList("org", "aopalliance", xs @ _*)      => MergeStrategy.last
-//  case PathList("javax", "inject", xs @ _*)         => MergeStrategy.last
-//  case PathList("javax", "servlet", xs @ _*)        => MergeStrategy.last
-//  case PathList("javax", "activation", xs @ _*)     => MergeStrategy.last
-//  case PathList("org", "apache", xs @ _*)           => MergeStrategy.last
-//  case PathList("com", "google", xs @ _*)           => MergeStrategy.last
-//  case PathList("com", "esotericsoftware", xs @ _*) => MergeStrategy.last
-//  case PathList("com", "codahale", xs @ _*)         => MergeStrategy.last
-//  case PathList("com", "yammer", xs @ _*)           => MergeStrategy.last
-//  case "about.html"                                 => MergeStrategy.rename
-//  case "META-INF/ECLIPSEF.RSA"                      => MergeStrategy.last
-//  case "META-INF/mailcap"                           => MergeStrategy.last
-//  case "META-INF/mimetypes.default"                 => MergeStrategy.last
-//  case "plugin.properties"                          => MergeStrategy.last
-//  case "log4j.properties"                           => MergeStrategy.last
-//  case x =>
-//    val oldStrategy = (assemblyMergeStrategy in assembly).value
-//    oldStrategy(x)
-//}
