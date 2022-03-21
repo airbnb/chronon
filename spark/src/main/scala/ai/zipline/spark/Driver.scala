@@ -158,7 +158,7 @@ object Driver {
           case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
           case Failure(exception) => throw exception
         })
-      println(s"the returned values are: ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
       println(s"Fetched in: $awaitTimeMs ms")
     }
   }
