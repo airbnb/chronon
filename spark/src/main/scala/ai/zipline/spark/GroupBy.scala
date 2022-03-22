@@ -337,7 +337,7 @@ object GroupBy {
       .map { source =>
         if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && source.isSetEvents) {
           assert(source.query.timeColumn != null,
-                 s"Time column is necessary for temporal accuracy in and events source - from ${source.table}")
+                 s"Time column is necessary for temporal accuracy in events source - from ${source.table}")
         }
         renderDataSourceQuery(source, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
