@@ -447,7 +447,7 @@ object GroupBy {
     val queryableDataRange = PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
     // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
-    var metaColumns = Map(Constants.PartitionColumn -> null)
+    var metaColumns: Map[String, String] = Map(Constants.PartitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(
         Constants.ReversalColumn -> source.query.reversalColumn,

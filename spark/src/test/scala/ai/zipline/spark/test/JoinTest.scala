@@ -3,6 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.zipline.api
+import ai.zipline.api.Extensions.GroupByOps
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.spark._
@@ -541,21 +542,27 @@ class JoinTest {
   def testSourceQueryRender(): Unit = {
     // Test cumulative
     val viewsGroupByCumulative = getViewsGroupBy(makeCumulative = true)
-    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head,
-                                                   Seq("item"),
-                                                   PartitionRange("2021-02-23", "2021-05-03"),
-                                                   tableUtils,
-                                                   None)
+    val renderedCumulative = renderDataSourceQuery(
+      viewsGroupByCumulative.sources.asScala.head,
+      Seq("item"),
+      PartitionRange("2021-02-23", "2021-05-03"),
+      tableUtils,
+      None,
+      viewsGroupByCumulative.inferredAccuracy
+    )
     // Only checking that the date logic is correct in the query
     assert(renderedCumulative.contains(s"ds >= '${today}' AND ds <= '${today}'"))
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
-    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head,
-                                                    Seq("item"),
-                                                    PartitionRange("2021-01-01", "2021-01-03"),
-                                                    tableUtils,
-                                                    None)
+    val renderedIncremental = renderDataSourceQuery(
+      viewsGroupByIncremental.sources.asScala.head,
+      Seq("item"),
+      PartitionRange("2021-01-01", "2021-01-03"),
+      tableUtils,
+      None,
+      viewsGroupByCumulative.inferredAccuracy
+    )
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
   }
