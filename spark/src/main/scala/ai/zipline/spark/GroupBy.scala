@@ -13,6 +13,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.time.temporal.Temporal
 import java.util
 import scala.collection.JavaConverters._
 
@@ -335,18 +336,12 @@ object GroupBy {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map { source =>
-        if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && source.isSetEvents) {
-          val timeNecessary =
-            source.query.timeColumn != null ||
-              source.query.selects == null ||
-              source.query.selects.containsKey(Constants.TimeColumn)
-          assert(
-            timeNecessary,
-            s"Time column is necessary for temporal accuracy in events source - from ${source.table}. " +
-              s"\nselects: ${source.query.selects}\ntimeColumn: ${source.query.timeColumn}"
-          )
-        }
-        renderDataSourceQuery(source, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
+        renderDataSourceQuery(source,
+                              groupByConf.getKeyColumns.asScala,
+                              queryRange,
+                              tableUtils,
+                              groupByConf.maxWindow,
+                              groupByConf.inferredAccuracy)
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
@@ -396,6 +391,7 @@ object GroupBy {
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
+                                  groupByConf.accuracy,
                                   mutations = true)
           }
           .map { tableUtils.sql }
@@ -417,6 +413,7 @@ object GroupBy {
                             queryRange: PartitionRange,
                             tableUtils: TableUtils,
                             window: Option[Window],
+                            accuracy: Accuracy,
                             mutations: Boolean = false): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
@@ -450,25 +447,25 @@ object GroupBy {
     val queryableDataRange = PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
     // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
-    val metaColumns = source.dataModel match {
-      case Entities =>
-        mutations match {
-          case true =>
-            Map(
-              Constants.PartitionColumn -> null,
-              Constants.ReversalColumn -> source.query.reversalColumn,
-              Constants.MutationTimeColumn -> source.query.mutationTimeColumn
-            ) ++ Option(source.query.timeColumn).map(Constants.TimeColumn -> _)
-          case false =>
-            Map(Constants.PartitionColumn -> null) ++ Option(source.query.timeColumn)
-              .map(Constants.TimeColumn -> _)
-        }
-      case Events =>
+    var metaColumns = Map(Constants.PartitionColumn -> null)
+    if (mutations) {
+      metaColumns ++= Map(
+        Constants.ReversalColumn -> source.query.reversalColumn,
+        Constants.MutationTimeColumn -> source.query.mutationTimeColumn
+      )
+    }
+    val timeMapping = if (source.dataModel == Entities) {
+      Option(source.query.timeColumn).map(Constants.TimeColumn -> _)
+    } else {
+      if (accuracy == Accuracy.TEMPORAL) {
+        Some(Constants.TimeColumn -> source.query.timeColumn)
+      } else {
         val dsBasedTimestamp = // 1 millisecond before ds + 1
           s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
-        Map(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp),
-            Constants.PartitionColumn -> null)
+        Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
+      }
     }
+    metaColumns ++= timeMapping
 
     println(s"""
          |Rendering source query:
