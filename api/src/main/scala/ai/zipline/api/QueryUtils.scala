@@ -23,9 +23,8 @@ object QueryUtils {
       case (Some(sels), Some(fills)) => toProjections(fills ++ sels)
       case (Some(sels), None)        => toProjections(sels)
       case (None, _) => {
-        assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
-               s"Please specify selects, when columns are being overriden is set")
-        Seq("*")
+        val fills = toProjections(fillIfAbsent.filter { case (key, value) => value != null })
+        Seq("*") ++ fills
       }
     }
 

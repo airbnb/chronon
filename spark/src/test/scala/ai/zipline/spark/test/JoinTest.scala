@@ -301,7 +301,7 @@ class JoinTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_events"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     val viewsSource = Builders.Source.events(
@@ -365,14 +365,14 @@ class JoinTest {
   @Test
   def testEventsEventsTemporal(): Unit = {
 
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal("temporal_events")
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_temporal"
     DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
 
     val viewsSource = Builders.Source.events(
@@ -442,8 +442,8 @@ class JoinTest {
   @Test
   def testEventsEventsCumulative(): Unit = {
     // Create a cumulative source GroupBy
-    val viewsTable = s"$namespace.view"
-    val viewsGroupBy = getViewsGroupBy(makeCumulative = true)
+    val viewsTable = s"$namespace.view_cumulative"
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true)
     // Copy and modify existing events/events case to use cumulative GroupBy
     val joinConf = getEventsEventsTemporal("_cumulative")
     joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
@@ -541,7 +541,7 @@ class JoinTest {
   @Test
   def testSourceQueryRender(): Unit = {
     // Test cumulative
-    val viewsGroupByCumulative = getViewsGroupBy(makeCumulative = true)
+    val viewsGroupByCumulative = getViewsGroupBy(suffix = "render", makeCumulative = true)
     val renderedCumulative = renderDataSourceQuery(
       viewsGroupByCumulative.sources.asScala.head,
       Seq("item"),
@@ -672,7 +672,7 @@ class JoinTest {
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
-    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user_2")
+    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
@@ -698,7 +698,7 @@ class JoinTest {
     computed.show()
     val itemQueriesTable = joinConf.getLeft.getEvents.getTable
     val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_versioning"
 
     val expected = tableUtils.sql(s"""
                                      |WITH
@@ -738,14 +738,14 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  private def getViewsGroupBy(makeCumulative: Boolean = false) = {
+  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false) = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_$suffix"
     val df = DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200)
 
     val viewsSource = Builders.Source.events(
@@ -790,7 +790,7 @@ class JoinTest {
 
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user")),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix), prefix = "user")),
       metaData =
         Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
     )
