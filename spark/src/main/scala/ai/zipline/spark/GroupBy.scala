@@ -336,7 +336,11 @@ object GroupBy {
     val inputDf = groupByConf.sources.asScala
       .map { source =>
         if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && source.isSetEvents) {
-          assert(source.query.timeColumn != null,
+          val timeNecessary =
+            source.query.timeColumn != null ||
+              source.query.selects == null ||
+              source.query.selects.containsKey(Constants.TimeColumn)
+          assert(timeNecessary,
                  s"Time column is necessary for temporal accuracy in events source - from ${source.table}")
         }
         renderDataSourceQuery(source, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
@@ -356,7 +360,6 @@ object GroupBy {
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
-
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
     val keyColumns = groupByConf.getKeyColumns.asScala
     val skewFilteredDf = skewFilter
