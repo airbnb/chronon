@@ -365,7 +365,7 @@ class JoinTest {
   @Test
   def testEventsEventsTemporal(): Unit = {
 
-    val joinConf = getEventsEventsTemporal("temporal_events")
+    val joinConf = getEventsEventsTemporal("_temporal")
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -433,7 +433,8 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff
-        .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = true)
+        .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
+                                 dropOriginal = true)
         .show()
     }
     assertEquals(diff.count(), 0)
