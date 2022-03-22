@@ -22,10 +22,7 @@ object QueryUtils {
     val finalSelects = (Option(selects), Option(fillIfAbsent)) match {
       case (Some(sels), Some(fills)) => toProjections(fills ++ sels)
       case (Some(sels), None)        => toProjections(sels)
-      case (None, _) => {
-        val fills = toProjections(fillIfAbsent.filter { case (key, value) => value != null })
-        Seq("*") ++ fills
-      }
+      case (None, _)                 => Seq("*")
     }
 
     val whereClause = Option(wheres)

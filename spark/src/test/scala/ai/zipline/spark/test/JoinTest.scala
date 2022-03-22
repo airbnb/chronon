@@ -452,13 +452,13 @@ class JoinTest {
     val itemQueriesTable = s"$namespace.item_queries"
     println("Item Queries DF: ")
     val q =
-      """
+      s"""
         |SELECT
         |  `ts`,
         |  `ds`,
         |  `item`,
         |  time_spent_ms as `time_spent_ms`
-        |FROM test_namespace_jointest.view
+        |FROM $viewsTable
         |WHERE
         |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
     spark.sql(q).show()
@@ -650,7 +650,7 @@ class JoinTest {
 
   @Test
   def testVersioning(): Unit = {
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal("versioning")
     joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
