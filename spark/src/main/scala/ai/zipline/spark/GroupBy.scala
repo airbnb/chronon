@@ -340,8 +340,11 @@ object GroupBy {
             source.query.timeColumn != null ||
               source.query.selects == null ||
               source.query.selects.containsKey(Constants.TimeColumn)
-          assert(timeNecessary,
-                 s"Time column is necessary for temporal accuracy in events source - from ${source.table}")
+          assert(
+            timeNecessary,
+            s"Time column is necessary for temporal accuracy in events source - from ${source.table}. " +
+              s"\nselects: ${source.query.selects}\ntimeColumn: ${source.query.timeColumn}"
+          )
         }
         renderDataSourceQuery(source, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
