@@ -301,7 +301,7 @@ class JoinTest {
     )
 
     val viewsTable = s"$namespace.view"
-    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
@@ -312,9 +312,7 @@ class JoinTest {
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
-        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
-        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a"),
       accuracy = Accuracy.SNAPSHOT
@@ -345,9 +343,7 @@ class JoinTest {
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
-                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
-                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
-                                |        AVG(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
+                                |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'

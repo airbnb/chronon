@@ -334,8 +334,12 @@ object GroupBy {
            skewFilter: Option[String] = None): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
-      .map {
-        renderDataSourceQuery(_, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
+      .map { source =>
+        if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && source.isSetEvents) {
+          assert(source.query.timeColumn != null,
+                 s"Time column is necessary for temporal accuracy in and events source - from ${source.table}")
+        }
+        renderDataSourceQuery(source, groupByConf.getKeyColumns.asScala, queryRange, tableUtils, groupByConf.maxWindow)
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
@@ -454,7 +458,10 @@ object GroupBy {
               .map(Constants.TimeColumn -> _)
         }
       case Events =>
-        Map(Constants.TimeColumn -> source.query.timeColumn, Constants.PartitionColumn -> null)
+        val dsBasedTimestamp = // 1 millisecond before ds + 1
+          s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
+        Map(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp),
+            Constants.PartitionColumn -> null)
     }
 
     println(s"""
