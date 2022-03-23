@@ -36,7 +36,7 @@ import ai.zipline.spark.consistency.ConsistencyJob
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.avg
+import org.apache.spark.sql.functions.{avg, lit}
 import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
@@ -590,8 +590,10 @@ class FetcherTest extends TestCase {
     println(endDsExpected.schema.pretty)
     val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
-    val responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
-
+    var responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
+    if (endDs != today) {
+      responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
+    }
     println("expected:")
     endDsExpected.show()
     println("response:")
