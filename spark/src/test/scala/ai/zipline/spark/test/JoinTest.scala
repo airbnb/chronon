@@ -365,7 +365,7 @@ class JoinTest {
   @Test
   def testEventsEventsTemporal(): Unit = {
 
-    val joinConf = getEventsEventsTemporal("_temporal")
+    val joinConf = getEventsEventsTemporal("temporal")
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -446,7 +446,7 @@ class JoinTest {
     val viewsTable = s"$namespace.view_cumulative"
     val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true)
     // Copy and modify existing events/events case to use cumulative GroupBy
-    val joinConf = getEventsEventsTemporal("_cumulative")
+    val joinConf = getEventsEventsTemporal("cumulative")
     joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
 
     // Run job
@@ -788,12 +788,12 @@ class JoinTest {
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-
+    val suffix = if (nameSuffix.isEmpty) "" else s"_$nameSuffix"
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix), prefix = "user")),
       metaData =
-        Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
+        Builders.MetaData(name = s"test.item_temporal_features${suffix}", namespace = namespace, team = "item_team")
     )
 
   }
