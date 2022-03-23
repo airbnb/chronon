@@ -22,11 +22,7 @@ object QueryUtils {
     val finalSelects = (Option(selects), Option(fillIfAbsent)) match {
       case (Some(sels), Some(fills)) => toProjections(fills ++ sels)
       case (Some(sels), None)        => toProjections(sels)
-      case (None, _) => {
-        assert(fillIfAbsent == null || fillIfAbsent.values.forall(_ == null),
-               s"Please specify selects, when columns are being overriden is set")
-        Seq("*")
-      }
+      case (None, _)                 => Seq("*")
     }
 
     val whereClause = Option(wheres)

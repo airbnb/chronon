@@ -3,6 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.zipline.api
+import ai.zipline.api.Extensions.GroupByOps
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.spark._
@@ -300,8 +301,8 @@ class JoinTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
-    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable)
+    val viewsTable = s"$namespace.view_events"
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
@@ -312,9 +313,7 @@ class JoinTest {
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
-        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
-        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a"),
       accuracy = Accuracy.SNAPSHOT
@@ -345,9 +344,7 @@ class JoinTest {
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
-                                |        MIN(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_min,
-                                |        MAX(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT),  $viewsTable.ts, null)) as user_team_a_unit_test_item_views_ts_max,
-                                |        AVG(IF(CAST(queries.ts/(86400*1000) AS BIGINT) > CAST($viewsTable.ts/(86400*1000) AS BIGINT), time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
+                                |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
@@ -368,14 +365,14 @@ class JoinTest {
   @Test
   def testEventsEventsTemporal(): Unit = {
 
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal("temporal")
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_temporal"
     DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
 
     val viewsSource = Builders.Source.events(
@@ -436,7 +433,8 @@ class JoinTest {
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff
-        .replaceWithReadableTime(Seq("ts", "a_user_ts_max", "b_user_ts_max"), dropOriginal = true)
+        .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
+                                 dropOriginal = true)
         .show()
     }
     assertEquals(diff.count(), 0)
@@ -445,23 +443,23 @@ class JoinTest {
   @Test
   def testEventsEventsCumulative(): Unit = {
     // Create a cumulative source GroupBy
-    val viewsTable = s"$namespace.view"
-    val viewsGroupBy = getViewsGroupBy(makeCumulative = true)
+    val viewsTable = s"$namespace.view_cumulative"
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true)
     // Copy and modify existing events/events case to use cumulative GroupBy
-    val joinConf = getEventsEventsTemporal("_cumulative")
+    val joinConf = getEventsEventsTemporal("cumulative")
     joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
 
     // Run job
     val itemQueriesTable = s"$namespace.item_queries"
     println("Item Queries DF: ")
     val q =
-      """
+      s"""
         |SELECT
         |  `ts`,
         |  `ds`,
         |  `item`,
         |  time_spent_ms as `time_spent_ms`
-        |FROM test_namespace_jointest.view
+        |FROM $viewsTable
         |WHERE
         |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
     spark.sql(q).show()
@@ -544,22 +542,28 @@ class JoinTest {
   @Test
   def testSourceQueryRender(): Unit = {
     // Test cumulative
-    val viewsGroupByCumulative = getViewsGroupBy(makeCumulative = true)
-    val renderedCumulative = renderDataSourceQuery(viewsGroupByCumulative.sources.asScala.head,
-                                                   Seq("item"),
-                                                   PartitionRange("2021-02-23", "2021-05-03"),
-                                                   tableUtils,
-                                                   None)
+    val viewsGroupByCumulative = getViewsGroupBy(suffix = "render", makeCumulative = true)
+    val renderedCumulative = renderDataSourceQuery(
+      viewsGroupByCumulative.sources.asScala.head,
+      Seq("item"),
+      PartitionRange("2021-02-23", "2021-05-03"),
+      tableUtils,
+      None,
+      viewsGroupByCumulative.inferredAccuracy
+    )
     // Only checking that the date logic is correct in the query
     assert(renderedCumulative.contains(s"ds >= '${today}' AND ds <= '${today}'"))
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
-    val renderedIncremental = renderDataSourceQuery(viewsGroupByIncremental.sources.asScala.head,
-                                                    Seq("item"),
-                                                    PartitionRange("2021-01-01", "2021-01-03"),
-                                                    tableUtils,
-                                                    None)
+    val renderedIncremental = renderDataSourceQuery(
+      viewsGroupByIncremental.sources.asScala.head,
+      Seq("item"),
+      PartitionRange("2021-01-01", "2021-01-03"),
+      tableUtils,
+      None,
+      viewsGroupByCumulative.inferredAccuracy
+    )
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
   }
@@ -647,7 +651,7 @@ class JoinTest {
 
   @Test
   def testVersioning(): Unit = {
-    val joinConf = getEventsEventsTemporal()
+    val joinConf = getEventsEventsTemporal("versioning")
     joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
@@ -669,7 +673,7 @@ class JoinTest {
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
-    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user_2")
+    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
@@ -695,7 +699,7 @@ class JoinTest {
     computed.show()
     val itemQueriesTable = joinConf.getLeft.getEvents.getTable
     val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_versioning"
 
     val expected = tableUtils.sql(s"""
                                      |WITH
@@ -735,14 +739,14 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  private def getViewsGroupBy(makeCumulative: Boolean = false) = {
+  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false) = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view"
+    val viewsTable = s"$namespace.view_$suffix"
     val df = DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200)
 
     val viewsSource = Builders.Source.events(
@@ -784,12 +788,12 @@ class JoinTest {
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-
+    val suffix = if (nameSuffix.isEmpty) "" else s"_$nameSuffix"
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(), prefix = "user")),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix), prefix = "user")),
       metaData =
-        Builders.MetaData(name = s"test.item_temporal_features${nameSuffix}", namespace = namespace, team = "item_team")
+        Builders.MetaData(name = s"test.item_temporal_features${suffix}", namespace = namespace, team = "item_team")
     )
 
   }
