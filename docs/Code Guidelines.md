@@ -56,4 +56,4 @@ Scala 3 fixes a lot of these design mistakes, but the world is quite far from
 adopting Scala 3 (as I write this).
 
 Having said all that, Scala 2 is leagues ahead of any other language on JVM, 
-in terms of power today. Most importantly, Spark apis are mainly in Scala.  
+in terms of power today. Most importantly, Spark APIs are mainly in Scala.  

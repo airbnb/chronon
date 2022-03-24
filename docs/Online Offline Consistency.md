@@ -66,7 +66,7 @@ Filtering in fetcher using:
      - `<namespace>.<join_name>_logged`
   3. Fetch join conf from kv store
   4. Replace left source with logged table. (prefix value_columns with logged)
-  5. Compute offline join. (earliest unavail till now)
+  5. Compute offline join. (earliest unavailable ds till now)
      - Save to `<namespace>.<join_name>_comparison`.  
   6. Consistency Metrics to compute 
      1. equality comparison: (universal to all types) 
@@ -133,7 +133,7 @@ Currently, will have a maximum of 4 distributions, 3 Longs and 1 double per feat
 For a join with 1000 features, this comes to 118 KB per day of data. For 100 features, it is 12 KB.
 For a three-month range, it will be 9 MB and 0.9 MB respectively.
 
-Which is to say that displaying 10,000 metrics at one time is the breaking current
+Which is to say that displaying 10,000 metrics at one time is the current
 breaking point of the design. 
 
 ## Future work
