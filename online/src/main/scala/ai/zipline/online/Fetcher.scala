@@ -8,8 +8,10 @@ import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 
 import java.io.{ByteArrayOutputStream, PrintStream}
+import java.util.Base64
 import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.Future
+import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 
 object Fetcher {
@@ -125,6 +127,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
+                  println(s"zipline could not encode request keys or casted keys ${exInner.getStackTrace
+                    .mkString("Array(", ", ", ")")}")
                   throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
               }
           }
@@ -148,7 +152,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         Some(batchRequest) ++ streamingRequestOpt
       case _ => Seq.empty
     }
-
+    println(
+      s"zipline get group by all requests ${allRequests.map(req => Base64.getEncoder.encodeToString(req.keyBytes) + " " + req.dataset).mkString(",")}")
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
@@ -182,6 +187,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
             responseMapTry.failed.map(ex => reportFailure(requests, context.withGroupBy, ex))
             Response(request, responseMapTry)
         }.toList
+        println(s"zipline group by responses $responses")
         responses
       }
   }
@@ -208,6 +214,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
     val context = Metrics.Context(method = "fetchJoin")
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
+    println("zipline before join decomposed")
     val joinDecomposed: Seq[(Request, Try[(Seq[PrefixedRequest], Metrics.Context)])] =
       requests.iterator.map { request =>
         val joinTry = getJoinConf(request.name)
@@ -222,11 +229,15 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         }
         request -> decomposedTry
       }.toSeq
-
+    println(s"zipline prepare unique requests $joinDecomposed")
     // dedup duplicate requests
     val uniqueRequests = joinDecomposed.iterator.flatMap(_._2.map(_._1).getOrElse(Seq.empty)).map(_.request).toSet
+    println(s"zipline unique requests $uniqueRequests")
     val groupByResponsesFuture = fetchGroupBys(uniqueRequests.toSeq)
+    println(s"zipline after fetch group bys $groupByResponsesFuture")
 
+    val res = Await.result(groupByResponsesFuture, 3000.milliseconds)
+    println(s"zipline debug wait for res ${res}")
     // re-attach groupBy responses to join
     groupByResponsesFuture
       .map { groupByResponses =>
@@ -237,6 +248,9 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               case (groupByRequestsWithPrefix, joinContext) =>
                 val result = groupByRequestsWithPrefix.iterator.flatMap {
                   case PrefixedRequest(prefix, groupByRequest) =>
+                    if (!responseMap.contains(groupByRequest)) {
+                      println(s"zipline Couldn't find a groupBy response for $groupByRequest in response map")
+                    }
                     responseMap
                       .getOrElse(groupByRequest,
                                  Failure(new IllegalStateException(
@@ -248,11 +262,14 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                         case ex: Throwable =>
                           val baos = new ByteArrayOutputStream()
                           ex.printStackTrace(new PrintStream(baos, true))
-                          Map(groupByRequest.name + "_exception" -> baos.toString)
+                          val errorMsg = baos.toString
+                          println(s"zipline debug print2 $errorMsg")
+                          Map(groupByRequest.name + "_exception" -> errorMsg)
                       }
                       .get
                 }.toMap
                 FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, joinContext)
+                println(s"zipline debug result $result")
                 result
             }
             Response(joinRequest, joinValuesTry)
@@ -262,10 +279,12 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
           FetcherMetrics.reportFinalLatency(System.currentTimeMillis() - startTimeMs,
                                             context.withJoin(resp.request.name))
         }
+        println(s"zipline finished processing responses ${responses}")
         responses
       }
       .recover {
         case e: Exception =>
+          println(s"zipline debug print3 ${e.printStackTrace()} \n ${e.getMessage}")
           reportFailure(requests, context.withJoin, e)
           throw e
       }

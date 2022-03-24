@@ -20,6 +20,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     val startTimeMs = System.currentTimeMillis()
     val joinConf = kvStore.getString(s"joins/$name", dataset, timeoutMillis)
     if (joinConf.isFailure) {
+      println(
+        s"zipline debug print 1: Couldn't fetch join conf for $name, please make sure that metadata-upload was successful",
+        joinConf.failed.get)
+
       Failure(
         new RuntimeException(
           s"Couldn't fetch join conf for $name, please make sure that metadata-upload was successful",

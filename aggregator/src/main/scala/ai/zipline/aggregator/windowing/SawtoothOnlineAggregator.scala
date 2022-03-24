@@ -63,6 +63,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     val headRows = Option(streamingRows).getOrElse(Array.empty[Row].iterator)
 
     if (batchEndTs > queryTs) {
+      // todo: it is swallowed here
       throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
     }
 

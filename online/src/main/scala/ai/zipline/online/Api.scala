@@ -43,11 +43,14 @@ trait KVStore {
     val responseFutureOpt = get(fetchRequest)
     val responseOpt = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
     if (responseOpt.isEmpty) {
+      println(s"zipline Request for key ${key} in dataset ${dataset} is empty")
       Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} is empty"))
     } else if (responseOpt.get.values.isFailure) {
+      println(s"zipline Request for key ${key} in dataset ${dataset} failed", responseOpt.get.values.failed.get)
       Failure(
         new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", responseOpt.get.values.failed.get))
     } else {
+      println(s"zipline metadata ${new String(responseOpt.get.latest.get.bytes, Constants.UTF8)}")
       Success(new String(responseOpt.get.latest.get.bytes, Constants.UTF8))
     }
   }
