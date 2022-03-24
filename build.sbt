@@ -30,6 +30,7 @@ lazy val api = project
       "org.apache.thrift" % "libthrift" % "0.13.0",
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
+      "org.scala-lang" % "scala-reflect" % "2.11.12",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
     ),
