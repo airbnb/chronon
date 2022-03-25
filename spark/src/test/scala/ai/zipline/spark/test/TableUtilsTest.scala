@@ -12,17 +12,16 @@ class TableUtilsTest {
   def ColumnFromSqlTest(): Unit = {
     val sampleSql =
       """
-        |SELECT 
+        |SELECT
         |  CASE WHEN column_a IS NULL THEN 1 ELSE NULL END,
         |  column_b,
         |  column_c AS not_this_one,
-        |  IF(column_d, column_e, NULL) AS not_this_one_either
+        |  COALESCE(IF(column_d, column_e, NULL), column_e) AS not_this_one_either
         |FROM fake_table
         |WHERE column_f IS NOT NULL AND column_g != 'Something'
         |""".stripMargin
 
     val columns = tableUtils.getColumnsFromQuery(sampleSql)
-    println(columns)
     val expected = Seq("column_a", "column_b", "column_c", "column_d", "column_e", "column_f", "column_g")
     assertEquals(columns.sorted, expected)
   }

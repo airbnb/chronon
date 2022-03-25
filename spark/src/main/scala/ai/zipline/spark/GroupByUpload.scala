@@ -9,8 +9,6 @@ import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
-import scala.collection.JavaConversions.asScalaBuffer
-
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
 
@@ -105,14 +103,14 @@ object GroupByUpload {
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     if (groupByConf.streamingSource.isDefined) {
-      val fullInputSchema = tableUtils.getSchemaFromTable(groupByConf.sources.head.table)
+      val fullInputSchema = tableUtils.getSchemaFromTable(groupByConf.streamingSource.get.table)
       val streamingQuery = groupByConf.buildStreamingQuery
-      val inputSchema = streamingQuery contains '*' match {
-        case true => fullInputSchema
-        case false =>
+      val inputSchema =
+        if (streamingQuery contains '*') fullInputSchema
+        else {
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
           StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
-      }
+        }
       groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
     }
 

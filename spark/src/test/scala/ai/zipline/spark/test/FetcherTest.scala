@@ -38,7 +38,6 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.JavaConversions.asScalaBuffer
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -67,20 +66,16 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String,
                    previous_ds: String): Unit = {
-    val groupBy = GroupBy.from(groupByConf, PartitionRange(previous_ds, ds), tableUtils)
-    // for events this will select ds-1 <= ts < ds
-
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
-        val entity = groupByConf.sources.head.getEntities
-        val df = tableUtils.sql(s"SELECT * FROM ${entity.mutationTable} WHERE ds = '$ds'")
+        val entity = groupByConf.streamingSource.get
+        val df = tableUtils.sql(s"SELECT * FROM ${entity.getEntities.mutationTable} WHERE ds = '$ds'")
         df.withColumnRenamed(entity.query.reversalColumn, Constants.ReversalColumn)
           .withColumnRenamed(entity.query.mutationTimeColumn, Constants.MutationTimeColumn)
       case DataModel.Events =>
-        val table = groupByConf.sources.head.table
+        val table = groupByConf.streamingSource.get.table
         tableUtils.sql(s"SELECT * FROM $table WHERE ds >= '$ds'")
     }
-
     val inputStream = new InMemoryStream
     val groupByStreaming =
       new streaming.GroupBy(
