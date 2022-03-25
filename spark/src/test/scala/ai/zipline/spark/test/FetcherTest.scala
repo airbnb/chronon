@@ -435,7 +435,6 @@ class FetcherTest extends TestCase {
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
-
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
       tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
