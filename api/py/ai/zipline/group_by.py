@@ -168,18 +168,6 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         sources = [sources]
 
     validate_group_by(sources, keys, aggregations)
-    # create a deep copy for case: multiple group_bys use the same sources,
-    # validation_sources will fail after the first group_by
-    updated_sources = copy.deepcopy(sources)
-    # mapping ts with query.timeColumn
-    for src in updated_sources:
-        if src.events:
-            src.events.query.selects.update({"ts": src.events.query.timeColumn})
-        else:
-            # timeColumn for entity source is optional
-            if src.entities.query.timeColumn:
-                src.entities.query.selects.update({"ts": src.entities.query.timeColumn})
-
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
     kwargs.update({
@@ -199,7 +187,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
         team=team)
 
     return ttypes.GroupBy(
-        sources=updated_sources,
+        sources=sources,
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata,
