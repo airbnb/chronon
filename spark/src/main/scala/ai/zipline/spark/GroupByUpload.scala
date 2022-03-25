@@ -112,6 +112,8 @@ object GroupByUpload {
           StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
         }
       groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
+    } else {
+      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
     }
 
     val metaRows = Seq(
