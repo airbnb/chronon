@@ -6,7 +6,10 @@ import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, Thrif
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
+
+import scala.collection.JavaConversions.asScalaBuffer
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
@@ -101,9 +104,15 @@ object GroupByUpload {
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
-
-    val inputSchema = groupBy.inputDf.schema.toAvroSchema(name = "Input").toString(true)
-    groupByServingInfo.setInputAvroSchema(inputSchema)
+    val streamingQuery = groupByConf.buildStreamingQuery
+    val fullInputSchema = tableUtils.getSchemaFromTable(groupByConf.sources.head.table)
+    val inputSchema = streamingQuery contains '*' match {
+      case true => fullInputSchema
+      case false =>
+        val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
+        StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+    }
+    groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
 
     val metaRows = Seq(
       Row(

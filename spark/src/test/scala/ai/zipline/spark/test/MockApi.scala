@@ -16,9 +16,8 @@ import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
 import org.apache.avro.specific.SpecificDatumReader
-import ai.zipline.api
 
-class MockDecoder(inputSchema: StructType) extends StreamDecoder {
+class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
 
   private def byteArrayToAvro(avro: Array[Byte], schema: Schema): GenericRecord = {
     val reader = new SpecificDatumReader[GenericRecord](schema)
@@ -28,13 +27,14 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
   }
 
   override def decode(bytes: Array[Byte]): Mutation = {
-    val avroSchema = AvroUtils.fromZiplineSchema(schema)
+    val avroSchema = AvroUtils.fromZiplineSchema(streamSchema)
     val avroRecord = byteArrayToAvro(bytes, avroSchema)
     val row: Array[Any] = schema.fields.map { f =>
       RowConversions.fromAvroRecord(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
     }
     if (schema.fields.contains(Constants.ReversalColumn)) {
-      val isBefore: Boolean = row(schema.indexOf(Constants.ReversalColumn)).asInstanceOf[Boolean]
+      val isBefore: Boolean =
+        row(schema.indexOf(Constants.ReversalColumn)).asInstanceOf[Boolean]
       if (isBefore) {
         return Mutation(schema, row, null)
       }
@@ -45,10 +45,10 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
   override def schema: StructType = inputSchema
 }
 
-class MockApi(kvStore: () => KVStore) extends Api(null) {
+class MockApi(kvStore: () => KVStore, streamSchema: StructType) extends Api(null) {
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
-    new MockDecoder(parsedInfo.streamZiplineSchema)
+    new MockDecoder(parsedInfo.streamZiplineSchema, streamSchema)
   }
 
   override def genKvStore: KVStore = {
