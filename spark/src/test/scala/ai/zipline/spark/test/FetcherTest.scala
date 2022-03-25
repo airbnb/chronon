@@ -3,7 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.aggregator.windowing.TsUtils
 import ai.zipline.api.Constants.ZiplineMetadataKey
-import ai.zipline.api.Extensions.{GroupByOps, MetadataOps}
+import ai.zipline.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.zipline.api.{
   Accuracy,
   BooleanType,
@@ -66,16 +66,23 @@ class FetcherTest extends TestCase {
                    tableUtils: TableUtils,
                    ds: String,
                    previous_ds: String): Unit = {
-    val groupBy = GroupBy.from(groupByConf, PartitionRange(previous_ds, ds), tableUtils)
-    // for events this will select ds-1 <= ts < ds
-
-    val selected = groupByConf.dataModel match {
-      case DataModel.Entities => groupBy.mutationDf.filter(s"ds='$ds'")
-      case DataModel.Events   => groupBy.inputDf.filter(s"ds>='$ds'")
+    val inputStreamDf = groupByConf.dataModel match {
+      case DataModel.Entities =>
+        val entity = groupByConf.streamingSource.get
+        val df = tableUtils.sql(s"SELECT * FROM ${entity.getEntities.mutationTable} WHERE ds = '$ds'")
+        df.withColumnRenamed(entity.query.reversalColumn, Constants.ReversalColumn)
+          .withColumnRenamed(entity.query.mutationTimeColumn, Constants.MutationTimeColumn)
+      case DataModel.Events =>
+        val table = groupByConf.streamingSource.get.table
+        tableUtils.sql(s"SELECT * FROM $table WHERE ds >= '$ds'")
     }
     val inputStream = new InMemoryStream
     val groupByStreaming =
-      new streaming.GroupBy(inputStream.getInMemoryStreamDF(spark, selected), spark, groupByConf, new MockApi(kvStore))
+      new streaming.GroupBy(
+        inputStream.getInMemoryStreamDF(spark, inputStreamDf),
+        spark,
+        groupByConf,
+        new MockApi(kvStore, StructType.from("Stream", Conversions.toZiplineSchema(inputStreamDf.schema))))
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
     val dataStream = groupByStreaming.buildDataStream()
     val query = dataStream.trigger(Trigger.Once()).start()
@@ -168,7 +175,7 @@ class FetcherTest extends TestCase {
     // Schemas
     val snapshotSchema = StructType(
       "listing_ratings_snapshot_fetcher",
-      Array(StructField("listing_id", IntType),
+      Array(StructField("listing", IntType),
             StructField("ts", LongType),
             StructField("rating", IntType),
             StructField("ds", StringType))
@@ -208,7 +215,7 @@ class FetcherTest extends TestCase {
     val endPartition = "2021-04-10"
     val rightSource = Builders.Source.entities(
       query = Builders.Query(
-        selects = Builders.Selects("listing_id", "ts", "rating"),
+        selects = Map("listing_id" -> "listing", "ts" -> "ts", "rating" -> "rating"),
         startPartition = startPartition,
         endPartition = endPartition,
         mutationTimeColumn = "mutation_time",
@@ -423,7 +430,6 @@ class FetcherTest extends TestCase {
       }
     }
     joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
-
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
       tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")

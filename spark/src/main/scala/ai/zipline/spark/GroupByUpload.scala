@@ -6,6 +6,7 @@ import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, Thrif
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
@@ -101,9 +102,19 @@ object GroupByUpload {
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
-
-    val inputSchema = groupBy.inputDf.schema.toAvroSchema(name = "Input").toString(true)
-    groupByServingInfo.setInputAvroSchema(inputSchema)
+    if (groupByConf.streamingSource.isDefined) {
+      val fullInputSchema = tableUtils.getSchemaFromTable(groupByConf.streamingSource.get.table)
+      val streamingQuery = groupByConf.buildStreamingQuery
+      val inputSchema =
+        if (streamingQuery contains '*') fullInputSchema
+        else {
+          val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
+          StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+        }
+      groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
+    } else {
+      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
+    }
 
     val metaRows = Seq(
       Row(
