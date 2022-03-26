@@ -283,7 +283,8 @@ object Extensions {
     def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
 
     def buildStreamingQuery: String = {
-      assert(streamingSource.isDefined, "You should probably define a topic in one of your sources")
+      assert(streamingSource.isDefined,
+             s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
       val query = streamingSource.get.query
       val selects = Option(query.selects).map(_.asScala.toMap).orNull
       val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)

@@ -1,6 +1,7 @@
 package ai.zipline.spark
 
 import ai.zipline.api.Constants
+import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
@@ -24,6 +25,21 @@ case class TableUtils(sparkSession: SparkSession) {
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
+  }
+
+  // Given a table and a query extract the schema of the columns involved as input.
+  def getColumnsFromQuery(query: String): Seq[String] = {
+    val parser = sparkSession.sessionState.sqlParser
+    val logicalPlan = parser.parsePlan(query)
+    logicalPlan.collect {
+      case p: Project =>
+        p.projectList.map(p => parser.parseExpression(p.sql).references.map(attr => attr.name)).flatten
+      case f: Filter => f.condition.references.map(attr => attr.name)
+    }.flatten
+  }
+
+  def getSchemaFromTable(tableName: String): StructType = {
+    sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
   def lastAvailablePartition(tableName: String): Option[String] =
