@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 
 import scala.Function1;
 import scala.collection.Iterator;
-import scala.collection.JavaConversions;
+import scala.jdk.CollectionConverters;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.concurrent.Future;
