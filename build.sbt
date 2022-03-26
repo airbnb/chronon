@@ -7,7 +7,10 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, spark, online)
-  .settings(name := "zipline")
+  .settings(
+    crossScalaVersions := Nil,
+    name := "zipline"
+  )
 
 lazy val api = project
   .settings(
@@ -16,17 +19,29 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
+    crossScalaVersions := List("2.11.12", "2.13.6"),
     libraryDependencies ++= Seq(
       "org.apache.thrift" % "libthrift" % "0.13.0",
-      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.6.7.1",
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7",
-      "com.fasterxml.jackson.core" % "jackson-core" % "2.6.7"
-    )
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
+      "org.scala-lang" % "scala-reflect" % "2.11.12",
+      "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
+    ),
+    unmanagedSourceDirectories in Compile ++= {
+      (unmanagedSourceDirectories in Compile).value.map { dir =>
+        CrossVersion.partialVersion(scalaVersion.value) match {
+          case Some((2, 13)) => file(dir.getPath ++ "213")
+          case _             => file(dir.getPath ++ "211")
+        }
+      }
+    }
   )
 
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
+    crossScalaVersions := List("2.11.12", "2.13.6"),
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
@@ -37,13 +52,22 @@ lazy val aggregator = project
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
+    crossScalaVersions := List("2.11.12", "2.13.6"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "org.apache.avro" % "avro" % "1.8.0",
       "net.jodah" % "typetools" % "0.4.1"
-    )
+    ),
+    libraryDependencies ++= {
+      CrossVersion.partialVersion(scalaVersion.value) match {
+        case Some((2, major)) if major <= 12 =>
+          Seq()
+        case _ =>
+          Seq("org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4")
+      }
+    }
   )
 
 def cleanSparkMeta: Unit = {
@@ -58,7 +82,8 @@ val sparkLibs = Seq(
   "org.apache.spark" %% "spark-hive" % "2.4.0",
   "org.apache.spark" %% "spark-core" % "2.4.0",
   "org.apache.spark" %% "spark-streaming" % "2.4.0",
-  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4",
+  "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
 )
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
