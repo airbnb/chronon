@@ -31,11 +31,14 @@ case class TableUtils(sparkSession: SparkSession) {
   def getColumnsFromQuery(query: String): Seq[String] = {
     val parser = sparkSession.sessionState.sqlParser
     val logicalPlan = parser.parsePlan(query)
-    logicalPlan.collect {
-      case p: Project =>
-        p.projectList.map(p => parser.parseExpression(p.sql).references.map(attr => attr.name)).flatten
-      case f: Filter => f.condition.references.map(attr => attr.name)
-    }.flatten
+    logicalPlan
+      .collect {
+        case p: Project =>
+          p.projectList.map(p => parser.parseExpression(p.sql).references.map(attr => attr.name)).flatten
+        case f: Filter => f.condition.references.map(attr => attr.name)
+      }
+      .flatten
+      .distinct
   }
 
   def getSchemaFromTable(tableName: String): StructType = {
