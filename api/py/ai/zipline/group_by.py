@@ -1,4 +1,3 @@
-from email.headerregistry import Group
 import inspect
 import json
 from typing import List, Optional, Union, Dict, Callable, Tuple
@@ -115,7 +114,7 @@ def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation
 def validate_group_by(group_by: ttypes.GroupBy):
     sources = group_by.sources
     keys = group_by.keyColumns
-    aggregations = group_by.aggregations                  
+    aggregations = group_by.aggregations
     # check ts is not included in query.select
     first_source_columns = set(utils.get_columns(sources[0]))
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Zipline," \
@@ -128,7 +127,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
             assert query.reversalColumn is None, "reversalColumn should not be specified for event source " \
                                                  "as it won't have mutations"
             if group_by.accuracy != Accuracy.SNAPSHOT:
-                assert query.timeColumn != None, "please specify query.timeColumn for non-snapshot accurate " \
+                assert query.timeColumn is not None, "please specify query.timeColumn for non-snapshot accurate " \
                     "group by with event source"
         else:
             if contains_windowed_aggregation(aggregations):
