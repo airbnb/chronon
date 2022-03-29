@@ -4,6 +4,7 @@ import ai.zipline.api._
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 
 import java.util
+import java.util.PriorityQueue
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -135,7 +136,7 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def isDeletable: Boolean = true
 }
 
-class Histogram extends SimpleAggregator[String, util.Map[String, Int], util.Map[String, Int]] {
+class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, Int], util.Map[String, Int]] {
   type IrMap = util.Map[String, Int]
   override def outputType: DataType = MapType(StringType, IntType)
 
@@ -175,7 +176,26 @@ class Histogram extends SimpleAggregator[String, util.Map[String, Int], util.Map
     ir1
   }
 
-  override def finalize(ir: IrMap): IrMap = ir
+  override def finalize(ir: IrMap): IrMap = {
+    if (k > 0 && ir.size() > k) { // keep only top k values
+      val pq = new MinHeap[Int](k, Ordering[Int].reverse)
+      val it = ir.entrySet().iterator()
+      val heap = new util.ArrayList[Int]()
+      while (it.hasNext) { pq.insert(heap, it.next().getValue) }
+      val cutOff = pq.sort(heap).get(k - 1)
+      val newResult = new util.HashMap[String, Int]()
+      val itNew = ir.entrySet().iterator()
+      while (itNew.hasNext && newResult.size() < k) {
+        val entry = itNew.next()
+        if (entry.getValue >= cutOff) {
+          newResult.put(entry.getKey, entry.getValue)
+        }
+      }
+      newResult
+    } else {
+      ir
+    }
+  }
 
   override def delete(ir: IrMap, input: String): IrMap = {
     incrementInMap(ir, input, -1)

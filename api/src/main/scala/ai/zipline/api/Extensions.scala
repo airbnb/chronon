@@ -84,13 +84,13 @@ object Extensions {
   // not exposed to users
   implicit class AggregationPartOps(aggregationPart: AggregationPart) {
 
-    def getInt(arg: String): Int = {
+    def getInt(arg: String, default: Option[Int] = None): Int = {
       val argOpt = Option(aggregationPart.argMap).flatMap(_.asScala.get(arg))
       require(
-        argOpt.isDefined,
+        argOpt.isDefined || default.isDefined,
         s"$arg needs to be specified in the `argMap` for ${aggregationPart.operation} type"
       )
-      argOpt.get.toInt
+      argOpt.map(_.toInt).getOrElse(default.get)
     }
 
     private def opSuffix =

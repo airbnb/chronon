@@ -34,15 +34,15 @@ object TestRow {
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("A", "B")),
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A")),
       TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq()),
       TestRow(3L, 5, 7.0f, "D", null, null),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "C")),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("D", "E"))
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D")),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"))
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "H")),
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H")),
       TestRow(5L, 1, 2.0f, "H", Seq(1), Seq())
     )
 
@@ -61,11 +61,8 @@ class RowAggregatorTest extends TestCase {
     sessionLengthAvgByTitle.put("H", 1) // 0-1 / 0-1
 
     val histogram = new java.util.HashMap[String, Int]()
-    histogram.put("A", 1)
-    histogram.put("B", 1)
-    histogram.put("D", 1)
-    histogram.put("E", 1)
-    histogram.put("H", -1) // 0-1 / 0-1
+    histogram.put("A", 4)
+    histogram.put("B", 2)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
@@ -82,7 +79,7 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
-      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input") -> histogram
+      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip
