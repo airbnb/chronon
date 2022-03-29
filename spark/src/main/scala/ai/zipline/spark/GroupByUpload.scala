@@ -103,10 +103,11 @@ object GroupByUpload {
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
     groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
     if (groupByConf.streamingSource.isDefined) {
-      val fullInputSchema = tableUtils.getSchemaFromTable(groupByConf.streamingSource.get.table)
+      val streamingSource = groupByConf.streamingSource.get
+      val fullInputSchema = tableUtils.getSchemaFromTable(streamingSource.table)
       val streamingQuery = groupByConf.buildStreamingQuery
       val inputSchema =
-        if (streamingQuery contains '*') fullInputSchema
+        if (!Option(streamingSource.query.selects).isDefined) fullInputSchema
         else {
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
           StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
