@@ -23,7 +23,7 @@ import ai.zipline.api.{
   GroupBy => GroupByConf
 }
 import ai.zipline.online.Fetcher.{Request, Response}
-import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
+import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, JavaResponse, KVStore, MetadataStore, ZCompletableFuture}
 import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
@@ -35,11 +35,10 @@ import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
-import java.lang
+import java.{lang, util}
 import java.util.TimeZone
-import java.util.concurrent.Executors
+import java.util.concurrent.{CompletableFuture, Executors}
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
-import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
@@ -480,12 +479,15 @@ class FetcherTest extends TestCase {
           val responses = if (useJavaFetcher) {
             // Converting to java request and using the toScalaRequest functionality to test conversion
             val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
-            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
-            FutureConverters
-              .toScala(javaResponse)
-              .map(_.asScala.map(jres =>
-                Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
-                         Try(jres.values.asScala.toMap))))
+            val javaResponse = javaFetcher
+              .fetchJoin(convertedJavaRequests)
+              .asInstanceOf[ZCompletableFuture[util.List[JavaResponse]]]
+              .wrapped
+            javaResponse
+              .map(
+                _.asScala.map(jres =>
+                  Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                           Try(jres.values.asScala.toMap))))
           } else {
             fetcher.fetchJoin(r)
           }
@@ -513,7 +515,7 @@ class FetcherTest extends TestCase {
     (0 until count).foreach { _ =>
       val (latency, qps, _) = joinResponses()
       latencySum += latency
-      qpsSum += qps
+      qpsSum = qpsSum + qps
     }
     printFetcherStats(false, requests, count, chunkSize, qpsSum, latencySum)
 
@@ -522,7 +524,7 @@ class FetcherTest extends TestCase {
     (0 until count).foreach { _ =>
       val (latency, qps, _) = joinResponses(true)
       latencySum += latency
-      qpsSum += qps
+      qpsSum = qpsSum + qps
     }
     printFetcherStats(true, requests, count, chunkSize, qpsSum, latencySum)
 
