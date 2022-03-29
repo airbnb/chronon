@@ -7,7 +7,6 @@ import re
 import subprocess
 from datetime import datetime
 import xml.etree.ElementTree as ET
-from distutils.version import StrictVersion
 
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class}'
 OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds}'
