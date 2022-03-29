@@ -9,9 +9,9 @@ REPO_ID=airbnb
 
 GIT_BRANCH=$(git branch --show-current)
 
-if [[ "$GIT_BRANCH" != "master" && "$MINOR_VERSION" != *[tT]est* ]]
+if [[ "$GIT_BRANCH" != "master" && "$MINOR_VERSION" != *staging* && "$MINOR_VERSION" != *[tT]est* ]]
 then
-  echo "Your branch($GIT_BRANCH) is not master, but the version doesn't contain 'test'"
+  echo "Your branch($GIT_BRANCH) is not master, but the version doesn't contain 'test' or 'staging'"
   exit
 fi
 
