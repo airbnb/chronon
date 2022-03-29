@@ -75,7 +75,7 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
-def download_jar(version, jar_type='uber', staging=False):
+def download_jar(version, jar_type='uber', release_tag=None):
     # TODO(Open Sourcing) this should be hard coded to mavencentral path
     base_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/zipline/spark_{}_2.11".format(
         jar_type)
@@ -87,18 +87,12 @@ def download_jar(version, jar_type='uber', staging=False):
             versions = [
                 node.text
                 for node in meta_tree.findall("./versioning/versions/")
-                if re.search(r"^\d+\.\d+\.\d+$", node.text)
+                if re.search(
+                    r"^\d+\.\d+\.\d+{}$".format('\_{}\d*'.format(release_tag) if release_tag else ''),
+                    node.text
+                )
             ]
             version = versions[-1]
-            if staging:
-                staging_version = [
-                    node.text
-                    for node in meta_tree.findall("./versioning/versions/")
-                    if re.search(r"^\d+\.\d+\.\d+\_staging\d*$", node.text)
-                ]
-                version = versions[-1] if not staging_version or \
-                    StrictVersion(versions[-1]) > StrictVersion(staging_version[-1].split('_staging')[0]) \
-                    else staging_version[-1]
         jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}.jar".format(
             base_url=base_url,
             version=version,
@@ -226,13 +220,12 @@ if __name__ == "__main__":
     parser.add_argument('--online-args', default=os.getenv('ZIPLINE_ONLINE_ARGS', ''),
                         help='Basic arguments that need to be supplied to all online modes')
     parser.add_argument('--zipline-jar', default=None, help='Path to zipline OS jar')
-    parser.add_argument('--staging', action='store_true', default=False, help='Use the latest staging or production.')
+    parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
     args, unknown_args = parser.parse_known_args()
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     print(args.online_args)
     print(args.args)
-    jar_path = args.zipline_jar if args.zipline_jar or args.dry_run else download_jar(
-        args.version, jar_type, args.staging)
+    jar_path = args.zipline_jar if args.zipline_jar else download_jar(args.version, jar_type, args.release_tag)
     Runner(args, jar_path).run()
