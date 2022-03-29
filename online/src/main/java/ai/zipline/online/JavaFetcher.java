@@ -1,22 +1,18 @@
 package ai.zipline.online;
 
-import ai.zipline.online.KVStore;
 import ai.zipline.api.Constants;
-import ai.zipline.online.Fetcher;
 import ai.zipline.online.Fetcher.Request;
 import ai.zipline.online.Fetcher.Response;
+import scala.Function1;
+import scala.collection.Iterator;
+import scala.collection.Seq;
+import scala.collection.mutable.ArrayBuffer;
+import scala.concurrent.Future;
+import scala.runtime.AbstractFunction1;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-
-import scala.Function1;
-import scala.collection.Iterator;
-import scala.collection.JavaConversions;
-import scala.collection.Seq;
-import scala.collection.mutable.ArrayBuffer;
-import scala.concurrent.Future;
-import scala.compat.java8.FutureConverters;
 
 public class JavaFetcher  {
   public static final Long DEFAULT_TIMEOUT = 10000L;
@@ -48,10 +44,13 @@ public class JavaFetcher  {
   }
 
   private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
-    return FutureConverters
-        .toJava(responses)
-        .toCompletableFuture()
-        .thenApply(JavaFetcher::toJavaResponses);
+    Future<List<JavaResponse>> javaResponseFuture = responses.map(new AbstractFunction1<Seq<Response>, List<JavaResponse>>() {
+      @Override
+      public List<JavaResponse> apply(Seq<Response> v1) {
+        return toJavaResponses(v1);
+      }
+    }, this.fetcher.executionContext());
+    return JConversions.toJavaCompletableFuture(javaResponseFuture, this.fetcher.executionContext());
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {

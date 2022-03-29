@@ -23,8 +23,8 @@ import ai.zipline.api.{
   GroupBy => GroupByConf
 }
 import ai.zipline.online.Fetcher.{Request, Response}
+import ai.zipline.online.{Fetcher, JavaFetcher, JavaRequest, KVStore, MetadataStore}
 import ai.zipline.online.KVStore.GetRequest
-import ai.zipline.online._
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore

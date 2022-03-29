@@ -2,7 +2,6 @@ package ai.zipline.online;
 
 import java.util.Map;
 import scala.Option;
-import scala.Predef;
 import scala.collection.JavaConverters;
 
 public class JavaRequest {
@@ -30,16 +29,7 @@ public class JavaRequest {
   }
 
   public Fetcher.Request toScalaRequest() {
-    scala.collection.immutable.Map<String, Object> scalaKeys = null;
-    if (keys != null) {
-      scalaKeys = JavaConverters.mapAsScalaMapConverter(keys)
-              .asScala()
-              .toMap(Predef.conforms());
-    }
-    return new Fetcher.Request(
-        this.name,
-        scalaKeys,
-        Option.apply(this.atMillis));
+    return new Fetcher.Request(this.name, JConversions.toScalaImmutableMap(keys), Option.apply(this.atMillis));
   }
 }
 

@@ -38,7 +38,6 @@ lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "org.apache.avro" % "avro" % "1.8.0",
