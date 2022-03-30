@@ -235,7 +235,8 @@ object Extensions {
     }
 
     def table: String = {
-      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+      specTable.cleanSpec
     }
 
     def topic: String = {
@@ -261,7 +262,7 @@ object Extensions {
     /**
       * Topic without kwargs
       */
-    def cleanTopic: String = source.topic.split("/").head
+    def cleanTopic: String = source.topic.cleanSpec
 
     def copyForVersioningComparison: Source = {
       // Makes a copy of the source and unsets date fields, used to compute equality on sources while ignoring these fields
@@ -362,6 +363,7 @@ object Extensions {
 
   implicit class StringOps(string: String) {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
+    def cleanSpec: String = string.split("/").head
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
