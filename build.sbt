@@ -100,7 +100,7 @@ val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := 
 val sparkProvided = sparkBaseSettings :+ providedLibs
 val sparkEmbedded = sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy
 
-lazy val spark_uber = project
+lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(sparkProvided: _*)
 
