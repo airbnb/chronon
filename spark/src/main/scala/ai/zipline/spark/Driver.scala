@@ -229,7 +229,7 @@ object Driver {
         descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
       val local: ScallopOption[Boolean] = opt[Boolean](
         required = false,
-        default = Some(true),
+        default = Some(false),
         descr = "Create a dummy group by serving info instead of fetching from kv")
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
@@ -251,7 +251,6 @@ object Driver {
         dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      println(s"local: ${args.local()}")
       streamingRunner.run(args.local())
     }
   }

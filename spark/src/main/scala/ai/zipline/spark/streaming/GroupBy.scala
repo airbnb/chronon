@@ -136,6 +136,7 @@ class GroupBy(inputStream: DataFrame,
     }
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")
+    println("Ready to stream")
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
