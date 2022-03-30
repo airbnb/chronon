@@ -92,7 +92,7 @@ def download_jar(version, jar_type='uber', release_tag=None):
                 )
             ]
             version = versions[-1]
-        jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}.jar".format(
+        jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}-assembly.jar".format(
             base_url=base_url,
             version=version,
             jar_type=jar_type
