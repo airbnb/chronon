@@ -11,14 +11,15 @@ import xml.etree.ElementTree as ET
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class}'
 OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds}'
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
-ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
+ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'debug-streaming']
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
     'fetch': ONLINE_ARGS,
-    'local-streaming': ONLINE_WRITE_ARGS + ' -d'
+    'local-streaming': ONLINE_WRITE_ARGS + ' -d -l',
+    'debug-streaming': ONLINE_WRITE_ARGS + ' -d'
 }
 
 ROUTES = {
@@ -27,6 +28,7 @@ ROUTES = {
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
         'local-streaming': 'group-by-streaming',
+        'debug-streaming': 'group-by-streaming',
         'fetch': 'fetch'
     },
     'joins': {
@@ -221,7 +223,7 @@ if __name__ == "__main__":
     parser.add_argument('--zipline-jar', default=None, help='Path to zipline OS jar')
     parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
     args, unknown_args = parser.parse_known_args()
-    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
+    jar_type = 'embedded' if args.mode.endswith('-streaming') else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     print(args.online_args)
