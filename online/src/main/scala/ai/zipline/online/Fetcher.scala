@@ -8,6 +8,8 @@ import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 
 import java.io.{ByteArrayOutputStream, PrintStream}
+import java.util
+import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -172,12 +174,18 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
               val batchEndTs = batchResponseTry.map { timedVal => Some(timedVal.millis) }.getOrElse(None)
               val streamingResponsesOpt = streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).get)
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              constructGroupByResponse(batchResponseTry,
-                                       streamingResponsesOpt,
-                                       updateServingInfo(batchEndTs, groupByServingInfo),
-                                       queryTs,
-                                       startTimeMs,
-                                       context)
+              try {
+                constructGroupByResponse(batchResponseTry,
+                                         streamingResponsesOpt,
+                                         updateServingInfo(batchEndTs, groupByServingInfo),
+                                         queryTs,
+                                         startTimeMs,
+                                         context)
+              } catch {
+                case ex: Exception =>
+                  ex.printStackTrace()
+                  throw ex
+              }
             }
             responseMapTry.failed.map(ex => reportFailure(requests, context.withGroupBy, ex))
             Response(request, responseMapTry)
@@ -194,9 +202,16 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
         .asInstanceOf[Array[Any]]
     val collapsed = gbInfo.aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
     val tailHops = batchRecord(1)
-      .asInstanceOf[Array[Any]]
-      .map(_.asInstanceOf[Array[Any]]
-        .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]])))
+      .asInstanceOf[util.ArrayList[Any]]
+      .iterator()
+      .asScala
+      .map(
+        _.asInstanceOf[util.ArrayList[Any]]
+          .iterator()
+          .asScala
+          .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]]))
+          .toArray)
+      .toArray
     FinalBatchIr(collapsed, tailHops)
   }
 
