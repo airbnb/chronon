@@ -1,16 +1,24 @@
 import sbt.Keys._
-import xerial.sbt.pack.PackPlugin._
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := Option(System.getProperty("version")).getOrElse("local")
+
+lazy val publishSettings = Seq(
+  publishTo := Some("Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases"),
+  credentials += Credentials(Path.userHome / ".sbt" / ".credentials")
+)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, spark, online)
-  .settings(name := "zipline")
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .settings(
+    publish / skip := true,
+    name := "zipline"
+  )
 
 lazy val api = project
   .settings(
+    publishSettings,
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
@@ -27,6 +35,7 @@ lazy val api = project
 lazy val aggregator = project
   .dependsOn(api)
   .settings(
+    publishSettings,
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
@@ -37,6 +46,7 @@ lazy val aggregator = project
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
+    publishSettings,
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
@@ -61,11 +71,15 @@ val sparkLibs = Seq(
   "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
 )
 
-val sparkBaseSettings: Seq[Setting[_]] = Seq(
+val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
   assembly / test := {},
-  mainClass in (Compile, run) := Some(
-    "ai.zipline.spark.Driver"
-  ),
+  assembly / artifact := {
+    val art = (assembly / artifact).value
+    art.withClassifier(Some("assembly"))
+  },
+  addArtifact(assembly / artifact, assembly),
+  publishSettings,
+  mainClass in (Compile, run) := Some("ai.zipline.spark.Driver"),
   cleanFiles ++= Seq(
     baseDirectory.value / "spark-warehouse",
     baseDirectory.value / "metastore_db"
@@ -83,16 +97,16 @@ val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := 
   case "plugin.xml"                        => MergeStrategy.last
   case _                                   => MergeStrategy.first
 }
-val sparkProvided: Seq[Setting[_]] = sparkBaseSettings :+ providedLibs
-val sparkEmbedded: Seq[Setting[_]] = sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy
+val sparkProvided = sparkBaseSettings :+ providedLibs
+val sparkEmbedded = sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy
 
-lazy val spark = project
+lazy val spark_uber = project
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(sparkProvided)
+  .settings(sparkProvided: _*)
 
 // Project for running with embedded spark for local testing
 lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(sparkEmbedded)
+  .settings(sparkEmbedded: _*)
 
 exportJars := true

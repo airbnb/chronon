@@ -49,11 +49,10 @@ object RowConversions {
       },
       { (byteBuffer: ByteBuffer) => byteBuffer.array() },
       { (garr: GenericData.Array[Any]) =>
-        val arr = new Array[Any](garr.size)
-        var idx = 0
-        while (idx < garr.size()) {
-          arr.update(idx, garr.get(idx))
-          idx += 1
+        val arr = new util.ArrayList[Any](garr.size)
+        val it = garr.iterator()
+        while (it.hasNext) {
+          arr.add(it.next())
         }
         arr
       },
