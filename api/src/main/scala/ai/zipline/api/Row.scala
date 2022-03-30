@@ -26,7 +26,7 @@ object Row {
       dataType: DataType,
       decomposer: (CompositeType, Seq[StructField]) => Iterator[Any],
       debinarizer: BinaryType => Array[Byte],
-      delister: ArrayType => Array[Any],
+      delister: ArrayType => util.ArrayList[Any],
       deStringer: StringType => String): Any = {
     if (value == null) return null
     def edit(value: Any, dataType: DataType): Any =
@@ -51,7 +51,7 @@ object Row {
             val arr = delister(list)
             var idx = 0
             while (idx < arr.size) {
-              arr.update(idx, edit(arr(idx), elemType))
+              arr.set(idx, edit(arr.get(idx), elemType))
               idx += 1
             }
             arr
