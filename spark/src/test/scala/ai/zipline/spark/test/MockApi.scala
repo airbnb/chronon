@@ -30,14 +30,12 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
     val row: Array[Any] = schema.fields.map { f =>
       AvroConversions.toZiplineRow(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
     }
-    if (schema.fields.map(_.name).contains(Constants.ReversalColumn)) {
-      val isBefore: Boolean =
-        row(schema.indexOf(Constants.ReversalColumn)).asInstanceOf[Boolean]
-      if (isBefore) {
-        return Mutation(schema, row, null)
-      }
+    val reversalIndex = schema.indexWhere(_.name == Constants.ReversalColumn)
+    if (reversalIndex >= 0 && row(reversalIndex).asInstanceOf[Boolean]) {
+      Mutation(schema, row, null)
+    } else {
+      Mutation(schema, null, row)
     }
-    Mutation(schema, null, row)
   }
 
   override def schema: StructType = inputSchema
