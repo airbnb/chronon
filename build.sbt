@@ -1,4 +1,5 @@
 import sbt.Keys._
+import sbt.Test
 
 ThisBuild / organization := "ai.zipline"
 ThisBuild / scalaVersion := "2.11.12"
@@ -98,7 +99,8 @@ val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := 
   case _                                   => MergeStrategy.first
 }
 val sparkProvided = sparkBaseSettings :+ providedLibs
-val sparkEmbedded = sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy
+val sparkEmbedded =
+  sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy :+ (Test / test := {})
 
 lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)

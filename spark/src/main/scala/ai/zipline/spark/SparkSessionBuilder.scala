@@ -40,7 +40,7 @@ object SparkSessionBuilder {
         .master("local[*]")
         .config("spark.kryo.registrationRequired", "true")
         .config("spark.local.dir", s"/tmp/$name")
-      //.config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder
