@@ -22,20 +22,26 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
+  def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
+    val confKey = pathToKey(confPathOrName)
+    kvStore
+      .getString(confKey, dataset, timeoutMillis)
+      .map(conf => ThriftJsonCodec.fromJsonStr[T](conf, false, classOf[T]))
+      .recoverWith {
+        case th: Throwable =>
+          Failure(
+            new RuntimeException(
+              s"Couldn't fetch ${classOf[T].getName} for key $confKey. Perhaps metadata upload wasn't successful.",
+              th
+            ))
+      }
+  }
+
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
-    val joinConf = kvStore.getString(s"joins/$name", dataset, timeoutMillis)
-    if (joinConf.isFailure) {
-      Failure(
-        new RuntimeException(
-          s"Couldn't fetch join conf for $name, please make sure that metadata-upload was successful",
-          joinConf.failed.get))
-    } else {
-      val joinOps: JoinOps = new JoinOps(ThriftJsonCodec.fromJsonStr[Join](joinConf.get, check = true, classOf[Join]))
-      MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs,
-                                                  Metrics.Context(join = name))
-      Success(joinOps)
-    }
+    val result = getConf[Join](name).map(new JoinOps(_))
+    MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
+    result
   })
 
   def putJoinConf(join: Join): Unit = {
@@ -104,6 +110,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       }
     })
 
+  // derive a key from path to file
+  def pathToKey(confPath: String): String = {
+    // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+    confPath.split("/").takeRight(3).mkString("/")
+  }
+
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
   def putConf(configPath: String): Future[Seq[Boolean]] = {
@@ -119,17 +131,18 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         name.isDefined
       }
       .flatMap { file =>
-        // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
         val path = file.getPath
-        val key = path.split("/").takeRight(3).mkString("/")
         val confJsonOpt = path match {
           case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
           case value if value.contains("joins/")           => loadJson[Join](value)
           case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
           case _                                           => println(s"unknown config type in file $path"); None
         }
+        val key = pathToKey(path)
         confJsonOpt.map { conf =>
-          println(s"Putting metadata for $key to KV store")
+          println(s"""Putting metadata for 
+               |key: $key 
+               |conf: $conf""".stripMargin)
           PutRequest(keyBytes = key.getBytes(),
                      valueBytes = conf.getBytes(),
                      dataset = dataset,

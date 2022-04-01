@@ -10,7 +10,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
-import java.io.File
+import java.io.{File, FileNotFoundException}
 import java.util.logging.Logger
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
@@ -117,6 +117,9 @@ object Driver {
       map.toMap
     }
 
+    def metaDataStore =
+      new MetadataStore(impl(serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+
     def impl(props: Map[String, String]): Api = {
       val urls = Array(new File(onlineJar()).toURI.toURL)
       val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
@@ -169,9 +172,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val metadataStore =
-        new MetadataStore(args.impl(args.serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
-      val putRequest = metadataStore.putConf(args.confPath())
+      val putRequest = args.metaDataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
       println(
         s"Uploaded Zipline Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
@@ -258,7 +259,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
+      val groupByConf: api.GroupBy =
+        try {
+          args.parseConf[api.GroupBy]
+        } catch { // on driver we can't ship the file easily
+          case _: FileNotFoundException =>
+            println(s"Couldn't file the conf file locally - fetching from metadata store")
+            args.metaDataStore.getConf[api.GroupBy](args.confPath()).get
+        }
       val session: SparkSession = buildSession(args.debug())
       session.sparkContext.addJar(args.onlineJar())
       val streamingSource = groupByConf.streamingSource
