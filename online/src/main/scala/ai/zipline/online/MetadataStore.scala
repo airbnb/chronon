@@ -1,17 +1,23 @@
 package ai.zipline.online
 
-import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.{JoinOps, MetadataOps, StringOps}
+import ai.zipline.api.Constants.{UTF8, ZiplineMetadataKey}
+import ai.zipline.api.Extensions.{JoinOps, StringOps}
 import ai.zipline.api._
-import ai.zipline.online.KVStore.PutRequest
-import com.google.gson.Gson
+import ai.zipline.online.KVStore.{GetRequest, PutRequest, TimedValue}
+import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
 import java.io.File
 import java.nio.file.{Files, Paths}
+import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
+import scala.collection.immutable.SortedMap
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
+
+// [timestamp -> {metric name -> metric value}]
+case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
@@ -33,10 +39,47 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   })
 
   def putJoinConf(join: Join): Unit = {
+    println(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.name}")
     kvStore.put(
       PutRequest(s"joins/${join.metaData.nameToFilePath}".getBytes(Constants.UTF8),
                  ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
                  dataset))
+  }
+
+  def putConsistencyMetrics(joinConf: Join, metrics: DataMetrics): Unit = {
+    val gson = new GsonBuilder().setPrettyPrinting().create()
+    kvStore.multiPut(
+      metrics.series.map {
+        case (tsMillis, map) =>
+          val jMap: java.util.Map[String, Any] = map.asJava
+          val json = gson.toJson(jMap)
+          PutRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
+                     json.getBytes(Constants.UTF8),
+                     dataset,
+                     Some(tsMillis))
+      }
+    )
+  }
+
+  def getConsistencyMetrics(joinConf: Join, fromDate: String): Future[Try[DataMetrics]] = {
+    val gson = new Gson()
+    val responseFuture = kvStore
+      .get(
+        GetRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
+                   dataset,
+                   Some(Constants.Partition.epochMillis(fromDate))));
+    responseFuture.map { response =>
+      val valuesTry = response.values
+      valuesTry.map { values =>
+        val series = values.map {
+          case TimedValue(bytes, millis) =>
+            val jsonString = new String(bytes, Constants.UTF8)
+            val jMap = gson.fromJson(jsonString, classOf[java.util.Map[String, Object]])
+            millis -> (SortedMap.empty[String, Any] ++ jMap.asScala)
+        }
+        DataMetrics(series)
+      }
+    }
   }
 
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =

@@ -5,7 +5,7 @@ import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.gson.GsonBuilder
+import ai.zipline.spark.consistency.ConsistencyJob
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -111,7 +111,7 @@ object Driver {
                   descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
 
     // hashmap implements serializable
-    def serializableProps = {
+    def serializableProps: Map[String, String] = {
       val map = new mutable.HashMap[String, String]()
       propsInner.foreach { case (key, value) => map.update(key, value) }
       map.toMap
@@ -139,7 +139,6 @@ object Driver {
     def run(args: Args): Unit = {
       val objectMapper = new ObjectMapper()
       val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
-
       val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
       val startNs = System.nanoTime
       val requests = Seq(Fetcher.Request(args.name(), keyMap))
@@ -176,6 +175,33 @@ object Driver {
       val res = Await.result(putRequest, 1.hour)
       println(
         s"Uploaded Zipline Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
+    }
+  }
+
+  object ConsistencyMetricsUploader {
+    class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
+      val confPath: ScallopOption[String] =
+        opt[String](required = true, descr = "Path to the Zipline join conf file to compute consistency for")
+      val endDate: ScallopOption[String] =
+        opt[String](required = false, descr = "End date to compute metrics until.")
+    }
+
+    /**
+      * class ConsistencyJob(session: SparkSession,
+                     joinConf: api.Join,
+                     endDate: String,
+                     joinCodec: JoinCodec,
+                     rawTable: String) {
+      * */
+    def run(args: Args): Unit = {
+      val apiImpl = args.impl(args.serializableProps)
+      val joinConf = parseConf[api.Join](args.confPath())
+      new ConsistencyJob(
+        SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}"),
+        joinConf,
+        args.endDate(),
+        apiImpl
+      ).buildConsistencyMetrics()
     }
   }
 
@@ -289,13 +315,13 @@ object Driver {
           case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
           case args.StagingQueryBackfillArgs => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
           case args.GroupByUploadArgs        => GroupByUploader.run(args.GroupByUploadArgs)
-          case args.GroupByStreamingArgs => {
+          case args.GroupByStreamingArgs =>
             shouldExit = false
             GroupByStreaming.run(args.GroupByStreamingArgs)
-          }
+
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
-          case _                         => println(s"Unknown subcommand: ${x}")
+          case _                         => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
     }

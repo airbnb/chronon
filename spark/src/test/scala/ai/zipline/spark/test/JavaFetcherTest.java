@@ -26,8 +26,8 @@ public class JavaFetcherTest {
     SparkSession session = SparkSessionBuilder.build(namespace, true);
     TableUtils tu = new TableUtils(session);
     InMemoryKvStore kvStore = new InMemoryKvStore(func(() -> tu));
-    // MockApi mockApi = new MockApi(func(() -> kvStore));
-    JavaFetcher fetcher = new JavaFetcher(kvStore);
+    MockApi mockApi = new MockApi(func(() -> kvStore), "java_fetcher_test");
+    JavaFetcher fetcher = mockApi.buildJavaFetcher();
 
     @Test
     public void testException() throws InterruptedException, ExecutionException, TimeoutException {

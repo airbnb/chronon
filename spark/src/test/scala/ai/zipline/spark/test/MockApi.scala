@@ -1,21 +1,18 @@
 package ai.zipline.spark.test
 
-import java.io.{ByteArrayInputStream, InputStream}
-import ai.zipline.api.{Constants, GroupByServingInfo, StructType}
-import ai.zipline.online.{
-  Api,
-  ArrayRow,
-  AvroUtils,
-  GroupByServingInfoParsed,
-  KVStore,
-  Mutation,
-  RowConversions,
-  StreamDecoder
-}
+import ai.zipline.api.{Constants, StructType}
+import ai.zipline.online._
+import ai.zipline.spark.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
 import org.apache.avro.specific.SpecificDatumReader
+import ai.zipline.spark.Extensions._
+import org.apache.spark.sql.{DataFrame, SparkSession}
+
+import java.io.{ByteArrayInputStream, InputStream}
+import java.util.concurrent.ConcurrentLinkedQueue
+import scala.collection.JavaConverters.asScalaIteratorConverter
 
 class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
 
@@ -27,31 +24,64 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
   }
 
   override def decode(bytes: Array[Byte]): Mutation = {
-    val avroSchema = AvroUtils.fromZiplineSchema(streamSchema)
+    val avroSchema = AvroConversions.fromZiplineSchema(streamSchema)
     val avroRecord = byteArrayToAvro(bytes, avroSchema)
+
     val row: Array[Any] = schema.fields.map { f =>
-      RowConversions.fromAvroRecord(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
+      AvroConversions.toZiplineRow(avroRecord.get(f.name), f.fieldType).asInstanceOf[AnyRef]
     }
-    if (schema.fields.contains(Constants.ReversalColumn)) {
-      val isBefore: Boolean =
-        row(schema.indexOf(Constants.ReversalColumn)).asInstanceOf[Boolean]
-      if (isBefore) {
-        return Mutation(schema, row, null)
-      }
+    val reversalIndex = schema.indexWhere(_.name == Constants.ReversalColumn)
+    if (reversalIndex >= 0 && row(reversalIndex).asInstanceOf[Boolean]) {
+      Mutation(schema, row, null)
+    } else {
+      Mutation(schema, null, row)
     }
-    Mutation(schema, null, row)
   }
 
   override def schema: StructType = inputSchema
 }
 
-class MockApi(kvStore: () => KVStore, streamSchema: StructType) extends Api(null) {
+class MockApi(kvStore: () => KVStore, namespace: String) extends Api(null) {
+  val loggedResponseList: ConcurrentLinkedQueue[LoggableResponse] = new ConcurrentLinkedQueue[LoggableResponse]
+
+  var streamSchema: StructType = null
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
+    assert(streamSchema != null, s"Stream Schema is necessary for stream decoder")
     new MockDecoder(parsedInfo.streamZiplineSchema, streamSchema)
   }
 
   override def genKvStore: KVStore = {
     kvStore()
+  }
+
+  override def logResponse(loggableResponse: LoggableResponse): Unit =
+    loggedResponseList.add(loggableResponse)
+
+  override def logTable: String = s"$namespace.mock_log_table"
+
+  def flushLoggedValues: Seq[LoggableResponse] = {
+    val loggedValues = loggedResponseList.iterator().asScala.toSeq
+    loggedResponseList.clear()
+    loggedValues
+  }
+
+  def loggedValuesToDf(loggedValues: Seq[LoggableResponse], session: SparkSession): DataFrame = {
+    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues))
+    df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
+  }
+
+  def loggedResponses(session: SparkSession, writeToHive: Boolean = false): DataFrame = {
+    val loggedValues = flushLoggedValues
+
+    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues))
+    val dsDf = df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
+
+    if (writeToHive) {
+      TableUtils(session).insertPartitions(dsDf, logTable, partitionColumns = Seq("join_name", "ds"))
+      TableUtils(session).sql(s"select * from $logTable")
+    } else {
+      dsDf
+    }
   }
 }

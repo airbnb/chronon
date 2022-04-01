@@ -1,7 +1,10 @@
 package ai.zipline.aggregator.base
 
 import ai.zipline.api._
+import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
+import com.yahoo.sketches.kll.KllFloatsSketch
+import com.yahoo.sketches.quantiles.{DoublesSketch, DoublesSketchBuilder, DoublesUnionBuilder, UpdateDoublesSketch}
 
 import java.util
 import java.util.PriorityQueue
@@ -275,6 +278,40 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
 
   override def denormalize(normalized: Any): CpcSketch =
     CpcSketch.heapify(normalized.asInstanceOf[Array[Byte]])
+}
+
+class ApproxPercentiles(k: Int = 128, bins: Int = 41) extends SimpleAggregator[Float, KllFloatsSketch, Array[Float]] {
+  override def outputType: DataType = ListType(FloatType)
+
+  override def irType: DataType = BinaryType
+
+  override def prepare(input: Float): KllFloatsSketch = {
+    val sketch = new KllFloatsSketch(k)
+    sketch.update(input)
+    sketch
+  }
+
+  override def update(ir: KllFloatsSketch, input: Float): KllFloatsSketch = {
+    ir.update(input)
+    ir
+  }
+
+  override def merge(ir1: KllFloatsSketch, ir2: KllFloatsSketch): KllFloatsSketch = {
+    ir1.merge(ir2)
+    ir1
+  }
+
+  // KLLFloatsketch doesn't have a proper copy method. So we serialize and deserialize.
+  override def clone(ir: KllFloatsSketch): KllFloatsSketch = {
+    KllFloatsSketch.heapify(Memory.wrap(ir.toByteArray))
+  }
+
+  override def finalize(ir: KllFloatsSketch): Array[Float] = ir.getQuantiles(bins)
+
+  override def normalize(ir: KllFloatsSketch): Array[Byte] = ir.toByteArray
+
+  override def denormalize(normalized: Any): KllFloatsSketch =
+    KllFloatsSketch.heapify(Memory.wrap(normalized.asInstanceOf[Array[Byte]]))
 }
 
 abstract class Order[I](inputType: DataType) extends SimpleAggregator[I, I, I] {

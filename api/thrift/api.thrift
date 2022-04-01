@@ -67,7 +67,7 @@ enum Operation {
     VARIANCE = 9  // TODO
     SKEW = 10     // TODO
     KURTOSIS = 11  // TODO
-    APPROX_PERCENTILE = 12 // TODO
+    APPROX_PERCENTILE = 12
 
     LAST_K = 13
     FIRST_K = 14,
@@ -131,6 +131,8 @@ struct MetaData {
     // (These just aren't implemented yet)
     // The inner map should contain environment variables
     9: optional map<string, map<string, string>> modeToEnvMap
+    10: optional bool consistencyCheck
+    11: optional double samplePercent
 }
 
 // Equivalent to a FeatureSet in zipline terms

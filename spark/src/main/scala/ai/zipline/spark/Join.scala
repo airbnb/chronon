@@ -12,7 +12,7 @@ import scala.sys
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  private val outputTable = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}"
+  private val outputTable = joinConf.metaData.outputTable
 
   // Get table properties from config
   private val confTableProps = Option(joinConf.metaData.tableProperties)
@@ -58,10 +58,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
     println(s"""Join keys for $partName: ${keys.mkString(", ")}
          |Left Schema:
-         |  ${leftDf.schema.pretty}
+         |${leftDf.schema.pretty}
          |  
          |Right Schema:
-         |  ${prefixedRight.schema.pretty}
+         |${prefixedRight.schema.pretty}
          |  
          |""".stripMargin)
 
@@ -166,7 +166,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimestampBasedPartition(Constants.TimePartitionColumn)
+      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
@@ -190,7 +190,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
             rightDf.save(joinPartTableName, tableProps)
           } catch {
             case e: Exception =>
-              println(s"Error while processing groupBy: ${joinPart.groupBy.getMetaData.getName}")
+              println(
+                s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
               throw e
           }
         }
@@ -280,15 +281,16 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     dropTablesToRecompute()
 
     joinConf.setups.foreach(tableUtils.sql)
-    val leftStart = joinConf.left.query.startPartition
+    val leftStart = Option(joinConf.left.query.startPartition)
+      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
     val rangeToFill = PartitionRange(leftStart, endPartition)
+    println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
       println(s"\nThere is no data to compute based on end partition of $endPartition.\n\n Exiting..")
       return finalResult
     }
-
     val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), endPartition)
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = getJoinPartTableName(joinPart)

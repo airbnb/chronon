@@ -33,7 +33,8 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
-  @transient lazy val keyZiplineSchema: StructType = AvroUtils.toZiplineSchema(keyCodec.schema).asInstanceOf[StructType]
+  @transient lazy val keyZiplineSchema: StructType =
+    AvroConversions.toZiplineSchema(keyCodec.schema).asInstanceOf[StructType]
 
   lazy val valueZiplineSchema: StructType = {
     val valueFields = groupBy.aggregationInputs
@@ -42,34 +43,34 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   }
 
   lazy val valueAvroSchema: String = {
-    AvroUtils.fromZiplineSchema(valueZiplineSchema).toString()
+    AvroConversions.fromZiplineSchema(valueZiplineSchema).toString()
   }
 
   def valueAvroCodec: AvroCodec = AvroCodec.of(valueAvroSchema)
   def selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
-  lazy val irAvroSchema: String = AvroUtils.fromZiplineSchema(irZiplineSchema).toString()
+  lazy val irAvroSchema: String = AvroConversions.fromZiplineSchema(irZiplineSchema).toString()
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
 
-  lazy val outputAvroSchema: String = {
-    val outputZiplineSchema =
-      StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
-    AvroUtils.fromZiplineSchema(outputZiplineSchema).toString()
+  def outputZiplineSchema: StructType = {
+    StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
   }
 
+  lazy val outputAvroSchema: String = { AvroConversions.fromZiplineSchema(outputZiplineSchema).toString() }
+
   def inputZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
+    AvroConversions.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
   }
 
   def selectedZiplineSchema: StructType = {
-    AvroUtils.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
+    AvroConversions.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
   }
 
   // Schema associated to the stored KV value for streaming data.
   // Mutations require reversal column and timestamp for proper computation and the effective timestamp of mutations is
   // the MutationTime. Therefore, the schema in the value now includes timestamp and reversal column.
   lazy val mutationValueAvroSchema: String = {
-    AvroUtils
+    AvroConversions
       .fromZiplineSchema(
         StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueZiplineSchema ++ MutationAvroFields).toArray))
       .toString
