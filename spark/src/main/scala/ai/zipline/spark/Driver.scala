@@ -265,7 +265,7 @@ object Driver {
         } catch { // on driver we can't ship the file easily
           case _: FileNotFoundException =>
             println(s"Couldn't file the conf file locally - fetching from metadata store")
-            args.metaDataStore.getConf[api.GroupBy](args.confPath()).get
+            args.metaDataStore.getConf[api.GroupBy](args.confPath(), classOf[api.GroupBy]).get
         }
       val session: SparkSession = buildSession(args.debug())
       session.sparkContext.addJar(args.onlineJar())
