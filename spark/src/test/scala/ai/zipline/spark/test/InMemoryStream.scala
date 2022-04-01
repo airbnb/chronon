@@ -1,8 +1,8 @@
 package ai.zipline.spark.test
 
 import ai.zipline.api.StructType
-import ai.zipline.online.AvroUtils
-import ai.zipline.spark.Conversions.toZiplineSchema
+import ai.zipline.online.AvroConversions
+import ai.zipline.spark.Conversions
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
 import org.apache.avro.specific.SpecificDatumWriter
@@ -29,8 +29,8 @@ class InMemoryStream {
 
   // encode input as avro byte array and insert into memory stream.
   def getInMemoryStreamDF(spark: SparkSession, inputDf: Dataset[Row]): DataFrame = {
-    val schema: StructType = StructType.from("input", toZiplineSchema(inputDf.schema))
-    val avroSchema = AvroUtils.fromZiplineSchema(schema)
+    val schema: StructType = StructType.from("input", Conversions.toZiplineSchema(inputDf.schema))
+    val avroSchema = AvroConversions.fromZiplineSchema(schema)
     import spark.implicits._
     val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](MemoryStreamID, spark.sqlContext)
     input.addData(inputDf.collect.map { row: Row =>

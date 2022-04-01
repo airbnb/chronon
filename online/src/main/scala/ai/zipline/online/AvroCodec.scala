@@ -23,14 +23,14 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val outputStream = new ByteArrayOutputStream()
   @transient private var jsonEncoder: JsonEncoder = null
   val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
-  @transient private lazy val ziplineSchema = AvroUtils.toZiplineSchema(schema)
+  @transient lazy val ziplineSchema: DataType = AvroConversions.toZiplineSchema(schema)
 
   @transient private var binaryEncoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null
-
+  @transient lazy val schemaElems: Array[Field] = schema.getFields.asScala.toArray
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
     val record = new GenericData.Record(schema)
-    schema.getFields.asScala.foreach { field =>
+    schemaElems.foreach { field =>
       record.put(field.name(), valueMap.get(field.name()).orNull)
     }
     encodeBinary(record)
@@ -78,13 +78,16 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     datumReader.read(null, decoder)
   }
 
+  def decodeRow(bytes: Array[Byte]): Array[Any] =
+    AvroConversions.toZiplineRow(decode(bytes), ziplineSchema).asInstanceOf[Array[Any]]
+
   def decodeRow(bytes: Array[Byte], millis: Long, mutation: Boolean = false): ArrayRow =
-    new ArrayRow(RowConversions.fromAvroRecord(decode(bytes), ziplineSchema).asInstanceOf[Array[Any]], millis, mutation)
+    new ArrayRow(decodeRow(bytes), millis, mutation)
 
   def decodeMap(bytes: Array[Byte]): Map[String, AnyRef] = {
     if (bytes == null) return null
-    val output = RowConversions
-      .fromAvroRecord(decode(bytes), ziplineSchema)
+    val output = AvroConversions
+      .toZiplineRow(decode(bytes), ziplineSchema)
       .asInstanceOf[Array[Any]]
     fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
   }
@@ -121,63 +124,4 @@ object AvroCodec {
     }
 
   def of(schemaStr: String): AvroCodec = codecMap.get().getOrElseUpdate(schemaStr, new AvroCodec(schemaStr))
-}
-
-object AvroUtils {
-  def toZiplineSchema(schema: Schema): DataType = {
-    schema.getType match {
-      case Schema.Type.RECORD =>
-        StructType(schema.getName,
-                   schema.getFields.asScala.toArray.map { field =>
-                     StructField(field.name(), toZiplineSchema(field.schema()))
-                   })
-      case Schema.Type.ARRAY   => ListType(toZiplineSchema(schema.getElementType))
-      case Schema.Type.MAP     => MapType(StringType, toZiplineSchema(schema.getValueType))
-      case Schema.Type.STRING  => StringType
-      case Schema.Type.INT     => IntType
-      case Schema.Type.LONG    => LongType
-      case Schema.Type.FLOAT   => FloatType
-      case Schema.Type.DOUBLE  => DoubleType
-      case Schema.Type.BYTES   => BinaryType
-      case Schema.Type.BOOLEAN => BooleanType
-      case Schema.Type.UNION   => toZiplineSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
-      case _                   => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
-    }
-  }
-
-  def fromZiplineSchema(dataType: DataType): Schema = {
-    dataType match {
-      case StructType(name, fields) =>
-        assert(name != null)
-        Schema.createRecord(
-          name,
-          "", // doc
-          "ai.zipline.data", // namespace
-          false, // isError
-          fields
-            .map { ziplineField =>
-              val defaultValue: AnyRef = null
-              new Field(ziplineField.name,
-                        Schema.createUnion(Schema.create(Schema.Type.NULL), fromZiplineSchema(ziplineField.fieldType)),
-                        "",
-                        defaultValue)
-            }
-            .toList
-            .asJava
-        )
-      case ListType(elementType) => Schema.createArray(fromZiplineSchema(elementType))
-      case MapType(keyType, valueType) => {
-        assert(keyType == StringType, s"Avro only supports string keys for a map")
-        Schema.createMap(fromZiplineSchema(valueType))
-      }
-      case StringType  => Schema.create(Schema.Type.STRING)
-      case IntType     => Schema.create(Schema.Type.INT)
-      case LongType    => Schema.create(Schema.Type.LONG)
-      case FloatType   => Schema.create(Schema.Type.FLOAT)
-      case DoubleType  => Schema.create(Schema.Type.DOUBLE)
-      case BinaryType  => Schema.create(Schema.Type.BYTES)
-      case BooleanType => Schema.create(Schema.Type.BOOLEAN)
-      case _           => throw new UnsupportedOperationException(s"Cannot convert zipline type $dataType")
-    }
-  }
 }

@@ -2,6 +2,8 @@ package ai.zipline.api
 
 import ai.zipline.api.DataModel._
 import ai.zipline.api.Operation._
+import com.fasterxml.jackson.core.`type`.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
 import scala.collection.mutable
@@ -68,6 +70,14 @@ object Extensions {
   implicit class MetadataOps(metaData: MetaData) {
     def cleanName: String = metaData.name.sanitize
 
+    def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+    def loggedTable = s"${outputTable}_logged"
+    private def comparisonPrefix = "comparison"
+    def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
+    def comparisonTable = s"${outputTable}_$comparisonPrefix"
+    def consistencyTable = s"${outputTable}_consistency"
+    def uploadTable = s"${outputTable}_upload"
+
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
       val newMetaData = new MetaData()
@@ -79,6 +89,15 @@ object Extensions {
       .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap).orNull
 
     def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
+
+    // helper function to extract values from customJson
+    def customJson(key: String): Any = {
+      if (metaData.customJson == null) return null
+      val mapper = new ObjectMapper();
+      val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
+      val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
+      jMap.asScala.get(key).orNull
+    }
   }
 
   // one per output column - so single window
@@ -299,7 +318,7 @@ object Extensions {
 
     lazy val batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
     lazy val streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
-    def kvTable: String = s"${groupBy.metaData.outputNamespace}.${groupBy.metaData.cleanName}_upload"
+    def kvTable: String = s"${groupBy.metaData.outputTable}_upload"
 
     def streamingSource: Option[Source] = ScalaVersionSpecificCollectionsConverter
       .convertJavaListToScala(groupBy.sources).find(_.topic != null)
@@ -370,7 +389,7 @@ object Extensions {
     }
   }
 
-  implicit class JoinOps(join: Join) {
+  implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts)

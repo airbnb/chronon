@@ -5,7 +5,8 @@ import ai.zipline.api.{AggregationPart, DataType, Row, StringType}
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
-class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[AggregationPart]) extends Serializable {
+class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
+    extends Serializable {
 
   val length: Int = aggregationParts.size
   val indices: Range = 0 until length
@@ -56,6 +57,11 @@ class RowAggregator(inputSchema: Seq[(String, DataType)], aggregationParts: Seq[
       columnAggregators(i).update(ir, inputRow)
       i += 1
     }
+  }
+
+  def updateWithReturn(ir: Array[Any], inputRow: Row): Array[Any] = {
+    update(ir, inputRow)
+    ir
   }
 
   def updateWindowed(ir: Array[Any], inputRow: Row, endTime: Long): Unit = {

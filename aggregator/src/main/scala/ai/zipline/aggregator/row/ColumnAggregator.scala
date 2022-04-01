@@ -3,8 +3,6 @@ package ai.zipline.aggregator.row
 import ai.zipline.aggregator.base._
 import ai.zipline.api.Extensions._
 import ai.zipline.api._
-
-import java.sql.{Date, Timestamp}
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
 
@@ -114,10 +112,6 @@ case class ColumnIndices(input: Int, output: Int)
 
 object ColumnAggregator {
 
-  //force numeric widening
-  def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
-  def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
-
   def castToLong(value: AnyRef): AnyRef =
     value match {
       case i: java.lang.Integer => new java.lang.Long(i.longValue())
@@ -180,6 +174,11 @@ object ColumnAggregator {
     }
   }
 
+  private def toDouble[A: Numeric](inp: Any) = implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A])
+  private def toFloat[A: Numeric](inp: Any): Float = implicitly[Numeric[A]].toFloat(inp.asInstanceOf[A])
+  private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
+  private def boolToLong(inp: Any): Long = if (inp.asInstanceOf[Boolean]) 1 else 0
+
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices,
@@ -222,12 +221,13 @@ object ColumnAggregator {
       case Operation.HISTOGRAM => simple(new Histogram(aggregationPart.getInt("k", Some(0))))
       case Operation.SUM =>
         inputType match {
-          case IntType    => simple(new Sum[Long](LongType), toLong[Int])
-          case LongType   => simple(new Sum[Long](inputType))
-          case ShortType  => simple(new Sum[Long](LongType), toLong[Short])
-          case DoubleType => simple(new Sum[Double](inputType))
-          case FloatType  => simple(new Sum[Double](inputType), toDouble[Float])
-          case _          => mismatchException
+          case IntType     => simple(new Sum[Long](LongType), toLong[Int])
+          case LongType    => simple(new Sum[Long](inputType))
+          case ShortType   => simple(new Sum[Long](LongType), toLong[Short])
+          case BooleanType => simple(new Sum[Long](LongType), boolToLong)
+          case DoubleType  => simple(new Sum[Double](inputType))
+          case FloatType   => simple(new Sum[Double](inputType), toDouble[Float])
+          case _           => mismatchException
         }
       case Operation.UNIQUE_COUNT =>
         inputType match {
@@ -251,6 +251,20 @@ object ColumnAggregator {
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]])
           case _          => mismatchException
         }
+
+      case Operation.APPROX_PERCENTILE =>
+        val k = aggregationPart.getInt("k", Some(128))
+        val bins = aggregationPart.getInt("bins", Some(40))
+        val agg = new ApproxPercentiles(k, bins)
+        inputType match {
+          case IntType    => simple(agg, toFloat[Int])
+          case LongType   => simple(agg, toFloat[Long])
+          case DoubleType => simple(agg, toFloat[Double])
+          case FloatType  => simple(agg)
+          case ShortType  => simple(agg, toFloat[Short])
+          case _          => mismatchException
+        }
+
       case Operation.AVERAGE =>
         inputType match {
           case IntType    => simple(new Average, toDouble[Int])
@@ -270,6 +284,7 @@ object ColumnAggregator {
           case StringType => simple(new Min[String](inputType))
           case _          => mismatchException
         }
+
       case Operation.MAX =>
         inputType match {
           case IntType    => simple(new Max[Int](inputType))
@@ -280,6 +295,7 @@ object ColumnAggregator {
           case StringType => simple(new Max[String](inputType))
           case _          => mismatchException
         }
+
       case Operation.TOP_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
@@ -291,6 +307,7 @@ object ColumnAggregator {
           case StringType => simple(new TopK[String](inputType, k))
           case _          => mismatchException
         }
+
       case Operation.BOTTOM_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
@@ -302,6 +319,7 @@ object ColumnAggregator {
           case StringType => simple(new BottomK[String](inputType, k))
           case _          => mismatchException
         }
+
       case Operation.FIRST   => timed(new First(inputType))
       case Operation.LAST    => timed(new Last(inputType))
       case Operation.FIRST_K => timed(new FirstK(inputType, aggregationPart.getInt("k")))

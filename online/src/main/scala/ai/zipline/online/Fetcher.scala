@@ -3,16 +3,22 @@ package ai.zipline.online
 import ai.zipline.aggregator.row.ColumnAggregator
 import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
+import ai.zipline.api.Extensions.JoinOps
 import ai.zipline.api.{Row, _}
 import ai.zipline.online.CompatParColls.Converters._
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
+import com.google.gson.Gson
+import org.apache.avro.generic.GenericRecord
 
-import java.io.{ByteArrayOutputStream, PrintStream}
+import java.io.{PrintWriter, StringWriter}
 import java.util
+import java.util.function.Consumer
 import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.mutable
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
+import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, Success, Try}
 
 object Fetcher {
@@ -20,7 +26,10 @@ object Fetcher {
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
 }
 
-class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeoutMillis: Long = 10000)
+class BaseFetcher(kvStore: KVStore,
+                  metaDataSet: String = ZiplineMetadataKey,
+                  timeoutMillis: Long = 10000,
+                  debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
@@ -85,7 +94,7 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                                 groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs.exists(_ > groupByServingInfo.batchEndTsMillis)) {
-      println(s"""${name}'s value's batch timestamp of ${batchEndTs.get} is
+      println(s"""$name's value's batch timestamp of ${batchEndTs.get} is
            |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
            |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
@@ -173,7 +182,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                              s"Couldn't find corresponding response for $batchRequest in responseMap")))
                 .map(_.maxBy(_.millis))
               val batchEndTs = batchResponseTry.map { timedVal => Some(timedVal.millis) }.getOrElse(None)
-              val streamingResponsesOpt = streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).get)
+              val streamingResponsesOpt =
+                streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
                 constructGroupByResponse(batchResponseTry,
@@ -198,8 +208,8 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
     if (bytes == null) return null
     val batchRecord =
-      RowConversions
-        .fromAvroRecord(gbInfo.irCodec.decode(bytes), gbInfo.irZiplineSchema)
+      AvroConversions
+        .toZiplineRow(gbInfo.irCodec.decode(bytes), gbInfo.irZiplineSchema)
         .asInstanceOf[Array[Any]]
     val collapsed = gbInfo.aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
     val tailHops = batchRecord(1)
@@ -257,14 +267,23 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
                       .getOrElse(groupByRequest,
                                  Failure(new IllegalStateException(
                                    s"Couldn't find a groupBy response for $groupByRequest in response map")))
-                      .map {
-                        _.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+                      .map { valueMap =>
+                        if (valueMap != null) {
+                          valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+                        } else {
+                          Map.empty[String, AnyRef]
+                        }
                       } // prefix feature names
                       .recover { // capture exception as a key
                         case ex: Throwable =>
-                          val baos = new ByteArrayOutputStream()
-                          ex.printStackTrace(new PrintStream(baos, true))
-                          Map(groupByRequest.name + "_exception" -> baos.toString)
+                          val stringWriter = new StringWriter()
+                          val printWriter = new PrintWriter(stringWriter)
+                          ex.printStackTrace(printWriter)
+                          val trace = stringWriter.toString
+                          if (debug || Math.random() < 0.001) {
+                            println(s"Failed to fetch $groupByRequest with \n$trace")
+                          }
+                          Map(groupByRequest.name + "_exception" -> trace)
                       }
                       .get
                 }.toMap
@@ -287,10 +306,131 @@ class Fetcher(kvStore: KVStore, metaDataSet: String = ZiplineMetadataKey, timeou
       }
   }
 
-  private def reportFailure(requests: scala.collection.Seq[Request], withTag: String => Metrics.Context, e: Throwable) = {
+  private def reportFailure(requests: scala.collection.Seq[Request], withTag: String => Metrics.Context, e: Throwable): Unit = {
     requests.foreach { req =>
       val context = withTag(req.name)
       FetcherMetrics.reportFailure(e, context)
     }
+  }
+}
+
+case class JoinCodec(conf: JoinOps,
+                     keySchema: StructType,
+                     valueSchema: StructType,
+                     keyCodec: AvroCodec,
+                     valueCodec: AvroCodec)
+    extends Serializable {
+  val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
+  val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
+
+  val keyFields: Array[StructField] = keySchema.fields
+  val valueFields: Array[StructField] = valueSchema.fields
+  val timeFields: Array[StructField] = Array(
+    StructField("ts", LongType),
+    StructField("ds", StringType)
+  )
+  val outputFields: Array[StructField] = keyFields ++ valueFields ++ timeFields
+}
+
+// BaseFetcher + Logging
+class Fetcher(kvStore: KVStore,
+              metaDataSet: String = ZiplineMetadataKey,
+              timeoutMillis: Long = 10000,
+              logFunc: Consumer[LoggableResponse] = null,
+              debug: Boolean = false)
+    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
+
+  // key and value schemas
+  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>
+    val joinConfTry = getJoinConf(joinName)
+    val keyFields = new mutable.ListBuffer[StructField]
+    val valueFields = new mutable.ListBuffer[StructField]
+    joinConfTry.map {
+      joinConf =>
+        joinConf.joinPartOps.foreach {
+          joinPart =>
+            val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
+            servingInfoTry
+              .map {
+                servingInfo =>
+                  val keySchema = servingInfo.keyCodec.ziplineSchema.asInstanceOf[StructType]
+                  joinPart.leftToRight
+                    .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
+                    .foreach {
+                      case (name, dType) =>
+                        val keyField = StructField(name, dType)
+                        if (!keyFields.contains(keyField)) {
+                          keyFields.append(keyField)
+                        }
+                    }
+
+                  val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+                    servingInfo.selectedZiplineSchema
+                  } else {
+                    servingInfo.outputZiplineSchema
+                  }
+                  baseValueSchema.fields.foreach { sf =>
+                    valueFields.append(StructField(joinPart.fullPrefix + "_" + sf.name, sf.fieldType))
+                  }
+              }
+        }
+
+        val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
+        val keyCodec = AvroCodec.of(AvroConversions.fromZiplineSchema(keySchema).toString)
+        val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
+        val valueCodec = AvroCodec.of(AvroConversions.fromZiplineSchema(valueSchema).toString)
+        JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+    }
+  })
+
+  override def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+    val ts = System.currentTimeMillis()
+    super
+      .fetchJoin(requests)
+      .map(_.map { resp =>
+        val joinCodecTry = getJoinCodecs(resp.request.name)
+        val loggingTry = joinCodecTry.map {
+          enc =>
+            val metaData = enc.conf.join.metaData
+            val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+            val hash = if (samplePercent > 0) Math.abs(MurmurHash3.orderedHash(resp.request.keys.values)) else -1
+            if ((hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))) {
+              val joinName = resp.request.name
+              if (debug) {
+                println(s"Passed ${resp.request.keys} : $hash : ${hash % 100000}: $samplePercent")
+                val gson = new Gson()
+                println(s"""Sampled join fetch
+                     |Key Map: ${resp.request.keys}
+                     |Value Map: [${resp.values.map {
+                  _.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
+                }}]
+                     |""".stripMargin)
+              }
+              val keyArr = enc.keys.map(resp.request.keys.getOrElse(_, null))
+              val keys = AvroConversions.fromZiplineRow(keyArr, enc.keySchema).asInstanceOf[GenericRecord]
+              val keyBytes = enc.keyCodec.encodeBinary(keys)
+              val valueBytes = resp.values
+                .map { valueMap =>
+                  val valueArr = enc.values.map(valueMap.getOrElse(_, null))
+                  val valueRecord =
+                    AvroConversions.fromZiplineRow(valueArr, enc.valueSchema).asInstanceOf[GenericRecord]
+                  enc.valueCodec.encodeBinary(valueRecord)
+                }
+                .getOrElse(null)
+              val loggableResponse =
+                LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts))
+              if (logFunc != null)
+                logFunc.accept(loggableResponse)
+            }
+        }
+        if (loggingTry.isFailure && (debug || Math.random() < 0.01)) {
+          loggingTry.failed.get.printStackTrace()
+        }
+        resp
+      })
+  }
+
+  override def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context]): Future[Seq[Response]] = {
+    super.fetchGroupBys(requests, contextOption)
   }
 }
