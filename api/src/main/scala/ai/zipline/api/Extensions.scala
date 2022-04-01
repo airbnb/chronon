@@ -5,7 +5,7 @@ import ai.zipline.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
-import scala.collection.JavaConverters._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 import scala.collection.mutable
 
 object Extensions {
@@ -85,7 +85,8 @@ object Extensions {
       newMetaData
     }
 
-    def tableProps: Map[String, String] = Option(metaData.tableProperties).map(_.asScala.toMap).orNull
+    def tableProps: Map[String, String] = Option(metaData.tableProperties)
+      .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap).orNull
 
     def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
 
@@ -95,7 +96,7 @@ object Extensions {
       val mapper = new ObjectMapper();
       val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
       val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
-      jMap.asScala.get(key).orNull
+      ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jMap).get(key).orNull
     }
   }
 
@@ -104,7 +105,8 @@ object Extensions {
   implicit class AggregationPartOps(aggregationPart: AggregationPart) {
 
     def getInt(arg: String, default: Option[Int] = None): Int = {
-      val argOpt = Option(aggregationPart.argMap).flatMap(_.asScala.get(arg))
+      val argOpt = Option(aggregationPart.argMap)
+        .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).get(arg))
       require(
         argOpt.isDefined || default.isDefined,
         s"$arg needs to be specified in the `argMap` for ${aggregationPart.operation} type"
@@ -132,13 +134,18 @@ object Extensions {
     // one agg part per bucket per window
     // unspecified windows are translated to one unbounded window
     def unpack: Seq[AggregationPart] = {
-      val windows = Option(aggregation.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded))
-      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      val windows = Option(aggregation.windows)
+        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq(WindowUtils.Unbounded)).toSeq
+      val buckets = Option(aggregation.buckets)
+        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq(null)).toSeq
       for (bucket <- buckets; window <- windows) yield {
         Builders.AggregationPart(aggregation.operation,
                                  aggregation.inputColumn,
                                  window,
-                                 Option(aggregation.argMap).map(_.asScala.toMap).orNull,
+                                 Option(aggregation.argMap).map(
+                                   ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_)
+                                     .toMap
+                                 ).orNull,
                                  bucket)
       }
     }
@@ -146,12 +153,15 @@ object Extensions {
     // one agg part per bucket
     // ignoring the windowing
     def unWindowed: Seq[AggregationPart] = {
-      val buckets = Option(aggregation.buckets).map(_.asScala).getOrElse(Seq(null))
+      val buckets = Option(aggregation.buckets).map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq(null)).toSeq
       for (bucket <- buckets) yield {
         Builders.AggregationPart(aggregation.operation,
                                  aggregation.inputColumn,
                                  WindowUtils.Unbounded,
-                                 Option(aggregation.argMap).map(_.asScala.toMap).orNull,
+                                 Option(aggregation.argMap).map(
+                                   ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_)
+                                     .toMap
+                                 ).orNull,
                                  bucket)
       }
     }
@@ -166,19 +176,25 @@ object Extensions {
       val perBucket = new mutable.ArrayBuffer[AggregationPart]
       val perWindow = new mutable.ArrayBuffer[WindowMapping]
       aggregations.foreach { agg =>
-        val buckets = Option(agg.buckets).map(_.asScala).getOrElse(Seq(null))
-        val windows = Option(agg.windows).map(_.asScala).getOrElse(Seq(WindowUtils.Unbounded))
+        val buckets = Option(agg.buckets)
+          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq(null))
+        val windows = Option(agg.windows)
+          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq(WindowUtils.Unbounded))
         for (bucket <- buckets) {
           perBucket += Builders.AggregationPart(agg.operation,
                                                 agg.inputColumn,
                                                 WindowUtils.Unbounded,
-                                                Option(agg.argMap).map(_.asScala.toMap).orNull,
+                                                Option(agg.argMap).map(
+                                                  ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                                                ).orNull,
                                                 bucket)
           for (window <- windows) {
             perWindow += WindowMapping(Builders.AggregationPart(agg.operation,
                                                                 agg.inputColumn,
                                                                 window,
-                                                                Option(agg.argMap).map(_.asScala.toMap).orNull,
+                                                                Option(agg.argMap).map(
+                                                                  ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                                                                ).orNull,
                                                                 bucket),
                                        counter)
           }
@@ -201,7 +217,9 @@ object Extensions {
     def allWindowsOpt: Option[Seq[Window]] =
       Option(aggregations).map { aggs =>
         aggs.flatMap { agg =>
-          Option(agg.windows).map(_.asScala).getOrElse(Seq(null))
+          Option(agg.windows).map(
+            ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)
+          ).getOrElse(Seq(null))
         }
       }
   }
@@ -257,7 +275,8 @@ object Extensions {
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
-      val allWindowsOpt = Option(groupBy.aggregations).flatMap(_.asScala.allWindowsOpt)
+      val allWindowsOpt = Option(groupBy.aggregations).flatMap(
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
@@ -265,7 +284,8 @@ object Extensions {
     }
 
     def dataModel: DataModel = {
-      val models = groupBy.sources.asScala.map(_.dataModel)
+      val models = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.sources)
+        .map(_.dataModel)
       assert(models.distinct.length == 1,
              s"All source of the groupBy: ${groupBy.metaData.name} " +
                s"should be of the same type. Either 'Events' or 'Entities'")
@@ -278,15 +298,16 @@ object Extensions {
       // if user specified something - respect it
       if (groupBy.accuracy != null) return groupBy.accuracy
       // if a topic is specified - then treat it as temporally accurate
-      val validTopics = groupBy.sources.asScala.map(_.topic).filter(_ != null)
+      val validTopics = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.sources)
+        .map(_.topic).filter(_ != null)
       if (validTopics.nonEmpty) return Accuracy.TEMPORAL
       // the default accuracy for events is temporal and entities is snapshot
       if (groupBy.dataModel == DataModel.Events) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
 
     def setups: Seq[String] = {
-      val sources = groupBy.sources.asScala
-      sources.flatMap(_.query.setupsSeq).distinct
+      val sources = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.sources)
+      sources.flatMap(_.query.setupsSeq).toSeq.distinct
     }
 
     def copyForVersioningComparison: GroupBy = {
@@ -299,18 +320,21 @@ object Extensions {
     lazy val streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
     def kvTable: String = s"${groupBy.metaData.outputTable}_upload"
 
-    def streamingSource: Option[Source] = groupBy.sources.asScala.find(_.topic != null)
+    def streamingSource: Option[Source] = ScalaVersionSpecificCollectionsConverter
+      .convertJavaListToScala(groupBy.sources).find(_.topic != null)
 
     def buildStreamingQuery: String = {
       assert(streamingSource.isDefined,
              s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
       val query = streamingSource.get.query
-      val selects = Option(query.selects).map(_.asScala.toMap).orNull
+      val selects = Option(query.selects).map(ScalaVersionSpecificCollectionsConverter
+        .convertJavaMapToScala(_).toMap).orNull
       val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
       val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
-      val keys = groupBy.getKeyColumns.asScala
+      val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.getKeyColumns)
 
-      val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+      val baseWheres = Option(query.wheres).map(
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq.empty[String])
       val keyWhereOption =
         Option(selects)
           .map { selectsMap =>
@@ -323,14 +347,15 @@ object Extensions {
       QueryUtils.build(
         selects,
         Constants.StreamingInputTable,
-        baseWheres ++ timeWheres ++ keyWhereOption,
+        baseWheres.toSeq ++ timeWheres.toSeq ++ keyWhereOption.toSeq,
         fillIfAbsent = fillIfAbsent
       )
     }
 
     def aggregationInputs: Array[String] =
-      groupBy.aggregations.asScala
-        .flatMap(agg => Option(agg.buckets).map(_.asScala).getOrElse(Seq.empty) :+ agg.inputColumn)
+      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.aggregations)
+        .flatMap(agg => Option(agg.buckets).map(
+          ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)).getOrElse(Seq.empty) :+ agg.inputColumn)
         .distinct
         .toArray
   }
@@ -344,12 +369,14 @@ object Extensions {
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
     def rightToLeft: Map[String, String] = {
-      val rightToRight = joinPart.groupBy.keyColumns.asScala.map { key => key -> key }.toMap
+      val rightToRight = ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(joinPart.groupBy.keyColumns).map { key => key -> key }.toMap
       Option(joinPart.keyMapping)
         .map { leftToRight =>
-          val rToL = leftToRight.asScala.map {
-            case (left, right) => right -> left
-          }.toMap
+          val rToL = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(leftToRight)
+            .map {
+              case (left, right) => right -> left
+            }.toMap
           rightToRight ++ rToL
         }
         .getOrElse(rightToRight)
@@ -365,7 +392,7 @@ object Extensions {
   implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
-      join.joinParts.asScala
+      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts)
         .flatMap { _.rightToLeft.values }
         .toSet
         .toArray
@@ -389,7 +416,7 @@ object Extensions {
     // TODO: validate that non keys are not specified in - join.skewKeys
     def skewFilter(keys: Option[Seq[String]] = None, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
-        val result = jmap.asScala
+        val result = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jmap)
           .filterKeys(key => keys.forall { _.contains(key) })
           .map {
             case (leftKey, values) =>
@@ -398,7 +425,7 @@ object Extensions {
                 s"specified skew filter for $leftKey is not used as a key in any join part. " +
                   s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
-              generateSkewFilterSql(leftKey, values.asScala)
+              generateSkewFilterSql(leftKey, ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values).toSeq)
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -409,14 +436,15 @@ object Extensions {
 
     def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
-        val result = jmap.asScala
+        val result = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jmap)
           .flatMap {
             case (leftKey, values) =>
               val replacedKey = Option(joinPart.keyMapping)
-                .map { _.asScala.getOrElse(leftKey, leftKey) }
+                .map { ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).getOrElse(leftKey, leftKey) }
                 .getOrElse(leftKey)
               if (joinPart.groupBy.keyColumns.contains(replacedKey))
-                Some(generateSkewFilterSql(replacedKey, values.asScala))
+                Some(generateSkewFilterSql(
+                  replacedKey, ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values).toSeq))
               else None
           }
           .filter(_.nonEmpty)
@@ -426,7 +454,8 @@ object Extensions {
       }
     }
 
-    def setups: Seq[String] = (join.left.query.setupsSeq ++ join.joinParts.asScala.flatMap(_.groupBy.setups)).distinct
+    def setups: Seq[String] = (join.left.query.setupsSeq ++ ScalaVersionSpecificCollectionsConverter
+      .convertJavaListToScala(join.joinParts).flatMap(_.groupBy.setups)).distinct
 
     def copyForVersioningComparison(): Join = {
       // When we compare previous-run join to current join to detect changes requiring table migration
@@ -440,7 +469,8 @@ object Extensions {
       newJoin
     }
 
-    lazy val joinPartOps: Seq[JoinPartOps] = join.joinParts.asScala.map(new JoinPartOps(_))
+    lazy val joinPartOps: Seq[JoinPartOps] =
+      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts).toSeq.map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -454,7 +484,9 @@ object Extensions {
 
   implicit class QueryOps(query: Query) {
     def setupsSeq: Seq[String] = {
-      Option(query.setups).map(_.asScala.toSeq).getOrElse(Seq.empty)
+      Option(query.setups).map(
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
+      ).getOrElse(Seq.empty)
     }
   }
 }

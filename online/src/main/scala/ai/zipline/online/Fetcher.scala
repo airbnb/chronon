@@ -5,6 +5,7 @@ import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.JoinOps
 import ai.zipline.api.{Row, _}
+import ai.zipline.online.CompatParColls.Converters._
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import com.google.gson.Gson
@@ -115,7 +116,7 @@ class BaseFetcher(kvStore: KVStore,
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
-  def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context] = None): Future[Seq[Response]] = {
+  def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context] = None): Future[scala.collection.Seq[Response]] = {
     val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
@@ -225,11 +226,11 @@ class BaseFetcher(kvStore: KVStore,
     FinalBatchIr(collapsed, tailHops)
   }
 
-  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).mapValues(_.map(_._2))
+  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).map{case (k,v) => (k, v.map(_._2))}.toMap
 
   private case class PrefixedRequest(prefix: String, request: Request)
 
-  def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val context = Metrics.Context(method = "fetchJoin")
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
@@ -305,7 +306,7 @@ class BaseFetcher(kvStore: KVStore,
       }
   }
 
-  private def reportFailure(requests: Seq[Request], withTag: String => Metrics.Context, e: Throwable): Unit = {
+  private def reportFailure(requests: scala.collection.Seq[Request], withTag: String => Metrics.Context, e: Throwable): Unit = {
     requests.foreach { req =>
       val context = withTag(req.name)
       FetcherMetrics.reportFailure(e, context)
@@ -382,7 +383,7 @@ class Fetcher(kvStore: KVStore,
     }
   })
 
-  override def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     super
       .fetchJoin(requests)
@@ -429,7 +430,7 @@ class Fetcher(kvStore: KVStore,
       })
   }
 
-  override def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context]): Future[Seq[Response]] = {
+  override def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context]): Future[scala.collection.Seq[Response]] = {
     super.fetchGroupBys(requests, contextOption)
   }
 }
