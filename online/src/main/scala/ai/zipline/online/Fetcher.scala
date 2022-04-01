@@ -383,7 +383,7 @@ class Fetcher(kvStore: KVStore,
     }
   })
 
-  override def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     super
       .fetchJoin(requests)
@@ -430,7 +430,7 @@ class Fetcher(kvStore: KVStore,
       })
   }
 
-  override def fetchGroupBys(requests: Seq[Request], contextOption: Option[Metrics.Context]): Future[Seq[Response]] = {
+  override def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context]): Future[scala.collection.Seq[Response]] = {
     super.fetchGroupBys(requests, contextOption)
   }
 }

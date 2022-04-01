@@ -96,7 +96,7 @@ object Extensions {
       val mapper = new ObjectMapper();
       val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
       val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
-      jMap.asScala.get(key).orNull
+      ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jMap).get(key).orNull
     }
   }
 
