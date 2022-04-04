@@ -40,7 +40,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
-    val result = getConf[Join](name).map(new JoinOps(_))
+    val result = getConf[Join](s"joins/$name").map(new JoinOps(_))
     MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
     result
   })
