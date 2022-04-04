@@ -51,8 +51,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "group_by_subject_expr",
-                  "entity": "entity_expr",
-                  "ts": "ts"
+                  "entity": "entity_expr"
                 },
                 "startPartition": "2021-03-01",
                 "timeColumn": "ts",
