@@ -22,7 +22,8 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
-  def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String, clazz: Class[_ <: T]): Try[T] = {
+  def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
+    val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
     val confKey = pathToKey(confPathOrName)
     kvStore
       .getString(confKey, dataset, timeoutMillis)
@@ -39,7 +40,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
-    val result = getConf[Join](name, classOf[Join]).map(new JoinOps(_))
+    val result = getConf[Join](name).map(new JoinOps(_))
     MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
     result
   })

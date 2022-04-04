@@ -3,12 +3,31 @@ package ai.zipline.spark.consistency
 object EditDistance {
 
   // we re-use this object - hence the vars.
-  case class Distance(var insert: Int, var delete: Int) {
+  case class Distance(var insert: Int, var delete: Int) extends Comparable[Distance] {
     def total: Int = insert + delete
     def update(ins: Int, del: Int): Unit = {
       insert = ins
       delete = del
     }
+
+    override def compareTo(o: Distance): Int = Ordering[Int].compare(total, o.total)
+  }
+
+  // edit distance should also work for strings
+  class StringOps(inner: String) extends Seq[Char] {
+    override def length: Int = inner.length
+
+    override def apply(idx: Int): Char = inner.charAt(idx)
+
+    override def iterator: Iterator[Char] = inner.iterator
+  }
+
+  object StringOps {
+    def from(value: String): Seq[Char] = if (value == null) null else new StringOps(value)
+  }
+
+  def betweenStrings(left: String, right: String): Distance = {
+    between(StringOps.from(left), StringOps.from(right))
   }
 
   // EditDistance DP algorithm with the following tweaks

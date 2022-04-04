@@ -361,7 +361,7 @@ class OrderByLimit[I: ClassTag](
   }
 
   // mutating
-  override final def update(state: Container, input: I): Container =
+  override final def update(state: util.ArrayList[I], input: I): util.ArrayList[I] =
     minHeap.insert(state, input)
 
   // mutating 1

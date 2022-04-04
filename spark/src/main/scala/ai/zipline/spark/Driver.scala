@@ -1,24 +1,34 @@
 package ai.zipline.spark
 
+import ai.zipline.aggregator.base.{BottomK, TopK}
 import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.ThriftJsonCodec
+import ai.zipline.api.{ThriftJsonCodec, UnknownType}
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
+import ai.zipline.spark.consistency.{ConsistencyJob, EditDistance}
+import ai.zipline.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
-import ai.zipline.spark.consistency.ConsistencyJob
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, ListTopicsOptions}
+import org.apache.spark.SparkFiles
+import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
-import java.io.{File, FileNotFoundException}
+import java.io.File
+import java.util
+import java.util.Properties
 import java.util.logging.Logger
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters.{asScalaIteratorConverter, mapAsScalaMapConverter}
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success}
+
+class DummyExtensions extends (SparkSessionExtensions => Unit) {
+  override def apply(extensions: SparkSessionExtensions): Unit = {}
+}
 
 // The mega zipline cli
 object Driver {
@@ -233,6 +243,7 @@ object Driver {
     }
 
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
+      TopicChecker.topicShouldExist(topic, host)
       session.readStream
         .format("kafka")
         .option("kafka.bootstrap.servers", host)
@@ -258,17 +269,25 @@ object Driver {
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
 
+    def findFile(path: String): Option[String] = {
+      val tail = path.split("/").last
+      val possiblePaths = Seq(path, tail, SparkFiles.get(tail))
+      val statuses = possiblePaths.map(p => p -> new File(p).exists())
+      println(s"File Statuses: $statuses")
+      statuses.find(_._2 == true).map(_._1)
+    }
+
     def run(args: Args): Unit = {
-      val groupByConf: api.GroupBy =
-        try {
-          args.parseConf[api.GroupBy]
-        } catch { // on driver we can't ship the file easily
-          case _: FileNotFoundException =>
-            println(s"Couldn't file the conf file locally - fetching from metadata store")
-            args.metaDataStore.getConf[api.GroupBy](args.confPath(), classOf[api.GroupBy]).get
-        }
+      // session needs to be initialized before we can call find file.
       val session: SparkSession = buildSession(args.debug())
-      session.sparkContext.addJar(args.onlineJar())
+
+      val confFile = findFile(args.confPath())
+      val groupByConf = confFile
+        .map(ThriftJsonCodec.fromJsonFile[api.GroupBy](_, check = false))
+        .getOrElse(args.metaDataStore.getConf[api.GroupBy](args.confPath()).get)
+
+      val onlineJar = findFile(args.onlineJar())
+      session.sparkContext.addJar(onlineJar.get)
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       lazy val host = streamingSource.get.topicTokens.get("host")
