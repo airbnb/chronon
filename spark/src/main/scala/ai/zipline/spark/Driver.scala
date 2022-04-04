@@ -26,6 +26,8 @@ import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success}
 
+// useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
+// so we give it dummy extensions
 class DummyExtensions extends (SparkSessionExtensions => Unit) {
   override def apply(extensions: SparkSessionExtensions): Unit = {}
 }
@@ -242,7 +244,7 @@ object Driver {
       spark
     }
 
-    def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
+    def dataStream(name: String, session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.readStream
         .format("kafka")
@@ -292,12 +294,17 @@ object Driver {
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       lazy val host = streamingSource.get.topicTokens.get("host")
       lazy val port = streamingSource.get.topicTokens.get("port")
+      // name should be different to not pollute prod offsets
+      val name = groupByConf.metaData.getName + (if (args.debug()) "_debug" else "")
       if (!args.kafkaBootstrap.isDefined)
         assert(
           host.isDefined && port.isDefined,
           "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
       val inputStream: DataFrame =
-        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+        dataStream(name,
+                   session,
+                   args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"),
+                   streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
       streamingRunner.run(args.debug())

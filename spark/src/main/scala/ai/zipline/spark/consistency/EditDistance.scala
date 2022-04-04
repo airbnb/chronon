@@ -3,14 +3,12 @@ package ai.zipline.spark.consistency
 object EditDistance {
 
   // we re-use this object - hence the vars.
-  case class Distance(var insert: Int, var delete: Int) extends Comparable[Distance] {
+  case class Distance(var insert: Int, var delete: Int) {
     def total: Int = insert + delete
     def update(ins: Int, del: Int): Unit = {
       insert = ins
       delete = del
     }
-
-    override def compareTo(o: Distance): Int = Ordering[Int].compare(total, o.total)
   }
 
   // edit distance should also work for strings

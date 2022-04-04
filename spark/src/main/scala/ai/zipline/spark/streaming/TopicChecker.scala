@@ -50,10 +50,5 @@ object TopicChecker {
     }
   }
 
-  def main(args: Array[String]): Unit = {
-    println(args.toSeq)
-    val topic = args(0)
-    val bootstrap = args(1)
-    topicShouldExist(topic, bootstrap)
-  }
+  def main(args: Array[String]): Unit = topicShouldExist(args(0), args(1))
 }
