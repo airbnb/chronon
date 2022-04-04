@@ -51,8 +51,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "group_by_subject_expr_old_version",
-                  "event": "event_expr_old_version",
-                  "ts": "UNIX_TIMESTAMP(ts) * 1000"
+                  "event": "event_expr_old_version"
                 },
                 "startPartition": "2021-03-01",
                 "endPartition": "2021-04-09",
@@ -67,8 +66,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "possibly_different_group_by_subject_expr",
-                  "event": "possibly_different_event_expr",
-                  "ts": "__timestamp"
+                  "event": "possibly_different_event_expr"
                 },
                 "startPartition": "2021-03-01",
                 "timeColumn": "__timestamp",
@@ -123,8 +121,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "group_by_subject_expr",
-                  "entity": "entity_expr",
-                  "ts": "ts"
+                  "entity": "entity_expr"
                 },
                 "startPartition": "2021-03-01",
                 "timeColumn": "ts",

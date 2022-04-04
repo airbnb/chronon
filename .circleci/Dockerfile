@@ -37,7 +37,7 @@ RUN apt-get update && apt-get -y -q install \
     && apt-get clean
 
 # Install thrift
-RUN curl -sSL "http://downloads.apache.org/thrift/$THRIFT_VERSION/thrift-$THRIFT_VERSION.tar.gz" -o thrift.tar.gz \
+RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THRIFT_VERSION.tar.gz" -o thrift.tar.gz \
 	&& mkdir -p /usr/src/thrift \
 	&& tar zxf thrift.tar.gz -C /usr/src/thrift --strip-components=1 \
 	&& rm thrift.tar.gz \
