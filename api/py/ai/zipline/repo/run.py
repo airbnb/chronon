@@ -137,9 +137,11 @@ class Runner:
             self.spark_submit = args.spark_streaming_submit_path
         else:
             self.spark_submit = args.spark_submit_path
+        self.list_apps_cmd = args.list_apps
 
     def set_env(self):
-        with open(os.path.join(self.repo, self.conf), 'r') as conf_file:
+        conf_path = os.path.join(self.repo, self.conf)
+        with open(conf_path, 'r') as conf_file:
             conf_json = json.load(conf_file)
         with open(os.path.join(self.repo, 'teams.json'), 'r') as teams_file:
             teams_json = json.load(teams_file)
@@ -159,6 +161,9 @@ class Runner:
         env.update(team_env)
         env.update(conf_env)
         env["APP_NAME"] = self.app_name
+        env["ZIPLINE_CONF_PATH"] = conf_path
+        env["ZIPLINE_DRIVER_JAR"] = self.jar_path
+        env["ZIPLINE_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
         for key, value in env.items():
             print("    " + key + "=" + value)
@@ -177,6 +182,16 @@ class Runner:
             )
         else:
             self.set_env()
+            if self.mode in ('streaming'):
+                print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
+                running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8")
+                filtered_apps = [app for app in running_apps.split('\n') if self.app_name in app]
+                if len(filtered_apps) > 0:
+                    print("Found running apps by the name {} in \n{}\n".format(
+                        self.app_name, '\n'.join(filtered_apps)))
+                    assert len(filtered_apps) == 1, "More than one found, please kill them all"
+                    print("All good. No need to start a new app.")
+                    return
             command = 'bash {script} --class ai.zipline.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
@@ -220,11 +235,11 @@ if __name__ == "__main__":
                         help='Basic arguments that need to be supplied to all online modes')
     parser.add_argument('--zipline-jar', default=None, help='Path to zipline OS jar')
     parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
+    parser.add_argument('--list-apps', default="python3 " + os.path.join(zipline_repo_path, "scripts/yarn_list.py"),
+                        help='command/script to list running jobs on the scheduler')
     args, unknown_args = parser.parse_known_args()
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
-    print(args.online_args)
-    print(args.args)
     jar_path = args.zipline_jar if args.zipline_jar else download_jar(args.version, jar_type, args.release_tag)
     Runner(args, jar_path).run()

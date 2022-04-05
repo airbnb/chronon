@@ -1,12 +1,14 @@
 package ai.zipline.spark.streaming
 
 import ai.zipline.online.KVStore.PutRequest
+import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.commons.io.FileUtils
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 
 class StreamingStats(val publishDelaySeconds: Int) {
+  private var latencyHistogram: KllFloatsSketch = new KllFloatsSketch()
   private var latencyMsTotal: Long = 0
   private var writesTotal: Long = 0
   private var keyBytesTotal: Long = 0
@@ -19,13 +21,15 @@ class StreamingStats(val publishDelaySeconds: Int) {
 
   def printStatus(): Unit = {
     if (writesTotal > 0) {
-      println("in print sync")
       val now = System.currentTimeMillis()
       def readable = (x: Long) => FileUtils.byteCountToDisplaySize(x)
       val threadName = s"Thread-${Thread.currentThread().getId}"
+      val medianLatency = latencyHistogram.getQuantile(.5)
+      val p95Latency = latencyHistogram.getQuantile(.95)
+      val p99Latency = latencyHistogram.getQuantile(.99)
       println(s"""
          |[$threadName][${timeString(utc, now)}] Wrote $writesTotal records in last ${now - startMs} ms.         
-         |    Latency: ${latencyMsTotal / writesTotal} (avg)
+         | Latency ms: ${latencyMsTotal / writesTotal} (avg) / $medianLatency (median) / $p95Latency (p95) / $p99Latency (p99) 
          |   Key Size: ${keyBytesTotal / writesTotal} bytes (avg) / ${readable(keyBytesTotal)} (total)
          | Value Size: ${valueBytesTotal / writesTotal} bytes (avg) / ${readable(valueBytesTotal)} (total)
          |""".stripMargin)
@@ -33,6 +37,7 @@ class StreamingStats(val publishDelaySeconds: Int) {
       writesTotal = 0
       keyBytesTotal = 0
       valueBytesTotal = 0
+      latencyHistogram = new KllFloatsSketch()
       startMs = now
     } else {
       println("No writes registered")
@@ -40,7 +45,11 @@ class StreamingStats(val publishDelaySeconds: Int) {
   }
 
   def increment(putRequest: PutRequest): Unit = {
-    putRequest.tsMillis.foreach(latencyMsTotal += System.currentTimeMillis() - _)
+    putRequest.tsMillis.foreach { queryTime =>
+      val latency = System.currentTimeMillis() - queryTime
+      latencyMsTotal += latency
+      latencyHistogram.update(latency)
+    }
     writesTotal += 1
     if (putRequest.keyBytes != null) keyBytesTotal += putRequest.keyBytes.length
     if (putRequest.valueBytes != null) valueBytesTotal += putRequest.valueBytes.length
