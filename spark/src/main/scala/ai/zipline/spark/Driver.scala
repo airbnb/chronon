@@ -9,6 +9,12 @@ import ai.zipline.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
+import org.apache.spark.sql.streaming.StreamingQueryListener
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -220,6 +226,17 @@ object Driver {
   object GroupByStreaming {
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
+      session.streams.addListener(new StreamingQueryListener() {
+        override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
+          println("Query started: " + queryStarted.id)
+        }
+        override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
+          println("Query terminated: " + queryTerminated.id)
+        }
+        override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
+          println("Query made progress: " + queryProgress.progress)
+        }
+      })
       session.readStream
         .format("kafka")
         .option("kafka.bootstrap.servers", host)
