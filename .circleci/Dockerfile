@@ -3,7 +3,7 @@ FROM ${base_image}
 USER root
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 ENV PATH /opt/conda/bin:$PATH
-ENV THRIFT_VERSION 0.13.0
+ENV THRIFT_VERSION 0.11.0
 
 WORKDIR /img-build
 
