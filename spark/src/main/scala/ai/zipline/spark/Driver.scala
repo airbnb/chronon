@@ -288,7 +288,8 @@ object Driver {
         dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      streamingRunner.run(args.debug())
+      val query = streamingRunner.run(args.debug())
+      query.awaitTermination()
     }
   }
 

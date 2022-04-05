@@ -17,7 +17,7 @@ import ai.zipline.spark.Conversions
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
+import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
@@ -63,7 +63,7 @@ class GroupBy(inputStream: DataFrame,
     )
   }
 
-  def run(local: Boolean = false): Unit = {
+  def run(local: Boolean = false): StreamingQuery = {
     buildDataStream(local).start()
   }
 
