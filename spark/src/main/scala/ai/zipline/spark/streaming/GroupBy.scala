@@ -165,7 +165,7 @@ class GroupBy(inputStream: DataFrame,
       }
       .writeStream
       .outputMode("append")
-      .trigger(Trigger.Continuous("60 second"))
+      // .trigger(Trigger.Continuous("60 second"))
       .foreach(dataWriter)
   }
 }
