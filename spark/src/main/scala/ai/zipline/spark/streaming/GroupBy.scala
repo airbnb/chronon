@@ -139,7 +139,7 @@ class GroupBy(inputStream: DataFrame,
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")
     // Change interval to  60 later
-    val dataWriter = new DataWriter(onlineImpl, context, 10, debug)
+    val dataWriter = new DataWriter(onlineImpl, context, 120, debug)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
