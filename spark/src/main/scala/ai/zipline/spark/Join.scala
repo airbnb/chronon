@@ -305,8 +305,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         Seq()
       }
       val scanQuery = leftUnfilledRange.genScanQuery(joinConf.left.query,
-        joinConf.left.table,
-        fillIfAbsent = Map(Constants.PartitionColumn -> null) ++ timeProjection)
+                                                     joinConf.left.table,
+                                                     fillIfAbsent =
+                                                       Map(Constants.PartitionColumn -> null) ++ timeProjection)
       val df = tableUtils.sql(scanQuery)
       val skewFilter = joinConf.skewFilter()
       val filteredDf = skewFilter
@@ -336,25 +337,5 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
     finalResult
-  }
-}
-
-// the driver
-object Join {
-  // TODO: deprecate - instead use `ztool join-backfill ...`
-  def main(args: Array[String]): Unit = {
-    // args = conf path, end date
-    val parsedArgs = new Args(args)
-    parsedArgs.verify()
-    println(s"Parsed Args: $parsedArgs")
-    val joinConf = parsedArgs.parseConf[JoinConf]
-    val join = new Join(
-      joinConf,
-      parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}")),
-      parsedArgs.skipEqualCheck()
-    )
-
-    join.computeJoin(parsedArgs.stepDays.toOption)
   }
 }

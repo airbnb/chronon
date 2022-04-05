@@ -11,6 +11,23 @@ object EditDistance {
     }
   }
 
+  // edit distance should also work for strings
+  class StringOps(inner: String) extends Seq[Char] {
+    override def length: Int = inner.length
+
+    override def apply(idx: Int): Char = inner.charAt(idx)
+
+    override def iterator: Iterator[Char] = inner.iterator
+  }
+
+  object StringOps {
+    def from(value: String): Seq[Char] = if (value == null) null else new StringOps(value)
+  }
+
+  def betweenStrings(left: String, right: String): Distance = {
+    between(StringOps.from(left), StringOps.from(right))
+  }
+
   // EditDistance DP algorithm with the following tweaks
   //        - replacement is not allowed, only inserts or deletes
   //        - inserts and deletes need to be counted separately (distinguish missing online vs. extra online)

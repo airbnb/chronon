@@ -51,4 +51,29 @@ object SparkSessionBuilder {
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
+
+  def buildStreaming(local: Boolean): SparkSession = {
+    val baseBuilder = SparkSession
+      .builder()
+      .config("spark.sql.session.timeZone", "UTC")
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
+      .config("spark.kryoserializer.buffer.max", "2000m")
+      .config("spark.kryo.referenceTracking", "false")
+
+    val builder = if (local) {
+      baseBuilder
+      // use all threads - or the tests will be slow
+        .master("local[*]")
+        .config("spark.local.dir", s"/tmp/zipline-spark-streaming")
+        .config("spark.kryo.registrationRequired", "true")
+    } else {
+      baseBuilder
+    }
+    val spark = builder.getOrCreate()
+    // disable log spam
+    spark.sparkContext.setLogLevel("ERROR")
+    Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
+    spark
+  }
 }

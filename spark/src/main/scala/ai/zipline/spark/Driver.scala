@@ -4,13 +4,24 @@ import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
-import com.fasterxml.jackson.databind.ObjectMapper
 import ai.zipline.spark.consistency.ConsistencyJob
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import ai.zipline.spark.streaming.TopicChecker
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.apache.commons.io.FileUtils
+import org.apache.spark.SparkFiles
+import org.apache.spark.sql.streaming.StreamingQueryListener
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
+import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
+import java.nio.channels.FileChannel
+import java.nio.file.{Files, Paths}
 import java.util.logging.Logger
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
@@ -19,6 +30,12 @@ import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success}
+
+// useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
+// so we give it dummy extensions
+class DummyExtensions extends (SparkSessionExtensions => Unit) {
+  override def apply(extensions: SparkSessionExtensions): Unit = {}
+}
 
 // The mega zipline cli
 object Driver {
@@ -117,6 +134,9 @@ object Driver {
       map.toMap
     }
 
+    def metaDataStore =
+      new MetadataStore(impl(serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+
     def impl(props: Map[String, String]): Api = {
       val urls = Array(new File(onlineJar()).toURI.toURL)
       val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
@@ -169,9 +189,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val metadataStore =
-        new MetadataStore(args.impl(args.serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
-      val putRequest = metadataStore.putConf(args.confPath())
+      val putRequest = args.metaDataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
       println(
         s"Uploaded Zipline Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
@@ -206,32 +224,19 @@ object Driver {
   }
 
   object GroupByStreaming {
-    def buildSession(local: Boolean): SparkSession = {
-      val baseBuilder = SparkSession
-        .builder()
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-        .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
-        .config("spark.kryoserializer.buffer.max", "2000m")
-        .config("spark.kryo.referenceTracking", "false")
-
-      val builder = if (local) {
-        baseBuilder
-        // use all threads - or the tests will be slow
-          .master("local[*]")
-          .config("spark.local.dir", s"/tmp/zipline-spark-streaming")
-          .config("spark.kryo.registrationRequired", "true")
-      } else {
-        baseBuilder
-      }
-      val spark = builder.getOrCreate()
-      // disable log spam
-      spark.sparkContext.setLogLevel("ERROR")
-      Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
-      spark
-    }
-
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
+      TopicChecker.topicShouldExist(topic, host)
+      session.streams.addListener(new StreamingQueryListener() {
+        override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
+          println("Query started: " + queryStarted.id)
+        }
+        override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
+          println("Query terminated: " + queryTerminated.id)
+        }
+        override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
+          println("Query made progress: " + queryProgress.progress)
+        }
+      })
       session.readStream
         .format("kafka")
         .option("kafka.bootstrap.servers", host)
@@ -257,10 +262,37 @@ object Driver {
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
 
+    def findFile(path: String): Option[String] = {
+      val tail = path.split("/").last
+      val possiblePaths = Seq(path, tail, SparkFiles.get(tail))
+      val statuses = possiblePaths.map(p => p -> new File(p).exists())
+
+      val messages = statuses.map {
+        case (file, present) =>
+          val suffix = if (present) {
+            val fileSize = Files.size(Paths.get(file))
+            s"exists ${FileUtils.byteCountToDisplaySize(fileSize)}"
+          } else {
+            "is not found"
+          }
+          s"$file $suffix"
+      }
+      println(s"File Statuses:\n  ${messages.mkString("\n  ")}")
+      statuses.find(_._2 == true).map(_._1)
+    }
+
     def run(args: Args): Unit = {
-      val groupByConf: api.GroupBy = args.parseConf[api.GroupBy]
-      val session: SparkSession = buildSession(args.debug())
-      session.sparkContext.addJar(args.onlineJar())
+      // session needs to be initialized before we can call find file.
+      val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
+
+      val confFile = findFile(args.confPath())
+      val groupByConf = confFile
+        .map(ThriftJsonCodec.fromJsonFile[api.GroupBy](_, check = false))
+        .getOrElse(args.metaDataStore.getConf[api.GroupBy](args.confPath()).get)
+
+      val onlineJar = findFile(args.onlineJar())
+      if (args.debug())
+        onlineJar.foreach(session.sparkContext.addJar)
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       lazy val host = streamingSource.get.topicTokens.get("host")
@@ -273,7 +305,8 @@ object Driver {
         dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      streamingRunner.run(args.debug())
+      val query = streamingRunner.run(args.debug())
+      query.awaitTermination()
     }
   }
 
