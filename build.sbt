@@ -79,7 +79,7 @@ lazy val online = project
     }
   )
 
-def cleanSparkMeta: Unit = {
+def cleanSparkMeta(): Unit = {
   Folder.clean(file(".") / "spark" / "spark-warehouse",
                file(".") / "spark-warehouse",
                file(".") / "spark" / "metastore_db",
@@ -91,7 +91,7 @@ val sparkLibs = Seq(
   "org.apache.spark" %% "spark-hive" % "2.4.0",
   "org.apache.spark" %% "spark-core" % "2.4.0",
   "org.apache.spark" %% "spark-streaming" % "2.4.0",
-  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.0"
 )
 
 val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
@@ -107,16 +107,16 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
     baseDirectory.value / "spark-warehouse",
     baseDirectory.value / "metastore_db"
   ),
-  testOptions in Test += Tests.Setup(() => cleanSparkMeta),
-  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta)
+  testOptions in Test += Tests.Setup(() => cleanSparkMeta()),
+  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta())
 )
 
-val providedLibs: Setting[_] = (libraryDependencies ++= sparkLibs.map(_ % "provided"))
-val embeddedLibs: Setting[_] = (libraryDependencies ++= sparkLibs)
-val embeddedTarget: Setting[_] = (target := target.value.toPath.resolveSibling("target-embedded").toFile)
+val providedLibs: Setting[_] = libraryDependencies ++= sparkLibs.map(_ % "provided")
+val embeddedLibs: Setting[_] = libraryDependencies ++= sparkLibs
+val embeddedTarget: Setting[_] = target := target.value.toPath.resolveSibling("target-embedded").toFile
 val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-  case PathList("META-INF", xs @ _*)       => MergeStrategy.filterDistinctLines
+  case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
   case "plugin.xml"                        => MergeStrategy.last
   case _                                   => MergeStrategy.first
 }

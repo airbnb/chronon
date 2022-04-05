@@ -1,24 +1,23 @@
 package ai.zipline.spark
 
-import ai.zipline.aggregator.base.{BottomK, TopK}
 import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
-import ai.zipline.api.{ThriftJsonCodec, UnknownType}
+import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
-import ai.zipline.spark.consistency.{ConsistencyJob, EditDistance}
+import ai.zipline.spark.consistency.ConsistencyJob
 import ai.zipline.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, ListTopicsOptions}
+import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
-import java.util
-import java.util.Properties
+import java.nio.channels.FileChannel
+import java.nio.file.{Files, Paths}
 import java.util.logging.Logger
-import scala.collection.JavaConverters.{asScalaIteratorConverter, mapAsScalaMapConverter}
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
@@ -219,32 +218,7 @@ object Driver {
   }
 
   object GroupByStreaming {
-    def buildSession(local: Boolean): SparkSession = {
-      val baseBuilder = SparkSession
-        .builder()
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-        .config("spark.kryo.registrator", "ai.zipline.spark.ZiplineKryoRegistrator")
-        .config("spark.kryoserializer.buffer.max", "2000m")
-        .config("spark.kryo.referenceTracking", "false")
-
-      val builder = if (local) {
-        baseBuilder
-        // use all threads - or the tests will be slow
-          .master("local[*]")
-          .config("spark.local.dir", s"/tmp/zipline-spark-streaming")
-          .config("spark.kryo.registrationRequired", "true")
-      } else {
-        baseBuilder
-      }
-      val spark = builder.getOrCreate()
-      // disable log spam
-      spark.sparkContext.setLogLevel("ERROR")
-      Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
-      spark
-    }
-
-    def dataStream(name: String, session: SparkSession, host: String, topic: String): DataFrame = {
+    def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.readStream
         .format("kafka")
@@ -275,13 +249,24 @@ object Driver {
       val tail = path.split("/").last
       val possiblePaths = Seq(path, tail, SparkFiles.get(tail))
       val statuses = possiblePaths.map(p => p -> new File(p).exists())
-      println(s"File Statuses: $statuses")
+
+      val messages = statuses.map {
+        case (file, present) =>
+          val suffix = if (present) {
+            val fileSize = Files.size(Paths.get(file))
+            s"exists ${FileUtils.byteCountToDisplaySize(fileSize)}"
+          } else {
+            "is not found"
+          }
+          s"$file $suffix"
+      }
+      println(s"File Statuses:\n  ${messages.mkString("\n  ")}")
       statuses.find(_._2 == true).map(_._1)
     }
 
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
-      val session: SparkSession = buildSession(args.debug())
+      val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
 
       val confFile = findFile(args.confPath())
       val groupByConf = confFile
@@ -289,22 +274,18 @@ object Driver {
         .getOrElse(args.metaDataStore.getConf[api.GroupBy](args.confPath()).get)
 
       val onlineJar = findFile(args.onlineJar())
-      session.sparkContext.addJar(onlineJar.get)
+      if (args.debug())
+        onlineJar.foreach(session.sparkContext.addJar)
       val streamingSource = groupByConf.streamingSource
       assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
       lazy val host = streamingSource.get.topicTokens.get("host")
       lazy val port = streamingSource.get.topicTokens.get("port")
-      // name should be different to not pollute prod offsets
-      val name = groupByConf.metaData.getName + (if (args.debug()) "_debug" else "")
       if (!args.kafkaBootstrap.isDefined)
         assert(
           host.isDefined && port.isDefined,
           "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
       val inputStream: DataFrame =
-        dataStream(name,
-                   session,
-                   args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"),
-                   streamingSource.get.cleanTopic)
+        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
       val streamingRunner =
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
       streamingRunner.run(args.debug())
