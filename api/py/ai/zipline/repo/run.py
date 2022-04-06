@@ -163,7 +163,8 @@ class Runner:
         env["APP_NAME"] = self.app_name
         env["ZIPLINE_CONF_PATH"] = conf_path
         env["ZIPLINE_DRIVER_JAR"] = self.jar_path
-        env["ZIPLINE_ONLINE_JAR"] = self.online_jar
+        if self.mode in ONLINE_MODES:
+            env["ZIPLINE_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
         for key, value in env.items():
             print("    " + key + "=" + value)
