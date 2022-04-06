@@ -9,7 +9,7 @@
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
       "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
       "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds_minus_1\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ macros.ds_add(ds, -1) }}\", \"start\": \"2021-03-01\", \"end\": null}",
-      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
+      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
     "tableProperties": {
       "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
@@ -108,7 +108,7 @@
           "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds_minus_1\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ macros.ds_add(ds, -1) }}\", \"start\": \"2021-03-01\", \"end\": null}",
-            "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
+            "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
           "team": "sample_team"
         },
@@ -116,7 +116,7 @@
           {
             "entities": {
               "snapshotTable": "sample_table.sample_entity_snapshot",
-              "mutationTable": "sample_table.sample_entity_mutations",
+              "mutationTable": "sample_table.sample_entity_mutations/hr=00:00",
               "mutationTopic": "sample_topic",
               "query": {
                 "selects": {

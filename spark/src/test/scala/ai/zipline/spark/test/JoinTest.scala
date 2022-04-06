@@ -697,7 +697,7 @@ class JoinTest {
 
     // Now assert that the actual output is correct after all these runs
     computed.show()
-    val itemQueriesTable = joinConf.getLeft.getEvents.getTable
+    val itemQueriesTable = joinConf.getLeft.getEvents.table
     val start = joinConf.getLeft.getEvents.getQuery.getStartPartition
     val viewsTable = s"$namespace.view_versioning"
 

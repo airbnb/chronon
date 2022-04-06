@@ -102,7 +102,8 @@ def get_query(source: api.Source) -> api.Query:
 
 
 def get_table(source: api.Source) -> str:
-    return source.entities.snapshotTable if source.entities else source.events.table
+    table = source.entities.snapshotTable if source.entities else source.events.table
+    return table.split('/')[0]
 
 
 def get_topic(source: api.Source) -> str:
@@ -167,12 +168,21 @@ def get_dependencies(
 
 
 def wait_for_simple_schema(table, lag, start, end):
+    if not table:
+        return None
+    table_tokens = table.split('/')
+    clean_name = table_tokens[0]
+    subpartition_spec = '/'.join(table_tokens[1:]) if len(table_tokens) > 1 else ''
     return {
-        "name": "wait_for_{}_ds{}".format(table, "" if lag == 0 else f"_minus_{lag}"),
-        "spec": "{}/ds={}".format(table, "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag)),
+        "name": "wait_for_{}_ds{}".format(clean_name, "" if lag == 0 else f"_minus_{lag}"),
+        "spec": "{}/ds={}{}".format(
+            clean_name,
+            "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag),
+            '/{}'.format(subpartition_spec) if subpartition_spec else '',
+        ),
         "start": start,
         "end": end,
-    } if table else None
+    }
 
 
 def wait_for_name(dep, table):

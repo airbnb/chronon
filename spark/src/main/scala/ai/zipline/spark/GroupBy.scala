@@ -488,7 +488,7 @@ object GroupBy {
 
     val query = QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
-      if (mutations) source.getEntities.mutationTable else source.table,
+      if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
       metaColumns ++ keys.map(_ -> null)
     )

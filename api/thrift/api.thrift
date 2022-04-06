@@ -26,6 +26,7 @@ struct StagingQuery {
     4: optional list<string> setups
 }
 
+// Table names can contain a subpartition spec, example db.table/subpartition=mobile
 struct EventSource {
     1: optional string table
     2: optional string topic
