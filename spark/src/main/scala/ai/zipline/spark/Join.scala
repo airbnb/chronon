@@ -287,7 +287,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
-    for (earliestHole <- earliestHoleOpt if earliestHole > rangeToFill.end) {
+    if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $endPartition.\n\n Exiting..")
       return finalResult
     }

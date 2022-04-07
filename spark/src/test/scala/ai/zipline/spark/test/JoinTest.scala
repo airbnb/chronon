@@ -290,7 +290,11 @@ class JoinTest {
       diff.show()
     }
     assertEquals(diff.count(), 0)
-
+    val stream = new java.io.ByteArrayOutputStream()
+    Console.withOut(stream) {
+      runner.computeJoin(Some(7))
+    }
+    assertTrue(stream.toString().contains(s"There is no data to compute based on end partition of ${end}."))
   }
 
   @Test
