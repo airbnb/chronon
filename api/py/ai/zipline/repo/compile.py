@@ -85,9 +85,9 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
             num_written_objs += 1
 
             # In case of online join, we need to materialize the underlying online group_bys.
+            online_group_bys = {}
+            offline_gbs = []  # gather list to report errors
             if obj_class is Join and obj.metaData.online:
-                online_group_bys = {}
-                offline_gbs = []  # gather list to report errors
                 for jp in obj.joinParts:
                     if jp.groupBy.metaData.online:
                         online_group_bys[jp.groupBy.metaData.name] = jp.groupBy
