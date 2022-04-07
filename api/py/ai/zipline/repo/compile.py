@@ -96,6 +96,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
                 extra_online_group_bys.update(online_group_bys)
             assert not offline_gbs,\
                 "You must make all dependent GroupBys `online` if you want to make your join `online`." \
+                " You can do this by passing the `online=True` argument to the GroupBy constructor." \
                 " Fix the following: {}".format(offline_gbs)
     if extra_online_group_bys:
         num_written_group_bys = 0
