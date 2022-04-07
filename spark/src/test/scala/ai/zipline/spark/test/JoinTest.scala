@@ -290,7 +290,21 @@ class JoinTest {
       diff.show()
     }
     assertEquals(diff.count(), 0)
+    /* the below testing case to cover the scenario when input table and output table
+     * have same partitions, in other words, the frontfill is done, the join job
+     * should not trigger a backfill and exit the program properly
+     */
 
+    // use console to redirect println message to Java IO
+    val stream = new java.io.ByteArrayOutputStream()
+    Console.withOut(stream) {
+      // rerun the same join job
+      runner.computeJoin(Some(7))
+    }
+    val stdOutMsg = stream.toString()
+    println(s"std out message =\n $stdOutMsg")
+    // make sure that the program exits with target print statements
+    assertTrue(stdOutMsg.contains(s"There is no data to compute based on end partition of $end."))
   }
 
   @Test
