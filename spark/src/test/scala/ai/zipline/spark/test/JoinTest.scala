@@ -294,7 +294,9 @@ class JoinTest {
     Console.withOut(stream) {
       runner.computeJoin(Some(7))
     }
-    assertTrue(stream.toString().contains(s"There is no data to compute based on end partition of ${end}."))
+    val stdOutMsg = stream.toString()
+    println(s"std out message =\n $stdOutMsg")
+    assertTrue(stdOutMsg.contains(s"There is no data to compute based on end partition of $end."))
   }
 
   @Test
