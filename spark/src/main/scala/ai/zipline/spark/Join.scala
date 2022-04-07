@@ -312,9 +312,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         println(s"Computing join for range: $range  $progress")
 
         val scanQuery = range.genScanQuery(joinConf.left.query,
-          joinConf.left.table,
-          fillIfAbsent =
-            Map(Constants.PartitionColumn -> null) ++ timeProjection)
+                                           joinConf.left.table,
+                                           fillIfAbsent =
+                                             Map(Constants.PartitionColumn -> null) ++ timeProjection)
 
         val leftDfInRange: DataFrame = {
           val df = tableUtils.sql(scanQuery)
@@ -331,14 +331,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
           computeRange(leftDfInRange, range).save(outputTable, tableProps)
           println(s"Wrote to table $outputTable, into partitions: $range $progress")
         } else {
-          if (index != stepRanges.length - 1) {
-            println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
-          } else {
-            println(s"Left side query for $range produced 0 rows\n  $scanQuery")
-            // Exit 0 here because the job is functioning correctly
-            sys.exit(0)
-          }
+          println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
         }
+
+        val start = System.currentTimeMillis()
+        computeRange(leftDfInRange.prunePartition(range), range).save(outputTable, tableProps)
+        val elapsed = System.currentTimeMillis() - start
+        println(s"Wrote $range to table $outputTable, into partitions: $range $progress, in $elapsed ms")
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
     finalResult

@@ -274,6 +274,17 @@ object ColumnAggregator {
           case FloatType  => simple(new Average, toDouble[Float])
           case _          => mismatchException
         }
+
+      case Operation.VARIANCE =>
+        inputType match {
+          case IntType    => simple(new Variance, toDouble[Int])
+          case LongType   => simple(new Variance, toDouble[Long])
+          case ShortType  => simple(new Variance, toDouble[Short])
+          case DoubleType => simple(new Variance)
+          case FloatType  => simple(new Variance, toDouble[Float])
+          case _          => mismatchException
+        }
+
       case Operation.MIN =>
         inputType match {
           case IntType    => simple(new Min[Int](inputType))

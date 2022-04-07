@@ -139,6 +139,93 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def isDeletable: Boolean = true
 }
 
+// Welford algo for computing variance
+// Traditional sum of squares based formula has serious numerical stability problems
+class WelfordState(ir: Array[Any]) {
+  private def count: Int = ir(0).asInstanceOf[Int]
+  private def setCount(c: Int): Unit = ir.update(0, c)
+  private def mean: Double = ir(1).asInstanceOf[Double]
+  private def setMean(m: Double): Unit = ir.update(1, m)
+  private def m2: Double = ir(2).asInstanceOf[Double]
+  private def setM2(m: Double): Unit = ir.update(2, m)
+
+  private def getCombinedMeanDouble(weightN: Double, an: Double, weightK: Double, ak: Double): Double =
+    if (weightN < weightK) getCombinedMeanDouble(weightK, ak, weightN, an)
+    else
+      (weightN + weightK) match {
+        case 0.0                             => 0.0
+        case newCount if newCount == weightN => an
+        case newCount =>
+          val scaling = weightK / newCount
+          if (scaling < 0.1) (an + (ak - an) * scaling)
+          else (weightN * an + weightK * ak) / newCount
+      }
+
+  // See http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+  def update(input: Double): Unit = {
+    setCount(count + 1)
+    val delta = input - mean
+    setMean(mean + (delta / count))
+    val delta2 = input - mean
+    setM2(m2 + (delta * delta2))
+  }
+
+  def finalizeImpl(): Double = m2 / count
+
+  // See http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
+  def merge(other: WelfordState): Unit = {
+    val countCombined = count + other.count
+    val delta = other.mean - mean
+    val delta_n = delta / countCombined
+    val meanCombined = getCombinedMeanDouble(count, mean, other.count, other.mean)
+    val m2Combined = m2 + other.m2 + (delta * delta_n * count * other.count)
+    setCount(countCombined)
+    setMean(meanCombined)
+    setM2(m2Combined)
+  }
+}
+
+object WelfordState {
+  def init: Array[Any] = Array(0, 0.0, 0.0)
+}
+
+class Variance extends SimpleAggregator[Double, Array[Any], Double] {
+  override def outputType: DataType = DoubleType
+
+  override def irType: DataType =
+    StructType(
+      "VarianceIr",
+      Array(StructField("count", IntType), StructField("mean", DoubleType), StructField("m2", DoubleType))
+    )
+
+  override def prepare(input: Double): Array[Any] = {
+    val ir = WelfordState.init
+    new WelfordState(ir).update(input)
+    ir
+  }
+
+  override def update(ir: Array[Any], input: Double): Array[Any] = {
+    new WelfordState(ir).update(input)
+    ir
+  }
+
+  override def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
+    new WelfordState(ir1).merge(new WelfordState(ir2))
+    ir1
+  }
+
+  override def finalize(ir: Array[Any]): Double =
+    new WelfordState(ir).finalizeImpl()
+
+  override def clone(ir: Array[Any]): Array[Any] = {
+    val arr = new Array[Any](ir.length)
+    ir.copyToArray(arr)
+    arr
+  }
+
+  override def isDeletable: Boolean = false
+}
+
 class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, Int], util.Map[String, Int]] {
   type IrMap = util.Map[String, Int]
   override def outputType: DataType = MapType(StringType, IntType)

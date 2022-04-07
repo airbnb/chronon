@@ -65,7 +65,7 @@ enum Operation {
     COUNT = 6
     SUM = 7
     AVERAGE = 8
-    VARIANCE = 9  // TODO
+    VARIANCE = 9
     SKEW = 10     // TODO
     KURTOSIS = 11  // TODO
     APPROX_PERCENTILE = 12
