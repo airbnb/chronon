@@ -37,7 +37,8 @@ class VarianceTest extends TestCase {
     val naiveResult = naive(nums)
     val welfordResult = welford(nums)
     println(s"naive $naiveResult - welford $welfordResult - sum of squares ${sumOfSquares(nums)}")
-    assertTrue(naiveResult - welfordResult < 0.0001)
+    println((naiveResult - welfordResult) / naiveResult)
+    assertTrue((naiveResult - welfordResult) / naiveResult < 0.0000001)
   }
 
   def testVariance: Unit = {
