@@ -153,7 +153,7 @@ class Runner:
                 context=self.context,
                 name=conf_json['metaData']['name'])
 
-        # env priority conf.metaData.modeToEnvMap >> team.env >> default_team.env
+        # env priority already set >> conf.metaData.modeToEnvMap >> team.env >> default_team.env
         # default env & conf env are optional, team env is not.
         env = teams_json.get('default', {}).get(self.context, {}).get(self.mode, {})
         team_env = teams_json[self.team].get(self.context, {}).get(self.mode, {})
@@ -167,8 +167,11 @@ class Runner:
             env["ZIPLINE_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
         for key, value in env.items():
-            print("    " + key + "=" + value)
-            os.environ[key] = value
+            if key in os.environ:
+                print("Found " + key + "=" + os.environ.get(key))
+            else:
+                print("Setting " + key + "=" + value)
+                os.environ[key] = value
 
     def run(self):
         base_args = MODE_ARGS[self.mode].format(

@@ -25,20 +25,15 @@ object Metrics {
   case class Context(join: String = null,
                      groupBy: String = null,
                      production: Boolean = false,
-                     isStaging: Boolean = false,
                      isStreaming: Boolean = false,
                      method: String = null,
-                     owner: String = null,
-                     accuracy: String = null,
                      team: String = null) {
+
     def withJoin(join: String): Context = copy(join = join)
     def withGroupBy(groupBy: String): Context = copy(groupBy = groupBy)
-    def withIsStreaming(isStreaming: Boolean): Context = copy(isStreaming = isStreaming)
-    def withMethod(method: String): Context = copy(method = method)
     def withProduction(production: Boolean): Context = copy(production = production)
     def asBatch: Context = copy(isStreaming = false)
     def asStreaming: Context = copy(isStreaming = true)
-    def withAccuracy(accuracy: String): Context = copy(accuracy = accuracy)
     def withTeam(team: String): Context = copy(team = team)
 
     // Tagging happens to be the most expensive part(~40%) of reporting stats.

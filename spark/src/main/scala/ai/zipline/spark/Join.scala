@@ -3,10 +3,11 @@ package ai.zipline.spark
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonCodec, Join => JoinConf}
+import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
 import org.apache.spark.sql.DataFrame
-import java.util.Base64
 
+import java.util.Base64
 import scala.collection.JavaConverters._
 import scala.sys
 
@@ -185,9 +186,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
         if (rightUnfilledRange.isDefined) {
           try {
+            val start = System.currentTimeMillis()
+            println(s"Writing to join part table: $joinPartTableName")
             val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
+            val elapsed = System.currentTimeMillis() - start
+            println(s"Wrote to join part table: $joinPartTableName in $elapsed ms")
           } catch {
             case e: Exception =>
               println(
