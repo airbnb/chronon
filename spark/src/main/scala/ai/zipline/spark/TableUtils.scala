@@ -84,14 +84,6 @@ case class TableUtils(sparkSession: SparkSession) {
     if (repartition) {
       repartitionAndWrite(dfRearranged, tableName, saveMode)
     } else {
-      writeDirect(dfRearranged, tableName, saveMode)
-    }
-  }
-
-  def writeDirect(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-      df.write.partitionBy(Constants.PartitionColumn).mode(saveMode).insertInto(tableName)
-    } else {
       df.write.mode(saveMode).insertInto(tableName)
     }
   }
