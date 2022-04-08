@@ -56,6 +56,7 @@ case class TableUtils(sparkSession: SparkSession) {
                        tableName: String,
                        tableProperties: Map[String, String] = null,
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                       repartition: Boolean = false,
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
     // partitions to the last
@@ -80,8 +81,19 @@ case class TableUtils(sparkSession: SparkSession) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
     }
+    if (repartition) {
+      repartitionAndWrite(dfRearranged, tableName, saveMode)
+    } else {
+      writeDirect(dfRearranged, tableName, saveMode)
+    }
+  }
 
-    repartitionAndWrite(dfRearranged, tableName, saveMode)
+  def writeDirect(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+      df.write.partitionBy(Constants.PartitionColumn).mode(saveMode).insertInto(tableName)
+    } else {
+      df.write.mode(saveMode).insertInto(tableName)
+    }
   }
 
   def sql(query: String): DataFrame = {
