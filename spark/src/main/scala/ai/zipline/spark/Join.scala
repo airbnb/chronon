@@ -190,7 +190,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
             println(s"Writing to join part table: $joinPartTableName")
             val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get)
             // cache the join-part output into table partitions
-            rightDf.save(joinPartTableName, tableProps, partitionHint = rightUnfilledRange.get.length)
+            rightDf.save(joinPartTableName, tableProps)
             val elapsed = System.currentTimeMillis() - start
             println(s"Wrote to join part table: $joinPartTableName in $elapsed ms")
           } catch {

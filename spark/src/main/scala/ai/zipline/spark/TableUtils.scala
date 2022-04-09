@@ -55,7 +55,6 @@ case class TableUtils(sparkSession: SparkSession) {
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,
-                       partitionHint: Int = -1,
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET"): Unit = {
@@ -81,15 +80,7 @@ case class TableUtils(sparkSession: SparkSession) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
     }
-    val sparkConf = sparkSession.sparkContext.getConf
-
-    if (sparkConf.getBoolean("spark.zipline.repartition-on-write.enabled", false)) {
-      repartitionAndWrite(dfRearranged, tableName, saveMode, partitionHint)
-    } else {
-      println(s"Writing directly without repartitioning into $tableName")
-      df.write.mode(saveMode).insertInto(tableName)
-      println(s"Finished writing into $tableName")
-    }
+    repartitionAndWrite(dfRearranged, tableName, saveMode)
   }
 
   def sql(query: String): DataFrame = {
@@ -112,29 +103,31 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode, 1)
+    repartitionAndWrite(df, tableName, saveMode)
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partitionCount: Int): Unit = {
-    val partCount = if (partitionCount <= 0) {
-      println(s"Determining partition count for $tableName automatically.")
-      df.select(countDistinct(Constants.PartitionColumn)).collect()(0).asInstanceOf[Int]
-    } else { partitionCount }
-    val scalingFactor = 5
-    println(s"Repartitioning data for table $tableName into $partCount rdd partitions")
-    val saltCol = "random_partition_salt"
-    val saltedDf = df.withColumn(saltCol, round(rand() * 1000) % 5)
-    val repartitionCols =
-      if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-        Seq(Constants.PartitionColumn, saltCol)
-      } else { Seq(saltCol) }
-    saltedDf
-      .repartition(partitionCount * scalingFactor * 5, repartitionCols.map(saltedDf.col): _*)
-      .drop(saltCol)
-      .write
-      .mode(saveMode)
-      .insertInto(tableName)
-    println(s"Finished writing to $tableName, with $partitionCount rdd partitions")
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    val rowCount = df.count()
+    println(s"$rowCount rows requested to be written into table $tableName")
+    if (rowCount > 0) {
+      // at-least a million rows per partition - or there will be too many files.
+      val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
+      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+
+      val saltCol = "random_partition_salt"
+      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      val repartitionCols =
+        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+          Seq(Constants.PartitionColumn, saltCol)
+        } else { Seq(saltCol) }
+      saltedDf
+        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
+        .drop(saltCol)
+        .write
+        .mode(saveMode)
+        .insertInto(tableName)
+      println(s"Finished writing to $tableName")
+    }
   }
 
   private def createTableSql(tableName: String,
