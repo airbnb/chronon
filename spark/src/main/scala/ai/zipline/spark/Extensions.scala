@@ -74,8 +74,8 @@ object Extensions {
 
     def typeOf(col: String): DataType = df.schema(df.schema.fieldIndex(col)).dataType
 
-    def save(tableName: String, tableProperties: Map[String, String] = null, partitionHint: Int = -1): Unit = {
-      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties, partitionHint)
+    def save(tableName: String, tableProperties: Map[String, String] = null): Unit = {
+      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
