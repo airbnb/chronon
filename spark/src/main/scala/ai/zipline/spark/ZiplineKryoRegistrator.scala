@@ -78,12 +78,8 @@ class ZiplineKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
     )
     names.foreach { name =>
-      try {
-        kryo.register(Class.forName(name))
-        kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
-      } catch {
-        case ex: Exception => ex.printStackTrace()
-      }
+      kryo.register(Class.forName(name))
+      kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
