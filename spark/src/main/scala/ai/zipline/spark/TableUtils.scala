@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import ai.zipline.api.Constants
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{countDistinct, rand, round}
+import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 case class TableUtils(sparkSession: SparkSession) {
@@ -80,6 +80,7 @@ case class TableUtils(sparkSession: SparkSession) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
     }
+
     repartitionAndWrite(dfRearranged, tableName, saveMode)
   }
 
