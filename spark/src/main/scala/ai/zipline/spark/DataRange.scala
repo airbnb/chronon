@@ -81,6 +81,14 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .map { step => PartitionRange(step.head, step.last) }
       .toSeq
 
+  def length: Int = {
+    if (start == null || end == null || start > end) {
+      -1
+    } else {
+      partitions.size
+    }
+  }
+
   def partitions: Seq[String] = {
     assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
     Stream

@@ -41,7 +41,7 @@ class StagingQuery(stagingQueryConf: StagingQueryConf, endPartition: String, tab
           .replaceAll(StartDateRegex, range.start)
           .replaceAll(EndDateRegex, range.end)
         println(s"Rendered Staging Query to run is:\n$renderedQuery")
-        tableUtils.sql(renderedQuery).save(outputTable, tableProps)
+        tableUtils.sql(renderedQuery).save(outputTable, tableProps, range.length)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Finished writing Staging Query data to $outputTable")

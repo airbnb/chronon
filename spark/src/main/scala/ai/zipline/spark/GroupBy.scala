@@ -528,7 +528,7 @@ object GroupBy {
           // group by backfills have to be snapshot only
           case Entities => groupByBackfill.snapshotEntities
           case Events   => groupByBackfill.snapshotEvents(range)
-        }).save(outputTable, tableProps)
+        }).save(outputTable, tableProps, range.length)
         println(s"Wrote to table $outputTable, into partitions: $range")
     }
     println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
