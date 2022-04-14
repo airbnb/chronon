@@ -83,10 +83,21 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         _set_team_level_metadata(obj, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
+
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:
-                online_group_bys = {rt.groupBy.metaData.name: rt.groupBy for rt in obj.joinParts}
+                online_group_bys = {}
+                offline_gbs = []  # gather list to report errors
+                for jp in obj.joinParts:
+                    if jp.groupBy.metaData.online:
+                        online_group_bys[jp.groupBy.metaData.name] = jp.groupBy
+                    else:
+                        offline_gbs.append(jp.groupBy.metaData.name)
                 extra_online_group_bys.update(online_group_bys)
+                assert not offline_gbs,\
+                    "You must make all dependent GroupBys `online` if you want to make your join `online`." \
+                    " You can do this by passing the `online=True` argument to the GroupBy constructor." \
+                    " Fix the following: {}".format(offline_gbs)
     if extra_online_group_bys:
         num_written_group_bys = 0
         # load materialized joins to validate the additional group_bys against.
