@@ -108,9 +108,7 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
     baseDirectory.value / "metastore_db"
   ),
   testOptions in Test += Tests.Setup(() => cleanSparkMeta()),
-  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta()),
-  // compatibility for m1 chip laptop
-  libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
+  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta())
 )
 
 val providedLibs: Setting[_] = libraryDependencies ++= sparkLibs.map(_ % "provided")
