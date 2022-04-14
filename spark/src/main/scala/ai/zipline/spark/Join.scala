@@ -335,7 +335,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
           if (index != stepRanges.length - 1) {
             println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
           } else {
-            println(s"Left side query produced 0 rows, exiting... Please check source data or filter logic: $scanQuery")
+            println(s"Left side query for $range produced 0 rows\n  $scanQuery")
             // Exit 0 here because the job is functioning correctly
             sys.exit(0)
           }
