@@ -333,7 +333,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
           println(s"Wrote to table $outputTable, into partitions: $range $progress")
         } else {
           if (index != stepRanges.length - 1) {
-            println(s"Left side query produced 0 rows in range $range, move onto next range. Please check source data or filter logic: $scanQuery")
+            println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
           } else {
             println(s"Left side query produced 0 rows, exiting... Please check source data or filter logic: $scanQuery")
             // Exit 0 here because the job is functioning correctly
