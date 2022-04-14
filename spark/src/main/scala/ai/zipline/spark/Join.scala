@@ -298,7 +298,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }
 
-
+    val timeProjection = if (joinConf.left.dataModel == Events) {
+      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
+    } else {
+      Seq()
+    }
 
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
@@ -307,11 +311,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
 
-        val timeProjection = if (joinConf.left.dataModel == Events) {
-          Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
-        } else {
-          Seq()
-        }
         val scanQuery = range.genScanQuery(joinConf.left.query,
           joinConf.left.table,
           fillIfAbsent =
