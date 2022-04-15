@@ -162,13 +162,13 @@ class BaseFetcher(kvStore: KVStore,
       case _ => Seq.empty
     }
 
-    val musselStartMs = System.currentTimeMillis()
+    val kvStartMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     FetcherMetrics.reportRequest(context)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
-        FetcherMetrics.reportKvLatency(musselStartMs - System.currentTimeMillis(), context)
+        FetcherMetrics.reportKvLatency(kvStartMs - System.currentTimeMillis(), context)
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = responsesFuture.iterator.map { response =>
           response.request -> response.values
         }.toMap
