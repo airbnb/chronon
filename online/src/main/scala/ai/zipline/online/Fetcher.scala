@@ -162,16 +162,18 @@ class BaseFetcher(kvStore: KVStore,
       case _ => Seq.empty
     }
 
-    // todo: mussel start mills , key size, value size, response latency in group by context
-    // todo: qps - how many requests we are sending
+    val musselStartMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
+    FetcherMetrics.reportRequest(context)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
-        // todo: mussel end mills
+        FetcherMetrics.reportKvLatency(musselStartMs - System.currentTimeMillis(), context)
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = responsesFuture.iterator.map { response =>
           response.request -> response.values
         }.toMap
+        FetcherMetrics.reportRequestBatchSize(responsesMap.keys.map(_.keyBytes.length).sum, context)
+        FetcherMetrics.reportResponseBytesSize(responsesMap.values.flatMap(_.get.map(_.bytes.length)).sum, context)
         // Heaviest compute is decoding bytes and merging them - so we parallelize
         val requestParFanout = groupByRequestToKvRequest.par
         requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
