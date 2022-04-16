@@ -297,7 +297,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }
-
+    val leftDfStart = System.currentTimeMillis()
     val leftDfFull: DataFrame = {
       val timeProjection = if (joinConf.left.dataModel == Events) {
         Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
@@ -325,7 +325,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
 
       filteredDf
     }
-
+    println(s"read range $leftUnfilledRange takes ${(System.currentTimeMillis() - leftDfStart)/1000 } seconds")
+    System.exit(0)
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
