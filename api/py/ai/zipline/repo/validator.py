@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import List, Dict
 
 from ai.zipline.api.ttypes import \
-    GroupBy, Join
+    GroupBy, Join, Source
 from ai.zipline.logger import get_logger
 from ai.zipline.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
@@ -165,7 +165,7 @@ class ZiplineRepoValidator(object):
             if offline_included_group_bys:
                 errors.append("join {} is online but includes the following offline group_bys: {}".format(
                     join.metaData.name, ', '.join(offline_included_group_bys)))
-            # If join is online we materialize the underlying group bys are materialized
+            # If join is online we materialize the underlying group bys
             # So we need to check if they are valid.
             group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
             errors += [f"join {join.metaData.name}'s underlying {error}"
@@ -193,9 +193,6 @@ class ZiplineRepoValidator(object):
                     group_by.metaData.name, ", ".join(online_joins)))
         # group by that are marked explicitly non-production should not be
         # present in materialized production joins.
-        self.logger.debug(prod_joins)
-        self.logger.debug("new")
-        self.logger.debug(self.old_joins)
         if prod_joins:
             if group_by.metaData.production is False:
                 errors.append(
@@ -206,4 +203,10 @@ class ZiplineRepoValidator(object):
             # set it to production in the materialized output.
             else:
                 group_by.metaData.production = True
+
+        for source in group_by.sources:
+            src: Source = source
+            if src.events and src.events.isCumulative and (src.events.query.timeColumn is None):
+                errors.append(
+                    "Please set query.timeColumn for Cumulative Events Table: {}".format(src.events.table))
         return errors
