@@ -173,7 +173,7 @@ class BaseFetcher(kvStore: KVStore,
           response.request -> response.values
         }.toMap
         FetcherMetrics.reportRequestBatchSize(responsesMap.keys.iterator.map(_.keyBytes.length).sum, context)
-        FetcherMetrics.reportResponseBytesSize(responsesMap.values.flatMap(_.get.map(_.bytes.length)).sum, context)
+        FetcherMetrics.reportResponseBytesSize(responsesMap.values.iterator.flatMap(_.get.map(_.bytes.length)).sum, context)
         // Heaviest compute is decoding bytes and merging them - so we parallelize
         val requestParFanout = groupByRequestToKvRequest.par
         requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
