@@ -303,7 +303,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     } else {
       Seq()
     }
-
+    val startTimer = System.currentTimeMillis()
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
@@ -327,8 +327,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
             .getOrElse(df)
           filteredDf
         }
+
         if (!leftDfInRange.isEmpty) {
-          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+//          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          println(s"one range $range query time ${(System.currentTimeMillis() - startTimer)/1000}")
           println(s"Wrote to table $outputTable, into partitions: $range $progress")
         } else {
           if (index != stepRanges.length - 1) {
@@ -340,6 +342,8 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
           }
         }
     }
+    println(s"full range $leftUnfilledRange query time ${(System.currentTimeMillis() - startTimer)/1000}")
+    System.exit(0)
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
     finalResult
   }
