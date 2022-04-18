@@ -298,32 +298,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }
 
-    val leftDfFull: DataFrame = {
-      val timeProjection = if (joinConf.left.dataModel == Events) {
-        Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
-      } else {
-        Seq()
-      }
-      val scanQuery = leftUnfilledRange.genScanQuery(joinConf.left.query,
-                                                     joinConf.left.table,
-                                                     fillIfAbsent =
-                                                       Map(Constants.PartitionColumn -> null) ++ timeProjection)
-      val df = tableUtils.sql(scanQuery)
-      val skewFilter = joinConf.skewFilter()
-      val filteredDf = skewFilter
-        .map(sf => {
-          println(s"left skew filter: $sf")
-          df.filter(sf)
-        })
-        .getOrElse(df)
-
-      if (filteredDf.isEmpty) {
-        println(s"Left side query produced 0 rows, exiting... Please check source data or filter logic: $scanQuery")
-        // Exit 0 here because the job is functioning correctly
-        sys.exit(0)
-      }
-
-      filteredDf
+    val timeProjection = if (joinConf.left.dataModel == Events) {
+      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
+    } else {
+      Seq()
     }
 
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
@@ -332,8 +310,35 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       case (range, index) =>
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        computeRange(leftDfFull.prunePartition(range), range).save(outputTable, tableProps)
-        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+
+        val scanQuery = range.genScanQuery(joinConf.left.query,
+          joinConf.left.table,
+          fillIfAbsent =
+            Map(Constants.PartitionColumn -> null) ++ timeProjection)
+
+        val leftDfInRange: DataFrame = {
+          val df = tableUtils.sql(scanQuery)
+          val skewFilter = joinConf.skewFilter()
+          val filteredDf = skewFilter
+            .map(sf => {
+              println(s"left skew filter: $sf")
+              df.filter(sf)
+            })
+            .getOrElse(df)
+          filteredDf
+        }
+        if (!leftDfInRange.isEmpty) {
+          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          println(s"Wrote to table $outputTable, into partitions: $range $progress")
+        } else {
+          if (index != stepRanges.length - 1) {
+            println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
+          } else {
+            println(s"Left side query for $range produced 0 rows\n  $scanQuery")
+            // Exit 0 here because the job is functioning correctly
+            sys.exit(0)
+          }
+        }
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
     finalResult
