@@ -69,8 +69,9 @@ object Comparison {
           val left = s"${aName}_$col"
           val right = s"${bName}_$col"
           val compareExpression =
-            if (doubleCols.contains(col)) { s"(abs($left - $right) > 0.00001)" }
-            else { s"($left <> $right)" }
+            if (doubleCols.contains(col)) {
+              s"($left is NOT NULL) AND ($right is NOT NULL) and (abs($left - $right) > 0.00001)"
+            } else { s"($left <> $right)" }
           Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
         }
         .mkString(" or ")}"
