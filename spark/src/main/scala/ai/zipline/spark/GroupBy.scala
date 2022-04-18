@@ -392,7 +392,7 @@ object GroupBy {
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
-      if (groupByConf.accuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
         mutationSources
           .map {
             renderDataSourceQuery(_,
@@ -400,7 +400,7 @@ object GroupBy {
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
-                                  groupByConf.accuracy,
+                                  groupByConf.inferredAccuracy,
                                   mutations = true)
           }
           .map { tableUtils.sql }
