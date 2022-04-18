@@ -5,11 +5,8 @@ import ai.zipline.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
-import java.security.MessageDigest
-import java.util.Base64
 import scala.util.ScalaVersionSpecificCollectionsConverter
 import scala.collection.mutable
-import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 object Extensions {
 
@@ -461,7 +458,10 @@ object Extensions {
 
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
-      val partHashes = join.joinParts.asScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
+      val partHashes = ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(join.joinParts)
+        .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
+        .toMap
       partHashes ++ Map(leftSourceKey -> leftHash)
     }
 
