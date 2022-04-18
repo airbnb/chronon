@@ -17,11 +17,11 @@ object Constants {
   val GroupByServingInfoKey = "group_by_serving_info"
   val UTF8 = "UTF-8"
   val lineTab = "\n    "
-  val JoinMetadataKey = "join"
+  val SemanticHashKey = "semantic_hash"
   val StreamingInputTable = "input_table"
   val ZiplineMetadataKey = "ZIPLINE_METADATA"
-  val TimeField = StructField(TimeColumn, LongType)
-  val ReversalField = StructField(ReversalColumn, BooleanType)
-  val MutationTimeField = StructField(MutationTimeColumn, LongType)
+  val TimeField: StructField = StructField(TimeColumn, LongType)
+  val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
+  val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
 }

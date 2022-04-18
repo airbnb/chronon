@@ -3,15 +3,13 @@ package ai.zipline.spark
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonCodec, Join => JoinConf}
-import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
+import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 
-import java.util.Base64
 import scala.collection.JavaConverters._
-import scala.sys
 
-class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, skipEqualCheck: Boolean = false) {
+class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = joinConf.metaData.outputTable
 
@@ -20,8 +18,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
+  private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
-  private val tableProps = confTableProps ++ Map(Constants.JoinMetadataKey -> ThriftJsonCodec.toCompactBase64(joinConf))
+  private val tableProps = confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
 
   private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -66,7 +65,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
          |  
          |""".stripMargin)
 
-    import org.apache.spark.sql.functions.{date_add, date_format, col}
+    import org.apache.spark.sql.functions.{col, date_add, date_format}
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
@@ -160,11 +159,6 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
-  def getJoinPartTableName(joinPart: JoinPart): String = {
-    val joinPartPrefix = Option(joinPart.prefix).map(prefix => s"_$prefix").getOrElse("")
-    s"${outputTable}_$joinPartPrefix${joinPart.groupBy.metaData.cleanName}"
-  }
-
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
@@ -180,7 +174,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
       } else {
 
         // compute only the missing piece
-        val joinPartTableName = getJoinPartTableName(joinPart)
+        val joinPartTableName = joinConf.partOutputTable(joinPart)
         val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
         println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
@@ -219,57 +213,14 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  def getLastRunJoinOpt: Option[JoinConf] = {
-    println(s"Fetching join from table props of $outputTable")
+  def tablesToRecompute(): Option[Seq[String]] = {
     for (
       props <- tableUtils.getTableProperties(outputTable);
-      joinBase64 <- props.get(Constants.JoinMetadataKey)
+      oldSemanticJson <- props.get(Constants.SemanticHashKey);
+      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
     ) yield {
-      ThriftJsonCodec.fromCompactBase64(new JoinConf(), joinBase64)
-    }
-  }
-
-  def joinPartsWereRemoved(lastRunJoin: Option[JoinConf]): Boolean = {
-    // This check is to handle the edge case where a join part was removed without any other changes
-    // to the join definition (and so the final table needs to be dropped for schema migration).
-    lastRunJoin.exists { lastRunJoin =>
-      lastRunJoin.joinParts.asScala.exists { joinPart =>
-        !joinConf.joinParts.asScala.exists(_.copyForVersioningComparison == joinPart.copyForVersioningComparison)
-      }
-    }
-  }
-
-  def getJoinPartsToRecompute(lastRunJoin: Option[JoinConf]): Seq[JoinPart] = {
-    lastRunJoin
-      .map { lastRunJoin =>
-        if (joinConf.copyForVersioningComparison != lastRunJoin.copyForVersioningComparison) {
-          println("Changes detected on left side of join, recomputing all joinParts")
-          joinConf.joinParts.asScala ++ lastRunJoin.joinParts.asScala
-        } else {
-          println("No changes detected on left side of join, comparing individual JoinParts for equality")
-          joinConf.joinParts.asScala.filter { joinPart =>
-            !lastRunJoin.joinParts.asScala.exists(_.copyForVersioningComparison == joinPart.copyForVersioningComparison)
-          }
-        }
-      }
-      .getOrElse {
-        println("No Metadata found on existing table, attempting to proceed without recomputation.")
-        Seq.empty
-      }
-  }
-
-  def dropTablesToRecompute(): Unit = {
-    // Detects semantic changes since last run in Join or GroupBy tables and drops the relevant tables so that they may be recomputed
-    val lastRunjoin = getLastRunJoinOpt
-    val joinPartsToRecompute = getJoinPartsToRecompute(lastRunjoin)
-    joinPartsToRecompute.foreach { joinPart =>
-      tableUtils.dropTableIfExists(getJoinPartTableName(joinPart))
-    }
-    if (joinPartsToRecompute.nonEmpty || joinPartsWereRemoved(lastRunjoin)) {
-      // If anything changed, then we also need to recompute the join to the final table
-      // This could be made more efficient with a "tetris" style backfill, only joining in the columns that had sematic chages
-      // But this is left as a future improvement as the efficiency gain is only relevant for very-wide joins
-      tableUtils.dropTableIfExists(outputTable)
+      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash");
+      joinConf.tablesToDrop(oldSemanticHash)
     }
   }
 
@@ -283,7 +234,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
 
     // First run command to drop tables that have changed semantically since the last run
-    dropTablesToRecompute()
+    tablesToRecompute().foreach(_.foreach(tableUtils.dropTableIfExists))
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)
@@ -298,7 +249,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils, ski
     }
     val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), endPartition)
     joinConf.joinParts.asScala.foreach { joinPart =>
-      val partTable = getJoinPartTableName(joinPart)
+      val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }

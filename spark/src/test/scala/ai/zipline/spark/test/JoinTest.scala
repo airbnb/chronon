@@ -3,7 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.zipline.api
-import ai.zipline.api.Extensions.GroupByOps
+import ai.zipline.api.Extensions.{GroupByOps, JoinOps}
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.spark._
@@ -125,7 +125,7 @@ class JoinTest {
     println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
     joinConf.joinParts.asScala
-      .map(jp => runner1.getJoinPartTableName(jp))
+      .map(jp => joinConf.partOutputTable(jp))
       .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
 
     Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
@@ -673,16 +673,16 @@ class JoinTest {
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
-    val joinPartsToRecomputeNoChange = oldJoin.getJoinPartsToRecompute(oldJoin.getLastRunJoinOpt)
+    val joinPartsToRecomputeNoChange = oldJoin.tablesToRecompute().get
     assertEquals(joinPartsToRecomputeNoChange.size, 0)
 
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val leftChangeRecompute = leftChangeJoin.getJoinPartsToRecompute(leftChangeJoin.getLastRunJoinOpt)
+    val leftChangeRecompute = leftChangeJoin.tablesToRecompute().get
     assertEquals(leftChangeRecompute.size, 2)
-    assertEquals(leftChangeRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    assertEquals(leftChangeRecompute, Seq("unit_test.item_views"))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -690,9 +690,9 @@ class JoinTest {
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val addPartRecompute = addPartJoin.getJoinPartsToRecompute(addPartJoin.getLastRunJoinOpt)
+    val addPartRecompute = addPartJoin.tablesToRecompute().get
     assertEquals(addPartRecompute.size, 1)
-    assertEquals(addPartRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    assertEquals(addPartRecompute, Seq("unit_test.item_views"))
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
 
@@ -700,9 +700,9 @@ class JoinTest {
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val rightModRecompute = rightModJoin.getJoinPartsToRecompute(rightModJoin.getLastRunJoinOpt)
+    val rightModRecompute = rightModJoin.tablesToRecompute()
     assertEquals(rightModRecompute.size, 1)
-    assertEquals(rightModRecompute.head.groupBy.getMetaData.getName, "unit_test.item_views")
+    assertEquals(rightModRecompute, Seq("unit_test.item_views"))
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
     val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
