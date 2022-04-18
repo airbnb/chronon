@@ -88,10 +88,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     // technically 1 billion is 512MB - but java overhead is crazy and we need to cutoff - to 100M
     val bloomSize = Math.min(100000000, Math.max(leftPrunedCount / 10, 100))
     println(s"Bloom size: $bloomSize")
-    val rightBloomMap = joinPart.rightToLeft
-      .mapValues(
-        leftDf.generateBloomFilter(_, bloomSize)
-      )
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftDf.generateBloomFilter(_, bloomSize))
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
 
     println(s"""

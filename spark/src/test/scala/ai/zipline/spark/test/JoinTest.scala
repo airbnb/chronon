@@ -3,7 +3,7 @@ package ai.zipline.spark.test
 import ai.zipline.aggregator.test.Column
 import ai.zipline.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.zipline.api
-import ai.zipline.api.Extensions.{GroupByOps, JoinOps}
+import ai.zipline.api.Extensions._
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark.GroupBy.renderDataSourceQuery
 import ai.zipline.spark._
@@ -666,7 +666,6 @@ class JoinTest {
   @Test
   def testVersioning(): Unit = {
     val joinConf = getEventsEventsTemporal("versioning")
-    joinConf.getMetaData.setName(s"${joinConf.getMetaData.getName}_versioning")
 
     // Run the old join to ensure that tables exist
     val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
@@ -682,7 +681,8 @@ class JoinTest {
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.tablesToRecompute().get
     assertEquals(leftChangeRecompute.size, 2)
-    assertEquals(leftChangeRecompute, Seq("unit_test.item_views"))
+    val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
+    assertEquals(leftChangeRecompute.toArray, Seq(partTable, leftChangeJoinConf.metaData.outputTable))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -691,8 +691,9 @@ class JoinTest {
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.tablesToRecompute().get
-    assertEquals(addPartRecompute.size, 1)
-    assertEquals(addPartRecompute, Seq("unit_test.item_views"))
+    assertEquals(addPartRecompute.size, 2)
+    val addPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
+    assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable, addPartTable))
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
 
@@ -701,8 +702,9 @@ class JoinTest {
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val rightModRecompute = rightModJoin.tablesToRecompute()
-    assertEquals(rightModRecompute.size, 1)
-    assertEquals(rightModRecompute, Seq("unit_test.item_views"))
+    assertEquals(rightModRecompute.size, 2)
+    val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_3_unit_test_item_views"
+    assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
     val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
