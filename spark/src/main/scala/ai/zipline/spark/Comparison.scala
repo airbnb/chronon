@@ -66,6 +66,7 @@ object Comparison {
       .filter(field => field.dataType == DoubleType || field.dataType == FloatType)
       .map(_.name)
       .toSet
+    finalDf = finalDf.select(colOrder: _*)
     val comparisonFilters = comparisonColumns
       .flatMap { col =>
         val left = s"${aName}_$col"
