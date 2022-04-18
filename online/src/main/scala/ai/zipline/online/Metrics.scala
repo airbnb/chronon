@@ -103,7 +103,7 @@ object FetcherMetrics {
     val DataSizeBytes = s"$fetcher.data_size_bytes"
     val Latency = s"$fetcher.latency_ms"
     val FinalLatency = s"$fetcher.final_latency_ms"
-    val KvLatency = s"$fetcher.mussel_latency_ms"
+    val KvLatency = s"$fetcher.kv_latency_ms"
     val StreamingRowSize: String = s"$fetcher.streaming.row_size"
   }
 
