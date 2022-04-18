@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.MapType
+import org.apache.spark.sql.types.{DoubleType, MapType}
 
 import java.util
 
@@ -61,13 +61,17 @@ object Comparison {
         comparisonColumns.flatMap { col =>
           List(finalDf(s"${aName}_$col"), finalDf(s"${bName}_$col"))
         }
-    finalDf = finalDf.select(colOrder: _*)
+    // double columns need to be compared approximately
+    val doubleCols = a.schema.fields.filter(_.dataType == DoubleType).map(_.name).toSet
     finalDf = finalDf.filter(
       s"${comparisonColumns
         .flatMap { col =>
           val left = s"${aName}_$col"
           val right = s"${bName}_$col"
-          Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR ($left <> $right))")
+          val compareExpression =
+            if (doubleCols.contains(col)) { s"(abs($left - $right) > 0.00001)" }
+            else { s"($left <> $right)" }
+          Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
         }
         .mkString(" or ")}"
     )
