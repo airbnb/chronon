@@ -682,7 +682,7 @@ class JoinTest {
     val leftChangeRecompute = leftChangeJoin.tablesToRecompute().get
     assertEquals(leftChangeRecompute.size, 2)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
-    assertEquals(leftChangeRecompute.toArray, Seq(partTable, leftChangeJoinConf.metaData.outputTable))
+    assertEquals(leftChangeRecompute, Seq(partTable, leftChangeJoinConf.metaData.outputTable))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -691,9 +691,8 @@ class JoinTest {
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = addPartJoin.tablesToRecompute().get
-    assertEquals(addPartRecompute.size, 2)
-    val addPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
-    assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable, addPartTable))
+    assertEquals(addPartRecompute.size, 1)
+    assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable))
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
 
@@ -701,9 +700,9 @@ class JoinTest {
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val rightModRecompute = rightModJoin.tablesToRecompute()
+    val rightModRecompute = rightModJoin.tablesToRecompute().get
     assertEquals(rightModRecompute.size, 2)
-    val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_3_unit_test_item_views"
+    val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
     assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")

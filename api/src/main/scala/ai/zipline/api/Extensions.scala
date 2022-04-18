@@ -468,17 +468,18 @@ object Extensions {
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != semanticHash(leftSourceKey)) {
+      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
         oldSemanticHash.keys.filter(_ != leftSourceKey).toSeq
       } else {
-        val changed = semanticHash.flatMap {
+        val changed = newSemanticHash.flatMap {
           case (key, newVal) =>
             oldSemanticHash.get(key).filter(_ != newVal).map(_ => key)
         }
-        val deleted = oldSemanticHash.keys.filter(!semanticHash.contains(_))
+        val deleted = oldSemanticHash.keys.filter(!newSemanticHash.contains(_))
         (changed ++ deleted).toSeq
       }
-      val mainTable = if (partsToDrop.nonEmpty) { Some(join.metaData.outputTable) }
+      val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_))
+      val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty) { Some(join.metaData.outputTable) }
       else None
       partsToDrop ++ mainTable
     }
