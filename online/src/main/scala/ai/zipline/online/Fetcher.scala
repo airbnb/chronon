@@ -169,7 +169,7 @@ class BaseFetcher(kvStore: KVStore,
 
     val kvStartMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
-    
+
     val validContext = context.join != null || context.groupBy != null
     if (validContext) FetcherMetrics.reportRequest(context)
     // map all the kv store responses back to groupBy level responses
