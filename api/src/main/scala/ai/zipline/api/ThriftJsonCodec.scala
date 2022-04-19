@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectM
 import org.apache.thrift.{TBase, TDeserializer, TSerializer}
 import org.apache.thrift.protocol.{TCompactProtocol, TSimpleJSONProtocol}
 
+import java.security.MessageDigest
 import java.util.Base64
 import scala.io.Source._
 import scala.reflect.ClassTag
@@ -21,6 +22,11 @@ object ThriftJsonCodec {
     Base64.getEncoder.encodeToString(compactSerializer.serialize(obj))
   }
 
+  def md5Digest[T <: TBase[_, _]: Manifest](obj: T): String = {
+    val json = ThriftJsonCodec.toJsonStr(obj)
+    val digest = MessageDigest.getInstance("MD5").digest(json.getBytes())
+    Base64.getEncoder.encodeToString(digest).take(10)
+  }
   def fromCompactBase64[T <: TBase[_, _]: Manifest](base: T, base64: String): T = {
     val compactDeserializer = new TDeserializer(new TCompactProtocol.Factory())
     val bytes = Base64.getDecoder.decode(base64)

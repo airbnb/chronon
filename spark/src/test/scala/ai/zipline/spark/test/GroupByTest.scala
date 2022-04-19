@@ -150,7 +150,7 @@ class GroupByTest {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
       println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      println(s"diff result rows last_k_test")
       diff.show()
       diff.rdd.foreach { row =>
         val gson = new Gson()

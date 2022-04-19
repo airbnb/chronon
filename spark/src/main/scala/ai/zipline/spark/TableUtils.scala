@@ -34,7 +34,7 @@ case class TableUtils(sparkSession: SparkSession) {
     logicalPlan
       .collect {
         case p: Project =>
-          p.projectList.map(p => parser.parseExpression(p.sql).references.map(attr => attr.name)).flatten
+          p.projectList.flatMap(p => parser.parseExpression(p.sql).references.map(attr => attr.name))
         case f: Filter => f.condition.references.map(attr => attr.name)
       }
       .flatten

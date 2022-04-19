@@ -2,7 +2,7 @@ package ai.zipline.spark
 
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.MapType
+import org.apache.spark.sql.types.{DoubleType, FloatType, MapType}
 
 import java.util
 
@@ -61,17 +61,24 @@ object Comparison {
         comparisonColumns.flatMap { col =>
           List(finalDf(s"${aName}_$col"), finalDf(s"${bName}_$col"))
         }
+    // double columns need to be compared approximately
+    val doubleCols = a.schema.fields
+      .filter(field => field.dataType == DoubleType || field.dataType == FloatType)
+      .map(_.name)
+      .toSet
     finalDf = finalDf.select(colOrder: _*)
-    finalDf = finalDf.filter(
-      s"${comparisonColumns
-        .flatMap { col =>
-          val left = s"${aName}_$col"
-          val right = s"${bName}_$col"
-          Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR ($left <> $right))")
-        }
-        .mkString(" or ")}"
-    )
-    finalDf
+    val comparisonFilters = comparisonColumns
+      .flatMap { col =>
+        val left = s"${aName}_$col"
+        val right = s"${bName}_$col"
+        val compareExpression =
+          if (doubleCols.contains(col)) {
+            s"($left is NOT NULL) AND ($right is NOT NULL) and (abs($left - $right) > 0.00001)"
+          } else { s"($left <> $right)" }
+        Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
+      }
+    println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
+    finalDf.filter(comparisonFilters.mkString(" or "))
   }
 
   private def prefixColumnName(df: DataFrame, prefix: String): DataFrame = {

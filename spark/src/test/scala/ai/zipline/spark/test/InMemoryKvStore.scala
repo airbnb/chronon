@@ -5,8 +5,8 @@ import ai.zipline.online.KVStore
 import ai.zipline.online.KVStore.{PutRequest, TimedValue}
 import ai.zipline.spark.TableUtils
 import org.apache.spark.sql.Row
-import org.jboss.netty.util.internal.ConcurrentHashMap
 
+import java.util.concurrent.ConcurrentHashMap
 import java.util.{Base64, function}
 import scala.collection.mutable
 import scala.concurrent.Future

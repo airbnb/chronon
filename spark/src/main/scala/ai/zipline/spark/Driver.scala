@@ -20,9 +20,7 @@ import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
-import java.nio.channels.FileChannel
 import java.nio.file.{Files, Paths}
-import java.util.logging.Logger
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -66,8 +64,7 @@ object Driver {
       val join = new Join(
         joinConf,
         args.endDate(),
-        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}")),
-        args.skipEqualCheck()
+        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}"))
       )
       join.computeJoin(args.stepDays.toOption)
     }
