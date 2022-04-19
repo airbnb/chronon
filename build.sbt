@@ -109,8 +109,6 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
   ),
   testOptions in Test += Tests.Setup(() => cleanSparkMeta()),
   testOptions in Test += Tests.Cleanup(() => cleanSparkMeta()),
-  // compatibility for m1 chip laptop
-  libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 )
 
 val providedLibs: Setting[_] = libraryDependencies ++= sparkLibs.map(_ % "provided")
