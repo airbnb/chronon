@@ -45,6 +45,9 @@ class Operation():
 
 def Aggregations(**agg_dict):
     assert all(isinstance(agg, ttypes.Aggregation) for agg in agg_dict.values())
+    for key, agg in agg_dict.items():
+        if not agg.inputColumn and agg.operation != Operation.COUNT:
+            agg.inputColumn = key
     return agg_dict.values()
 
 
@@ -95,7 +98,6 @@ def Aggregation(input_column: str = None,
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    assert input_column or operation == Operation.COUNT, "input_column is required for all operations except COUNT"
     return ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
 
 
@@ -151,6 +153,16 @@ Keys {unselected_keys}, are unselected in source
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
         assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
+    else:
+        columns = set([c for src in sources for c in utils.get_columns(src)])
+        for agg in aggregations:
+            assert agg.inputColumn or agg.operation == Operation.COUNT, (
+                f"input_column is required for all operations except COUNT, found: input_column = {agg.inputColumn} "
+                f"and operation {op_to_str(agg.operation)}"
+            )
+            assert agg.inputColumn in columns or agg.inputColumn is None, (
+                f"input_column for aggregation is not part of the query. Available columns: {column_set} "
+                f"input_column: {agg.inputColumn}")
 
 
 def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],

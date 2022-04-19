@@ -27,6 +27,25 @@ def hours_unit():
     return ttypes.TimeUnit.HOURS
 
 
+def event_source(table):
+    """
+    Sample left join
+    """
+    return ttypes.Source(
+        events=ttypes.EventSource(
+            table=table,
+            query=ttypes.Query(
+                startPartition="2020-04-09",
+                selects={
+                    "subject": "subject_sql",
+                    "event_id": "event_sql",
+                },
+                timeColumn="CAST(ts AS DOUBLE)",
+            ),
+        ),
+    )
+
+
 def test_pretty_window_str(days_unit, hours_unit):
     """
     Test pretty window utils.
@@ -76,3 +95,28 @@ def test_contains_windowed_aggregation(sum_op, min_op, days_unit):
         )
     )
     assert group_by.contains_windowed_aggregation(aggregations)
+
+
+def test_validator_ok():
+    gb = group_by.GroupBy(
+        sources=event_source("table"),
+        keys=["subject"],
+        aggregations=group_by.Aggregations(
+            random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM),
+            event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
+            cnt=ttypes.Aggregation(operation=ttypes.Operation.COUNT),
+        ),
+    )
+    assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
+
+
+def test_validator_raises():
+    with pytest.raises(Exception):
+        gb = group_by.GroupBy(
+            sources=event_source("table"),
+            keys=["subject"],
+            aggregations=group_by.Aggregations(
+                random=ttypes.Aggregation(operation=ttypes.Operation.SUM),
+            ),
+        )
+        print(gb)
