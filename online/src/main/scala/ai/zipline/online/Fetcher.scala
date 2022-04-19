@@ -118,7 +118,12 @@ class BaseFetcher(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request],
                     contextOption: Option[Metrics.Context] = None): Future[scala.collection.Seq[Response]] = {
-    val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
+    val context = contextOption.getOrElse(
+      if (requests.iterator.toSet.size == 1) {
+        Metrics.Context(method = "fetchGroupBys").withGroupBy(requests.head.name)
+      } else {
+        Metrics.Context(method = "fetchGroupBys").withGroupBy("multiGetGroupBy")
+      })
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
@@ -163,18 +168,17 @@ class BaseFetcher(kvStore: KVStore,
     }
 
     val kvStartMs = System.currentTimeMillis()
-    val groupByContext = context.withGroupBy("multiGetGroupBy")
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
-    FetcherMetrics.reportRequest(groupByContext)
+    FetcherMetrics.reportRequest(context)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
-        FetcherMetrics.reportKvLatency(kvStartMs - System.currentTimeMillis(), groupByContext)
+        FetcherMetrics.reportKvLatency(kvStartMs - System.currentTimeMillis(), context)
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = responsesFuture.iterator.map { response =>
           response.request -> response.values
         }.toMap
-        FetcherMetrics.reportRequestBatchSize(responsesMap.keys.iterator.map(_.keyBytes.length).sum, groupByContext)
-        FetcherMetrics.reportResponseBytesSize(Option(responsesMap.values.iterator.filter(_.isSuccess).flatMap(_.get.map(_.bytes.length.toLong)).sum).getOrElse(0L), groupByContext)
+        FetcherMetrics.reportRequestBatchSize(responsesMap.keys.iterator.map(_.keyBytes.length).sum, context)
+        FetcherMetrics.reportResponseBytesSize(Option(responsesMap.values.iterator.filter(_.isSuccess).flatMap(_.get.map(_.bytes.length.toLong)).sum).getOrElse(0L), context)
         // Heaviest compute is decoding bytes and merging them - so we parallelize
         val requestParFanout = groupByRequestToKvRequest.par
         requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
@@ -259,7 +263,7 @@ class BaseFetcher(kvStore: KVStore,
 
     // dedup duplicate requests
     val uniqueRequests = joinDecomposed.iterator.flatMap(_._2.map(_._1).getOrElse(Seq.empty)).map(_.request).toSet
-    val groupByResponsesFuture = fetchGroupBys(uniqueRequests.toSeq)
+    val groupByResponsesFuture = if (requests.iterator.toSet.size == 1) fetchGroupBys(uniqueRequests.toSeq) else fetchGroupBys(uniqueRequests.toSeq, Some(context.withJoin(requests.head.name)))
 
     // re-attach groupBy responses to join
     groupByResponsesFuture
