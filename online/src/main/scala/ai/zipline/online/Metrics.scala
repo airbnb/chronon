@@ -91,6 +91,7 @@ object FetcherMetrics {
     private val fetcher = "fetcher"
     private val failure = "failure"
 
+    val FetcherRequest = s"$fetcher.request"
     val RequestBatchSize = s"$fetcher.request_batch.size"
     val ResponseSize = s"$fetcher.response.size"
     val EmptyResponseCount = s"$fetcher.empty_response.count"
@@ -102,6 +103,7 @@ object FetcherMetrics {
     val DataSizeBytes = s"$fetcher.data_size_bytes"
     val Latency = s"$fetcher.latency_ms"
     val FinalLatency = s"$fetcher.final_latency_ms"
+    val KvLatency = s"$fetcher.kv_latency_ms"
     val StreamingRowSize: String = s"$fetcher.streaming.row_size"
   }
 
@@ -144,6 +146,14 @@ object FetcherMetrics {
 
   def reportLatency(millis: Long, metricsContext: Context): Unit = {
     statsd.histogram(Name.Latency, millis, metricsContext.toTags(): _*)
+  }
+
+  def reportKvLatency(millis: Long, metricsContext: Context): Unit = {
+    statsd.histogram(Name.KvLatency, millis, metricsContext.toTags(): _*)
+  }
+
+  def reportRequest(metricsContext: Context): Unit = {
+    statsd.increment(Name.FetcherRequest, metricsContext.toTags(): _*)
   }
 
   // report latency as the maximum latency of all group bys / joins included in multiGet requests.

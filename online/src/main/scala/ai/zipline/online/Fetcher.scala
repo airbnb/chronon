@@ -116,8 +116,14 @@ class BaseFetcher(kvStore: KVStore,
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
-  def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context] = None): Future[scala.collection.Seq[Response]] = {
-    val context = contextOption.getOrElse(Metrics.Context(method = "fetchGroupBys"))
+  def fetchGroupBys(requests: scala.collection.Seq[Request],
+                    contextOption: Option[Metrics.Context] = None): Future[scala.collection.Seq[Response]] = {
+    val context = contextOption.getOrElse(
+      if (requests.iterator.toSet.size == 1) {
+        Metrics.Context(method = "fetchGroupBys").withGroupBy(requests.head.name)
+      } else {
+        Metrics.Context(method = "fetchGroupBys")
+      })
     val startTimeMs = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
@@ -161,13 +167,20 @@ class BaseFetcher(kvStore: KVStore,
       case _ => Seq.empty
     }
 
+    val kvStartMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
+
+    val validContext = context.join != null || context.groupBy != null
+    if (validContext) FetcherMetrics.reportRequest(context)
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
+        if (validContext) FetcherMetrics.reportKvLatency(kvStartMs - System.currentTimeMillis(), context)
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = responsesFuture.iterator.map { response =>
           response.request -> response.values
         }.toMap
+        if (validContext) FetcherMetrics.reportRequestBatchSize(responsesMap.keys.iterator.map(_.keyBytes.length).sum, context)
+        if (validContext) FetcherMetrics.reportResponseBytesSize(Option(responsesMap.values.iterator.filter(_.isSuccess).flatMap(_.get.map(_.bytes.length.toLong)).sum).getOrElse(0L), context)
         // Heaviest compute is decoding bytes and merging them - so we parallelize
         val requestParFanout = groupByRequestToKvRequest.par
         requestParFanout.tasksupport = new ExecutionContextTaskSupport(executionContext)
@@ -226,7 +239,8 @@ class BaseFetcher(kvStore: KVStore,
     FinalBatchIr(collapsed, tailHops)
   }
 
-  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] = tuples.groupBy(_._1).map{case (k,v) => (k, v.map(_._2))}.toMap
+  def tuplesToMap[K, V](tuples: Seq[(K, V)]): Map[K, Seq[V]] =
+    tuples.groupBy(_._1).map { case (k, v) => (k, v.map(_._2)) }.toMap
 
   private case class PrefixedRequest(prefix: String, request: Request)
 
@@ -251,7 +265,14 @@ class BaseFetcher(kvStore: KVStore,
 
     // dedup duplicate requests
     val uniqueRequests = joinDecomposed.iterator.flatMap(_._2.map(_._1).getOrElse(Seq.empty)).map(_.request).toSet
-    val groupByResponsesFuture = fetchGroupBys(uniqueRequests.toSeq)
+    val groupByResponsesFuture = if (requests.iterator.toSet.size == 1) {
+      val joinContext = context.withJoin(requests.head.name)
+      FetcherMetrics.reportRequest(joinContext)
+      fetchGroupBys(uniqueRequests.toSeq, Some(joinContext))
+    } else {
+      // we are not count qps here
+      fetchGroupBys(uniqueRequests.toSeq)
+    }
 
     // re-attach groupBy responses to join
     groupByResponsesFuture
@@ -306,7 +327,9 @@ class BaseFetcher(kvStore: KVStore,
       }
   }
 
-  private def reportFailure(requests: scala.collection.Seq[Request], withTag: String => Metrics.Context, e: Throwable): Unit = {
+  private def reportFailure(requests: scala.collection.Seq[Request],
+                            withTag: String => Metrics.Context,
+                            e: Throwable): Unit = {
     requests.foreach { req =>
       val context = withTag(req.name)
       FetcherMetrics.reportFailure(e, context)
@@ -430,7 +453,8 @@ class Fetcher(kvStore: KVStore,
       })
   }
 
-  override def fetchGroupBys(requests: scala.collection.Seq[Request], contextOption: Option[Metrics.Context]): Future[scala.collection.Seq[Response]] = {
+  override def fetchGroupBys(requests: scala.collection.Seq[Request],
+                             contextOption: Option[Metrics.Context]): Future[scala.collection.Seq[Response]] = {
     super.fetchGroupBys(requests, contextOption)
   }
 }

@@ -31,3 +31,4 @@ api/py/*.egg-info/
 
 # airbnb specific stuff
 mvn_settings.xml
+/.run/spark Clean.run.xml
