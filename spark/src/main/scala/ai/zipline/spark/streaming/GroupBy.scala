@@ -91,7 +91,11 @@ class GroupBy(inputStream: DataFrame,
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
-      .map { streamDecoder.decode }
+      .map { arr =>
+        Metrics.Ingress.reportRowCount(metricsContext = context)
+        Metrics.Ingress.reportDataSize(arr.length, context)
+        streamDecoder.decode(arr)
+      }
       .filter(mutation =>
         !(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after))
 
@@ -148,7 +152,7 @@ class GroupBy(inputStream: DataFrame,
         val ts = row.get(tsIndex).asInstanceOf[Long]
         val keyBytes = keyCodec.encodeArray(keys)
         val valueBytes = valueCodec.encodeArray(values)
-        if (false) { // UNDO BEFORE COMMIT
+        if (debug) {
           val gson = new Gson()
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
           val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))

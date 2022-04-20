@@ -24,6 +24,8 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
       kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
         Metrics.Egress.reportLatency(System.currentTimeMillis() - ts, metricsContext = context)
+        Metrics.Egress.reportRowCount(context)
+        Metrics.Egress.reportDataSize(putRequest.valueBytes.length + putRequest.keyBytes.length, context)
       }
     }
   }
