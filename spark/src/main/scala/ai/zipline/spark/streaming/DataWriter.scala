@@ -15,6 +15,7 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
 
   override def open(partitionId: Long, epochId: Long): Boolean = {
     kvStore = onlineImpl.genKvStore
+    localStats.get() // init stats writer for the current thread
     true
   }
 

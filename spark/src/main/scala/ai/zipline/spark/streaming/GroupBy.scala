@@ -138,8 +138,7 @@ class GroupBy(inputStream: DataFrame,
     }
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")
-    // Change interval to  60 later
-    val dataWriter = new DataWriter(onlineImpl, context, 120, debug)
+    val dataWriter = new DataWriter(onlineImpl, context, 120, debug = debug)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
@@ -148,7 +147,7 @@ class GroupBy(inputStream: DataFrame,
         val ts = row.get(tsIndex).asInstanceOf[Long]
         val keyBytes = keyCodec.encodeArray(keys)
         val valueBytes = valueCodec.encodeArray(values)
-        if (false) { // UNDO BEFORE COMMIT
+        if (debug) {
           val gson = new Gson()
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
           val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))

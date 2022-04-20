@@ -6,6 +6,7 @@ import org.apache.commons.io.FileUtils
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
+import java.util.{Timer, TimerTask}
 
 class StreamingStats(val publishDelaySeconds: Int) {
   private var latencyHistogram: KllFloatsSketch = new KllFloatsSketch()
@@ -18,6 +19,15 @@ class StreamingStats(val publishDelaySeconds: Int) {
   private val utc = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
 
   private def timeString(formatter: DateTimeFormatter, ts: Long) = formatter.format(Instant.ofEpochMilli(ts))
+
+  private val timer = new Timer();
+  timer.schedule(new TimerTask() {
+                   override def run(): Unit = {
+                     printStatus()
+                   }
+                 },
+                 0,
+                 publishDelaySeconds * 1000);
 
   def printStatus(): Unit = {
     if (writesTotal > 0) {
@@ -53,6 +63,5 @@ class StreamingStats(val publishDelaySeconds: Int) {
     writesTotal += 1
     if (putRequest.keyBytes != null) keyBytesTotal += putRequest.keyBytes.length
     if (putRequest.valueBytes != null) valueBytesTotal += putRequest.valueBytes.length
-    if (System.currentTimeMillis() - startMs > publishDelaySeconds * 1000L) printStatus()
   }
 }
