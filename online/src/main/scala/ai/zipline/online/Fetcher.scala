@@ -175,11 +175,11 @@ class BaseFetcher(kvStore: KVStore,
     // map all the kv store responses back to groupBy level responses
     kvResponseFuture
       .map { responsesFuture: Seq[GetResponse] =>
-        if (validContext) FetcherMetrics.reportKvLatency(kvStartMs - System.currentTimeMillis(), context)
+        if (validContext) FetcherMetrics.reportKvLatency(System.currentTimeMillis() - kvStartMs, context)
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = responsesFuture.iterator.map { response =>
           response.request -> response.values
         }.toMap
-        if (validContext) FetcherMetrics.reportRequestBatchSize(responsesMap.keys.iterator.map(_.keyBytes.length).sum, context)
+        if (validContext) FetcherMetrics.reportRequestBatchSize(responsesMap.keys.size, context)
         if (validContext) FetcherMetrics.reportResponseBytesSize(Option(responsesMap.values.iterator.filter(_.isSuccess).flatMap(_.get.map(_.bytes.length.toLong)).sum).getOrElse(0L), context)
         // Heaviest compute is decoding bytes and merging them - so we parallelize
         val requestParFanout = groupByRequestToKvRequest.par
