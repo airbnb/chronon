@@ -139,7 +139,7 @@ def get_dependencies(
         src: api.Source,
         dependencies: List[str] = None,
         meta_data: api.MetaData = None,
-        lag: int = 0) -> List[str]:
+        for_group_by: bool = True) -> List[str]:
     if meta_data is not None:
         deps = meta_data.dependencies
     else:
@@ -157,9 +157,15 @@ def get_dependencies(
         } for dep in deps]
     else:
         if src.entities and src.entities.mutationTable:
-            result = list(filter(None, [
-                wait_for_simple_schema(src.entities.snapshotTable, 1, start, end),
-                wait_for_simple_schema(src.entities.mutationTable, 0, start, end)]))
+            # Always add the mutation table without lag
+            result = [wait_for_simple_schema(src.entities.mutationTable, 0, start, end)]
+            if for_group_by:
+                # Don't lag the snapshot for group_by case
+                result.append(wait_for_simple_schema(src.entities.snapshotTable, 0, start, end))
+            else:
+                # Do lag for join case
+                result.append(wait_for_simple_schema(src.entities.snapshotTable, 1, start, end))
+            result = list(filter(None, result))
         elif src.entities:
             result = [wait_for_simple_schema(src.entities.snapshotTable, 0, start, end)]
         else:
