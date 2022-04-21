@@ -184,7 +184,7 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
     if isinstance(sources, ttypes.Source):
         sources = [sources]
 
-    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
+    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies)]
 
     kwargs.update({
         "lag": lag

@@ -138,8 +138,7 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery):
 def get_dependencies(
         src: api.Source,
         dependencies: List[str] = None,
-        meta_data: api.MetaData = None,
-        lag: int = 0) -> List[str]:
+        meta_data: api.MetaData = None) -> List[str]:
     if meta_data is not None:
         deps = meta_data.dependencies
     else:
@@ -157,8 +156,11 @@ def get_dependencies(
         } for dep in deps]
     else:
         if src.entities and src.entities.mutationTable:
+            # Opting to use no lag for all use cases because that the "safe catch-all" case when
+            # it comes to dependencies (assuming ds lands before ds + 1). The actual query lag logic
+            # is more complicated and depends on temporal/snapshot accuracy for join.
             result = list(filter(None, [
-                wait_for_simple_schema(src.entities.snapshotTable, 1, start, end),
+                wait_for_simple_schema(src.entities.snapshotTable, 0, start, end),
                 wait_for_simple_schema(src.entities.mutationTable, 0, start, end)]))
         elif src.entities:
             result = [wait_for_simple_schema(src.entities.snapshotTable, 0, start, end)]
