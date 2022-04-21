@@ -6,7 +6,7 @@ import com.timgroup.statsd.{NonBlockingStatsDClient, StatsDClient}
 
 object Metrics {
 
-  val statsd: StatsDClient = new NonBlockingStatsDClient("zipline-ai", "localhost", 8125)
+  val statsd: StatsDClient = new NonBlockingStatsDClient("ai.zipline", "localhost", 8125)
 
   object Tag {
     val GroupBy = "group_by"
