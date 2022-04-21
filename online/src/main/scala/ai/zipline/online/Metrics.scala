@@ -54,6 +54,10 @@ object Metrics {
       new String(charBuf)
     }
 
+    lazy val emptyTags: Array[String] = {
+      toTags()
+    }
+
     def toTags(tags: (String, String)*): Array[String] = {
       assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
       val buffer = new Array[String](tags.size + 6)
@@ -118,11 +122,11 @@ object FetcherMetrics {
   }
 
   def reportRequestBatchSize(size: Int, metricsContext: Context): Unit = {
-    statsd.histogram(Name.RequestBatchSize, size, metricsContext.toTags(): _*)
+    statsd.histogram(Name.RequestBatchSize, size, metricsContext.emptyTags: _*)
   }
 
   def reportResponseNumRows(size: Int, metricsContext: Context): Unit = {
-    statsd.histogram(Name.ResponseSize, size, metricsContext.toTags(): _*)
+    statsd.histogram(Name.ResponseSize, size, metricsContext.emptyTags: _*)
   }
 
   def reportFailure(exception: Throwable, metricsContext: Context): Unit = {
@@ -134,31 +138,31 @@ object FetcherMetrics {
   }
 
   def reportDataFreshness(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.DataFreshness, millis, metricsContext.toTags(): _*)
+    statsd.histogram(Name.DataFreshness, millis, metricsContext.emptyTags: _*)
   }
 
   def reportResponseBytesSize(sizeBytes: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.DataSizeBytes, sizeBytes, metricsContext.toTags(): _*)
+    statsd.histogram(Name.DataSizeBytes, sizeBytes, metricsContext.emptyTags: _*)
     if (sizeBytes == 0) {
-      statsd.increment(Name.EmptyResponseCount, metricsContext.toTags(): _*)
+      statsd.increment(Name.EmptyResponseCount, metricsContext.emptyTags: _*)
     }
   }
 
   def reportLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.Latency, millis, metricsContext.toTags(): _*)
+    statsd.histogram(Name.Latency, millis, metricsContext.emptyTags: _*)
   }
 
   def reportKvLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.KvLatency, millis, metricsContext.toTags(): _*)
+    statsd.histogram(Name.KvLatency, millis, metricsContext.emptyTags: _*)
   }
 
   def reportRequest(metricsContext: Context): Unit = {
-    statsd.increment(Name.FetcherRequest, metricsContext.toTags(): _*)
+    statsd.increment(Name.FetcherRequest, metricsContext.emptyTags: _*)
   }
 
   // report latency as the maximum latency of all group bys / joins included in multiGet requests.
   def reportFinalLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.FinalLatency, millis, metricsContext.toTags(): _*)
+    statsd.histogram(Name.FinalLatency, millis, metricsContext.emptyTags: _*)
   }
 }
 
