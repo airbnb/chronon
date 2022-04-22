@@ -146,42 +146,42 @@ class FetcherTest extends TestCase {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
-      Row(2, toTs("2021-04-10 09:00:00"), "2021-04-10"),
-      Row(2, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
-      Row(2, toTs("2021-04-10 23:45:00"), "2021-04-10") // Query for mutated event
+      Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
+      Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
+      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10") // Query for mutated event
     )
     val snapshotData = Seq(
-      Row(1, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
-      Row(1, toTs("2021-04-04 12:30:00"), 4, "2021-04-08"),
-      Row(1, toTs("2021-04-05 00:30:00"), 4, "2021-04-08"),
-      Row(1, toTs("2021-04-08 02:30:00"), 4, "2021-04-08"),
-      Row(2, toTs("2021-04-04 01:40:00"), 3, "2021-04-08"),
-      Row(2, toTs("2021-04-05 03:40:00"), 3, "2021-04-08"),
-      Row(2, toTs("2021-04-06 03:45:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-08"),
       // {listing_id, ts, rating, ds}
-      Row(1, toTs("2021-04-04 00:30:00"), 4, "2021-04-09"),
-      Row(1, toTs("2021-04-04 12:30:00"), 4, "2021-04-09"),
-      Row(1, toTs("2021-04-05 00:30:00"), 4, "2021-04-09"),
-      Row(1, toTs("2021-04-08 02:30:00"), 4, "2021-04-09"),
-      Row(2, toTs("2021-04-04 01:40:00"), 3, "2021-04-09"),
-      Row(2, toTs("2021-04-05 03:40:00"), 3, "2021-04-09"),
-      Row(2, toTs("2021-04-06 03:45:00"), 4, "2021-04-09"),
-      Row(2, toTs("2021-04-09 05:45:00"), 5, "2021-04-09")
+      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09")
     )
     val mutationData = Seq(
-      Row(2, toTs("2021-04-09 05:45:00"), 2, "2021-04-09", toTs("2021-04-09 05:45:00"), false),
-      Row(2, toTs("2021-04-09 05:45:00"), 2, "2021-04-09", toTs("2021-04-09 07:00:00"), true),
-      Row(2, toTs("2021-04-09 05:45:00"), 5, "2021-04-09", toTs("2021-04-09 07:00:00"), false),
+      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 2, "2021-04-09", toTs("2021-04-09 05:45:00"), false),
+      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 2, "2021-04-09", toTs("2021-04-09 07:00:00"), true),
+      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09", toTs("2021-04-09 07:00:00"), false),
       // {listing_id, ts, rating, ds, mutation_ts, is_before}
-      Row(1, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 00:30:00"), false),
-      Row(2, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 10:00:00"), false),
-      Row(2, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 23:30:00"), true),
-      Row(2, toTs("2021-04-10 10:00:00"), 3, "2021-04-10", toTs("2021-04-10 23:30:00"), false)
+      Row(1L, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 00:30:00"), false),
+      Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 10:00:00"), false),
+      Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 23:30:00"), true),
+      Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 3, "2021-04-10", toTs("2021-04-10 23:30:00"), false)
     )
     // Schemas
     val snapshotSchema = StructType(
       "listing_ratings_snapshot_fetcher",
-      Array(StructField("listing", IntType),
+      Array(StructField("listing", LongType),
             StructField("ts", LongType),
             StructField("rating", IntType),
             StructField("ds", StringType))
@@ -200,7 +200,7 @@ class FetcherTest extends TestCase {
     // {..., event (generic event column), ...}
     val eventSchema = StructType("listing_events_fetcher",
                                  Array(
-                                   StructField("listing_id", IntType),
+                                   StructField("listing_id", LongType),
                                    StructField("ts", LongType),
                                    StructField("ds", StringType)
                                  ))
@@ -216,6 +216,7 @@ class FetcherTest extends TestCase {
         spark.createDataFrame(rows.asJava, Conversions.fromZiplineSchema(schema)).save(s"$namespace.${schema.name}")
 
     }
+    println("saved all data hand written for fetcher test")
 
     val startPartition = "2021-04-08"
     val endPartition = "2021-04-10"
@@ -570,8 +571,8 @@ class FetcherTest extends TestCase {
       println(s"ooc metrics: $metrics".stripMargin)
     }
     // benchmark
-    joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
-    joinResponses(requests, mockApi, runCount = 10)
+    joinResponses(requests, mockApi, runCount = 100, useJavaFetcher = true)
+    //joinResponses(requests, mockApi, runCount = 10)
 
     // comparison
     val columns = endDsExpected.schema.fields.map(_.name)

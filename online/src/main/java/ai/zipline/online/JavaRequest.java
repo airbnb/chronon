@@ -28,15 +28,28 @@ public class JavaRequest {
     }
   }
 
-  public Fetcher.Request toScalaRequest() {
+  public Fetcher.Request toScalaRequest(Boolean isGroupBy) {
     scala.collection.immutable.Map<String, Object> scalaKeys = null;
     if (keys != null) {
       scalaKeys = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(keys);
     }
+    String gb= null;
+    String join= null;
+    String method;
+    if (isGroupBy) {
+      gb = this.name;
+      method = "fetchGroupBys";
+    } else {
+      join = this.name;
+      method = "fetchJoin";
+    }
+
+    Metrics.Context ctx = new Metrics.Context(join, gb, false , false, false, method, null, null, null);
     return new Fetcher.Request(
         this.name,
         scalaKeys,
-        Option.apply(this.atMillis));
+        Option.apply(this.atMillis),
+        Option.apply(ctx));
   }
 }
 

@@ -1,6 +1,6 @@
 package ai.zipline.spark.streaming
 
-import ai.zipline.online.Metrics.{Context, statsd}
+import ai.zipline.online.Metrics.Context
 
 object Metrics {
 
@@ -20,25 +20,25 @@ object Metrics {
 
   object Egress {
     def reportDataSize(sizeBytes: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.EgressDataSize, sizeBytes, metricsContext.toTags(): _*)
+      metricsContext.stats.histogram(Name.EgressDataSize, sizeBytes)
     }
 
     def reportLatency(millis: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.EgressLatencyMillis, millis, metricsContext.toTags(): _*)
+      metricsContext.stats.histogram(Name.EgressLatencyMillis, millis)
     }
 
     def reportRowCount(metricsContext: Context): Unit = {
-      statsd.increment(Name.EgressRowCount, metricsContext.toTags(): _*)
+      metricsContext.stats.increment(Name.EgressRowCount)
     }
   }
 
   object Ingress {
     def reportRowCount(metricsContext: Context): Unit = {
-      statsd.increment(Name.IngressRowCount, metricsContext.toTags(): _*)
+      metricsContext.stats.increment(Name.IngressRowCount)
     }
 
     def reportDataSize(sizeBytes: Long, metricsContext: Context): Unit = {
-      statsd.histogram(Name.IngressDataSize, sizeBytes, metricsContext.toTags(): _*)
+      metricsContext.stats.histogram(Name.IngressDataSize, sizeBytes)
     }
   }
 }
