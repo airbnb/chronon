@@ -119,7 +119,7 @@ class BaseFetcher(kvStore: KVStore,
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
-  def fetchGroupBys(requests: Seq[Request]): Future[Seq[Response]] = {
+  def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val defaultContext = Metrics.Context(method = "fetchGroupBys")
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
@@ -232,11 +232,11 @@ class BaseFetcher(kvStore: KVStore,
 
   private case class PrefixedRequest(prefix: String, request: Request)
 
-  def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val context = Metrics.Context(method = "fetchJoin")
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-    val joinDecomposed: Seq[(Request, Try[Seq[PrefixedRequest]])] =
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
       requests.map { request =>
         val joinTry = getJoinConf(request.name)
         val joinContext = context.withJoin(request.name)
@@ -380,7 +380,7 @@ class Fetcher(kvStore: KVStore,
     }
   })
 
-  override def fetchJoin(requests: Seq[Request]): Future[Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     super
       .fetchJoin(requests)
@@ -427,7 +427,7 @@ class Fetcher(kvStore: KVStore,
       }.toSeq)
   }
 
-  override def fetchGroupBys(requests: Seq[Request]): Future[Seq[Response]] = {
+  override def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     super.fetchGroupBys(requests)
   }
 }

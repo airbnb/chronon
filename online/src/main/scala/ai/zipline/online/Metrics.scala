@@ -155,7 +155,7 @@ object FetcherMetrics {
                        latencyMillis: Long,
                        totalResponseBytes: Int,
                        metricsContext: Context): Unit = {
-    val latestResponseTs = response.iterator.map(_.millis).reduceOption(Ordering[Long].max).getOrElse(startTsMillis)
+    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
     val responseBytes = response.iterator.map(_.bytes.length).sum
     metricsContext.stats.histogram(Name.KvResponseRowCount, response.length)
     metricsContext.stats.histogram(Name.KvResponseSizeBytes, responseBytes)
