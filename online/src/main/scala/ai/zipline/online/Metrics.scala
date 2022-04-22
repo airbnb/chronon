@@ -1,12 +1,21 @@
 package ai.zipline.online
 
 import ai.zipline.api.GroupByServingInfo
-import ai.zipline.online.Metrics.{Context, statsd}
+import ai.zipline.online.KVStore.TimedValue
+import ai.zipline.online.Metrics.Context
 import com.timgroup.statsd.{NonBlockingStatsDClient, StatsDClient}
 
 object Metrics {
 
-  val statsd: StatsDClient = new NonBlockingStatsDClient("ai.zipline", "localhost", 8125)
+  val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
+    { ctx =>
+      println(s"""Building new stats cache for: Join(${ctx.join}), GroupByJoin(${ctx.groupBy}) 
+           |hash: ${ctx.hashCode()}
+           |context $ctx         
+           |""".stripMargin)
+      new NonBlockingStatsDClient("zipline", "localhost", 8125, ctx.toTags: _*)
+    }
+  )
 
   object Tag {
     val GroupBy = "group_by"
@@ -54,13 +63,11 @@ object Metrics {
       new String(charBuf)
     }
 
-    lazy val emptyTags: Array[String] = {
-      toTags()
-    }
+    @transient lazy val stats: NonBlockingStatsDClient = statsCache(this)
 
-    def toTags(tags: (String, String)*): Array[String] = {
+    private[Metrics] def toTags: Array[String] = {
       assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
-      val buffer = new Array[String](tags.size + 6)
+      val buffer = new Array[String](6)
       var counter = 0
       def addTag(key: String, value: String): Unit = {
         if (value == null) return
@@ -75,13 +82,6 @@ object Metrics {
       addTag(Tag.Team, team)
       addTag(Tag.Method, method)
       addTag(Tag.RequestType, requestType(isStreaming))
-      var i = 0
-      while (i < tags.size) {
-        val tag = tags(i)
-        addTag(tag._1, tag._2)
-        i += 1
-      }
-
       buffer
     }
 
@@ -103,6 +103,14 @@ object FetcherMetrics {
     val FailureByGroupBy = s"$fetcher.group_by.$failure"
     val FailureByJoin = s"$fetcher.join.$failure"
 
+    val KvResponseSizeBytes = s"$fetcher.kv_store.response.size_bytes"
+    val KvResponseRowCount = s"$fetcher.kv_store.response.row_count"
+    val KvFreshnessMillis = s"$fetcher.kv_store.response.freshness_millis"
+    val KvTotalResponseBytes = s"$fetcher.kv_store.response.total_size_bytes"
+    val KvAttributedLatencyMillis = s"$fetcher.kv_store.response.attributed_latency_millis"
+    val KvOverallLatencyMillis = s"$fetcher.kv_store.response.overall_latency_millis"
+
+    val BatchSizeBytes = s"$fetcher.batch_size_bytes"
     val DataFreshness = s"$fetcher.data_freshness_ms"
     val DataSizeBytes = s"$fetcher.data_size_bytes"
     val Latency = s"$fetcher.latency_ms"
@@ -122,11 +130,11 @@ object FetcherMetrics {
   }
 
   def reportRequestBatchSize(size: Int, metricsContext: Context): Unit = {
-    statsd.histogram(Name.RequestBatchSize, size, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.RequestBatchSize, size)
   }
 
   def reportResponseNumRows(size: Int, metricsContext: Context): Unit = {
-    statsd.histogram(Name.ResponseSize, size, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.ResponseSize, size)
   }
 
   def reportFailure(exception: Throwable, metricsContext: Context): Unit = {
@@ -134,35 +142,47 @@ object FetcherMetrics {
       if (metricsContext.groupBy != null) Name.FailureByGroupBy
       else if (metricsContext.join != null) Name.FailureByJoin
       else throw new RuntimeException("context must be set with either join or group by")
-    statsd.increment(metricName, metricsContext.toTags(Metrics.Tag.Exception -> exception.getClass.toString): _*)
+    metricsContext.stats
+      .increment(metricName, s"${Metrics.Tag.Exception}:${exception.getClass.toString}")
   }
 
   def reportDataFreshness(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.DataFreshness, millis, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.DataFreshness, millis)
+  }
+
+  def reportKvResponse(response: Seq[TimedValue],
+                       startTsMillis: Long,
+                       latencyMillis: Long,
+                       totalResponseBytes: Int,
+                       metricsContext: Context): Unit = {
+    val latestResponseTs = response.iterator.map(_.millis).reduceOption(Ordering[Long].max).getOrElse(startTsMillis)
+    val responseBytes = response.iterator.map(_.bytes.length).sum
+    metricsContext.stats.histogram(Name.KvResponseRowCount, response.length)
+    metricsContext.stats.histogram(Name.KvResponseSizeBytes, responseBytes)
+    metricsContext.stats.histogram(Name.KvFreshnessMillis, startTsMillis - latestResponseTs)
+    metricsContext.stats.histogram(Name.KvTotalResponseBytes, totalResponseBytes)
+    metricsContext.stats.histogram(Name.KvOverallLatencyMillis, latencyMillis)
+    metricsContext.stats
+      .histogram(Name.KvAttributedLatencyMillis, (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
   def reportResponseBytesSize(sizeBytes: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.DataSizeBytes, sizeBytes, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.DataSizeBytes, sizeBytes)
     if (sizeBytes == 0) {
-      statsd.increment(Name.EmptyResponseCount, metricsContext.emptyTags: _*)
+      metricsContext.stats.increment(Name.EmptyResponseCount)
     }
   }
 
   def reportLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.Latency, millis, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.Latency, millis)
   }
 
   def reportKvLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.KvLatency, millis, metricsContext.emptyTags: _*)
+    metricsContext.stats.histogram(Name.KvLatency, millis)
   }
 
   def reportRequest(metricsContext: Context): Unit = {
-    statsd.increment(Name.FetcherRequest, metricsContext.emptyTags: _*)
-  }
-
-  // report latency as the maximum latency of all group bys / joins included in multiGet requests.
-  def reportFinalLatency(millis: Long, metricsContext: Context): Unit = {
-    statsd.histogram(Name.FinalLatency, millis, metricsContext.emptyTags: _*)
+    metricsContext.stats.increment(Name.FetcherRequest)
   }
 }
 
@@ -175,10 +195,10 @@ object MetadataMetrics {
   }
 
   def reportJoinConfRequestMetric(latencyMs: Long, context: Context): Unit = {
-    statsd.histogram(Name.JoinConfLatency, latencyMs, context.toTags(): _*)
+    context.stats.histogram(Name.JoinConfLatency, latencyMs)
   }
 
   def reportGroupByServingInfoRequestMetric(latencyMs: Long, context: Context): Unit = {
-    statsd.histogram(Name.GroupByServingLatency, latencyMs, context.toTags(): _*)
+    context.stats.histogram(Name.GroupByServingLatency, latencyMs)
   }
 }
