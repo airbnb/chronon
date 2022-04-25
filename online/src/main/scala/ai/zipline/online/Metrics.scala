@@ -37,7 +37,9 @@ object Metrics {
     val ResponseLength = "response_length"
     val KvStore = "kv_store"
     val Freshness = "freshness"
-    val Latency = "latency"
+    val LatencyMillis = "latency.millis"
+    val LatencyMinutes = "latency.minutes"
+    val PartitionCount = "partition.count"
     val Bytes = "bytes"
     val TotalBytes = "total_bytes"
     val Count = "count"
@@ -124,7 +126,7 @@ object Metrics {
       new String(charBuf)
     }
 
-    @transient lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsCache(this)
+    @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsCache(this)
 
     def increment(metric: String): Unit = stats.increment(metric)
     def incrementException(exception: Throwable): Unit =
@@ -133,21 +135,6 @@ object Metrics {
     def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
-
-    def reportKvResponse(response: Seq[TimedValue],
-                         startTsMillis: Long,
-                         latencyMillis: Long,
-                         totalResponseBytes: Int): Unit = {
-      val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
-      val responseBytes = response.iterator.map(_.bytes.length).sum
-      val context = withSuffix(Name.Response)
-      context.histogram(Name.Count, response.length)
-      context.histogram(Name.Bytes, responseBytes)
-      context.histogram(Name.Freshness, startTsMillis - latestResponseTs)
-      context.histogram("total_bytes", totalResponseBytes)
-      context.histogram("total_latency", latencyMillis)
-      context.histogram("attributed_latency", (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
-    }
 
     private[Metrics] def toTags: Array[String] = {
       assert(join != null || groupBy != null, "Either Join, groupBy should be set.")

@@ -7,6 +7,7 @@ import ai.zipline.api.Extensions.JoinOps
 import ai.zipline.api.{Row, _}
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
+import ai.zipline.online.Metrics.Name
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
@@ -54,7 +55,7 @@ class BaseFetcher(kvStore: KVStore,
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
     batchResponsesTry.map {
-      context.withSuffix("batch").reportKvResponse(_, startTimeMs, overallLatency, totalResponseValueBytes)
+      reportKvResponse(context.withSuffix("batch"), _, startTimeMs, overallLatency, totalResponseValueBytes)
     }
     // bulk upload didn't remove an older batch value - so we manually discard
     val batchBytes: Array[Byte] = batchResponsesTry
@@ -77,15 +78,33 @@ class BaseFetcher(kvStore: KVStore,
       val streamingRows: Iterator[Row] = streamingResponses.iterator
         .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
         .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-      context
-        .withSuffix("streaming")
-        .reportKvResponse(streamingResponses, startTimeMs, overallLatency, totalResponseValueBytes)
+      reportKvResponse(context.withSuffix("streaming"),
+                       streamingResponses,
+                       startTimeMs,
+                       overallLatency,
+                       totalResponseValueBytes)
       val batchIr = toBatchIr(batchBytes, servingInfo)
       val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
       servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
     }
-    context.histogram("", System.currentTimeMillis() - startTimeMs)
+    context.histogram("latency.millis", System.currentTimeMillis() - startTimeMs)
     responseMap
+  }
+
+  def reportKvResponse(ctx: Metrics.Context,
+                       response: Seq[TimedValue],
+                       startTsMillis: Long,
+                       latencyMillis: Long,
+                       totalResponseBytes: Int): Unit = {
+    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
+    val responseBytes = response.iterator.map(_.bytes.length).sum
+    val context = ctx.withSuffix(Name.Response)
+    context.histogram(Name.Count, response.length)
+    context.histogram(Name.Bytes, responseBytes)
+    context.histogram(Name.Freshness, startTsMillis - latestResponseTs)
+    context.histogram("total_bytes", totalResponseBytes)
+    context.histogram("total_latency", latencyMillis)
+    context.histogram("attributed_latency", (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
   private def updateServingInfo(batchEndTs: Long,
@@ -194,8 +213,7 @@ class BaseFetcher(kvStore: KVStore,
                                          totalResponseValueBytes)
               } catch {
                 case ex: Exception =>
-                  context.stats
-                    .increment(Metrics.Name.Exception, s"${Metrics.Name.Exception}:${ex.getClass.toString}")
+                  context.incrementException(ex)
                   ex.printStackTrace()
                   throw ex
               }
