@@ -5,9 +5,9 @@ import ai.zipline.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.zipline.api.Constants.ZiplineMetadataKey
 import ai.zipline.api.Extensions.JoinOps
 import ai.zipline.api.{Row, _}
-import ai.zipline.online.CompatParColls.Converters._
 import ai.zipline.online.Fetcher._
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, TimedValue}
+import ai.zipline.online.Metrics.Name
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
@@ -16,7 +16,6 @@ import java.util
 import java.util.function.Consumer
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
-import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.Future
 import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, Success, Try}
@@ -55,9 +54,8 @@ class BaseFetcher(kvStore: KVStore,
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
-    val groupByContext = FetcherMetrics.getGroupByContext(servingInfo, Some(context))
     batchResponsesTry.map {
-      FetcherMetrics.reportKvResponse(_, startTimeMs, overallLatency, totalResponseValueBytes, groupByContext.asBatch)
+      reportKvResponse(context.withSuffix("batch"), _, startTimeMs, overallLatency, totalResponseValueBytes)
     }
     // bulk upload didn't remove an older batch value - so we manually discard
     val batchBytes: Array[Byte] = batchResponsesTry
@@ -80,17 +78,34 @@ class BaseFetcher(kvStore: KVStore,
       val streamingRows: Iterator[Row] = streamingResponses.iterator
         .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
         .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-      FetcherMetrics.reportKvResponse(streamingResponses,
-                                      startTimeMs,
-                                      overallLatency,
-                                      totalResponseValueBytes,
-                                      groupByContext.asStreaming)
+      reportKvResponse(context.withSuffix("streaming"),
+                       streamingResponses,
+                       startTimeMs,
+                       overallLatency,
+                       totalResponseValueBytes)
       val batchIr = toBatchIr(batchBytes, servingInfo)
       val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
       servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
     }
-    FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByContext)
+    context.histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     responseMap
+  }
+
+  def reportKvResponse(ctx: Metrics.Context,
+                       response: Seq[TimedValue],
+                       startTsMillis: Long,
+                       latencyMillis: Long,
+                       totalResponseBytes: Int): Unit = {
+    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
+    val responseBytes = response.iterator.map(_.bytes.length).sum
+    val context = ctx.withSuffix("response")
+    context.histogram(Name.RowCount, response.length)
+    context.histogram(Name.Bytes, responseBytes)
+    context.histogram(Name.FreshnessMillis, startTsMillis - latestResponseTs)
+    context.histogram("total_size.bytes", totalResponseBytes)
+    context.histogram("total_latency.millis", latencyMillis)
+    context.histogram("attributed_latency.millis",
+                      (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
   private def updateServingInfo(batchEndTs: Long,
@@ -120,13 +135,13 @@ class BaseFetcher(kvStore: KVStore,
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    val defaultContext = Metrics.Context(method = "fetchGroupBys")
+
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByName = request.name
-      val context = request.context.getOrElse(defaultContext.withGroupBy(groupByName))
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(groupByName)
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
         .map { groupByServingInfo =>
+          val context =
+            request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           var keyBytes: Array[Byte] = null
           try {
             keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
@@ -178,6 +193,7 @@ class BaseFetcher(kvStore: KVStore,
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
+              context.histogram("multiget.latency.millis", multiGetMillis)
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
                 .getOrElse(batchRequest,
@@ -198,7 +214,7 @@ class BaseFetcher(kvStore: KVStore,
                                          totalResponseValueBytes)
               } catch {
                 case ex: Exception =>
-                  FetcherMetrics.reportFailure(ex, request.context.get)
+                  context.incrementException(ex)
                   ex.printStackTrace()
                   throw ex
               }
@@ -233,23 +249,23 @@ class BaseFetcher(kvStore: KVStore,
   private case class PrefixedRequest(prefix: String, request: Request)
 
   def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    val context = Metrics.Context(method = "fetchJoin")
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
       requests.map { request =>
         val joinTry = getJoinConf(request.name)
-        val joinContext = context.withJoin(request.name)
+        var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
+          joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
           join.joinPartOps.map { part =>
-            val groupByName = part.groupBy.getMetaData.getName
-            val joinContextInner =
-              joinContext.withProduction(join.isProduction).withTeam(join.team).withGroupBy(groupByName)
+            val joinContextInner = Metrics.Context(joinContext.get, part)
             val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-            PrefixedRequest(part.fullPrefix, Request(groupByName, rightKeys, request.atMillis, Some(joinContextInner)))
+            PrefixedRequest(
+              part.fullPrefix,
+              Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner)))
           }
         }
-        request.copy(context = Some(joinContext)) -> decomposedTry
+        request.copy(context = joinContext) -> decomposedTry
       }
 
     val groupByRequests = joinDecomposed.flatMap {
@@ -281,10 +297,7 @@ class BaseFetcher(kvStore: KVStore,
                         Map.empty[String, AnyRef]
                       }
                     }
-                    .map { v =>
-                      FetcherMetrics.reportLatency(System.currentTimeMillis() - startTimeMs, groupByRequest.context.get)
-                      v
-                    } // prefix feature names
+                    // prefix feature names
                     .recover { // capture exception as a key
                       case ex: Throwable =>
                         val stringWriter = new StringWriter()
@@ -301,7 +314,7 @@ class BaseFetcher(kvStore: KVStore,
               result
             }
             joinValuesTry match {
-              case Failure(ex) => FetcherMetrics.reportFailure(ex, joinRequest.context.get.withGroupBy("overall"))
+              case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
               case _           => ()
             }
             Response(joinRequest, joinValuesTry)

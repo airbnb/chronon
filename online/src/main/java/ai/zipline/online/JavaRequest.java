@@ -44,12 +44,11 @@ public class JavaRequest {
       method = "fetchJoin";
     }
 
-    Metrics.Context ctx = new Metrics.Context(join, gb, false , false, false, method, null, null, null);
     return new Fetcher.Request(
         this.name,
         scalaKeys,
         Option.apply(this.atMillis),
-        Option.apply(ctx));
+        Option.empty());
   }
 }
 

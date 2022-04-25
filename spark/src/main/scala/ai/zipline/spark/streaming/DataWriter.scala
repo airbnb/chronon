@@ -2,7 +2,7 @@ package ai.zipline.spark.streaming
 
 import ai.zipline.online.KVStore.PutRequest
 import ai.zipline.online.Metrics.Context
-import ai.zipline.online.{Api, KVStore}
+import ai.zipline.online.{Api, KVStore, Metrics}
 import org.apache.spark.sql.ForeachWriter
 
 class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debug: Boolean = false)
@@ -23,9 +23,10 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
     if (!debug) {
       kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
-        Metrics.Egress.reportLatency(System.currentTimeMillis() - ts, metricsContext = context)
-        Metrics.Egress.reportRowCount(context)
-        Metrics.Egress.reportDataSize(putRequest.valueBytes.length + putRequest.keyBytes.length, context)
+        context.histogram(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
+        context.increment(Metrics.Name.RowCount)
+        context.histogram(Metrics.Name.ValueBytes, putRequest.valueBytes.length)
+        context.histogram(Metrics.Name.KeyBytes, putRequest.keyBytes.length)
       }
     }
   }

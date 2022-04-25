@@ -571,8 +571,8 @@ class FetcherTest extends TestCase {
       println(s"ooc metrics: $metrics".stripMargin)
     }
     // benchmark
-    joinResponses(requests, mockApi, runCount = 100, useJavaFetcher = true)
-    //joinResponses(requests, mockApi, runCount = 10)
+    joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
+    joinResponses(requests, mockApi, runCount = 10)
 
     // comparison
     val columns = endDsExpected.schema.fields.map(_.name)

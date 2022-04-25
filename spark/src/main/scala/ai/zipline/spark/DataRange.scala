@@ -75,11 +75,12 @@ case class PartitionRange(start: String, end: String) extends DataRange {
                      fillIfAbsent = fillIfAbsent)
   }
 
-  def steps(days: Int): Seq[PartitionRange] =
+  def steps(days: Int): Seq[PartitionRange] = {
     partitions
       .sliding(days, days)
       .map { step => PartitionRange(step.head, step.last) }
       .toSeq
+  }
 
   def partitions: Seq[String] = {
     assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")

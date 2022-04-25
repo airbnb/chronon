@@ -3,6 +3,7 @@ package ai.zipline.spark
 import ai.zipline.api.DataModel.{Entities, Events}
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, Constants, JoinPart, ThriftJsonCodec, Join => JoinConf}
+import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
@@ -11,6 +12,7 @@ import scala.collection.JavaConverters._
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
+  val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
 
   // Get table properties from config
@@ -165,11 +167,11 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
     // compute joinParts in parallel
     val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
+      val partMetrics = Metrics.Context(metrics, joinPart)
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
         computeJoinPart(leftTaggedDf, joinPart, leftRange)
       } else {
-
         // compute only the missing piece
         val joinPartTableName = joinConf.partOutputTable(joinPart)
         val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
@@ -182,8 +184,10 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
             val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
-            val elapsed = System.currentTimeMillis() - start
-            println(s"Wrote to join part table: $joinPartTableName in $elapsed ms")
+            val elapsedMins = (System.currentTimeMillis() - start) / 60000
+            partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
+            partMetrics.gauge(Metrics.Name.PartitionCount, rightUnfilledRange.get.partitions.length)
+            println(s"Wrote to join part table: $joinPartTableName in $elapsedMins minutes")
           } catch {
             case e: Exception =>
               println(
@@ -222,6 +226,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   }
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
@@ -245,6 +250,9 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
       return finalResult
     }
     val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), endPartition)
+    if (leftUnfilledRange.start != null && leftUnfilledRange.end != null) {
+      metrics.gauge(Metrics.Name.PartitionCount, leftUnfilledRange.partitions.length)
+    }
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
@@ -256,11 +264,12 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     } else {
       Seq()
     }
-
+    stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
+        val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
 
@@ -282,15 +291,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
         }
         if (!leftDfInRange.isEmpty) {
           computeRange(leftDfInRange, range).save(outputTable, tableProps)
-          println(s"Wrote to table $outputTable, into partitions: $range $progress")
+          val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
+          metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
+          metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
+          println(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
         } else {
           println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
         }
-
-        val start = System.currentTimeMillis()
-        computeRange(leftDfInRange.prunePartition(range), range).save(outputTable, tableProps)
-        val elapsed = System.currentTimeMillis() - start
-        println(s"Wrote $range to table $outputTable, into partitions: $range $progress, in $elapsed ms")
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
     finalResult

@@ -10,8 +10,8 @@ import ai.zipline.online.{
   Fetcher,
   GroupByServingInfoParsed,
   KVStore,
-  Mutation,
-  Metrics => FetcherMetrics
+  Metrics,
+  Mutation
 }
 import ai.zipline.spark.Conversions
 import com.google.gson.Gson
@@ -85,15 +85,15 @@ class GroupBy(inputStream: DataFrame,
     val streamingSource = groupByConf.streamingSource.get
     val streamingQuery = buildStreamingQuery()
 
-    val context = FetcherMetrics.Context(groupBy = groupByConf.getMetaData.getName)
-
+    val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
+    val ingressContext = context.withSuffix("ingress")
     import session.implicits._
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { arr =>
-        Metrics.Ingress.reportRowCount(metricsContext = context)
-        Metrics.Ingress.reportDataSize(arr.length, context)
+        ingressContext.increment(Metrics.Name.RowCount)
+        ingressContext.count(Metrics.Name.Bytes, arr.length)
         streamDecoder.decode(arr)
       }
       .filter(mutation =>
@@ -142,7 +142,7 @@ class GroupBy(inputStream: DataFrame,
     }
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")
-    val dataWriter = new DataWriter(onlineImpl, context, 120, debug)
+    val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
