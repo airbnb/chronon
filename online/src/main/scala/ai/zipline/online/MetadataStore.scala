@@ -43,8 +43,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
     val result = getConf[Join](s"joins/$name").map(new JoinOps(_))
     val context =
       if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
-      else Metrics.Context(Metrics.Environment.JoinFetching, join = name)
-    context.histogram("metadata_latency", System.currentTimeMillis() - startTimeMs)
+      else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
+    context.withSuffix("join").histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     result
   })
 
@@ -109,7 +109,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
           .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
         Metrics
           .Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy)
-          .histogram("metadata_latency", System.currentTimeMillis() - startTimeMs)
+          .withSuffix("group_by")
+          .histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
         Success(new GroupByServingInfoParsed(groupByServingInfo))
       }
     })
