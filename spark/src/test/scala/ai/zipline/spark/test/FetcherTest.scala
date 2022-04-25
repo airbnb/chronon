@@ -571,7 +571,7 @@ class FetcherTest extends TestCase {
       println(s"ooc metrics: $metrics".stripMargin)
     }
     // benchmark
-    joinResponses(requests, mockApi, runCount = 1000, useJavaFetcher = true)
+    joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
     joinResponses(requests, mockApi, runCount = 10)
 
     // comparison
