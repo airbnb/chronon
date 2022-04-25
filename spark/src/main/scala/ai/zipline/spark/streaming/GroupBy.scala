@@ -93,7 +93,7 @@ class GroupBy(inputStream: DataFrame,
       .as[Array[Byte]]
       .map { arr =>
         ingressContext.increment(Metrics.Name.RowCount)
-        context.count(Metrics.Name.Bytes, arr.length)
+        ingressContext.count(Metrics.Name.Bytes, arr.length)
         streamDecoder.decode(arr)
       }
       .filter(mutation =>
