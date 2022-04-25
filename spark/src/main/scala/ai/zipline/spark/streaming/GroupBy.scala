@@ -92,8 +92,8 @@ class GroupBy(inputStream: DataFrame,
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { arr =>
-        ingressContext.increment("rows")
-        context.count("bytes", arr.length)
+        ingressContext.increment(Metrics.Name.RowCount)
+        context.count(Metrics.Name.Bytes, arr.length)
         streamDecoder.decode(arr)
       }
       .filter(mutation =>

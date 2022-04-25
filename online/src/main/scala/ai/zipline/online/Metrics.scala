@@ -32,18 +32,17 @@ object Metrics {
   }
 
   object Name {
-    val Request = "request"
-    val Response = "response"
-    val ResponseLength = "response_length"
-    val KvStore = "kv_store"
-    val Freshness = "freshness"
+    val FreshnessMillis = "freshness.millis"
     val LatencyMillis = "latency.millis"
     val LatencyMinutes = "latency.minutes"
+
     val PartitionCount = "partition.count"
+    val RowCount = "row.count"
+
     val Bytes = "bytes"
-    val TotalBytes = "total_bytes"
-    val Count = "count"
-    val Millis = "millis"
+    val KeyBytes = "key.bytes"
+    val ValueBytes = "value.bytes"
+
     val Exception = "exception"
   }
 

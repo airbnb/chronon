@@ -87,7 +87,7 @@ class BaseFetcher(kvStore: KVStore,
       val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
       servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
     }
-    context.histogram("latency.millis", System.currentTimeMillis() - startTimeMs)
+    context.histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     responseMap
   }
 
@@ -98,13 +98,14 @@ class BaseFetcher(kvStore: KVStore,
                        totalResponseBytes: Int): Unit = {
     val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
     val responseBytes = response.iterator.map(_.bytes.length).sum
-    val context = ctx.withSuffix(Name.Response)
-    context.histogram(Name.Count, response.length)
+    val context = ctx.withSuffix("response")
+    context.histogram(Name.RowCount, response.length)
     context.histogram(Name.Bytes, responseBytes)
-    context.histogram(Name.Freshness, startTsMillis - latestResponseTs)
-    context.histogram("total_bytes", totalResponseBytes)
-    context.histogram("total_latency", latencyMillis)
-    context.histogram("attributed_latency", (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
+    context.histogram(Name.FreshnessMillis, startTsMillis - latestResponseTs)
+    context.histogram("total_size.bytes", totalResponseBytes)
+    context.histogram("total_latency.millis", latencyMillis)
+    context.histogram("attributed_latency.millis",
+                      (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
   private def updateServingInfo(batchEndTs: Long,
