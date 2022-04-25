@@ -225,32 +225,38 @@ case class TableUtils(sparkSession: SparkSession) {
                               partitionRange: PartitionRange): Option[String] = {
 
     def partitionsInRange(table: String): Set[String] = {
-      if (partitionRange.start == null || partitionRange.end == null) return Set.empty[String]
-      partitions(table)
-        .filter(ds => ds >= partitionRange.start && ds <= partitionRange.end)
-        .toSet
+      val allParts = partitions(table)
+      val startPrunedParts = Option(partitionRange.start).map(start => allParts.filter(_ >= start)).getOrElse(allParts)
+      Option(partitionRange.end).map(end => startPrunedParts.filter(_ <= end)).getOrElse(startPrunedParts).toSet
     }
 
     val inputPartitions = partitionsInRange(inputTable)
     val outputPartitions = partitionsInRange(outputTable)
-    val earliestHoleOpt = (inputPartitions -- outputPartitions)
-      .reduceLeftOption(Ordering[String].min)
-    val maxOutputPartitionOpt = outputPartitions.reduceLeftOption(Ordering[String].max)
-
-    for (
-      earliestHole <- earliestHoleOpt;
-      maxOutputPartition <- maxOutputPartitionOpt if maxOutputPartition > earliestHole
-    ) {
+    val earliestHoleOpt = (inputPartitions -- outputPartitions).reduceLeftOption(Ordering[String].min)
+    earliestHoleOpt.foreach { hole =>
+      val toDrop = outputPartitions.filter(_ > hole)
       println(s"""
-                 |Earliest hole at $earliestHole
-                 |In output table $outputTable (max partition: $maxOutputPartition)
-                 |Compared to input table $inputTable
-                 |Dropping table partitions in range: [$earliestHole - $maxOutputPartition] 
+                   |Earliest hole at $hole in output table $outputTable, relative to $inputTable
+                   |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                   |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")} 
           """.stripMargin)
-      dropPartitionRange(outputTable, earliestHole, maxOutputPartition)
+      dropPartitions(outputTable, toDrop.toArray.sorted)
     }
-
     earliestHoleOpt
+  }
+
+  def dropPartitions(tableName: String,
+                     partitions: Seq[String],
+                     partitionColumn: String = Constants.PartitionColumn): Unit = {
+    if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
+      val partitionSpecs =
+        partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
+      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      sql(dropSql)
+    } else {
+      println(s"$tableName doesn't exist, please double check before drop partitions")
+    }
   }
 
   def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {

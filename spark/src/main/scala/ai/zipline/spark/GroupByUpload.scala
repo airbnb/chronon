@@ -3,9 +3,10 @@ package ai.zipline.spark
 import ai.zipline.aggregator.windowing._
 import ai.zipline.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.zipline.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec, GroupBy => GroupByConf}
+import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions.{count, lit, sum}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
@@ -68,6 +69,8 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 
 object GroupByUpload {
   def run(groupByConf: GroupByConf, endDs: String, tableUtilsOpt: Option[TableUtils] = None): Unit = {
+    val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
+    val startTs = System.currentTimeMillis()
     val tableUtils =
       tableUtilsOpt.getOrElse(
         TableUtils(
@@ -107,7 +110,7 @@ object GroupByUpload {
       val fullInputSchema = tableUtils.getSchemaFromTable(streamingSource.table)
       val streamingQuery = groupByConf.buildStreamingQuery
       val inputSchema =
-        if (!Option(streamingSource.query.selects).isDefined) fullInputSchema
+        if (Option(streamingSource.query.selects).isEmpty) fullInputSchema
         else {
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
           StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
@@ -130,6 +133,13 @@ object GroupByUpload {
       .union(metaDf)
       .withColumn("ds", lit(endDs))
       .saveUnPartitioned(groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
+
+    val metricRow =
+      kvDf.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
+    context.gauge("total_key_bytes", metricRow(0).getDouble(0).toLong)
+    context.gauge("total_value_bytes", metricRow(0).getDouble(1).toLong)
+    context.gauge("row_count", metricRow(0).getLong(2))
+    context.gauge("latency_minutes", (System.currentTimeMillis() - startTs) / (60 * 1000))
   }
 
   def main(args: Array[String]): Unit = {

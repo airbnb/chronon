@@ -64,6 +64,7 @@ lazy val online = project
     crossScalaVersions := List("2.11.12", "2.13.6"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+      // statsd 3.0 has local aggregation - TODO: upgrade
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "org.apache.avro" % "avro" % "1.8.0",

@@ -23,9 +23,11 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
     if (!debug) {
       kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
-        Metrics.Egress.reportLatency(System.currentTimeMillis() - ts, metricsContext = context)
-        Metrics.Egress.reportRowCount(context)
-        Metrics.Egress.reportDataSize(putRequest.valueBytes.length + putRequest.keyBytes.length, context)
+        context.histogram("freshness", System.currentTimeMillis() - ts)
+        context.increment("rows")
+        context.increment("value_bytes")
+        context.histogram("value_bytes", putRequest.valueBytes.length)
+        context.histogram("key_bytes", putRequest.keyBytes.length)
       }
     }
   }

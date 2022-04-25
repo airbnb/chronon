@@ -41,7 +41,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
     val result = getConf[Join](s"joins/$name").map(new JoinOps(_))
-    MetadataMetrics.reportJoinConfRequestMetric(System.currentTimeMillis() - startTimeMs, Metrics.Context(join = name))
+    val context =
+      if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
+      else Metrics.Context(Metrics.Environment.JoinFetching, join = name)
+    context.histogram("metadata_latency", System.currentTimeMillis() - startTimeMs)
     result
   })
 
@@ -104,9 +107,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       } else {
         val groupByServingInfo = ThriftJsonCodec
           .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
-        MetadataMetrics.reportJoinConfRequestMetric(
-          System.currentTimeMillis() - startTimeMs,
-          Metrics.Context(groupBy = groupByServingInfo.getGroupBy.getMetaData.getName))
+        Metrics
+          .Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy)
+          .histogram("metadata_latency", System.currentTimeMillis() - startTimeMs)
         Success(new GroupByServingInfoParsed(groupByServingInfo))
       }
     })
