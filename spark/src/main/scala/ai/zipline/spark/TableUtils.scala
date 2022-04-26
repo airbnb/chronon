@@ -56,7 +56,6 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
-                       range: Option[PartitionRange],
                        tableProperties: Map[String, String] = null,
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
@@ -96,7 +95,6 @@ case class TableUtils(sparkSession: SparkSession) {
       println(s"Writing output directly into $tableName with manual repartitioning count of $partCount")
       repartitionAndWrite(dfRearranged, tableName, saveMode, Some(partCount))
     }
-
   }
 
   def sql(query: String): DataFrame = {

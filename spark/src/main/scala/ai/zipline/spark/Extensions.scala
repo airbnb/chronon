@@ -77,7 +77,7 @@ object Extensions {
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
              range: Option[PartitionRange] = None): Unit = {
-      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties, range)
+      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
