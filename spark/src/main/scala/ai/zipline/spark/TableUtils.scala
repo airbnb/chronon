@@ -5,6 +5,8 @@ import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
+import scala.util.Try
 case class TableUtils(sparkSession: SparkSession) {
 
   sparkSession.sparkContext.setLogLevel("ERROR")
@@ -54,6 +56,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
+                       range: Option[PartitionRange],
                        tableProperties: Map[String, String] = null,
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
@@ -81,7 +84,19 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(dfRearranged, tableName, saveMode)
+    val repartition = sparkSession.sparkContext.getConf.get("spark.zipline.output.repartitioning", "disabled")
+    if (repartition == "disabled") {
+      println(s"Writing output directly into $tableName without repartitioning")
+      writePartitionsDirect(dfRearranged, tableName, saveMode)
+    } else if (repartition == "auto") {
+      println(s"Writing output directly into $tableName with automatic repartitioning")
+      repartitionAndWrite(dfRearranged, tableName, saveMode)
+    } else if (repartition.forall(_.isDigit)) {
+      val partCount = repartition.toInt
+      println(s"Writing output directly into $tableName with manual repartitioning count of $partCount")
+      repartitionAndWrite(dfRearranged, tableName, saveMode, Some(partCount))
+    }
+
   }
 
   def sql(query: String): DataFrame = {
@@ -104,31 +119,39 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode)
+    df.write.mode(saveMode).insertInto(tableName)
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    val rowCount = df.count()
-    println(s"$rowCount rows requested to be written into table $tableName")
-    if (rowCount > 0) {
-      // at-least a million rows per partition - or there will be too many files.
-      val rddPartitionCount = math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
-      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+  private def writePartitionsDirect(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    df.write.partitionBy(Constants.PartitionColumn).mode(saveMode).insertInto(tableName)
+  }
 
-      val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
-      val repartitionCols =
-        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-          Seq(Constants.PartitionColumn, saltCol)
-        } else { Seq(saltCol) }
-      saltedDf
-        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
-        .drop(saltCol)
-        .write
-        .mode(saveMode)
-        .insertInto(tableName)
-      println(s"Finished writing to $tableName")
+  private def repartitionAndWrite(df: DataFrame,
+                                  tableName: String,
+                                  saveMode: SaveMode,
+                                  partCount: Option[Int] = None): Unit = {
+    val rddPartitionCount = partCount.getOrElse {
+      val rowCount = df.count()
+      println(s"$rowCount rows requested to be written into table $tableName")
+      math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
     }
+
+    println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+
+    val saltCol = "random_partition_salt"
+    val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+    val repartitionCols =
+      if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+        Seq(Constants.PartitionColumn, saltCol)
+      } else { Seq(saltCol) }
+    saltedDf
+      .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
+      .drop(saltCol)
+      .write
+      .mode(saveMode)
+      .insertInto(tableName)
+    println(s"Finished writing to $tableName")
+
   }
 
   private def createTableSql(tableName: String,
