@@ -62,7 +62,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     _print_highlighted("Using zipline root path", zipline_root)
     zipline_root_path = os.path.expanduser(zipline_root)
     path_split = input_path.split('/')
-    obj_folder_name, team_name = path_split[0], path_split[1]
+    obj_folder_name = path_split[0]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
     full_input_path = os.path.join(zipline_root_path, input_path)
     _print_highlighted(f"Input {obj_folder_name} from", full_input_path)
@@ -80,6 +80,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
     full_output_root = os.path.join(zipline_root_path, output_root)
     teams_path = os.path.join(zipline_root_path, TEAMS_FILE_PATH)
     for name, obj in results.items():
+        team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
             num_written_objs += 1
@@ -103,6 +104,7 @@ def extract_and_convert(zipline_root, input_path, output_root, debug, force_over
         # load materialized joins to validate the additional group_bys against.
         validator.load_objs()
         for name, obj in extra_online_group_bys.items():
+            team_name = name.split(".")[0]
             _set_team_level_metadata(obj, teams_path, team_name)
             if _write_obj(full_output_root, validator, name, obj, log_level, force_compile=True):
                 num_written_group_bys += 1
