@@ -121,7 +121,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   private def writePartitionsDirect(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    df.write.partitionBy(Constants.PartitionColumn).mode(saveMode).insertInto(tableName)
+    df.write.mode(saveMode).insertInto(tableName)
   }
 
   private def repartitionAndWrite(df: DataFrame,
