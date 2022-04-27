@@ -6,9 +6,7 @@ import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
-import scala.util.Try
 case class TableUtils(sparkSession: SparkSession) {
-
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -117,11 +115,11 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    df.write.mode(saveMode).insertInto(tableName)
+    df.coalesce(500).write.mode(saveMode).insertInto(tableName)
   }
 
   private def writePartitionsDirect(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    df.write.mode(saveMode).insertInto(tableName)
+    df.coalesce(500).write.mode(saveMode).insertInto(tableName)
   }
 
   private def repartitionAndWrite(df: DataFrame,
@@ -129,6 +127,7 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   partCount: Option[Int] = None): Unit = {
     val rddPartitionCount = partCount.getOrElse {
+      df.cache()
       val rowCount = df.count()
       println(s"$rowCount rows requested to be written into table $tableName")
       math.min(5000, math.ceil(rowCount / 1000000.0).toInt)
