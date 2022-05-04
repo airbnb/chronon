@@ -75,7 +75,7 @@ class BaseFetcher(kvStore: KVStore,
         case DataModel.Events   => servingInfo.valueAvroCodec
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
-      if (batchBytes == null && (streamingResponses == null || streamingResponses.nonEmpty)) {
+      if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         null
       } else {
         val streamingRows: Iterator[Row] = streamingResponses.iterator
