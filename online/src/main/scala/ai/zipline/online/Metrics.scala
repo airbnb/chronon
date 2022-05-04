@@ -2,7 +2,6 @@ package ai.zipline.online
 
 import ai.zipline.api.Extensions._
 import ai.zipline.api.{Accuracy, GroupBy, Join, JoinPart, StagingQuery}
-import ai.zipline.online.KVStore.TimedValue
 import com.timgroup.statsd.NonBlockingStatsDClient
 
 object Metrics {
@@ -86,9 +85,7 @@ object Metrics {
 
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
-        println(s"""Building new stats cache for ${ctx.toString}
-                   |""".stripMargin)
-
+        println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
         new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
                                     "localhost",

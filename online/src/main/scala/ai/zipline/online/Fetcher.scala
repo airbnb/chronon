@@ -114,7 +114,7 @@ class BaseFetcher(kvStore: KVStore,
                                 groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
-      println(s"""$name's value's batch timestamp of ${batchEndTs} is
+      println(s"""$name's value's batch timestamp of $batchEndTs is
            |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
            |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
@@ -132,20 +132,11 @@ class BaseFetcher(kvStore: KVStore,
     }
   }
 
-  private val GlobalGroupByContext = Metrics.Context(environment = Metrics.Environment.GroupByFetching,
-                                                     join = "overall",
-                                                     groupBy = "overall",
-                                                     team = "overall")
-  private val GlobalJoinContext = Metrics.Context(environment = Metrics.Environment.JoinFetching,
-                                                  join = "overall",
-                                                  groupBy = "overall",
-                                                  team = "overall")
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    GlobalGroupByContext.increment(Metrics.Name.RequestCount)
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
@@ -193,19 +184,21 @@ class BaseFetcher(kvStore: KVStore,
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     kvResponseFuture
       .map { kvResponses: Seq[GetResponse] =>
+        val multiGetMillis = System.currentTimeMillis() - startTimeMs
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = kvResponses.map { response =>
           response.request -> response.values
         }.toMap
-        val multiGetMillis = System.currentTimeMillis() - startTimeMs
         val totalResponseValueBytes =
           responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(_.bytes.length)).sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
-              context.histogram("multiget.bytes", totalResponseValueBytes)
-              context.histogram("multiget.response.length", kvResponses.length)
-              context.histogram("multiget.latency.millis", multiGetMillis)
+              context.increment("request.count")
+              context.count("multi_get.batch.size", allRequests.length)
+              context.histogram("multi_get.bytes", totalResponseValueBytes)
+              context.histogram("multi_get.response.length", kvResponses.length)
+              context.histogram("multi_get.latency.millis", multiGetMillis)
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
                 .getOrElse(batchRequest,
@@ -231,6 +224,7 @@ class BaseFetcher(kvStore: KVStore,
                   throw ex
               }
             }
+
             Response(request, responseMapTry)
         }.toList
         responses
@@ -327,11 +321,14 @@ class BaseFetcher(kvStore: KVStore,
             }
             joinValuesTry match {
               case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
-              case Success(responseMap) => {
-                joinRequest.context.map { ctx =>
+              case Success(responseMap) =>
+                joinRequest.context.foreach { ctx =>
                   ctx.histogram("response.keys.count", responseMap.size)
                 }
-              }
+            }
+            joinRequest.context.foreach { ctx =>
+              ctx.histogram("response.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.increment("join.request.count")
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq
