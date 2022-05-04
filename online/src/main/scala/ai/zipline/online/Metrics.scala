@@ -38,6 +38,7 @@ object Metrics {
 
     val PartitionCount = "partition.count"
     val RowCount = "row.count"
+    val RequestCount = "request.count"
 
     val Bytes = "bytes"
     val KeyBytes = "key.bytes"

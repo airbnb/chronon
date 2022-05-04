@@ -102,8 +102,6 @@ class BaseFetcher(kvStore: KVStore,
     context.histogram(Name.RowCount, response.length)
     context.histogram(Name.Bytes, responseBytes)
     context.histogram(Name.FreshnessMillis, startTsMillis - latestResponseTs)
-    context.histogram("total_size.bytes", totalResponseBytes)
-    context.histogram("total_latency.millis", latencyMillis)
     context.histogram("attributed_latency.millis",
                       (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
@@ -130,12 +128,14 @@ class BaseFetcher(kvStore: KVStore,
     }
   }
 
+  private val GlobalGroupByContext = Metrics.Context(environment = Metrics.Environment.GroupByFetching, join= "overall", groupBy = "overall", team = "overall")
+  private val GlobalJoinContext = Metrics.Context(environment = Metrics.Environment.JoinFetching, join= "overall", groupBy = "overall", team = "overall")
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-
+    GlobalGroupByContext.increment(Metrics.Name.RequestCount)
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
@@ -193,6 +193,8 @@ class BaseFetcher(kvStore: KVStore,
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
+              context.histogram("multiget.bytes", totalResponseValueBytes)
+              context.histogram("multiget.response.length", kvResponses.length)
               context.histogram("multiget.latency.millis", multiGetMillis)
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
@@ -315,7 +317,11 @@ class BaseFetcher(kvStore: KVStore,
             }
             joinValuesTry match {
               case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
-              case _           => ()
+              case Success(responseMap) => {
+                joinRequest.context.map{ctx =>
+                  ctx.histogram("response.keys.count", )
+                }
+              }
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq

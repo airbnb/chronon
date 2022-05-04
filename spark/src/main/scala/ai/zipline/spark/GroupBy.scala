@@ -141,14 +141,18 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
     val timeBasedPartitionColumn = "ds_of_ts"
     val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(timeBasedPartitionColumn)
+
     val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
+    val timeBasedPartitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(timeBasedPartitionColumn)
+    val timeIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.TimeColumn)
+    val partitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.PartitionColumn)
 
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
       .map { row =>
-        val ts = row.getAs[Long](Constants.TimeColumn)
-        val partition = row.getAs[String](Constants.PartitionColumn)
+        val ts = row.getLong(timeIndex)
+        val partition = row.getString(partitionIndex)
         (
-          (queriesKeyHashFx(row), row.getAs[String](timeBasedPartitionColumn)),
+          (queriesKeyHashFx(row), row.getString(timeBasedPartitionIndex)),
           TimeTuple.make(ts, partition)
         )
       }
@@ -163,15 +167,17 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val expandedInputDf = inputDf
       .withShiftedPartition(shiftedColumnName)
       .withPartitionBasedTimestamp(shiftedColumnNameTs, shiftedColumnName)
+    val shiftedColumnIndex = expandedInputDf.schema.fieldIndex(shiftedColumnName)
+    val shiftedColumnIndexTs = expandedInputDf.schema.fieldIndex(shiftedColumnNameTs)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
       new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(row.getAs[Long](shiftedColumnNameTs), ir, Conversions.toZiplineRow(row, tsIndex))
+      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toZiplineRow(row, tsIndex))
       ir
     }
     val snapshotByKeys = expandedInputDf.rdd
-      .keyBy(row => (snapshotKeyHashFx(row), row.getAs[String](shiftedColumnName)))
+      .keyBy(row => (snapshotKeyHashFx(row), row.getString(shiftedColumnIndex)))
       .aggregateByKey(sawtoothAggregator.init)(seqOp = updateFunc, combOp = sawtoothAggregator.merge)
       .mapValues(sawtoothAggregator.finalizeSnapshot)
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
@@ -179,10 +185,11 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
     val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
+    val mutationPartitionIndex = mutationDf.schema.fieldIndex(Constants.PartitionColumn)
     val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = mutationDf.rdd
       .map { row =>
         (
-          (mutationsHashFx(row), row.getAs[String](Constants.PartitionColumn)),
+          (mutationsHashFx(row), row.getString(mutationPartitionIndex)),
           row
         )
       }
@@ -251,7 +258,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
       .groupByKey()
       .mapValues { _.toArray.uniqSort(TimeTuple) }
     // uniqSort to produce one row per key
-    // otherwise we the mega-join will produce square number of rows.
+    // otherwise the mega-join will produce square number of rows.
 
     val sawtoothAggregator =
       new SawtoothAggregator(aggregations, selectedSchema, resolution)
