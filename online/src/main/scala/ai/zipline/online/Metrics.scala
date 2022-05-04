@@ -86,9 +86,7 @@ object Metrics {
 
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
-        println(s"""Building new stats cache for: Join(${ctx.join}), GroupByJoin(${ctx.groupBy}) 
-                   |hash: ${ctx.hashCode()}
-                   |context $ctx
+        println(s"""Building new stats cache for ${ctx.toString}
                    |""".stripMargin)
 
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")

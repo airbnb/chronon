@@ -47,10 +47,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    // team name is assigned at the materialize step
-    val team =
-      if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
-    val fullPrefix = (Option(joinPart.prefix) ++ team ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
+    val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
     val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,

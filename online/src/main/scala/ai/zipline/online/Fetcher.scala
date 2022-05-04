@@ -75,17 +75,21 @@ class BaseFetcher(kvStore: KVStore,
         case DataModel.Events   => servingInfo.valueAvroCodec
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
-      val streamingRows: Iterator[Row] = streamingResponses.iterator
-        .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-        .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-      reportKvResponse(context.withSuffix("streaming"),
-                       streamingResponses,
-                       startTimeMs,
-                       overallLatency,
-                       totalResponseValueBytes)
-      val batchIr = toBatchIr(batchBytes, servingInfo)
-      val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
-      servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+      if (batchBytes == null && (streamingResponses == null || streamingResponses.nonEmpty)) {
+        null
+      } else {
+        val streamingRows: Iterator[Row] = streamingResponses.iterator
+          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+          .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+        reportKvResponse(context.withSuffix("streaming"),
+                         streamingResponses,
+                         startTimeMs,
+                         overallLatency,
+                         totalResponseValueBytes)
+        val batchIr = toBatchIr(batchBytes, servingInfo)
+        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
+        servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+      }
     }
     context.histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     responseMap
@@ -128,8 +132,14 @@ class BaseFetcher(kvStore: KVStore,
     }
   }
 
-  private val GlobalGroupByContext = Metrics.Context(environment = Metrics.Environment.GroupByFetching, join= "overall", groupBy = "overall", team = "overall")
-  private val GlobalJoinContext = Metrics.Context(environment = Metrics.Environment.JoinFetching, join= "overall", groupBy = "overall", team = "overall")
+  private val GlobalGroupByContext = Metrics.Context(environment = Metrics.Environment.GroupByFetching,
+                                                     join = "overall",
+                                                     groupBy = "overall",
+                                                     team = "overall")
+  private val GlobalJoinContext = Metrics.Context(environment = Metrics.Environment.JoinFetching,
+                                                  join = "overall",
+                                                  groupBy = "overall",
+                                                  team = "overall")
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
@@ -318,8 +328,8 @@ class BaseFetcher(kvStore: KVStore,
             joinValuesTry match {
               case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
               case Success(responseMap) => {
-                joinRequest.context.map{ctx =>
-                  ctx.histogram("response.keys.count", )
+                joinRequest.context.map { ctx =>
+                  ctx.histogram("response.keys.count", responseMap.size)
                 }
               }
             }
