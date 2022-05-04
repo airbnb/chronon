@@ -209,7 +209,7 @@ class JoinTest {
       sources = Seq(weightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
-      metaData = Builders.MetaData(name = "unit_test.country_weights", namespace = namespace, team = "team_a")
+      metaData = Builders.MetaData(name = "unit_test.country_weights", namespace = namespace)
     )
 
     val heightSchema = List(
@@ -228,7 +228,7 @@ class JoinTest {
       sources = Seq(heightSource),
       keyColumns = Seq("country"),
       aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
-      metaData = Builders.MetaData(name = "unit_test.country_heights", namespace = namespace, team = "team_b")
+      metaData = Builders.MetaData(name = "unit_test.country_heights", namespace = namespace)
     )
 
     // left side
@@ -252,21 +252,21 @@ class JoinTest {
     |   grouped_weights AS (
     |      SELECT country,
     |             ds,
-    |             avg(weight) as team_a_unit_test_country_weights_weight_average
+    |             avg(weight) as unit_test_country_weights_weight_average
     |      FROM $weightTable
     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
     |      GROUP BY country, ds),
     |   grouped_heights AS (
     |      SELECT country,
     |             ds,
-    |             avg(height) as team_b_unit_test_country_heights_height_average
+    |             avg(height) as unit_test_country_heights_height_average
     |      FROM $heightTable
     |      WHERE ds >= '$monthAgo'
     |      GROUP BY country, ds)
     |   SELECT countries.country,
     |        countries.ds,
-    |        grouped_weights.team_a_unit_test_country_weights_weight_average,
-    |        grouped_heights.team_b_unit_test_country_heights_height_average
+    |        grouped_weights.unit_test_country_weights_weight_average,
+    |        grouped_heights.unit_test_country_heights_height_average
     | FROM countries left outer join grouped_weights
     | ON countries.country = grouped_weights.country
     | AND countries.ds = grouped_weights.ds
@@ -329,7 +329,7 @@ class JoinTest {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "team_a"),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -358,7 +358,7 @@ class JoinTest {
                                 | SELECT queries.item,
                                 |        queries.ts,
                                 |        queries.ds,
-                                |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_team_a_unit_test_item_views_time_spent_ms_average
+                                |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
                                 | FROM queries left outer join $viewsTable
                                 |  ON queries.item = $viewsTable.item
                                 | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
