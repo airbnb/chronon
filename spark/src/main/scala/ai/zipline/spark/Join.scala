@@ -7,6 +7,7 @@ import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.approx_count_distinct
 import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
@@ -162,7 +163,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     }
     val leftDfCount = leftTaggedDf.count()
     val leftBlooms = joinConf.leftKeyCols.par.map { key =>
-      key -> leftTaggedDf.generateBloomFilter(key, leftDfCount)
+      key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
     }.toMap
 
     // compute joinParts in parallel

@@ -7,7 +7,15 @@ import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
-import org.apache.spark.sql.functions.{date_add, date_format, desc, from_unixtime, udf, unix_timestamp}
+import org.apache.spark.sql.functions.{
+  approx_count_distinct,
+  date_add,
+  date_format,
+  desc,
+  from_unixtime,
+  udf,
+  unix_timestamp
+}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
@@ -118,10 +126,29 @@ object Extensions {
     // numBits(m) = - n * log(e) / lg(2) * lg(2) = 2.08*n => 2e9 bits = 256MB
     // hashes = numBits * lg(2)/ n = 1.44~2
     // so each column bloom take 256MB on driver
-    def generateBloomFilter(col: String, count: Long, fpp: Double = 0.1): BloomFilter =
-      df.filter(df.col(col).isNotNull)
+    def generateBloomFilter(col: String,
+                            totalCount: Long,
+                            tableName: String,
+                            partitionRange: PartitionRange,
+                            fpp: Double = 0.03): BloomFilter = {
+      val approxCount =
+        df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
+      println(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
+           | Approximate distinct count of `$col`: $approxCount
+           | Total count of rows: $totalCount
+           |""".stripMargin)
+      val bloomFilter = df
+        .filter(df.col(col).isNotNull)
         .stat
-        .bloomFilter(col, count, fpp)
+        .bloomFilter(col, approxCount, fpp)
+      println(s"""
+           | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
+           | Approximate distinct count of `$col`: $approxCount
+           | Total count of rows: $totalCount
+           | BloomSize in bits: ${bloomFilter.bitSize()}
+           |""".stripMargin)
+      bloomFilter
+    }
 
     def removeNulls(cols: Seq[String]): DataFrame = {
       println(s"filtering nulls from columns: [${cols.mkString(", ")}]")

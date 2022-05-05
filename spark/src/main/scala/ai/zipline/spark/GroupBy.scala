@@ -22,7 +22,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
-import java.time.temporal.Temporal
 import java.util
 import scala.collection.JavaConverters._
 
