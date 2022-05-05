@@ -128,14 +128,14 @@ class GroupBy(val aggregations: Seq[Aggregation],
     toDf(snapshotEventsBase(partitionRange), Seq((Constants.PartitionColumn, StringType)))
 
   /**
-    * Support for entities mutations.
+    * Support for entities with mutations.
     * Three way join between:
     *   Queries: grouped by key and dsOf[ts]
     *   Snapshot[InputDf]: Grouped by key and ds providing a FinalBatchIR to be extended.
     *   Mutations[MutationDf]: Grouped by key and dsOf[MutationTs] providing an array of updates/deletes to be done
     * With this process the components (end of day batchIr + day's mutations + day's queries -> output)
     */
-  def entitiesMutations(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
+  def temporalEntities(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
     // Add extra column to the queries and generate the key hash.
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
@@ -194,8 +194,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
         )
       }
       .groupByKey()
-      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)))
-      .mapValues(_.toArray.sortWith(_.ts < _.ts).toIterator)
+      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toArray
+        .sortWith(_.ts < _.ts)
+        .toIterator)
 
     // Having the final IR of previous day + mutations (if any), build the array of finalized IR for each query.
     val queryValuesRDD = queriesByKeys
@@ -384,12 +385,7 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val processedInputDf = bloomMapOpt
-      .map { bloomMap =>
-        val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-        bloomFilteredDf
-      }
-      .getOrElse { skewFilteredDf }
+    val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
     val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
@@ -399,8 +395,8 @@ object GroupBy {
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
-        mutationSources
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+        val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(_,
                                   groupByConf.getKeyColumns.asScala,
@@ -410,13 +406,16 @@ object GroupBy {
                                   groupByConf.inferredAccuracy,
                                   mutations = true)
           }
-          .map { tableUtils.sql }
+          .map {
+            tableUtils.sql
+          }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
           }
           .selectExpr(mutationsColumnOrder: _*)
-      else null
+        bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
+      } else null
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
                 keyColumns,
