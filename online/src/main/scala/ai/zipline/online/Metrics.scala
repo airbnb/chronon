@@ -32,6 +32,7 @@ object Metrics {
 
   object Name {
     val FreshnessMillis = "freshness.millis"
+    val FreshnessMinutes = "freshness.minutes"
     val LatencyMillis = "latency.millis"
     val LatencyMinutes = "latency.minutes"
 

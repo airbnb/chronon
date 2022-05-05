@@ -146,6 +146,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val timeIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.TimeColumn)
     val partitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.PartitionColumn)
 
+    // queries by key & ds_of_ts
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
       .map { row =>
         val ts = row.getLong(timeIndex)
@@ -175,17 +176,22 @@ class GroupBy(val aggregations: Seq[Aggregation],
       sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toZiplineRow(row, tsIndex))
       ir
     }
+
+    // end of day IR
     val snapshotByKeys = expandedInputDf.rdd
       .keyBy(row => (snapshotKeyHashFx(row), row.getString(shiftedColumnIndex)))
       .aggregateByKey(sawtoothAggregator.init)(seqOp = updateFunc, combOp = sawtoothAggregator.merge)
       .mapValues(sawtoothAggregator.finalizeSnapshot)
+
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
     val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
     val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
     val mutationPartitionIndex = mutationDf.schema.fieldIndex(Constants.PartitionColumn)
-    val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = mutationDf.rdd
+
+    //mutations by ds, sorted
+    val mutationsByKeys: RDD[((KeyWithHash, String), Array[ZRow])] = mutationDf.rdd
       .map { row =>
         (
           (mutationsHashFx(row), row.getString(mutationPartitionIndex)),
@@ -193,9 +199,9 @@ class GroupBy(val aggregations: Seq[Aggregation],
         )
       }
       .groupByKey()
-      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toArray
+      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
         .sortWith(_.ts < _.ts)
-        .toIterator)
+        .toArray)
 
     // Having the final IR of previous day + mutations (if any), build the array of finalized IR for each query.
     val queryValuesRDD = queriesByKeys
@@ -209,8 +215,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
           val irs = sawtoothAggregator.lambdaAggregateIrMany(Constants.Partition.epochMillis(ds),
                                                              finalizedEodIr,
                                                              dayMutations.orNull,
-                                                             sortedQueries,
-                                                             true)
+                                                             sortedQueries)
           ((keyWithHash, ds), (timeQueries, sortedQueries.indices.map(i => normalizeOrFinalize(irs(i)))))
       }
 

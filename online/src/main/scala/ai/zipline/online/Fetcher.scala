@@ -91,7 +91,7 @@ class BaseFetcher(kvStore: KVStore,
         servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
-    context.histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
+    context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
     responseMap
   }
 
@@ -100,12 +100,15 @@ class BaseFetcher(kvStore: KVStore,
                        startTsMillis: Long,
                        latencyMillis: Long,
                        totalResponseBytes: Int): Unit = {
-    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _).getOrElse(startTsMillis)
+    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _)
     val responseBytes = response.iterator.map(_.bytes.length).sum
     val context = ctx.withSuffix("response")
     context.histogram(Name.RowCount, response.length)
     context.histogram(Name.Bytes, responseBytes)
-    context.histogram(Name.FreshnessMillis, startTsMillis - latestResponseTs)
+    latestResponseTs.foreach { ts =>
+      context.histogram(Name.FreshnessMillis, startTsMillis - ts)
+      context.histogram(Name.FreshnessMinutes, (startTsMillis - ts) / 60000)
+    }
     context.histogram("attributed_latency.millis",
                       (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
@@ -143,10 +146,13 @@ class BaseFetcher(kvStore: KVStore,
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
+          context.increment("group_by_request.count")
           var keyBytes: Array[Byte] = null
           try {
             keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
           } catch {
+            // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
+            // TODO: Remove this code block
             case ex: Exception =>
               val castedKeys = groupByServingInfo.keyZiplineSchema.fields.map {
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
@@ -172,6 +178,9 @@ class BaseFetcher(kvStore: KVStore,
           }
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
         }
+      if (groupByRequestMetaTry.isFailure) {
+        request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+      }
       request -> groupByRequestMetaTry
     }.toSeq
     val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
@@ -194,7 +203,6 @@ class BaseFetcher(kvStore: KVStore,
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
-              context.increment("request.count")
               context.count("multi_get.batch.size", allRequests.length)
               context.histogram("multi_get.bytes", totalResponseValueBytes)
               context.histogram("multi_get.response.length", kvResponses.length)
@@ -263,6 +271,7 @@ class BaseFetcher(kvStore: KVStore,
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
+          joinContext.get.increment("join_request.count")
           join.joinPartOps.map { part =>
             val joinContextInner = Metrics.Context(joinContext.get, part)
             val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
@@ -327,8 +336,8 @@ class BaseFetcher(kvStore: KVStore,
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("response.latency.millis", System.currentTimeMillis() - startTimeMs)
-              ctx.increment("join.request.count")
+              ctx.histogram("overall.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.increment("overall.request.count")
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq
