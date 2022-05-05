@@ -167,8 +167,6 @@ class GroupBy(val aggregations: Seq[Aggregation],
             keyColumns :+ dsJoinColumn,
             "leftsemi"
       ) // Join to reduce input. Only aggregate what's needed
-    expandedInputDf.printSchema()
-    inputDf.printSchema()
     val expandedTsIndex = expandedInputDf.schema.fieldIndex(Constants.TimeColumn)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
