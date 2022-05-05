@@ -139,8 +139,8 @@ class GroupBy(val aggregations: Seq[Aggregation],
 
     // Add extra column to the queries and generate the key hash.
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
-    val timeBasedPartitionColumn = "ds_of_ts"
-    val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(timeBasedPartitionColumn)
+    val dsJoinColumn = "effective_ds"
+    val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(dsJoinColumn)
     val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
 
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
@@ -148,7 +148,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
         val ts = row.getAs[Long](Constants.TimeColumn)
         val partition = row.getAs[String](Constants.PartitionColumn)
         (
-          (queriesKeyHashFx(row), row.getAs[String](timeBasedPartitionColumn)),
+          (queriesKeyHashFx(row), row.getAs[String](dsJoinColumn)),
           TimeTuple.make(ts, partition)
         )
       }
@@ -158,31 +158,45 @@ class GroupBy(val aggregations: Seq[Aggregation],
     // Snapshot data needs to be shifted. We need to extract the end state of the IR by EOD before mutations.
     // Since partition data for <ds> contains all history up to and including <ds>, we need to join with the previous ds.
     // This is the same as the code for snapshot entities. Define behavior for aggregateByKey.
-    val shiftedColumnName = "end_of_day_ds"
     val shiftedColumnNameTs = "end_of_day_ts"
     val expandedInputDf = inputDf
-      .withShiftedPartition(shiftedColumnName)
-      .withPartitionBasedTimestamp(shiftedColumnNameTs, shiftedColumnName)
+      .withShiftedPartition(dsJoinColumn)
+      .withPartitionBasedTimestamp(shiftedColumnNameTs, dsJoinColumn)
+      .alias("input")
+      .join(queriesWithTimeBasedPartition,
+            keyColumns :+ dsJoinColumn,
+            "leftsemi"
+      ) // Join to reduce input. Only aggregate what's needed
+    expandedInputDf.printSchema()
+    inputDf.printSchema()
+    val expandedTsIndex = expandedInputDf.schema.fieldIndex(Constants.TimeColumn)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
       new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(row.getAs[Long](shiftedColumnNameTs), ir, Conversions.toZiplineRow(row, tsIndex))
+      sawtoothAggregator.update(row.getAs[Long](shiftedColumnNameTs),
+                                ir,
+                                Conversions.toZiplineRow(row, expandedTsIndex))
       ir
     }
+
     val snapshotByKeys = expandedInputDf.rdd
-      .keyBy(row => (snapshotKeyHashFx(row), row.getAs[String](shiftedColumnName)))
+      .keyBy(row => (snapshotKeyHashFx(row), row.getAs[String](dsJoinColumn)))
       .aggregateByKey(sawtoothAggregator.init)(seqOp = updateFunc, combOp = sawtoothAggregator.merge)
       .mapValues(sawtoothAggregator.finalizeSnapshot)
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
-    val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
-    val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
-    val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
-    val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
-    val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = mutationDf.rdd
+    val reducedMutationDf = mutationDf
+      .withShiftedPartition(dsJoinColumn, 0)
+      .alias("mutation")
+      .join(queriesWithTimeBasedPartition, keyColumns :+ dsJoinColumn, "leftsemi")
+    val mutationsTsIndex = reducedMutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
+    val mTsIndex = reducedMutationDf.schema.fieldIndex(Constants.TimeColumn)
+    val mutationsReversalIndex = reducedMutationDf.schema.fieldIndex(Constants.ReversalColumn)
+    val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, reducedMutationDf.schema)
+    val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = reducedMutationDf.rdd
       .map { row =>
         (
-          (mutationsHashFx(row), row.getAs[String](Constants.PartitionColumn)),
+          (mutationsHashFx(row), row.getAs[String](dsJoinColumn)),
           row
         )
       }
