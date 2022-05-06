@@ -29,8 +29,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
   val hopsAggregator = new HopsAggregatorBase(aggregations, inputSchema, resolution)
 
   def batchIrSchema: Array[(String, DataType)] = {
-    val collapsedSchema = windowedAggregator.irSchema
-    val hopFields = baseAggregator.irSchema :+ ("ts", LongType)
+    val collapsedSchema = windowedAggregator.irSchema.map { case (a, b) => a + "Collapsed" -> b }
+    val hopFields = (baseAggregator.irSchema :+ ("ts", LongType)).map { case (a, b) => a + "TailHop" -> b }
     Array("collapsedIr" -> StructType.from("WindowedIr", collapsedSchema),
           "tailHopIrs" -> ListType(ListType(StructType.from("HopIr", hopFields))))
   }
