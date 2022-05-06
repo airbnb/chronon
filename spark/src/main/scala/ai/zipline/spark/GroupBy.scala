@@ -200,7 +200,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
       }
       .groupByKey()
       .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
-        .sortWith(_.ts < _.ts)
+        .sortWith(_.mutationTs < _.mutationTs)
         .toArray)
 
     // Having the final IR of previous day + mutations (if any), build the array of finalized IR for each query.

@@ -55,7 +55,7 @@ class BaseFetcher(kvStore: KVStore,
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
     batchResponsesTry.map {
-      reportKvResponse(context.withSuffix("batch"), _, startTimeMs, overallLatency, totalResponseValueBytes)
+      reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
     }
     // bulk upload didn't remove an older batch value - so we manually discard
     val batchBytes: Array[Byte] = batchResponsesTry
@@ -83,7 +83,7 @@ class BaseFetcher(kvStore: KVStore,
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
-                         startTimeMs,
+                         queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
@@ -97,7 +97,7 @@ class BaseFetcher(kvStore: KVStore,
 
   def reportKvResponse(ctx: Metrics.Context,
                        response: Seq[TimedValue],
-                       startTsMillis: Long,
+                       queryTsMillis: Long,
                        latencyMillis: Long,
                        totalResponseBytes: Int): Unit = {
     val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _)
@@ -106,8 +106,8 @@ class BaseFetcher(kvStore: KVStore,
     context.histogram(Name.RowCount, response.length)
     context.histogram(Name.Bytes, responseBytes)
     latestResponseTs.foreach { ts =>
-      context.histogram(Name.FreshnessMillis, startTsMillis - ts)
-      context.histogram(Name.FreshnessMinutes, (startTsMillis - ts) / 60000)
+      context.histogram(Name.FreshnessMillis, queryTsMillis - ts)
+      context.histogram(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
     }
     context.histogram("attributed_latency.millis",
                       (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
