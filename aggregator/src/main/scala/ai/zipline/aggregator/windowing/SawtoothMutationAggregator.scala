@@ -127,28 +127,31 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     */
   def lambdaAggregateIrMany(batchEndTs: Long,
                             finalBatchIr: FinalBatchIr,
-                            sortedInputs: Iterator[Row],
-                            sortedEndTimes: Array[Long],
-                            hasReversal: Boolean = false): Array[Array[Any]] = {
+                            sortedInputs: Array[Row],
+                            sortedEndTimes: Array[Long]): Array[Array[Any]] = {
     if (sortedEndTimes == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(finalizeSnapshot(init))
-    val result = Array.fill[Array[Any]](sortedEndTimes.length)(windowedAggregator.clone(batchIr.collapsed))
-    // Early exit. No mutations, no snapshot data.
-    if (finalBatchIr == null && sortedInputs == null) return result
-    val headRows = Option(sortedInputs).getOrElse(Array.empty[Row].iterator)
-    // Go through mutations as they come. Then update all the aggregators that are in row.ts
-    while (headRows.hasNext) {
-      val row = headRows.next()
-      val mutationTs = row.mutationTs
-      var i: Int = 0
-      while (i < sortedEndTimes.length) {
-        val queryTs = sortedEndTimes(i)
-        // Since mutationTs is always after rowTs then mutationTs before queryTs implies rowTs before query Ts as well
-        if (batchEndTs <= mutationTs && mutationTs < queryTs) {
-          updateIr(result(i), row, queryTs, hasReversal)
-        }
-        i += 1
+    val result = Array.fill[Array[Any]](sortedEndTimes.length)(null)
+    // single-pass two cursors across sorted queries & sorted inputs
+    var queryIdx = 0
+    var inputIdx = 0
+
+    var cumulatedIr = windowedAggregator.clone(batchIr.collapsed)
+    val inputLength = if (sortedInputs == null) 0 else sortedInputs.length
+
+    // forward scan inputIdx until mutationTs becomes relevant
+    while (inputIdx < inputLength && batchEndTs > sortedInputs(inputIdx).mutationTs) { inputIdx += 1 }
+
+    while (queryIdx < sortedEndTimes.length) {
+      val queryTs = sortedEndTimes(queryIdx)
+      while (inputIdx < inputLength && sortedInputs(inputIdx).mutationTs < queryTs) {
+        val row = sortedInputs(inputIdx)
+        updateIr(cumulatedIr, row, queryTs, true)
+        inputIdx += 1
       }
+      result.update(queryIdx, cumulatedIr)
+      cumulatedIr = windowedAggregator.clone(cumulatedIr)
+      queryIdx += 1
     }
 
     // Tail hops contain the window information that needs to be merged to the result.

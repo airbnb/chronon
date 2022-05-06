@@ -22,7 +22,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
-import java.time.temporal.Temporal
 import java.util
 import scala.collection.JavaConverters._
 
@@ -128,27 +127,32 @@ class GroupBy(val aggregations: Seq[Aggregation],
     toDf(snapshotEventsBase(partitionRange), Seq((Constants.PartitionColumn, StringType)))
 
   /**
-    * Support for entities mutations.
+    * Support for entities with mutations.
     * Three way join between:
     *   Queries: grouped by key and dsOf[ts]
     *   Snapshot[InputDf]: Grouped by key and ds providing a FinalBatchIR to be extended.
     *   Mutations[MutationDf]: Grouped by key and dsOf[MutationTs] providing an array of updates/deletes to be done
     * With this process the components (end of day batchIr + day's mutations + day's queries -> output)
     */
-  def entitiesMutations(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
+  def temporalEntities(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
     // Add extra column to the queries and generate the key hash.
     val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
     val timeBasedPartitionColumn = "ds_of_ts"
     val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(timeBasedPartitionColumn)
-    val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
 
+    val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
+    val timeBasedPartitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(timeBasedPartitionColumn)
+    val timeIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.TimeColumn)
+    val partitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.PartitionColumn)
+
+    // queries by key & ds_of_ts
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
       .map { row =>
-        val ts = row.getAs[Long](Constants.TimeColumn)
-        val partition = row.getAs[String](Constants.PartitionColumn)
+        val ts = row.getLong(timeIndex)
+        val partition = row.getString(partitionIndex)
         (
-          (queriesKeyHashFx(row), row.getAs[String](timeBasedPartitionColumn)),
+          (queriesKeyHashFx(row), row.getString(timeBasedPartitionIndex)),
           TimeTuple.make(ts, partition)
         )
       }
@@ -163,32 +167,41 @@ class GroupBy(val aggregations: Seq[Aggregation],
     val expandedInputDf = inputDf
       .withShiftedPartition(shiftedColumnName)
       .withPartitionBasedTimestamp(shiftedColumnNameTs, shiftedColumnName)
+    val shiftedColumnIndex = expandedInputDf.schema.fieldIndex(shiftedColumnName)
+    val shiftedColumnIndexTs = expandedInputDf.schema.fieldIndex(shiftedColumnNameTs)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
       new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(row.getAs[Long](shiftedColumnNameTs), ir, Conversions.toZiplineRow(row, tsIndex))
+      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toZiplineRow(row, tsIndex))
       ir
     }
+
+    // end of day IR
     val snapshotByKeys = expandedInputDf.rdd
-      .keyBy(row => (snapshotKeyHashFx(row), row.getAs[String](shiftedColumnName)))
+      .keyBy(row => (snapshotKeyHashFx(row), row.getString(shiftedColumnIndex)))
       .aggregateByKey(sawtoothAggregator.init)(seqOp = updateFunc, combOp = sawtoothAggregator.merge)
       .mapValues(sawtoothAggregator.finalizeSnapshot)
+
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
     val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
     val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
-    val mutationsByKeys: RDD[((KeyWithHash, String), Iterator[ZRow])] = mutationDf.rdd
+    val mutationPartitionIndex = mutationDf.schema.fieldIndex(Constants.PartitionColumn)
+
+    //mutations by ds, sorted
+    val mutationsByKeys: RDD[((KeyWithHash, String), Array[ZRow])] = mutationDf.rdd
       .map { row =>
         (
-          (mutationsHashFx(row), row.getAs[String](Constants.PartitionColumn)),
+          (mutationsHashFx(row), row.getString(mutationPartitionIndex)),
           row
         )
       }
       .groupByKey()
-      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)))
-      .mapValues(_.toArray.sortWith(_.ts < _.ts).toIterator)
+      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
+        .sortWith(_.mutationTs < _.mutationTs)
+        .toArray)
 
     // Having the final IR of previous day + mutations (if any), build the array of finalized IR for each query.
     val queryValuesRDD = queriesByKeys
@@ -202,8 +215,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
           val irs = sawtoothAggregator.lambdaAggregateIrMany(Constants.Partition.epochMillis(ds),
                                                              finalizedEodIr,
                                                              dayMutations.orNull,
-                                                             sortedQueries,
-                                                             true)
+                                                             sortedQueries)
           ((keyWithHash, ds), (timeQueries, sortedQueries.indices.map(i => normalizeOrFinalize(irs(i)))))
       }
 
@@ -251,7 +263,7 @@ class GroupBy(val aggregations: Seq[Aggregation],
       .groupByKey()
       .mapValues { _.toArray.uniqSort(TimeTuple) }
     // uniqSort to produce one row per key
-    // otherwise we the mega-join will produce square number of rows.
+    // otherwise the mega-join will produce square number of rows.
 
     val sawtoothAggregator =
       new SawtoothAggregator(aggregations, selectedSchema, resolution)
@@ -377,12 +389,7 @@ object GroupBy {
       }
       .getOrElse(inputDf)
 
-    val processedInputDf = bloomMapOpt
-      .map { bloomMap =>
-        val bloomFilteredDf = skewFilteredDf.filterBloom(bloomMap)
-        bloomFilteredDf
-      }
-      .getOrElse { skewFilteredDf }
+    val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
     val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
@@ -392,8 +399,8 @@ object GroupBy {
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty)
-        mutationSources
+      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+        val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(_,
                                   groupByConf.getKeyColumns.asScala,
@@ -403,13 +410,16 @@ object GroupBy {
                                   groupByConf.inferredAccuracy,
                                   mutations = true)
           }
-          .map { tableUtils.sql }
+          .map {
+            tableUtils.sql
+          }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
           }
           .selectExpr(mutationsColumnOrder: _*)
-      else null
+        bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
+      } else null
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
                 keyColumns,
