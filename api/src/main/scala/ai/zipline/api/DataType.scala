@@ -82,6 +82,7 @@ case class StructType(name: String, fields: Array[StructField]) extends DataType
   override def length: Int = fields.length
 
   override def iterator: Iterator[StructField] = fields.iterator
+  override def stringPrefix: String = "StructType"
 }
 
 object StructType {
