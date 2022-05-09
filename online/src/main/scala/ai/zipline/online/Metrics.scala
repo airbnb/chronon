@@ -125,8 +125,15 @@ object Metrics {
     @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsCache(this)
 
     def increment(metric: String): Unit = stats.increment(metric)
-    def incrementException(exception: Throwable): Unit =
-      stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exception.getClass.toString}")
+    def incrementException(exception: Throwable): Unit = {
+      val stackRoot = exception.getStackTrace.apply(0)
+      val file = stackRoot.getFileName
+      val line = stackRoot.getLineNumber
+      val method = stackRoot.getMethodName
+      val exceptionSignature = s"$method@$file:$line"
+      stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
+    }
+
     def histogram(metric: String, value: Double): Unit = stats.histogram(metric, value, Context.sampleRate)
     def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
