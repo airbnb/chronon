@@ -81,7 +81,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   // Needs consistency with mutationDf Schema for backfill group by. (Shared queries)
   // Additional columns used for mutations are stored
   def mutationZiplineSchema: StructType = {
-    val fields: Seq[StructField] = inputZiplineSchema ++ Constants.MutationFields
+    val fields: scala.collection.Seq[StructField] = inputZiplineSchema ++ Constants.MutationFields
     StructType("MUTATION_SCHEMA", fields.toArray)
   }
 

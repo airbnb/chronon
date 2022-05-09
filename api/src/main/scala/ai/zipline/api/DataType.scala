@@ -75,8 +75,8 @@ case object DateType extends DataType
 case object TimestampType extends DataType
 
 // maps to Array[Any]
-case class StructType(name: String, fields: Array[StructField]) extends DataType with Seq[StructField] {
-  def unpack: Seq[(String, DataType)] = fields.map { field => field.name -> field.fieldType }
+case class StructType(name: String, fields: Array[StructField]) extends DataType with scala.collection.Seq[StructField] {
+  def unpack: scala.collection.Seq[(String, DataType)] = fields.map { field => field.name -> field.fieldType }
 
   override def apply(idx: Int): StructField = fields(idx)
   override def length: Int = fields.length
