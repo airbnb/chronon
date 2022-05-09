@@ -130,7 +130,7 @@ object Metrics {
       val file = stackRoot.getFileName
       val line = stackRoot.getLineNumber
       val method = stackRoot.getMethodName
-      val exceptionSignature = s"$method@$file:$line"
+      val exceptionSignature = s"[$method@$file:$line]${exception.getClass.toString}"
       stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
     }
 
