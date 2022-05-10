@@ -9,7 +9,7 @@ import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
-import scala.collection.AbstractIterator
+import scala.collection.{AbstractIterator, mutable}
 import scala.collection.JavaConverters._
 
 object AvroConversions {
@@ -34,30 +34,44 @@ object AvroConversions {
     }
   }
 
-  def fromZiplineSchema(dataType: DataType): Schema = {
+  val RepetitionSuffix = "_REPEATED_NAME_"
+  def fromZiplineSchema(dataType: DataType, nameSet: mutable.Set[String] = new mutable.HashSet[String]): Schema = {
+    def addName(name: String): String = {
+      val cleanName = name.replaceAll("[^0-9a-zA-Z_]", "_")
+      val eligibleName = if (!nameSet.contains(cleanName)) {
+        cleanName
+      } else {
+        var i = 0
+        while (nameSet.contains(cleanName + RepetitionSuffix + i.toString)) { i += 1 }
+        cleanName + RepetitionSuffix + i.toString
+      }
+      nameSet.add(eligibleName)
+      eligibleName
+    }
     dataType match {
       case StructType(name, fields) =>
         assert(name != null)
         Schema.createRecord(
-          name.replaceAll("[^0-9a-zA-Z_]", "_"),
+          addName(name),
           "", // doc
           "ai.zipline.data", // namespace
           false, // isError
           fields
             .map { ziplineField =>
               val defaultValue: AnyRef = null
-              new Field(ziplineField.name,
-                        Schema.createUnion(Schema.create(Schema.Type.NULL), fromZiplineSchema(ziplineField.fieldType)),
-                        "",
-                        defaultValue)
+              new Field(
+                addName(ziplineField.name),
+                Schema.createUnion(Schema.create(Schema.Type.NULL), fromZiplineSchema(ziplineField.fieldType, nameSet)),
+                "",
+                defaultValue)
             }
             .toList
             .asJava
         )
-      case ListType(elementType) => Schema.createArray(fromZiplineSchema(elementType))
+      case ListType(elementType) => Schema.createArray(fromZiplineSchema(elementType, nameSet))
       case MapType(keyType, valueType) => {
         assert(keyType == StringType, s"Avro only supports string keys for a map")
-        Schema.createMap(fromZiplineSchema(valueType))
+        Schema.createMap(fromZiplineSchema(valueType, nameSet))
       }
       case StringType  => Schema.create(Schema.Type.STRING)
       case IntType     => Schema.create(Schema.Type.INT)

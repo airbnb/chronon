@@ -7,8 +7,11 @@ import ai.zipline.online.Metrics
 import ai.zipline.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.approx_count_distinct
+import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
+import scala.collection.parallel.ParMap
 
 class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -47,10 +50,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    // team name is assigned at the materialize step
-    val team =
-      if (joinConf.metaData.team.equals(joinPart.groupBy.metaData.team)) None else Some(joinPart.groupBy.metaData.team)
-    val fullPrefix = (Option(joinPart.prefix) ++ team ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
+    val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
     val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
@@ -83,16 +83,13 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     leftDf.join(joinableRight, keys, "left")
   }
 
-  private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, unfilledRange: PartitionRange): DataFrame = {
+  private def computeJoinPart(leftDf: DataFrame,
+                              joinPart: JoinPart,
+                              unfilledRange: PartitionRange,
+                              leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val leftPrunedCount = leftDf.count()
-    println(s"Pruned count $leftPrunedCount")
-    // technically 1 billion is 512MB - but java overhead is crazy and we need to cutoff - to 100M
-    val bloomSize = Math.min(100000000, Math.max(leftPrunedCount / 10, 100))
-    println(s"Bloom size: $bloomSize")
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftDf.generateBloomFilter(_, bloomSize))
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-
     println(s"""
          |JoinPart Info:
          |  part name : ${joinPart.groupBy.metaData.name}, 
@@ -153,7 +150,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
 
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
-        genGroupBy(unfilledTimeRange.toPartitionRange.shift(-1)).entitiesMutations(renamedLeftDf)
+        genGroupBy(unfilledTimeRange.toPartitionRange.shift(-1)).temporalEntities(renamedLeftDf)
       }
     }
   }
@@ -164,13 +161,17 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     } else {
       leftDf
     }
+    val leftDfCount = leftTaggedDf.count()
+    val leftBlooms = joinConf.leftKeyCols.par.map { key =>
+      key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
+    }.toMap
 
     // compute joinParts in parallel
     val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
       val partMetrics = Metrics.Context(metrics, joinPart)
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
-        computeJoinPart(leftTaggedDf, joinPart, leftRange)
+        computeJoinPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
       } else {
         // compute only the missing piece
         val joinPartTableName = joinConf.partOutputTable(joinPart)
@@ -181,7 +182,7 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
           try {
             val start = System.currentTimeMillis()
             println(s"Writing to join part table: $joinPartTableName")
-            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get)
+            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get, leftBlooms)
             // cache the join-part output into table partitions
             rightDf.save(joinPartTableName, tableProps)
             val elapsedMins = (System.currentTimeMillis() - start) / 60000

@@ -947,7 +947,7 @@ class MutationsTest {
     val suffix = "generated"
     val reviews = List(
       Column("listing_id", api.StringType, 100),
-      Column("rating", api.LongType, 5)
+      Column("rating", api.LongType, 100)
     )
     val events = List(
       Column("listing_id", api.StringType, 100),
@@ -977,6 +977,8 @@ class MutationsTest {
       val recomputedResult = computeJoinFromTables(suffix, minDs, maxDs, null, Operation.AVERAGE)
       val recomputedDiff = Comparison.sideBySide(recomputedResult, expected, List("listing_id", "ts", "ds"))
       println("Checking second run of the same data.")
+      println(s"recomputed diff result rows")
+      recomputedDiff.show()
       assert(recomputedDiff.count() == 0)
     }
   }
