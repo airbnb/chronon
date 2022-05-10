@@ -40,7 +40,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
-    val result = getConf[Join](s"joins/$name").map(new JoinOps(_))
+    val result = getConf[Join](s"joins/$name")
+      .recover {
+        case e: java.util.NoSuchElementException =>
+          println(
+            s"Failed to fetch conf for join $name at joins/$name, please check metadata upload to make sure the join metadata for $name has been uploaded")
+          throw e
+      }
+      .map(new JoinOps(_))
     val context =
       if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
       else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
@@ -97,7 +104,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       val startTimeMs = System.currentTimeMillis()
       val batchDataset = s"${name.sanitize.toUpperCase()}_BATCH"
       val metaData =
-        kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis)
+        kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis).recover {
+          case e: java.util.NoSuchElementException =>
+            println(
+              s"Failed to fetch metadata for $batchDataset, is it possible Group By Upload for $name has not succeeded?")
+            throw e
+        }
       println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
       if (metaData.isFailure) {
         Failure(

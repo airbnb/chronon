@@ -3,6 +3,7 @@ package ai.zipline.online
 import ai.zipline.api.{Constants, StructType}
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
+import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.function.Consumer
 import scala.concurrent.duration.{Duration, MILLISECONDS}
@@ -33,7 +34,14 @@ trait KVStore {
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
+  def get(request: GetRequest): Future[GetResponse] =
+    multiGet(Seq(request)).map(_.head).recover {
+      case e: java.util.NoSuchElementException =>
+        println(
+          s"Failed request $request check the related task to the upload of the dataset (GroupByUpload or Metadata")
+        throw e
+    }
+
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
