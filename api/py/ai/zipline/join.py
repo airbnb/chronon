@@ -83,9 +83,9 @@ def Join(left: api.Source,
     right_sources = [join_part.groupBy.sources for join_part in right_parts]
     # flattening
     right_sources = [source for source_list in right_sources for source in source_list]
-    left_dependencies = utils.get_dependencies(left, dependencies)
+    left_dependencies = utils.get_dependencies(left, dependencies, lag=lag)
     right_dependencies = [dep for source in right_sources for dep in
-                          utils.get_dependencies(source, dependencies)]
+                          utils.get_dependencies(source, dependencies, lag=lag)]
 
     customJson = {
         "check_consistency": check_consistency
