@@ -23,7 +23,8 @@ class GroupByUploadTest {
     val eventsTable = "events_last_k"
     val eventSchema = List(
       Column("user", StringType, 10),
-      Column("list_event", StringType, 100)
+      Column("list_event", StringType, 100),
+      Column("tiny", ByteType, 10)
     )
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
     eventDf.save(s"$namespace.$eventsTable")

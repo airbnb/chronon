@@ -3,7 +3,19 @@ package ai.zipline.aggregator.test
 import ai.zipline.aggregator.base._
 import ai.zipline.aggregator.test.CStream._
 import ai.zipline.api.Extensions._
-import ai.zipline.api.{Constants, DataType, DoubleType, IntType, ListType, LongType, Row, StringType, TimeUnit, Window}
+import ai.zipline.api.{
+  ByteType,
+  Constants,
+  DataType,
+  DoubleType,
+  IntType,
+  ListType,
+  LongType,
+  Row,
+  StringType,
+  TimeUnit,
+  Window
+}
 
 import scala.reflect.ClassTag
 import scala.util.Random
@@ -47,6 +59,7 @@ abstract class CStream[+T: ClassTag] {
 object CStream {
   private type JLong = java.lang.Long
   private type JDouble = java.lang.Double
+  private type JByte = java.lang.Byte
 
   def genTimestamps(window: Window,
                     count: Int,
@@ -105,6 +118,11 @@ object CStream {
       Option(rollDouble(max, 1)).map(java.lang.Double.valueOf(_)).orNull
   }
 
+  class ByteStream(max: Int = 128) extends CStream[JByte] {
+    override def next(): JByte =
+      Option(roll(max)).map(p => java.lang.Byte.valueOf(p.toString)).orNull
+  }
+
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
     override def next(): TestRow =
       new TestRow(streams.map(_.next()).toArray: _*)(tsIndex)
@@ -129,6 +147,7 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
         }
       case IntType    => new IntStream(cardinality)
       case DoubleType => new DoubleStream(cardinality)
+      case ByteType   => new ByteStream()
       case LongType =>
         name match {
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
