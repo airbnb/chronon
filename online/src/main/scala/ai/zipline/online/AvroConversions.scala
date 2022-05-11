@@ -80,6 +80,7 @@ object AvroConversions {
       case DoubleType  => Schema.create(Schema.Type.DOUBLE)
       case BinaryType  => Schema.create(Schema.Type.BYTES)
       case BooleanType => Schema.create(Schema.Type.BOOLEAN)
+      case ByteType    => Schema.create(Schema.Type.INT)
       case _ =>
         throw new UnsupportedOperationException(
           s"Cannot convert zipline type $dataType to avro type. Cast it to string please")
