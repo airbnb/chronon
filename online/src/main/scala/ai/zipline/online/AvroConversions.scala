@@ -1,7 +1,6 @@
 package ai.zipline.online
 
-import ai.zipline.api.Row
-import ai.zipline.api._
+import ai.zipline.api.{ByteType, Row, _}
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.generic.{GenericData, GenericRecord}
@@ -95,7 +94,10 @@ object AvroConversions {
       { (data: Iterator[Any], elemDataType: DataType) =>
         val schema = AvroConversions.fromZiplineSchema(elemDataType)
         val record = new GenericData.Record(schema)
-        data.zipWithIndex.foreach { case (value, idx) => record.put(idx, value) }
+        data.zipWithIndex.foreach {
+          case (value: Byte, idx) => record.put(idx, value.toInt)
+          case (value, idx)       => record.put(idx, value)
+        }
         record
       },
       ByteBuffer.wrap,
