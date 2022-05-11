@@ -37,7 +37,7 @@ trait KVStore {
     multiGet(Seq(request)).map(_.head).recover {
       case e: java.util.NoSuchElementException =>
         println(
-          s"Failed request $request check the related task to the upload of the dataset (GroupByUpload or Metadata")
+          s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
         throw e
     }
 
