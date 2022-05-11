@@ -188,6 +188,7 @@ class BaseFetcher(kvStore: KVStore,
         Some(batchRequest) ++ streamingRequestOpt
       case _ => Seq.empty
     }
+
     val startTimeMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
     kvResponseFuture
@@ -290,6 +291,7 @@ class BaseFetcher(kvStore: KVStore,
         }
     }
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
+
     // re-attach groupBy responses to join
     groupByResponsesFuture
       .map { groupByResponses =>

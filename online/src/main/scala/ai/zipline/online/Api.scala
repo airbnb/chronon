@@ -3,7 +3,6 @@ package ai.zipline.online
 import ai.zipline.api.{Constants, StructType}
 import ai.zipline.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.function.Consumer
 import scala.concurrent.duration.{Duration, MILLISECONDS}
