@@ -30,7 +30,8 @@ class GroupByUploadTest {
     eventDf.save(s"$namespace.$eventsTable")
 
     val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30"))
+      Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
+      Builders.Aggregation(Operation.LAST, "tiny", Seq(WindowUtils.Unbounded))
     )
     val keys = Seq("user").toArray
     val groupByConf =
