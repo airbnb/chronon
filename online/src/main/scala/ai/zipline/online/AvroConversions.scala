@@ -13,6 +13,16 @@ import scala.collection.{AbstractIterator, mutable}
 import scala.collection.JavaConverters._
 
 object AvroConversions {
+  def toAvroValue(value: AnyRef, schema: Schema): Object =
+    schema.getType match {
+      case Schema.Type.UNION  => toAvroValue(value, schema.getTypes.get(1))
+      case Schema.Type.LONG   => value.asInstanceOf[Long].asInstanceOf[Object]
+      case Schema.Type.INT    => value.asInstanceOf[Int].asInstanceOf[Object]
+      case Schema.Type.FLOAT  => value.asInstanceOf[Float].asInstanceOf[Object]
+      case Schema.Type.DOUBLE => value.asInstanceOf[Double].asInstanceOf[Object]
+      case _                  => value
+    }
+
   def toZiplineSchema(schema: Schema): DataType = {
     schema.getType match {
       case Schema.Type.RECORD =>
