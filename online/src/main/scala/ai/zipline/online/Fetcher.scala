@@ -296,7 +296,7 @@ class BaseFetcher(kvStore: KVStore,
     if (groupByRequests.isEmpty) { // we couldn't find join metadata for any of the requests
       throw new RuntimeException(s"""
            |Couldn't find uploaded metadata for any of the joins in the request: ${requests.map(_.name)}. 
-           |Either the metadata upload didn't succeed, or the name is incorrect.
+           |Either the metadata-upload didn't succeed, or the name is incorrect.
            |The naming convention is: <team>/<py_module>.<variable_name>
            |""".stripMargin)
     }
