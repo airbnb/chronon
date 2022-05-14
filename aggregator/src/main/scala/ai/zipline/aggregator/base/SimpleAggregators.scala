@@ -2,12 +2,12 @@ package ai.zipline.aggregator.base
 
 import ai.zipline.api._
 import com.yahoo.memory.Memory
+import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
+import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
-import com.yahoo.sketches.quantiles.{DoublesSketch, DoublesSketchBuilder, DoublesUnionBuilder, UpdateDoublesSketch}
 
 import java.util
-import java.util.PriorityQueue
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -399,6 +399,49 @@ class ApproxPercentiles(k: Int = 128, bins: Int = 41) extends SimpleAggregator[F
 
   override def denormalize(normalized: Any): KllFloatsSketch =
     KllFloatsSketch.heapify(Memory.wrap(normalized.asInstanceOf[Array[Byte]]))
+}
+
+class FrequentItems(val mapSize: Int, val errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
+    extends SimpleAggregator[String, ItemsSketch[String], Map[String, Long]] {
+  override def outputType: DataType = MapType(StringType, IntType)
+
+  override def irType: DataType = BinaryType
+  type Sketch = ItemsSketch[String]
+  override def prepare(input: String): Sketch = {
+    val sketch = new ItemsSketch[String](mapSize)
+    sketch.update(input)
+    sketch
+  }
+
+  override def update(ir: Sketch, input: String): Sketch = {
+    ir.update(input)
+    ir
+  }
+
+  override def merge(ir1: Sketch, ir2: Sketch): Sketch = {
+    ir1.merge(ir2)
+    ir1
+  }
+
+  // ItemsSketch doesn't have a proper copy method. So we serialize and deserialize.
+  override def clone(ir: Sketch): Sketch = {
+    val serDe = new ArrayOfStringsSerDe
+    val bytes = ir.toByteArray(serDe)
+    ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
+  }
+
+  override def finalize(ir: Sketch): Map[String, Long] =
+    ir.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate).toMap
+
+  override def normalize(ir: Sketch): Array[Byte] = {
+    val serDe = new ArrayOfStringsSerDe
+    ir.toByteArray(serDe)
+  }
+
+  override def denormalize(normalized: Any): Sketch = {
+    val serDe = new ArrayOfStringsSerDe
+    ItemsSketch.getInstance[String](Memory.wrap(normalized.asInstanceOf[Array[Byte]]), serDe)
+  }
 }
 
 abstract class Order[I](inputType: DataType) extends SimpleAggregator[I, I, I] {

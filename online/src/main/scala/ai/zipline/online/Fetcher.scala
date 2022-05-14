@@ -161,8 +161,9 @@ class BaseFetcher(kvStore: KVStore,
                 keyBytes = groupByServingInfo.keyCodec.encode(castedKeys)
               } catch {
                 case exInner: Exception =>
-                  exInner.addSuppressed(ex)
-                  throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
+                  throw new RuntimeException(
+                    s"Couldn't encode request keys: ${request.keys}\n  or casted keys: ${castedKeys} ",
+                    exInner)
               }
           }
           val batchRequest = GetRequest(keyBytes, groupByServingInfo.groupByOps.batchDataset)
@@ -272,6 +273,7 @@ class BaseFetcher(kvStore: KVStore,
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
           joinContext.get.increment("join_request.count")
+          request.atMillis.foreach(queryTs => joinContext.get.histogram("query_lag.millis", startTimeMs - queryTs))
           join.joinPartOps.map { part =>
             val joinContextInner = Metrics.Context(joinContext.get, part)
             val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
@@ -289,6 +291,14 @@ class BaseFetcher(kvStore: KVStore,
           case Failure(_)        => Iterator.empty
           case Success(requests) => requests.iterator.map(_.request)
         }
+    }
+
+    if (groupByRequests.isEmpty) { // we couldn't find join metadata for any of the requests
+      throw new RuntimeException(s"""
+           |Couldn't find uploaded metadata for any of the joins in the request: ${requests.map(_.name)}. 
+           |Either the metadata upload didn't succeed, or the name is incorrect.
+           |The naming convention is: <team>/<py_module>.<variable_name>
+           |""".stripMargin)
     }
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
 
