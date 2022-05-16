@@ -4,7 +4,7 @@ import ai.zipline.api
 import ai.zipline.api.Extensions.{GroupByOps, SourceOps}
 import ai.zipline.api.ThriftJsonCodec
 import ai.zipline.online.{Api, Fetcher, MetadataStore}
-import ai.zipline.spark.consistency.ConsistencyJob
+import ai.zipline.spark.stats.ConsistencyJob
 import ai.zipline.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils

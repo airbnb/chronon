@@ -1,6 +1,6 @@
 package ai.zipline.spark.test
 
-import ai.zipline.spark.consistency.EditDistance
+import ai.zipline.spark.stats.EditDistance
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

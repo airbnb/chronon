@@ -1,13 +1,8 @@
 package ai.zipline.aggregator.test
-import ai.zipline.aggregator.base.{FrequentItems, SimpleAggregator, TopK}
-import ai.zipline.api.StringType
-import com.google.gson.Gson
+import ai.zipline.aggregator.base.{FrequentItems, SimpleAggregator}
 import com.yahoo.sketches.frequencies.ErrorType
 import junit.framework.TestCase
 import org.junit.Assert._
-
-import scala.collection.mutable
-import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 class FrequentItemsTest extends TestCase {
 
@@ -18,13 +13,6 @@ class FrequentItemsTest extends TestCase {
       chunk.tail.foldLeft(agg.prepare(chunk.head))(agg.update)
     }
     val mergedIr = elems.sliding(chunkSize, chunkSize).map(toIr).reduce(agg.merge)
-    val directIr = toIr(elems)
-
-//    val output = agg.finalize(directIr)
-//    val gson = new Gson()
-//    val mergedString = gson.toJson(output)
-//    val directString = gson.toJson(agg.finalize(mergedIr))
-//    assertEquals(mergedString, directString)
     agg.denormalize(agg.normalize(mergedIr))
   }
 
@@ -46,7 +34,6 @@ class FrequentItemsTest extends TestCase {
     )
   }
 
-  def testTopK: Unit = {}
   def testBasic: Unit = {
     def runTest(agg: FrequentItems): Unit = {
       println(s"errorType: ${agg.errorType.toString}")

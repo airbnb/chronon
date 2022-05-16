@@ -1,4 +1,4 @@
-package ai.zipline.spark.consistency
+package ai.zipline.spark.stats
 
 import ai.zipline.api.Extensions._
 import ai.zipline.api._

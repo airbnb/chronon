@@ -2,7 +2,7 @@ package ai.zipline.spark.streaming
 
 import ai.zipline.aggregator.base.BottomK
 import ai.zipline.api.UnknownType
-import ai.zipline.spark.consistency.EditDistance
+import ai.zipline.spark.stats.EditDistance
 import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, ListTopicsOptions}
 
 import java.util

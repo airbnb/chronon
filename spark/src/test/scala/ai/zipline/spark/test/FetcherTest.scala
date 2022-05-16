@@ -32,7 +32,7 @@ import ai.zipline.online.KVStore.GetRequest
 import ai.zipline.online._
 import ai.zipline.spark.Extensions._
 import ai.zipline.spark._
-import ai.zipline.spark.consistency.ConsistencyJob
+import ai.zipline.spark.stats.ConsistencyJob
 import ai.zipline.spark.test.FetcherTest.buildInMemoryKVStore
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow

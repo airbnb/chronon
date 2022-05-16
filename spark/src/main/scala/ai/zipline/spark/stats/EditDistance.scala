@@ -1,4 +1,4 @@
-package ai.zipline.spark.consistency
+package ai.zipline.spark.stats
 
 object EditDistance {
 
