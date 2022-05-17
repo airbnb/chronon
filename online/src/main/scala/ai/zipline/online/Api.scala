@@ -24,7 +24,7 @@ object KVStore {
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
   implicit val executionContext: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(Runtime.getRuntime.availableProcessors()))
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(500))
 
   def create(dataset: String): Unit
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
