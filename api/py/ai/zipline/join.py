@@ -60,9 +60,9 @@ def Join(left: api.Source,
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
-    if left.events:
-        assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Zipline," \
-                                                             " please specify the expression in timeColumn"
+    if left.events and left.events.query.selects is not None:
+        assert "ts" not in left.events.query.selects.keys(), (
+            "'ts' is a reserved key word for Zipline, please specify the expression in time_column")
         # mapping ts to query.timeColumn to events only
         updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.

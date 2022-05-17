@@ -12,6 +12,7 @@ from ai.zipline.repo import JOIN_FOLDER_NAME, \
 from ai.zipline.repo import teams
 from ai.zipline.repo.serializer import thrift_simple_json_protected
 from ai.zipline.repo.validator import ZiplineRepoValidator
+from ai.zipline.repo.colorutils import Color
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -176,17 +177,17 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
 
 def _print_highlighted(left, right):
     # print in blue.
-    print(f"{left:>25} - \u001b[34m{right}\u001b[0m")
+    print(f"{left:>25} - {Color.BLUE}{right}{Color.NORMAL}")
 
 
 def _print_error(left, right):
     # print in red.
-    print(f"\033[91m{left:>25} - \033[1m{right}\033[00m")
+    print(f"\033[91m{left:>25} - {Color.BOLD}{right}{Color.NORMAL}")
 
 
 def _print_warning(string):
     # print in yellow - \u001b[33m
-    print(f"\u001b[33m{string}\u001b[0m")
+    print(f"{Color.YELLOW}{string}{Color.NORMAL}")
 
 
 if __name__ == '__main__':

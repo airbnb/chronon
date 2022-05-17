@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from colorutils import Color
 
 
 CWD = os.getcwd()
@@ -48,19 +49,6 @@ JOIN_INDEX_SPEC = {
 GB_REL_PATH = "production/group_bys"
 JOIN_REL_PATH = "production/joins"
 FILTER_COLUMNS = ["aggregation", "keys", "name", "sources", "joins"]
-
-# colors chosen to be visible clearly on BOTH black and white terminals
-# change with caution
-NORMAL = '\033[0m'
-BOLD = '\033[1m'
-ITALIC = '\033[3m'
-UNDERLINE = '\033[4m'
-RED = '\033[38;5;160m'
-GREEN = '\033[38;5;28m'
-ORANGE = '\033[38;5;130m'
-BLUE = '\033[38;5;27m'
-GREY = '\033[38;5;246m'
-HIGHLIGHT = BOLD+ITALIC+RED
 
 
 # walks the json nodes recursively collecting all values that match the path
@@ -121,7 +109,9 @@ def build_entry(conf, index_spec, conf_type):
 def git_info(file_paths):
     procs = []
     for file_path in file_paths:
-        args = f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})"
+        args = (
+            f"echo $(git log -n 1 --pretty='format:{Color.GREY}on {Color.GREEN}%as {Color.GREY}by {Color.BLUE}%an"
+            f"' -- {file_path})")
         procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
 
     result = {}
@@ -160,7 +150,7 @@ def highlight(text, word):
     result = ""
     prev_idx = 0
     for idx in find_string(text, word):
-        result = result + text[prev_idx:idx] + HIGHLIGHT + word + NORMAL
+        result = result + text[prev_idx:idx] + Color.HIGHLIGHT + word + Color.NORMAL
         prev_idx = idx + len(word)
     result += text[prev_idx:len(text)]
     return result
@@ -175,12 +165,12 @@ def prettify_entry(entry, target, modification, show=10):
             if(len(values) > show):
                 truncated = ', '.join(values[:show])
                 remaining = len(values) - show
-                values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"
+                values = f"[{truncated} ... {Color.GREY}{Color.UNDERLINE}{remaining} more{Color.NORMAL}]"
         if column == "file":
-            values = f"{BOLD}{values} {modification}{NORMAL}"
+            values = f"{Color.BOLD}{values} {modification}{Color.NORMAL}"
         else:
             values = highlight(str(values), target)
-        lines.append(f"{BOLD}{ORANGE}{name}{NORMAL} - {values}")
+        lines.append(f"{Color.BOLD}{Color.ORANGE}{name}{Color.NORMAL} - {values}")
     content = "\n" + "\n".join(lines)
     return content
 

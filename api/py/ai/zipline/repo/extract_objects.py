@@ -5,6 +5,7 @@ import logging
 import os
 
 from ai.zipline.logger import get_logger
+from ai.zipline.repo.colorutils import Color
 
 
 def from_folder(root_path: str,
@@ -22,8 +23,14 @@ def from_folder(root_path: str,
         os.path.join(full_path, "**/*.py"),
         recursive=True)
     result = {}
+    logger = get_logger(log_level)
     for f in python_files:
-        result.update(from_file(root_path, f, cls, log_level))
+        try:
+            result.update(from_file(root_path, f, cls, log_level))
+        except Exception as e:
+            print(f"{Color.BOLD}{Color.RED}Failed to parse {f}{Color.NORMAL}")
+            logger.exception(e)
+            raise e
     return result
 
 

@@ -4,6 +4,7 @@ from thrift.protocol.TJSONProtocol import TSimpleJSONProtocolFactory, TJSONProto
 
 from thrift import TSerialization
 from ai.zipline.utils import JsonDiffer
+from ai.zipline.repo.colorutils import Color
 
 
 class ThriftJSONDecoder(json.JSONDecoder):
@@ -70,7 +71,11 @@ def thrift_json(obj):
 
 
 def thrift_simple_json(obj):
-    simple = TSerialization.serialize(obj, protocol_factory=TSimpleJSONProtocolFactory())
+    try:
+        simple = TSerialization.serialize(obj, protocol_factory=TSimpleJSONProtocolFactory())
+    except Exception as e:
+        print(f"{Color.RED}{Color.BOLD}Failed to serialize object: {obj}{Color.NORMAL}")
+        raise e
     parsed = json.loads(simple)
     return json.dumps(parsed, indent=2)
 

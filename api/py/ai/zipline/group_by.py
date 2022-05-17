@@ -155,14 +155,16 @@ Keys {unselected_keys}, are unselected in source
     if aggregations is None:
         assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
     else:
-        columns = set([c for src in sources for c in utils.get_columns(src)])
+        aggregation_columns = first_source_columns
+        if utils.get_query(sources[0]).timeColumn:
+            aggregation_columns.add("ts")
         for agg in aggregations:
             assert agg.inputColumn or agg.operation == Operation.COUNT, (
                 f"input_column is required for all operations except COUNT, found: input_column = {agg.inputColumn} "
                 f"and operation {op_to_str(agg.operation)}"
             )
-            assert agg.inputColumn in columns or agg.inputColumn is None, (
-                f"input_column for aggregation is not part of the query. Available columns: {column_set} "
+            assert agg.inputColumn in aggregation_columns or agg.inputColumn is None, (
+                f"input_column for aggregation is not part of the query. Available columns: {aggregation_columns} "
                 f"input_column: {agg.inputColumn}")
 
 
