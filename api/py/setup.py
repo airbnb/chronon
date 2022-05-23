@@ -9,7 +9,7 @@ with open("requirements/base.in", "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.41"
+__version__ = "0.0.42"
 
 
 setup(
@@ -24,6 +24,10 @@ setup(
     install_requires=basic_requirements,
     name="zipline-ai-dev",
     packages=find_packages(),
+    extras_require={
+        # Extra requirement to have access to cli commands in python2 environments.
+        "pip2compat": ["click<8"]
+    },
     python_requires=">=3.7",
     url=None,
     version=__version__,

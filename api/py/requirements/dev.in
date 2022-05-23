@@ -1,3 +1,4 @@
 -r base.in
 tox
 pytest-cov
+black
