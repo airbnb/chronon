@@ -125,7 +125,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   final def buildJavaFetcher(): JavaFetcher = new JavaFetcher(genKvStore, responseConsumer)
 
-  def responseConsumer: Consumer[LoggableResponse] =
+  private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
