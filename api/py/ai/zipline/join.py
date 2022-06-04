@@ -57,7 +57,8 @@ def Join(left: api.Source,
          env: Dict[str, Dict[str, str]] = None,
          lag: int = 0,
          skew_keys: Dict[str, List[str]] = None,
-         sample_percent: float = 0.0) -> api.Join:
+         sample_percent: float = None,  # will sample all the requests based on sample percent
+         **kwargs) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -88,22 +89,21 @@ def Join(left: api.Source,
     right_dependencies = [dep for source in right_sources for dep in
                           utils.get_dependencies(source, dependencies, lag=lag)]
 
-    customJson = {
-        "check_consistency": check_consistency
-    }
+    kwargs.update({
+        "check_consistency": check_consistency,
+        "lag": lag
+    })
 
     if additional_args:
-        customJson["additional_args"] = additional_args
+        kwargs["additional_args"] = additional_args
 
     if additional_env:
-        customJson["additional_env"] = additional_env
-
-    customJson["lag"] = lag
+        kwargs["additional_env"] = additional_env
 
     metadata = api.MetaData(
         online=online,
         production=production,
-        customJson=json.dumps(customJson),
+        customJson=json.dumps(kwargs),
         dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
         outputNamespace=output_namespace,
         tableProperties=table_properties,
