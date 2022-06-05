@@ -112,6 +112,7 @@ def get_topic(source: api.Source) -> str:
 
 def get_columns(source: api.Source):
     query = get_query(source)
+    assert query.selects is not None, "Please specify selects in your Source/Query"
     columns = query.selects.keys()
     return columns
 

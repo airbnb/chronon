@@ -45,12 +45,11 @@ class GroupBy(inputStream: DataFrame,
 
     val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
     val selectMap = Option(selects).getOrElse(Map.empty[String, String])
-    val keyWhereOption = Seq(
-      keys
-        .map { key =>
-          s"${selectMap.getOrElse(key, key)} IS NOT NULL"
-        }
-        .mkString(" OR "))
+    val keyWhereOption = keys
+      .map { key =>
+        s"${selectMap.getOrElse(key, key)} IS NOT NULL"
+      }
+      .mkString(" OR ")
     val timeWheres = groupByConf.dataModel match {
       case api.DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
       case api.DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
@@ -58,7 +57,7 @@ class GroupBy(inputStream: DataFrame,
     QueryUtils.build(
       selects,
       Constants.StreamingInputTable,
-      baseWheres ++ timeWheres ++ keyWhereOption,
+      baseWheres ++ timeWheres :+ s"($keyWhereOption)",
       fillIfAbsent = if (selects == null) null else fillIfAbsent
     )
   }

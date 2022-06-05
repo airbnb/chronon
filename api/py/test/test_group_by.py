@@ -31,19 +31,17 @@ def event_source(table):
     """
     Sample left join
     """
-    return ttypes.Source(
-        events=ttypes.EventSource(
-            table=table,
-            query=ttypes.Query(
-                startPartition="2020-04-09",
-                selects={
-                    "subject": "subject_sql",
-                    "event_id": "event_sql",
-                },
-                timeColumn="CAST(ts AS DOUBLE)",
-            ),
+    return ttypes.EventSource(
+        table=table,
+        query=ttypes.Query(
+            startPartition="2020-04-09",
+            selects={
+                "subject": "subject_sql",
+                "event_id": "event_sql",
+            },
+            timeColumn="CAST(ts AS DOUBLE)",
         ),
-    )
+    ),
 
 
 def test_pretty_window_str(days_unit, hours_unit):

@@ -36,6 +36,7 @@ class Operation():
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
     VARIANCE = ttypes.Operation.VARIANCE
+    HISTOGRAM = ttypes.Operation.HISTOGRAM
     # k truncates the map to top_k most frequent items, 0 turns off truncation
     HISTOGRAM_K = collector(ttypes.Operation.HISTOGRAM)
     FIRST_K = collector(ttypes.Operation.FIRST_K)
@@ -47,7 +48,7 @@ class Operation():
 def Aggregations(**agg_dict):
     assert all(isinstance(agg, ttypes.Aggregation) for agg in agg_dict.values())
     for key, agg in agg_dict.items():
-        if not agg.inputColumn and agg.operation != Operation.COUNT:
+        if not agg.inputColumn:
             agg.inputColumn = key
     return agg_dict.values()
 
@@ -137,6 +138,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
 
+    column_set = None
     # all sources should select the same columns
     for i, source in enumerate(sources[1:]):
         column_set = set(utils.get_columns(source))
@@ -161,12 +163,12 @@ Keys {unselected_keys}, are unselected in source
                 f"input_column is required for all operations except COUNT, found: input_column = {agg.inputColumn} "
                 f"and operation {op_to_str(agg.operation)}"
             )
-            assert agg.inputColumn in columns or agg.inputColumn is None, (
-                f"input_column for aggregation is not part of the query. Available columns: {column_set} "
+            assert (agg.inputColumn in columns) or (agg.inputColumn is None) or (agg.inputColumn == 'ts'), (
+                f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
                 f"input_column: {agg.inputColumn}")
 
 
-def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
+def GroupBy(sources: Union[List[Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]], ttypes.Source],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
@@ -181,8 +183,17 @@ def GroupBy(sources: Union[List[ttypes.Source], ttypes.Source],
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
-    if isinstance(sources, ttypes.Source):
+    def _normalize_source(source):
+        if isinstance(source, ttypes.EventSource):
+            return ttypes.Source(events=source)
+        elif isinstance(sources, ttypes.EntitySource):
+            return ttypes.Source(entities=source)
+        elif isinstance(source, ttypes.Source):
+            return source
+
+    if not isinstance(sources, list):
         sources = [sources]
+    sources = [_normalize_source(source) for source in sources]
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
