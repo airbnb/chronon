@@ -190,6 +190,8 @@ def GroupBy(sources: Union[List[Union[ttypes.Source, ttypes.EventSource, ttypes.
             return ttypes.Source(entities=source)
         elif isinstance(source, ttypes.Source):
             return source
+        else:
+            print("unrecognized " + str(source))
 
     if not isinstance(sources, list):
         sources = [sources]

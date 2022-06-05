@@ -38,10 +38,11 @@ def event_source(table):
             selects={
                 "subject": "subject_sql",
                 "event_id": "event_sql",
+                "cnt": 1
             },
             timeColumn="CAST(ts AS DOUBLE)",
         ),
-    ),
+    )
 
 
 def test_pretty_window_str(days_unit, hours_unit):
