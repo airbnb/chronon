@@ -11,7 +11,7 @@
 **/.vscode/
 **/__pycache__/
 .DS_Store
-api/py/ai/zipline/api/
+api/py/ai/chronon/api/
 api/py/.coverage
 api/py/htmlcov/
 **/derby.log
@@ -21,7 +21,7 @@ api/py/dist/
 api/py/eggs/
 api/py/sdist/
 api/py/build/
-api/py/ai/zipline/thrift/
+api/py/ai/chronon/thrift/
 api/py/*.egg-info/
 *.egg
 

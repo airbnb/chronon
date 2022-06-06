@@ -1,8 +1,8 @@
 """
 Module for testing code paths not covered in normal compile.
 """
-from ai.zipline import group_by, query
-from ai.zipline.api import ttypes
+from ai.chronon import group_by, query
+from ai.chronon.api import ttypes
 
 import pytest
 

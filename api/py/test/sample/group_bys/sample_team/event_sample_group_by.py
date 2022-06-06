@@ -1,5 +1,5 @@
 from sources import test_sources
-from ai.zipline.group_by import (
+from ai.chronon.group_by import (
     GroupBy,
     Aggregation,
     Operation,

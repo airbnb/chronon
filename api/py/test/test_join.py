@@ -1,5 +1,5 @@
-from ai.zipline.join import Join
-from ai.zipline.api import ttypes as api
+from ai.chronon.join import Join
+from ai.chronon.api import ttypes as api
 
 import pytest
 

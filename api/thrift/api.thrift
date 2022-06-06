@@ -1,8 +1,8 @@
 namespace py api
-namespace java ai.zipline.api
+namespace java ai.chronon.api
 
-// cd /path/to/zipline
-// thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+// cd /path/to/chronon
+// thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 
 struct Query {
     1: optional map<string, string> selects
@@ -136,7 +136,7 @@ struct MetaData {
     11: optional double samplePercent
 }
 
-// Equivalent to a FeatureSet in zipline terms
+// Equivalent to a FeatureSet in chronon terms
 struct GroupBy {
     1: optional MetaData metaData
     // CONDITION: all sources select the same columns

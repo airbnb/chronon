@@ -7,16 +7,16 @@ Brain dump of commands used to do various things. For a complete devnotes with A
 ## Commands
 
 ***All commands assume you are in the root directory of this project***.
-For me, that looks like `~/repos/zipline`.
+For me, that looks like `~/repos/chronon`.
 
 ### Prerequisites
 
 Add the following to your shell run command files e.g. `~/.bashrc`.
 
 ```
-export ZIPLINE_OS=<path/to/zipline/repo>
+export ZIPLINE_OS=<path/to/chronon/repo>
 export ZIPLINE_API=$ZIPLINE_OS/api/py
-alias materialize="PYTHONPATH=$ZIPLINE_API:$PYTHONPATH $ZIPLINE_API/ai/zipline/repo/compile.py"
+alias materialize="PYTHONPATH=$ZIPLINE_API:$PYTHONPATH $ZIPLINE_API/ai/chronon/repo/compile.py"
 ```
 
 ### Configuring IntelliJ
@@ -40,7 +40,7 @@ The project should then automatically start indexing, and when it finishes you s
 
 ```shell
 cd $ZIPLINE_OS
-thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 ```
 
 ### Materializing confs
@@ -99,7 +99,7 @@ Thrift is a dependency for compile. The latest version 0.14 is very new - feb 20
 First make sure the thrift definitions are updated:
 ```shell
 cd $ZIPLINE_OS
-thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
+thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 ```
 
 Second make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
@@ -127,7 +127,7 @@ Don't forget to update the version if necessary
 
 ## ztool
 
-ztool is the mega cli tool that allows users to access all zipline functionalities.
+ztool is the mega cli tool that allows users to access all chronon functionalities.
 We use the [xerial/sbt-pack](https://github.com/xerial/sbt-pack) plugin to accomplish the bundling.
 ```bash
 # Building ztool. We use xerial/sbt-pack plugin.
@@ -142,7 +142,7 @@ $> spark/target/pack/bin/ztool fetch \
     --online-jar <jar path to this implementation> \
     # the values below pass Map[String, String] that is used to construct an instance of online api.
     -Zkey1=value1 -Zkey2=value2 \ 
-    --key '{"user_id": "bob"}' --name zipline_test.online_join.v1 -t join
+    --key '{"user_id": "bob"}' --name chronon_test.online_join.v1 -t join
 
 ```
 
@@ -156,7 +156,7 @@ $> cd spark/target/pack; make archive
 **TODO**: The idea here is to use this archive as a [github release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository). 
 
 Users should be able to: 
- 1. download this archive - `wget https://github.com/airbnb/zipline/releases/download/vx.x.x/ztool.tar.gz`
+ 1. download this archive - `wget https://github.com/airbnb/chronon/releases/download/vx.x.x/ztool.tar.gz`
  2. untar it, `tar -xvzf ztool.tar.gz`
  3. `cd ztool` and `make install` to put the ztool in their bin path.
 

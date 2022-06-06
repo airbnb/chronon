@@ -1,5 +1,5 @@
-from ai.zipline.join import JoinPart, Join
-from ai.zipline.query import Query, select
+from ai.chronon.join import JoinPart, Join
+from ai.chronon.query import Query, select
 from sources import test_sources
 
 

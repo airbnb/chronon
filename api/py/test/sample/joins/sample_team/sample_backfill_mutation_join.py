@@ -3,7 +3,7 @@ Sample entity temporal accurate backfill (mutation)
 """
 from sources import test_sources
 from group_bys.sample_team import mutation_sample_group_by
-from ai.zipline.join import Join, JoinPart
+from ai.chronon.join import Join, JoinPart
 
 
 v0 = Join(

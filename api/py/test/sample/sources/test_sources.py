@@ -1,9 +1,9 @@
-from ai.zipline.query import (
+from ai.chronon.query import (
     Query,
     select,
 )
-from ai.zipline.utils import get_staging_query_output_table_name
-from ai.zipline.api import ttypes
+from ai.chronon.utils import get_staging_query_output_table_name
+from ai.chronon.api import ttypes
 
 from staging_queries.sample_team import sample_staging_query
 

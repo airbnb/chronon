@@ -1,4 +1,4 @@
-from ai.zipline.repo import teams
+from ai.chronon.repo import teams
 import pytest
 
 

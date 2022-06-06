@@ -1,7 +1,7 @@
 import sbt.Keys._
 import sbt.Test
 
-ThisBuild / organization := "ai.zipline"
+ThisBuild / organization := "ai.chronon"
 ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / version := Option(System.getProperty("version")).getOrElse("local")
 
@@ -15,7 +15,7 @@ lazy val root = (project in file("."))
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
-    name := "zipline"
+    name := "chronon"
   )
 
 lazy val api = project
@@ -103,7 +103,7 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
   },
   addArtifact(assembly / artifact, assembly),
   publishSettings,
-  mainClass in (Compile, run) := Some("ai.zipline.spark.Driver"),
+  mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(
     baseDirectory.value / "spark-warehouse",
     baseDirectory.value / "metastore_db"

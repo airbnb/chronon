@@ -2,7 +2,7 @@
 Sample Join
 """
 from sources import test_sources
-from ai.zipline.join import Join, JoinPart
+from ai.chronon.join import Join, JoinPart
 from group_bys.sample_team import (
     sample_group_by_from_module,
     entity_sample_group_by_from_module,

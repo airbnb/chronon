@@ -4,7 +4,7 @@ Sample Non Production Join
 from sources import test_sources
 from group_bys.sample_team import sample_non_prod_group_by
 
-from ai.zipline.join import Join, JoinPart
+from ai.chronon.join import Join, JoinPart
 
 
 v1 = Join(

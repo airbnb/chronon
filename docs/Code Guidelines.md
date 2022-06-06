@@ -1,6 +1,6 @@
 ## Scala Language usage Philosophy
 
-There are two phases of execution in zipline code. Hot path & control path.
+There are two phases of execution in chronon code. Hot path & control path.
 Hot path is in sense the "inner loop" of the larger program. The speed of the the inner
 loop controls the speed of the whole program. While changes to control path are less impactful.
 Any row level operation is a part of the inner loop. This is true across all online & offline workflows.

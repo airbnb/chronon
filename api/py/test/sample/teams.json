@@ -7,7 +7,7 @@
         "flink_cluster": "flink-default",
         "flink_queue": "flink_default_queue",
         "hive_cli_conn_id": "hive-default-cli",
-        "maintainer_emails": ["zipline@airbnb.com"],
+        "maintainer_emails": ["chronon@airbnb.com"],
         "namespace": "default_namespace",
         "one_airbnb_team_name": "Default Team Name",
         "online_spark_cluster": "",
@@ -22,7 +22,7 @@
       "sample_team": {
         "airflow_queue": "sample_queue",
         "description": "Sample Team",
-        "maintainer_emails": ["user@zipline.com"],
+        "maintainer_emails": ["user@chronon.com"],
         "namespace": "sample_team_namespace",
         "one_airbnb_team_name": "Sample Team name",
         "spark_cluster": "sample-cluster",

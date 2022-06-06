@@ -58,12 +58,12 @@ jobs:
                         docker push patyoon/zipline-ci:base
                     fi
 
-    "Zipline Scala Tests":
+    "Chronon Scala Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
             - run:
-                  name: Run Zipline tests
+                  name: Run Chronon tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       # Increase if we see OOM.
@@ -74,29 +74,29 @@ jobs:
             - store_test_results:
                   path: /zipline/aggregator/target/test-reports
 
-    "Zipline Python Lint":
+    "Chronon Python Lint":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
             - run:
-                  name: Run Zipline Python lint
+                  name: Run Chronon Python lint
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate zipline_py
                       cd /zipline/api/py/ai/zipline
                       flake8 --extend-ignore=W605,Q000,F631
 
-    "Zipline Python Tests":
+    "Chronon Python Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
             - run:
-                  name: Run Zipline Python tests
+                  name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate zipline_py
                       pushd /zipline/api/
-                      thrift --gen py -out /zipline/api/py/ai/zipline\
+                      thrift --gen py -out /zipline/api/py/ai/chronon\
                          /zipline/api/thrift/api.thrift                 # Generate thrift files
                       cd /zipline/api/py                                # Go to Python module
                       pip install -r requirements/dev.txt               # Install latest requirements
@@ -112,19 +112,19 @@ workflows:
                 filters:  # required since `Publish JARs` has tag filters AND requires this step
                     tags:
                         only: /.*/
-            - "Zipline Scala Tests":
+            - "Chronon Scala Tests":
                   requires:
                       - "Docker Base Build"
                   filters:
                       tags:
                           ignore: /^release-zl-.*/
-            - "Zipline Python Tests":
+            - "Chronon Python Tests":
                   requires:
                       - "Docker Base Build"
                   filters:
                       tags:
                           ignore: /^release-zl-.*/
-            - "Zipline Python Lint":
+            - "Chronon Python Lint":
                   requires:
                       - "Docker Base Build"
                   filters:

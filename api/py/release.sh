@@ -8,7 +8,7 @@ echo "Releasing to PyPi repository: $1"
 echo "Finding working directory.."
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 echo "Compiling thrift files..."
-thrift --gen py -out $SCRIPT_DIR/ai/zipline $SCRIPT_DIR/../thrift/api.thrift
+thrift --gen py -out $SCRIPT_DIR/ai/chronon $SCRIPT_DIR/../thrift/api.thrift
 echo "Running tests..."
 cd $SCRIPT_DIR && tox
 if [[ $? -eq 0 ]]; then

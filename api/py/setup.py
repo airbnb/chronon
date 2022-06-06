@@ -9,7 +9,7 @@ with open("requirements/base.in", "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.45"
+__version__ = "0.0.1"
 
 
 setup(
@@ -18,11 +18,11 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    scripts=['ai/zipline/repo/explore.py', 'ai/zipline/repo/compile.py', 'ai/zipline/repo/run.py'],
-    description="Zipline python API library",
+    scripts=['ai/chronon/repo/explore.py', 'ai/chronon/repo/compile.py', 'ai/chronon/repo/run.py'],
+    description="Chronon python API library",
     include_package_data=True,
     install_requires=basic_requirements,
-    name="zipline-ai-dev",
+    name="chronon-ai-dev",
     packages=find_packages(),
     extras_require={
         # Extra requirement to have access to cli commands in python2 environments.

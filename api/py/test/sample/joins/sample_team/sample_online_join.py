@@ -8,7 +8,7 @@ from group_bys.sample_team import (
     group_by_with_kwargs,
 )
 
-from ai.zipline.join import Join, JoinPart
+from ai.chronon.join import Join, JoinPart
 
 
 v1 = Join(

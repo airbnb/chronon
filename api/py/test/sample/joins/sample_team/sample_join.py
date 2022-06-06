@@ -3,7 +3,7 @@ Sample Join
 """
 from sources import test_sources
 from group_bys.sample_team import sample_group_by
-from ai.zipline.join import (
+from ai.chronon.join import (
     Join,
     JoinPart,
 )

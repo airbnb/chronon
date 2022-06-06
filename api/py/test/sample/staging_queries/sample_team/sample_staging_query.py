@@ -1,4 +1,4 @@
-from ai.zipline.api.ttypes import StagingQuery, MetaData
+from ai.chronon.api.ttypes import StagingQuery, MetaData
 
 query = """
 SELECT

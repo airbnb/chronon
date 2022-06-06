@@ -3,13 +3,13 @@ Forcing validator to fail some tests
 """
 import pytest
 
-from ai.zipline.repo import validator
+from ai.chronon.repo import validator
 
 
 @pytest.fixture
 def zvalidator():
-    return validator.ZiplineRepoValidator(
-        zipline_root_path='test/sample',
+    return validator.ChrononRepoValidator(
+        chronon_root_path='test/sample',
         output_root='production'
     )
 

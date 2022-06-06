@@ -28,7 +28,7 @@ features that need to refreshed daily.
 
 ### Design
 
-We log inference queries, the zipline's responses along with their timestamps.
+We log inference queries, the chronon's responses along with their timestamps.
 
 ```sql
 CREATE TABLE IF NOT EXISTS <namespace>.query_logs (
