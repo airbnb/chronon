@@ -39,8 +39,8 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
       val codec: AvroCodec = new AvroCodec(AvroConversions.fromZiplineSchema(schema).toString(true));
       { data: Any =>
         val record = AvroConversions.fromZiplineRow(data, schema).asInstanceOf[GenericData.Record]
-        val bytes = codec.encodeJson(record)
-        bytes
+        val json = codec.encodeJson(record)
+        json
       }
     }
 
@@ -57,7 +57,14 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
     val rowRdd: RDD[Row] = data.map {
       case (keys, values) =>
-        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyToJson(keys), valueToJson(values))
+        // json encoding is very expensive (50% of entire job).
+        // Only do it for a small fraction to retain debuggability.
+        val (keyJson, valueJson) = if (math.random < 0.01) {
+          (keyToJson(keys), valueToJson(values))
+        } else {
+          (null, null)
+        }
+        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson)
         new GenericRow(result)
     }
     sparkSession.createDataFrame(rowRdd, rowSchema)
