@@ -3,10 +3,10 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.api._
+import ai.chronon.api.{Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.types.{BooleanType => _, DoubleType => _, LongType => _, StringType => _, _}
+import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
 
@@ -173,7 +173,7 @@ class MutationsTest {
           windows = windows
         )
       ),
-      accuracy = Accuracy.TEMPORAL,
+      accuracy = api.Accuracy.TEMPORAL,
       metaData = Builders.MetaData(name = groupByName, namespace = namespace(suffix), team = "chronon")
     )
 
@@ -951,7 +951,7 @@ class MutationsTest {
     )
     val events = List(
       Column("listing_id", api.StringType, 100),
-      Column("event", IntType, 6)
+      Column("event", api.IntType, 6)
     )
     val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1, "listing_id")
     val (_, maxDs) = mutationsDf.range[String](Constants.PartitionColumn)

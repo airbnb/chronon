@@ -2,6 +2,7 @@ package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing.TsUtils
+import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api.{Row, Window}
 
 class NaiveAggregator(aggregator: RowAggregator,

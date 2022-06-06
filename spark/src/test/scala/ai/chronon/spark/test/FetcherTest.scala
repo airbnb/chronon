@@ -3,9 +3,25 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
+import ai.chronon.api.{
+  Accuracy,
+  BooleanType,
+  Builders,
+  Constants,
+  DataModel,
+  DoubleType,
+  IntType,
+  ListType,
+  LongType,
+  Operation,
+  StringType,
+  StructField,
+  StructType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Constants.ZiplineMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, MetadataStore}
@@ -489,7 +505,7 @@ class FetcherTest extends TestCase {
     val inMemoryKvStore = buildInMemoryKVStore()
     val mockApi = new MockApi(buildInMemoryKVStore, namespace)
 
-    val joinedDf = new Join(joinConf, endDs, tableUtils).computeJoin()
+    val joinedDf = new ai.chronon.spark.Join(joinConf, endDs, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")

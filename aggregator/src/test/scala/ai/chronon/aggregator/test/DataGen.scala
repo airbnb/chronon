@@ -1,6 +1,7 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.test.CStream._
+import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import scala.reflect.ClassTag

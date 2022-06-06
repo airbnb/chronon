@@ -2,11 +2,11 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
-import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
-import ai.chronon.spark.{Join => _, _}
+import ai.chronon.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
@@ -33,15 +33,15 @@ class JoinTest {
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
     val dollarTransactions = List(
-      Column("user", api.StringType, 100),
+      Column("user", StringType, 100),
       Column("ts", LongType, 200),
-      Column("amount_dollars", api.LongType, 1000)
+      Column("amount_dollars", LongType, 1000)
     )
 
     val rupeeTransactions = List(
-      Column("user", api.StringType, 100),
-      Column("ts", api.LongType, 200),
-      Column("amount_rupees", api.LongType, 70000)
+      Column("user", StringType, 100),
+      Column("ts", LongType, 200),
+      Column("amount_rupees", LongType, 70000)
     )
 
     val dollarTable = s"$namespace.dollar_transactions"
