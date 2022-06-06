@@ -4,9 +4,9 @@ import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
+import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{DataType => _, LongType => _, StringType => _, StructType => _, _}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -16,7 +16,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.util
 import scala.collection.JavaConverters._
 
-class GroupBy(val aggregations: Seq[Aggregation],
+class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
               val inputDf: DataFrame,
               val mutationDf: DataFrame = null,
@@ -390,7 +390,7 @@ object GroupBy {
     val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+      if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(_,
@@ -418,12 +418,12 @@ object GroupBy {
                 Option(mutationDf).orNull)
   }
 
-  def renderDataSourceQuery(source: Source,
+  def renderDataSourceQuery(source: api.Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
                             tableUtils: TableUtils,
-                            window: Option[Window],
-                            accuracy: Accuracy,
+                            window: Option[api.Window],
+                            accuracy: api.Accuracy,
                             mutations: Boolean = false): String = {
     val PartitionRange(queryStart, queryEnd) = queryRange
 
@@ -464,7 +464,7 @@ object GroupBy {
     val timeMapping = if (source.dataModel == Entities) {
       Option(source.query.timeColumn).map(Constants.TimeColumn -> _)
     } else {
-      if (accuracy == Accuracy.TEMPORAL) {
+      if (accuracy == api.Accuracy.TEMPORAL) {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
         val dsBasedTimestamp = // 1 millisecond before ds + 1
@@ -487,7 +487,7 @@ object GroupBy {
          |   metaColumns: $metaColumns
          |""".stripMargin)
 
-    val query = QueryUtils.build(
+    val query = api.QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
