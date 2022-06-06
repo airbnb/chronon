@@ -83,7 +83,7 @@ jobs:
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate zipline_py
-                      cd /zipline/api/py/ai/zipline
+                      cd /zipline/api/py/ai/chronon
                       flake8 --extend-ignore=W605,Q000,F631
 
     "Chronon Python Tests":
