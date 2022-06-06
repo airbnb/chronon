@@ -159,16 +159,19 @@ Keys {unselected_keys}, are unselected in source
     else:
         columns = set([c for src in sources for c in utils.get_columns(src)])
         for agg in aggregations:
-            assert agg.inputColumn or agg.operation == Operation.COUNT, (
-                f"input_column is required for all operations except COUNT, found: input_column = {agg.inputColumn} "
+            assert agg.inputColumn, (
+                f"input_column is required for all operations, found: input_column = {agg.inputColumn} "
                 f"and operation {op_to_str(agg.operation)}"
             )
-            assert (agg.inputColumn in columns) or (agg.inputColumn is None) or (agg.inputColumn == 'ts'), (
+            assert (agg.inputColumn in columns) or (agg.inputColumn == 'ts'), (
                 f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
                 f"input_column: {agg.inputColumn}")
 
 
-def GroupBy(sources: Union[List[Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]], ttypes.Source],
+_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
+
+
+def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
             online: bool = DEFAULT_ONLINE,
