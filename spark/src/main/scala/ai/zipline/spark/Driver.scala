@@ -156,7 +156,7 @@ object Driver {
     def run(args: Args): Unit = {
       val objectMapper = new ObjectMapper()
       val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
-      val fetcher = new Fetcher(args.impl(args.serializableProps).genKvStore)
+      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
       val startNs = System.nanoTime
       val requests = Seq(Fetcher.Request(args.name(), keyMap))
       val resultFuture = if (args.`type`() == "join") {

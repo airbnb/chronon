@@ -22,6 +22,10 @@ public class JavaFetcher  {
     this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false);
   }
 
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, boolean debug) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, debug);
+  }
+
   public JavaFetcher(KVStore kvStore, String metaDataSet, Consumer<LoggableResponse> logFunc) {
     this(kvStore, metaDataSet, DEFAULT_TIMEOUT, logFunc);
   }
