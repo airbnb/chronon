@@ -183,10 +183,25 @@ def GroupBy(sources: Union[List[Union[ttypes.Source, ttypes.EventSource, ttypes.
             **kwargs) -> ttypes.GroupBy:
     assert sources, "Sources are not specified"
 
+    agg_inputs = []
+    if aggregations is not None:
+        agg_inputs = [agg.inputColumn for agg in aggregations]
+
+    required_columns = keys + agg_inputs
+
+    def _sanitize_columns(source: ttypes.Source):
+        query = source.entities.query if source.entities is not None else source.events.query
+        if query.selects is None:
+            query.selects = {}
+        for col in required_columns:
+            if col not in query.selects:
+                query.selects[col] = col
+        return source
+
     def _normalize_source(source):
         if isinstance(source, ttypes.EventSource):
             return ttypes.Source(events=source)
-        elif isinstance(sources, ttypes.EntitySource):
+        elif isinstance(source, ttypes.EntitySource):
             return ttypes.Source(entities=source)
         elif isinstance(source, ttypes.Source):
             return source
@@ -195,7 +210,7 @@ def GroupBy(sources: Union[List[Union[ttypes.Source, ttypes.EventSource, ttypes.
 
     if not isinstance(sources, list):
         sources = [sources]
-    sources = [_normalize_source(source) for source in sources]
+    sources = [_sanitize_columns(_normalize_source(source)) for source in sources]
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 

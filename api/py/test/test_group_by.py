@@ -109,13 +109,35 @@ def test_validator_ok():
     assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
 
 
-def test_validator_raises():
-    with pytest.raises(Exception):
-        gb = group_by.GroupBy(
-            sources=event_source("table"),
-            keys=["subject"],
-            aggregations=group_by.Aggregations(
-                random=ttypes.Aggregation(operation=ttypes.Operation.SUM),
+def test_select_sanitization():
+    gb = group_by.GroupBy(
+        sources=[
+            ttypes.EventSource(  # No selects are spcified
+                table="event_table1",
+                query=query.Query(
+                    selects=None,
+                    time_column="ts"
+                )
             ),
-        )
-        print(gb)
+            ttypes.EntitySource(  # Some selects are specified
+                snapshotTable="entity_table1",
+                query=query.Query(
+                    selects={
+                        "key1": "key1_sql",
+                        "event_id": "event_sql"
+                    }
+                )
+            )
+        ],
+        keys=["key1", "key2"],
+        aggregations=group_by.Aggregations(
+            random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM),
+            event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
+            cnt=ttypes.Aggregation(operation=ttypes.Operation.COUNT),
+        ),
+    )
+    required_selects = set(["key1", "key2", "event_id", "cnt"])
+    assert set(gb.sources[0].events.query.selects.keys()) == required_selects
+    assert set(gb.sources[0].events.query.selects.values()) == required_selects
+    assert set(gb.sources[1].entities.query.selects.keys()) == required_selects
+    assert set(gb.sources[1].entities.query.selects.values()) == set(["key1_sql", "key2", "event_sql", "cnt"])
