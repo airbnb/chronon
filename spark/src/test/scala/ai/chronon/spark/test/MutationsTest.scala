@@ -189,7 +189,7 @@ class MutationsTest {
 
   /**
     * Compute the no windows average based on the tables using pure sql
-    * @return Expected Dataframe that should be returned by Zipline.
+    * @return Expected Dataframe that should be returned by Chronon.
     */
   def computeSimpleAverageThroughSql(testNamespace: String): DataFrame = {
     val excludeCondition = "mutations.is_before AND mutations.ts <= queries.ts AND mutations.mutation_ts < queries.ts"
@@ -275,7 +275,7 @@ class MutationsTest {
   /**
     * Compute the no windows last based on the tables using pure sql
     * This helps cover the TimedAggregator part of the code.
-    * @return Expected Dataframe that should be returned by Zipline.
+    * @return Expected Dataframe that should be returned by Chronon.
     */
   def computeLastThroughSql(testNamespace: String): DataFrame = {
     val excludeCondition = "mutations.is_before AND mutations.ts <= queries.ts AND mutations.mutation_ts < queries.ts"

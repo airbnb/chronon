@@ -92,7 +92,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
 object ConsistencyJob {
   def flattenKeyValueBytes(rawDf: Dataset[Row], joinCodec: JoinCodec, outputSize: Int): DataFrame = {
     val outputSchema: StructType = StructType("", joinCodec.outputFields)
-    val outputSparkSchema = Conversions.fromZiplineSchema(outputSchema)
+    val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
     val outputRdd: RDD[Row] = rawDf
       .select("key_bytes", "value_bytes", "ts_millis", "ds")
       .rdd

@@ -25,7 +25,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     extends Serializable {
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
-  protected val selectedSchema: Array[(String, api.DataType)] = Conversions.toZiplineSchema(inputDf.schema)
+  protected val selectedSchema: Array[(String, api.DataType)] = Conversions.toChrononSchema(inputDf.schema)
 
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
   implicit val sparkSession: SparkSession = inputDf.sparkSession
@@ -48,8 +48,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   }
 
   lazy val postAggSchema: StructType = {
-    val valueZiplineSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
-    Conversions.fromZiplineSchema(valueZiplineSchema)
+    val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+    Conversions.fromChrononSchema(valueChrononSchema)
   }
 
   @transient
@@ -65,14 +65,14 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       val updateFunc = (ir: Array[Any], row: Row) => {
         // update when ts < tsOf(ds + 1)
         windowAggregator.updateWindowed(ir,
-                                        Conversions.toZiplineRow(row, tsIndex),
+                                        Conversions.toChrononRow(row, tsIndex),
                                         row.getLong(partitionTsIndex) + Constants.Partition.spanMillis)
         ir
       }
       inputWithPartitionTs -> updateFunc
     } else {
       val updateFunc = (ir: Array[Any], row: Row) => {
-        windowAggregator.update(ir, Conversions.toZiplineRow(row, tsIndex))
+        windowAggregator.update(ir, Conversions.toChrononRow(row, tsIndex))
         ir
       }
       inputDf -> updateFunc
@@ -162,9 +162,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val shiftedColumnIndexTs = expandedInputDf.schema.fieldIndex(shiftedColumnNameTs)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
-      new SawtoothMutationAggregator(aggregations, Conversions.toZiplineSchema(expandedInputDf.schema), resolution)
+      new SawtoothMutationAggregator(aggregations, Conversions.toChrononSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toZiplineRow(row, tsIndex))
+      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toChrononRow(row, tsIndex))
       ir
     }
 
@@ -190,7 +190,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         )
       }
       .groupByKey()
-      .mapValues(_.map(Conversions.toZiplineRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
+      .mapValues(_.map(Conversions.toChrononRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
         .sortWith(_.mutationTs < _.mutationTs)
         .toArray)
 
@@ -289,7 +289,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
                eventsOpt: Option[Iterable[Row]])) =>
           val inputsIt: Iterator[RowWrapper] = {
-            eventsOpt.map(_.map(Conversions.toZiplineRow(_, tsIndex)).toIterator).orNull
+            eventsOpt.map(_.map(Conversions.toChrononRow(_, tsIndex)).toIterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
@@ -314,7 +314,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     inputDf.rdd
       .keyBy(keyBuilder)
-      .mapValues(Conversions.toZiplineRow(_, tsIndex))
+      .mapValues(Conversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
         seqOp = hopsAggregator.update,
         combOp = hopsAggregator.merge

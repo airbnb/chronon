@@ -19,7 +19,7 @@ object Constants {
   val lineTab = "\n    "
   val SemanticHashKey = "semantic_hash"
   val StreamingInputTable = "input_table"
-  val ZiplineMetadataKey = "ZIPLINE_METADATA"
+  val ChrononMetadataKey = "ZIPLINE_METADATA"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)

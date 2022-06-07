@@ -23,47 +23,47 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   lazy val aggregator: SawtoothOnlineAggregator = {
     new SawtoothOnlineAggregator(batchEndTsMillis,
                                  groupByServingInfo.groupBy.aggregations.asScala.toSeq,
-                                 valueZiplineSchema.fields.map(sf => (sf.name, sf.fieldType)))
+                                 valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
   }
 
   // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy
   lazy val groupByOps = new GroupByOps(groupByServingInfo.groupBy)
 
-  lazy val irZiplineSchema: StructType =
+  lazy val irChrononSchema: StructType =
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
-  @transient lazy val keyZiplineSchema: StructType =
-    AvroConversions.toZiplineSchema(keyCodec.schema).asInstanceOf[StructType]
+  @transient lazy val keyChrononSchema: StructType =
+    AvroConversions.toChrononSchema(keyCodec.schema).asInstanceOf[StructType]
 
-  lazy val valueZiplineSchema: StructType = {
+  lazy val valueChrononSchema: StructType = {
     val valueFields = groupBy.aggregationInputs
-      .flatMap(inp => selectedZiplineSchema.fields.find(_.name == inp))
+      .flatMap(inp => selectedChrononSchema.fields.find(_.name == inp))
     StructType(s"${groupBy.metaData.cleanName}_INPUT_COLS", valueFields)
   }
 
   lazy val valueAvroSchema: String = {
-    AvroConversions.fromZiplineSchema(valueZiplineSchema).toString()
+    AvroConversions.fromChrononSchema(valueChrononSchema).toString()
   }
 
   def valueAvroCodec: AvroCodec = AvroCodec.of(valueAvroSchema)
   def selectedCodec: AvroCodec = AvroCodec.of(selectedAvroSchema)
-  lazy val irAvroSchema: String = AvroConversions.fromZiplineSchema(irZiplineSchema).toString()
+  lazy val irAvroSchema: String = AvroConversions.fromChrononSchema(irChrononSchema).toString()
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
 
-  def outputZiplineSchema: StructType = {
+  def outputChrononSchema: StructType = {
     StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
   }
 
-  lazy val outputAvroSchema: String = { AvroConversions.fromZiplineSchema(outputZiplineSchema).toString() }
+  lazy val outputAvroSchema: String = { AvroConversions.fromChrononSchema(outputChrononSchema).toString() }
 
-  def inputZiplineSchema: StructType = {
-    AvroConversions.toZiplineSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
+  def inputChrononSchema: StructType = {
+    AvroConversions.toChrononSchema(parser.parse(inputAvroSchema)).asInstanceOf[StructType]
   }
 
-  def selectedZiplineSchema: StructType = {
-    AvroConversions.toZiplineSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
+  def selectedChrononSchema: StructType = {
+    AvroConversions.toChrononSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
   }
 
   // Schema associated to the stored KV value for streaming data.
@@ -71,8 +71,8 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   // the MutationTime. Therefore, the schema in the value now includes timestamp and reversal column.
   lazy val mutationValueAvroSchema: String = {
     AvroConversions
-      .fromZiplineSchema(
-        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueZiplineSchema ++ MutationAvroFields).toArray))
+      .fromChrononSchema(
+        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueChrononSchema ++ MutationAvroFields).toArray))
       .toString
   }
   def mutationValueAvroCodec: AvroCodec = AvroCodec.of(mutationValueAvroSchema)
@@ -80,15 +80,15 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
   // Schema for data consumed by the streaming job.
   // Needs consistency with mutationDf Schema for backfill group by. (Shared queries)
   // Additional columns used for mutations are stored
-  def mutationZiplineSchema: StructType = {
-    val fields: scala.collection.Seq[StructField] = inputZiplineSchema ++ Constants.MutationFields
+  def mutationChrononSchema: StructType = {
+    val fields: scala.collection.Seq[StructField] = inputChrononSchema ++ Constants.MutationFields
     StructType("MUTATION_SCHEMA", fields.toArray)
   }
 
-  def streamZiplineSchema: StructType = {
+  def streamChrononSchema: StructType = {
     groupByOps.dataModel match {
-      case DataModel.Events   => inputZiplineSchema
-      case DataModel.Entities => mutationZiplineSchema
+      case DataModel.Events   => inputChrononSchema
+      case DataModel.Entities => mutationChrononSchema
     }
   }
 }

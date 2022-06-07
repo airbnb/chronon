@@ -97,7 +97,7 @@ object ConsistencyMetrics {
     }
 
   def buildRowAggregator(metrics: Seq[MetricTransform], inputDf: DataFrame): RowAggregator = {
-    val schema = Conversions.toZiplineSchema(inputDf.schema)
+    val schema = Conversions.toChrononSchema(inputDf.schema)
     val aggParts = metrics.flatMap { m =>
       def buildAggPart(name: String): AggregationPart = {
         val aggPart = new AggregationPart()
@@ -147,15 +147,15 @@ object ConsistencyMetrics {
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
       .keyBy(row => (row.getLong(tsIndex) / bucketMs) * bucketMs) // bin
-      .mapValues(Conversions.toZiplineRow(_, -1))
+      .mapValues(Conversions.toChrononRow(_, -1))
       .aggregateByKey(rowAggregator.init)(rowAggregator.updateWithReturn, rowAggregator.merge) // aggregate
       .mapValues(rowAggregator.finalize)
 
     val resultRowRdd: RDD[SparkRow] = resultRdd.map {
       case (bucketStart, metrics) => new GenericRow(bucketStart +: metrics)
     }
-    val resultZiplineSchema = StructType.from("ooc_metrics", ("ts", LongType) +: rowAggregator.outputSchema)
-    val resultSparkSchema = Conversions.fromZiplineSchema(resultZiplineSchema)
+    val resultChrononSchema = StructType.from("ooc_metrics", ("ts", LongType) +: rowAggregator.outputSchema)
+    val resultSparkSchema = Conversions.fromChrononSchema(resultChrononSchema)
     val resultDf = inputDf.sparkSession.createDataFrame(resultRowRdd, resultSparkSchema)
 
     val result = resultRdd

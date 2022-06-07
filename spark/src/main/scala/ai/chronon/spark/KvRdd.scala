@@ -12,10 +12,10 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession) {
 
-  val keyZSchema: api.StructType = keySchema.toZiplineSchema("Key")
-  val valueZSchema: api.StructType = valueSchema.toZiplineSchema("Value")
+  val keyZSchema: api.StructType = keySchema.toChrononSchema("Key")
+  val valueZSchema: api.StructType = valueSchema.toChrononSchema("Value")
   val flatSchema: StructType = StructType(keySchema ++ valueSchema)
-  val flatZSchema: api.StructType = flatSchema.toZiplineSchema("Flat")
+  val flatZSchema: api.StructType = flatSchema.toChrononSchema("Flat")
 
   def toAvroDf: DataFrame = {
     val rowSchema = StructType(
@@ -27,18 +27,18 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
       )
     )
     def encodeBytes(schema: api.StructType): Any => Array[Byte] = {
-      val codec: AvroCodec = new AvroCodec(AvroConversions.fromZiplineSchema(schema).toString(true));
+      val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
       { data: Any =>
-        val record = AvroConversions.fromZiplineRow(data, schema).asInstanceOf[GenericData.Record]
+        val record = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericData.Record]
         val bytes = codec.encodeBinary(record)
         bytes
       }
     }
 
     def encodeJson(schema: api.StructType): Any => String = {
-      val codec: AvroCodec = new AvroCodec(AvroConversions.fromZiplineSchema(schema).toString(true));
+      val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
       { data: Any =>
-        val record = AvroConversions.fromZiplineRow(data, schema).asInstanceOf[GenericData.Record]
+        val record = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericData.Record]
         val json = codec.encodeJson(record)
         json
       }
@@ -46,9 +46,9 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
 
     println(s"""
          |key schema: 
-         |  ${AvroConversions.fromZiplineSchema(keyZSchema).toString(true)}
+         |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
          |value schema: 
-         |  ${AvroConversions.fromZiplineSchema(valueZSchema).toString(true)}
+         |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
          |""".stripMargin)
     val keyToBytes = encodeBytes(keyZSchema)
     val valueToBytes = encodeBytes(valueZSchema)

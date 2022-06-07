@@ -39,10 +39,10 @@ class RowWrapper(val row: Row, val tsIndex: Int, val reversalIndex: Int = -1, va
 
 object Conversions {
 
-  def toZiplineRow(row: Row, tsIndex: Int, reversalIndex: Int = -1, mutationTsIndex: Int = -1): RowWrapper =
+  def toChrononRow(row: Row, tsIndex: Int, reversalIndex: Int = -1, mutationTsIndex: Int = -1): RowWrapper =
     new RowWrapper(row, tsIndex, reversalIndex, mutationTsIndex)
 
-  def toZiplineType(name: String, dataType: DataType): api.DataType = {
+  def toChrononType(name: String, dataType: DataType): api.DataType = {
     val typeName = name.capitalize
     dataType match {
       case IntegerType               => api.IntType
@@ -56,21 +56,21 @@ object Conversions {
       case BooleanType               => api.BooleanType
       case DateType                  => api.DateType
       case TimestampType             => api.TimestampType
-      case ArrayType(elementType, _) => api.ListType(toZiplineType(s"${typeName}Element", elementType))
+      case ArrayType(elementType, _) => api.ListType(toChrononType(s"${typeName}Element", elementType))
       case MapType(keyType, valueType, _) =>
-        api.MapType(toZiplineType(s"${typeName}Key", keyType), toZiplineType(s"${typeName}Value", valueType))
+        api.MapType(toChrononType(s"${typeName}Key", keyType), toChrononType(s"${typeName}Value", valueType))
       case StructType(fields) =>
         api.StructType(
           s"${typeName}Struct",
           fields.map { field =>
-            api.StructField(field.name, toZiplineType(field.name, field.dataType))
+            api.StructField(field.name, toChrononType(field.name, field.dataType))
           }
         )
       case other => api.UnknownType(other)
     }
   }
 
-  def fromZiplineType(zType: api.DataType): DataType =
+  def fromChrononType(zType: api.DataType): DataType =
     zType match {
       case api.IntType               => IntegerType
       case api.LongType              => LongType
@@ -83,31 +83,31 @@ object Conversions {
       case api.BooleanType           => BooleanType
       case api.DateType              => DateType
       case api.TimestampType         => TimestampType
-      case api.ListType(elementType) => ArrayType(fromZiplineType(elementType))
+      case api.ListType(elementType) => ArrayType(fromChrononType(elementType))
       case api.MapType(keyType, valueType) =>
-        MapType(fromZiplineType(keyType), fromZiplineType(valueType))
+        MapType(fromChrononType(keyType), fromChrononType(valueType))
       case api.StructType(_, fields) =>
         StructType(fields.map { field =>
-          StructField(field.name, fromZiplineType(field.fieldType))
+          StructField(field.name, fromChrononType(field.fieldType))
         })
       case api.UnknownType(other) => other.asInstanceOf[DataType]
     }
 
-  def toZiplineSchema(schema: StructType): Array[(String, api.DataType)] =
+  def toChrononSchema(schema: StructType): Array[(String, api.DataType)] =
     schema.fields.map { field =>
-      (field.name, toZiplineType(field.name, field.dataType))
+      (field.name, toChrononType(field.name, field.dataType))
     }
 
-  def fromZiplineSchema(schema: Seq[(String, api.DataType)]): StructType =
+  def fromChrononSchema(schema: Seq[(String, api.DataType)]): StructType =
     StructType(schema.map {
       case (name, zType) =>
-        StructField(name, fromZiplineType(zType))
+        StructField(name, fromChrononType(zType))
     })
 
-  def fromZiplineSchema(schema: api.StructType): StructType =
+  def fromChrononSchema(schema: api.StructType): StructType =
     StructType(schema.fields.map {
       case api.StructField(name, zType) =>
-        StructField(name, fromZiplineType(zType))
+        StructField(name, fromChrononType(zType))
     })
 
   def toSparkRow(value: Any, dataType: api.DataType): Any = {

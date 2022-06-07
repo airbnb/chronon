@@ -1,5 +1,5 @@
 ### Problem
-Zipline produces data in two contexts. **Offline** as hive tables and 
+Chronon produces data in two contexts. **Offline** as hive tables and 
 **Online** via a low latency kv-store. In the context of a machine learning
 application, training uses offline data and inference uses online data. To
 achieve best model performance, offline data and online data need to 
@@ -139,7 +139,7 @@ breaking point of the design.
 ## Future work
 
 ### Specify groupBy lag
-Zipline could allow users to specify a write-lag as milliseconds. 
+Chronon could allow users to specify a write-lag as milliseconds. 
 Offline, joining with observations/query log would shift the query timestamps 
 ahead by the specified amount. One could use this consistency-measurement 
 framework to estimate the time interval to shift. Since this would vary by 

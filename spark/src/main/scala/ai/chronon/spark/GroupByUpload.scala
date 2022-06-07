@@ -43,14 +43,14 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     println(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(endTs,
                                                                 groupBy.aggregations,
-                                                                Conversions.toZiplineSchema(groupBy.inputDf.schema),
+                                                                Conversions.toChrononSchema(groupBy.inputDf.schema),
                                                                 resolution)
-    val irSchema = Conversions.fromZiplineSchema(sawtoothOnlineAggregator.batchIrSchema)
+    val irSchema = Conversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
-      .mapValues(Conversions.toZiplineRow(_, groupBy.tsIndex))
+      .mapValues(Conversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)(
         seqOp = sawtoothOnlineAggregator.update,
         combOp = sawtoothOnlineAggregator.merge

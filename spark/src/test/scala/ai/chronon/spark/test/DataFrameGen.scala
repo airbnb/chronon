@@ -17,7 +17,7 @@ object DataFrameGen {
     val RowsWithSchema(rows, schema) = CStream.gen(columns, count)
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
-    val sparkSchema = Conversions.fromZiplineSchema(schema)
+    val sparkSchema = Conversions.fromChrononSchema(schema)
     spark.createDataFrame(data, sparkSchema)
   }
 

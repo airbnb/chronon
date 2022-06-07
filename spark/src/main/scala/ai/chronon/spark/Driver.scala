@@ -182,21 +182,21 @@ object Driver {
   object MetadataUploader {
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Path to the Zipline config file or directory")
+        opt[String](required = true, descr = "Path to the Chronon config file or directory")
     }
 
     def run(args: Args): Unit = {
       val putRequest = args.metaDataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
       println(
-        s"Uploaded Zipline Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
+        s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }
   }
 
   object ConsistencyMetricsUploader {
     class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Path to the Zipline join conf file to compute consistency for")
+        opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
       val endDate: ScallopOption[String] =
         opt[String](required = false, descr = "End date to compute metrics until.")
     }

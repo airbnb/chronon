@@ -31,7 +31,7 @@ def get_folder_name_from_class_name(class_name):
 @click.command()
 @click.option(
     '--chronon_root',
-    envvar='ZIPLINE_ROOT',
+    envvar='CHRONON_ROOT',
     help='Path to the root chronon folder',
     default=os.getcwd())
 @click.option(

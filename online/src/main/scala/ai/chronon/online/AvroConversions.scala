@@ -12,6 +12,7 @@ import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
 
 object AvroConversions {
+
   def toAvroValue(value: AnyRef, schema: Schema): Object =
     schema.getType match {
       case Schema.Type.UNION  => toAvroValue(value, schema.getTypes.get(1))
@@ -22,15 +23,15 @@ object AvroConversions {
       case _                  => value
     }
 
-  def toZiplineSchema(schema: Schema): DataType = {
+  def toChrononSchema(schema: Schema): DataType = {
     schema.getType match {
       case Schema.Type.RECORD =>
         StructType(schema.getName,
                    schema.getFields.asScala.toArray.map { field =>
-                     StructField(field.name(), toZiplineSchema(field.schema()))
+                     StructField(field.name(), toChrononSchema(field.schema()))
                    })
-      case Schema.Type.ARRAY   => ListType(toZiplineSchema(schema.getElementType))
-      case Schema.Type.MAP     => MapType(StringType, toZiplineSchema(schema.getValueType))
+      case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType))
+      case Schema.Type.MAP     => MapType(StringType, toChrononSchema(schema.getValueType))
       case Schema.Type.STRING  => StringType
       case Schema.Type.INT     => IntType
       case Schema.Type.LONG    => LongType
@@ -38,13 +39,13 @@ object AvroConversions {
       case Schema.Type.DOUBLE  => DoubleType
       case Schema.Type.BYTES   => BinaryType
       case Schema.Type.BOOLEAN => BooleanType
-      case Schema.Type.UNION   => toZiplineSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
+      case Schema.Type.UNION   => toChrononSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
       case _                   => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
     }
   }
 
   val RepetitionSuffix = "_REPEATED_NAME_"
-  def fromZiplineSchema(dataType: DataType, nameSet: mutable.Set[String] = new mutable.HashSet[String]): Schema = {
+  def fromChrononSchema(dataType: DataType, nameSet: mutable.Set[String] = new mutable.HashSet[String]): Schema = {
     def addName(name: String): String = {
       val cleanName = name.replaceAll("[^0-9a-zA-Z_]", "_")
       val eligibleName = if (!nameSet.contains(cleanName)) {
@@ -70,17 +71,17 @@ object AvroConversions {
               val defaultValue: AnyRef = null
               new Field(
                 addName(chrononField.name),
-                Schema.createUnion(Schema.create(Schema.Type.NULL), fromZiplineSchema(chrononField.fieldType, nameSet)),
+                Schema.createUnion(Schema.create(Schema.Type.NULL), fromChrononSchema(chrononField.fieldType, nameSet)),
                 "",
                 defaultValue)
             }
             .toList
             .asJava
         )
-      case ListType(elementType) => Schema.createArray(fromZiplineSchema(elementType, nameSet))
+      case ListType(elementType) => Schema.createArray(fromChrononSchema(elementType, nameSet))
       case MapType(keyType, valueType) => {
         assert(keyType == StringType, s"Avro only supports string keys for a map")
-        Schema.createMap(fromZiplineSchema(valueType, nameSet))
+        Schema.createMap(fromChrononSchema(valueType, nameSet))
       }
       case StringType  => Schema.create(Schema.Type.STRING)
       case IntType     => Schema.create(Schema.Type.INT)
@@ -95,13 +96,13 @@ object AvroConversions {
     }
   }
 
-  def fromZiplineRow(value: Any, dataType: DataType): Any = {
+  def fromChrononRow(value: Any, dataType: DataType): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
       dataType,
       { (data: Iterator[Any], elemDataType: DataType) =>
-        val schema = AvroConversions.fromZiplineSchema(elemDataType)
+        val schema = AvroConversions.fromChrononSchema(elemDataType)
         val record = new GenericData.Record(schema)
         data.zipWithIndex.foreach { case (value, idx) => record.put(idx, value) }
         record
@@ -116,7 +117,7 @@ object AvroConversions {
     )
   }
 
-  def toZiplineRow(value: Any, dataType: DataType): Any = {
+  def toChrononRow(value: Any, dataType: DataType): Any = {
     Row.from[GenericRecord, ByteBuffer, GenericData.Array[Any], Utf8](
       value,
       dataType,

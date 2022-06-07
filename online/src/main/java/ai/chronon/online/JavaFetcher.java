@@ -31,7 +31,7 @@ public class JavaFetcher  {
   }
 
   public JavaFetcher(KVStore kvStore, Consumer<LoggableResponse> logFunc) {
-    this(kvStore, Constants.ZiplineMetadataKey(), DEFAULT_TIMEOUT, logFunc);
+    this(kvStore, Constants.ChrononMetadataKey(), DEFAULT_TIMEOUT, logFunc);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

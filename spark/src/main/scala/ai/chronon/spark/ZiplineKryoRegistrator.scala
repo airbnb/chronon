@@ -19,7 +19,7 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   }
 }
 
-class ZiplineKryoRegistrator extends KryoRegistrator {
+class ChrononKryoRegistrator extends KryoRegistrator {
   // registering classes tells kryo to not send schema on the wire
   // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {

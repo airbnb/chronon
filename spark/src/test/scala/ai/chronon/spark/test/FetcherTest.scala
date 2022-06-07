@@ -20,7 +20,7 @@ import ai.chronon.api.{
   TimeUnit,
   Window
 }
-import ai.chronon.api.Constants.ZiplineMetadataKey
+import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
@@ -80,7 +80,7 @@ class FetcherTest extends TestCase {
     }
     val inputStream = new InMemoryStream
     val mockApi = new MockApi(kvStore, namespace)
-    mockApi.streamSchema = StructType.from("Stream", Conversions.toZiplineSchema(inputStreamDf.schema))
+    mockApi.streamSchema = StructType.from("Stream", Conversions.toChrononSchema(inputStreamDf.schema))
     val groupByStreaming =
       new GroupBy(inputStream.getInMemoryStreamDF(spark, inputStreamDf), spark, groupByConf, mockApi)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
@@ -101,7 +101,7 @@ class FetcherTest extends TestCase {
     }.replaceAll("\\s+", "")
 
     val inMemoryKvStore = buildInMemoryKVStore()
-    val singleFileDataSet = ZiplineMetadataKey + "_single_file_test"
+    val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
@@ -115,7 +115,7 @@ class FetcherTest extends TestCase {
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
-    val directoryDataSetDataSet = ZiplineMetadataKey + "_directory_test"
+    val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
     val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/chronon/spark/test/resources")
@@ -208,7 +208,7 @@ class FetcherTest extends TestCase {
 
     sourceData.foreach {
       case (schema, rows) =>
-        spark.createDataFrame(rows.asJava, Conversions.fromZiplineSchema(schema)).save(s"$namespace.${schema.name}")
+        spark.createDataFrame(rows.asJava, Conversions.fromChrononSchema(schema)).save(s"$namespace.${schema.name}")
 
     }
     println("saved all data hand written for fetcher test")
@@ -530,7 +530,7 @@ class FetcherTest extends TestCase {
     val keyIndices = keys.map(endDsQueries.schema.fieldIndex)
     val tsIndex = endDsQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create(ZiplineMetadataKey)
+    inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
     def buildRequests(lagMs: Int = 0): Array[Request] =
@@ -578,7 +578,7 @@ class FetcherTest extends TestCase {
             Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
         val values: Array[Any] = columns.map(all.get(_).orNull)
         Conversions
-          .toSparkRow(values, StructType.from("record", Conversions.toZiplineSchema(endDsExpected.schema)))
+          .toSparkRow(values, StructType.from("record", Conversions.toChrononSchema(endDsExpected.schema)))
           .asInstanceOf[GenericRow]
       }
 

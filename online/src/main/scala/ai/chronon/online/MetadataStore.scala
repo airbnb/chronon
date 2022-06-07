@@ -1,6 +1,6 @@
 package ai.chronon.online
 
-import ai.chronon.api.Constants.{UTF8, ZiplineMetadataKey}
+import ai.chronon.api.Constants.{UTF8, ChrononMetadataKey}
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
@@ -18,7 +18,7 @@ import scala.util.{Failure, Success, Try}
 // [timestamp -> {metric name -> metric value}]
 case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
-class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, timeoutMillis: Long) {
+class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
@@ -137,7 +137,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
   def putConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
-    println(s"Uploading Zipline configs from $configPath")
+    println(s"Uploading Chronon configs from $configPath")
     val fileList = listFiles(configFile)
 
     val puts = fileList
@@ -192,7 +192,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case e: Throwable =>
-        println(s"Failed to parse compiled Zipline config file: $file, \nerror=${e.getMessage}")
+        println(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
         None
     }
   }
@@ -209,7 +209,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
         .map(_.asInstanceOf[String])
     } catch {
       case ex: Throwable =>
-        println(s"Failed to parse Zipline config file at $path as JSON with error: ${ex.getMessage}")
+        println(s"Failed to parse Chronon config file at $path as JSON with error: ${ex.getMessage}")
         ex.printStackTrace()
         None
     }

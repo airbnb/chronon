@@ -29,8 +29,8 @@ class InMemoryStream {
 
   // encode input as avro byte array and insert into memory stream.
   def getInMemoryStreamDF(spark: SparkSession, inputDf: Dataset[Row]): DataFrame = {
-    val schema: StructType = StructType.from("input", Conversions.toZiplineSchema(inputDf.schema))
-    val avroSchema = AvroConversions.fromZiplineSchema(schema)
+    val schema: StructType = StructType.from("input", Conversions.toChrononSchema(inputDf.schema))
+    val avroSchema = AvroConversions.fromChrononSchema(schema)
     import spark.implicits._
     val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](MemoryStreamID, spark.sqlContext)
     input.addData(inputDf.collect.map { row: Row =>

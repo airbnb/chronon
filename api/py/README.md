@@ -1,9 +1,9 @@
-### Zipline Python API
+### Chronon Python API
 
 
 #### Overview
 
-Zipline Python API for materializing configs to be run by the Zipline Engine.
+Chronon Python API for materializing configs to be run by the Chronon Engine.
 
 
 #### Set up for publishing.

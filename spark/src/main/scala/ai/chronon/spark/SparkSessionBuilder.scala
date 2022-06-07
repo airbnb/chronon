@@ -23,7 +23,7 @@ object SparkSessionBuilder {
       //otherwise overwrite will delete ALL partitions, not just the ones it touches
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.kryo.registrator", "ai.chronon.spark.ZiplineKryoRegistrator")
+      .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
       .config("spark.kryoserializer.buffer.max", "2000m")
       .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
@@ -57,7 +57,7 @@ object SparkSessionBuilder {
       .builder()
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.kryo.registrator", "ai.chronon.spark.ZiplineKryoRegistrator")
+      .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
       .config("spark.kryoserializer.buffer.max", "2000m")
       .config("spark.kryo.referenceTracking", "false")
 

@@ -78,7 +78,7 @@ def download_jar(version, jar_type='uber', release_tag=None):
     # TODO(Open Sourcing) this should be hard coded to mavencentral path
     base_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/chronon/spark_{}_2.11".format(
         jar_type)
-    jar_path = os.environ.get('ZIPLINE_JAR_PATH', None)
+    jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
         if version is None:
             metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
@@ -118,8 +118,8 @@ class Runner:
 
         self.spark_modes = ['backfill', 'upload', 'streaming']
         if (not self.sub_help) and (args.mode in ONLINE_MODES):
-            assert args.online_class, "must specify online-class or set ZIPLINE_ONLINE_CLASS envvar"
-            assert self.online_jar, "must specify online-jar set ZIPLINE_ONLINE_JAR envvar"
+            assert args.online_class, "must specify online-class or set CHRONON_ONLINE_CLASS envvar"
+            assert self.online_jar, "must specify online-jar set CHRONON_ONLINE_JAR envvar"
 
         if self.conf:
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
@@ -161,10 +161,10 @@ class Runner:
         env.update(team_env)
         env.update(conf_env)
         env["APP_NAME"] = self.app_name
-        env["ZIPLINE_CONF_PATH"] = conf_path
-        env["ZIPLINE_DRIVER_JAR"] = self.jar_path
+        env["CHRONON_CONF_PATH"] = conf_path
+        env["CHRONON_DRIVER_JAR"] = self.jar_path
         if self.mode in ONLINE_MODES:
-            env["ZIPLINE_ONLINE_JAR"] = self.online_jar
+            env["CHRONON_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
         for key, value in env.items():
             if key in os.environ:
@@ -208,7 +208,7 @@ class Runner:
 if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
-    chronon_repo_path = os.getenv('ZIPLINE_REPO_PATH', '.')
+    chronon_repo_path = os.getenv('CHRONON_REPO_PATH', '.')
     parser.add_argument('--conf', required=False, help='Conf param - required for every mode except fetch')
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
@@ -217,10 +217,10 @@ if __name__ == "__main__":
     parser.add_argument('--online-jar',
                         help='Jar containing Online KvStore & Deserializer Impl. ' +
                              'Used for streaming and metadata-upload mode.',
-                        default=os.environ.get('ZIPLINE_ONLINE_JAR', None))
+                        default=os.environ.get('CHRONON_ONLINE_JAR', None))
     parser.add_argument('--online-class',
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
-                        default=os.environ.get('ZIPLINE_ONLINE_CLASS', None))
+                        default=os.environ.get('CHRONON_ONLINE_CLASS', None))
     parser.add_argument('--version', help='Chronon version to use.', default=None)
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
@@ -235,7 +235,7 @@ if __name__ == "__main__":
     parser.add_argument('--sub-help', action='store_true', help='print help command of the underlying jar and exit')
     parser.add_argument('--conf-type', default='group_bys',
                         help='related to sub-help - no need to set unless you are not working with a conf')
-    parser.add_argument('--online-args', default=os.getenv('ZIPLINE_ONLINE_ARGS', ''),
+    parser.add_argument('--online-args', default=os.getenv('CHRONON_ONLINE_ARGS', ''),
                         help='Basic arguments that need to be supplied to all online modes')
     parser.add_argument('--chronon-jar', default=None, help='Path to chronon OS jar')
     parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')

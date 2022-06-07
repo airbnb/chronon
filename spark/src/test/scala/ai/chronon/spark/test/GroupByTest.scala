@@ -225,7 +225,7 @@ class GroupByTest {
     val eventsByKey: RDD[(KeyWithHash, Iterator[RowWrapper])] = eventDf.rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
-        rowIter.map(Conversions.toZiplineRow(_, groupBy.tsIndex)).toIterator
+        rowIter.map(Conversions.toChrononRow(_, groupBy.tsIndex)).toIterator
       }
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray

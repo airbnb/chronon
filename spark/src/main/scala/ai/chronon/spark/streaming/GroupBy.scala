@@ -90,7 +90,7 @@ class GroupBy(inputStream: DataFrame,
       .filter(mutation =>
         !(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after))
 
-    val streamSchema = Conversions.fromZiplineSchema(streamDecoder.schema)
+    val streamSchema = Conversions.fromChrononSchema(streamDecoder.schema)
     println(s"""
         | group by serving info: $groupByServingInfo
         | Streaming source: $streamingSource
@@ -126,10 +126,10 @@ class GroupBy(inputStream: DataFrame,
 
     def schema(indices: Seq[Int], name: String): AvroCodec = {
       val fields = indices
-        .map(Conversions.toZiplineSchema(selectedDf.schema))
+        .map(Conversions.toChrononSchema(selectedDf.schema))
         .map { case (f, d) => StructField(f, d) }
         .toArray
-      AvroCodec.of(AvroConversions.fromZiplineSchema(StructType(name, fields)).toString())
+      AvroCodec.of(AvroConversions.fromChrononSchema(StructType(name, fields)).toString())
     }
     val keyCodec = schema(keyIndices, "key")
     val valueCodec = schema(valueIndices, "selected")

@@ -88,7 +88,7 @@ object Metrics {
       { ctx =>
         println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
-        new NonBlockingStatsDClient("ai.chronon." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
+        new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
                                     "localhost",
                                     8125,
                                     ctx.toTags: _*)

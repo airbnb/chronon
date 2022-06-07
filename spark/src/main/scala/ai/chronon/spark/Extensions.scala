@@ -30,9 +30,9 @@ object Extensions {
         .mkString("\n")
     }
 
-    def toZiplineSchema(name: String = null): api.StructType =
-      api.StructType.from(name, Conversions.toZiplineSchema(schema))
-    def toAvroSchema(name: String = null): Schema = AvroConversions.fromZiplineSchema(toZiplineSchema(name))
+    def toChrononSchema(name: String = null): api.StructType =
+      api.StructType.from(name, Conversions.toChrononSchema(schema))
+    def toAvroSchema(name: String = null): Schema = AvroConversions.fromChrononSchema(toChrononSchema(name))
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 

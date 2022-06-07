@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
-import ai.chronon.api.Constants.ZiplineMetadataKey
+import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -30,7 +30,7 @@ object Fetcher {
 }
 
 class BaseFetcher(kvStore: KVStore,
-                  metaDataSet: String = ZiplineMetadataKey,
+                  metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
@@ -155,7 +155,7 @@ class BaseFetcher(kvStore: KVStore,
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
             case ex: Exception =>
-              val castedKeys = groupByServingInfo.keyZiplineSchema.fields.map {
+              val castedKeys = groupByServingInfo.keyChrononSchema.fields.map {
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
               }.toMap
               try {
@@ -244,7 +244,7 @@ class BaseFetcher(kvStore: KVStore,
     if (bytes == null) return null
     val batchRecord =
       AvroConversions
-        .toZiplineRow(gbInfo.irCodec.decode(bytes), gbInfo.irZiplineSchema)
+        .toChrononRow(gbInfo.irCodec.decode(bytes), gbInfo.irChrononSchema)
         .asInstanceOf[Array[Any]]
     val collapsed = gbInfo.aggregator.windowedAggregator.denormalize(batchRecord(0).asInstanceOf[Array[Any]])
     val tailHops = batchRecord(1)
@@ -367,7 +367,7 @@ case class JoinCodec(conf: JoinOps,
 
 // BaseFetcher + Logging
 class Fetcher(kvStore: KVStore,
-              metaDataSet: String = ZiplineMetadataKey,
+              metaDataSet: String = ChrononMetadataKey,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false)
@@ -398,9 +398,9 @@ class Fetcher(kvStore: KVStore,
                     }
 
                   val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
-                    servingInfo.selectedZiplineSchema
+                    servingInfo.selectedChrononSchema
                   } else {
-                    servingInfo.outputZiplineSchema
+                    servingInfo.outputChrononSchema
                   }
                   baseValueSchema.fields.foreach { sf =>
                     valueFields.append(StructField(joinPart.fullPrefix + "_" + sf.name, sf.fieldType))
@@ -409,9 +409,9 @@ class Fetcher(kvStore: KVStore,
         }
 
         val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
-        val keyCodec = AvroCodec.of(AvroConversions.fromZiplineSchema(keySchema).toString)
+        val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
         val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-        val valueCodec = AvroCodec.of(AvroConversions.fromZiplineSchema(valueSchema).toString)
+        val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
         JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
     }
   })
@@ -440,13 +440,13 @@ class Fetcher(kvStore: KVStore,
                      |""".stripMargin)
               }
               val keyArr = enc.keys.map(resp.request.keys.getOrElse(_, null))
-              val keys = AvroConversions.fromZiplineRow(keyArr, enc.keySchema).asInstanceOf[GenericRecord]
+              val keys = AvroConversions.fromChrononRow(keyArr, enc.keySchema).asInstanceOf[GenericRecord]
               val keyBytes = enc.keyCodec.encodeBinary(keys)
               val valueBytes = resp.values
                 .map { valueMap =>
                   val valueArr = enc.values.map(valueMap.getOrElse(_, null))
                   val valueRecord =
-                    AvroConversions.fromZiplineRow(valueArr, enc.valueSchema).asInstanceOf[GenericRecord]
+                    AvroConversions.fromChrononRow(valueArr, enc.valueSchema).asInstanceOf[GenericRecord]
                   enc.valueCodec.encodeBinary(valueRecord)
                 }
                 .getOrElse(null)
