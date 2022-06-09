@@ -16,6 +16,7 @@ object Metrics {
     val JoinOffline = "join.offline"
     val GroupByOffline = "group_by.offline"
     val StagingQueryOffline = "staging_query.offline"
+    val JoinMetadataUpload = "metadata.upload"
   }
   import Environment._
 
@@ -43,6 +44,8 @@ object Metrics {
     val Bytes = "bytes"
     val KeyBytes = "key.bytes"
     val ValueBytes = "value.bytes"
+
+    val MetadataUpload = "metadata.upload"
 
     val Exception = "exception"
   }

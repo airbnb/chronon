@@ -54,6 +54,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ZiplineMetadataKey, 
       PutRequest(s"joins/${join.metaData.nameToFilePath}".getBytes(Constants.UTF8),
                  ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
                  dataset))
+    val context = Metrics.Context(Metrics.Environment.JoinMetadataUpload, join)
+    context.count("metadata.upload.count", 1)
   }
 
   def putConsistencyMetrics(joinConf: Join, metrics: DataMetrics): Unit = {
