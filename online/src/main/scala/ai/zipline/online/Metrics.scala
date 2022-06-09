@@ -45,7 +45,7 @@ object Metrics {
     val KeyBytes = "key.bytes"
     val ValueBytes = "value.bytes"
 
-    val MetadataUpload = "metadata.upload"
+    val SuccessCount = "success.count"
 
     val Exception = "exception"
   }
