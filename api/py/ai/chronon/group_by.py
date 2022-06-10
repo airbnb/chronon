@@ -202,6 +202,13 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         for col in required_columns:
             if col not in query.selects:
                 query.selects[col] = col
+        if 'ts' in query.selects:  # ts cannot be in selects.
+            ts = query.selects['ts']
+            del query.selects['ts']
+            if query.timeColumn is None:
+                query.timeColumn = ts
+            assert query.timeColumn == ts, f"mismatched `ts`: {ts} and `timeColumn`: {query.timeColumn} " \
+                "in source {source}. Please specify only the `timeColumn`"
         return source
 
     def _normalize_source(source):
