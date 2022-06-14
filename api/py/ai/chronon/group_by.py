@@ -125,6 +125,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
     aggregations = group_by.aggregations
     # check ts is not included in query.select
     first_source_columns = set(utils.get_columns(sources[0]))
+    # TODO undo this check after ml_models CI passes
     assert "ts" not in first_source_columns, "'ts' is a reserved key word for Chronon," \
                                              " please specify the expression in timeColumn"
     for src in sources:
