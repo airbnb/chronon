@@ -456,7 +456,7 @@ class Fetcher(kvStore: KVStore,
             }
         }
         if (loggingTry.isFailure && (debug || Math.random() < 0.01)) {
-          loggingTry.failed.get.printStackTrace()
+          println(s"logging failed due to ${loggingTry.failed.get.getStackTrace.mkString("Array(", ", ", ")")}")
         }
         resp
       }.toSeq)

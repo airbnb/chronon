@@ -121,7 +121,15 @@ object Row {
             mapper(newMap)
         }
       case BinaryType => binarizer(value.asInstanceOf[Array[Byte]])
-      case _          => value
+      case IntType => value.asInstanceOf[Number].intValue()
+      case LongType => value.asInstanceOf[Number].longValue()
+      case DoubleType => value.asInstanceOf[Number].doubleValue()
+      case FloatType => value.asInstanceOf[Number].floatValue()
+      case ShortType => value.asInstanceOf[Number].shortValue()
+      case ByteType => value.asInstanceOf[Number].byteValue()
+      case BooleanType => value.asInstanceOf[Boolean]
+      case StringType => value.toString
+      case _ => value
     }
   }
 }
