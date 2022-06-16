@@ -136,6 +136,7 @@ struct MetaData {
     11: optional double samplePercent
 }
 
+
 // Equivalent to a FeatureSet in zipline terms
 struct GroupBy {
     1: optional MetaData metaData
@@ -165,16 +166,39 @@ struct JoinPart {
     4: optional string prefix
 }
 
+enum ExternalFeatureSource {
+    CONTEXTUAL = 1
+    SERVICE = 2
+}
+
+enum ExternalFeatureDataType {
+    // TODO: Finalize possible types
+    STRING = 1
+    INT = 2
+    FLOAT = 3
+    DOUBLE = 4
+    // etc...
+}
+
+struct ExternalFeature {
+    1: optional string name
+    2: optional ExternalFeatureSource source
+    3: optional ExternalFeatureDataType dataType
+    // Validate in the python API that this is only set when FeatureSource = SERVICE
+    4: optional string serviceEndpoint
+}
+
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
     1: optional MetaData metaData
     2: optional Source left
     3: list<JoinPart> joinParts
+    4: optional list<ExternalFeature> externalFeatures
     // map of left key column name and values representing the skew keys
     // these skew keys will be excluded from the output
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
-    4: optional map<string,list<string>> skewKeys
+    5: optional map<string,list<string>> skewKeys
 }
 
 
