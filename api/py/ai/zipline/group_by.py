@@ -31,6 +31,10 @@ class Operation():
     FIRST = ttypes.Operation.FIRST
     LAST = ttypes.Operation.LAST
     APPROX_UNIQUE_COUNT = ttypes.Operation.APPROX_UNIQUE_COUNT
+    # refer to the chart here to tune your sketch size with lgK
+    # default is 8
+    # https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
+    APPROX_UNIQUE_COUNT_LGK = collector(ttypes.Operation.APPROX_UNIQUE_COUNT)
     UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
