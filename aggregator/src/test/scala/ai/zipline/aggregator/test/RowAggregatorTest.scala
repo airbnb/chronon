@@ -76,6 +76,7 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
+      Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title", argMap = Map("k" -> "10")) -> 3L,
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,

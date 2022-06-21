@@ -242,13 +242,13 @@ object ColumnAggregator {
         }
       case Operation.APPROX_UNIQUE_COUNT =>
         inputType match {
-          case IntType    => simple(new ApproxDistinctCount[Long], toLong[Int])
-          case LongType   => simple(new ApproxDistinctCount[Long])
-          case ShortType  => simple(new ApproxDistinctCount[Long], toLong[Short])
-          case DoubleType => simple(new ApproxDistinctCount[Double])
-          case FloatType  => simple(new ApproxDistinctCount[Double], toDouble[Float])
-          case StringType => simple(new ApproxDistinctCount[String])
-          case BinaryType => simple(new ApproxDistinctCount[Array[Byte]])
+          case IntType    => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))), toLong[Int])
+          case LongType   => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))))
+          case ShortType  => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))), toLong[Short])
+          case DoubleType => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))))
+          case FloatType  => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
+          case StringType => simple(new ApproxDistinctCount[String](aggregationPart.getInt("k", Some(8))))
+          case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException
         }
 
