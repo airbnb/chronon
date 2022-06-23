@@ -18,6 +18,7 @@ MODE_ARGS = {
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
     'fetch': ONLINE_ARGS,
+    'consistency-metrics-upload': OFFLINE_ARGS,
     'local-streaming': ONLINE_WRITE_ARGS + ' -d'
 }
 
@@ -32,7 +33,8 @@ ROUTES = {
     'joins': {
         'backfill': 'join',
         'metadata-upload': 'metadata-upload',
-        'fetch': 'fetch'
+        'fetch': 'fetch',
+        'consistency-metrics-upload': 'consistency-metrics-upload',
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',

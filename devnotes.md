@@ -46,7 +46,7 @@ thrift --gen py -out api/py/ai/zipline api/thrift/api.thrift
 ### Materializing confs
 
 ```
-materizlize  --input_path=<path/to/conf>
+materialize --input_path=<path/to/conf>
 ```
 
 ### Testing
