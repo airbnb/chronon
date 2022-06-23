@@ -112,7 +112,7 @@ case class TableUtils(sparkSession: SparkSession) {
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
       // at-least a million rows per partition - or there will be too many files.
-      val rddPartitionCount = math.min(1500, math.ceil(rowCount / 1000000.0).toInt)
+      val rddPartitionCount = math.min(800, math.ceil(rowCount / 1000000.0).toInt)
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
