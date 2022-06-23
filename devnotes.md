@@ -122,3 +122,22 @@ python setup.py sdist upload -r private
 ```
 
 Don't forget to update the version if necessary
+
+
+## Publishing to MavenCentral (via sonatype)
+1. Create a sonatype account if you don't have
+2. `brew install gpg` on your mac
+
+In `~/.sbt/1.0/sonatype.sbt` add
+```scala
+credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
+```
+In `~/.sbt/sonatype_credentials` add
+```
+realm=Sonatype Nexus Repository Manager
+host=oss.sonatype.org
+user=<your username>
+password=<your password>
+```
+
+

@@ -2,12 +2,26 @@ import sbt.Keys._
 import sbt.Test
 
 ThisBuild / organization := "ai.chronon"
+ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / version := Option(System.getProperty("version")).getOrElse("local")
+ThisBuild / description := "Chronon is a feature engineering platform"
+ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/airbnb/chronon"),
+    "scm:git@github.com:airbnb/chronon.git"
+  )
+)
+ThisBuild / pomIncludeRepository := { _ => false }
 
 lazy val publishSettings = Seq(
-  publishTo := Some("Artifactory Realm" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases"),
-  credentials += Credentials(Path.userHome / ".sbt" / ".credentials")
+  publishTo := {
+    val nexus = "https://s01.oss.sonatype.org/"
+    if (isSnapshot.value) Some("snapshots" at nexus + "content/repositories/snapshots")
+    else Some("releases" at nexus + "service/local/staging/deploy/maven2")
+  },
+  publishMavenStyle := true
 )
 
 lazy val root = (project in file("."))
