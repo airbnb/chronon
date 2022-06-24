@@ -4,7 +4,7 @@ import sbt.Test
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := "2.11.12"
-ThisBuild / version := Option(System.getProperty("version")).getOrElse("local")
+ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -14,6 +14,16 @@ ThisBuild / scmInfo := Some(
   )
 )
 ThisBuild / pomIncludeRepository := { _ => false }
+ThisBuild / homepage := Some(url("https://github.com/airbnb/chronon"))
+// The id needs to be sonatype id. TODO: ask the team to create one and add here.
+ThisBuild / developers := List(
+  Developer(
+    id = "nikhilsimha",
+    name = "Nikhil Simha",
+    email = "r.nikhilsimha@gmail.com",
+    url = url("http://nikhilsimha.com")
+  )
+)
 
 lazy val publishSettings = Seq(
   publishTo := {
@@ -128,6 +138,7 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 )
 
+// TODO: use github releases to publish the spark driver
 val providedLibs: Setting[_] = libraryDependencies ++= sparkLibs.map(_ % "provided")
 val embeddedLibs: Setting[_] = libraryDependencies ++= sparkLibs
 val embeddedTarget: Setting[_] = target := target.value.toPath.resolveSibling("target-embedded").toFile

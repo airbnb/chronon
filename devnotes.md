@@ -105,12 +105,11 @@ thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 Second make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
 ```
 [distutils]
-index-servers = private
+index-servers = pypi
 
-[private]
-repository: <private pypi artifactory url>
-username: <username>
-password: <password or token>
+[pypi]
+repository = https://upload.pypi.org/legacy/
+username = <pypi.org user name>
 ```
 
 Finally, go into the folder containing setup.py and run the publish to the required (using setuptools or twine).
@@ -124,15 +123,15 @@ python setup.py sdist upload -r private
 Don't forget to update the version if necessary
 
 
-## Publishing to MavenCentral (via sonatype)
+## Setup for Publishing libraries to MavenCentral (via sonatype)
 1. Create a sonatype account if you don't have
 2. `brew install gpg` on your mac
 
-In `~/.sbt/1.0/sonatype.sbt` add
+3. In `~/.sbt/1.0/sonatype.sbt` add
 ```scala
 credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
 ```
-In `~/.sbt/sonatype_credentials` add
+4. In `~/.sbt/sonatype_credentials` add
 ```
 realm=Sonatype Nexus Repository Manager
 host=oss.sonatype.org
@@ -140,4 +139,19 @@ user=<your username>
 password=<your password>
 ```
 
+5. setup gpg - just first step in this [link](https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html#step+1%3A+PGP+Signatures)
 
+## Publishing libraries to maven central
+1.Run publish
+```
+CHRONON_VERSION=0.0.X GPG_TTY=$(tty) sbt +publishSigned
+```
+2. login into the [staging repo](https://s01.oss.sonatype.org/#stagingRepositories) in nexus (same password as sonatype jira) 
+3. In the staging repos list - select your publish 
+     1. select "close" wait for the steps to finish
+     2. Select "refresh" and "release"
+     3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/)
+
+## [TODO] Publishing a driver to github releases
+We use gh releases to release the driver that can backfill, upload, stream etc. 
+Currently the repo is not public and the run.py script can't reach it.

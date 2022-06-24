@@ -76,7 +76,7 @@ def download_only_once(url, path):
 
 def download_jar(version, jar_type='uber', release_tag=None):
     # TODO(Open Sourcing) this should be hard coded to mavencentral path
-    base_url = "https://artifactory.d.musta.ch/artifactory/maven-airbnb-releases/ai/chronon/spark_{}_2.11".format(
+    base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_2.11".format(
         jar_type)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
