@@ -1,0 +1,34 @@
+**/target/
+**/target-embedded/
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+*.iml
+.idea/
+.eclipse
+**/.vscode/
+**/__pycache__/
+.DS_Store
+api/py/ai/chronon/api/
+api/py/.coverage
+api/py/htmlcov/
+**/derby.log
+
+# Python distribution and packaging
+api/py/dist/
+api/py/eggs/
+api/py/sdist/
+api/py/build/
+api/py/ai/chronon/thrift/
+api/py/*.egg-info/
+*.egg
+
+# spark test scratch area
+**/spark-warehouse/
+**/metastore_db/
+
+# airbnb specific stuff
+mvn_settings.xml
+/.run/spark Clean.run.xml
