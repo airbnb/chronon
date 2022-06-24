@@ -31,7 +31,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
     val record = new GenericData.Record(schema)
     schemaElems.foreach { field =>
-      record.put(field.name(), valueMap.get(field.name()).orNull)
+      record.put(field.name(), AvroConversions.toAvroValue(valueMap.get(field.name()).orNull, field.schema()))
     }
     encodeBinary(record)
   }
