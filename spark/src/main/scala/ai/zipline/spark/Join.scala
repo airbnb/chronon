@@ -242,15 +242,16 @@ class Join(joinConf: JoinConf, endPartition: String, tableUtils: TableUtils) {
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
-    val rangeToFill = PartitionRange(leftStart, endPartition)
+    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
+    val rangeToFill = PartitionRange(leftStart, leftEnd)
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
-      println(s"\nThere is no data to compute based on end partition of $endPartition.\n\n Exiting..")
+      println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
     }
-    val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), endPartition)
+    val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), leftEnd)
     if (leftUnfilledRange.start != null && leftUnfilledRange.end != null) {
       metrics.gauge(Metrics.Name.PartitionCount, leftUnfilledRange.partitions.length)
     }

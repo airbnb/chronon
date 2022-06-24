@@ -813,4 +813,22 @@ class JoinTest {
 
   }
 
+  @Test
+  def testEndPartitionJoin(): Unit = {
+    val join = getEventsEventsTemporal("end_partition_test")
+    val start = join.getLeft.query.startPartition
+    val end = Constants.Partition.after(start)
+    val limitedJoin = Builders.Join(
+      left =
+        Builders.Source.events(Builders.Query(startPartition = start, endPartition = end), table = join.getLeft.table),
+      joinParts = join.getJoinParts.asScala,
+      metaData = join.metaData
+    )
+    assertTrue(end < today)
+    val toCompute = new Join(limitedJoin, today, tableUtils)
+    toCompute.computeJoin()
+    val ds = tableUtils.sql(s"SELECT MAX(ds) FROM ${limitedJoin.metaData.outputTable}")
+    assertTrue(ds.first().getString(0) < today)
+  }
+
 }
