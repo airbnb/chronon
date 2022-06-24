@@ -33,7 +33,14 @@ trait KVStore {
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
 
   // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] = multiGet(Seq(request)).map(_.head)
+  def get(request: GetRequest): Future[GetResponse] =
+    multiGet(Seq(request)).map(_.head).recover {
+      case e: java.util.NoSuchElementException =>
+        println(
+          s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
+        throw e
+    }
+
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
