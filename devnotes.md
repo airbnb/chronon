@@ -1,9 +1,5 @@
 # Intro
 
-Brain dump of commands used to do various things. For a complete devnotes with Airbnb-specific commands go to this Quip [doc](https://airbnb.quip.com/3ZTyABbDwDUZ/Chronon-V21-dev-notes).
-
-
-
 ## Commands
 
 ***All commands assume you are in the root directory of this project***.
