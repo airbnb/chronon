@@ -28,7 +28,5 @@ api/py/*.egg-info/
 # spark test scratch area
 **/spark-warehouse/
 **/metastore_db/
-
-# airbnb specific stuff
 mvn_settings.xml
 /.run/spark Clean.run.xml

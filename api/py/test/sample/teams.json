@@ -24,7 +24,7 @@
         "description": "Sample Team",
         "maintainer_emails": ["user@chronon.com"],
         "namespace": "sample_team_namespace",
-        "one_airbnb_team_name": "Sample Team name",
+        "team_name": "Sample Team name",
         "spark_cluster": "sample-cluster",
         "spark_queue": "sample_spark_queue"
       }
