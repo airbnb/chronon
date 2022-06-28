@@ -13,6 +13,8 @@ OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
+SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload']
+
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
@@ -135,8 +137,6 @@ class Runner:
             self.online_jar = check_output("{}".format(args.online_jar_fetch)).decode("utf-8")
             print("Downloaded jar to {}".format(self.online_jar))
 
-        self.spark_modes = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload']
-
         if self.conf:
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
             possible_modes = ROUTES[self.conf_type].keys()
@@ -189,7 +189,7 @@ class Runner:
             conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
         final_args = base_args + ' ' + str(self.args)
         subcommand = ROUTES[self.conf_type][self.mode]
-        if self.sub_help or (self.mode not in self.spark_modes):
+        if self.sub_help or (self.mode not in SPARK_MODES):
             command = 'java -cp {jar} ai.chronon.spark.Driver {subcommand} {args}'.format(
                 jar=self.jar_path,
                 args='--help' if self.sub_help else final_args,

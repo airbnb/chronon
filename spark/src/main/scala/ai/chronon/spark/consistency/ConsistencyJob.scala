@@ -113,7 +113,6 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
       joinCodec.valueFields.foldLeft(comparisonDf)((df, field) =>
         df.withColumnRenamed(field.name, s"${field.name}${ConsistencyMetrics.backfilledSuffix}"))
     val (df, metrics) = ConsistencyMetrics.compute(joinCodec.valueFields, renamedDf)
-    df.show()
     df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable)
     metadataStore.putConsistencyMetrics(joinConf, metrics)
     metrics
