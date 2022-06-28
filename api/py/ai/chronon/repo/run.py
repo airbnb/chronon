@@ -179,7 +179,7 @@ class Runner:
         if self.mode in ONLINE_MODES:
             env["CHRONON_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
-        self.set_env_dict(env)
+        set_env_dict(env)
 
     def run(self):
         base_args = MODE_ARGS[self.mode].format(
