@@ -172,7 +172,7 @@ object Extensions {
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
     private def camelToSnake(name: String) =
-      "([a-z]+)([A-Za-z]+)(\\d+)?".r.replaceAllIn(name, { m => m.subgroups.flatMap(g=>Option(g).map(_.toLowerCase())).mkString("_") })
+      "([a-z]+)([A-Z][a-z]+)?(\\d+)?".r.replaceAllIn(name, { m => m.subgroups.flatMap(g=>Option(g).map(_.toLowerCase())).mkString("_") })
 
     def camelToSnake: DataFrame =
       df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))
