@@ -1,0 +1,31 @@
+{
+      "default": {
+        "airflow_queue": "default_queue",
+        "business_hours_alert_notify_people": [],
+        "critical_alert_notify_people": [],
+        "description": "Default values below are used when teams do not specify their own settings",
+        "flink_cluster": "flink-default",
+        "flink_queue": "flink_default_queue",
+        "hive_cli_conn_id": "hive-default-cli",
+        "maintainer_emails": ["chronon@airbnb.com"],
+        "namespace": "default_namespace",
+        "one_airbnb_team_name": "Default Team Name",
+        "online_spark_cluster": "",
+        "online_spark_queue": "",
+        "spark_cluster": "default_spark",
+        "spark_queue": "default_spark_queue",
+        "user": "default_user",
+        "table_properties": {
+            "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+        }
+    },
+      "sample_team": {
+        "airflow_queue": "sample_queue",
+        "description": "Sample Team",
+        "maintainer_emails": ["user@chronon.com"],
+        "namespace": "sample_team_namespace",
+        "team_name": "Sample Team name",
+        "spark_cluster": "sample-cluster",
+        "spark_queue": "sample_spark_queue"
+      }
+}
