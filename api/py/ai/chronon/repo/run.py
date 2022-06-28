@@ -8,16 +8,18 @@ import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class}'
-OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds}'
+ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class} '
+OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
-ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
+ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
+ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
     'fetch': ONLINE_ARGS,
+    'consistency-metrics-upload': ONLINE_OFFLINE_WRITE_ARGS,
     'local-streaming': ONLINE_WRITE_ARGS + ' -d'
 }
 
@@ -32,7 +34,8 @@ ROUTES = {
     'joins': {
         'backfill': 'join',
         'metadata-upload': 'metadata-upload',
-        'fetch': 'fetch'
+        'fetch': 'fetch',
+        'consistency-metrics-upload': 'consistency-metrics-upload',
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
@@ -116,7 +119,7 @@ class Runner:
             self.online_jar = check_output("{}".format(args.online_jar_fetch)).decode("utf-8")
             print("Downloaded jar to {}".format(self.online_jar))
 
-        self.spark_modes = ['backfill', 'upload', 'streaming']
+        self.spark_modes = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload']
         if (not self.sub_help) and (args.mode in ONLINE_MODES):
             assert args.online_class, "must specify online-class or set CHRONON_ONLINE_CLASS envvar"
             assert self.online_jar, "must specify online-jar set CHRONON_ONLINE_JAR envvar"
