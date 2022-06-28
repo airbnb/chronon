@@ -3,28 +3,12 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.api.{
-  Accuracy,
-  BooleanType,
-  Builders,
-  Constants,
-  DataModel,
-  DoubleType,
-  IntType,
-  ListType,
-  LongType,
-  Operation,
-  StringType,
-  StructField,
-  StructType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Accuracy, BooleanType, Builders, Constants, DataModel, DoubleType, IntType, ListType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, MetadataStore}
+import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.consistency.ConsistencyJob
 import ai.chronon.spark.streaming.GroupBy
@@ -465,7 +449,7 @@ class FetcherTest extends TestCase {
 
     var latencySum = 0.0
     var qpsSum = 0.0
-    var loggedValues: Seq[LoggableResponse] = null
+    var loggedValues: Seq[LoggableResponseBase64] = null
     var result: List[Response] = null
     (0 until runCount).foreach { _ =>
       val (latency, qps, resultVal) = fetchOnce
@@ -487,14 +471,13 @@ class FetcherTest extends TestCase {
       TableUtils(spark).insertPartitions(
         loggedDf,
         mockApi.logTable,
-        partitionColumns = Seq("join_name", "ds")
+        partitionColumns = Seq("ds")
       )
     }
     if (samplePercent > 0) {
       println(s"logged count: ${loggedDf.count()}")
       loggedDf.show()
     }
-
     result -> loggedDf
   }
 

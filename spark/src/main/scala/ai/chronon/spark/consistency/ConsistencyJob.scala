@@ -31,7 +31,8 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
            |from $inputTable
            |where name = '$joinName' """.stripMargin)
       .collect()
-      .flatMap(row => tableUtils.parsePartition(row.getString(0)).get(Constants.PartitionColumn)).toSeq
+      .map(row => row.getString(0))
+      .toSet
 
     val inputStart = inputPartitions.reduceOption(Ordering[String].min)
     assert(
