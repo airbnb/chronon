@@ -171,8 +171,10 @@ object Extensions {
                             format: String = Constants.Partition.format): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
-    private def camelToSnake(name: String) =
-      "[A-Z\\d]".r.replaceAllIn(name, { m => "_" + m.group(0).toLowerCase() })
+    private def camelToSnake(name: String) = {
+      val res = "([a-z]+)([A-Z]\\w+)?".r.replaceAllIn(name, { m => m.subgroups.flatMap(g=>Option(g).map(_.toLowerCase())).mkString("_") })
+      res
+    }
 
     def camelToSnake: DataFrame =
       df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))

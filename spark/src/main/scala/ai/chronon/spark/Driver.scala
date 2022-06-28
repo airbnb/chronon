@@ -310,6 +310,8 @@ object Driver {
   class Args(args: Array[String]) extends ScallopConf(args) {
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
+    object ConsistencyMetricsUploaderArgs extends ConsistencyMetricsUploader.Args
+    addSubcommand(ConsistencyMetricsUploaderArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
     addSubcommand(GroupByBackfillArgs)
     object StagingQueryBackfillArgs extends StagingQueryBackfill.Args
@@ -351,6 +353,7 @@ object Driver {
 
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
+          case args.ConsistencyMetricsUploaderArgs => ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
           case _                         => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
