@@ -57,7 +57,7 @@ def download_only_once(url, path):
     path = path.strip()
     if os.path.exists(path):
         content_output = check_output("curl -sI " + url).decode('utf-8')
-        content_length = re.search("(Content-Length:\\s)(\\d+)", content_output)
+        content_length = re.search("(content-length:\\s)(\\d+)", content_output.lower())
         remote_size = int(content_length.group().split()[-1])
         local_size = int(check_output("wc -c " + path).split()[0])
         print("""Files sizes of {url} vs. {path}
@@ -102,6 +102,22 @@ def download_jar(version, jar_type='uber', release_tag=None):
     return jar_path
 
 
+def set_env_dict(env_map):
+    for key, value in env_map.items():
+        if key in os.environ:
+            print("Found " + key + "=" + os.environ.get(key))
+        else:
+            print("Setting " + key + "=" + value)
+            os.environ[key] = value
+
+
+def set_common_env(repo):
+    with open(os.path.join(repo, 'teams.json'), 'r') as teams_file:
+        teams_json = json.load(teams_file)
+        env = teams_json.get('default', {}).get("common_env", {})
+        set_env_dict(env)
+
+
 class Runner:
     def __init__(self, args, jar_path):
         self.repo = args.repo
@@ -117,9 +133,6 @@ class Runner:
             print("Downloaded jar to {}".format(self.online_jar))
 
         self.spark_modes = ['backfill', 'upload', 'streaming']
-        if (not self.sub_help) and (args.mode in ONLINE_MODES):
-            assert args.online_class, "must specify online-class or set CHRONON_ONLINE_CLASS envvar"
-            assert self.online_jar, "must specify online-jar set CHRONON_ONLINE_JAR envvar"
 
         if self.conf:
             self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
@@ -166,12 +179,7 @@ class Runner:
         if self.mode in ONLINE_MODES:
             env["CHRONON_ONLINE_JAR"] = self.online_jar
         print("Setting env variables:")
-        for key, value in env.items():
-            if key in os.environ:
-                print("Found " + key + "=" + os.environ.get(key))
-            else:
-                print("Setting " + key + "=" + value)
-                os.environ[key] = value
+        self.set_env_dict(env)
 
     def run(self):
         base_args = MODE_ARGS[self.mode].format(
@@ -209,6 +217,7 @@ if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
     chronon_repo_path = os.getenv('CHRONON_REPO_PATH', '.')
+    set_common_env(chronon_repo_path)
     parser.add_argument('--conf', required=False, help='Conf param - required for every mode except fetch')
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
