@@ -33,16 +33,16 @@ object TestRow {
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A")),
-      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq()),
-      TestRow(3L, 5, 7.0f, "D", null, null),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D")),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"))
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Seq(5, 3, 4)),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), Seq()),
+      TestRow(3L, 5, 7.0f, "D", null, null, null),
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Seq(5, 3, 4)),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Seq())
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H")),
-      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq())
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Seq(5)),
+      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Seq())
     )
 
     val schema = List(
@@ -51,7 +51,8 @@ class RowAggregatorTest extends TestCase {
       "rating" -> FloatType,
       "title" -> StringType,
       "session_lengths" -> ListType(IntType),
-      "hist_input" -> ListType(StringType)
+      "hist_input" -> ListType(StringType),
+      "hist_input_int" -> ListType(IntType)
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
@@ -62,6 +63,10 @@ class RowAggregatorTest extends TestCase {
     val histogram = new java.util.HashMap[String, Int]()
     histogram.put("A", 4)
     histogram.put("B", 2)
+
+    val histogramInt = new java.util.HashMap[Integer, Int]()
+    histogramInt.put(3, 2)
+    histogramInt.put(4, 2)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
@@ -79,7 +84,8 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
-      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram
+      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
+      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input_int", argMap = Map("k" -> "2")) -> histogramInt
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip

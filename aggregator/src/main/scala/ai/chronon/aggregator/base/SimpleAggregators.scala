@@ -224,19 +224,19 @@ class Variance extends SimpleAggregator[Double, Array[Any], Double] {
   override def isDeletable: Boolean = false
 }
 
-class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, Int], util.Map[String, Int]] {
-  type IrMap = util.Map[String, Int]
+class Histogram[T](k: Int = 0) extends SimpleAggregator[T, util.Map[T, Int], util.Map[T, Int]] {
+  type IrMap = util.Map[T, Int]
   override def outputType: DataType = MapType(StringType, IntType)
 
   override def irType: DataType = outputType
 
-  override def prepare(input: String): IrMap = {
-    val result = new util.HashMap[String, Int]()
+  override def prepare(input: T): IrMap = {
+    val result = new util.HashMap[T, Int]()
     result.put(input, 1)
     result
   }
 
-  def incrementInMap(ir: IrMap, input: String, count: Int = 1): IrMap = {
+  def incrementInMap(ir: IrMap, input: T, count: Int = 1): IrMap = {
     val old = ir.get(input)
     val newVal = if (old == null) count else old + count
     if (newVal == 0) {
@@ -248,7 +248,7 @@ class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, In
   }
 
   // mutating
-  override def update(ir: IrMap, input: String): IrMap = {
+  override def update(ir: IrMap, input: T): IrMap = {
     incrementInMap(ir, input)
   }
 
@@ -271,7 +271,7 @@ class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, In
       val heap = new util.ArrayList[Int]()
       while (it.hasNext) { pq.insert(heap, it.next().getValue) }
       val cutOff = pq.sort(heap).get(k - 1)
-      val newResult = new util.HashMap[String, Int]()
+      val newResult = new util.HashMap[T, Int]()
       val itNew = ir.entrySet().iterator()
       while (itNew.hasNext && newResult.size() < k) {
         val entry = itNew.next()
@@ -285,12 +285,12 @@ class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, In
     }
   }
 
-  override def delete(ir: IrMap, input: String): IrMap = {
+  override def delete(ir: IrMap, input: T): IrMap = {
     incrementInMap(ir, input, -1)
   }
 
   override def clone(ir: IrMap): IrMap = {
-    val result = new util.HashMap[String, Int]();
+    val result = new util.HashMap[T, Int]();
     result.putAll(ir);
     result
   }
