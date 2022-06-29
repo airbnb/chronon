@@ -92,6 +92,8 @@ case class Mutation(schema: StructType = null, before: Array[Any] = null, after:
 
 case class LoggableResponse(keyBytes: Array[Byte], valueBytes: Array[Byte], joinName: String, tsMillis: Long)
 
+case class LoggableResponseBase64(keyBase64: String, valueBase64: String, name: String, tsMillis: Long)
+
 abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
   def schema: StructType

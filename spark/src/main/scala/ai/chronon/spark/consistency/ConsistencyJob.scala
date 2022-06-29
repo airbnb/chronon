@@ -11,6 +11,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util
+import java.util.Base64
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, impl: Api) extends Serializable {
 
@@ -22,13 +23,44 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
   val tableUtils: TableUtils = TableUtils(session)
 
   private def unfilledRange(inputTable: String, outputTable: String): Option[PartitionRange] = {
-    val unfilledRange = tableUtils.unfilledRange(outputTable, PartitionRange(null, endDate), Some(inputTable))
-    if (unfilledRange.isEmpty) {
+    val joinName = joinConf.metaData.name
+    val inputPartitions = session.sqlContext
+      .sql(
+        s"""
+           |select distinct ${Constants.PartitionColumn}
+           |from $inputTable
+           |where name = '$joinName' """.stripMargin)
+      .collect()
+      .map(row => row.getString(0))
+      .toSet
+
+    val inputStart = inputPartitions.reduceOption(Ordering[String].min)
+    assert(
+      inputStart.isDefined,
+      s"""
+         |The join name $joinName does not have available logged data yet.
+         |Please double check your logging status""".stripMargin
+    )
+    val fillablePartitions = PartitionRange(inputStart.get, endDate).partitions.toSet
+    val outputMissing = fillablePartitions -- tableUtils.partitions(outputTable)
+    val inputMissing = fillablePartitions -- inputPartitions
+    val missingPartitions = outputMissing -- inputMissing
+
+    println(
+      s"""
+         |   Unfilled range computation:
+         |   Output table: $outputTable
+         |   Missing output partitions: $outputMissing
+         |   Missing input partitions: $inputMissing
+         |   Unfilled Partitions: $missingPartitions
+         |""".stripMargin)
+    if (missingPartitions.isEmpty) {
       println(
         s"$outputTable seems to be caught up - to either " +
           s"$inputTable(latest ${tableUtils.lastAvailablePartition(inputTable)}) or $endDate.")
+      return None
     }
-    unfilledRange
+    Some(PartitionRange(missingPartitions.min, missingPartitions.max))
   }
 
   private def buildLogTable(): Unit = {
@@ -36,9 +68,8 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
     if (unfilled.isEmpty) return
     val joinName = joinConf.metaData.name
     val rawTableScan = unfilled.get.genScanQuery(null, rawTable)
-    val rawDf = tableUtils.sql(rawTableScan).where(s"join_name = '$joinName'")
+    val rawDf = tableUtils.sql(rawTableScan).where(s"name = '$joinName'")
     println(s"scanned data for $joinName")
-    rawDf.show()
     val outputSize = joinCodec.outputFields.length
     tableUtils.insertPartitions(ConsistencyJob.flattenKeyValueBytes(rawDf, joinCodec, outputSize),
                                 joinConf.metaData.loggedTable)
@@ -66,7 +97,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
   }
 
   private def buildComparisonTable(): Unit = {
-    val unfilled = unfilledRange(joinConf.metaData.loggedTable, joinConf.metaData.comparisonTable)
+    val unfilled = tableUtils.unfilledRange(joinConf.metaData.comparisonTable, PartitionRange(null, endDate), Some(joinConf.metaData.loggedTable))
     if (unfilled.isEmpty) return
     val join = new chronon.spark.Join(buildComparisonJoin(), unfilled.get.end, TableUtils(session))
     join.computeJoin(Some(30))
@@ -75,14 +106,13 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
   def buildConsistencyMetrics(): DataMetrics = {
     buildLogTable()
     buildComparisonTable()
-    val unfilled = unfilledRange(joinConf.metaData.comparisonTable, joinConf.metaData.consistencyTable)
+    val unfilled = tableUtils.unfilledRange(joinConf.metaData.consistencyTable, PartitionRange(null, endDate), Some(joinConf.metaData.comparisonTable))
     if (unfilled.isEmpty) return null
     val comparisonDf = tableUtils.sql(unfilled.get.genScanQuery(null, joinConf.metaData.comparisonTable))
     val renamedDf =
       joinCodec.valueFields.foldLeft(comparisonDf)((df, field) =>
         df.withColumnRenamed(field.name, s"${field.name}${ConsistencyMetrics.backfilledSuffix}"))
     val (df, metrics) = ConsistencyMetrics.compute(joinCodec.valueFields, renamedDf)
-    df.show()
     df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable)
     metadataStore.putConsistencyMetrics(joinConf, metrics)
     metrics
@@ -94,12 +124,12 @@ object ConsistencyJob {
     val outputSchema: StructType = StructType("", joinCodec.outputFields)
     val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
     val outputRdd: RDD[Row] = rawDf
-      .select("key_bytes", "value_bytes", "ts_millis", "ds")
+      .select("key_base64", "value_base64", "ts_millis", "ds")
       .rdd
       .map { row =>
-        val keyBytes = row.get(0).asInstanceOf[Array[Byte]]
+        val keyBytes = Base64.getDecoder.decode(row.getString(0))
         val keyRow = joinCodec.keyCodec.decodeRow(keyBytes)
-        val valueBytes = row.get(1).asInstanceOf[Array[Byte]]
+        val valueBytes = Base64.getDecoder.decode(row.getString(1))
 
         val result = new Array[Any](outputSize)
         System.arraycopy(keyRow, 0, result, 0, keyRow.length)
