@@ -240,6 +240,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
     val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
+    val queryTsType = queriesDf.schema(queryTsIndex).dataType
+    assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
     val partitionIndex = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
 
     // group the data to collect all the timestamps by key and headStart
@@ -247,7 +249,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     // nextHeadStart = headStart + minHopSize
     val queriesByHeadStarts = queriesDf.rdd
       .map { row =>
-        val ts = row.getLong(queryTsIndex)
+        val tsVal = row.get(queryTsIndex)
+        assert(tsVal != null, "ts column cannot be null in left source or query df")
+        val ts = tsVal.asInstanceOf[Long]
         val partition = row.getString(partitionIndex)
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
