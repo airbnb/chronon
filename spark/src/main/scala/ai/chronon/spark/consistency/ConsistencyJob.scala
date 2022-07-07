@@ -12,18 +12,22 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util
 import java.util.Base64
+import scala.collection.JavaConverters._
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, impl: Api) extends Serializable {
 
   val kvStore: KVStore = impl.genKvStore
   val metadataStore = new MetadataStore(kvStore, timeoutMillis = 10000)
   val fetcher: Fetcher = impl.fetcher
-  val joinCodec = fetcher.getJoinCodecs(joinConf.metaData.name).get
+  val joinCodec = fetcher.getJoinCodecs(joinConf.metaData.nameToFilePath).get
   val rawTable: String = impl.logTable
+  val tblProperties = Option(joinConf.metaData.tableProperties)
+    .map(_.asScala.toMap)
+    .getOrElse(Map.empty[String, String])
   val tableUtils: TableUtils = TableUtils(session)
 
   private def unfilledRange(inputTable: String, outputTable: String): Option[PartitionRange] = {
-    val joinName = joinConf.metaData.name
+    val joinName = joinConf.metaData.nameToFilePath
     val inputPartitions = session.sqlContext
       .sql(
         s"""
@@ -35,12 +39,11 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
       .toSet
 
     val inputStart = inputPartitions.reduceOption(Ordering[String].min)
-    assert(
-      inputStart.isDefined,
-      s"""
-         |The join name $joinName does not have available logged data yet.
-         |Please double check your logging status""".stripMargin
-    )
+    assert(inputStart.isDefined,
+        s"""
+           |The join name $joinName does not have available logged data yet.
+           |Please double check your logging status""".stripMargin)
+
     val fillablePartitions = PartitionRange(inputStart.get, endDate).partitions.toSet
     val outputMissing = fillablePartitions -- tableUtils.partitions(outputTable)
     val inputMissing = fillablePartitions -- inputPartitions
@@ -66,13 +69,13 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
   private def buildLogTable(): Unit = {
     val unfilled = unfilledRange(rawTable, joinConf.metaData.loggedTable)
     if (unfilled.isEmpty) return
-    val joinName = joinConf.metaData.name
+    val joinName = joinConf.metaData.nameToFilePath
     val rawTableScan = unfilled.get.genScanQuery(null, rawTable)
     val rawDf = tableUtils.sql(rawTableScan).where(s"name = '$joinName'")
     println(s"scanned data for $joinName")
     val outputSize = joinCodec.outputFields.length
     tableUtils.insertPartitions(ConsistencyJob.flattenKeyValueBytes(rawDf, joinCodec, outputSize),
-                                joinConf.metaData.loggedTable)
+                                joinConf.metaData.loggedTable, tableProperties = tblProperties)
   }
 
   // replace join's left side with the logged table
@@ -113,7 +116,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
       joinCodec.valueFields.foldLeft(comparisonDf)((df, field) =>
         df.withColumnRenamed(field.name, s"${field.name}${ConsistencyMetrics.backfilledSuffix}"))
     val (df, metrics) = ConsistencyMetrics.compute(joinCodec.valueFields, renamedDf)
-    df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable)
+    df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
     metadataStore.putConsistencyMetrics(joinConf, metrics)
     metrics
   }
