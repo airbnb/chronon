@@ -130,7 +130,7 @@ credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
 4. In `~/.sbt/sonatype_credentials` add
 ```
 realm=Sonatype Nexus Repository Manager
-host=oss.sonatype.org
+host=s01.oss.sonatype.org
 user=<your username>
 password=<your password>
 ```
@@ -146,7 +146,7 @@ CHRONON_VERSION=0.0.X GPG_TTY=$(tty) sbt +publishSigned
 3. In the staging repos list - select your publish 
      1. select "close" wait for the steps to finish
      2. Select "refresh" and "release"
-     3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/)
+     3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/) or [sonatype UI](https://search.maven.org/search?q=g:ai.chronon)
 
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
