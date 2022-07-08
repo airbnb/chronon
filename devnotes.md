@@ -92,13 +92,14 @@ Thrift is a dependency for compile. The latest version 0.14 is very new - feb 20
 
 ### Pushing python API package to a private Pypi repository
 
-First make sure the thrift definitions are updated:
-```shell
-cd $CHRONON_OS
-thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
+[One-Time] Setup your pypi public account and contact nikhil to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
+
+[One-Time] Install build and twine
+```
+python3 -m pip install build twine
 ```
 
-Second make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
+[One-Time] Make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
 ```
 [distutils]
 index-servers = pypi
@@ -108,15 +109,17 @@ repository = https://upload.pypi.org/legacy/
 username = <pypi.org user name>
 ```
 
-Finally, go into the folder containing setup.py and run the publish to the required (using setuptools or twine).
-For example, following the configuration above to publish into the `<private>` repository.
-```
-cd $CHRONON_OS
-cd api/py
-python setup.py sdist upload -r private
-```
+Check the [current version](https://pypi.org/manage/project/chronon-ai/releases/) - you are going to increment the version in `api/py/setup.py`
 
-Don't forget to update the version if necessary
+Generate thrift files, build and upload package
+
+```shell
+cd $CHRONON_OS
+thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
+cd api/py
+python3 -m build
+twine upload dist/*
+```
 
 
 ## Setup for Publishing libraries to MavenCentral (via sonatype)
