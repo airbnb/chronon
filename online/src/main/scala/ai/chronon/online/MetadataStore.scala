@@ -55,7 +55,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
   })
 
   def putJoinConf(join: Join): Unit = {
-    println(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.name}")
+    println(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.nameToFilePath}")
     kvStore.put(
       PutRequest(s"joins/${join.metaData.nameToFilePath}".getBytes(Constants.UTF8),
                  ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
