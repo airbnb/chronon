@@ -27,11 +27,12 @@ trait KVStore {
     ExecutionContext.fromExecutor(Executors.newFixedThreadPool(Runtime.getRuntime.availableProcessors()))
 
   def create(dataset: String): Unit
+
   def multiGet(requests: Seq[GetRequest]): Future[Seq[GetResponse]]
+
   def multiPut(keyValueDatasets: Seq[PutRequest]): Future[Seq[Boolean]]
 
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
-
   // helper methods to do single put and single get
   def get(request: GetRequest): Future[GetResponse] =
     multiGet(Seq(request)).map(_.head).recover {

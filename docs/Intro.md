@@ -1,6 +1,6 @@
 # Introduction
 
-Chronon is a feature engineering framework that allows you to compute and store features for offline model training from large scale raw data and online feature serving with low-latency based on a unified feature definition.
+Chronon is a feature engineering framework that allows you to compute and store features for offline model training and online feature serving with unified feature definitions.
 
 Chronon integrates with airflow and spark to automatically generate feature computation pipelines. We can utilize kafka and hive as data sources that power these spark pipelines.
 
@@ -111,15 +111,13 @@ item_rec_features = Join(
 )
 ```
 
-Note: Chronon uses a combination of spark sql expressions and a powerful python API to allow users to define complex feature pipelines. This means you will have access to the spark expression language, built-in functions and UDFs along with Chronon's aggregation engine.
-
 Full code [example](https://gist.github.com/nikhilsimha/13cf46b93116bc3b0b08b4adc1483bd1)
 
 ## Components
 
 ## Source
 
-Source in chronon refers to a logical group of underlying physical data sources.
+Source in chronon refers to a logical group of underlying physical data sources. For each source you can specify a Query that can transform the actual input
 
 ### Entities
 
@@ -136,8 +134,8 @@ To visualize lets say we have a ratings table that looks like so
 | user_id |   item_id |  rating | rating_timestamp |
 |---------|-----------|---------|------------------|
 |  alice  |    pizza  |    5    |  2021-08-16 5:24 |
-|   bob   | ice_cream |    3    |  
-|  carl   | ice_cream |    4    |
+|   bob   | ice_cream |    3    |  2021-08-16 5:24 |
+|  carl   | ice_cream |    4    |  2021-08-16 5:24 |
 | dominic |    pizza  |    1    |  2021-10-21 7:44 |
 |  eva    |    pizza  |    4    |  2021-10-21 7:44 |
 |  fred   | ice_cream |    4    |  2021-10-21 7:44 |
@@ -162,7 +160,7 @@ Consider the following group of aggregations from an user purchase stream `(user
 
 The above example illustrates the computation of aggregates in several contexts.
 
-- **served online** in **realtime** - you can utilize the Chronon client (java/scala) to query for the aggregate values as for **now**. The client would reply with realtime updated aggregate values. This would require a *stream* of user purchases and also a warehouse (hive) *table* of historical user purchases.
+- **served online** in **realtime** - you can utilize the Chronon client (java/scala) to query for the aggregate values as of **now**. The client would reply with realtime updated aggregate values. This would require a *stream* of user purchases and also a warehouse (hive) *table* of historical user purchases.
 
 - **served online** as **midnight snapshots** - you can utilize the client to query for the aggregate values as of **today's midnight**. The values are only refreshed every midnight. This would require just the warehouse (hive) table of historical user purchases that receives a new partition every midnight.
   - *Note: Users can configure accuracy to be midnight or realtime*
