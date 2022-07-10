@@ -77,6 +77,7 @@ object GroupByUpload {
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
+    groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = Constants.Partition.after(endDs)
     // for snapshot accuracy
