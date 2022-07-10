@@ -107,6 +107,8 @@ class GroupBy(inputStream: DataFrame,
       }(RowEncoder(streamSchema))
 
     des.createOrReplaceTempView(Constants.StreamingInputTable)
+
+    groupByConf.setups.foreach(session.sql)
     val selectedDf = session.sql(streamingQuery)
     assert(selectedDf.schema.fieldNames.contains(Constants.TimeColumn),
            s"time column ${Constants.TimeColumn} must be included in the selects")
