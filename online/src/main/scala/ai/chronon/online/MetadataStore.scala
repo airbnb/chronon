@@ -37,7 +37,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
-  lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
+  lazy val getJoinConf: TTLCache[String, JoinOps] = new TTLCache[String, JoinOps]({ name =>
     val startTimeMs = System.currentTimeMillis()
     val result = getConf[Join](s"joins/$name")
       .recover {
@@ -51,7 +51,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
       else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
     context.withSuffix("join").histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
-    result
+    result match {
+      case Success(v) => v
+      case Failure(ex) => throw ex
+    }
   })
 
   def putJoinConf(join: Join): Unit = {
@@ -83,7 +86,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       .get(
         GetRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
                    dataset,
-                   Some(Constants.Partition.epochMillis(fromDate))));
+                   Some(Constants.Partition.epochMillis(fromDate))))
     responseFuture.map { response =>
       val valuesTry = response.values
       valuesTry.map { values =>
