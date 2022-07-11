@@ -6,7 +6,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 
 import java.util
-import scala.collection.mutable
+import scala.collection.{AbstractIterator, mutable}
 
 // wrapper class of spark ai.chronon.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.chronon.aggregator.row with an additional class
@@ -130,6 +130,27 @@ object Conversions {
         }
         result
       }
+    )
+  }
+
+  def toChrononRowRecursive(value: Any, dataType: api.DataType): Any = {
+    api.Row.from[GenericRow, Array[Byte], util.ArrayList[Any], String](
+      value,
+      dataType,
+      { (record: GenericRow, fields: Seq[api.StructField]) =>
+        new AbstractIterator[Any]() {
+          var idx = 0
+          override def next(): Any = {
+            val res = record.get(idx)
+            idx += 1
+            res
+          }
+          override def hasNext: Boolean = idx < fields.size
+        }
+      },
+      { id:  Array[Byte] => id },
+      { id:  util.ArrayList[Any] => id},
+      { id:  String => id }
     )
   }
 }

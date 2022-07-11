@@ -482,6 +482,7 @@ object GroupBy {
          |Rendering source query:
          |   query range: $queryRange
          |   query window: $window
+         |   accuracy: $accuracy
          |   source table: ${source.table}
          |   source data range: $sourceRange
          |   source start/end: ${source.query.startPartition}/${source.query.endPartition}

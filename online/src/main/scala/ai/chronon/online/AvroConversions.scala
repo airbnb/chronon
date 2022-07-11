@@ -96,7 +96,7 @@ object AvroConversions {
     }
   }
 
-  def fromChrononRow(value: Any, dataType: DataType): Any = {
+  def fromChrononRow(value: Any, dataType: DataType,  extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
@@ -104,7 +104,9 @@ object AvroConversions {
       { (data: Iterator[Any], elemDataType: DataType) =>
         val schema = AvroConversions.fromChrononSchema(elemDataType)
         val record = new GenericData.Record(schema)
-        data.zipWithIndex.foreach { case (value, idx) => record.put(idx, value) }
+        data.zipWithIndex.foreach {
+          case (value1, idx) => record.put(idx, value1)
+        }
         record
       },
       ByteBuffer.wrap,
@@ -113,7 +115,8 @@ object AvroConversions {
         elems.foreach(result.add)
         result
       },
-      { m: util.Map[Any, Any] => m }
+      { m: util.Map[Any, Any] => m },
+      extraneousRecord
     )
   }
 

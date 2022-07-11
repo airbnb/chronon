@@ -83,11 +83,13 @@ object Row {
                                                     composer: (Iterator[Any], DataType) => StructType,
                                                     binarizer: Array[Byte] => BinaryType,
                                                     collector: (Iterator[Any], Int) => ListType,
-                                                    mapper: (util.Map[Any, Any] => MapType)): Any = {
+                                                    mapper: (util.Map[Any, Any] => MapType),
+                                                    extraneousRecord: Any => Array[Any] = null
+                                                   ): Any = {
 
     if (value == null) return null
     def edit(value: Any, dataType: DataType): Any =
-      to(value, dataType, composer, binarizer, collector, mapper)
+      to(value, dataType, composer, binarizer, collector, mapper, extraneousRecord)
     dataType match {
       case StructType(_, fields) =>
         value match {
@@ -101,6 +103,10 @@ object Row {
                        .zipWithIndex
                        .map { case (value, idx) => edit(value, fields(idx).fieldType) },
                      dataType)
+          case value: Any =>
+            assert(extraneousRecord != null, s"No handler for $value")
+            composer(extraneousRecord(value).iterator.zipWithIndex.map { case (value, idx) => edit(value, fields(idx).fieldType) },
+            dataType)
         }
       case ListType(elemType) =>
         value match {
