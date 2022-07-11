@@ -831,4 +831,57 @@ class JoinTest {
     assertTrue(ds.first().getString(0) < today)
   }
 
+  @Test
+  def testStructJoin(): Unit = {
+    val nameSuffix = "_struct_test"
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_$nameSuffix"
+    val itemQueriesDf = DataFrameGen
+      .events(spark, itemQueries, 10000, partitions = 100)
+
+    itemQueriesDf.save(s"${itemQueriesTable}_tmp")
+    val structLeftDf = tableUtils.sql(s"SELECT item, NAMED_STRUCT('item_repeat', item) as item_struct, ts, ds FROM ${itemQueriesTable}_tmp")
+    structLeftDf.save(itemQueriesTable)
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view_$nameSuffix"
+    val df = DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200)
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms", "item_struct"), startPartition = yearAgo)
+    )
+    spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
+    df.save(s"${viewsTable}_tmp", Map("tblProp1" -> "1"))
+    val structSource = tableUtils.sql(s"SELECT *, NAMED_STRUCT('item_repeat', item) as item_struct FROM ${viewsTable}_tmp")
+    structSource.save(viewsTable)
+    val gb = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "1"), inputColumn = "item_struct")
+        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
+        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
+      ),
+      metaData = Builders.MetaData(name = s"unit_test.item_views_$nameSuffix", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    val join = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
+      metaData =
+        Builders.MetaData(name = s"test.item_temporal_features$nameSuffix", namespace = namespace, team = "item_team")
+    )
+    val toCompute = new Join(join, today, tableUtils)
+    toCompute.computeJoin()
+  }
 }
