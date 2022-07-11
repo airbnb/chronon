@@ -266,25 +266,30 @@ class BaseFetcher(kvStore: KVStore,
   def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-    val joinDecomposed: scala.collection.Seq[(Request, Seq[PrefixedRequest])] = {
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
       requests.map { request =>
-        val join = getJoinConf(request.name)
+        val joinTry = getJoinConf(request.name)
         var joinContext: Option[Metrics.Context] = None
-        joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
-        joinContext.get.increment("join_request.count")
-        val decomposed = join.joinPartOps.map { part =>
-          val joinContextInner = Metrics.Context(joinContext.get, part)
-          val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-          PrefixedRequest(
-            part.fullPrefix,
-            Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner)))
+        val decomposedTry = joinTry.map { join =>
+          joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
+          joinContext.get.increment("join_request.count")
+          join.joinPartOps.map { part =>
+            val joinContextInner = Metrics.Context(joinContext.get, part)
+            val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+            PrefixedRequest(
+              part.fullPrefix,
+              Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner)))
+          }
         }
-        request.copy(context = joinContext) -> decomposed
+        request.copy(context = joinContext) -> decomposedTry
       }
-    }
+
     val groupByRequests = joinDecomposed.flatMap {
-      case (_, prefixedRequest) =>
-        prefixedRequest.map(_.request)
+      case (_, gbTry) =>
+        gbTry match {
+          case Failure(_)        => Iterator.empty
+          case Success(requests) => requests.iterator.map(_.request)
+        }
     }
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
 
@@ -293,37 +298,49 @@ class BaseFetcher(kvStore: KVStore,
       .map { groupByResponses =>
         val responseMap = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
         val responses = joinDecomposed.iterator.map {
-          case (joinRequest, decomposedRequests) =>
-            val joinValues = decomposedRequests.iterator.flatMap {
-              case PrefixedRequest(prefix, groupByRequest) =>
-                val result = responseMap
-                  .getOrElse(groupByRequest,
-                    Failure(new IllegalStateException(
-                      s"Couldn't find a groupBy response for $groupByRequest in response map")))
-                  .map { valueMap =>
-                    if (valueMap != null) {
-                      valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
-                    } else {
-                      Map.empty[String, AnyRef]
+          case (joinRequest, decomposedRequestsTry) =>
+            val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
+              val result = groupByRequestsWithPrefix.iterator.flatMap {
+                case PrefixedRequest(prefix, groupByRequest) =>
+                  responseMap
+                    .getOrElse(groupByRequest,
+                               Failure(new IllegalStateException(
+                                 s"Couldn't find a groupBy response for $groupByRequest in response map")))
+                    .map { valueMap =>
+                      if (valueMap != null) {
+                        valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+                      } else {
+                        Map.empty[String, AnyRef]
+                      }
                     }
-                  }.recover { // capture exception as a key
-                  case ex: Throwable =>
-                    val stringWriter = new StringWriter()
-                    val printWriter = new PrintWriter(stringWriter)
-                    ex.printStackTrace(printWriter)
-                    val trace = stringWriter.toString
-                    if (debug || Math.random() < 0.001) {
-                      println(s"Failed to fetch $groupByRequest with \n$trace")
+                    // prefix feature names
+                    .recover { // capture exception as a key
+                      case ex: Throwable =>
+                        val stringWriter = new StringWriter()
+                        val printWriter = new PrintWriter(stringWriter)
+                        ex.printStackTrace(printWriter)
+                        val trace = stringWriter.toString
+                        if (debug || Math.random() < 0.001) {
+                          println(s"Failed to fetch $groupByRequest with \n$trace")
+                        }
+                        Map(groupByRequest.name + "_exception" -> trace)
                     }
-                    Map(groupByRequest.name + "_exception" -> trace)
-                }.get
-                result
-            }.toMap
+                    .get
+              }.toMap
+              result
+            }
+            joinValuesTry match {
+              case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
+              case Success(responseMap) =>
+                joinRequest.context.foreach { ctx =>
+                  ctx.histogram("response.keys.count", responseMap.size)
+                }
+            }
             joinRequest.context.foreach { ctx =>
               ctx.histogram("overall.latency.millis", System.currentTimeMillis() - startTimeMs)
               ctx.increment("overall.request.count")
             }
-            Response(joinRequest, joinValues)
+            Response(joinRequest, joinValuesTry)
         }.toSeq
         responses
       }
