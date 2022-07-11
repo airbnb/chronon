@@ -61,7 +61,7 @@ def Join(left: api.Source,
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
-    if left.events:
+    if left.events and left.events.query.selects:
         assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Chronon," \
                                                              " please specify the expression in timeColumn"
         # mapping ts to query.timeColumn to events only
