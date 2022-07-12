@@ -199,6 +199,11 @@ object Driver {
         opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
       val endDate: ScallopOption[String] =
         opt[String](required = false, descr = "End date to compute metrics until.")
+      // todo: implement step day logic for ConsistencyJob.scala
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+          descr = "Runs consistency metrics job in steps, step-days at a time. Default is 30 days",
+          default = Option(30))
     }
 
     /**
