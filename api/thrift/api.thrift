@@ -136,6 +136,8 @@ struct MetaData {
     11: optional double samplePercent
 }
 
+// <--------- Feature Definition via Group By ----------------->
+
 // Equivalent to a FeatureSet in chronon terms
 struct GroupBy {
     1: optional MetaData metaData
@@ -153,29 +155,122 @@ struct GroupBy {
     6: optional string backfillStartDate
 }
 
+// <--------- Feature Definition via External Data ----------------->
+
+enum DataType {
+  // ...
+}
+
+struct TypedField {
+  1: optional string name
+  2: optional DataType dataType
+}
+
+struct ExternalData {
+  1: optional MetaData metaData
+  2: optional list<TypedField> fields
+}
+
+// <---------------- Join aka Feature Collection ---------------->
+
 struct AggregationSelector {
   1: optional string name
   2: optional list<Window> windows
 }
 
-struct JoinPart {
-    1: optional GroupBy groupBy
-    2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors
-    4: optional string prefix
+struct NameMapper {
+  1: optional map<string, string> keyMapping
+  2: optional string prefix
 }
 
-// A Temporal join - with a root source, with multiple groupby's.
+// JoinPart is now either a GroupBy or a ExternalData
+struct JoinPart {
+    // A: Define JoinPart as a groupBy + selectors + nameMapper
+    1: optional GroupBy groupBy
+
+    // B: Define JoinPart as a externalData + selectors + nameMapper
+    6: optional ExternalData externalData
+
+    // filters/mappers to produce the finalized features
+    3: optional list<AggregationSelector> selectors
+    5: optional NameMapper nameMapper
+    2: optional map<string, string> keyMapping // deprecated
+    4: optional string prefix // deprecated
+
+    // for offline data generation
+    7: optional string logStartPartition
+    8: optional string backfillStartPartition
+}
+
+struct Derivation {
+    1: optional map<string, string> selects
+    2: optional list<string> setups = []
+}
+
+// Represents a feature collection which becomes a handle for both online fetching and offline data management.
+//
+// However, we likely need different levels of user-facing APIs for online versus offline: Kyoo models explicitly
+// support one event source containing multiple models and feature fetches, which means offline is a union of online
+// We need to expose some utility functions in ml_models to easily construct/merge multiple joins into one join,
+// and easily flag which ones are for serving and which ones are for offline data generation.
 struct Join {
     1: optional MetaData metaData
-    2: optional Source left
+    2: optional Source left // define log source
     3: list<JoinPart> joinParts
     // map of left key column name and values representing the skew keys
     // these skew keys will be excluded from the output
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    5: optional Derivation derivations
+    6: optional list<string> offlineProcessors // placeholder for custom offline processing logic
 }
+
+// <---------------- Label Join API ----------------------------->
+
+struct LabelJoin {
+  1: optional EntitySource labelSource
+  2: optional map<string, string> keyMapping // log-to-label key mapping.
+  3: optional list<TypedField> labels
+  4: optional int startOffset
+  5: optional int endOffset
+}
+
+struct TrainingSet {
+  1: optional Join join
+  2: optional list<LabelJoin> labelJoins
+}
+
+// <--------- Feature MetaData  ----------------->
+// <--------- this will be auto-compiled instead of populated by clients ---------------------->
+// <--------- use for: (1) UMS, (2) static access (w/o type info), (3) dynamic access (w/ type info) --------->
+
+enum FeatureSource {
+  GROUP_BY = 0
+  EXTERNAL_DATA = 1
+}
+
+struct Feature {
+  1: optional string name
+  2: optional DataType dataType
+  3: optional FeatureSource source
+  4: optional string sourceName
+  5: optional list<string> keyColumns
+}
+
+// ??? how will this be used?
+struct FeatureCollection {
+  1: optional string name
+  2: optional list<Feature> features
+  3: optional list<NameMapper> nameMappers
+  // ??? how to support derivations
+}
+
+// Open questions:
+// 1. Dynamic referencing: clients (esp. feature consumers) may want to reference a feature just by its name, and carry
+//                         around a list of feature names as the definition of feature collection. How do we enable this?
+//                         Can we dynamically link back to GB/External feature definitions?
+//                         see https://docs.google.com/presentation/d/1aFTZZtxYp3y0S896q_IkzmU4xaMYzdpCkIOI2PTKAFM/edit#slide=id.g13241bc00f8_0_63
 
 
 // This is written by the bulk upload process into the metaDataset

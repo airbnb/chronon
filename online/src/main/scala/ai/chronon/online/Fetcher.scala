@@ -29,6 +29,31 @@ object Fetcher {
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
 }
 
+object FetcherAFP {
+
+  // maps to 1 ExternalData definition in ml_models
+  trait ExternalFetch {
+    def fetch: AnyRef
+    def parse(fetchResult: AnyRef): Map[String, AnyRef]
+  }
+
+  case class Contextual(contexts: Map[String, AnyRef]) extends ExternalFetch {
+    def fetch = None
+    def parse(fetchResult: AnyRef) = contexts
+  }
+
+  case class Request(name: String,
+                     keys: Map[String, AnyRef],
+                     // mapping from the names of ExternalData to the ExternalFetch logic
+                     externalFetches: Map[String, ExternalFetch] = Map.empty,
+                     atMillis: Option[Long] = None,
+                     context: Option[Metrics.Context] = None)
+
+  case class Response(request: Request,
+                      values: Try[Map[String, AnyRef]],
+                      externalValues: Map[String, Try[Map[String, AnyRef]]] = Map.empty)
+}
+
 class BaseFetcher(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
