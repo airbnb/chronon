@@ -171,6 +171,25 @@ struct ExternalData {
   2: optional list<TypedField> fields
 }
 
+// <--------- Feature MetaData  ----------------->
+// <--------- this will be auto-compiled instead of populated by clients ---------------------->
+// <--------- usage 1. UMS integration source
+// <---------       2. discovery through code
+// <---------       3. allow dynamic reference from feature name string back to feature objects (i.e. reverse index).
+
+enum FeatureSource {
+  GROUP_BY = 0
+  EXTERNAL_DATA = 1
+}
+
+struct Feature {
+  1: optional string name
+  2: optional DataType dataType
+  3: optional FeatureSource source
+  4: optional string sourceName
+  5: optional list<string> keyColumns
+}
+
 // <---------------- Join aka Feature Collection ---------------->
 
 struct AggregationSelector {
@@ -183,7 +202,17 @@ struct NameMapper {
   2: optional string prefix
 }
 
-// JoinPart is now either a GroupBy or a ExternalData
+// JoinPart is now either a GroupBy or a ExternalData.
+//
+// Can be created via static reference to GroupBy/ExternalData objects, or dynamic reference via featureNames.
+// Motivation: clients (esp. feature consumers) may want to reference a feature just by its name, and carry
+//             around a list of feature names as the definition of feature collection. How do we enable this?
+//             Can we dynamically link back to GB/External feature definitions?
+// see https://docs.google.com/presentation/d/1aFTZZtxYp3y0S896q_IkzmU4xaMYzdpCkIOI2PTKAFM/edit#slide=id.g13241bc00f8_0_63
+//
+// static reference: JoinPart(groupBy=..., externalData=...)
+// dynamic reference: ChrononUtils.createJoinPart(featureNames=[...])
+//
 struct JoinPart {
     // A: Define JoinPart as a groupBy + selectors + nameMapper
     1: optional GroupBy groupBy
@@ -208,14 +237,9 @@ struct Derivation {
 }
 
 // Represents a feature collection which becomes a handle for both online fetching and offline data management.
-//
-// However, we likely need different levels of user-facing APIs for online versus offline: Kyoo models explicitly
-// support one event source containing multiple models and feature fetches, which means offline is a union of online
-// We need to expose some utility functions in ml_models to easily construct/merge multiple joins into one join,
-// and easily flag which ones are for serving and which ones are for offline data generation.
 struct Join {
     1: optional MetaData metaData
-    2: optional Source left // define log source
+    2: optional Source left
     3: list<JoinPart> joinParts
     // map of left key column name and values representing the skew keys
     // these skew keys will be excluded from the output
@@ -223,10 +247,9 @@ struct Join {
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
     5: optional Derivation derivations
-    6: optional list<string> offlineProcessors // placeholder for custom offline processing logic
 }
 
-// <---------------- Label Join API ----------------------------->
+// <---------------- Offline Data API ----------------------------->
 
 struct LabelJoin {
   1: optional EntitySource labelSource
@@ -236,42 +259,19 @@ struct LabelJoin {
   5: optional int endOffset
 }
 
+// one TrainingSet maps a single instance of OFS. Note that, we need to support one event source containing multiple
+// models and therefore multiple join, which is an explicit requirement from Kyoo models.
 struct TrainingSet {
-  1: optional Join join
-  2: optional list<LabelJoin> labelJoins
+  1: optional MetaData metaData
+  2: optional EventSource logSource
+  3: optional list<string> offlineProcessors // placeholder for custom offline processing logic
+  4: optional list<LabelJoin> labelJoins
+
+  // features to extract. the recommended way is to use Join created from feature name lists.
+  5: optional list<Join> joins
+  6: optional list<GroupBy> groupBys
+  7: optional list<ExternalData> externalData
 }
-
-// <--------- Feature MetaData  ----------------->
-// <--------- this will be auto-compiled instead of populated by clients ---------------------->
-// <--------- use for: (1) UMS, (2) static access (w/o type info), (3) dynamic access (w/ type info) --------->
-
-enum FeatureSource {
-  GROUP_BY = 0
-  EXTERNAL_DATA = 1
-}
-
-struct Feature {
-  1: optional string name
-  2: optional DataType dataType
-  3: optional FeatureSource source
-  4: optional string sourceName
-  5: optional list<string> keyColumns
-}
-
-// ??? how will this be used?
-struct FeatureCollection {
-  1: optional string name
-  2: optional list<Feature> features
-  3: optional list<NameMapper> nameMappers
-  // ??? how to support derivations
-}
-
-// Open questions:
-// 1. Dynamic referencing: clients (esp. feature consumers) may want to reference a feature just by its name, and carry
-//                         around a list of feature names as the definition of feature collection. How do we enable this?
-//                         Can we dynamically link back to GB/External feature definitions?
-//                         see https://docs.google.com/presentation/d/1aFTZZtxYp3y0S896q_IkzmU4xaMYzdpCkIOI2PTKAFM/edit#slide=id.g13241bc00f8_0_63
-
 
 // This is written by the bulk upload process into the metaDataset
 // streaming uses this to
