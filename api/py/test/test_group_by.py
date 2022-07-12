@@ -141,3 +141,28 @@ def test_select_sanitization():
     assert set(gb.sources[0].events.query.selects.values()) == required_selects
     assert set(gb.sources[1].entities.query.selects.keys()) == required_selects
     assert set(gb.sources[1].entities.query.selects.values()) == set(["key1_sql", "key2", "event_sql", "cnt"])
+
+
+def test_snapshot_with_hour_aggregation():
+    with pytest.raises(AssertionError):
+        group_by.GroupBy(
+            sources=[
+                ttypes.EntitySource(  # Some selects are specified
+                    snapshotTable="entity_table1",
+                    query=query.Query(
+                        selects={
+                            "key1": "key1_sql",
+                            "event_id": "event_sql"
+                        },
+                        time_column="ts",
+                    )
+                )
+            ],
+            keys=["key1"],
+            aggregations=group_by.Aggregations(
+                random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM, windows=[
+                    ttypes.Window(1, ttypes.TimeUnit.HOURS),
+                ]),
+            ),
+            backfill_start_date="2021-01-04",
+        )

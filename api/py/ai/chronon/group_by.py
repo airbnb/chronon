@@ -170,6 +170,16 @@ Keys {unselected_keys}, are unselected in source
             assert (agg.inputColumn in columns) or (agg.inputColumn == 'ts'), (
                 f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
                 f"input_column: {agg.inputColumn}")
+            assert not (
+                # Snapshot accuracy.
+                (group_by.accuracy == Accuracy.SNAPSHOT or group_by.backfillStartDate) and
+                # Hourly aggregation.
+                any([window.timeUnit == TimeUnit.HOURS for window in agg.windows if agg.windows])
+            ), (
+                "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot accuracy "
+                "is not fine enough to allow hourly group bys. Consider removing the `backfill start date` param if "
+                f"set or adjusting the aggregation window. input_column: {agg.inputColumn}, windows: {agg.windows}"
+            )
 
 
 _ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]

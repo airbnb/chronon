@@ -23,7 +23,11 @@ def from_folder(root_path: str,
         recursive=True)
     result = {}
     for f in python_files:
-        result.update(from_file(root_path, f, cls, log_level))
+        try:
+            result.update(from_file(root_path, f, cls, log_level))
+        except Exception as e:
+            logging.error(f"Failed to extract: {f}")
+            logging.exception(e)
     return result
 
 
