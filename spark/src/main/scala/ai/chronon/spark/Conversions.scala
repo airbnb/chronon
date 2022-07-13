@@ -110,7 +110,7 @@ object Conversions {
         StructField(name, fromChrononType(zType))
     })
 
-  def toSparkRow(value: Any, dataType: api.DataType): Any = {
+  def toSparkRow(value: Any, dataType: api.DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
       value,
       dataType,
@@ -129,7 +129,8 @@ object Conversions {
           result.update(entry.getKey, entry.getValue)
         }
         result
-      }
+      },
+      extraneousRecord
     )
   }
 

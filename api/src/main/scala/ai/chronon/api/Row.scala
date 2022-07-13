@@ -104,7 +104,7 @@ object Row {
                        .map { case (value, idx) => edit(value, fields(idx).fieldType) },
                      dataType)
           case value: Any =>
-            assert(extraneousRecord != null, s"No handler for $value")
+            assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
             composer(extraneousRecord(value).iterator.zipWithIndex.map { case (value, idx) => edit(value, fields(idx).fieldType) },
             dataType)
         }

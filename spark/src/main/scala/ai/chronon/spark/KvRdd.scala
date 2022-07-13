@@ -81,7 +81,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
         val result = new Array[Any](keys.length + values.length)
         System.arraycopy(keys, 0, result, 0, keys.length)
         System.arraycopy(values, 0, result, keys.length, values.length)
-        Conversions.toSparkRow(result, flatZSchema).asInstanceOf[GenericRow]
+        Conversions.toSparkRow(result, flatZSchema, GenericRowHandler.func).asInstanceOf[GenericRow]
     }
     sparkSession.createDataFrame(rowRdd, flatSchema)
   }
