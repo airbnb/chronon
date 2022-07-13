@@ -50,9 +50,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     val context =
       if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
       else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
-    context.withSuffix("join").histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     // Throw exception after metrics. No join metadata is bound to be a critical failure.
-    if (result.isFailure) throw result.failed.get
+    if (result.isFailure) {
+      context.withSuffix("join").increment(Metrics.Name.Exception)
+      throw result.failed.get
+    }
+    context.withSuffix("join").histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
     result
   })
 
