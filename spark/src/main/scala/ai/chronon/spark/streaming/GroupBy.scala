@@ -7,6 +7,7 @@ import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
 import ai.chronon.spark.{Conversions, GenericRowHandler}
 import com.google.gson.Gson
+import org.apache.avro.generic.GenericData
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
@@ -123,27 +124,38 @@ class GroupBy(inputStream: DataFrame,
     }
     val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
     val valueIndices = valueColumns.map(selectedDf.schema.fieldIndex)
+
     val tsIndex = selectedDf.schema.fieldIndex(eventTimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
-    def schema(indices: Seq[Int], name: String): AvroCodec = {
-      val fields = indices
-        .map(Conversions.toChrononSchema(selectedDf.schema))
-        .map { case (f, d) => StructField(f, d) }
-        .toArray
-      AvroCodec.of(AvroConversions.fromChrononSchema(StructType(name, fields)).toString())
+    def encodeBytes(schema: api.StructType): Any => Array[Byte] = {
+      val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
+      { data: Any =>
+        val record = AvroConversions.fromChrononRow(data, schema, GenericRowHandler.func).asInstanceOf[GenericData.Record]
+        val bytes = codec.encodeBinary(record)
+        bytes
+      }
     }
-    val keyCodec = schema(keyIndices, "key")
-    val valueCodec = schema(valueIndices, "selected")
+    val keyZSchema: api.StructType = groupByServingInfo.keyChrononSchema
+    val valueZSchema: api.StructType = groupByServingInfo.valueChrononSchema
+    println(
+      s"""
+         |key schema:
+         |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
+         |value schema:
+         |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
+         |""".stripMargin)
+    val keyToBytes = encodeBytes(keyZSchema)
+    val valueToBytes = encodeBytes(valueZSchema)
+
     val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
         val values = valueIndices.map(row.get)
-
         val ts = row.get(tsIndex).asInstanceOf[Long]
-        val keyBytes = keyCodec.encodeArray(keys)
-        val valueBytes = valueCodec.encodeArray(values)
+        val keyBytes = keyToBytes(keys)
+        val valueBytes = valueToBytes(values)
         if (debug) {
           val gson = new Gson()
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
