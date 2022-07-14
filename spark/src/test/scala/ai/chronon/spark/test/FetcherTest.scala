@@ -11,13 +11,11 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.consistency.ConsistencyJob
-import ai.chronon.spark.streaming.GroupBy
 import ai.chronon.spark.test.FetcherTest.buildInMemoryKVStore
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, lit}
-import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
@@ -39,39 +37,12 @@ object FetcherTest {
 }
 
 class FetcherTest extends TestCase {
-  val spark: SparkSession = SparkSessionBuilder.build("FetcherTest", local = true)
-
+  val sessionName = "FetcherTest"
+  val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val topic = "test_topic"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   private val today = Constants.Partition.at(System.currentTimeMillis())
   private val yesterday = Constants.Partition.before(today)
-
-  // TODO: Pull the code here into what streaming can use.
-  def putStreaming(groupByConf: api.GroupBy,
-                   kvStore: () => KVStore,
-                   tableUtils: TableUtils,
-                   ds: String,
-                   namespace: String): Unit = {
-    val inputStreamDf = groupByConf.dataModel match {
-      case DataModel.Entities =>
-        val entity = groupByConf.streamingSource.get
-        val df = tableUtils.sql(s"SELECT * FROM ${entity.getEntities.mutationTable} WHERE ds = '$ds'")
-        df.withColumnRenamed(entity.query.reversalColumn, Constants.ReversalColumn)
-          .withColumnRenamed(entity.query.mutationTimeColumn, Constants.MutationTimeColumn)
-      case DataModel.Events =>
-        val table = groupByConf.streamingSource.get.table
-        tableUtils.sql(s"SELECT * FROM $table WHERE ds >= '$ds'")
-    }
-    val inputStream = new InMemoryStream
-    val mockApi = new MockApi(kvStore, namespace)
-    mockApi.streamSchema = StructType.from("Stream", Conversions.toChrononSchema(inputStreamDf.schema))
-    val groupByStreaming =
-      new GroupBy(inputStream.getInMemoryStreamDF(spark, inputStreamDf), spark, groupByConf, mockApi)
-    // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
-    val dataStream = groupByStreaming.buildDataStream()
-    val query = dataStream.trigger(Trigger.Once()).start()
-    query.awaitTermination()
-  }
 
   def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
@@ -492,17 +463,8 @@ class FetcherTest extends TestCase {
     val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
-    val prevDs = Constants.Partition.before(endDs)
 
-    def serve(groupByConf: api.GroupBy): Unit = {
-      GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
-      inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
-      if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
-        inMemoryKvStore.create(groupByConf.streamingDataset)
-        putStreaming(groupByConf, buildInMemoryKVStore, tableUtils, endDs, namespace)
-      }
-    }
-    joinConf.joinParts.asScala.foreach(jp => serve(jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp => StreamingUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
