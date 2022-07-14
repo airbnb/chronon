@@ -61,12 +61,10 @@ class StreamingTest extends TestCase {
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       topic = topicName,
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms", "item_struct", "item"), startPartition = yearAgo)
+      query = Builders.Query(selects = Seq("time_spent_ms" -> "time_spent_ms", "item_struct" -> "NAMED_STRUCT('item_repeat', item)", "item"-> "item").toMap, startPartition = yearAgo)
     )
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
-    df.save(s"${viewsTable}_tmp", Map("tblProp1" -> "1"))
-    val structSource = tableUtils.sql(s"SELECT *, NAMED_STRUCT('item_repeat', item) as item_struct FROM ${viewsTable}_tmp")
-    structSource.save(viewsTable)
+    df.save(viewsTable)
     val gb = Builders.GroupBy(
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),

@@ -5,7 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
-import ai.chronon.spark.Conversions
+import ai.chronon.spark.{Conversions, GenericRowHandler}
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
@@ -103,7 +103,7 @@ class GroupBy(inputStream: DataFrame,
       .flatMap { mutation =>
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
-          .map(Conversions.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
+          .map(Conversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
 
     des.createOrReplaceTempView(Constants.StreamingInputTable)
