@@ -2,12 +2,11 @@ package ai.chronon.spark.streaming
 
 import ai.chronon
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
+import ai.chronon.api.Extensions._
 import ai.chronon.spark.{Conversions, GenericRowHandler}
 import com.google.gson.Gson
-import org.apache.avro.generic.GenericData
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
@@ -128,25 +127,14 @@ class GroupBy(inputStream: DataFrame,
     val tsIndex = selectedDf.schema.fieldIndex(eventTimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
-    def encodeBytes(schema: api.StructType): Any => Array[Byte] = {
-      val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
-      { data: Any =>
-        val record = AvroConversions.fromChrononRow(data, schema, GenericRowHandler.func).asInstanceOf[GenericData.Record]
-        val bytes = codec.encodeBinary(record)
-        bytes
-      }
-    }
     val keyZSchema: api.StructType = groupByServingInfo.keyChrononSchema
-    val valueZSchema: api.StructType = groupByServingInfo.valueChrononSchema
-    println(
-      s"""
-         |key schema:
-         |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
-         |value schema:
-         |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
-         |""".stripMargin)
-    val keyToBytes = encodeBytes(keyZSchema)
-    val valueToBytes = encodeBytes(valueZSchema)
+    val valueZSchema: api.StructType = groupByConf.dataModel match {
+      case chronon.api.DataModel.Events => groupByServingInfo.valueChrononSchema
+      case chronon.api.DataModel.Entities => groupByServingInfo.mutationValueChrononSchema
+    }
+
+    val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+    val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
 
     val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
     selectedDf
