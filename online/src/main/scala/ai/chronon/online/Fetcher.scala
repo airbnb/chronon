@@ -454,8 +454,8 @@ class Fetcher(kvStore: KVStore,
                 LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts))
               if (logFunc != null)
                 logFunc.accept(loggableResponse)
-                var joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join))
-                joinContext.get.increment("logging_request.count")
+                val joinContext = Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join)
+                joinContext.increment("logging_request.count")
             }
         }
         if (loggingTry.isFailure && (debug || Math.random() < 0.01)) {
