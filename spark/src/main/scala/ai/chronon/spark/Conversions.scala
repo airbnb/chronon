@@ -6,7 +6,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types._
 
 import java.util
-import scala.collection.{AbstractIterator, mutable}
+import scala.collection.mutable
 
 // wrapper class of spark ai.chronon.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.chronon.aggregator.row with an additional class

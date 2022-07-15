@@ -1,6 +1,5 @@
 package ai.chronon.online
 
-import ai.chronon.api
 import ai.chronon.api._
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
@@ -149,19 +148,19 @@ object AvroConversions {
     )
   }
 
-  def encodeBytes(schema: api.StructType, extraneousRecord: Any => Array[Any] = null): Any => Array[Byte] = {
-    val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
+  def encodeBytes(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => Array[Byte] = {
+    val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = AvroConversions.fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record = fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
       val bytes = codec.encodeBinary(record)
       bytes
     }
   }
 
-  def encodeJson(schema: api.StructType, extraneousRecord: Any => Array[Any] = null): Any => String = {
-    val codec: AvroCodec = new AvroCodec(AvroConversions.fromChrononSchema(schema).toString(true));
+  def encodeJson(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => String = {
+    val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = AvroConversions.fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record = fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
       val json = codec.encodeJson(record)
       json
     }
