@@ -34,6 +34,10 @@ lazy val publishSettings = Seq(
   publishMavenStyle := true
 )
 
+lazy val scala211 = "2.11.12"
+lazy val scala213 = "2.13.6"
+lazy val supportedVersions = List(scala211, scala213)
+
 lazy val root = (project in file("."))
   .aggregate(api, aggregator, online, spark_uber, spark_embedded)
   .settings(
@@ -50,7 +54,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.apache.thrift" % "libthrift" % "0.13.0",
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
@@ -73,7 +77,7 @@ lazy val aggregator = project
   .dependsOn(api)
   .settings(
     publishSettings,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.novocode" % "junit-interface" % "0.11" % "test",
@@ -85,7 +89,7 @@ lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     publishSettings,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       // statsd 3.0 has local aggregation - TODO: upgrade
