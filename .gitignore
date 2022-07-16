@@ -1,5 +1,6 @@
 **/target/
 **/target-embedded/
+**/target-31/
 *.class
 *.jar
 *.war
