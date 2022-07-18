@@ -5,6 +5,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import scala.util.{Success, Try}
 case class TableUtils(sparkSession: SparkSession) {
 
   sparkSession.sparkContext.setLogLevel("ERROR")
@@ -21,10 +22,35 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def partitions(tableName: String): Seq[String] = {
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
+    if (isIcebergTable(tableName)) return getIcebergPartitions(tableName)
     sparkSession.sqlContext
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
+  }
+
+  def isIcebergTable(tableName: String): Boolean = Try {
+    sparkSession.read.format("iceberg").load(tableName)
+  } match {
+    case Success(_) =>
+      println(s"IcebergCheck: Detected iceberg formatted table $tableName.")
+      true
+    case _ =>
+      println(s"IcebergCheck: Checked table $tableName is not iceberg format.")
+      false
+  }
+
+  def getIcebergPartitions(tableName: String): Seq[String] = {
+    val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
+    val index = partitionsDf.schema.fieldIndex("partition")
+    val dsDf = if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
+      partitionsDf.where("partition.hr is null").select("partition.ds")
+    } else {
+      partitionsDf.select("partition.ds")
+    }
+    dsDf.collect()
+      .map{ row => row.getString(0) }
+      .toSeq
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
