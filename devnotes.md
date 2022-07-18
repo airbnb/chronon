@@ -62,6 +62,11 @@ sbt "testOnly *<Module>"
 sbt assemble
 ```
 
+Building a fat jar for just one submodule
+```shell
+sbt 'spark_uber/assembly'
+```
+
 ### Install specific version of thrift
 ```shell
 brew tap-new $USER/local-thrift
