@@ -54,31 +54,13 @@ sbt test
 
 Specific submodule tests
 ```shell
-sbt "spark/test"
-sbt "aggregator/test"
+sbt "testOnly *<Module>"
 ```
 
 ### Build a fat jar
 ```shell
 sbt assemble
 ```
-
-Building a fat jar for just one submodule
-```shell
-sbt 'spark/assembly'
-```
-
-Without running tests
-```shell
-sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean assembly
-```
-
-For a submodule without running tests
-```shell
-sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean 'spark/assembly'
-```
-
-^ The above is the most common command for iteration
 
 ### Install specific version of thrift
 ```shell
