@@ -204,3 +204,37 @@ struct GroupByServingInfo {
     //       2. batch_upload_lag = batch_upload_time - batch_data_time
     5: optional string batchEndDate
 }
+
+// DataKind + TypeParams = DataType
+// for primitive types there is no need for params
+enum DataKind {
+    // non parametric types
+    BOOLEAN = 0,
+    BYTE = 1,
+    SHORT = 2,
+    INT = 3,
+    LONG = 4,
+    FLOAT = 5,
+    DOUBLE = 6,
+    STRING = 7,
+    BINARY = 8,
+    DATE = 9,
+    TIMESTAMP = 10,
+
+    // parametric types
+    MAP = 11,
+    LIST = 12,
+    STRUCT = 13,
+}
+
+struct DataField {
+    1: optional string name
+    2: optional TDataType dataType
+}
+
+// TDataType because DataType has idiomatic implementation in scala and py
+struct TDataType {
+    1: DataKind kind
+    2: optional list<DataField> params
+    3: optional string name // required only for struct types
+}

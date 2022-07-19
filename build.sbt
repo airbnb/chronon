@@ -57,7 +57,8 @@ lazy val api = project
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
       "org.scala-lang" % "scala-reflect" % "2.11.12",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0"
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+      "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
     unmanagedSourceDirectories in Compile ++= {
       (unmanagedSourceDirectories in Compile).value.map { dir =>
@@ -70,13 +71,12 @@ lazy val api = project
   )
 
 lazy val aggregator = project
-  .dependsOn(api)
+  .dependsOn(api.%("compile->compile;test->test"))
   .settings(
     publishSettings,
     crossScalaVersions := List("2.11.12", "2.13.6"),
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
-      "com.novocode" % "junit-interface" % "0.11" % "test",
       "com.google.code.gson" % "gson" % "2.8.6"
     )
   )
