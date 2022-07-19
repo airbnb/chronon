@@ -55,6 +55,8 @@ sbt test
 Specific submodule tests
 ```shell
 sbt "testOnly *<Module>"
+# example to test FetcherTest with 9G memory 
+sbt -mem 9000 "test:testOnly *FetcherTest
 ```
 
 ### Build a fat jar
