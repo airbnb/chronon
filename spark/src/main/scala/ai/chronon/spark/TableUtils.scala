@@ -43,14 +43,21 @@ case class TableUtils(sparkSession: SparkSession) {
   def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
-    val dsDf = if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
-      partitionsDf.where("partition.hr is null").select("partition.ds")
+    if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
+      // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
+      partitionsDf
+        .select("partition.ds", "partition.hr")
+        .collect()
+        .filter(_.get(1) == null)
+        .map(_.getString(0))
+        .toSeq
     } else {
-      partitionsDf.select("partition.ds")
+      partitionsDf
+        .select("partition.ds")
+        .collect()
+        .map(_.getString(0))
+        .toSeq
     }
-    dsDf.collect()
-      .map{ row => row.getString(0) }
-      .toSeq
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
