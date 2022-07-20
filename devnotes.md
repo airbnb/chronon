@@ -42,7 +42,7 @@ thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 ### Materializing confs
 
 ```
-materizlize  --input_path=<path/to/conf>
+materialize  --input_path=<path/to/conf>
 ```
 
 ### Testing
@@ -54,31 +54,20 @@ sbt test
 
 Specific submodule tests
 ```shell
-sbt "spark/test"
-sbt "aggregator/test"
+sbt "testOnly *<Module>"
+# example to test FetcherTest with 9G memory 
+sbt -mem 9000 "test:testOnly *FetcherTest
 ```
 
 ### Build a fat jar
 ```shell
-sbt assemble
+sbt assembly
 ```
 
 Building a fat jar for just one submodule
 ```shell
-sbt 'spark/assembly'
+sbt 'spark_uber/assembly'
 ```
-
-Without running tests
-```shell
-sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean assembly
-```
-
-For a submodule without running tests
-```shell
-sbt 'set test in assembly in aggregator := {}' 'set test in assembly in spark := {}' clean 'spark/assembly'
-```
-
-^ The above is the most common command for iteration
 
 ### Install specific version of thrift
 ```shell
