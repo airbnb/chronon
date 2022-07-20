@@ -42,7 +42,7 @@ thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
 ### Materializing confs
 
 ```
-materizlize  --input_path=<path/to/conf>
+materialize  --input_path=<path/to/conf>
 ```
 
 ### Testing
@@ -61,7 +61,7 @@ sbt -mem 9000 "test:testOnly *FetcherTest
 
 ### Build a fat jar
 ```shell
-sbt assemble
+sbt assembly
 ```
 
 Building a fat jar for just one submodule
