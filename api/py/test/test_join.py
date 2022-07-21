@@ -2,6 +2,7 @@ from ai.chronon.join import Join
 from ai.chronon.api import ttypes as api
 
 import pytest
+import json
 
 
 def event_source(table):
@@ -51,3 +52,12 @@ def test_deduped_dependencies():
         left=event_source("sample_namespace.sample_table"),
         right_parts=[right_part(event_source("sample_namespace.sample_table"))])
     assert len(join.metaData.dependencies) == 1
+
+
+def test_additional_args_to_custom_json():
+    join = Join(
+        left=event_source("sample_namespace.sample_table"),
+        right_parts=[right_part(event_source("sample_namespace.sample_table"))],
+        team_override="some_other_team_value"
+    )
+    assert json.loads(join.metaData.customJson)['team_override'] == "some_other_team_value"
