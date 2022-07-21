@@ -56,7 +56,8 @@ def Join(left: api.Source,
          env: Dict[str, Dict[str, str]] = None,
          lag: int = 0,
          skew_keys: Dict[str, List[str]] = None,
-         sample_percent: float = None  # will sample all the requests based on sample percent
+         sample_percent: float = None,  # will sample all the requests based on sample percent
+         **kwargs
          ) -> api.Join:
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
@@ -98,6 +99,7 @@ def Join(left: api.Source,
 
     if additional_env:
         custom_json["additional_env"] = additional_env
+    custom_json.update(kwargs)
 
     metadata = api.MetaData(
         online=online,
