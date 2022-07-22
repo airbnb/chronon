@@ -1,4 +1,5 @@
 **/target/
+**/target-*/
 **/target-embedded/
 **/target-31/
 *.class

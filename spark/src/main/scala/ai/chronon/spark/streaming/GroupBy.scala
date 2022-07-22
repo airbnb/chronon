@@ -2,10 +2,10 @@ package ai.chronon.spark.streaming
 
 import ai.chronon
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
-import ai.chronon.spark.Conversions
+import ai.chronon.api.Extensions._
+import ai.chronon.spark.{Conversions, GenericRowHandler}
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
@@ -58,17 +58,11 @@ class GroupBy(inputStream: DataFrame,
     buildDataStream(local).start()
   }
 
+  // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
-    val groupByServingInfo = if (local) {
-      // don't talk to kv store - instead make a dummy ServingInfo
-      val gb = new GroupByServingInfo()
-      gb.setGroupBy(groupByConf)
-      new GroupByServingInfoParsed(gb)
-    } else {
-      fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
-    }
+    val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
@@ -103,7 +97,7 @@ class GroupBy(inputStream: DataFrame,
       .flatMap { mutation =>
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
-          .map(Conversions.toSparkRow(_, streamDecoder.schema).asInstanceOf[Row])
+          .map(Conversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
 
     des.createOrReplaceTempView(Constants.StreamingInputTable)
@@ -123,27 +117,27 @@ class GroupBy(inputStream: DataFrame,
     }
     val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
     val valueIndices = valueColumns.map(selectedDf.schema.fieldIndex)
+
     val tsIndex = selectedDf.schema.fieldIndex(eventTimeColumn)
     val streamingDataset = groupByConf.streamingDataset
 
-    def schema(indices: Seq[Int], name: String): AvroCodec = {
-      val fields = indices
-        .map(Conversions.toChrononSchema(selectedDf.schema))
-        .map { case (f, d) => StructField(f, d) }
-        .toArray
-      AvroCodec.of(AvroConversions.fromChrononSchema(StructType(name, fields)).toString())
+    val keyZSchema: api.StructType = groupByServingInfo.keyChrononSchema
+    val valueZSchema: api.StructType = groupByConf.dataModel match {
+      case chronon.api.DataModel.Events => groupByServingInfo.valueChrononSchema
+      case chronon.api.DataModel.Entities => groupByServingInfo.mutationValueChrononSchema
     }
-    val keyCodec = schema(keyIndices, "key")
-    val valueCodec = schema(valueIndices, "selected")
+
+    val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+    val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
+
     val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
         val values = valueIndices.map(row.get)
-
         val ts = row.get(tsIndex).asInstanceOf[Long]
-        val keyBytes = keyCodec.encodeArray(keys)
-        val valueBytes = valueCodec.encodeArray(values)
+        val keyBytes = keyToBytes(keys)
+        val valueBytes = valueToBytes(values)
         if (debug) {
           val gson = new Gson()
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
