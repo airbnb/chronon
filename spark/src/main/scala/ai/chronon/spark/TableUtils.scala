@@ -29,7 +29,7 @@ case class TableUtils(sparkSession: SparkSession) {
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
   }
 
-  def isIcebergTable(tableName: String): Boolean = Try {
+  private def isIcebergTable(tableName: String): Boolean = Try {
     sparkSession.read.format("iceberg").load(tableName)
   } match {
     case Success(_) =>
@@ -40,11 +40,12 @@ case class TableUtils(sparkSession: SparkSession) {
       false
   }
 
-  def getIcebergPartitions(tableName: String): Seq[String] = {
+  private def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
     if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
+      // so we collect and then filter.
       partitionsDf
         .select("partition.ds", "partition.hr")
         .collect()

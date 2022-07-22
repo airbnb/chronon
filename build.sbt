@@ -42,7 +42,7 @@ lazy val publishSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber_24, spark_uber_31, spark_embedded_24)
+  .aggregate(api, aggregator, online, spark_uber, spark_uber_31, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -143,7 +143,7 @@ val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := 
   case _                                   => MergeStrategy.first
 }
 
-lazy val spark_uber_24 = (project in file("spark"))
+lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
@@ -160,7 +160,7 @@ lazy val spark_uber_31 = (project in file("spark"))
   )
 
 // Project for running with embedded spark for local testing
-lazy val spark_embedded_24 = (project in file("spark"))
+lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
