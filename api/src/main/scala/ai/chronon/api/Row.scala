@@ -2,6 +2,7 @@ package ai.chronon.api
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.mutable
 
 trait Row {
   def get(index: Int): Any
@@ -112,7 +113,9 @@ object Row {
         value match {
           case list: util.ArrayList[Any] =>
             collector(list.iterator().asScala.map(edit(_, elemType)), list.size())
-          case arr: Array[Any] => // avro only recognizes arrayList for its ArrayType/ListType
+          case arr: Array[Any]  => // avro only recognizes arrayList for its ArrayType/ListType
+            collector(arr.iterator.map(edit(_, elemType)), arr.length)
+          case arr: mutable.WrappedArray[Any] => // handles the wrapped array type from transform function in spark sql
             collector(arr.iterator.map(edit(_, elemType)), arr.length)
         }
       case MapType(keyType, valueType) =>

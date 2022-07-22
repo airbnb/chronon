@@ -61,7 +61,11 @@ class StreamingTest extends TestCase {
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       topic = topicName,
-      query = Builders.Query(selects = Seq("time_spent_ms" -> "time_spent_ms", "item_struct" -> "NAMED_STRUCT('item_repeat', item)", "item"-> "item").toMap, startPartition = yearAgo)
+      query = Builders.Query(selects = Seq(
+        "str_arr" -> "transform(array(1, 2, 3), x -> CAST(x as STRING))",
+        "time_spent_ms" -> "time_spent_ms",
+        "item_struct" -> "NAMED_STRUCT('item_repeat', item)",
+        "item"-> "item").toMap, startPartition = yearAgo)
     )
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
     df.save(viewsTable)
@@ -69,7 +73,8 @@ class StreamingTest extends TestCase {
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "1"), inputColumn = "item_struct")
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "1"), inputColumn = "item_struct"),
+        Builders.Aggregation(operation = Operation.HISTOGRAM, argMap = Map("k" -> "2"), inputColumn = "str_arr")
       ),
       metaData = Builders.MetaData(name = s"unit_test.item_views_$nameSuffix", namespace = namespace, team = "item_team"),
       accuracy = Accuracy.TEMPORAL
