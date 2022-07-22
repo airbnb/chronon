@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
 import com.yahoo.sketches.cpc.CpcSketch
 import org.apache.spark.serializer.KryoRegistrator
+import org.apache.spark.SPARK_VERSION
 
 class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
@@ -24,10 +25,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
   // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {
     //kryo.setWarnUnregisteredClasses(true)
-    val names = Seq(
+    val common = Seq(
       "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
-      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
-      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableBlockLocation",
       "org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage",
       "org.apache.spark.sql.execution.datasources.ExecutedWriteSummary",
       "org.apache.spark.sql.execution.datasources.BasicWriteTaskStats",
@@ -64,21 +63,33 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.TimestampType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
-      "scala.reflect.ManifestFactory$$anon$10",
       "scala.reflect.ClassTag$$anon$1",
       "scala.math.Ordering$$anon$4",
       "org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering",
       "org.apache.spark.sql.catalyst.expressions.SortOrder",
       "org.apache.spark.sql.catalyst.expressions.BoundReference",
-      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
       "org.apache.spark.sql.catalyst.trees.Origin",
       "org.apache.spark.sql.catalyst.expressions.Ascending$",
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
       "scala.collection.IndexedSeqLike$Elements"
     )
+    val spark3 = Seq("org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
+      "org.apache.spark.sql.execution.datasources.v2.DataWritingSparkTaskResult",
+      "org.apache.spark.sql.execution.joins.EmptyHashedRelation",
+      "org.apache.spark.util.HadoopFSUtils$SerializableBlockLocation",
+      "scala.reflect.ManifestFactory$LongManifest",
+      "org.apache.spark.sql.execution.joins.EmptyHashedRelation$"
+    )
+    val spark2 = Seq(
+      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
+      "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableBlockLocation",
+      "scala.reflect.ManifestFactory$$anon$10",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
+    )
+    val names = if (SPARK_VERSION.startsWith("2")) common ++ spark2 else common ++ spark3
     names.foreach { name =>
       kryo.register(Class.forName(name))
       kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm

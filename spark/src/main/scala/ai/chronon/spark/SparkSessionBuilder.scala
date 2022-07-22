@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import org.apache.spark.sql.SparkSession
-
+import org.apache.spark.SPARK_VERSION
 import java.io.File
 import java.util.logging.Logger
 
@@ -28,11 +28,14 @@ object SparkSessionBuilder {
       .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
-      // Otherwise files left from deleting the table with the same name result in test failures
-      .config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
       .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+
+    if (SPARK_VERSION.startsWith("2")) {
+      // Otherwise files left from deleting the table with the same name result in test failures
+      baseBuilder.config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
+    }
 
     val builder = if (local) {
       baseBuilder

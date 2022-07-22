@@ -1,9 +1,13 @@
 import sbt.Keys._
 import sbt.Test
 
+lazy val scala211 = "2.11.12"
+lazy val scala212 = "2.12.12"
+lazy val scala213 = "2.13.6"
+
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := "2.11.12"
+ThisBuild / scalaVersion := scala211
 ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
@@ -34,8 +38,11 @@ lazy val publishSettings = Seq(
   publishMavenStyle := true
 )
 
+
+lazy val supportedVersions = List(scala211, scala212, scala213)
+
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_uber_31, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -50,7 +57,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.apache.thrift" % "libthrift" % "0.13.0",
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
@@ -60,21 +67,13 @@ lazy val api = project
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
       "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
-    unmanagedSourceDirectories in Compile ++= {
-      (unmanagedSourceDirectories in Compile).value.map { dir =>
-        CrossVersion.partialVersion(scalaVersion.value) match {
-          case Some((2, 13)) => file(dir.getPath ++ "213")
-          case _             => file(dir.getPath ++ "211")
-        }
-      }
-    }
   )
 
 lazy val aggregator = project
   .dependsOn(api.%("compile->compile;test->test"))
   .settings(
     publishSettings,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
       "com.google.code.gson" % "gson" % "2.8.6"
@@ -85,7 +84,7 @@ lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
     publishSettings,
-    crossScalaVersions := List("2.11.12", "2.13.6"),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       // statsd 3.0 has local aggregation - TODO: upgrade
@@ -111,22 +110,20 @@ def cleanSparkMeta(): Unit = {
                file(".") / "metastore_db")
 }
 
-val sparkLibs = Seq(
-  "org.apache.spark" %% "spark-sql" % "2.4.0",
-  "org.apache.spark" %% "spark-hive" % "2.4.0",
-  "org.apache.spark" %% "spark-core" % "2.4.0",
-  "org.apache.spark" %% "spark-streaming" % "2.4.0",
-  "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.0"
+def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] = Seq(
+  "org.apache.spark" %% "spark-sql" % version,
+  "org.apache.spark" %% "spark-hive" % version,
+  "org.apache.spark" %% "spark-core" % version,
+  "org.apache.spark" %% "spark-streaming" % version,
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % version
 )
 
-val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
+val sparkBaseSettings: Seq[Setting[_]] = Seq(
   assembly / test := {},
   assembly / artifact := {
     val art = (assembly / artifact).value
     art.withClassifier(Some("assembly"))
   },
-  addArtifact(assembly / artifact, assembly),
-  publishSettings,
   mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(
     baseDirectory.value / "spark-warehouse",
@@ -136,29 +133,41 @@ val sparkBaseSettings: Seq[Def.SettingsDefinition] = Seq(
   testOptions in Test += Tests.Cleanup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
-)
+) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
 
 // TODO: use github releases to publish the spark driver
-val providedLibs: Setting[_] = libraryDependencies ++= sparkLibs.map(_ % "provided")
-val embeddedLibs: Setting[_] = libraryDependencies ++= sparkLibs
-val embeddedTarget: Setting[_] = target := target.value.toPath.resolveSibling("target-embedded").toFile
 val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
   case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
   case "plugin.xml"                        => MergeStrategy.last
   case _                                   => MergeStrategy.first
 }
-val sparkProvided = sparkBaseSettings :+ providedLibs
-val sparkEmbedded =
-  sparkBaseSettings :+ embeddedLibs :+ embeddedTarget :+ embeddedAssemblyStrategy :+ (Test / test := {})
 
 lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(sparkProvided: _*)
+  .settings(
+    sparkBaseSettings,
+    libraryDependencies ++= sparkLibs("2.4.0").map(_ % "provided")
+  )
+
+lazy val spark_uber_31 = (project in file("spark"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .settings(
+    sparkBaseSettings,
+    scalaVersion := scala212,
+    libraryDependencies ++= sparkLibs("3.1.1").map(_ % "provided"),
+    target := target.value.toPath.resolveSibling("target-31").toFile
+  )
 
 // Project for running with embedded spark for local testing
 lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(sparkEmbedded: _*)
+  .settings(
+    sparkBaseSettings,
+    libraryDependencies ++= sparkLibs("2.4.0"),
+    target := target.value.toPath.resolveSibling("target-embedded").toFile,
+    embeddedAssemblyStrategy,
+    Test / test := {}
+  )
 
 exportJars := true
