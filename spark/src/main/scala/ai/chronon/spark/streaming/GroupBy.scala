@@ -58,17 +58,11 @@ class GroupBy(inputStream: DataFrame,
     buildDataStream(local).start()
   }
 
+  // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val kvStore = onlineImpl.genKvStore
     val fetcher = new Fetcher(kvStore)
-    val groupByServingInfo = if (local) {
-      // don't talk to kv store - instead make a dummy ServingInfo
-      val gb = new GroupByServingInfo()
-      gb.setGroupBy(groupByConf)
-      new GroupByServingInfoParsed(gb)
-    } else {
-      fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
-    }
+    val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
