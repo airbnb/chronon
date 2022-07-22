@@ -20,6 +20,51 @@ commands:
             - run:
                   name: Checkout submodules
                   command: git submodule update --init --recursive
+    run_python_tests:
+        description: Build python environment and run python tests
+        steps:
+            - run:
+                  name: Run Chronon Python tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate zipline_py
+                      pushd /zipline/api/
+                      thrift --gen py -out /zipline/api/py/ai/chronon\
+                         /zipline/api/thrift/api.thrift                 # Generate thrift files
+                      cd /zipline/api/py                                # Go to Python module
+                      pip install -r requirements/dev.txt               # Install latest requirements
+                      tox                                               # Run tests
+                      popd
+    release_to_testpypi:
+        description: Release package to pypi
+        steps:
+            - run:
+                name: Release to pypi
+                command: |
+                  pushd /zipline/api/py
+                  python3 -m pip install --user --upgrade twine
+                  python3 setup.py sdist bdist_wheel
+                  python3 -m twine upload dist/*
+    lint_python_code:
+        description: Lint python code.
+        steps:
+            - run:
+                  name: Run Chronon Python lint
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate zipline_py
+                      cd /zipline/api/py/ai/chronon
+                      flake8 --extend-ignore=W605,Q000,F631
+    release_to_pypi:
+        description: Release package to testpypi
+        steps:
+            - run:
+                name: Release to testpypi
+                command: |
+                  pushd /zipline/api/py
+                  python3 -m pip install --user --upgrade twine
+                  python3 setup.py sdist bdist_wheel
+                  python3 -m twine upload dist/* --repository testpypi
 
 executors:
     docker_baseimg_executor:
@@ -78,32 +123,31 @@ jobs:
         executor: docker_baseimg_executor
         steps:
             - full_checkout
-            - run:
-                  name: Run Chronon Python lint
-                  shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate zipline_py
-                      cd /zipline/api/py/ai/chronon
-                      flake8 --extend-ignore=W605,Q000,F631
+            - lint_python_code
 
     "Chronon Python Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
-            - run:
-                  name: Run Chronon Python tests
-                  shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate zipline_py
-                      pushd /zipline/api/
-                      thrift --gen py -out /zipline/api/py/ai/chronon\
-                         /zipline/api/thrift/api.thrift                 # Generate thrift files
-                      cd /zipline/api/py                                # Go to Python module
-                      pip install -r requirements/dev.txt               # Install latest requirements
-                      tox                                               # Run tests
-                      popd
+            - run_python_tests
             - store_artifacts:
                   path: /zipline/api/py/htmlcov
+
+    "Release Python API to Pypi":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - lint_python_code
+            - run_python_tests
+            - release_to_pypi
+
+    "Release Python API to testpypi":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - lint_python_code
+            - run_python_tests
+            - release_to_testpypi
 
 workflows:
     build_test_deploy:
@@ -117,16 +161,32 @@ workflows:
                       - "Docker Base Build"
                   filters:
                       tags:
-                          ignore: /^release-zl-.*/
+                          ignore: /^release-.*/
             - "Chronon Python Tests":
                   requires:
                       - "Docker Base Build"
                   filters:
                       tags:
-                          ignore: /^release-zl-.*/
+                          ignore: /^release-.*/
             - "Chronon Python Lint":
                   requires:
                       - "Docker Base Build"
                   filters:
                       tags:
-                          ignore: /^release-zl-.*/
+                          ignore: /^release-.*/
+            - "Release Python API to testpypi":
+                  requires:
+                        - "Docker Base Build"
+                  filters:
+                    tags:
+                        only: /^release-testpypi-.*/
+            - "Release Python API to Pypi":
+                  requires:
+                        - "Docker Base Build"
+                  filters:
+                      tags:
+                          only: /^release-pypi-.*/
+                      branches:
+                          only:
+                              - master
+

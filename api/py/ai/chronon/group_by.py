@@ -177,9 +177,10 @@ Keys {unselected_keys}, are unselected in source
                     # Hourly aggregation.
                     any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
                 ), (
-                    "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot accuracy "
-                    "is not fine enough to allow hourly group bys. Consider removing the `backfill start date` param if "
-                    f"set or adjusting the aggregation window. input_column: {agg.inputColumn}, windows: {agg.windows}"
+                    "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot "
+                    "accuracy is not fine enough to allow hourly group bys. Consider removing the `backfill start "
+                    f"date` param if set or adjusting the aggregation window. input_column: {agg.inputColumn}, "
+                    f"windows: {agg.windows}"
                 )
 
 
