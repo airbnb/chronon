@@ -1,15 +1,15 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, Extensions, StructType}
+import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
 import ai.chronon.online.KVStore
-import ai.chronon.spark.{Conversions, GroupByUpload, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Conversions, GroupByUpload, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
 import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 
-object StreamingUtils {
+object OnlineUtils {
   def putStreaming(session: SparkSession, groupByConf: api.GroupBy, kvStore: () => KVStore, tableUtils: TableUtils, ds: String, namespace: String): Unit = {
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
@@ -38,7 +38,7 @@ object StreamingUtils {
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
     if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
       inMemoryKvStore.create(groupByConf.streamingDataset)
-      StreamingUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)
+      OnlineUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)
     }
   }
 }

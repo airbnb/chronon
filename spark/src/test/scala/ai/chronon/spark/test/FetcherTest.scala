@@ -464,7 +464,7 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp => StreamingUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {

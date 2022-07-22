@@ -89,6 +89,6 @@ class StreamingTest extends TestCase {
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
-    joinConf.joinParts.asScala.foreach(jp => StreamingUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKvStore, namespace, today, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKvStore, namespace, today, jp.groupBy))
   }
 }
