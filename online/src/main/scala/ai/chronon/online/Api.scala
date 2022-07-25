@@ -5,6 +5,7 @@ import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
 import java.util.concurrent.Executors
 import java.util.function.Consumer
+import scala.collection.mutable
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -100,11 +101,21 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
+
+
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
+
+  type FetchFunction: Map[String, Any] => Future[Map[String, Any]]
+
+  def addExternalSource(name: String, fetchFunction: FetchFunction): Unit = {
+    externalRegistry.put(name, fetchFunction)
+  }
+
+  private val externalRegistry: mutable.Map[String, FetchFunction]
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
