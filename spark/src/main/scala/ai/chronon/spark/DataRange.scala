@@ -90,6 +90,6 @@ case class PartitionRange(start: String, end: String) extends DataRange {
       .takeWhile(_ <= end)
   }
 
-  def shift(days: Int): PartitionRange =
-    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+  def shift(days: Int, endShiftDays: Option[Int] = None): PartitionRange =
+    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, endShiftDays.getOrElse(days)))
 }

@@ -7,7 +7,7 @@ import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
@@ -36,8 +36,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         Seq(Constants.PartitionColumn)
       } else if (joinPart.groupBy.inferredAccuracy == Accuracy.TEMPORAL) {
         Seq(Constants.TimeColumn, Constants.PartitionColumn)
-      } else { // left-events + snapshot => join-key = ds_of_left_ts
+      } else if (joinPart.isJoinShiftByDays) { // left-events + snapshot => join-key = ds_of_left_ts
         Seq(Constants.TimePartitionColumn)
+      } else { // left-events + snapshot => join-key = ds_of_left_ts
+        Seq(Constants.JoinTimePartitionColumn)
       }
     }
 
@@ -48,7 +50,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
 
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
                                                                      Constants.PartitionColumn,
-                                                                     Constants.TimePartitionColumn)
+                                                                     Constants.TimePartitionColumn,
+                                                                     Constants.JoinTimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
     val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
@@ -61,26 +64,41 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     println(s"""Join keys for $partName: ${keys.mkString(", ")}
          |Left Schema:
          |${leftDf.schema.pretty}
-         |  
+         |
          |Right Schema:
          |${prefixedRight.schema.pretty}
-         |  
+         |
          |""".stripMargin)
 
-    import org.apache.spark.sql.functions.{col, date_add, date_format}
-    val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-      // increment one day to align with left side ts_ds
-      // because one day was decremented from the partition range for snapshot accuracy
-      prefixedRight
-        .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
-        .drop(Constants.PartitionColumn)
-    } else {
-      prefixedRight
+    import org.apache.spark.sql.functions.{col, date_add, date_format, from_unixtime}
+    def shiftLeftDate(leftTs: Column): Column = {
+      from_unixtime(leftTs / 1000 - joinPart.joinShiftSeconds, Constants.Partition.format)
     }
 
-    leftDf.validateJoinKeys(joinableRight, keys)
-    leftDf.join(joinableRight, keys, "left")
+    def shiftRightDate(rightDate: Column): Column = {
+      date_format(date_add(rightDate, joinPart.joinShiftDays), Constants.Partition.format)
+    }
+
+    val (joinableRight, joinableLeft) = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
+      // increment one day to align with left side ts_ds
+      // because one day was decremented from the partition range for snapshot accuracy
+      val newRight = prefixedRight
+        .withColumn(Constants.TimePartitionColumn,
+                    shiftRightDate(col(Constants.PartitionColumn)))
+        .drop(Constants.PartitionColumn)
+      (newRight, leftDf)
+    } else if (additionalKeys.contains(Constants.JoinTimePartitionColumn)) {
+      val newRight = prefixedRight.withColumnRenamed(Constants.PartitionColumn, Constants.JoinTimePartitionColumn)
+      val newLeft = leftDf.withColumn(
+        Constants.JoinTimePartitionColumn, shiftLeftDate(col(Constants.TimeColumn)))
+      (newRight, newLeft)
+    } else {
+      (prefixedRight, leftDf)
+    }
+
+    joinableLeft.validateJoinKeys(joinableRight, keys)
+    joinableLeft.join(joinableRight, keys, "left")
+                .drop(Constants.JoinTimePartitionColumn)
   }
 
   private def computeJoinPart(leftDf: DataFrame,
@@ -92,9 +110,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     println(s"""
          |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metaData.name}, 
-         |  left type : ${joinConf.left.dataModel}, 
-         |  right type: ${joinPart.groupBy.dataModel}, 
+         |  part name : ${joinPart.groupBy.metaData.name},
+         |  left type : ${joinConf.left.dataModel},
+         |  right type: ${joinPart.groupBy.dataModel},
          |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
          |  part unfilled range: $unfilledRange,
          |  bloom sizes: $bloomSizes
@@ -137,17 +155,14 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
           result.withColumnRenamed(leftKey, rightKey)
       }
 
-    lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
       case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
       case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
-      case (Events, Events, Accuracy.SNAPSHOT) =>
-        genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
+      case (Events, Events, Accuracy.SNAPSHOT) => partitionRangeGroupBy.snapshotEvents(unfilledRange)
+      // TODO: unfilledTimeRange is the left range. Can we use rightUnfilledRange?
       case (Events, Events, Accuracy.TEMPORAL) =>
         genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
-
-      case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
-
+      case (Events, Entities, Accuracy.SNAPSHOT) => partitionRangeGroupBy.snapshotEntities
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
         genGroupBy(unfilledTimeRange.toPartitionRange.shift(-1)).temporalEntities(renamedLeftDf)
@@ -169,13 +184,22 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     // compute joinParts in parallel
     val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
       val partMetrics = Metrics.Context(metrics, joinPart)
+      val rightRange =
+        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+          // the events of a ds will join with
+          // TODO: Can we use leftRange?
+          leftDf.timeRange.toPartitionRange.shift(-1 * joinPart.joinShiftMaxDays, Some(-1 * joinPart.joinShiftMinDays))
+        } else {
+          leftRange
+        }
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
-        computeJoinPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
+        computeJoinPart(leftTaggedDf, joinPart, rightRange, leftBlooms)
       } else {
         // compute only the missing piece
         val joinPartTableName = joinConf.partOutputTable(joinPart)
-        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
+        // Do not pass in joinConf.left.table as inputTable. unfilledRange() assumes no partition shift.
+        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, rightRange)
         println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
         if (rightUnfilledRange.isDefined) {
@@ -196,14 +220,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
               throw e
           }
         }
-        val scanRange =
-          if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-            // the events of a ds will join with
-            leftDf.timeRange.toPartitionRange.shift(-1)
-          } else {
-            leftRange
-          }
-        tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
+        tableUtils.sql(rightRange.genScanQuery(query = null, joinPartTableName))
       }
     }
 

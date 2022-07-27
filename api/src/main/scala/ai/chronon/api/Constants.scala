@@ -6,6 +6,7 @@ object Constants {
   val TimeColumn: String = "ts"
   val PartitionColumn: String = "ds"
   val TimePartitionColumn: String = "ts_ds"
+  val JoinTimePartitionColumn: String = "join_ts_ds"
   val ReversalColumn: String = "is_before"
   val MutationTimeColumn: String = "mutation_ts"
   val ReservedColumns: Seq[String] =

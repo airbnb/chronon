@@ -415,6 +415,7 @@ object Extensions {
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
+    val lagHour = 24
 
     def rightToLeft: Map[String, String] = {
       val rightToRight = ScalaVersionSpecificCollectionsConverter
@@ -439,6 +440,12 @@ object Extensions {
       newJoinPart.setGroupBy(newJoinPart.groupBy.copyForVersioningComparison)
       newJoinPart
     }
+
+    def isJoinShiftByDays: Boolean = { lagHour % 24 == 0 }
+    def joinShiftDays: Int = { lagHour / 24 }
+    def joinShiftSeconds: Int = { lagHour * 3600 }
+    def joinShiftMinDays: Int = { Math.floor(lagHour / 24.0).toInt }
+    def joinShiftMaxDays: Int = { Math.ceil(lagHour / 24.0).toInt }
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
