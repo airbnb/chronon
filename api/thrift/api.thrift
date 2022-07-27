@@ -136,6 +136,24 @@ struct MetaData {
     11: optional double samplePercent
 }
 
+
+struct ContextualFeature {
+    1: optional string name
+    2: optional DataKind dataKind
+}
+
+struct ServiceFeature {
+    1: optional string name
+    2: optional DataKind dataKind
+    4: optional map<string, DataKind> requestFields
+    5: optional string ServiceEndpoint // Only used for metadata tracking and lineage, no validation of accuracy
+}
+
+union ExternalFeature {
+    1: ContextualFeature contextualFeature
+    2: ServiceFeature ServiceFeature
+}
+
 // Equivalent to a FeatureSet in chronon terms
 struct GroupBy {
     1: optional MetaData metaData
@@ -175,6 +193,7 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    5: optional list<ExternalFeature> externalFeatures // TODO: Alternatively we could list out service call and contextual features independently
 }
 
 
