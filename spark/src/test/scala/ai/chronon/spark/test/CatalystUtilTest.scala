@@ -1,37 +1,149 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api.{
-  BinaryType,
-  BooleanType,
-  ByteType,
-  DataType,
-  DateType,
-  DoubleType,
-  FloatType,
-  IntType,
-  ListType,
-  LongType,
-  MapType,
-  ShortType,
-  StringType,
-  StructField,
-  StructType,
-  TimestampType,
-  UnknownType
-}
+import ai.chronon.api._
 import ai.chronon.spark.Conversions
 import ai.chronon.spark.test.CatalystUtil.IteratorWrapper
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
-import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.execution.{BufferedRowIterator, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
+import org.apache.spark.unsafe.types.UTF8String
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import java.util
 import scala.collection.mutable
+import scala.jdk.CollectionConverters.asScalaIteratorConverter
+
+// TODO: move these classes to online module. We would need to figure out how to relocate spark deps so that they don't
+// pollute apps that depend on Chronon fetcher.
+object InternalRowConversions {
+  // the identity function
+  private def id(x: Any): Any = x
+
+  // recursively convert sparks byte array based internal row to chronon's fetcher result type (map[string, any])
+  // The purpose of this class is to be used on fetcher output in a fetching context
+  // we take a data type and build a function that operates on actual value
+  // we want to build functions where we only branch at construction time, but not at function execution time.
+  def from(dataType: types.DataType): Any => Any = {
+    val unguardedFunc: Any => Any = dataType match {
+      case types.MapType(keyType, valueType, _) =>
+        val keyConverter = from(keyType)
+        val valueConverter = from(valueType)
+
+        def mapConverter(x: Any): Any = {
+          val mapData = x.asInstanceOf[MapData]
+          val result = new util.HashMap[Any, Any]()
+          val size = mapData.numElements()
+          val keys = mapData.keyArray()
+          val values = mapData.valueArray()
+          var idx = 0
+          while (idx < size) {
+            result.put(keyConverter(keys.get(idx, keyType)), valueConverter(values.get(idx, valueType)))
+            idx += 1
+          }
+          result
+        }
+
+        mapConverter
+      case types.ArrayType(elementType, _) =>
+        val elementConverter = from(elementType)
+
+        def arrayConverter(x: Any): Any = {
+          val arrayData = x.asInstanceOf[ArrayData]
+          val size = arrayData.numElements()
+          val result = new util.ArrayList[Any](size)
+          var idx = 0
+          while (idx < size) {
+            result.add(elementConverter(arrayData.get(idx, elementType)))
+            idx += 1
+          }
+          result
+        }
+
+        arrayConverter
+      case types.StructType(fields) =>
+        val funcs = fields.map { _.dataType }.map { from }
+        val types = fields.map { _.dataType }
+        val names = fields.map { _.name }
+        val size = funcs.length
+
+        def structConverter(x: Any): Any = {
+          val internalRow = x.asInstanceOf[InternalRow]
+          val result = new mutable.HashMap[Any, Any]()
+          var idx = 0
+          while (idx < size) {
+            val value = internalRow.get(idx, types(idx))
+            result.put(names(idx), funcs(idx)(value))
+            idx += 1
+          }
+          result.toMap
+        }
+
+        structConverter
+      case types.StringType =>
+        def stringConvertor(x: Any): Any = x.asInstanceOf[UTF8String].toString
+
+        stringConvertor
+      case _ => id
+    }
+    def guardedFunc(x: Any): Any = if (x == null) x else unguardedFunc(x)
+    guardedFunc
+  }
+
+  // recursively convert fetcher result type - map[string, any] to internalRow.
+  // The purpose of this class is to be used on fetcher output in a fetching context
+  // we take a data type and build a function that operates on actual value
+  // we want to build functions where we only branch at construction time, but not at function execution time.
+  def to(dataType: types.DataType): Any => Any = {
+    val unguardedFunc: Any => Any = dataType match {
+      case types.MapType(keyType, valueType, _) =>
+        val keyConverter = to(keyType)
+        val valueConverter = to(valueType)
+
+        def mapConverter(x: Any): Any = {
+          val mapData = x.asInstanceOf[util.HashMap[Any, Any]]
+          val keyArray: ArrayData = new GenericArrayData(
+            mapData.entrySet().iterator().asScala.map(_.getKey).map(keyConverter).toArray)
+          val valueArray: ArrayData = new GenericArrayData(
+            mapData.entrySet().iterator().asScala.map(_.getValue).map(valueConverter).toArray)
+          new ArrayBasedMapData(keyArray, valueArray)
+        }
+
+        mapConverter
+      case types.ArrayType(elementType, _) =>
+        val elementConverter = to(elementType)
+
+        def arrayConverter(x: Any): Any = {
+          val arrayData = x.asInstanceOf[util.ArrayList[Any]]
+          new GenericArrayData(arrayData.iterator().asScala.map(elementConverter).toArray)
+        }
+
+        arrayConverter
+      case types.StructType(fields) =>
+        val funcs = fields.map { _.dataType }.map { to }
+        val names = fields.map { _.name }
+
+        def structConverter(x: Any): Any = {
+          val structMap = x.asInstanceOf[Map[Any, Any]]
+          val valueArr =
+            names.iterator.zip(funcs.iterator).map { case (name, func) => structMap.get(name).map(func).orNull }.toArray
+          new GenericInternalRow(valueArr)
+        }
+
+        structConverter
+      case types.StringType =>
+        def stringConvertor(x: Any): Any = { UTF8String.fromString(x.asInstanceOf[String]) }
+
+        stringConvertor
+      case _ => id
+    }
+    def guardedFunc(x: Any): Any = if (x == null) x else unguardedFunc(x)
+    guardedFunc
+  }
+}
 
 object CatalystUtil {
   val inputTable: String = "input_table"
@@ -50,11 +162,11 @@ class CatalystUtil(query: String, inputSchema: StructType) {
   private val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
   private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
     initializeIterator(iteratorWrapper)
-  private val outputSchema = Conversions.toChrononSchema(outputSparkSchema)
-  private val outputDecoder = internalConvert(outputSparkSchema)
-  private val outputNames = outputSchema.map(_._1)
+  private val outputDecoder = InternalRowConversions.from(outputSparkSchema)
+  private val inputEncoder = InternalRowConversions.to(Conversions.fromChrononSchema(inputSchema))
+
   def performSql(values: Map[String, Any]): Map[String, Any] = {
-    val internalRow = valueMapToInternalRow(values)
+    val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
     iteratorWrapper.put(internalRow)
     while (sparkSQLTransformerBuffer.hasNext) {
       val resultInternalRow = sparkSQLTransformerBuffer.next()
@@ -62,82 +174,6 @@ class CatalystUtil(query: String, inputSchema: StructType) {
       return Option(outputVal).map(_.asInstanceOf[Map[String, Any]]).orNull
     }
     null
-  }
-
-  // recursively convert sparks byte array based internal row to chronon's type system
-  private def id(x: Any): Any = x
-  private def internalConvert(dataType: types.DataType): Any => Any = {
-    val unguardedFunc: Any => Any = dataType match {
-      case types.MapType(keyType, valueType, _) => {
-        val keyConverter = internalConvert(keyType)
-        val valueConverter = internalConvert(valueType)
-        def mapConverter(x: Any): Any = {
-          val mapData = x.asInstanceOf[MapData]
-          val result = new util.HashMap[Any, Any]()
-          val size = mapData.numElements()
-          val keys = mapData.keyArray()
-          val values = mapData.valueArray()
-          var idx = 0
-          while (idx < size) {
-            result.put(keyConverter(keys.get(idx, keyType)), valueConverter(values.get(idx, keyType)))
-            idx += 1
-          }
-          result
-        }
-        mapConverter
-      }
-      case types.ArrayType(elementType, _) => {
-        val elementConverter = internalConvert(elementType)
-        def arrayConverter(x: Any): Any = {
-          val arrayData = x.asInstanceOf[ArrayData]
-          val size = arrayData.numElements()
-          val result = new util.ArrayList[Any](size)
-          var idx = 0
-          while (idx < size) {
-            result.add(elementConverter(arrayData.get(idx, elementType)))
-            idx += 1
-          }
-          result
-        }
-        arrayConverter
-      }
-      case types.StructType(fields) => {
-        val funcs = fields.map { _.dataType }.map { internalConvert }
-        val types = fields.map { _.dataType }
-        val names = fields.map { _.name }
-        val size = funcs.size
-        def structConverter(x: Any): Any = {
-          val internalRow = x.asInstanceOf[InternalRow]
-          val result = new mutable.HashMap[Any, Any]()
-          var idx = 0
-          while (idx < size) {
-            println(internalRow, idx)
-            val value = internalRow.get(idx, types(idx))
-            result.put(names(idx), funcs(idx)(value))
-            idx += 1
-          }
-          result.toMap
-        }
-        structConverter
-      }
-      case _ => id
-    }
-    def guardedFunc(x: Any): Any = if (x == null) x else unguardedFunc(x)
-    guardedFunc
-  }
-
-  private def valueMapToInternalRow(values: Map[String, Any]): InternalRow = {
-    if (values == null) return null
-    val size = inputSchema.fields.length
-    val arr = new Array[Any](size)
-    val it = inputSchema.fields.iterator
-    var idx = 0
-    while (it.hasNext) {
-      val col = it.next().name
-      arr.update(idx, values.get(col).orNull)
-      idx += 1
-    }
-    InternalRow.fromSeq(arr)
   }
 
   private def initializeIterator(
@@ -167,17 +203,35 @@ class CatalystUtilTest {
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
-    val mapType = MapType(StringType, innerStruct)
-    val listType =
-    val util = new CatalystUtil(
-      s"select a + 1 as a_plus, CAST(b as string) as b_str, c.e as c_e, c as c from ${CatalystUtil.inputTable} ",
-      StructType("root",
-                 Array(
-                   StructField("a", IntType),
-                   StructField("b", DoubleType),
-                   StructField("c", innerStruct)
-                 )))
-    val result = util.performSql(Map("a" -> 1, "b" -> 0.58, "c" -> Array(9L, 5.0)))
-    assertEquals(null, result)
+
+    val ctUtil = new CatalystUtil(
+      s"select a + 1 as a_plus, CAST(b as string) as b_str, c.e as c_e, c as c, element_at(mp, 'key').d as mp_d, mp, ls from ${CatalystUtil.inputTable} ",
+      StructType(
+        "root",
+        Array(
+          StructField("a", IntType),
+          StructField("b", DoubleType),
+          StructField("c", innerStruct),
+          StructField("mp", MapType(StringType, innerStruct)),
+          StructField("ls", ListType(innerStruct))
+        )
+      ))
+
+    val mapVal = new util.HashMap[Any, Any]()
+    mapVal.put("key", Map("e" -> 7.0f, "d" -> 8L))
+
+    val listVal = new util.ArrayList[Any]()
+    listVal.add(Map("e" -> 2.3f, "d" -> 7L))
+
+    val result =
+      ctUtil.performSql(Map("a" -> 1, "b" -> 0.58, "c" -> Map("e" -> 3.6f, "d" -> 9L), "mp" -> mapVal, "ls" -> listVal))
+    val expected = Map("a_plus" -> 2,
+                       "b_str" -> "0.58",
+                       "c_e" -> 3.6f,
+                       "c" -> Map("e" -> 3.6f, "d" -> 9L),
+                       "mp_d" -> 8L,
+                       "mp" -> mapVal,
+                       "ls" -> listVal)
+    assertEquals(expected, result)
   }
 }
