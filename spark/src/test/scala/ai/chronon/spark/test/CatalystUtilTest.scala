@@ -1,7 +1,7 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api._
-import ai.chronon.spark.Conversions
+import ai.chronon.spark.{Conversions, SparkSessionBuilder}
 import ai.chronon.spark.test.CatalystUtil.IteratorWrapper
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
@@ -158,7 +158,12 @@ object CatalystUtil {
   }
 }
 
-class CatalystUtil(query: String, inputSchema: StructType) {
+class CatalystUtil(expressions: Map[String, String],
+                   inputSchema: StructType,
+                   session: SparkSession,
+                   sessionName: String) {
+  private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
+  private val query = s"SELECT $selectClauses FROM $sessionName"
   private val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
   private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
     initializeIterator(iteratorWrapper)
@@ -178,21 +183,20 @@ class CatalystUtil(query: String, inputSchema: StructType) {
 
   private def initializeIterator(
       iteratorWrapper: IteratorWrapper[InternalRow]): (BufferedRowIterator, types.StructType) = {
-    val s = SparkSession.builder.appName("Test").master("local").getOrCreate()
-    val emptyRowRdd = s.emptyDataFrame.rdd
+    val emptyRowRdd = session.emptyDataFrame.rdd
     val inputSparkSchema = Conversions.fromChrononSchema(inputSchema)
-    val emptyDf = s.createDataFrame(emptyRowRdd, inputSparkSchema)
-    emptyDf.createOrReplaceTempView(CatalystUtil.inputTable)
-    val outputSchema = s.sql(query).schema
-    val logicalPlan = s.sessionState.sqlParser.parsePlan(query)
-    val plan = s.sessionState.executePlan(logicalPlan)
+    val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
+    emptyDf.createOrReplaceTempView(sessionName)
+    val outputSchema = session.sql(query).schema
+    val logicalPlan = session.sessionState.sqlParser.parsePlan(query)
+    val plan = session.sessionState.executePlan(logicalPlan)
     val executedPlan = plan.executedPlan
     val codeGenerator = executedPlan.asInstanceOf[WholeStageCodegenExec]
     val (ctx, cleanedSource) = codeGenerator.doCodeGen()
     val (clazz, _) = CodeGenerator.compile(cleanedSource)
     val references = ctx.references.toArray
     val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
-    s.close()
+    session.close()
     buffer.init(0, Array(iteratorWrapper))
     (buffer, outputSchema)
   }
@@ -203,9 +207,15 @@ class CatalystUtilTest {
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
-
+    val session = SparkSessionBuilder.build("catalyst_test", true)
     val ctUtil = new CatalystUtil(
-      s"select a + 1 as a_plus, CAST(b as string) as b_str, c.e as c_e, c as c, element_at(mp, 'key').d as mp_d, mp, ls from ${CatalystUtil.inputTable} ",
+      Map("a_plus" -> "a + 1",
+          "b_str" -> "CAST(b as string)",
+          "c_e" -> "c.e",
+          "c" -> "c",
+          "mp_d" -> "element_at(mp, 'key').d",
+          "mp" -> "mp",
+          "ls" -> "ls"),
       StructType(
         "root",
         Array(
@@ -215,7 +225,10 @@ class CatalystUtilTest {
           StructField("mp", MapType(StringType, innerStruct)),
           StructField("ls", ListType(innerStruct))
         )
-      ))
+      ),
+      session,
+      "test_query"
+    )
 
     val mapVal = new util.HashMap[Any, Any]()
     mapVal.put("key", Map("e" -> 7.0f, "d" -> 8L))
