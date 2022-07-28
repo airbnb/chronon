@@ -58,7 +58,7 @@ jobs:
                         docker push patyoon/zipline-ci:base
                     fi
 
-    "Chronon Scala Tests":
+    "Spark 2 Scala Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
@@ -68,7 +68,23 @@ jobs:
                   command: |
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt +test
+                      sbt test
+            - store_test_results:
+                  path: /zipline/spark/target/test-reports
+            - store_test_results:
+                  path: /zipline/aggregator/target/test-reports
+
+    "Spark 3 Scala Tests":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - run:
+                  name: Run Spark 3.1.1 tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      # Increase if we see OOM.
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      sbt "++ 2.12.12 spark_uber/test"
             - store_test_results:
                   path: /zipline/spark/target/test-reports
             - store_test_results:
@@ -112,7 +128,13 @@ workflows:
                 filters:  # required since `Publish JARs` has tag filters AND requires this step
                     tags:
                         only: /.*/
-            - "Chronon Scala Tests":
+            - "Spark 2 Scala Tests":
+                  requires:
+                      - "Docker Base Build"
+                  filters:
+                      tags:
+                          ignore: /^release-zl-.*/
+            - "Spark 3 Scala Tests":
                   requires:
                       - "Docker Base Build"
                   filters:

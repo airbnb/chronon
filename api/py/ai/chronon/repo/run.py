@@ -17,6 +17,13 @@ ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
 SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload', 'analyze']
 
+# Constants for supporting multiple spark versions.
+SUPPORTED_SPARK = ['2.4.0', '3.1.1']
+SCALA_VERSION_FOR_SPARK = {
+    '2.4.0': "2.11",
+    '3.1.1': "2.12",
+}
+
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
@@ -105,9 +112,12 @@ def download_only_once(url, path):
 
 
 @retry_decorator(retries=3, backoff=50)
-def download_jar(version, jar_type='uber', release_tag=None):
-    base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_2.11".format(
-        jar_type)
+def download_jar(version, jar_type='uber', release_tag=None, spark_version="2.4.0"):
+    assert spark_version in SUPPORTED_SPARK, (
+        f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}")
+    scala_version = SCALA_VERSION_FOR_SPARK[spark_version]
+    base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_{}".format(
+        jar_type, scala_version)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
         if version is None:
@@ -122,9 +132,10 @@ def download_jar(version, jar_type='uber', release_tag=None):
                 )
             ]
             version = versions[-1]
-        jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}-assembly.jar".format(
+        jar_url = "{base_url}/{version}/spark_{jar_type}_{scala_version}-{version}-assembly.jar".format(
             base_url=base_url,
             version=version,
+            scala_version=scala_version,
             jar_type=jar_type
         )
         jar_path = os.path.join('/tmp', jar_url.split('/')[-1])
@@ -271,6 +282,7 @@ if __name__ == "__main__":
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
                         default=os.environ.get('CHRONON_ONLINE_CLASS', None))
     parser.add_argument('--version', help='Chronon version to use.', default=None)
+    parser.add_argument('--spark-version', help='Spark version to use for downloading jar.', default='2.4.0')
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
                         default=os.path.join(chronon_repo_path, 'scripts/spark_submit.sh'))
@@ -294,5 +306,6 @@ if __name__ == "__main__":
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
-    jar_path = args.chronon_jar if args.chronon_jar else download_jar(args.version, jar_type, args.release_tag)
+    jar_path = args.chronon_jar if args.chronon_jar else download_jar(
+        args.version, jar_type=jar_type, release_tag=args.release_tag, spark_version=args.spark_version)
     Runner(args, jar_path).run()
