@@ -3,6 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api._
 import ai.chronon.spark.{Conversions, SparkSessionBuilder}
 import ai.chronon.spark.test.CatalystUtil.IteratorWrapper
+import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
@@ -202,7 +203,7 @@ class CatalystUtil(expressions: Map[String, String],
   }
 }
 
-class CatalystUtilTest {
+class CatalystUtilTest extends TestCase {
 
   @Test
   def testCatalystUtil(): Unit = {
