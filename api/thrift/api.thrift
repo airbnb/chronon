@@ -169,6 +169,8 @@ struct GroupBy {
     5: optional Accuracy accuracy
     // Optional start date for a group by backfill, if it's unset then no historical partitions will be generate
     6: optional string backfillStartDate
+    // Verify in user API that either external features are set or source, aggs, etc.
+    7: optional list<ExternalFeature> externalFeatures
 }
 
 struct AggregationSelector {
