@@ -139,13 +139,13 @@ struct MetaData {
 
 struct ContextualFeature {
     1: optional string name
-    2: optional DataKind dataKind
+    2: optional TDataType dataType
 }
 
 struct ServiceFeature {
     1: optional string name
-    2: optional DataKind dataKind
-    4: optional map<string, DataKind> requestFields
+    2: optional TDataType featureDataType
+    4: optional TDataType requestDataType
     5: optional string ServiceEndpoint // Only used for metadata tracking and lineage, no validation of accuracy
 }
 
