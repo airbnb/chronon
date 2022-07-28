@@ -101,13 +101,28 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
+// users can simply register external endpoints with a lambda that can return the future of a response given keys
+// keys and values need to match schema in ExternalSource - chronon will validate automatically
+class ExternalSourceRegistry {
+  type FetchFunction = Map[String, Any] => Future[Map[String, Any]]
+  val externalRegistry: mutable.Map[String, FetchFunction] = new mutable.HashMap[String, FetchFunction]()
 
+  def register(name: String, fetchFunction: FetchFunction): Unit = {
+    externalRegistry.put(name, fetchFunction)
+  }
+
+  def fetch(name: String, keyMap: Map[String, Any]): Future[Map[String, Any]] = {
+    assert(externalRegistry.contains(name), s"$name is not found in the external registry")
+    externalRegistry(name)(keyMap)
+  }
+}
 
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
+  def externalRegistry: ExternalSourceRegistry = new ExternalSourceRegistry
 
   type FetchFunction: Map[String, Any] => Future[Map[String, Any]]
 
