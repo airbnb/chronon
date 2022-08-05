@@ -44,6 +44,7 @@ class BaseFetcher(kvStore: KVStore,
   )
 
   // a groupBy request is split into batchRequest and optionally a streamingRequest
+  // this method decodes bytes (of the appropriate avro schema) into chronon rows aggregates further if necessary
   private def constructGroupByResponse(batchResponsesTry: Try[Seq[TimedValue]],
                                        streamingResponsesOpt: Option[Seq[TimedValue]],
                                        oldServingInfo: GroupByServingInfoParsed,
@@ -228,6 +229,8 @@ class BaseFetcher(kvStore: KVStore,
                                          totalResponseValueBytes)
               } catch {
                 case ex: Exception =>
+                  // not all exceptions are due to stale schema, so we want to control how often we hit kv store
+                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
                   context.incrementException(ex)
                   ex.printStackTrace()
                   throw ex
@@ -454,8 +457,8 @@ class Fetcher(kvStore: KVStore,
                 LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts))
               if (logFunc != null)
                 logFunc.accept(loggableResponse)
-                val joinContext = Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join)
-                joinContext.increment("logging_request.count")
+              val joinContext = Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join)
+              joinContext.increment("logging_request.count")
             }
         }
         if (loggingTry.isFailure && (debug || Math.random() < 0.01)) {

@@ -337,9 +337,7 @@ object Extensions {
         .convertJavaListToScala(groupBy.sources)
         .map(_.topic)
         .filter(_ != null)
-      if (validTopics.nonEmpty) return Accuracy.TEMPORAL
-      // the default accuracy for events is temporal and entities is snapshot
-      if (groupBy.dataModel == DataModel.Events) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
+      if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
     }
 
     def setups: Seq[String] = {

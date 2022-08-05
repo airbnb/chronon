@@ -103,6 +103,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  // pull and cache groupByServingInfo from the groupBy uploads
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
     new TTLCache[String, Try[GroupByServingInfoParsed]]({ name =>
       val startTimeMs = System.currentTimeMillis()
