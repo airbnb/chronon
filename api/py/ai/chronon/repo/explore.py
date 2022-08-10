@@ -24,12 +24,10 @@ GB_INDEX_SPEC = {
         "keyColumns"
     ],
     "name": [
-        "metaData.name",
-        # "name"
+        "metaData.name"
     ],
     "online": [
-        "metaData.online",
-        # "name"
+        "metaData.online"
     ]
 }
 
@@ -44,8 +42,7 @@ JOIN_INDEX_SPEC = {
         "rightParts[].groupBy.name",
     ],
     "name": [
-        "metaData.name",
-        # "name"
+        "metaData.name"
     ],
     "_group_bys": [
         "joinParts[].groupBy",
@@ -132,13 +129,14 @@ git_info_cache = {}
 
 
 # git_info is the most expensive part of the entire script - so we will have to parallelize
-def git_info(file_paths):
+def git_info(file_paths, exclude=None):
+    exclude_args = f"--invert-grep --grep={exclude}" if exclude else ''
     procs = []
     for file_path in file_paths:
         if file_path in git_info_cache:
             procs.append((file_path, git_info_cache[file_path]))
         else:
-            args = f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})"
+            args = f"echo $(git log -n 2 --pretty='format:{BLUE} %as/%an/%ae' {exclude_args} -- {file_path})"
             procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
 
     result = {}
@@ -249,36 +247,101 @@ def enrich_with_joins(gb_index, join_index):
                     gb_index[gb_name]["join_event_driver"].append(join["_events_driver"][0])
 
 
-if __name__ == "__main__":
-    if not CWD.endswith("chronon"):
-        print("This script needs to be run from chronon conf root - with folder named 'chronon'")
-    gb_index = build_index("group_bys", GB_INDEX_SPEC)
-    join_index = build_index("joins", JOIN_INDEX_SPEC)
-    enrich_with_joins(gb_index, join_index)
-    if len(sys.argv) != 2:
-        print("This script takes just one argument, the keyword to lookup keys or features by")
-        print("Eg., explore.py price")
-        sys.exit(1)
+file_to_author = {}
+## This file parses all confs and constructs several reverse indexes - per gb and join
+gb_index = []
+join_index = []
 
-    def author(file):
-        for file, auth_str in git_info([file]).items():
-            return auth_str.split("27m")[-1]
+
+def author_name_email(file, exclude=None):
+    if not os.path.exists(file):
+        return ("", "")
+    if file not in file_to_author:
+        for file, auth_str in git_info([file], exclude).items():
+            file_to_author[file] = auth_str.split("/")[-2:]
+    return file_to_author[file]
+
+
+def conf_file(conf_type, conf_name):
+    path_parts = ["production", conf_type]
+    path_parts.extend(conf_name.split(".", 1))
+    return os.path.join(*path_parts)
+
+
+# args[0] is output tsv file
+# args[1] is commit messages to exclude when extracting author and email information
+def events_without_topics(output_file=None, exclude_commit_message=None):
+    result = []
+    emails = set()
 
     def is_events_without_topics(entry):
         found = len(entry["_event_topics"]) == 0 and len(entry["_event_tables"]) > 0
-        for join in entry["joins"]:
-            git_info("/".join(join.split(".", 1)))
+        is_online = len(entry["online"]) > 0
+        joins = ", ".join(entry["joins"]) if len(entry["joins"]) > 0 else "STANDALONE"
         if found:
-            print(f"""
-      table: {entry["_event_tables"][0]}
-     online: {len(entry["online"]) > 0}
-      joins: {entry["joins"]}
-       file: {entry["json_file"]}
-     author: {author(entry["json_file"])}
-join_author: 
-            """)
+            file = entry["json_file"] if os.path.exists(entry["json_file"]) else entry["file"]
+            producer_name, producer_email = author_name_email(file, exclude_commit_message)
+            emails.add(producer_email)
+            consumers = set()
+            for join in entry["joins"]:
+                conf_file_path = conf_file("joins", join)
+                consumer_name, consumer_email = author_name_email(conf_file_path, exclude_commit_message)
+                consumers.add(consumer_name)
+                emails.add(consumer_email)
+            row = [
+                entry["name"][0],
+                producer_name,
+                is_online,
+                entry["_event_tables"][0],
+                joins,
+                ", ".join(consumers)
+            ]
+            result.append(row)
+        return found
 
     find_in_index_pred(gb_index, is_events_without_topics)
-    sys.exit(0)
-    group_bys = find_in_index(gb_index, sys.argv[1])
-    display_entries(group_bys, sys.argv[1])
+    if output_file:
+        with open(os.path.expanduser(output_file), 'w') as tsv_file:
+            for row in result:
+                tsv_file.write('\t'.join(map(str, row))+'\n')
+        print("wrote information about cases where events us used " +
+              f"without topics set into file {os.path.expanduser(output_file)}")
+    else:
+        for row in result:
+            print('\t'.join(map(str, row))+'\n')
+    print(emails)
+
+
+# register all handlers here
+handlers = {
+    "_events_without_topics": events_without_topics
+}
+
+if __name__ == "__main__":
+    if not (CWD.endswith("chronon") or CWD.endswith("zipline")):
+        print("This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline'")
+
+    assert(len(sys.argv) > 1), "explore.py needs one or more arguments"
+
+    gb_index = build_index("group_bys", GB_INDEX_SPEC)
+    join_index = build_index("joins", JOIN_INDEX_SPEC)
+    enrich_with_joins(gb_index, join_index)
+
+    candidate = sys.argv[1]
+    if candidate in handlers:
+        print(f"{candidate} is a registered handler")
+        handler = handlers[candidate]
+        args = {}
+        for arg in sys.argv[2:]:
+            splits = arg.split("=", 1)
+            assert len(splits) == 2, f"need args to handler for the form, param=value. Found and invalid arg:{arg}"
+            key, value = splits
+            args[key] = value
+        handler(**args)
+    else:
+        if len(sys.argv) != 2:
+            print("This script takes just one argument, the keyword to lookup keys or features by")
+            print("Eg., explore.py price")
+            sys.exit(1)
+        group_bys = find_in_index(gb_index, sys.argv[1])
+        display_entries(group_bys, sys.argv[1])
