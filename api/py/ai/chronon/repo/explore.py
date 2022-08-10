@@ -15,6 +15,8 @@ GB_INDEX_SPEC = {
         "sources[].entities.topic",
         "sources[].events.topic",
     ],
+    "_event_tables": ["sources[].events.table"],
+    "_event_topics": ["sources[].events.topic"],
     "aggregation": [
         "aggregations[].inputColumn"
     ],
@@ -23,7 +25,11 @@ GB_INDEX_SPEC = {
     ],
     "name": [
         "metaData.name",
-        "name"
+        # "name"
+    ],
+    "online": [
+        "metaData.online",
+        # "name"
     ]
 }
 
@@ -32,13 +38,14 @@ JOIN_INDEX_SPEC = {
         "left.entities.snapshotTable",
         "left.events.table",
     ],
+    "_events_driver": ["left.events.table"],
     "group_bys": [
         "joinParts[].groupBy.metaData.name",
         "rightParts[].groupBy.name",
     ],
     "name": [
         "metaData.name",
-        "name"
+        # "name"
     ],
     "_group_bys": [
         "joinParts[].groupBy",
@@ -105,6 +112,9 @@ def build_entry(conf, index_spec, conf_type):
             result.extend(extract_json(path, conf_dict))
         entry[column] = result
 
+    if len(entry["name"]) == 0:
+        return None
+
     # derive python file path from the name & conf_type
     (team, conf_module) = entry["name"][0].split(".", 1)
     file_base = "/".join(conf_module.split(".")[:-1])
@@ -113,23 +123,32 @@ def build_entry(conf, index_spec, conf_type):
     py_path = os.path.join(conf_type, team, py_file)
     init_path = os.path.join(conf_type, team, init_file)
     conf_path = py_path if os.path.exists(py_path) else init_path
+    entry["json_file"] = os.path.join("production", conf_type, team, conf_module)
     entry["file"] = conf_path
     return entry
+
+
+git_info_cache = {}
 
 
 # git_info is the most expensive part of the entire script - so we will have to parallelize
 def git_info(file_paths):
     procs = []
     for file_path in file_paths:
-        args = f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})"
-        procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
+        if file_path in git_info_cache:
+            procs.append((file_path, git_info_cache[file_path]))
+        else:
+            args = f"echo $(git log -n 1 --pretty='format:{GREY}on {GREEN}%as {GREY}by {BLUE}%an ' -- {file_path})"
+            procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
 
     result = {}
     for file_path, proc in procs:
-        lines = []
-        for line in proc.stdout.readlines():
-            lines.append(line.decode("utf-8").strip())
-        result[file_path] = lines[0]
+        if isinstance(proc, subprocess.Popen):
+            lines = []
+            for line in proc.stdout.readlines():
+                lines.append(line.decode("utf-8").strip())
+            git_info_cache[file_path] = lines[0]
+        result[file_path] = git_info_cache[file_path]
     return result
 
 
@@ -193,6 +212,10 @@ def find_in_index(index_table, target):
             if column in FILTER_COLUMNS
             for value in values
         ])
+    find_in_index_pred(index_table, valid_entry)
+
+
+def find_in_index_pred(index_table, valid_entry):
     return [entry for _, entry in index_table.items() if valid_entry(entry)]
 
 
@@ -217,10 +240,13 @@ def enrich_with_joins(gb_index, join_index):
     # lineage -> reverse index from gb -> join
     for _, group_by in gb_index.items():
         group_by["joins"] = []
+        group_by["join_event_driver"] = []
     for _, join in join_index.items():
         for gb_name in join["group_bys"]:
             if gb_name in gb_index:
                 gb_index[gb_name]["joins"].append(join["name"][0])
+                if len(join["_events_driver"]) > 0:
+                    gb_index[gb_name]["join_event_driver"].append(join["_events_driver"][0])
 
 
 if __name__ == "__main__":
@@ -233,5 +259,26 @@ if __name__ == "__main__":
         print("This script takes just one argument, the keyword to lookup keys or features by")
         print("Eg., explore.py price")
         sys.exit(1)
+
+    def author(file):
+        for file, auth_str in git_info([file]).items():
+            return auth_str.split("27m")[-1]
+
+    def is_events_without_topics(entry):
+        found = len(entry["_event_topics"]) == 0 and len(entry["_event_tables"]) > 0
+        for join in entry["joins"]:
+            git_info("/".join(join.split(".", 1)))
+        if found:
+            print(f"""
+      table: {entry["_event_tables"][0]}
+     online: {len(entry["online"]) > 0}
+      joins: {entry["joins"]}
+       file: {entry["json_file"]}
+     author: {author(entry["json_file"])}
+join_author: 
+            """)
+
+    find_in_index_pred(gb_index, is_events_without_topics)
+    sys.exit(0)
     group_bys = find_in_index(gb_index, sys.argv[1])
     display_entries(group_bys, sys.argv[1])

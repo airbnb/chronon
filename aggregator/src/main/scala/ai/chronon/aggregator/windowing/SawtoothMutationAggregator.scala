@@ -82,7 +82,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     while (i < windowedAggregator.length) {
       val window = windowMappings(i).aggregationPart.window
       val hopIndex = tailHopIndices(i)
-      if (window == null || row.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))) {
+      val rowInWindow = (row.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && row.ts < queryTs)
+      if (window == null || rowInWindow) {
         if (hasReversal && row.isBefore) {
           windowedAggregator(i).delete(ir, row)
         } else {
