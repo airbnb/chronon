@@ -247,9 +247,11 @@ def enrich_with_joins(gb_index, join_index):
                     gb_index[gb_name]["join_event_driver"].append(join["_events_driver"][0])
 
 
+# reuse `git log` command result
 file_to_author = {}
-## This file parses all confs and constructs several reverse indexes - per gb and join
+# extract information based on GROUPBY_INDEX_SPEC into this
 gb_index = []
+# extract information based on JOIN_INDEX_SPEC into this
 join_index = []
 
 
@@ -309,7 +311,7 @@ def events_without_topics(output_file=None, exclude_commit_message=None):
     else:
         for row in result:
             print('\t'.join(map(str, row))+'\n')
-    print(emails)
+    print(",".join(list(emails)))
 
 
 # register all handlers here
