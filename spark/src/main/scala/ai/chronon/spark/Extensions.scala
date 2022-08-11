@@ -40,6 +40,33 @@ object Extensions {
   }
 
   implicit class DataframeOps(df: DataFrame) {
+    case class MetricTransformer(colName: String, expr: String, aggs: Seq[Operation]) {}
+    // take an set of subsets of columns and produce heavy hitter counts for each subset in a single pass.
+    // Seq(Seq("user", "item"), Seq("item")) will produce two maps, "user|item" heavy hitters and "item" heavy hitters.
+    def analyze(frequentItemKeys: Seq[Seq[String]], frequentItemMapSize: Int = 1024): Seq[Map[String, Long]] = {
+      assert(frequentItemKeys.nonEmpty, "No column arrays specified for frequent items summary")
+      val frequencyKeyExprs = frequentItemKeys.map { cols =>
+        assert(cols.nonEmpty, "No columns specified for frequent items summary")
+        val stringifiedCols = cols.map { col =>
+          df.schema.fields.find(_.name == col) match {
+            case Some(types.StructField(name, StringType, _, _)) => name
+            case Some(types.StructField(name, _, _, _))          => s"CAST($name AS STRING)"
+            case None =>
+              throw new IllegalArgumentException(s"$col is not present among: [${df.schema.fieldNames.mkString(", ")}]")
+          }
+        }
+
+        if (stringifiedCols.length > 1) {
+          s"CONCAT_WS('|', ${stringifiedCols.mkString(", ")}) AS ${cols.mkString("__")}"
+        } else { stringifiedCols.head }
+      }
+
+      df.selectExpr(exprs: _*)
+        .rdd
+        .treeAggregate(new ItemsSketch[String](1024))(seqOp = {
+          case (sketch, row) => sketch.update(row.getString(0))
+        })
+    }
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
