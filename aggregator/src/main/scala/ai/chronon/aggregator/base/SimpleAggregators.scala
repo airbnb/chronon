@@ -3,7 +3,15 @@ package ai.chronon.aggregator.base
 import ai.chronon.api._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
+import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
+import com.yahoo.sketches.{
+  ArrayOfDoublesSerDe,
+  ArrayOfItemsSerDe,
+  ArrayOfLongsSerDe,
+  ArrayOfNumbersSerDe,
+  ArrayOfStringsSerDe
+}
 
 import java.util
 import scala.reflect.ClassTag
@@ -316,6 +324,70 @@ object CpcFriendly {
 
   implicit val BinaryIsCpcFriendly: CpcFriendly[Array[Byte]] = new CpcFriendly[Array[Byte]] {
     override def update(sketch: CpcSketch, input: Array[Byte]): Unit = sketch.update(input)
+  }
+}
+
+trait FrequentItemsFriendly[Input] {
+  def serializer: ArrayOfItemsSerDe[Input]
+}
+
+object FrequentItemsFriendly {
+  implicit val stringIsFrequentItemsFriendly: FrequentItemsFriendly[String] = new FrequentItemsFriendly[String] {
+    override def serializer: ArrayOfItemsSerDe[String] = new ArrayOfStringsSerDe
+  }
+
+  implicit val longIsCpcFriendly: FrequentItemsFriendly[java.lang.Long] = new FrequentItemsFriendly[java.lang.Long] {
+    override def serializer: ArrayOfItemsSerDe[java.lang.Long] = new ArrayOfLongsSerDe
+  }
+  implicit val doubleIsCpcFriendly: FrequentItemsFriendly[java.lang.Double] =
+    new FrequentItemsFriendly[java.lang.Double] {
+      override def serializer: ArrayOfItemsSerDe[java.lang.Double] = new ArrayOfDoublesSerDe
+    }
+
+  implicit val BinaryIsCpcFriendly: FrequentItemsFriendly[Number] = new FrequentItemsFriendly[Number] {
+    override def serializer: ArrayOfItemsSerDe[Number] = new ArrayOfNumbersSerDe
+  }
+}
+
+class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
+    extends SimpleAggregator[T, ItemsSketch[T], Map[T, Long]] {
+  override def outputType: DataType = MapType(StringType, IntType)
+
+  override def irType: DataType = BinaryType
+  type Sketch = ItemsSketch[T]
+  override def prepare(input: T): Sketch = {
+    val sketch = new ItemsSketch[T](mapSize)
+    sketch.update(input)
+    sketch
+  }
+
+  override def update(ir: Sketch, input: T): Sketch = {
+    ir.update(input)
+    ir
+  }
+  override def merge(ir1: Sketch, ir2: Sketch): Sketch = {
+    ir1.merge(ir2)
+    ir1
+  }
+
+  // ItemsSketch doesn't have a proper copy method. So we serialize and deserialize.
+  override def clone(ir: Sketch): Sketch = {
+    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
+    val bytes = ir.toByteArray(serDe)
+    ItemsSketch.getInstance[T](Memory.wrap(bytes), serDe)
+  }
+
+  override def finalize(ir: Sketch): Map[T, Long] =
+    ir.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate).toMap
+
+  override def normalize(ir: Sketch): Array[Byte] = {
+    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
+    ir.toByteArray(serDe)
+  }
+
+  override def denormalize(normalized: Any): Sketch = {
+    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
+    ItemsSketch.getInstance[T](Memory.wrap(normalized.asInstanceOf[Array[Byte]]), serDe)
   }
 }
 
