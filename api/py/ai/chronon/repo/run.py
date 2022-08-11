@@ -18,6 +18,7 @@ SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload']
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
+    'analyze': OFFLINE_ARGS,
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
     'fetch': ONLINE_ARGS,
@@ -31,13 +32,15 @@ ROUTES = {
         'backfill': 'group-by-backfill',
         'streaming': 'group-by-streaming',
         'local-streaming': 'group-by-streaming',
-        'fetch': 'fetch'
+        'fetch': 'fetch',
+        'analyze': 'analyze'
     },
     'joins': {
         'backfill': 'join',
         'metadata-upload': 'metadata-upload',
         'fetch': 'fetch',
         'consistency-metrics-upload': 'consistency-metrics-upload',
+        'analyze': 'analyze'
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
