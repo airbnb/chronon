@@ -35,4 +35,7 @@ case class PartitionSpec(format: String, spanMillis: Long) {
 
   def shift(date: String, days: Int): String =
     partitionFormatter.format(Instant.ofEpochMilli(epochMillis(date) + days * spanMillis))
+
+  def now: String = at(System.currentTimeMillis())
+  def shiftBackFromNow(days: Int) = shift(now, 0 - days)
 }

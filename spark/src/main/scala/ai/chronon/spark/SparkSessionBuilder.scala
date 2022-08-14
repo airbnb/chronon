@@ -69,7 +69,7 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.local.dir", s"/tmp/chronon-spark-streaming")
-        .config("spark.kryo.registrationRequired", "true")
+      //.config("spark.kryo.registrationRequired", "true")
     } else {
       baseBuilder
     }
