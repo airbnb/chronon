@@ -9,7 +9,7 @@ import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 
 import scala.jdk.CollectionConverters.asScalaBufferConverter
@@ -24,6 +24,7 @@ class ItemSketchSerializable extends Serializable {
     this
   }
 
+  // necessary for serialization
   private def writeObject(out: java.io.ObjectOutputStream): Unit = {
     val serDe = new ArrayOfStringsSerDe
     val bytes = sketch.toByteArray(serDe)
@@ -38,7 +39,6 @@ class ItemSketchSerializable extends Serializable {
     val serDe = new ArrayOfStringsSerDe
     sketch = ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
   }
-
 }
 
 class Analyzer(tableUtils: TableUtils,
@@ -56,7 +56,10 @@ class Analyzer(tableUtils: TableUtils,
     val baseDf = df.withColumn("total_count", lit("rows"))
     val baseKeys = keys :+ "total_count"
     if (df.schema.fieldNames.contains(Constants.TimeColumn)) {
-      heavyHitters(baseDf.withTimeBasedColumn("ds_of_ts"), baseKeys :+ "ds_of_ts", frequentItemMapSize, sampleFraction)
+      heavyHitters(baseDf.withColumn("ts_year", from_unixtime(col("ts") / 1000, "yyyy")),
+                   baseKeys :+ "ts_year",
+                   frequentItemMapSize,
+                   sampleFraction)
     } else {
       heavyHitters(baseDf, baseKeys, frequentItemMapSize, sampleFraction)
     }

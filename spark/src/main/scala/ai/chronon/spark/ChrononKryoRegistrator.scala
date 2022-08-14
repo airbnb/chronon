@@ -94,10 +94,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements",
-      //"ai.chronon.spark.ItemSketchSerializable",
-      "com.yahoo.sketches.frequencies.ReversePurgeItemHashMap"
-      //"com.yahoo.sketches.frequencies.ItemsSketch"
+      "scala.collection.IndexedSeqLike$Elements"
     )
     val spark3 = Seq(
       "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
@@ -124,6 +121,5 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
     kryo.register(classOf[ItemSketchSerializable], new ItemsSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
-    // kryo.register(classOf[ItemsSketch[_]])
   }
 }
