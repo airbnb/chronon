@@ -66,7 +66,12 @@ class BaseFetcher(kvStore: KVStore,
       .getOrElse(null)
     val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
       servingInfo.selectedCodec.decodeMap(batchBytes)
+      println("--------- Batch Upload Request -------------")
+      println(servingInfo.selectedCodec.decodeMap(batchBytes).toString)
+      servingInfo.selectedCodec.decodeMap(batchBytes)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
+      println("--------- Batch Upload Request -------------")
+      println(servingInfo.outputCodec.decodeMap(batchBytes).toString)
       servingInfo.outputCodec.decodeMap(batchBytes)
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
@@ -89,6 +94,9 @@ class BaseFetcher(kvStore: KVStore,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
+
+        println("--------- Streaming Request -------------")
+        println(servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap.toString)
         servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
       }
     }

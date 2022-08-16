@@ -50,7 +50,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
       case (keys, values) =>
         // json encoding is very expensive (50% of entire job).
         // Only do it for a small fraction to retain debuggability.
-        val (keyJson, valueJson) = if (math.random < 0.01) {
+        val (keyJson, valueJson) = if (math.random < 1.01) {
           (keyToJson(keys), valueToJson(values))
         } else {
           (null, null)
