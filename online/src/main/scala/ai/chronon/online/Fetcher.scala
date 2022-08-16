@@ -93,9 +93,15 @@ class BaseFetcher(kvStore: KVStore,
                          overallLatency,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
+        val batchOnlyOutput = aggregator.lambdaAggregateFinalized(batchIr, null, queryTimeMs)
+        val streamingOnlyOutput = aggregator.lambdaAggregateFinalized(null, streamingRows, queryTimeMs)
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
 
-        println("--------- Streaming Request -------------")
+        println("--------- Batch Request -------------")
+        println(servingInfo.outputCodec.fieldNames.zip(batchOnlyOutput.map(_.asInstanceOf[AnyRef])).toMap.toString)
+        println("--------- streamingOnlyOutput Request -------------")
+        println(servingInfo.outputCodec.fieldNames.zip(streamingOnlyOutput.map(_.asInstanceOf[AnyRef])).toMap.toString)
+        println("--------- Joined Output -------------")
         println(servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap.toString)
         servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
       }
