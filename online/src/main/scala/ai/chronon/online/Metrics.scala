@@ -92,7 +92,8 @@ object Metrics {
                                     "localhost",
                                     8125,
                                     ctx.toTags: _*)
-      }
+      },
+      ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
   }
 
