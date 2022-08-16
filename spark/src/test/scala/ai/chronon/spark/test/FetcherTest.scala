@@ -3,7 +3,23 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, BooleanType, Builders, Constants, DataModel, DoubleType, IntType, ListType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  BooleanType,
+  Builders,
+  Constants,
+  DataModel,
+  DoubleType,
+  IntType,
+  ListType,
+  LongType,
+  Operation,
+  StringType,
+  StructField,
+  StructType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Fetcher.{Request, Response}
@@ -237,6 +253,9 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.COUNT, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
+        Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
+                             inputColumn = "notes",
+                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
@@ -464,7 +483,8 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
