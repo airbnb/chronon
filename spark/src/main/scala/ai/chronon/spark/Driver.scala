@@ -92,16 +92,10 @@ object Driver {
 
   object Analyzer {
     class Args extends Subcommand("analyze") with OfflineSubcommand {
-      override val endDate: ScallopOption[String] = opt[String](
-        required = false,
-        descr = "Finds heavy hitters & time-distributions until a specified end date",
-        // default range is 2 days ago to 3 day ago partition - most data would have landed by then
-        default = Some(Constants.Partition.shiftBackFromNow(-2))
-      )
       val startDate: ScallopOption[String] =
         opt[String](required = false,
                     descr = "Finds heavy hitters & time-distributions until a specified start date",
-                    default = Some(Constants.Partition.shiftBackFromNow(-3)))
+                    default = Some(Constants.Partition.shiftBackFromNow(3)))
       val count: ScallopOption[Int] =
         opt[Int](
           required = false,
@@ -363,7 +357,7 @@ object Driver {
     object GroupByStreamingArgs extends GroupByStreaming.Args
     addSubcommand(GroupByStreamingArgs)
     object AnalyzerArgs extends Analyzer.Args
-    addSubcommand(GroupByStreamingArgs)
+    addSubcommand(AnalyzerArgs)
     requireSubcommand()
     verify()
   }

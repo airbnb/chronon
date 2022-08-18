@@ -13,7 +13,7 @@ OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
-SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload']
+SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload', 'analyze']
 
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,

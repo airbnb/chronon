@@ -130,6 +130,7 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = ""): Unit = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
+    println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
     val analysis = analyze(groupBy.inputDf,
                            groupByConf.keyColumns.asScala.toArray,
                            groupByConf.sources.asScala.map(_.table).mkString(","))
@@ -145,6 +146,8 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def analyzeJoin(joinConf: api.Join): Unit = {
+    val name = "joins/" + joinConf.metaData.name
+    println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
     println(s"""
@@ -153,7 +156,7 @@ class Analyzer(tableUtils: TableUtils,
                |$analysis
                |------ END ------
                |""".stripMargin)
-    joinConf.joinParts.asScala.foreach { part =>
+    joinConf.joinParts.asScala.par.foreach { part =>
       analyzeGroupBy(part.groupBy, Option(part.prefix).map(_ + "_").getOrElse(""))
     }
   }
