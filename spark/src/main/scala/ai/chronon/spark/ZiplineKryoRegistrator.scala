@@ -10,7 +10,7 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
     val bytes = sketch.toByteArray
     output.writeInt(bytes.size)
-    output.writeBytes(sketch.toByteArray)
+    output.writeBytes(bytes)
   }
 
   override def read(kryo: Kryo, input: Input, `type`: Class[CpcSketch]): CpcSketch = {
@@ -73,9 +73,11 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements"
+      "scala.collection.IndexedSeqLike$Elements",
+      "com.yahoo.sketches.cpc.PairTable"
     )
-    val spark3 = Seq("org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
+    val spark3 = Seq(
+      "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
       "org.apache.spark.sql.execution.datasources.v2.DataWritingSparkTaskResult",
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation",
       "org.apache.spark.util.HadoopFSUtils$SerializableBlockLocation",

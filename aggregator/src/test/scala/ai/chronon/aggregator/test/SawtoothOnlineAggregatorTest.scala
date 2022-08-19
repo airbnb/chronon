@@ -16,7 +16,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
     val eventCount = 1000000
 
-    val columns = Seq(Column("ts", LongType, 60), Column("num", LongType, 100))
+    val columns = Seq(Column("ts", LongType, 60), Column("num", LongType, 10000))
     val RowsWithSchema(events, schema) = CStream.gen(columns, eventCount)
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -24,17 +24,20 @@ class SawtoothOnlineAggregatorTest extends TestCase {
         Operation.AVERAGE,
         "num",
         Seq(
-          new Window(1, TimeUnit.DAYS), // hop = 1hr
           new Window(1, TimeUnit.HOURS), // hop = 5min
-          new Window(12, TimeUnit.HOURS), // hop = 5min
           new Window(7, TimeUnit.DAYS), // hop = 1hr
           new Window(30, TimeUnit.DAYS) // hop = 1d
         )
       ),
+//      Builders.Aggregation(
+//        Operation.APPROX_UNIQUE_COUNT,
+//        "num",
+//        Seq(new Window(6, TimeUnit.HOURS))
+//      ),
       Builders.Aggregation(Operation.SUM, "num", null)
     )
 
-    val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
+    val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema, true)
     val onlineAggregator = new SawtoothOnlineAggregator(batchEndTs, aggregations, schema, FiveMinuteResolution)
     val (events1, events2) = events.splitAt(eventCount / 2)
     val batchIr1 = events1.foldLeft(onlineAggregator.init)(onlineAggregator.update)
@@ -42,7 +45,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val batchIr = onlineAggregator.finalizeTail(onlineAggregator.merge(batchIr1, batchIr2))
 
     val windowHeadEvents = events.filter(_.ts >= batchEndTs)
-    val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(batchIr, windowHeadEvents.iterator, _))
+    val onlineIrs = queries.map(onlineAggregator.lambdaAggregateFinalized(batchIr, windowHeadEvents.iterator, _))
 
     val gson = new Gson()
     for (i <- queries.indices) {

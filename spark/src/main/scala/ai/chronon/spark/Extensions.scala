@@ -10,6 +10,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.lang.Math.random
 import java.util
 import scala.reflect.ClassTag
 
@@ -57,8 +58,8 @@ object Extensions {
       PartitionRange(start, end)
     }
 
-    def range[T](columnName: String): (T, T) = {
-      val viewName = s"${columnName}_range_input"
+    private def range[T](columnName: String): (T, T) = {
+      val viewName = s"${columnName}_range_input_${(random() * 1000).toInt}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
@@ -172,7 +173,8 @@ object Extensions {
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
     private def camelToSnake(name: String) = {
-      val res = "([a-z]+)([A-Z]\\w+)?".r.replaceAllIn(name, { m => m.subgroups.flatMap(g=>Option(g).map(_.toLowerCase())).mkString("_") })
+      val res = "([a-z]+)([A-Z]\\w+)?".r
+        .replaceAllIn(name, { m => m.subgroups.flatMap(g => Option(g).map(_.toLowerCase())).mkString("_") })
       res
     }
 

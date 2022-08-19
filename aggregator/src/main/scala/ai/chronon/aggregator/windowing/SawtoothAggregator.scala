@@ -79,7 +79,8 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   // But without the requirement that the input be sorted
   def cumulate(inputs: Iterator[Row], // don't need to be sorted
                sortedEndTimes: Array[Long], // sorted,
-               baseIR: Array[Any]): Array[Array[Any]] = {
+               baseIR: Array[Any],
+               finalize: Boolean = false): Array[Array[Any]] = {
     if (sortedEndTimes == null || sortedEndTimes.isEmpty) return Array.empty[Array[Any]]
     if (inputs == null || inputs.isEmpty)
       return Array.fill[Array[Any]](sortedEndTimes.length)(baseIR)
@@ -116,7 +117,11 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
           currBase.update(col, merged)
         }
       }
-      result.update(i, currBase)
+      if (finalize) {
+        result.update(i, windowedAggregator.finalize(currBase))
+      } else {
+        result.update(i, currBase)
+      }
     }
     result
   }

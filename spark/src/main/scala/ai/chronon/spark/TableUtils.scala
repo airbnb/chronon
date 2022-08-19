@@ -29,21 +29,22 @@ case class TableUtils(sparkSession: SparkSession) {
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
   }
 
-  private def isIcebergTable(tableName: String): Boolean = Try {
-    sparkSession.read.format("iceberg").load(tableName)
-  } match {
-    case Success(_) =>
-      println(s"IcebergCheck: Detected iceberg formatted table $tableName.")
-      true
-    case _ =>
-      println(s"IcebergCheck: Checked table $tableName is not iceberg format.")
-      false
-  }
+  private def isIcebergTable(tableName: String): Boolean =
+    Try {
+      sparkSession.read.format("iceberg").load(tableName)
+    } match {
+      case Success(_) =>
+        println(s"IcebergCheck: Detected iceberg formatted table $tableName.")
+        true
+      case _ =>
+        println(s"IcebergCheck: Checked table $tableName is not iceberg format.")
+        false
+    }
 
   private def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
-    if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
+    if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
@@ -121,7 +122,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def sql(query: String): DataFrame = {
     println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
     val df = sparkSession.sql(query)
-    df
+    df.coalesce(2 * sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000))
   }
 
   def insertUnPartitioned(df: DataFrame,
@@ -155,10 +156,17 @@ case class TableUtils(sparkSession: SparkSession) {
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)
         } else { Seq(saltCol) }
-      saltedDf
+      val repartitionedDf = saltedDf
         .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
-        .write
+
+      val finalDf = if (df.rdd.getNumPartitions <= rddPartitionCount) {
+        df
+      } else {
+        repartitionedDf
+      }
+
+      finalDf.write
         .mode(saveMode)
         .insertInto(tableName)
       println(s"Finished writing to $tableName")

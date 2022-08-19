@@ -127,6 +127,7 @@ class SawtoothAggregatorTest extends TestCase {
                              new Window(1, TimeUnit.HOURS),
                              new Window(30, TimeUnit.DAYS)
                            )),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "age", Seq(new Window(6, TimeUnit.HOURS))),
       Builders.Aggregation(Operation.SUM, "age")
     )
     timer.publish("setup")
@@ -166,6 +167,7 @@ object SawtoothAggregatorTest {
       queries: Array[Long],
       specs: Seq[Aggregation],
       schema: Seq[(String, DataType)],
+      finalize: Boolean = false,
       resolution: Resolution = FiveMinuteResolution
   ): Array[Array[Any]] = {
 
@@ -211,7 +213,8 @@ object SawtoothAggregatorTest {
       result ++= sawtoothAggregator.cumulate(
         Option(headEvents).map(_.iterator).orNull,
         endTimes,
-        tailIr
+        tailIr,
+        finalize
       )
     }
     result.toArray

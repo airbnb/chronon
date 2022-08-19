@@ -5,7 +5,7 @@ import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.{Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Comparison, Join, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
@@ -954,8 +954,8 @@ class MutationsTest {
       Column("event", api.IntType, 6)
     )
     val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1, "listing_id")
-    val (_, maxDs) = mutationsDf.range[String](Constants.PartitionColumn)
-    val (minDs, _) = snapshotDf.range[String](Constants.PartitionColumn)
+    val PartitionRange(_, maxDs) = mutationsDf.partitionRange
+    val PartitionRange(minDs, _) = snapshotDf.partitionRange
     val leftDf = DataFrameGen
       .events(spark, events, 100, 15)
       .drop()

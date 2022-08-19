@@ -28,7 +28,10 @@ class ApproxDistinctTest extends TestCase {
       duplicates.tail.foreach { elem => counter.update(ir, elem) }
       ir
     }
-    val ir = irList.reduceLeft(counter.merge)
+    val ir = irList.reduceLeft { (ir1, ir2) =>
+      counter.merge(counter.clone(ir1), counter.denormalize(counter.normalize(ir2)))
+    }
+    //val ir = irList.reduceLeft{counter.merge}
     val estimated = counter.finalize(ir)
     // println(s"estimated - $estimated, actual - $uniques, bound - $errorBound")
     assertTrue(Math.abs(estimated - uniques) < errorBound)

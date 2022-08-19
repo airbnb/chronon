@@ -253,9 +253,12 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.COUNT, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
-        Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT,
-                             inputColumn = "notes",
-                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
+        Builders.Aggregation(
+          operation = Operation.APPROX_UNIQUE_COUNT,
+          argMap = Map("k" -> "16"),
+          inputColumn = "notes",
+          windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        ),
         Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),

@@ -43,7 +43,10 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       Option(batchIr.tailHops)
         .map(hopsAggregator.toTimeSortedArray)
         .map(_.map(_.map { hopIr =>
-          baseAggregator.indices.foreach(i => hopIr.update(i, baseAggregator(i).normalize(hopIr(i))))
+          baseAggregator.indices.foreach { i =>
+            val normalizedIr = baseAggregator(i).normalize(hopIr(i))
+            hopIr.update(i, normalizedIr)
+          }
           hopIr
         }))
         .orNull
