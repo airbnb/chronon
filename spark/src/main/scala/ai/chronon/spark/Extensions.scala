@@ -58,7 +58,7 @@ object Extensions {
       PartitionRange(start, end)
     }
 
-    private def range[T](columnName: String): (T, T) = {
+    def range[T](columnName: String): (T, T) = {
       val viewName = s"${columnName}_range_input_${(random() * 1000).toInt}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
