@@ -254,7 +254,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
         Builders.Aggregation(
-          operation = Operation.APPROX_UNIQUE_COUNT,
+          operation = Operation.FIRST_K,
           argMap = Map("k" -> "16"),
           inputColumn = "notes",
           windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
