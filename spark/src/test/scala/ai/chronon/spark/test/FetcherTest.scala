@@ -230,6 +230,62 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
+  def generateTemporalEventsCase(namespace: String): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val keyCount = 100
+    val rowCount = 1000 * keyCount
+    val userCol = Column("user", StringType, keyCount)
+    val vendorCol = Column("vendor", StringType, keyCount)
+    // temporal events
+    val paymentCols = Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
+    val paymentsTable = s"$namespace.payments_table"
+    val paymentsDf = DataFrameGen.events(spark, paymentCols, rowCount, 60)
+    val tsColString = "ts_string"
+
+    paymentsDf.withTimeBasedColumn(tsColString, format = "dd HH:mm:ss").save(paymentsTable)
+    val userPaymentsGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT,
+                             inputColumn = "payment",
+                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
+//        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "payment"),
+//        Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
+//        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
+        Builders.Aggregation(
+          operation = Operation.FIRST_K,
+          argMap = Map("k" -> "16"),
+          inputColumn = tsColString,
+          windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        )
+//        Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
+//        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes")
+//        Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
+//        Builders.Aggregation(operation = Operation.LAST, inputColumn = tsColString)
+      ),
+      metaData = Builders.MetaData(name = "unit_test/user_payments", namespace = namespace)
+    )
+
+    val queryCols = Seq(userCol, vendorCol)
+    val queriesTable = s"$namespace.queries_table"
+    val queriesDf = DataFrameGen
+      .events(spark, queryCols, rowCount, 4)
+      .withColumnRenamed("user", "user_id")
+      .withColumnRenamed("vendor", "vendor_id")
+    queriesDf.show()
+    queriesDf.save(queriesTable)
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user"))
+      ),
+      metaData =
+        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
+    )
+    joinConf
+  }
+
   def generateRandomData(namespace: String): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val keyCount = 100
@@ -242,7 +298,7 @@ class FetcherTest extends TestCase {
     val paymentsDf = DataFrameGen.events(spark, paymentCols, rowCount, 60)
     val tsColString = "ts_string"
 
-    paymentsDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(paymentsTable)
+    paymentsDf.withTimeBasedColumn(tsColString, format = "dd HH:mm:ss").save(paymentsTable)
     val userPaymentsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
       keyColumns = Seq("user"),
@@ -256,7 +312,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(
           operation = Operation.FIRST_K,
           argMap = Map("k" -> "16"),
-          inputColumn = "notes",
+          inputColumn = tsColString,
           windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
         ),
         Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
@@ -591,5 +647,14 @@ class FetcherTest extends TestCase {
                          Constants.Partition.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true)
+  }
+
+  def testTemporalFetchEventsGenerate(): Unit = {
+    val namespace = "generated_fetch_events"
+    val joinConf = generateTemporalEventsCase(namespace)
+    compareTemporalFetch(joinConf,
+                         Constants.Partition.at(System.currentTimeMillis()),
+                         namespace,
+                         consistencyCheck = false)
   }
 }

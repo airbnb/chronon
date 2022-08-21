@@ -3,6 +3,7 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base._
 import ai.chronon.api.Extensions.{AggregationPartOps, OperationOps}
 import ai.chronon.api._
+import com.google.gson.Gson
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
@@ -101,8 +102,19 @@ class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndic
   override def prepare(inputRow: Row): IR =
     agg.prepare(inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
 
-  override def updateColumn(ir: Any, inputRow: Row): IR =
-    agg.update(ir.asInstanceOf[IR], inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
+  override def updateColumn(ir: Any, inputRow: Row): IR = {
+    try {
+      agg.update(ir.asInstanceOf[IR], inputRow.get(columnIndices.input).asInstanceOf[Input], inputRow.ts)
+    } catch {
+      case ex: Exception =>
+        val gson = new Gson()
+        println(s"""ir: ${gson.toJson(ir)}
+           |input: ${gson.toJson(inputRow.values)}
+           |columnIndices: ${columnIndices}
+           |""".stripMargin)
+        throw ex
+    }
+  }
 
   override def inversePrepare(inputRow: Row): IR = ???
 
@@ -247,7 +259,8 @@ object ColumnAggregator {
           case LongType   => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))))
           case ShortType  => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))), toLong[Short])
           case DoubleType => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))))
-          case FloatType  => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
+          case FloatType =>
+            simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
           case StringType => simple(new ApproxDistinctCount[String](aggregationPart.getInt("k", Some(8))))
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException

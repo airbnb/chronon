@@ -50,6 +50,9 @@ class MinHeap[T](maxSize: Int, ordering: Ordering[T]) {
     } else if (arr.size == maxSize) {
       // array is full, and the element is smaller than the largest,
       // add to the root and sift down
+//      val elemCls = elem.getClass.toString.split(".")
+//      val topCls = arr.get(0).getClass.toString.split(".")
+//      println(elemCls, topCls)
       if (ordering.lteq(elem, arr.get(0))) {
         arr.set(0, elem)
         siftDownRoot(arr)

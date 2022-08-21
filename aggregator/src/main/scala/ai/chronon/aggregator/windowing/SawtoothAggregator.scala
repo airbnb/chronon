@@ -29,6 +29,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   protected val hopSizes = resolution.hopSizes
 
   @transient lazy val unpackedAggs = UnpackedAggregations.from(aggregations)
+
   @transient lazy protected val tailHopIndices: Array[Int] = windowMappings.map { mapping =>
     hopSizes.indexOf(resolution.calculateTailHop(mapping.aggregationPart.window))
   }

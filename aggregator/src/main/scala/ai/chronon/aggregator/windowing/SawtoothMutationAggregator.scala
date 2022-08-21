@@ -3,6 +3,12 @@ package ai.chronon.aggregator.windowing
 import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
+import java.time.{Instant, ZoneOffset}
+import java.time.format.DateTimeFormatter
+import java.util
+import java.util.Locale
+import scala.collection.BitSet
+
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
 
@@ -42,21 +48,43 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
 
   def update(batchEndTs: Long, batchIr: BatchIr, row: Row): BatchIr = {
     val rowTs = row.ts
-    val updatedHop = Array.fill(hopSizes.length)(false)
+
+    // To track if a tail value for a particular (hopIndex, baseIrIndex) is updated
+    val updatedFlagsBitset = new util.BitSet(hopSizes.length * baseAggregator.length)
+    def setIfNot(hopIndex: Int, baseIrIndex: Int): Boolean = {
+      val flatIndex = (baseIrIndex * hopSizes.length) + hopIndex
+      val isSet = updatedFlagsBitset.get(flatIndex)
+      if (!isSet) { updatedFlagsBitset.set(flatIndex, true) }
+      isSet
+    }
+
     var i = 0
     while (i < windowedAggregator.length) {
-      if (batchEndTs > rowTs && tailTs(batchEndTs)(i).forall(rowTs > _)) { // relevant for the window
-        if (tailTs(batchEndTs)(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
+      val tailTimeStamp = tailTs(batchEndTs)(i)
+
+      val formatter = DateTimeFormatter
+        .ofPattern("MM-dd HH:mm:ss", Locale.US)
+        .withZone(ZoneOffset.UTC)
+      def fmt(ts: Long): String = formatter.format(Instant.ofEpochMilli(ts))
+      val tailHopStart = tailTimeStamp.map(_ + tailBufferMillis)
+      println(s"""
+           |irIndex: $i, baseIndex: ${baseIrIndices(i)}
+           |inputTs: ${fmt(rowTs)}, batchEnd: ${fmt(batchEndTs)}, 
+           |tailHopStart: ${tailHopStart.map(fmt)} tail: ${tailTimeStamp.map(fmt)}""".stripMargin)
+
+      if (batchEndTs > rowTs && tailTimeStamp.forall(rowTs > _)) { // relevant for the window
+        if (tailTimeStamp.forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
           windowedAggregator.columnAggregators(i).update(batchIr.collapsed, row)
         } else { // update tailHops part
           val hopIndex = tailHopIndices(i)
+          val baseIrIndex = baseIrIndices(i)
           // eg., 7d, 8d windows shouldn't update the same 1hr tail hop twice
           // so update a hop only once
-          if (!updatedHop(hopIndex)) {
-            updatedHop.update(hopIndex, true)
+          if (!setIfNot(hopIndex, baseIrIndex)) {
             val hopStart = TsUtils.round(rowTs, hopSizes(hopIndex))
+            println(s"updating tail @$hopIndex: ${fmt(hopStart)}\n")
             val hopIr = batchIr.tailHops(hopIndex).computeIfAbsent(hopStart, hopsAggregator.javaBuildHop)
-            baseAggregator.columnAggregators(baseIrIndices(i)).update(hopIr, row)
+            baseAggregator.columnAggregators(baseIrIndex).update(hopIr, row)
           }
         }
       }
@@ -80,7 +108,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
   def updateIr(ir: Array[Any], row: Row, queryTs: Long, hasReversal: Boolean = false) = {
     var i: Int = 0
     while (i < windowedAggregator.length) {
-      val window = windowMappings(i).aggregationPart.window
+      val mapping = windowMappings(i)
+      val window = mapping.aggregationPart.window
       val hopIndex = tailHopIndices(i)
       val rowInWindow = (row.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && row.ts < queryTs)
       if (window == null || rowInWindow) {
@@ -107,7 +136,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
         val hopIrs = batchIr.tailHops(hopIndex)
         var idx: Int = 0
         while (idx < hopIrs.length) {
-          val hopIr = hopIrs(idx)
+          val hopIr = baseAggregator.denormalize(hopIrs(idx))
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
             val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
