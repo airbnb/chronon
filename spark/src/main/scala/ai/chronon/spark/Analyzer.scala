@@ -161,7 +161,6 @@ class Analyzer(tableUtils: TableUtils,
                |------ SCHEMA -----
                |${leftSchema.mkString("\n")}
                |------ END ------
-               |
                |""".stripMargin)
     joinConf.joinParts.asScala.par.foreach { part =>
       analyzeGroupBy(part.groupBy, Option(part.prefix).map(_ + "_").getOrElse(""))
