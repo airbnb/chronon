@@ -42,10 +42,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       windowedAggregator.normalize(batchIr.collapsed),
       Option(batchIr.tailHops)
         .map(hopsAggregator.toTimeSortedArray)
-        .map(_.map(_.map { hopIr =>
-          baseAggregator.indices.foreach(i => hopIr.update(i, baseAggregator(i).normalize(hopIr(i))))
-          hopIr
-        }))
+        .map(_.map(_.map { baseAggregator.normalizeInPlace }))
         .orNull
     )
 
@@ -67,7 +64,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     }
 
     // initialize with collapsed
-    val resultIr = windowedAggregator.clone(batchIr.collapsed)
+    val resultIr = windowedAggregator.denormalize(batchIr.collapsed)
 
     // add head events
     while (headRows.hasNext) {

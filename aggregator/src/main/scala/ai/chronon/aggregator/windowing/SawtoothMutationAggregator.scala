@@ -2,6 +2,9 @@ package ai.chronon.aggregator.windowing
 
 import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
+import com.google.gson.Gson
+
+import java.util
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -42,7 +45,15 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
 
   def update(batchEndTs: Long, batchIr: BatchIr, row: Row): BatchIr = {
     val rowTs = row.ts
-    val updatedHop = Array.fill(hopSizes.length)(false)
+    // To track if a tail value for a particular (hopIndex, baseIrIndex) is updated
+    val updatedFlagsBitset = new util.BitSet(hopSizes.length * baseAggregator.length)
+    def setIfNot(hopIndex: Int, baseIrIndex: Int): Boolean = {
+      val flatIndex = (baseIrIndex * hopSizes.length) + hopIndex
+      val isSet = updatedFlagsBitset.get(flatIndex)
+      if (!isSet) { updatedFlagsBitset.set(flatIndex, true) }
+      isSet
+    }
+
     var i = 0
     while (i < windowedAggregator.length) {
       if (batchEndTs > rowTs && tailTs(batchEndTs)(i).forall(rowTs > _)) { // relevant for the window
@@ -52,11 +63,11 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           val hopIndex = tailHopIndices(i)
           // eg., 7d, 8d windows shouldn't update the same 1hr tail hop twice
           // so update a hop only once
-          if (!updatedHop(hopIndex)) {
-            updatedHop.update(hopIndex, true)
+          val baseIrIndex = baseIrIndices(i)
+          if (!setIfNot(hopIndex, baseIrIndex)) {
             val hopStart = TsUtils.round(rowTs, hopSizes(hopIndex))
             val hopIr = batchIr.tailHops(hopIndex).computeIfAbsent(hopStart, hopsAggregator.javaBuildHop)
-            baseAggregator.columnAggregators(baseIrIndices(i)).update(hopIr, row)
+            baseAggregator.columnAggregators(baseIrIndex).update(hopIr, row)
           }
         }
       }
@@ -110,7 +121,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
-            val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
+            val baseTailHop = windowedAggregator(i).denormalize(hopIr(baseIrIndices(i)))
+            val merged = windowedAggregator(i).merge(ir(i), baseTailHop)
             ir.update(i, merged)
           }
           idx += 1

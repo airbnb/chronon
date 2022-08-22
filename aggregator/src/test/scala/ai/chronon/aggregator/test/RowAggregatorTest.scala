@@ -24,6 +24,8 @@ class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
   override def mutationTs: Long = timeStamp
 
   def print(): Unit = println(fieldsSeq)
+
+  def set(index: Int, any: Any): Unit = fields.set(index, any)
 }
 
 object TestRow {

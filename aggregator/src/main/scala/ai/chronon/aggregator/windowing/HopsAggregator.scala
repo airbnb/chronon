@@ -126,7 +126,7 @@ class HopsAggregator(minQueryTs: Long,
   // used to collect hops of various sizes in a single pass of input rows
   def update(hopMaps: IrMapType, row: Row): IrMapType = {
     for (i <- hopSizes.indices) {
-      if (leftBoundaries(i).isDefined && row.ts >= leftBoundaries(i).get) { // left inclusive
+      if (leftBoundaries(i).exists(row.ts >= _)) { // left inclusive
         val hopStart = TsUtils.round(row.ts, hopSizes(i))
         val hopIr = hopMaps(i).computeIfAbsent(hopStart, javaBuildHop)
         rowAggregator.update(hopIr, row)
