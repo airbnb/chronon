@@ -58,7 +58,7 @@ object Extensions {
     }
 
     def range[T](columnName: String): (T, T) = {
-      val viewName = s"${columnName}_range_input"
+      val viewName = s"${columnName}_range_input_${(math.random * 100000).toInt}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
@@ -172,7 +172,8 @@ object Extensions {
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
     private def camelToSnake(name: String) = {
-      val res = "([a-z]+)([A-Z]\\w+)?".r.replaceAllIn(name, { m => m.subgroups.flatMap(g=>Option(g).map(_.toLowerCase())).mkString("_") })
+      val res = "([a-z]+)([A-Z]\\w+)?".r
+        .replaceAllIn(name, { m => m.subgroups.flatMap(g => Option(g).map(_.toLowerCase())).mkString("_") })
       res
     }
 
