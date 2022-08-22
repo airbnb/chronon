@@ -134,11 +134,14 @@ class Analyzer(tableUtils: TableUtils,
     val analysis = analyze(groupBy.inputDf,
                            groupByConf.keyColumns.asScala.toArray,
                            groupByConf.sources.asScala.map(_.table).mkString(","))
+    val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     println(s"""
                |ANALYSIS for $name:
                |------ [HEAVY HITTERS COUNTS] -----
                |$analysis
+               |----- KEY SCHEMA -----
+               |${keySchema.mkString("\n")}
                |----- OUTPUT SCHEMA -----
                |${schema.mkString("\n")}
                |------ END ------
@@ -150,11 +153,15 @@ class Analyzer(tableUtils: TableUtils,
     println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+    val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     println(s"""
                |------ [HEAVY HITTERS COUNTS] -----
                |ANALYSIS for join/${joinConf.metaData.cleanName}/left/:
                |$analysis
+               |------ SCHEMA -----
+               |${leftSchema.mkString("\n")}
                |------ END ------
+               |
                |""".stripMargin)
     joinConf.joinParts.asScala.par.foreach { part =>
       analyzeGroupBy(part.groupBy, Option(part.prefix).map(_ + "_").getOrElse(""))
