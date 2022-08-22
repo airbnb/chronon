@@ -35,17 +35,17 @@ class SawtoothOnlineAggregatorTest extends TestCase {
         Operation.COUNT,
         "num",
         Seq(
-          new Window(14, TimeUnit.DAYS), // hop = 1hr
+          new Window(14, TimeUnit.DAYS), // hop = 1 day
           new Window(20, TimeUnit.HOURS), // hop = 1hr
           new Window(6, TimeUnit.DAYS), // hop = 1hr
           new Window(7, TimeUnit.DAYS) // hop = 1hr,
         )
       ),
       Builders.Aggregation(
-        Operation.COUNT,
+        Operation.AVERAGE,
         "num",
         Seq(
-          new Window(14, TimeUnit.DAYS), // hop = 1hr
+          new Window(14, TimeUnit.DAYS), // hop = 1 day
           new Window(20, TimeUnit.HOURS), // hop = 1hr
           new Window(6, TimeUnit.DAYS), // hop = 1hr
           new Window(7, TimeUnit.DAYS) // hop = 1hr,
@@ -77,10 +77,8 @@ class SawtoothOnlineAggregatorTest extends TestCase {
 
     val gson = new Gson()
     for (i <- queries.indices) {
-//      val onlineStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(onlineIrs(i)))
-//      val sawtoothStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(sawtoothIrs(i)))
-      val onlineStr = gson.toJson(onlineIrs(i))
-      val sawtoothStr = gson.toJson(sawtoothIrs(i))
+      val onlineStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(onlineIrs(i)))
+      val sawtoothStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(sawtoothIrs(i)))
       assertEquals(sawtoothStr, onlineStr)
     }
   }

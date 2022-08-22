@@ -2,7 +2,6 @@ package ai.chronon.aggregator.windowing
 
 import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
-import com.google.gson.Gson
 
 import java.util
 
