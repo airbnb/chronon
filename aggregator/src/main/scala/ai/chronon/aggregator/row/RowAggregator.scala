@@ -96,8 +96,17 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
   // parquet/spark or any other external storage format understands
   // CPCSketch is the primary use-case now. We will need it for quantile estimation too I think
   def normalize(ir: Array[Any]): Array[Any] = map(ir, _.normalize)
-  def denormalize(ir: Array[Any]): Array[Any] = map(ir, _.denormalize)
+  // used by hops aggregator, hops have a timestamp in the end - which we want to preserve
+  def normalizeInPlace(ir: Array[Any]): Array[Any] = {
+    var idx = 0
+    while (idx < columnAggregators.length) {
+      ir.update(idx, columnAggregators(idx).normalize(ir(idx)))
+      idx += 1
+    }
+    ir
+  }
 
+  def denormalize(ir: Array[Any]): Array[Any] = map(ir, _.denormalize)
   def denormalizeInPlace(ir: Array[Any]): Array[Any] = {
     var idx = 0
     while (idx < columnAggregators.length) {

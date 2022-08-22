@@ -55,7 +55,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
         seqOp = sawtoothOnlineAggregator.update,
         combOp = sawtoothOnlineAggregator.merge
       )
-      .mapValues(sawtoothOnlineAggregator.finalizeTail)
+      .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
           val irArray = new Array[Any](2)
