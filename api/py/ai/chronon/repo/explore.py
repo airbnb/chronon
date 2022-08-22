@@ -144,7 +144,7 @@ def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
 
 
 @contextmanager
-def set_directory(path):
+def chdir(path):
     """
     Context manager to run subprocesses in the appropriate folder so git can get the relevant info.
     """
@@ -163,7 +163,7 @@ git_info_cache = {}
 def git_info(file_paths, exclude=None, root=CWD):
     exclude_args = f"--invert-grep --grep={exclude}" if exclude else ''
     procs = []
-    with set_directory(root):
+    with chdir(root):
         for file_path in file_paths:
             if file_path in git_info_cache:
                 procs.append((file_path, git_info_cache[file_path]))
