@@ -2,7 +2,10 @@ package ai.chronon.spark
 
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
+import com.yahoo.memory.Memory
+import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.cpc.CpcSketch
+import com.yahoo.sketches.frequencies.ItemsSketch
 import org.apache.spark.serializer.KryoRegistrator
 import org.apache.spark.SPARK_VERSION
 
@@ -10,13 +13,31 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
     val bytes = sketch.toByteArray
     output.writeInt(bytes.size)
-    output.writeBytes(sketch.toByteArray)
+    output.writeBytes(bytes)
   }
 
   override def read(kryo: Kryo, input: Input, `type`: Class[CpcSketch]): CpcSketch = {
     val size = input.readInt()
     val bytes = input.readBytes(size)
     CpcSketch.heapify(bytes)
+  }
+}
+
+class ItemsSketchKryoSerializer extends Serializer[ItemSketchSerializable] {
+  override def write(kryo: Kryo, output: Output, sketch: ItemSketchSerializable): Unit = {
+    val serDe = new ArrayOfStringsSerDe
+    val bytes = sketch.sketch.toByteArray(serDe)
+    output.writeInt(bytes.size)
+    output.writeBytes(bytes)
+  }
+
+  override def read(kryo: Kryo, input: Input, `type`: Class[ItemSketchSerializable]): ItemSketchSerializable = {
+    val size = input.readInt()
+    val bytes = input.readBytes(size)
+    val serDe = new ArrayOfStringsSerDe
+    val result = new ItemSketchSerializable
+    result.sketch = ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
+    result
   }
 }
 
@@ -75,7 +96,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
       "scala.collection.IndexedSeqLike$Elements"
     )
-    val spark3 = Seq("org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
+    val spark3 = Seq(
+      "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
       "org.apache.spark.sql.execution.datasources.v2.DataWritingSparkTaskResult",
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation",
       "org.apache.spark.util.HadoopFSUtils$SerializableBlockLocation",
@@ -97,5 +119,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
+    kryo.register(classOf[ItemSketchSerializable], new ItemsSketchKryoSerializer())
+    kryo.register(classOf[Array[ItemSketchSerializable]])
   }
 }

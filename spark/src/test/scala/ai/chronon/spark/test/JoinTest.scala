@@ -348,6 +348,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
     )
 
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     computed.show()
@@ -415,7 +416,7 @@ class JoinTest {
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
@@ -840,7 +841,8 @@ class JoinTest {
       .events(spark, itemQueries, 10000, partitions = 100)
 
     itemQueriesDf.save(s"${itemQueriesTable}_tmp")
-    val structLeftDf = tableUtils.sql(s"SELECT item, NAMED_STRUCT('item_repeat', item) as item_struct, ts, ds FROM ${itemQueriesTable}_tmp")
+    val structLeftDf = tableUtils.sql(
+      s"SELECT item, NAMED_STRUCT('item_repeat', item) as item_struct, ts, ds FROM ${itemQueriesTable}_tmp")
     structLeftDf.save(itemQueriesTable)
     val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
 
@@ -859,7 +861,8 @@ class JoinTest {
     )
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
     df.save(s"${viewsTable}_tmp", Map("tblProp1" -> "1"))
-    val structSource = tableUtils.sql(s"SELECT *, NAMED_STRUCT('item_repeat', item) as item_struct FROM ${viewsTable}_tmp")
+    val structSource =
+      tableUtils.sql(s"SELECT *, NAMED_STRUCT('item_repeat', item) as item_struct FROM ${viewsTable}_tmp")
     structSource.save(viewsTable)
     val gb = Builders.GroupBy(
       sources = Seq(viewsSource),
@@ -871,7 +874,8 @@ class JoinTest {
         // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
         // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
-      metaData = Builders.MetaData(name = s"unit_test.item_views_$nameSuffix", namespace = namespace, team = "item_team"),
+      metaData =
+        Builders.MetaData(name = s"unit_test.item_views_$nameSuffix", namespace = namespace, team = "item_team"),
       accuracy = Accuracy.TEMPORAL
     )
 

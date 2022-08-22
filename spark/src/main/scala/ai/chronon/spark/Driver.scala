@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.consistency.ConsistencyJob
 import ai.chronon.spark.streaming.TopicChecker
@@ -44,7 +44,9 @@ object Driver {
   trait OfflineSubcommand { this: ScallopConf =>
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
     val endDate: ScallopOption[String] =
-      opt[String](required = false, descr = "End date to compute as of, start date is taken from conf.")
+      opt[String](required = false,
+                  descr = "End date to compute as of, start date is taken from conf.",
+                  default = Some(Constants.Partition.now))
   }
 
   object JoinBackfill {
@@ -85,6 +87,31 @@ object Driver {
         TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
         args.stepDays.toOption
       )
+    }
+  }
+
+  object Analyzer {
+    class Args extends Subcommand("analyze") with OfflineSubcommand {
+      val startDate: ScallopOption[String] =
+        opt[String](required = false,
+                    descr = "Finds heavy hitters & time-distributions until a specified start date",
+                    default = Some(Constants.Partition.shiftBackFromNow(3)))
+      val count: ScallopOption[Int] =
+        opt[Int](
+          required = false,
+          descr =
+            "Finds the specified number of heavy hitters approximately. The larger this number is the more accurate the analysis will be.",
+          default = Option(128)
+        )
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false,
+                    descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
+                    default = Option(0.1))
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = TableUtils(SparkSessionBuilder.build("analyzer_util"))
+      new Analyzer(tableUtils, args.confPath(), args.startDate(), args.endDate(), args.count(), args.sample()).run
     }
   }
 
@@ -202,8 +229,8 @@ object Driver {
       // todo: implement step day logic for ConsistencyJob.scala
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
-          descr = "Runs consistency metrics job in steps, step-days at a time. Default is 30 days",
-          default = Option(30))
+                 descr = "Runs consistency metrics job in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
     }
 
     /**
@@ -329,6 +356,8 @@ object Driver {
     addSubcommand(MetadataUploaderArgs)
     object GroupByStreamingArgs extends GroupByStreaming.Args
     addSubcommand(GroupByStreamingArgs)
+    object AnalyzerArgs extends Analyzer.Args
+    addSubcommand(AnalyzerArgs)
     requireSubcommand()
     verify()
   }
@@ -358,8 +387,10 @@ object Driver {
 
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
-          case args.ConsistencyMetricsUploaderArgs => ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
-          case _                         => println(s"Unknown subcommand: $x")
+          case args.ConsistencyMetricsUploaderArgs =>
+            ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
+          case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
+          case _                 => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
     }

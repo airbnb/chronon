@@ -226,6 +226,32 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     }
   }
 
+  def leftDf(range: PartitionRange): Option[DataFrame] = {
+    val timeProjection = if (joinConf.left.dataModel == Events) {
+      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
+    } else {
+      Seq()
+    }
+    val scanQuery = range.genScanQuery(joinConf.left.query,
+                                       joinConf.left.table,
+                                       fillIfAbsent =
+                                         Map(Constants.PartitionColumn -> null) ++ timeProjection)
+
+    val df = tableUtils.sql(scanQuery)
+    val skewFilter = joinConf.skewFilter()
+    val result = skewFilter
+      .map(sf => {
+        println(s"left skew filter: $sf")
+        df.filter(sf)
+      })
+      .getOrElse(df)
+    if (result.isEmpty) {
+      println(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
+      return None
+    }
+    Some(result)
+  }
+
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
@@ -261,11 +287,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
     }
 
-    val timeProjection = if (joinConf.left.dataModel == Events) {
-      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
-    } else {
-      Seq()
-    }
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
@@ -274,31 +295,12 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-
-        val scanQuery = range.genScanQuery(joinConf.left.query,
-                                           joinConf.left.table,
-                                           fillIfAbsent =
-                                             Map(Constants.PartitionColumn -> null) ++ timeProjection)
-
-        val leftDfInRange: DataFrame = {
-          val df = tableUtils.sql(scanQuery)
-          val skewFilter = joinConf.skewFilter()
-          val filteredDf = skewFilter
-            .map(sf => {
-              println(s"left skew filter: $sf")
-              df.filter(sf)
-            })
-            .getOrElse(df)
-          filteredDf
-        }
-        if (!leftDfInRange.isEmpty) {
+        leftDf(range).map { leftDfInRange =>
           computeRange(leftDfInRange, range).save(outputTable, tableProps)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
           println(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
-        } else {
-          println(s"Left side query below produced 0 rows in range $range, moving onto next range. \n $scanQuery")
         }
     }
     println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")

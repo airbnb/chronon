@@ -47,6 +47,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     StructType(valuesIndices.map(inputDf.schema))
   }
 
+  lazy val outputSchema: api.StructType = {
+    api.StructType("", windowAggregator.outputSchema.map(tup => api.StructField(tup._1, tup._2)))
+  }
+
   lazy val postAggSchema: StructType = {
     val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
     Conversions.fromChrononSchema(valueChrononSchema)
@@ -348,7 +352,8 @@ object GroupBy {
            queryRange: PartitionRange,
            tableUtils: TableUtils,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
-           skewFilter: Option[String] = None): GroupBy = {
+           skewFilter: Option[String] = None,
+           finalize: Boolean = true): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map { source =>
@@ -419,7 +424,8 @@ object GroupBy {
     new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
                 keyColumns,
                 nullFiltered,
-                Option(mutationDf).orNull)
+                Option(mutationDf).orNull,
+                finalize = finalize)
   }
 
   def renderDataSourceQuery(source: api.Source,
