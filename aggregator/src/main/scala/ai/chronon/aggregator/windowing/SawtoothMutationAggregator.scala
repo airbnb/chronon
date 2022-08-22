@@ -121,8 +121,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
-            val baseTailHop = windowedAggregator(i).denormalize(hopIr(baseIrIndices(i)))
-            val merged = windowedAggregator(i).merge(ir(i), baseTailHop)
+            val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
             ir.update(i, merged)
           }
           idx += 1

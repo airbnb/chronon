@@ -70,10 +70,10 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val (events1, events2) = events.splitAt(eventCount / 2)
     val batchIr1 = events1.foldLeft(onlineAggregator.init)(onlineAggregator.update)
     val batchIr2 = events2.foldLeft(onlineAggregator.init)(onlineAggregator.update)
-    val batchIr = onlineAggregator.finalizeTail(onlineAggregator.merge(batchIr1, batchIr2))
-
+    val batchIr = onlineAggregator.normalizeBatchIr(onlineAggregator.merge(batchIr1, batchIr2))
+    val denormBatchIr = onlineAggregator.denormalizeBatchIr(batchIr)
     val windowHeadEvents = events.filter(_.ts >= batchEndTs)
-    val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(batchIr, windowHeadEvents.iterator, _))
+    val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(denormBatchIr, windowHeadEvents.iterator, _))
 
     val gson = new Gson()
     for (i <- queries.indices) {

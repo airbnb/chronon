@@ -37,12 +37,20 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
 
   def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row)
 
-  def finalizeTail(batchIr: BatchIr): FinalBatchIr =
+  def normalizeBatchIr(batchIr: BatchIr): FinalBatchIr =
     FinalBatchIr(
       windowedAggregator.normalize(batchIr.collapsed),
       Option(batchIr.tailHops)
         .map(hopsAggregator.toTimeSortedArray)
         .map(_.map(_.map { baseAggregator.normalizeInPlace }))
+        .orNull
+    )
+
+  def denormalizeBatchIr(batchIr: FinalBatchIr): FinalBatchIr =
+    FinalBatchIr(
+      windowedAggregator.denormalize(batchIr.collapsed),
+      Option(batchIr.tailHops)
+        .map(_.map(_.map { baseAggregator.denormalizeInPlace }))
         .orNull
     )
 
@@ -56,7 +64,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
                         hasReversal: Boolean = false): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingRows == null) return null
-    val batchIr = Option(finalBatchIr).getOrElse(finalizeTail(init))
+    val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
     val headRows = Option(streamingRows).getOrElse(Array.empty[Row].iterator)
 
     if (batchEndTs > queryTs) {
@@ -64,7 +72,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     }
 
     // initialize with collapsed
-    val resultIr = windowedAggregator.denormalize(batchIr.collapsed)
+    val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
     // add head events
     while (headRows.hasNext) {
