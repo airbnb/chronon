@@ -10,6 +10,8 @@ import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.time.Instant
+
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 
@@ -262,8 +264,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }
 
-    // First run command to drop tables that have changed semantically since the last run
-    tablesToRecompute().foreach(_.foreach(tableUtils.dropTableIfExists))
+    // First run command to archive tables that have changed semantically since the last run
+    val jobRunTimestamp = Instant.now().toEpochMilli
+    tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName, jobRunTimestamp)))
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)

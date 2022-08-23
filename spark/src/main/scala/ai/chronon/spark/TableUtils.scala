@@ -5,6 +5,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
 import scala.util.{Success, Try}
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -248,10 +249,13 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def dropTableIfExists(tableName: String): Unit = {
-    val command = s"DROP TABLE IF EXISTS $tableName"
-    println(s"Dropping table with command: $command")
-    sql(command)
+  def archiveTableIfExists(tableName: String, timestamp: Long, archiveTableName: Option[String] = None): Unit = {
+    if (sparkSession.catalog.tableExists(tableName)) {
+      val finalArchiveTableName = archiveTableName.getOrElse(s"${tableName}_${timestamp}")
+      val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
+      println(s"Archiving table with command: $command")
+      sql(command)
+    }
   }
 
   def dropPartitionsAfterHole(inputTable: String,
