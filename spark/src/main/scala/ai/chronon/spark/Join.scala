@@ -11,7 +11,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
-
+import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 
@@ -265,7 +265,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     }
 
     // First run command to archive tables that have changed semantically since the last run
-    val jobRunTimestamp = Instant.now().toEpochMilli
+    val jobRunTimestamp = Instant.now()
     tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName, jobRunTimestamp)))
 
     joinConf.setups.foreach(tableUtils.sql)

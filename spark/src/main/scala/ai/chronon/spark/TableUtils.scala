@@ -6,8 +6,14 @@ import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
+import java.time.format.DateTimeFormatter
+import java.time.{Instant, ZoneId}
 import scala.util.{Success, Try}
 case class TableUtils(sparkSession: SparkSession) {
+
+  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyy_MM_dd_HH_mm_ss"
+  private lazy val archiveTimestampFormatter = DateTimeFormatter.ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
+    .withZone(ZoneId.systemDefault())
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -249,9 +255,10 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def archiveTableIfExists(tableName: String, timestamp: Long, archiveTableName: Option[String] = None): Unit = {
+  def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
     if (sparkSession.catalog.tableExists(tableName)) {
-      val finalArchiveTableName = archiveTableName.getOrElse(s"${tableName}_${timestamp}")
+      val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
+      val finalArchiveTableName = s"${tableName}_${humanReadableTimestamp}"
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
       println(s"Archiving table with command: $command")
       sql(command)
