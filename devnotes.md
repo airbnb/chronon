@@ -32,6 +32,14 @@ Mark the following directories as `Test Root` in a similar way:
 
 The project should then automatically start indexing, and when it finishes you should be good to go.
 
+**Troubleshooting**
+
+Try the following if you are seeing flaky issues in IntelliJ 
+```
+sbt +clean 
+sbt +assembly
+```
+
 ### Generate python thrift definitions
 
 ```shell
