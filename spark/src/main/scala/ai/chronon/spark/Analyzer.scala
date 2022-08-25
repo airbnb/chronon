@@ -162,6 +162,7 @@ class Analyzer(tableUtils: TableUtils,
     var rightSchema = List[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
       val sanitizePrefix = Option(part.prefix).map(_ + "_").getOrElse("")
+      val selectors = part.selectors
       val (groupByName, groupBySchema) = analyzeGroupBy(part.groupBy, sanitizePrefix)
       rightSchema ++= groupBySchema.map { field => s"  ${sanitizePrefix}${groupByName}_${field.name} => ${field.fieldType}" }
     }
@@ -171,11 +172,11 @@ class Analyzer(tableUtils: TableUtils,
                |$analysis
                |----- OUTPUT TABLE NAME -----
                |${joinConf.metaData.outputTable}
-               |------ LEFT SCHEMA -----
+               |------ SCHEMA ---------------
                |${leftSchema.mkString("\n")}
-               |------ RIGHT SCHEMA -----
+               |------ RIGHT SIDE SCHEMA ----
                |${rightSchema.mkString("\n")}
-               |------ END ------
+               |------ END ------------------
                |""".stripMargin)
     leftSchema ++ rightSchema
   }

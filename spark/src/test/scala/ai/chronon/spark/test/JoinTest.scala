@@ -348,7 +348,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
     )
 
-    val schema = (new Analyzer(tableUtils, joinConf, monthAgo, today)).analyzeJoin(joinConf)
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     computed.show()
@@ -378,19 +378,7 @@ class JoinTest {
   }
   @Test
   def testJoinAnalyzerSchema(): Unit = {
-    val viewsSchema = List(
-      Column("user", api.StringType, 10000),
-      Column("item", api.StringType, 100),
-      Column("time_spent_ms", api.LongType, 5000)
-    )
-
-    val viewsTable = s"$namespace.view_events"
-    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
-
-    val viewsSource = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
-      table = viewsTable
-    )
+    val viewsSource = genTestEventSource
 
     val viewsGroupBy = Builders.GroupBy(
       sources = Seq(viewsSource),
@@ -949,5 +937,21 @@ class JoinTest {
     )
     val toCompute = new Join(join, today, tableUtils)
     toCompute.computeJoin()
+  }
+
+  def genTestEventSource() : api.Source = {
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view_events"
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
+
+    Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      table = viewsTable
+    )
   }
 }
