@@ -417,6 +417,7 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
     )
 
+    //run analyzer and validate output schema
     val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today)
     val analyzerSchema = analyzer.analyzeJoin(joinConf).map(_.trim).sorted
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)

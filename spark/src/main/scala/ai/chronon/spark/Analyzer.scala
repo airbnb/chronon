@@ -136,7 +136,7 @@ class Analyzer(tableUtils: TableUtils,
                            groupByConf.keyColumns.asScala.toArray,
                            groupByConf.sources.asScala.map(_.table).mkString(","))
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}"}
+    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     println(s"""
                |ANALYSIS for $name:
                |------ [HEAVY HITTERS COUNTS] -----
@@ -168,11 +168,11 @@ class Analyzer(tableUtils: TableUtils,
     }
     println(s"""
                |------ [HEAVY HITTERS COUNTS] -----
-               |ANALYSIS for join/${joinConf.metaData.cleanName}/left/:
+               |ANALYSIS for join/${joinConf.metaData.cleanName}:
                |$analysis
                |----- OUTPUT TABLE NAME -----
                |${joinConf.metaData.outputTable}
-               |------ SCHEMA ---------------
+               |------ LEFT SIDE SCHEMA -------
                |${leftSchema.mkString("\n")}
                |------ RIGHT SIDE SCHEMA ----
                |${rightSchema.mkString("\n")}
