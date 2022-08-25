@@ -18,6 +18,7 @@ object Constants {
   val UTF8 = "UTF-8"
   val lineTab = "\n    "
   val SemanticHashKey = "semantic_hash"
+  val ChrononDynamicTable = "chronon_dynamic_table"
   val StreamingInputTable = "input_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
