@@ -3,19 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Aggregation, Builders, Constants, DataType, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -253,7 +241,7 @@ class GroupByTest {
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
   @Test
   def testStepDaysConsistency(): Unit = {
-    val (source, endPartition) = createTestSource
+    val (source, endPartition) = createTestSource()
 
     val tableUtils = TableUtils(spark)
     val testSteps = Option(30)
@@ -269,13 +257,30 @@ class GroupByTest {
       diff.show(100)
     }
     assertEquals(0, diff.count())
-
   }
+
+  @Test
+  def testGroupByAnalyzer(): Unit = {
+    val (source, endPartition) = createTestSource(30)
+
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_analyzer"
+    val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
+    val today = Constants.Partition.at(System.currentTimeMillis())
+
+    val (groupByName, groupBySchema) = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf)
+    assertEquals(groupByName, "unit_analyze_test_item_views")
+    val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
+    val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
+    val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
+    groupBySchema.foreach(s => expectedSchema.contains(s))
+  }
+
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
   @Test
   def testFirstKLastKTopKBottomKApproxUniqueCount(): Unit = {
-    val (source, endPartition) = createTestSource
+    val (source, endPartition) = createTestSource()
 
     val tableUtils = TableUtils(spark)
     val namespace = "test_order_by_limit"
@@ -323,9 +328,9 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-  private def createTestSource: (Source, String) = {
+  private def createTestSource(windowSize: Int = 365): (Source, String) = {
     val today = Constants.Partition.at(System.currentTimeMillis())
-    val startPartition = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
+    val startPartition = Constants.Partition.minus(today, new Window(windowSize, TimeUnit.DAYS))
     val endPartition = Constants.Partition.at(System.currentTimeMillis())
     val sourceSchema = List(
       Column("user", StringType, 10000),
@@ -353,24 +358,7 @@ class GroupByTest {
                stepDays: Option[Int] = None,
                additionalAgg: Seq[Aggregation] = Seq.empty): String = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-    val groupBy = Builders.GroupBy(
-      sources = Seq(source),
-      keyColumns = Seq("item"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-        Builders.Aggregation(operation = Operation.MIN,
-                             inputColumn = "ts",
-                             windows = Seq(
-                               new Window(15, TimeUnit.DAYS),
-                               new Window(60, TimeUnit.DAYS),
-                               WindowUtils.Unbounded
-                             )),
-        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-      ) ++ additionalAgg,
-      metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
-      backfillStartDate =
-        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
-    )
+    val groupBy = getSampleGroupBy(name, source, namespace, additionalAgg)
 
     GroupBy.computeBackfill(
       groupBy,
@@ -379,5 +367,29 @@ class GroupByTest {
       stepDays = stepDays
     )
     s"$namespace.$name"
+  }
+
+  def getSampleGroupBy(name: String,
+                       source: Source,
+                       namespace: String,
+                       additionalAgg: Seq[Aggregation] = Seq.empty): ai.chronon.api.GroupBy = {
+    Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN,
+          inputColumn = "ts",
+          windows = Seq(
+            new Window(15, TimeUnit.DAYS),
+            new Window(60, TimeUnit.DAYS),
+            WindowUtils.Unbounded
+          )),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+      ) ++ additionalAgg,
+      metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
+      backfillStartDate =
+        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
+    )
   }
 }

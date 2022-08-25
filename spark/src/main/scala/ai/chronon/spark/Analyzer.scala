@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, DataType}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.Driver.parseConf
@@ -10,8 +10,9 @@ import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{StringType, StructType}
 
+import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 //@SerialVersionUID(3457890987L)
@@ -127,7 +128,7 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = ""): Unit = {
+  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = ""): (String, api.StructType) = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
@@ -135,36 +136,48 @@ class Analyzer(tableUtils: TableUtils,
                            groupByConf.keyColumns.asScala.toArray,
                            groupByConf.sources.asScala.map(_.table).mkString(","))
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
+    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}"}
     println(s"""
                |ANALYSIS for $name:
                |------ [HEAVY HITTERS COUNTS] -----
                |$analysis
+               |----- OUTPUT TABLE NAME -----
+               |${groupByConf.metaData.outputTable}
                |----- KEY SCHEMA -----
                |${keySchema.mkString("\n")}
                |----- OUTPUT SCHEMA -----
                |${schema.mkString("\n")}
                |------ END ------
                |""".stripMargin)
+    (groupByConf.metaData.cleanName, groupBy.outputSchema)
   }
 
-  def analyzeJoin(joinConf: api.Join): Unit = {
+  def analyzeJoin(joinConf: api.Join): Array[String] = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
+
+    var rightSchema = List[String]()
+    joinConf.joinParts.asScala.par.foreach { part =>
+      val sanitizePrefix = Option(part.prefix).map(_ + "_").getOrElse("")
+      val (groupByName, groupBySchema) = analyzeGroupBy(part.groupBy, sanitizePrefix)
+      rightSchema ++= groupBySchema.map { field => s"  ${sanitizePrefix}${groupByName}_${field.name} => ${field.fieldType}" }
+    }
     println(s"""
                |------ [HEAVY HITTERS COUNTS] -----
                |ANALYSIS for join/${joinConf.metaData.cleanName}/left/:
                |$analysis
-               |------ SCHEMA -----
+               |----- OUTPUT TABLE NAME -----
+               |${joinConf.metaData.outputTable}
+               |------ LEFT SCHEMA -----
                |${leftSchema.mkString("\n")}
+               |------ RIGHT SCHEMA -----
+               |${rightSchema.mkString("\n")}
                |------ END ------
                |""".stripMargin)
-    joinConf.joinParts.asScala.par.foreach { part =>
-      analyzeGroupBy(part.groupBy, Option(part.prefix).map(_ + "_").getOrElse(""))
-    }
+    leftSchema ++ rightSchema
   }
 
   def run(): Unit =
