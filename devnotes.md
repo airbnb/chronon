@@ -37,7 +37,7 @@ The project should then automatically start indexing, and when it finishes you s
 Try the following if you are seeing flaky issues in IntelliJ 
 ```
 sbt +clean 
-sbt +build
+sbt +assembly
 ```
 
 ### Generate python thrift definitions
