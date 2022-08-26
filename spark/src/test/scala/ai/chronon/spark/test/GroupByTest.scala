@@ -280,7 +280,7 @@ class GroupByTest {
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = Constants.Partition.at(System.currentTimeMillis())
 
-    val (groupByName, groupBySchema) = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf)
+    val (groupByName, groupBySchema) = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     assertEquals(groupByName, "unit_analyze_test_item_views")
     val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")

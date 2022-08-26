@@ -47,7 +47,8 @@ class Analyzer(tableUtils: TableUtils,
                startDate: String,
                endDate: String,
                count: Int = 64,
-               sample: Double = 0.1) {
+               sample: Double = 0.1,
+               enableHitter: Boolean = true) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
@@ -128,18 +129,17 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = ""): (String, api.StructType) = {
+  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = "", enableHitter: Boolean = true): (String, api.StructType) = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
-    val analysis = analyze(groupBy.inputDf,
+    val analysis = if(enableHitter) analyze(groupBy.inputDf,
                            groupByConf.keyColumns.asScala.toArray,
-                           groupByConf.sources.asScala.map(_.table).mkString(","))
+                           groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     println(s"""
                |ANALYSIS for $name:
-               |------ [HEAVY HITTERS COUNTS] -----
                |$analysis
                |----- OUTPUT TABLE NAME -----
                |${groupByConf.metaData.outputTable}
@@ -147,22 +147,23 @@ class Analyzer(tableUtils: TableUtils,
                |${keySchema.mkString("\n")}
                |----- OUTPUT SCHEMA -----
                |${schema.mkString("\n")}
-               |------ END ------
+               |------ END --------------
                |""".stripMargin)
+
     (groupByConf.metaData.cleanName, groupBy.outputSchema)
   }
 
-  def analyzeJoin(joinConf: api.Join): Array[String] = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = true): Array[String] = {
     val name = "joins/" + joinConf.metaData.name
-    println(s"""|Running join analysis for $name ...""".stripMargin)
+    println(s"""|Running join analysis
+    } for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
-    val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+    val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
     var rightSchema = List[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
       val sanitizePrefix = Option(part.prefix).map(_ + "_").getOrElse("")
-      val selectors = part.selectors
       val (groupByName, groupBySchema) = analyzeGroupBy(part.groupBy, sanitizePrefix)
       rightSchema ++= groupBySchema.map { field => s"  ${sanitizePrefix}${groupByName}_${field.name} => ${field.fieldType}" }
     }
@@ -178,6 +179,7 @@ class Analyzer(tableUtils: TableUtils,
                |${rightSchema.mkString("\n")}
                |------ END ------------------
                |""".stripMargin)
+    
     leftSchema ++ rightSchema
   }
 
@@ -191,7 +193,7 @@ class Analyzer(tableUtils: TableUtils,
           val groupByConf = parseConf[api.GroupBy](confPath)
           analyzeGroupBy(groupByConf)
         }
-      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf)
-      case joinConf: api.Join       => analyzeJoin(joinConf)
+      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter)
+      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter)
     }
 }

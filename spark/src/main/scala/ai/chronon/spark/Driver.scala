@@ -107,11 +107,15 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
+      val enableHitter: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          descr = "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
+          default = Option(true))
     }
 
     def run(args: Args): Unit = {
       val tableUtils = TableUtils(SparkSessionBuilder.build("analyzer_util"))
-      new Analyzer(tableUtils, args.confPath(), args.startDate(), args.endDate(), args.count(), args.sample()).run
+      new Analyzer(tableUtils, args.confPath(), args.startDate(), args.endDate(), args.count(), args.sample(), args.enableHitter()).run
     }
   }
 
