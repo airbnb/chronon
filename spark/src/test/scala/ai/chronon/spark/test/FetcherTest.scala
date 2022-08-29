@@ -3,7 +3,23 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, BooleanType, Builders, Constants, DataModel, DoubleType, IntType, ListType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  BooleanType,
+  Builders,
+  Constants,
+  DataModel,
+  DoubleType,
+  IntType,
+  ListType,
+  LongType,
+  Operation,
+  StringType,
+  StructField,
+  StructType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Fetcher.{Request, Response}
@@ -221,7 +237,12 @@ class FetcherTest extends TestCase {
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
     // temporal events
-    val paymentCols = Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
+    val paymentCols = Seq(userCol,
+                          vendorCol,
+                          Column("payment", LongType, 100),
+                          Column("notes", StringType, 20),
+                          Column("txn_types", ListType(StringType), 5, nullRate = 0.0))
+
     val paymentsTable = s"$namespace.payments_table"
     val paymentsDf = DataFrameGen.events(spark, paymentCols, rowCount, 60)
     val tsColString = "ts_string"
@@ -237,6 +258,9 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.COUNT, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
+        Builders.Aggregation(operation = Operation.LAST_K,
+                             argMap = Map("k" -> "300", "mode" -> "explode"),
+                             inputColumn = "txn_types"),
         Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes"),
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
@@ -464,7 +488,8 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {

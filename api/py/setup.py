@@ -1,5 +1,5 @@
 from setuptools import find_packages, setup
-
+import os
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -9,7 +9,7 @@ with open("requirements/base.in", "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.5"
+__version__ = os.environ.get("CHRONON_VERSION", "0.0.6")
 
 
 setup(

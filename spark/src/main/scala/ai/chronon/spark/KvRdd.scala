@@ -1,20 +1,18 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.online.{AvroCodec, AvroConversions}
+import ai.chronon.online.AvroConversions
 import ai.chronon.spark.Extensions._
-import org.apache.avro.generic.GenericData
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{GenericRow, GenericRowWithSchema}
 import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
-
 object GenericRowHandler {
-  val func: Any => Array[Any] = {input: Any => input match {
+  val func: Any => Array[Any] = {
     // TODO: optimize this later - to iterator
     case x: GenericRowWithSchema => x.toSeq.toArray
-  }}
+  }
 }
 
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit

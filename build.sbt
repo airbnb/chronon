@@ -38,7 +38,6 @@ lazy val publishSettings = Seq(
   publishMavenStyle := true
 )
 
-
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
@@ -66,7 +65,7 @@ lazy val api = project
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
       "com.novocode" % "junit-interface" % "0.11" % "test"
-    ),
+    )
   )
 
 lazy val aggregator = project
@@ -76,7 +75,7 @@ lazy val aggregator = project
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
-      "com.google.code.gson" % "gson" % "2.8.6"
+      "com.google.code.gson" % "gson" % "2.8.9"
     )
   )
 
@@ -110,13 +109,14 @@ def cleanSparkMeta(): Unit = {
                file(".") / "metastore_db")
 }
 
-def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] = Seq(
-  "org.apache.spark" %% "spark-sql" % version,
-  "org.apache.spark" %% "spark-hive" % version,
-  "org.apache.spark" %% "spark-core" % version,
-  "org.apache.spark" %% "spark-streaming" % version,
-  "org.apache.spark" %% "spark-sql-kafka-0-10" % version
-)
+def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
+  Seq(
+    "org.apache.spark" %% "spark-sql" % version,
+    "org.apache.spark" %% "spark-hive" % version,
+    "org.apache.spark" %% "spark-core" % version,
+    "org.apache.spark" %% "spark-streaming" % version,
+    "org.apache.spark" %% "spark-sql-kafka-0-10" % version
+  )
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
   assembly / test := {},

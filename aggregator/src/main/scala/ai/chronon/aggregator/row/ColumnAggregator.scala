@@ -56,22 +56,25 @@ class SimpleDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
   override def updateColumn(ir: Any, inputRow: Row): IR =
     agg.update(ir.asInstanceOf[IR], toTypedInput(inputRow.get(columnIndices.input)))
 }
-
-class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
-                                  columnIndices: ColumnIndices,
-                                  toTypedInput: Any => Input)
-    extends Dispatcher[Input, Any]
-    with Serializable {
-
+abstract class BaseVectorDispatcher[Input, IR](columnIndices: ColumnIndices, toTypedInput: Any => Input)
+    extends Dispatcher[Input, Any] {
   def toInputIterator(inputRow: Row): Iterator[Input] = {
     val inputVal = inputRow.get(columnIndices.input)
     if (inputVal == null) return null
     val anyIterator = inputVal match {
       case inputSeq: Seq[Any]             => inputSeq.iterator
       case inputList: util.ArrayList[Any] => inputList.iterator().asScala
+      case inputList: Array[Any]          => inputList.iterator
     }
     anyIterator.filter { _ != null }.map { toTypedInput }
   }
+}
+
+class SimpleVectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
+                                        columnIndices: ColumnIndices,
+                                        toTypedInput: Any => Input)
+    extends BaseVectorDispatcher[Input, Any](columnIndices, toTypedInput)
+    with Serializable {
 
   def guardedApply(inputRow: Row, prepare: Input => IR, update: (IR, Input) => IR, baseIr: Any = null): Any = {
     val it = toInputIterator(inputRow)
@@ -93,6 +96,36 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
   override def inversePrepare(inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete)
 
   override def deleteColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete, ir)
+
+}
+
+class TimedVectorDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _],
+                                       columnIndices: ColumnIndices,
+                                       toTypedInput: Any => Input = { x: Any => x.asInstanceOf[Input] })
+    extends BaseVectorDispatcher[Input, Any](columnIndices, toTypedInput)
+    with Serializable {
+
+  def guardedApply(inputRow: Row, baseIr: Any = null): Any = {
+    val it = toInputIterator(inputRow)
+    if (it == null) return baseIr
+    var result = baseIr
+    while (it.hasNext) {
+      if (result == null) {
+        result = agg.prepare(it.next(), inputRow.ts)
+      } else {
+        result = agg.update(result.asInstanceOf[IR], it.next(), inputRow.ts)
+      }
+    }
+    result
+  }
+
+  override def prepare(inputRow: Row): Any = guardedApply(inputRow)
+
+  override def updateColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, ir)
+
+  override def inversePrepare(inputRow: Row): Any = ???
+
+  override def deleteColumn(ir: Any, inputRow: Row): Any = ???
 
 }
 
@@ -151,7 +184,7 @@ object ColumnAggregator {
                                     bucketIndex: Option[Int] = None,
                                     isVector: Boolean = false): ColumnAggregator = {
     val dispatcher = if (isVector) {
-      new VectorDispatcher(agg, columnIndices, toTypedInput)
+      new SimpleVectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
       new SimpleDispatcher(agg, columnIndices, toTypedInput)
     }
@@ -165,9 +198,15 @@ object ColumnAggregator {
   def fromTimed[Input, IR, Output](
       agg: TimedAggregator[Input, IR, Output],
       columnIndices: ColumnIndices,
-      bucketIndex: Option[Int] = None
+      bucketIndex: Option[Int] = None,
+      isVector: Boolean = false
   ): ColumnAggregator = {
-    val dispatcher = new TimedDispatcher(agg, columnIndices)
+    val dispatcher = if (isVector) {
+      new TimedVectorDispatcher(agg, columnIndices)
+    } else {
+      new TimedDispatcher(agg, columnIndices)
+    }
+
     if (bucketIndex.isEmpty) {
       new DirectColumnAggregator(agg, columnIndices, dispatcher)
     } else {
@@ -189,7 +228,7 @@ object ColumnAggregator {
         throw new IllegalArgumentException(
           s"Error while aggregating over '${aggregationPart.inputColumn}'. " +
             s"Date type and Timestamp time should not be aggregated over (They don't serialize well in avro either). " +
-            s"Please use Query's Select expressions to transform them into Long.")
+            s"Please use Query's Select expressions to transform them into Long / String")
       case _ =>
     }
 
@@ -198,14 +237,17 @@ object ColumnAggregator {
 
     // to support vector aggregations when input column is an array.
     // avg of [1, 2, 3], [3, 4], [5] = 18 / 6 => 3
+    val explicitExplode = aggregationPart.argMap != null && aggregationPart.argMap.get("mode") == "explode"
     val vectorElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
       case (true, ListType(elementType)) =>
         elementType match {
           case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
             Some(elementType)
         }
-      case _ => None
+      case (false, ListType(elementType)) if explicitExplode => Some(elementType)
+      case _                                                 => None
     }
+
     val inputType = vectorElementType.getOrElse(baseInputType)
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
@@ -214,7 +256,7 @@ object ColumnAggregator {
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
-      fromTimed(agg, columnIndices, bucketIndex)
+      fromTimed(agg, columnIndices, bucketIndex, isVector = vectorElementType.isDefined)
     }
 
     aggregationPart.operation match {
@@ -247,7 +289,8 @@ object ColumnAggregator {
           case LongType   => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))))
           case ShortType  => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))), toLong[Short])
           case DoubleType => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))))
-          case FloatType  => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
+          case FloatType =>
+            simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
           case StringType => simple(new ApproxDistinctCount[String](aggregationPart.getInt("k", Some(8))))
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException

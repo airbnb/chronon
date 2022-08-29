@@ -133,4 +133,28 @@ object Conversions {
       extraneousRecord
     )
   }
+
+//  def fromSparkRow(value: Any, dataType: api.DataType, extraneousRecord: Any => Array[Any] = null): Any = {
+//    api.Row.from[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any]](
+//      value,
+//      dataType,
+//      { (data: GenericRow, schema: Seq[StructField]) => data.toSeq.zip(schema).iterator.map() },
+//      { bytes: Array[Byte] => bytes },
+//      { (elems: Iterator[Any], size: Int) =>
+//        val result = new Array[Any](size)
+//        elems.zipWithIndex.foreach { case (elem, idx) => result.update(idx, elem) }
+//        result
+//      },
+//      { m: util.Map[Any, Any] =>
+//        val result = new mutable.HashMap[Any, Any]
+//        val it = m.entrySet().iterator()
+//        while (it.hasNext) {
+//          val entry = it.next()
+//          result.update(entry.getKey, entry.getValue)
+//        }
+//        result
+//      },
+//      extraneousRecord
+//    )
+//  }
 }
