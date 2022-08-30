@@ -1,7 +1,9 @@
 package ai.chronon.spark.test
 
+import ai.chronon.api.Constants.HiveMetadataTableName
 import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,4 +38,39 @@ class TableUtilsTest {
     assertEquals(expected, columns.sorted)
   }
 
+  @Test
+  def getHiveSchemaEntryTest(): Unit = {
+    //create test table
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS hive_test")
+    val tableName = "hive_test." + HiveMetadataTableName
+    val metadataSchema = StructType( Array(
+      StructField("conf_key", StringType,true),
+      StructField("entity_type", StringType,true),
+      StructField("schema", StringType,true),
+      StructField("schema_hash", StringType,true)
+    ))
+    //clean up table if already exists
+    tableUtils.sql(s"DROP TABLE IF EXISTS ${tableName}")
+
+    val createMetaTable = tableUtils.createTableSql(tableName, metadataSchema, Seq.empty[String], null, "parquet")
+    tableUtils.sql(createMetaTable)
+    println(s"Metadata schema table ${tableName} created")
+
+    val confKey = "joins/testConfKey"
+    val entityType = "join"
+    val schemaHash = "testHash"
+    val schema = StructType( Array(
+      StructField("item", StringType,true),
+      StructField("item_view_avg", DoubleType,true),
+      StructField("item_view_sum", IntegerType,true)
+    ))
+
+    tableUtils.uploadEntityMetadata(confKey, schema, schemaHash, entityType, tableName)
+    val entry = tableUtils.sql(s"SELECT * FROM ${tableName} WHERE conf_key = '$confKey' and schema_hash = '$schemaHash'")
+    entry.show();
+    val schemaEntry = tableUtils.getEntityMetadata(confKey, schemaHash, tableName)
+    assert(schemaEntry.count() == 1)
+    assert(schemaEntry.first().get(0).equals(confKey))
+    assert(schemaEntry.first().get(3).equals(schemaHash))
+  }
 }
