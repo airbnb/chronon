@@ -110,7 +110,7 @@ object Driver {
       val enableHitter: ScallopOption[Boolean] =
         opt[Boolean](required = false,
           descr = "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
-          default = Option(true))
+          default = Some(true))
     }
 
     def run(args: Args): Unit = {
