@@ -3,7 +3,6 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.{Constants, DataType}
 import ai.chronon.api.Extensions._
-import ai.chronon.spark.Extensions._
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
@@ -12,7 +11,7 @@ import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.{StringType, StructType}
 
-import java.util.concurrent.ConcurrentHashMap
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 //@SerialVersionUID(3457890987L)
@@ -48,7 +47,7 @@ class Analyzer(tableUtils: TableUtils,
                endDate: String,
                count: Int = 64,
                sample: Double = 0.1,
-               enableHitter: Boolean = true) {
+               enableHitter: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
@@ -132,7 +131,7 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = true): (api.StructType) = {
+                     enableHitter: Boolean = false): (api.StructType) = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
@@ -161,16 +160,16 @@ class Analyzer(tableUtils: TableUtils,
     groupBy.outputSchema
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = true): Array[String] = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): Array[String] = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
-    var rightSchema = List[String]()
+    var rightSchema = ListBuffer[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
-      val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true)
+      val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
       rightSchema ++= groupBySchema.map { field => part.constructJoinPartSchema(field)}
           .map {field => s"  ${field.name} => ${field.fieldType}"}
     }
@@ -194,10 +193,10 @@ class Analyzer(tableUtils: TableUtils,
       case confPath: String =>
         if (confPath.contains("/joins/")) {
           val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf)
+          analyzeJoin(joinConf, enableHitter = enableHitter)
         } else if (confPath.contains("/group_bys/")) {
           val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf)
+          analyzeGroupBy(groupByConf, enableHitter = enableHitter)
         }
       case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter)
       case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter = enableHitter)

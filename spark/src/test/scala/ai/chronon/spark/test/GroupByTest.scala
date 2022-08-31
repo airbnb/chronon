@@ -284,7 +284,8 @@ class GroupByTest {
     val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
-    groupBySchema.foreach(s => expectedSchema.contains(s))
+    groupBySchema.fields.map(field => s"${field.name} => ${field.fieldType}")
+      .foreach(s => assertTrue(expectedSchema.contains(s)))
   }
 
 
