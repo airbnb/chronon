@@ -3,8 +3,8 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
-
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
@@ -28,36 +28,47 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
-    val unfilledRange =
-      tableUtils.unfilledRange(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
+    val unfilledRanges =
+      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition), Some(outputTable))
 
-    if (unfilledRange.isEmpty) {
+    if (unfilledRanges.isEmpty) {
       println(s"""No unfilled range for $outputTable given
            |start partition of ${stagingQueryConf.startPartition}
            |end partition of $endPartition
            |""".stripMargin)
       return
     }
-    val stagingQueryUnfilledRange = unfilledRange.get
-    println(s"Staging Query unfilled range: $stagingQueryUnfilledRange")
-    val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
-    println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
-
-    stepRanges.zipWithIndex.foreach {
-      case (range, index) =>
-        val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing staging query for range: $range  $progress")
-        val renderedQuery = stagingQueryConf.query
-          .replaceAll(StartDateRegex, range.start)
-          .replaceAll(EndDateRegex, range.end)
-          .replaceAll(LatestDateRegex, endPartition)
-        println(s"Rendered Staging Query to run is:\n$renderedQuery")
-        val df = tableUtils.sql(renderedQuery)
-        tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
-        println(s"Wrote to table $outputTable, into partitions: $range $progress")
+    val stagingQueryUnfilledRanges = unfilledRanges.get
+    println(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
+    val exceptions = mutable.Buffer.empty[String]
+    stagingQueryUnfilledRanges.foreach{ case stagingQueryUnfilledRange =>
+      try {
+        val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
+        println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+        stepRanges.zipWithIndex.foreach {
+          case (range, index) =>
+            val progress = s"| [${index + 1}/${stepRanges.size}]"
+            println(s"Computing staging query for range: $range  $progress")
+            val renderedQuery = stagingQueryConf.query
+              .replaceAll(StartDateRegex, range.start)
+              .replaceAll(EndDateRegex, range.end)
+              .replaceAll(LatestDateRegex, endPartition)
+            println(s"Rendered Staging Query to run is:\n$renderedQuery")
+            val df = tableUtils.sql(renderedQuery)
+            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
+            println(s"Wrote to table $outputTable, into partitions: $range $progress")
+        }
+        println(s"Finished writing Staging Query data to $outputTable")
+      } catch {
+        case err: Throwable =>
+          exceptions :+ s"Error handling range ${stagingQueryUnfilledRange} : ${err.getStackTrace}"
+      }
+      if (exceptions.nonEmpty) {
+        throw new RuntimeException(exceptions.mkString("\n"))
+      }
     }
-    println(s"Finished writing Staging Query data to $outputTable")
   }
+
 }
 
 object StagingQuery {

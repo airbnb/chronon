@@ -5,6 +5,9 @@ import ai.chronon.spark.{Conversions, IncompatibleSchemaException, SparkSessionB
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.SparkSession
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
@@ -195,4 +198,15 @@ class TableUtilsTest {
 
     testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
+
+  @Test
+  def ChunkTest(): Unit = {
+    val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
+    val expected = Seq(
+      PartitionRange("2021-01-01", "2021-01-02"),
+      PartitionRange("2021-01-05", "2021-01-05"),
+      PartitionRange("2021-01-07", "2021-01-07"))
+    assertEquals(expected, actual)
+  }
+
 }
