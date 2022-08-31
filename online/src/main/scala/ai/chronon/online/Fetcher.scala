@@ -406,7 +406,7 @@ class Fetcher(kvStore: KVStore,
                     servingInfo.outputChrononSchema
                   }
                   baseValueSchema.fields.foreach { sf =>
-                    valueFields.append(StructField(joinPart.fullPrefix + "_" + sf.name, sf.fieldType))
+                    valueFields.append(joinPart.constructJoinPartSchema(sf))
                   }
               }
         }

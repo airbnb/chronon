@@ -129,7 +129,10 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = "", enableHitter: Boolean = true): (String, api.StructType) = {
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = true): (api.StructType) = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
@@ -141,8 +144,13 @@ class Analyzer(tableUtils: TableUtils,
     println(s"""
                |ANALYSIS for $name:
                |$analysis
+               """.stripMargin)
+    if(includeOutputTableName)
+      println(s"""
                |----- OUTPUT TABLE NAME -----
                |${groupByConf.metaData.outputTable}
+               """.stripMargin)
+    println(s"""
                |----- KEY SCHEMA -----
                |${keySchema.mkString("\n")}
                |----- OUTPUT SCHEMA -----
@@ -150,25 +158,23 @@ class Analyzer(tableUtils: TableUtils,
                |------ END --------------
                |""".stripMargin)
 
-    (groupByConf.metaData.cleanName, groupBy.outputSchema)
+    groupBy.outputSchema
   }
 
   def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = true): Array[String] = {
     val name = "joins/" + joinConf.metaData.name
-    println(s"""|Running join analysis
-    } for $name ...""".stripMargin)
+    println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
     var rightSchema = List[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
-      val sanitizePrefix = Option(part.prefix).map(_ + "_").getOrElse("")
-      val (groupByName, groupBySchema) = analyzeGroupBy(part.groupBy, sanitizePrefix)
-      rightSchema ++= groupBySchema.map { field => s"  ${sanitizePrefix}${groupByName}_${field.name} => ${field.fieldType}" }
+      val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true)
+      rightSchema ++= groupBySchema.map { field => part.constructJoinPartSchema(field)}
+          .map {field => s"  ${field.name} => ${field.fieldType}"}
     }
     println(s"""
-               |------ [HEAVY HITTERS COUNTS] -----
                |ANALYSIS for join/${joinConf.metaData.cleanName}:
                |$analysis
                |----- OUTPUT TABLE NAME -----
@@ -194,6 +200,6 @@ class Analyzer(tableUtils: TableUtils,
           analyzeGroupBy(groupByConf)
         }
       case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter)
-      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter)
+      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter = enableHitter)
     }
 }
