@@ -62,7 +62,8 @@ class MockApi(kvStore: () => KVStore, namespace: String) extends Api(null) {
       keyBase64 = Base64.getEncoder.encodeToString(loggableResponse.keyBytes),
       valueBase64 = Base64.getEncoder.encodeToString(loggableResponse.valueBytes),
       name = loggableResponse.joinName,
-      tsMillis = loggableResponse.tsMillis
+      tsMillis = loggableResponse.tsMillis,
+      schemaHash = loggableResponse.schemaHash
     ))
 
   override def logTable: String = s"$namespace.mock_log_table"

@@ -453,8 +453,10 @@ class Fetcher(kvStore: KVStore,
                   enc.valueCodec.encodeBinary(valueRecord)
                 }
                 .getOrElse(null)
+
+              // TODO: populate the correct schema_hash
               val loggableResponse =
-                LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts))
+                LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts), null)
               if (logFunc != null)
                 logFunc.accept(loggableResponse)
               val joinContext = Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join)
