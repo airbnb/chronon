@@ -15,7 +15,7 @@ import ai.chronon.spark.test.FetcherTest.buildInMemoryKVStore
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.{avg, lit}
+import org.apache.spark.sql.functions.{avg, col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
@@ -497,8 +497,8 @@ class FetcherTest extends TestCase {
       val laggedResponseDf = joinResponses(laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
       val correctedLaggedResponse = laggedResponseDf
         .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
-        .drop("ts_millis")
-        .withColumnRenamed("ts_lagged", "ts_millis")
+        .withColumn("ts_millis", col("ts_lagged"))
+        .drop("ts_lagged")
       println("corrected lagged response")
       correctedLaggedResponse.show()
       correctedLaggedResponse.save(mockApi.logTable)
