@@ -1,17 +1,17 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, DataType}
 import ai.chronon.api.Extensions._
-import ai.chronon.spark.Extensions._
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{StringType, StructType}
 
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 //@SerialVersionUID(3457890987L)
@@ -46,7 +46,8 @@ class Analyzer(tableUtils: TableUtils,
                startDate: String,
                endDate: String,
                count: Int = 64,
-               sample: Double = 0.1) {
+               sample: Double = 0.1,
+               enableHitter: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
@@ -127,44 +128,64 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy, prefix: String = ""): Unit = {
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = false): (api.StructType) = {
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
-    val analysis = analyze(groupBy.inputDf,
+    val analysis = if(enableHitter) analyze(groupBy.inputDf,
                            groupByConf.keyColumns.asScala.toArray,
-                           groupByConf.sources.asScala.map(_.table).mkString(","))
+                           groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     println(s"""
                |ANALYSIS for $name:
-               |------ [HEAVY HITTERS COUNTS] -----
                |$analysis
+               """.stripMargin)
+    if(includeOutputTableName)
+      println(s"""
+               |----- OUTPUT TABLE NAME -----
+               |${groupByConf.metaData.outputTable}
+               """.stripMargin)
+    println(s"""
                |----- KEY SCHEMA -----
                |${keySchema.mkString("\n")}
                |----- OUTPUT SCHEMA -----
                |${schema.mkString("\n")}
-               |------ END ------
+               |------ END --------------
                |""".stripMargin)
+
+    groupBy.outputSchema
   }
 
-  def analyzeJoin(joinConf: api.Join): Unit = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): Array[String] = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
-    val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+    val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-    println(s"""
-               |------ [HEAVY HITTERS COUNTS] -----
-               |ANALYSIS for join/${joinConf.metaData.cleanName}/left/:
-               |$analysis
-               |------ SCHEMA -----
-               |${leftSchema.mkString("\n")}
-               |------ END ------
-               |""".stripMargin)
+
+    var rightSchema = ListBuffer[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
-      analyzeGroupBy(part.groupBy, Option(part.prefix).map(_ + "_").getOrElse(""))
+      val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
+      rightSchema ++= groupBySchema.map { field => part.constructJoinPartSchema(field)}
+          .map {field => s"  ${field.name} => ${field.fieldType}"}
     }
+    println(s"""
+               |ANALYSIS for join/${joinConf.metaData.cleanName}:
+               |$analysis
+               |----- OUTPUT TABLE NAME -----
+               |${joinConf.metaData.outputTable}
+               |------ LEFT SIDE SCHEMA -------
+               |${leftSchema.mkString("\n")}
+               |------ RIGHT SIDE SCHEMA ----
+               |${rightSchema.mkString("\n")}
+               |------ END ------------------
+               |""".stripMargin)
+    
+    leftSchema ++ rightSchema
   }
 
   def run(): Unit =
@@ -172,12 +193,12 @@ class Analyzer(tableUtils: TableUtils,
       case confPath: String =>
         if (confPath.contains("/joins/")) {
           val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf)
+          analyzeJoin(joinConf, enableHitter = enableHitter)
         } else if (confPath.contains("/group_bys/")) {
           val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf)
+          analyzeGroupBy(groupByConf, enableHitter = enableHitter)
         }
-      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf)
-      case joinConf: api.Join       => analyzeJoin(joinConf)
+      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter)
+      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter = enableHitter)
     }
 }

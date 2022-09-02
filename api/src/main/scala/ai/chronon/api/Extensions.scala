@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object Extensions {
@@ -436,6 +437,10 @@ object Extensions {
       val newJoinPart = joinPart.deepCopy()
       newJoinPart.setGroupBy(newJoinPart.groupBy.copyForVersioningComparison)
       newJoinPart
+    }
+
+    def constructJoinPartSchema(schemaField: StructField): StructField = {
+      StructField(joinPart.fullPrefix + "_" + schemaField.name, schemaField.fieldType)
     }
   }
 

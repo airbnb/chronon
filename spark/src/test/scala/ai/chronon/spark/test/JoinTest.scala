@@ -376,7 +376,58 @@ class JoinTest {
     }
     assertEquals(diff.count(), 0)
   }
+  @Test
+  def testJoinAnalyzerSchema(): Unit = {
+    val viewsSource = genTestEventSource
 
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+    val anotherViewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.new_item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries"
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one"),
+        Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two")
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer and validate output schema
+    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today)
+    val analyzerSchema = analyzer.analyzeJoin(joinConf).map(_.trim).sorted
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val computed = join.computeJoin()
+    val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
+    println("=== expected schema =====")
+    println(expectedSchema.mkString("\n"))
+
+    assertTrue(expectedSchema sameElements analyzerSchema)
+  }
   @Test
   def testEventsEventsTemporal(): Unit = {
 
@@ -887,5 +938,21 @@ class JoinTest {
     )
     val toCompute = new Join(join, today, tableUtils)
     toCompute.computeJoin()
+  }
+
+  def genTestEventSource() : api.Source = {
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view_events"
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
+
+    Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      table = viewsTable
+    )
   }
 }
