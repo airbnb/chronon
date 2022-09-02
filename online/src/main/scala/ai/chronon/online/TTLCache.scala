@@ -11,26 +11,43 @@ class TTLCache[I, O](f: I => O,
                      ttlMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
                      nowFunc: () => Long = { () => System.currentTimeMillis() },
                      refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
-) {
-  case class Entry(value: O, updatedAtMillis: Long)
+                    ) {
 
-  private def funcForInterval(intervalMillis: Long) =
+  // isNew: when true, we should attempt to capture this entry update in control event
+  // duringException: when true, we are blocked from publishing control event, so we must capture this status so
+  //                  that we can publish it next time when we are not in an exception
+  case class Entry(value: O, updatedAtMillis: Long, isNew: Boolean, duringException: Boolean)
+
+  private def funcForInterval(intervalMillis: Long, duringException: Boolean) =
     new function.BiFunction[I, Entry, Entry] {
       override def apply(t: I, u: Entry): Entry = {
         val now = nowFunc()
         if (u == null || now - u.updatedAtMillis > intervalMillis) {
-          Entry(f(t), now)
+          Entry(
+            f(t),
+            now,
+            isNew = true,
+            duringException = duringException
+          )
         } else {
-          u
+          u.copy(
+            isNew = u.duringException,
+            duringException = duringException
+          )
         }
       }
     }
-  private val refreshFunc = funcForInterval(refreshIntervalMillis)
-  private val applyFunc = funcForInterval(ttlMillis)
+  private val refreshFunc = funcForInterval(refreshIntervalMillis, duringException = true)
+  private val applyFunc = funcForInterval(ttlMillis, duringException = false)
 
   val cMap = new ConcurrentHashMap[I, Entry]()
-  def apply(i: I): O = cMap.compute(i, applyFunc).value
+  def apply(i: I): O = applyAndGetStatus(i)._1
+  def applyAndGetStatus(i: I): (O, Boolean) = {
+    val entry = cMap.compute(i, applyFunc)
+    (entry.value, entry.isNew)
+  }
   // manually refresh entry with a lower interval
   def refresh(i: I): O = cMap.compute(i, refreshFunc).value
-  def force(i: I): O = cMap.put(i, Entry(f(i), nowFunc())).value
+  def force(i: I, duringException: Boolean = false): O =
+    cMap.put(i, Entry(f(i), nowFunc(), isNew = true, duringException)).value
 }

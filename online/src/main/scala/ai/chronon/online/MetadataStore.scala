@@ -103,6 +103,21 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  def putLoggingSchema(joinCodec: JoinCodec, tsMillis: Long): Unit = {
+    kvStore.put(PutRequest(
+      s"logging_schema/${joinCodec.loggingSchemaHash}".getBytes(UTF8),
+      joinCodec.loggingSchema.getBytes(UTF8),
+      dataset,
+      Some(tsMillis)
+    ))
+  }
+
+  def getLoggingSchema(loggingSchemaHash: String): Try[String] = {
+    kvStore.getString(
+      s"logging_schema/${loggingSchemaHash}", dataset, timeoutMillis
+    )
+  }
+
   // pull and cache groupByServingInfo from the groupBy uploads
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
     new TTLCache[String, Try[GroupByServingInfoParsed]]({ name =>
