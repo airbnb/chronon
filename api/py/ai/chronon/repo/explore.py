@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+from contextlib import contextmanager
+from pathlib import Path
 
+import argparse
 import json
 import os
 import subprocess
-import sys
 
 
 CWD = os.getcwd()
@@ -28,7 +30,10 @@ GB_INDEX_SPEC = {
     ],
     "online": [
         "metaData.online"
-    ]
+    ],
+    "output_namespace": [
+        "metaData.outputNamespace"
+    ],
 }
 
 JOIN_INDEX_SPEC = {
@@ -44,15 +49,23 @@ JOIN_INDEX_SPEC = {
     "name": [
         "metaData.name"
     ],
+    "output_namespace": [
+        "metaData.outputNamespace"
+    ],
     "_group_bys": [
         "joinParts[].groupBy",
         "rightParts[].groupBy"
     ]
 }
+
+DEFAULTS_SPEC = {
+    "output_namespace": "namespace",
+}
+
 GB_REL_PATH = "production/group_bys"
 JOIN_REL_PATH = "production/joins"
 FILTER_COLUMNS = ["aggregation", "keys", "name", "sources", "joins"]
-
+PATH_FIELDS = ['file', 'json_file']
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
 NORMAL = '\033[0m'
@@ -93,7 +106,7 @@ def extract_json(json_path, conf_json):
     return []
 
 
-def build_entry(conf, index_spec, conf_type):
+def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
     conf_dict = conf
     if isinstance(conf, str):
         with open(conf) as conf_file:
@@ -114,39 +127,60 @@ def build_entry(conf, index_spec, conf_type):
 
     # derive python file path from the name & conf_type
     (team, conf_module) = entry["name"][0].split(".", 1)
+    # Update missing values with teams defaults.
+    for field, mapped_field in DEFAULTS_SPEC.items():
+        if field in entry and not entry[field]:
+            entry[field] = [teams[team][mapped_field]]
+
     file_base = "/".join(conf_module.split(".")[:-1])
     py_file = file_base + ".py"
     init_file = file_base + "/__init__.py"
-    py_path = os.path.join(conf_type, team, py_file)
-    init_path = os.path.join(conf_type, team, init_file)
+    py_path = os.path.join(root, conf_type, team, py_file)
+    init_path = os.path.join(root, conf_type, team, init_file)
     conf_path = py_path if os.path.exists(py_path) else init_path
-    entry["json_file"] = os.path.join("production", conf_type, team, conf_module)
+    entry["json_file"] = os.path.join(root, "production", conf_type, team, conf_module)
     entry["file"] = conf_path
     return entry
+
+
+@contextmanager
+def chdir(path):
+    """
+    Context manager to run subprocesses in the appropriate folder so git can get the relevant info.
+    """
+    origin = Path().absolute()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(origin)
 
 
 git_info_cache = {}
 
 
 # git_info is the most expensive part of the entire script - so we will have to parallelize
-def git_info(file_paths, exclude=None):
+def git_info(file_paths, exclude=None, root=CWD):
     exclude_args = f"--invert-grep --grep={exclude}" if exclude else ''
     procs = []
-    for file_path in file_paths:
-        if file_path in git_info_cache:
-            procs.append((file_path, git_info_cache[file_path]))
-        else:
-            args = f"echo $(git log -n 2 --pretty='format:{BLUE} %as/%an/%ae' {exclude_args} -- {file_path})"
-            procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
+    with chdir(root):
+        for file_path in file_paths:
+            if file_path in git_info_cache:
+                procs.append((file_path, git_info_cache[file_path]))
+            else:
+                args = (
+                    f"echo $(git log -n 2 --pretty='format:{BLUE} %as/%an/%ae' {exclude_args} -- "
+                    f"{file_path.replace(root, '')})")
+                procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
 
-    result = {}
-    for file_path, proc in procs:
-        if isinstance(proc, subprocess.Popen):
-            lines = []
-            for line in proc.stdout.readlines():
-                lines.append(line.decode("utf-8").strip())
-            git_info_cache[file_path] = lines[0]
-        result[file_path] = git_info_cache[file_path]
+        result = {}
+        for file_path, proc in procs:
+            if isinstance(proc, subprocess.Popen):
+                lines = []
+                for line in proc.stdout.readlines():
+                    lines.append(line.decode("utf-8").strip())
+                git_info_cache[file_path] = lines[0]
+            result[file_path] = git_info_cache[file_path]
     return result
 
 
@@ -156,11 +190,12 @@ def walk_files(path):
             yield os.path.join(root, file)
 
 
-def build_index(conf_type, index_spec):
-    rel_path = os.path.join(CWD, "production", conf_type)
+def build_index(conf_type, index_spec, root=CWD, teams=None):
+    rel_path = os.path.join(root, "production", conf_type)
+    teams = teams or {}
     index_table = {}
     for path in walk_files(rel_path):
-        index_entry = build_entry(path, index_spec, conf_type)
+        index_entry = build_entry(path, index_spec, conf_type, root=root, teams=teams)
         if index_entry is not None:
             index_table[index_entry["name"][0]] = index_entry
     return index_table
@@ -183,8 +218,11 @@ def highlight(text, word):
     return result
 
 
-def prettify_entry(entry, target, modification, show=10):
+def prettify_entry(entry, target, modification, show=10, root=CWD, trim_paths=False):
     lines = []
+    if trim_paths:
+        for field in filter(lambda x: x in entry, PATH_FIELDS):
+            entry[field] = entry[field].replace(root, '')
     for column, values in entry.items():
         name = " "*(15 - len(column)) + column
         if column in FILTER_COLUMNS and len(values) > show:
@@ -210,30 +248,30 @@ def find_in_index(index_table, target):
             if column in FILTER_COLUMNS
             for value in values
         ])
-    find_in_index_pred(index_table, valid_entry)
+    return find_in_index_pred(index_table, valid_entry)
 
 
 def find_in_index_pred(index_table, valid_entry):
     return [entry for _, entry in index_table.items() if valid_entry(entry)]
 
 
-def display_entries(entries, target):
-    git_infos = git_info([entry["file"] for entry in entries])
+def display_entries(entries, target, root=CWD, trim_paths=False):
+    git_infos = git_info([entry["file"] for entry in entries], root=root)
     display = []
     for entry in entries:
         info = git_infos[entry["file"]]
-        pretty = prettify_entry(entry, target, info)
+        pretty = prettify_entry(entry, target, info, root=root, trim_paths=trim_paths)
         display.append((info, pretty))
 
     for (_, pretty_entry) in sorted(display):
         print(pretty_entry)
 
 
-def enrich_with_joins(gb_index, join_index):
+def enrich_with_joins(gb_index, join_index, root=CWD, teams=None):
     # nested gb entries
     for _, join_entry in join_index.items():
         for gb in join_entry["_group_bys"]:
-            entry = build_entry(gb, GB_INDEX_SPEC, "group_bys")
+            entry = build_entry(gb, GB_INDEX_SPEC, "group_bys", root=root, teams=teams)
             gb_index[entry["name"][0]] = entry
     # lineage -> reverse index from gb -> join
     for _, group_by in gb_index.items():
@@ -314,36 +352,48 @@ def events_without_topics(output_file=None, exclude_commit_message=None):
     print(",".join(list(emails)))
 
 
+def load_team_data(path):
+    with open(path, 'r') as infile:
+        teams = json.load(infile)
+    base_defaults = teams.get('default', {})
+    full_info = teams.copy()
+    for team, values in teams.items():
+        full_info[team] = dict(base_defaults, **values)
+    return full_info
+
+
 # register all handlers here
 handlers = {
     "_events_without_topics": events_without_topics
 }
 
 if __name__ == "__main__":
-    if not (CWD.endswith("chronon") or CWD.endswith("zipline")):
-        print("This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline'")
+    parser = argparse.ArgumentParser(description="Explore tool for chronon")
+    parser.add_argument("keyword", help="Keyword to look up keys")
+    parser.add_argument("--conf-root", help="Conf root for the configs", default=CWD)
+    parser.add_argument(
+        "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value")
+    args = parser.parse_args()
+    root = args.conf_root
+    if not (root.endswith("chronon") or root.endswith("zipline")):
+        print("This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline', found: "
+              + root)
+    teams = load_team_data(os.path.join(root, 'teams.json'))
+    gb_index = build_index("group_bys", GB_INDEX_SPEC, root=root, teams=teams)
+    join_index = build_index("joins", JOIN_INDEX_SPEC, root=root, teams=teams)
+    enrich_with_joins(gb_index, join_index, root=root, teams=teams)
 
-    assert(len(sys.argv) > 1), "explore.py needs one or more arguments"
-
-    gb_index = build_index("group_bys", GB_INDEX_SPEC)
-    join_index = build_index("joins", JOIN_INDEX_SPEC)
-    enrich_with_joins(gb_index, join_index)
-
-    candidate = sys.argv[1]
+    candidate = args.keyword
     if candidate in handlers:
         print(f"{candidate} is a registered handler")
         handler = handlers[candidate]
-        args = {}
-        for arg in sys.argv[2:]:
+        handler_args = {}
+        for arg in args.handler_args:
             splits = arg.split("=", 1)
             assert len(splits) == 2, f"need args to handler for the form, param=value. Found and invalid arg:{arg}"
             key, value = splits
-            args[key] = value
-        handler(**args)
+            handler_args[key] = value
+        handler(**handler_args)
     else:
-        if len(sys.argv) != 2:
-            print("This script takes just one argument, the keyword to lookup keys or features by")
-            print("Eg., explore.py price")
-            sys.exit(1)
-        group_bys = find_in_index(gb_index, sys.argv[1])
-        display_entries(group_bys, sys.argv[1])
+        group_bys = find_in_index(gb_index, args.keyword)
+        display_entries(group_bys, args.keyword, root=root, trim_paths=True)
