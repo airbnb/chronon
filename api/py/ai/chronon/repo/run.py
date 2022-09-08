@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import xml.etree.ElementTree as ET
+import sys
 from datetime import datetime
 
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class} '
@@ -219,7 +220,7 @@ class Runner:
         check_call(command)
 
 
-def main():
+def parse_args(argv):
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
     chronon_repo_path = os.getenv('CHRONON_REPO_PATH', '.')
@@ -256,13 +257,18 @@ def main():
     parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
     parser.add_argument('--list-apps', default="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
                         help='command/script to list running jobs on the scheduler')
-    args, unknown_args = parser.parse_known_args()
+    args, unknown_args = parser.parse_known_args(argv)
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
+    return args
+
+
+def build_runner(args):
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(args.version, jar_type, args.release_tag)
-    Runner(args, jar_path).run()
+    return Runner(args, jar_path)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args(sys.argv[1:])
+    build_runner(args).run()
