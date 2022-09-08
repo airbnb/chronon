@@ -219,7 +219,7 @@ class Runner:
         check_call(command)
 
 
-if __name__ == "__main__":
+def main():
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
     chronon_repo_path = os.getenv('CHRONON_REPO_PATH', '.')
@@ -262,3 +262,7 @@ if __name__ == "__main__":
     args.args = ' '.join(unknown_args) + extra_args
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(args.version, jar_type, args.release_tag)
     Runner(args, jar_path).run()
+
+
+if __name__ == "__main__":
+    main()
