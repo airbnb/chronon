@@ -1,8 +1,6 @@
 package ai.chronon.spark
 
 import ai.chronon.api.Constants
-import ai.chronon.api.Constants.{HiveMetadataTableName, MetadataColumnCreatedAt}
-import com.google.gson.Gson
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{rand, round}
 import org.apache.spark.sql.types.StructType
@@ -316,34 +314,5 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
     }
-  }
-
-  def uploadEntityMetadata(confKey: String,
-                         schema: StructType,
-                         schemaHash: String,
-                         entityType: String = "None",
-                         metaTableName: String = HiveMetadataTableName
-                        ): Unit = {
-    val serializedSchema = new Gson().toJson(schema)
-    if (sparkSession.catalog.tableExists(metaTableName)) {
-      val insertSql = s"INSERT INTO TABLE ${metaTableName} VALUES ('$confKey', '$entityType', '$serializedSchema', '$schemaHash')"
-      sql(insertSql)
-    } else {
-      println(s"${metaTableName} doesn't exist, please double check before inserting entry")
-    }
-  }
-
-  def getEntityMetadata(confKey: String, schemaHash: String = "", metaTableName: String = HiveMetadataTableName): DataFrame = {
-    var getSql: String = ""
-    if(schemaHash == "" ) {
-       getSql = s"SELECT * FROM ${metaTableName} WHERE conf_key = '$confKey' order by ${MetadataColumnCreatedAt} limit 1"
-    } else {
-       getSql = s"SELECT * FROM ${metaTableName} WHERE conf_key = '$confKey' and schema_hash = '$schemaHash'"
-    }
-    sql(getSql)
-  }
-
-  def batchGetEntityMetadata(confKeys: List[String]): List[DataFrame] = {
-    confKeys.par.map(cf => getEntityMetadata(cf)).toList
   }
 }
