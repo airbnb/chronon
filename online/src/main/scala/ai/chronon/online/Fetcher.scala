@@ -20,6 +20,7 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, Success, Try}
+import scala.collection.JavaConverters._
 
 object Fetcher {
   case class Request(name: String,
@@ -372,7 +373,7 @@ case class JoinCodec(conf: JoinOps,
       "key_schema" -> keyCodec.schemaStr,
       "value_schema" -> valueCodec.schemaStr
     )
-    new Gson().toJson(schemaMap)
+    new Gson().toJson(schemaMap.asJava)
   }
   lazy val loggingSchemaHash: String = MurmurHash3.stringHash(loggingSchema).toString
 }
@@ -380,7 +381,10 @@ case class JoinCodec(conf: JoinOps,
 object JoinCodec {
 
   def fromLoggingSchema(loggingSchema: String, joinConf: Join): JoinCodec = {
-    val schemaMap = new Gson().fromJson(loggingSchema, classOf[Map[String, String]])
+    val schemaMap = new Gson().fromJson(
+      loggingSchema,
+      classOf[java.util.Map[java.lang.String, java.lang.String]]
+    ).asScala
     val keyCodec = new AvroCodec(schemaMap("key_schema"))
     val valueCodec = new AvroCodec(schemaMap("value_schema"))
 
@@ -500,14 +504,30 @@ class Fetcher(kvStore: KVStore,
               }
               val keys = AvroConversions.fromChrononRow(keyArr, enc.keySchema).asInstanceOf[GenericRecord]
               val keyBytes = enc.keyCodec.encodeBinary(keys)
+
+              var shouldRefresh = false
+              if (keyArr.length != resp.request.keys.size) {
+                shouldRefresh = true
+              }
               val valueBytes = resp.values
                 .map { valueMap =>
                   val valueArr = enc.values.map(valueMap.getOrElse(_, null))
                   val valueRecord =
                     AvroConversions.fromChrononRow(valueArr, enc.valueSchema).asInstanceOf[GenericRecord]
-                  enc.valueCodec.encodeBinary(valueRecord)
+                  val bytes = enc.valueCodec.encodeBinary(valueRecord)
+                  if (valueArr.length != valueMap.keys.size) {
+                    shouldRefresh = true
+                  }
+                  bytes
                 }
                 .getOrElse(null)
+
+              if (shouldRefresh) {
+                // manually refresh the joinCodec in 8-seconds interval if an inconsistency is detected
+                // since the joinCodec is stale, some fields may be fetched but not logged. this should only
+                // happen in the first 8 seconds when a join is updated
+                getJoinCodecs.refresh(resp.request.name)
+              }
               LoggableResponse(
                 keyBytes,
                 valueBytes,

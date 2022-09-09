@@ -11,7 +11,6 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.consistency.ConsistencyJob
-import ai.chronon.spark.test.FetcherTest.buildInMemoryKVStore
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -28,13 +27,6 @@ import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
 import scala.util.Try
-
-object FetcherTest {
-
-  def buildInMemoryKVStore(): InMemoryKvStore = {
-    InMemoryKvStore.build("FetcherTest", { () => TableUtils(SparkSessionBuilder.build("FetcherTest", local = true)) })
-  }
-}
 
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
@@ -55,7 +47,7 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
-    val inMemoryKvStore = buildInMemoryKVStore()
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
@@ -456,15 +448,16 @@ class FetcherTest extends TestCase {
   def compareTemporalFetch(joinConf: api.Join, endDs: String, namespace: String, consistencyCheck: Boolean): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = buildInMemoryKVStore()
-    val mockApi = new MockApi(buildInMemoryKVStore, namespace)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
 
     val joinedDf = new ai.chronon.spark.Join(joinConf, endDs, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKVStore, namespace, endDs, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {

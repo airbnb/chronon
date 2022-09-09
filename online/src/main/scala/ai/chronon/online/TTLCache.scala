@@ -7,10 +7,16 @@ import java.util.function
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh
 // Four 9's of availability is 8.64 secs of downtime per day. Batch uploads happen once per day
 // we choose 8 secs as the refresh interval. Refresh is to be used when an exception happens and we want to re-fetch.
+object TTLCache {
+
+  val DEFAULT_TTL_MILLIS: Long = 2 * 60 * 60 * 1000 // 2 hours
+  val DEFAULT_REFRESH_TTL_MILLIS: Long = 8 * 1000 // 8 seconds
+}
+
 class TTLCache[I, O](f: I => O,
-                     ttlMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
+                     ttlMillis: Long = TTLCache.DEFAULT_TTL_MILLIS,
                      nowFunc: () => Long = { () => System.currentTimeMillis() },
-                     refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
+                     refreshIntervalMillis: Long = TTLCache.DEFAULT_REFRESH_TTL_MILLIS
                     ) {
 
   // isNew: when true, we should attempt to capture this entry update in control event
