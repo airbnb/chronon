@@ -44,6 +44,7 @@ def test_failed_compile():
     ])
     assert result.exit_code != 0
 
+
 def test_failed_compile_missing_input_column():
     """
     Should raise errors as we are trying to create aggregations without input column.
