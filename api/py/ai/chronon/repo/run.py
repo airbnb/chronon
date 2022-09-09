@@ -83,14 +83,15 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
+def base_url(jar_type):
+    return f"https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{jar_type}_2.11"
+
+
 def download_jar(version, jar_type='uber', release_tag=None):
-    # TODO(Open Sourcing) this should be hard coded to mavencentral path
-    base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_2.11".format(
-        jar_type)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
         if version is None:
-            metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
+            metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url(jar_type)))
             meta_tree = ET.fromstring(metadata_content)
             versions = [
                 node.text
@@ -102,7 +103,7 @@ def download_jar(version, jar_type='uber', release_tag=None):
             ]
             version = versions[-1]
         jar_url = "{base_url}/{version}/spark_{jar_type}_2.11-{version}-assembly.jar".format(
-            base_url=base_url,
+            base_url=base_url(jar_type),
             version=version,
             jar_type=jar_type
         )
@@ -258,13 +259,13 @@ def parse_args(argv):
     parser.add_argument('--list-apps', default="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
                         help='command/script to list running jobs on the scheduler')
     args, unknown_args = parser.parse_known_args(argv)
-    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     return args
 
 
 def build_runner(args):
+    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(args.version, jar_type, args.release_tag)
     return Runner(args, jar_path)
 

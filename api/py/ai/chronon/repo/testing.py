@@ -95,7 +95,7 @@ def run_test_config(team, obj, days = 10, modulo = 1024, namespace='tmp', **kwar
         **kwargs: Any other arguments usually passed through CLI to run.py in the form of a list.
         """
     base_args = []
-    for k, v in kwargs.items()
+    for k, v in kwargs.items():
         base_args.extend([k, v])
     args = parse_args(base_args if base_args else None)
     with tempfile.NamedTemporaryFile(dir=os.path.join(args.repo, 'testing/joins', team)) as tmp:

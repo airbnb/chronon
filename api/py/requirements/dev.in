@@ -1,4 +1,5 @@
 -r base.in
 tox
 pytest-cov
+pytest-subprocess
 black
