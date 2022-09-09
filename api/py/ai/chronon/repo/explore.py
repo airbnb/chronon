@@ -369,7 +369,7 @@ def parse_args(argv):
     parser.add_argument("keyword", help="Keyword to look up keys")
     parser.add_argument("--conf-root", help="Conf root for the configs", default=CWD)
     parser.add_argument(
-        "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value")
+        "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value", default=[])
     return parser.parse_args(argv)
 
 

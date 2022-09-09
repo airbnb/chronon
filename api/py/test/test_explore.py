@@ -35,5 +35,5 @@ def test_main(sampledir, keyword):
 
 
 def test_handlers(sampledir):
-    args = parse_args(["_events_without_topics", "--conf-root", sampledir, "--handler-args", "output_file=output.tsv"])
+    args = parse_args(["_events_without_topics", "--conf-root", sampledir])
     main(args)

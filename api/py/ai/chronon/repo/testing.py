@@ -87,7 +87,7 @@ def write_test_config(team, obj, args, modulo = 1024, namespace='tmp'):
     return os.path.join(args.repo, "production", "joins", team, name)
 
 
-def run_test_config(team, obj, days = 10, modulo = 1024, namespace='tmp', **kwargs):
+def run_test_config(team, obj, modulo = 1024, namespace='tmp', **kwargs):
     """
     Main method for testing.
     Creates a temporary file for the object and runs the job.
