@@ -5,7 +5,7 @@ import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
 import java.util.concurrent.Executors
 import java.util.function.Consumer
-import scala.collection.mutable
+import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -34,16 +34,8 @@ trait KVStore {
   def multiPut(keyValueDatasets: Seq[PutRequest]): Future[Seq[Boolean]]
 
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
-  // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] =
-    multiGet(Seq(request)).map(_.head).recover {
-      case e: java.util.NoSuchElementException =>
-        println(
-          s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
-        throw e
-    }
 
-  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
+  def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)(executionContext)
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
@@ -55,6 +47,18 @@ trait KVStore {
     } else {
       Success(new String(response.latest.get.bytes, Constants.UTF8))
     }
+  }
+
+  // helper methods to do single put and single get
+  def get(request: GetRequest): Future[GetResponse] = {
+    multiGet(Seq(request))
+      .map(_.head)
+      .recover {
+        case e: java.util.NoSuchElementException =>
+          println(
+            s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
+          throw e
+      }
   }
 }
 
@@ -101,28 +105,29 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
-// users can simply register external endpoints with a lambda that can return the future of a response given keys
-// keys and values need to match schema in ExternalSource - chronon will validate automatically
-class ExternalSourceRegistry {
-  type FetchFunction = Map[String, Any] => Future[Map[String, Any]]
-  val externalRegistry: mutable.Map[String, FetchFunction] = new mutable.HashMap[String, FetchFunction]()
-
-  def register(name: String, fetchFunction: FetchFunction): Unit = {
-    externalRegistry.put(name, fetchFunction)
-  }
-
-  def fetch(name: String, keyMap: Map[String, Any]): Future[Map[String, Any]] = {
-    assert(externalRegistry.contains(name), s"$name is not found in the external registry")
-    externalRegistry(name)(keyMap)
-  }
+// user facing class that needs to be implemented for external sources defined in a join
+// Chronon issues the request in parallel to groupBy fetches.
+// There is a Java Friendly Handler that extends this and handles conversions
+// see: [[ai.chronon.online.JavaExternalSourceHandler]]
+abstract class ExternalSourceHandler {
+  def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
 }
 
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
+  lazy val fetcher: Fetcher = {
+    if (fetcherObj == null)
+      fetcherObj = buildFetcher()
+    fetcherObj
+  }
+  private var fetcherObj: Fetcher = null
+
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
+
   def genKvStore: KVStore
-  def externalRegistry: ExternalSourceRegistry = new ExternalSourceRegistry
+
+  def externalRegistry: ExternalSourceRegistry;
 
   type FetchFunction: Map[String, Any] => Future[Map[String, Any]]
 
@@ -146,13 +151,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
-  private var fetcherObj: Fetcher = null
-
-  lazy val fetcher: Fetcher = {
-    if (fetcherObj == null)
-      fetcherObj = buildFetcher()
-    fetcherObj
-  }
+  def logTable: String
 
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =

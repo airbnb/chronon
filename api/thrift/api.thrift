@@ -83,10 +83,21 @@ struct EntitySource {
     4: optional Query query
 }
 
+struct ExternalSource {
+    1: optional string name
+    2: optional TDataType keySchema
+    3: optional TDataType valueSchema
+
+    // OPTIONAL prefix
+    // used to distinguish between different semantic entities that need to query the same end-point
+    // host country & guest country for example
+    // the final value names will this prefix in hive tables and fetcher response's map's keys.
+    4: optional string prefix
+}
+
 union Source {
     1: EventSource events
     2: EntitySource entities
-    3: ExternalSource external
 }
 
 enum Operation {
@@ -234,6 +245,11 @@ struct JoinPart {
     4: optional string prefix
 }
 
+struct ExternalPart {
+    1: optional ExternalSource source
+    // what keys on the left becomes what
+    2: optional map<string, string> keyMapping
+}
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
     1: optional MetaData metaData
@@ -244,6 +260,9 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    // users can register external sources into Api implementation. Zipline fetcher can invoke the implementation.
+    // This is applicable only for online fetching. Offline this will not be produce any values.
+    5: optional list<ExternalPart> onlineExternalParts
 }
 
 
@@ -313,4 +332,3 @@ struct ExternalSource {
     2: optional TDataType keySchema
     3: optional TDataType valueSchema
 }
-

@@ -11,6 +11,7 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
 import scala.collection.immutable.SortedMap
+import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}

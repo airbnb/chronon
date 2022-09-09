@@ -50,10 +50,10 @@ public class JavaFetcher  {
         .thenApply(JavaFetcher::toJavaResponses);
   }
 
-  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests, Boolean isGroupBy) {
+  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
     ArrayBuffer<Request> scalaRequests = new ArrayBuffer<>();
     for (JavaRequest request : requests) {
-      Request convertedRequest = request.toScalaRequest(isGroupBy);
+      Request convertedRequest = request.toScalaRequest();
       scalaRequests.$plus$eq(convertedRequest);
     }
     return scalaRequests.toSeq();
@@ -61,13 +61,13 @@ public class JavaFetcher  {
 
   public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests, true));
+    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
 
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
-    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests, false));
+    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
