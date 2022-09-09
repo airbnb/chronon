@@ -6,14 +6,11 @@ Methods to simplify testing.
 """
 from ai.chronon.repo.validator import ChrononRepoValidator
 from ai.chronon.repo.compile import _write_obj
-from ai.chronon.utils import get_underlying_source, get_query
+from ai.chronon.utils import get_underlying_source
 from ai.chronon.api import ttypes
 
 from ai.chronon.repo.run import parse_args, build_runner
 
-from datetime import datetime, timedelta
-
-import tempfile
 import hashlib
 import sys
 import os
@@ -65,7 +62,7 @@ def test_filename(obj):
     return f"testing.{hashlib.md5(str(obj).encode('utf8')).hexdigest()}"
 
 
-def write_test_config(team, obj, args, modulo = 1024, namespace='tmp'):
+def write_test_config(team, obj, args, modulo=1024, namespace='tmp'):
     """
     Write a temporary config for testing
     """
@@ -87,7 +84,7 @@ def write_test_config(team, obj, args, modulo = 1024, namespace='tmp'):
     return os.path.join(args.repo, "production", "joins", team, name)
 
 
-def run_test_config(team, obj, modulo = 1024, namespace='tmp', **kwargs):
+def run_test_config(team, obj, modulo=1024, namespace='tmp', **kwargs):
     """
     Main method for testing.
     Creates a temporary file for the object and runs the job.

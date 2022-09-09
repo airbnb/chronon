@@ -1,7 +1,6 @@
 from ai.chronon.join import Join
 from ai.chronon.api import ttypes as api
 
-import pytest
 import json
 
 

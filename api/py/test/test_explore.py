@@ -14,7 +14,6 @@ from ai.chronon.repo.explore import (
 )
 
 import pytest
-import os
 
 
 @pytest.mark.parametrize("keyword", ["event", "entity"])
