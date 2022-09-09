@@ -14,6 +14,9 @@ from ai.chronon.repo.run import parse_args, build_runner
 from datetime import datetime, timedelta
 
 import tempfile
+import hashlib
+import sys
+import os
 
 
 def mutate_obj(obj, modulo):
@@ -58,26 +61,30 @@ def mutate_join(obj, modulo):
     return obj
 
 
-def write_test_config(team, obj, args, file, modulo = 1024, namespace='tmp'):
+def test_filename(obj):
+    return f"testing.{hashlib.md5(str(obj).encode('utf8')).hexdigest()}"
+
+
+def write_test_config(team, obj, args, modulo = 1024, namespace='tmp'):
     """
     Write a temporary config for testing
     """
-    obj.metaData.name = file.name.split('/')[-1]
+    name = test_filename(obj)
+    obj.metaData.name = f"{team}.{name}"
     obj.metaData.outputNamespace = namespace
     mutated = mutate_obj(obj, modulo)
     _write_obj(
-        'testing',
+        os.path.join(args.repo, 'production'),
         validator=ChrononRepoValidator(
             chronon_root_path=args.repo,
-            output_root='testing'),
+            output_root='production'),
         name=obj.metaData.name,
         obj=mutated,
         log_level=None,
         force_compile=False,
         force_overwrite=True
     )
-    with open(file.name, 'r') as infile:
-        print(infile.read())
+    return os.path.join(args.repo, "production", "joins", team, name)
 
 
 def run_test_config(team, obj, days = 10, modulo = 1024, namespace='tmp', **kwargs):
@@ -97,8 +104,10 @@ def run_test_config(team, obj, days = 10, modulo = 1024, namespace='tmp', **kwar
     base_args = []
     for k, v in kwargs.items():
         base_args.extend([k, v])
-    args = parse_args(base_args if base_args else None)
-    with tempfile.NamedTemporaryFile(dir=os.path.join(args.repo, 'testing/joins', team)) as tmp:
-        write_test_config(team, obj, args, tmp, modulo=modulo, suffix=suffix, namespace=namespace)
-        args.conf = tmp
+    args = parse_args(base_args if base_args else sys.argv[1:])
+    filename = write_test_config(team, obj, args, modulo=modulo, namespace=namespace)
+    args.conf = filename
+    try:
         build_runner(args).run()
+    finally:
+        os.remove(filename)

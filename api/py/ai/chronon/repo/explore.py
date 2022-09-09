@@ -4,6 +4,7 @@ from pathlib import Path
 
 import argparse
 import json
+import sys
 import os
 import subprocess
 
@@ -298,7 +299,7 @@ def author_name_email(file, exclude=None):
         return ("", "")
     if file not in file_to_author:
         for file, auth_str in git_info([file], exclude).items():
-            file_to_author[file] = auth_str.split("/")[-2:]
+            file_to_author[file] = auth_str.split("/")[-2:] if auth_str else ("", "")
     return file_to_author[file]
 
 
@@ -310,7 +311,7 @@ def conf_file(conf_type, conf_name):
 
 # args[0] is output tsv file
 # args[1] is commit messages to exclude when extracting author and email information
-def events_without_topics(output_file=None, exclude_commit_message=None):
+def events_without_topics(output_file=None, exclude_commit_message=None, join_index=None, gb_index=None):
     result = []
     emails = set()
 
@@ -320,11 +321,13 @@ def events_without_topics(output_file=None, exclude_commit_message=None):
         joins = ", ".join(entry["joins"]) if len(entry["joins"]) > 0 else "STANDALONE"
         if found:
             file = entry["json_file"] if os.path.exists(entry["json_file"]) else entry["file"]
+            print(author_name_email(file, exclude_commit_message))
             producer_name, producer_email = author_name_email(file, exclude_commit_message)
             emails.add(producer_email)
             consumers = set()
             for join in entry["joins"]:
                 conf_file_path = conf_file("joins", join)
+                print(author_name_email(conf_file_path, exclude_commit_message))
                 consumer_name, consumer_email = author_name_email(conf_file_path, exclude_commit_message)
                 consumers.add(consumer_name)
                 emails.add(consumer_email)
@@ -338,7 +341,6 @@ def events_without_topics(output_file=None, exclude_commit_message=None):
             ]
             result.append(row)
         return found
-
     find_in_index_pred(gb_index, is_events_without_topics)
     if output_file:
         with open(os.path.expanduser(output_file), 'w') as tsv_file:
@@ -362,18 +364,23 @@ def load_team_data(path):
     return full_info
 
 
-# register all handlers here
-handlers = {
-    "_events_without_topics": events_without_topics
-}
-
-if __name__ == "__main__":
+def parse_args(argv):
     parser = argparse.ArgumentParser(description="Explore tool for chronon")
     parser.add_argument("keyword", help="Keyword to look up keys")
     parser.add_argument("--conf-root", help="Conf root for the configs", default=CWD)
     parser.add_argument(
         "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value")
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def main(args):
+    """
+    Main method for explore.
+    Go through the configs in args.conf_root and build metadata on them.
+    Then either:
+        Search based on keyword passed and display the entries
+        If the keyword is one of the predefined handlers to pass on the handler args to operate on the local variables.
+    """
     root = args.conf_root
     if not (root.endswith("chronon") or root.endswith("zipline")):
         print("This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline', found: "
@@ -382,12 +389,18 @@ if __name__ == "__main__":
     gb_index = build_index("group_bys", GB_INDEX_SPEC, root=root, teams=teams)
     join_index = build_index("joins", JOIN_INDEX_SPEC, root=root, teams=teams)
     enrich_with_joins(gb_index, join_index, root=root, teams=teams)
-
+    # register all handlers here
+    handlers = {
+        "_events_without_topics": events_without_topics
+    }
     candidate = args.keyword
     if candidate in handlers:
         print(f"{candidate} is a registered handler")
         handler = handlers[candidate]
-        handler_args = {}
+        handler_args = {
+            "gb_index": gb_index,
+            "join_index": join_index,
+        }
         for arg in args.handler_args:
             splits = arg.split("=", 1)
             assert len(splits) == 2, f"need args to handler for the form, param=value. Found and invalid arg:{arg}"
@@ -397,3 +410,8 @@ if __name__ == "__main__":
     else:
         group_bys = find_in_index(gb_index, args.keyword)
         display_entries(group_bys, args.keyword, root=root, trim_paths=True)
+
+
+if __name__ == "__main__":
+    args = parse_args(sys.argv[1:])
+    main(args)
