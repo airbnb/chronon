@@ -247,9 +247,11 @@ struct JoinPart {
 
 struct ExternalPart {
     1: optional ExternalSource source
-    // what keys on the left becomes what
+    // what keys on the left becomes what keys in the external source
+    // currently this only supports renaming, in the future this will run catalyst expressions
     2: optional map<string, string> keyMapping
 }
+
 // A Temporal join - with a root source, with multiple groupby's.
 struct Join {
     1: optional MetaData metaData
