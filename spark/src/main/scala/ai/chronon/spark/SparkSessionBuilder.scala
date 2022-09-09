@@ -5,6 +5,8 @@ import org.apache.spark.SPARK_VERSION
 import java.io.File
 import java.util.logging.Logger
 
+import scala.util.Properties
+
 object SparkSessionBuilder {
 
   val warehouseDir = new File("spark-warehouse")
@@ -14,6 +16,7 @@ object SparkSessionBuilder {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
+    val userName = Properties.userName
 
     val baseBuilder = SparkSession
       .builder()
@@ -42,7 +45,7 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", "true")
-        .config("spark.local.dir", s"/tmp/$name")
+        .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
@@ -56,6 +59,7 @@ object SparkSessionBuilder {
   }
 
   def buildStreaming(local: Boolean): SparkSession = {
+    val userName = Properties.userName
     val baseBuilder = SparkSession
       .builder()
       .config("spark.sql.session.timeZone", "UTC")
@@ -68,7 +72,7 @@ object SparkSessionBuilder {
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
-        .config("spark.local.dir", s"/tmp/chronon-spark-streaming")
+        .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
         .config("spark.kryo.registrationRequired", "true")
     } else {
       baseBuilder
