@@ -80,4 +80,6 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
     val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues))
     df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
   }
+
+  override def externalRegistry: ExternalSourceRegistry = new ExternalSourceRegistry
 }
