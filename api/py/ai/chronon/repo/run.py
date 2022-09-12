@@ -126,7 +126,7 @@ def set_common_env(repo):
             teams_json = json.load(teams_file)
             env = teams_json.get('default', {}).get("common_env", {})
             set_env_dict(env)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         sys.exit("Invalid working directory: {}, please ensure to run the command inside the zipline/ folder".format(
             os.path.abspath(repo)))
 
@@ -148,7 +148,7 @@ class Runner:
         if self.conf:
             try:
                 self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
-            except Exception as e:
+            except:
                 sys.exit("Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder".format(
                     self.conf))
             possible_modes = ROUTES[self.conf_type].keys()
