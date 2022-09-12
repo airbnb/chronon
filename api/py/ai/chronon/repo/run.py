@@ -148,7 +148,7 @@ class Runner:
         if self.conf:
             try:
                 self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
-            except:
+            except Exception:
                 sys.exit("Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder".format(
                     self.conf))
             possible_modes = ROUTES[self.conf_type].keys()
