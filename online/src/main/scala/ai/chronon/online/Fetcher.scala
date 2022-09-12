@@ -13,13 +13,16 @@ import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
 import java.io.{PrintWriter, StringWriter}
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.util
+import java.util.Base64
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.hashing.MurmurHash3
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Fetcher {
   case class Request(name: String,
@@ -368,14 +371,25 @@ case class JoinCodec(conf: JoinOps,
   )
   val outputFields: Array[StructField] = keyFields ++ valueFields ++ timeFields
 
+  /*
+   * Get the serialized string repr. of the logging schema.
+   * key_schema and value_schema are first converted to strings and then serialized as part of Map[String, String] => String conversion.
+   *
+   * Example:
+   * {"join_name":"unit_test/test_join","key_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_key\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"listing\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}","value_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_value\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"unit_test_listing_views_v1_m_guests_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"},{\"name\":\"unit_test_listing_views_v1_m_views_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}"}
+   */
   lazy val loggingSchema: String = {
     val schemaMap = Map(
+      "join_name" -> conf.join.metaData.name,
       "key_schema" -> keyCodec.schemaStr,
       "value_schema" -> valueCodec.schemaStr
     )
-    new Gson().toJson(schemaMap.asJava)
+    new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
   }
-  lazy val loggingSchemaHash: String = MurmurHash3.stringHash(loggingSchema).toString
+  lazy val loggingSchemaHash: String = {
+    val digest = MessageDigest.getInstance("MD5").digest(loggingSchema.getBytes)
+    Base64.getEncoder.encodeToString(digest).take(10)
+  }
 }
 
 object JoinCodec {
@@ -456,7 +470,7 @@ class Fetcher(kvStore: KVStore,
     val controlEvent = LoggableResponse(
       enc.loggingSchemaHash.getBytes(UTF8),
       enc.loggingSchema.getBytes(UTF8),
-      Constants.SchemaUpdateEvent,
+      Constants.SchemaPublishEvent,
       loggingTs,
       null
     )
@@ -485,7 +499,7 @@ class Fetcher(kvStore: KVStore,
     }
     val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
     val bytes = codec.encodeBinary(avroRecord)
-    val isConsistent = schema.fields.length == dataMap.keys.size
+    val isConsistent = schema.fields.length >= dataMap.keys.size
     (bytes, isConsistent)
   }
 
@@ -499,7 +513,13 @@ class Fetcher(kvStore: KVStore,
       }
       val metaData = codec.conf.join.metaData
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
-      val hash = if (samplePercent > 0) Math.abs(MurmurHash3.orderedHash(resp.request.keys.values)) else -1
+      val (keyBytes, keyIsConsistent) = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
+
+      val hash = if (samplePercent > 0) {
+        Math.abs(ByteBuffer.wrap(MessageDigest.getInstance("MD5").digest(keyBytes)).getLong)
+      } else {
+        -1
+      }
       val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
       if (shouldPublishLog || debug) {
         if (debug) {
@@ -514,7 +534,6 @@ class Fetcher(kvStore: KVStore,
                |""".stripMargin)
         }
 
-        val (keyBytes, keyIsConsistent) = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
         val (valueBytes, valueIsConsistent) =
           resp.values.toOption
             .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))

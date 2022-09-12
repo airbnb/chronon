@@ -179,8 +179,8 @@ class SchemaEvolutionTest extends TestCase {
     // empty responses are still logged and this schema version is still tracked
     var logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
-    var controlEvent = logs.filter(_.name == Constants.SchemaUpdateEvent).head
-    var dataEvent = logs.filter(_.name != Constants.SchemaUpdateEvent).head
+    var controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
+    var dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
     assertEquals(
       Base64.getEncoder.encodeToString(dataEvent.schemaHash.getBytes(Constants.UTF8)),
       controlEvent.keyBase64
@@ -203,8 +203,8 @@ class SchemaEvolutionTest extends TestCase {
 
     logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaUpdateEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaUpdateEvent).head
+    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
+    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
     assertEquals(
       Base64.getEncoder.encodeToString(dataEvent.schemaHash.getBytes(Constants.UTF8)),
       controlEvent.keyBase64
@@ -225,8 +225,8 @@ class SchemaEvolutionTest extends TestCase {
 
     logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaUpdateEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaUpdateEvent).head
+    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
+    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
 
     // verify that schemaHash is NOT changed in this scenario because we skip failed JoinPart
     assertEquals(schemaHash, dataEvent.schemaHash)
@@ -243,8 +243,8 @@ class SchemaEvolutionTest extends TestCase {
 
     logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaUpdateEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaUpdateEvent).head
+    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
+    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
 
     assertNotEquals(schemaHash, dataEvent.schemaHash)
     schemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
@@ -269,7 +269,7 @@ class SchemaEvolutionTest extends TestCase {
     var response = fetchJoin(namespace, fetcher)
     var logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
-    val controlEvent = logs.filter(_.name == Constants.SchemaUpdateEvent).head
+    val controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
     val schemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
 
     Thread.sleep(TTLCache.DEFAULT_REFRESH_TTL_MILLIS)
