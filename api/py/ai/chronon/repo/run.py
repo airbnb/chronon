@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 import subprocess
@@ -126,9 +127,11 @@ def set_common_env(repo):
             teams_json = json.load(teams_file)
             env = teams_json.get('default', {}).get("common_env", {})
             set_env_dict(env)
-    except FileNotFoundError:
-        sys.exit("Invalid working directory: {}, please ensure to run the command inside the zipline/ folder".format(
-            os.path.abspath(repo)))
+    except FileNotFoundError as e:
+        logging.error(
+            "Invalid working directory: {}, please ensure to run the command inside the zipline/ folder"
+            .format(os.path.abspath(repo)))
+        raise e
 
 
 class Runner:
@@ -148,9 +151,11 @@ class Runner:
         if self.conf:
             try:
                 self.context, self.conf_type, self.team, _ = self.conf.split('/')[-4:]
-            except Exception:
-                sys.exit("Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder".format(
-                    self.conf))
+            except Exception as e:
+                logging.error(
+                    "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
+                    .format(self.conf))
+                raise e
             possible_modes = ROUTES[self.conf_type].keys()
             assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
                 args.mode, self.conf, self.conf_type, possible_modes)
