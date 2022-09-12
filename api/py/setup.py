@@ -26,7 +26,12 @@ setup(
     packages=find_packages(),
     extras_require={
         # Extra requirement to have access to cli commands in python2 environments.
-        "pip2compat": ["click<8"]
+        "pip2compat": ["click<8"],
+        # Extra requirement for feature stats store interactive module.
+        "stats-store": [
+            "numpy",
+            "matplotlib",
+        ]
     },
     python_requires=">=3.7",
     url=None,
