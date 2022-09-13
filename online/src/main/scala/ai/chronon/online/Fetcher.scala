@@ -13,15 +13,11 @@ import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
 import java.io.{PrintWriter, StringWriter}
-import java.nio.ByteBuffer
-import java.security.MessageDigest
 import java.util
-import java.util.Base64
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Future
-import scala.util.hashing.MurmurHash3
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Fetcher {
@@ -386,10 +382,7 @@ case class JoinCodec(conf: JoinOps,
     )
     new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
   }
-  lazy val loggingSchemaHash: String = {
-    val digest = MessageDigest.getInstance("MD5").digest(loggingSchema.getBytes)
-    Base64.getEncoder.encodeToString(digest).take(10)
-  }
+  lazy val loggingSchemaHash: String = HashUtils.stringToString(loggingSchema)
 }
 
 object JoinCodec {
@@ -516,7 +509,7 @@ class Fetcher(kvStore: KVStore,
       val (keyBytes, keyIsConsistent) = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
 
       val hash = if (samplePercent > 0) {
-        Math.abs(ByteBuffer.wrap(MessageDigest.getInstance("MD5").digest(keyBytes)).getLong)
+        Math.abs(HashUtils.bytesToLong(keyBytes))
       } else {
         -1
       }
