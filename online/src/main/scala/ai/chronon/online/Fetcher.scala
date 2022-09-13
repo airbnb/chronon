@@ -459,7 +459,6 @@ class Fetcher(kvStore: KVStore,
   })
 
   private def logControlEvent(enc: JoinCodec, loggingTs: Long): Unit = {
-    putLoggingSchema(enc, loggingTs)
     val controlEvent = LoggableResponse(
       enc.loggingSchemaHash.getBytes(UTF8),
       enc.loggingSchema.getBytes(UTF8),
