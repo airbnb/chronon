@@ -82,7 +82,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
-        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite):
+        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
             # In case of online join, we need to materialize the underlying online group_bys.
@@ -106,7 +106,8 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         for name, obj in extra_online_group_bys.items():
             team_name = name.split(".")[0]
             _set_team_level_metadata(obj, teams_path, team_name)
-            if _write_obj(full_output_root, validator, name, obj, log_level, force_compile=True):
+            if _write_obj(full_output_root, validator, name, obj, log_level,
+                          force_compile=True, force_overwrite=force_overwrite):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
     if num_written_objs > 0:
