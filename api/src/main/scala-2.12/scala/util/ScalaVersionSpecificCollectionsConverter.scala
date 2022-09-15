@@ -16,6 +16,10 @@ object ScalaVersionSpecificCollectionsConverter {
     map.asJava
   }
 
+  def convertScalaSeqToJava[S](seq: Seq[S]) : java.util.List[S] = {
+    seq.asJava
+  }
+
   def convertJavaListToScala[S](map: java.util.List[S]) : List[S] = {
     map.asScala.toList
   }
