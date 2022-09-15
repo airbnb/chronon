@@ -1,8 +1,8 @@
 package ai.chronon.spark
 
 import ai.chronon.api
+import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
-import ai.chronon.spark.Extensions._
 
 import scala.collection.JavaConverters._
 
@@ -12,6 +12,9 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .orNull
+  private val partitionCols: Seq[String] = Seq(Constants.PartitionColumn) ++
+    Option(stagingQueryConf.metaData.customJsonLookUp(key="additional_partition_cols").asInstanceOf[java.util.ArrayList[String]].asScala)
+      .getOrElse(Seq())
 
   private final val StartDateRegex = replacementRegexFor("start_date")
   private final val EndDateRegex = replacementRegexFor("end_date")
@@ -42,7 +45,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
           .replaceAll(StartDateRegex, range.start)
           .replaceAll(EndDateRegex, range.end)
         println(s"Rendered Staging Query to run is:\n$renderedQuery")
-        tableUtils.sql(renderedQuery).save(outputTable, tableProps)
+        val df = tableUtils.sql(renderedQuery)
+        tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
         println(s"Wrote to table $outputTable, into partitions: $range $progress")
     }
     println(s"Finished writing Staging Query data to $outputTable")

@@ -167,7 +167,8 @@ object Builders {
         dependencies: Seq[String] = null,
         namespace: String = null,
         team: String = null,
-        samplePercent: Double = 0
+        samplePercent: Double = 0,
+        tableProperties: Map[String,String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -180,6 +181,8 @@ object Builders {
         result.setDependencies(dependencies.asJava)
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
+      if (tableProperties.nonEmpty)
+        result.setTableProperties(tableProperties.asJava)
       result
     }
   }

@@ -35,7 +35,10 @@ class StagingQueryTest {
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = ninetyDaysAgo,
       setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
-      metaData = Builders.MetaData(name = "test.user_session_features", namespace = namespace)
+      metaData = Builders.MetaData(name = "test.user_session_features",
+        namespace = namespace,
+        tableProperties = Map("key" -> "val"),
+        customJson = "{\"additional_partition_cols\": [\"user\"]}")
     )
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
