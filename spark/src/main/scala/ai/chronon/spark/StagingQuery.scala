@@ -5,6 +5,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -12,9 +13,12 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .orNull
+
   private val partitionCols: Seq[String] = Seq(Constants.PartitionColumn) ++
-    Option(stagingQueryConf.metaData.customJsonLookUp(key="additional_partition_cols").asInstanceOf[java.util.ArrayList[String]].asScala)
-      .getOrElse(Seq())
+    ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(
+      Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
+        .getOrElse(new java.util.ArrayList[String]())
+        .asInstanceOf[java.util.ArrayList[String]])
 
   private final val StartDateRegex = replacementRegexFor("start_date")
   private final val EndDateRegex = replacementRegexFor("end_date")
