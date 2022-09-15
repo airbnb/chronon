@@ -51,6 +51,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     api.StructType("", windowAggregator.outputSchema.map(tup => api.StructField(tup._1, tup._2)))
   }
 
+  lazy val featureColumns: Array[api.FeatureColumn] = windowAggregator.featureColumns
+
   lazy val postAggSchema: StructType = {
     val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
     Conversions.fromChrononSchema(valueChrononSchema)

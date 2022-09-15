@@ -188,7 +188,7 @@ class JoinTest {
 
   @Test
   def testEntitiesEntities(): Unit = {
-    // untimned/unwindowed entities on right
+    // untimed/unwindowed entities on right
     // right side
     val weightSchema = List(
       Column("user", api.StringType, 1000),
@@ -418,8 +418,8 @@ class JoinTest {
     )
 
     //run analyzer and validate output schema
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today)
-    val analyzerSchema = analyzer.analyzeJoin(joinConf).map(_.trim).sorted
+    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
+    val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map(_.trim).sorted
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
