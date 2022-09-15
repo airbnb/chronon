@@ -3,6 +3,7 @@ package ai.chronon.api
 import ai.chronon.api.Extensions.WindowUtils
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 // mostly used by tests to define confs easily
 object Builders {
@@ -178,11 +179,11 @@ object Builders {
       result.setOutputNamespace(namespace)
       result.setTeam(Option(team).getOrElse("chronon"))
       if (dependencies != null)
-        result.setDependencies(dependencies.asJava)
+        result.setDependencies(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(dependencies))
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
       if (tableProperties.nonEmpty)
-        result.setTableProperties(tableProperties.asJava)
+        result.setTableProperties(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(tableProperties))
       result
     }
   }
