@@ -241,7 +241,7 @@ struct AggregationSelector {
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors
+    3: optional list<AggregationSelector> selectors # deprecated
     4: optional string prefix
 }
 
@@ -250,6 +250,7 @@ struct ExternalPart {
     // what keys on the left becomes what keys in the external source
     // currently this only supports renaming, in the future this will run catalyst expressions
     2: optional map<string, string> keyMapping
+    3: optional string prefix
 }
 
 // A Temporal join - with a root source, with multiple groupby's.

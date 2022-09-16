@@ -1,12 +1,9 @@
 package ai.chronon.online;
 
 import scala.collection.Seq;
-import scala.collection.immutable.List;
-import scala.collection.immutable.Map;
 import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
 import scala.util.ScalaVersionSpecificCollectionsConverter;
-import scala.util.Try;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -34,7 +31,7 @@ public abstract class JavaExternalSourceHandler extends ExternalSourceHandler {
         CompletableFuture<Seq<Fetcher.Response>> mapJFuture = jResultFuture.thenApply(jList -> {
                     java.util.List<Fetcher.Response> jListSMap = jList
                             .stream()
-                            .map(jResp -> jResp.toScala())
+                            .map(JavaResponse::toScala)
                             .collect(Collectors.toList());
                     return ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(jListSMap).toSeq();
                 }

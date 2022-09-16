@@ -413,6 +413,7 @@ object Extensions {
     def cleanSpec: String = string.split("/").head
   }
 
+  implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {}
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
