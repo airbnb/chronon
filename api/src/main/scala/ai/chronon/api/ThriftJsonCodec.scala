@@ -23,7 +23,7 @@ object ThriftJsonCodec {
   }
 
   def md5Digest[T <: TBase[_, _]: Manifest](obj: T): String = {
-    HashUtils.stringToString(ThriftJsonCodec.toJsonStr(obj))
+    HashUtils.md5Base64(ThriftJsonCodec.toJsonStr(obj))
   }
 
   def fromCompactBase64[T <: TBase[_, _]: Manifest](base: T, base64: String): T = {

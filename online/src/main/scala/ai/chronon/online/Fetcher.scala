@@ -382,7 +382,7 @@ case class JoinCodec(conf: JoinOps,
     )
     new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
   }
-  lazy val loggingSchemaHash: String = HashUtils.stringToString(loggingSchema)
+  lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
 }
 
 object JoinCodec {
@@ -508,7 +508,7 @@ class Fetcher(kvStore: KVStore,
       val (keyBytes, keyIsConsistent) = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
 
       val hash = if (samplePercent > 0) {
-        Math.abs(HashUtils.bytesToLong(keyBytes))
+        Math.abs(HashUtils.md5Long(keyBytes))
       } else {
         -1
       }

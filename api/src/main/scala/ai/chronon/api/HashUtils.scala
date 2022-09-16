@@ -8,19 +8,19 @@ import java.util.Base64
 
 object HashUtils {
 
-  def stringToString(string: String): String = {
-    bytesToString(string.getBytes)
+  def md5Base64(string: String): String = {
+    md5Base64(string.getBytes)
   }
 
-  def bytesToString(bytes: Array[Byte]): String = {
-    Base64.getEncoder.encodeToString(bytesToBytes(bytes)).take(10)
+  def md5Base64(bytes: Array[Byte]): String = {
+    Base64.getEncoder.encodeToString(md5Bytes(bytes)).take(10)
   }
 
-  def bytesToLong(bytes: Array[Byte]): Long = {
-    ByteBuffer.wrap(bytesToBytes(bytes)).getLong
+  def md5Long(bytes: Array[Byte]): Long = {
+    ByteBuffer.wrap(md5Bytes(bytes)).getLong
   }
 
-  def bytesToBytes(bytes: Array[Byte]): Array[Byte] = {
+  def md5Bytes(bytes: Array[Byte]): Array[Byte] = {
     MessageDigest.getInstance("MD5").digest(bytes)
   }
 }
