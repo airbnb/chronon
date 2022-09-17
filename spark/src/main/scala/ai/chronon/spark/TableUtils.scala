@@ -12,7 +12,8 @@ import scala.util.{Success, Try}
 case class TableUtils(sparkSession: SparkSession) {
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyy_MM_dd_HH_mm_ss"
-  private lazy val archiveTimestampFormatter = DateTimeFormatter.ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
+  private lazy val archiveTimestampFormatter = DateTimeFormatter
+    .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
 
   sparkSession.sparkContext.setLogLevel("ERROR")
@@ -36,21 +37,22 @@ case class TableUtils(sparkSession: SparkSession) {
       .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
   }
 
-  private def isIcebergTable(tableName: String): Boolean = Try {
-    sparkSession.read.format("iceberg").load(tableName)
-  } match {
-    case Success(_) =>
-      println(s"IcebergCheck: Detected iceberg formatted table $tableName.")
-      true
-    case _ =>
-      println(s"IcebergCheck: Checked table $tableName is not iceberg format.")
-      false
-  }
+  private def isIcebergTable(tableName: String): Boolean =
+    Try {
+      sparkSession.read.format("iceberg").load(tableName)
+    } match {
+      case Success(_) =>
+        println(s"IcebergCheck: Detected iceberg formatted table $tableName.")
+        true
+      case _ =>
+        println(s"IcebergCheck: Checked table $tableName is not iceberg format.")
+        false
+    }
 
   private def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
-    if(partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
+    if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
@@ -126,8 +128,10 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def sql(query: String): DataFrame = {
-    println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query)
+    val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    println(
+      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
+    val df = sparkSession.sql(query).coalesce(partitionCount)
     df
   }
 
