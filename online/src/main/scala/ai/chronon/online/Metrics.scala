@@ -89,13 +89,14 @@ object Metrics {
       )
     }
 
+    val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
         println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
         new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
                                     "localhost",
-                                    8125,
+                                    statsPort,
                                     ctx.toTags: _*)
       },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days

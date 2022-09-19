@@ -19,12 +19,17 @@ class ExternalSourceRegistry {
   def fetchRequests(requests: Seq[Request], context: Metrics.Context)(implicit
       ec: ExecutionContext): Future[Seq[Response]] = {
     val responsesByNameF = requests
-      .groupBy(_.name) // groupBy end point
+      .groupBy(_.name) // group reqs for an end point
       //.par // issue requests in parallel (might not be necessary if the executor parallelizes)
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
-            handlerMap(name).fetch(requests) // issue batch request to endpoint
+            val ctx = context.copy(groupBy = s"external_source_$name")
+            handlerMap(name).fetch(requests).map { responses =>
+              val failures = responses.count(_.values.isFailure)
+              responses.foreach(size => ctx.histogram("response_size", _))
+            } // issue batch request to endpoint
+
           } else {
             val failure = Failure(
               new IllegalArgumentException(
@@ -45,4 +50,6 @@ class ExternalSourceRegistry {
           )))
     }
   }
+
+  def
 }
