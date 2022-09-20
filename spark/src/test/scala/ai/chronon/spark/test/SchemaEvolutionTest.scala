@@ -9,7 +9,7 @@ import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{Conversions, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertNotEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 
 import java.nio.charset.StandardCharsets
 import java.util.{Base64, TimeZone}
@@ -238,7 +238,7 @@ class SchemaEvolutionTest extends TestCase {
     fetcher.getGroupByServingInfo.cMap.clear()
   }
 
-  def testSchemaEvolutionNoTTL(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
+  def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
     val tableUtils: TableUtils = TableUtils(spark)
@@ -291,9 +291,9 @@ class SchemaEvolutionTest extends TestCase {
     clearTTLCache(fetcher)
     response = fetchJoin(fetcher, joinSuiteV2)
 
-    // TODO: handle removed groupBys
     val newGroupBys = joinSuiteV2.groupBys.filter(gb => !joinSuiteV1.groupBys.exists(g => g.name == gb.name))
     val existingGroupBys = joinSuiteV2.groupBys.filter(gb => joinSuiteV1.groupBys.exists(g => g.name == gb.name))
+    val removedGroupBys = joinSuiteV1.groupBys.filter(gb => !joinSuiteV2.groupBys.exists(g => g.name == gb.name))
     val newSubMapExpected = joinSuiteV2.fetchExpectations._2.filter {
       case (key, value) => newGroupBys.exists(gb => key.contains(gb.name))
     }
@@ -306,18 +306,33 @@ class SchemaEvolutionTest extends TestCase {
     val existingSubMapActual = response.values.get.filter {
       case (key, value) => existingGroupBys.exists(gb => key.contains(gb.name))
     }
+    val removedSubMapOriginalData = joinSuiteV1.fetchExpectations._2.filter {
+      case (key, value) => removedGroupBys.exists(gb => key.contains(gb.name))
+    }
     assertEquals(existingSubMapActual, existingSubMapExpected)
-    assertEquals(1, newSubMapActual.keys.size)
-    assertTrue(newSubMapActual.keys.exists(_.endsWith("_exception")))
+    val newGroupByCount = newGroupBys.length
+    assertEquals(newGroupByCount, newSubMapActual.keys.size)
+    if (newGroupByCount > 0) {
+      // new GroupBy fetches will fail because upload has not run
+      assertTrue(newSubMapActual.keys.exists(_.endsWith("_exception")))
+    }
+    assertFalse(response.values.get.keys.exists(k => removedSubMapOriginalData.keys.toSet.contains(k)))
 
     logs = mockApi.flushLoggedValues
     assertEquals(2, logs.length)
     controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
     dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
 
-    // verify that schemaHash is NOT changed in this scenario because we skip failed JoinPart
-    assertEquals(schemaHash, dataEvent.schemaHash)
-    assertEquals(schemaHash, new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8))
+    val controlEventSchemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
+    assertEquals(dataEvent.schemaHash, controlEventSchemaHash)
+
+    if (removedGroupBys.isEmpty) {
+      // verify that schemaHash is NOT changed in this scenario because we skip failed JoinPart
+      assertEquals(schemaHash, dataEvent.schemaHash)
+    } else {
+      // verify that schemaHash is changed because some groupBys are removed from the join
+      assertNotEquals(schemaHash, dataEvent.schemaHash)
+    }
 
     /* STAGE 4: GroupBy upload completes for the new GroupBy */
     runGBUpload(namespace, joinSuiteV2, tableUtils, inMemoryKvStore)
@@ -336,11 +351,15 @@ class SchemaEvolutionTest extends TestCase {
     assertEquals(schemaHash, dataEvent.schemaHash)
     val joinV2Codec = JoinCodec.fromLoggingSchema(schemaValue, joinSuiteV2.joinConf)
     assertEquals(schemaHash, joinV2Codec.loggingSchemaHash)
-    assertEquals(4, joinV2Codec.valueFields.length)
   }
 
-  def testSchemaExpansion(): Unit = {
-    val namespace = "schema_expansion"
-    testSchemaEvolutionNoTTL(namespace, createV1Join(namespace), createV2Join(namespace))
+  def testAddFeatures(): Unit = {
+    val namespace = "add_features"
+    testSchemaEvolution(namespace, createV1Join(namespace), createV2Join(namespace))
+  }
+
+  def testRemoveFeatures(): Unit = {
+    val namespace = "remove_features"
+    testSchemaEvolution(namespace, createV2Join(namespace), createV1Join(namespace))
   }
 }
