@@ -4,7 +4,7 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{Fetcher, JoinCodec, MetadataStore, TTLCache}
+import ai.chronon.online.{Fetcher, JoinCodec, MetadataStore}
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{Conversions, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
@@ -339,46 +339,8 @@ class SchemaEvolutionTest extends TestCase {
     assertEquals(4, joinV2Codec.valueFields.length)
   }
 
-  def testSchemaEvolutionTTL(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
-    val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore(namespace)
-    val mockApi = new MockApi(() => inMemoryKvStore, namespace)
-    inMemoryKvStore.create(ChrononMetadataKey)
-    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    val fetcher = mockApi.buildFetcher(true)
-
-    runGBUpload(namespace, joinSuiteV1, tableUtils, inMemoryKvStore)
-    metadataStore.putJoinConf(joinSuiteV1.joinConf)
-    var response = fetchJoin(fetcher, joinSuiteV1)
-    var logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    val controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
-    val schemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
-
-    Thread.sleep(TTLCache.DEFAULT_REFRESH_TTL_MILLIS)
-    runGBUpload(namespace, joinSuiteV2, tableUtils, inMemoryKvStore)
-    metadataStore.putJoinConf(joinSuiteV2.joinConf)
-    fetcher.getJoinConf.cMap.clear()
-    response = fetchJoin(fetcher, joinSuiteV1)
-    logs = mockApi.flushLoggedValues
-
-    // joinCodec is stale so only old values are logged for 8 seconds
-    assertEquals(1, logs.length)
-    assertEquals(schemaHash, logs.head.schemaHash)
-
-    response = fetchJoin(fetcher, joinSuiteV1)
-    logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    assertNotEquals(schemaHash, logs.head.schemaHash)
-  }
-
-  def testSchemaExpansionNoTTL(): Unit = {
+  def testSchemaExpansion(): Unit = {
     val namespace = "schema_expansion"
     testSchemaEvolutionNoTTL(namespace, createV1Join(namespace), createV2Join(namespace))
-  }
-
-  def testSchemaExpansionWithTTL(): Unit = {
-    val namespace = "schema_expansion_ttl"
-    testSchemaEvolutionTTL(namespace, createV1Join(namespace), createV2Join(namespace))
   }
 }

@@ -454,16 +454,19 @@ class Fetcher(kvStore: KVStore,
         val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
         val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
         val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
-        JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+        val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+        logControlEvent(joinCodec)
+        joinCodec
     }
   })
 
-  private def logControlEvent(enc: JoinCodec, loggingTs: Long): Unit = {
+  private def logControlEvent(enc: JoinCodec): Unit = {
+    val ts = System.currentTimeMillis()
     val controlEvent = LoggableResponse(
       enc.loggingSchemaHash.getBytes(UTF8),
       enc.loggingSchema.getBytes(UTF8),
       Constants.SchemaPublishEvent,
-      loggingTs,
+      ts,
       null
     )
     if (logFunc != null) {
@@ -477,7 +480,7 @@ class Fetcher(kvStore: KVStore,
   private def encode(schema: StructType,
                      codec: AvroCodec,
                      dataMap: Map[String, AnyRef],
-                     cast: Boolean = false): (Array[Byte], Boolean) = {
+                     cast: Boolean = false): Array[Byte] = {
     val data = schema.fields.map {
       case StructField(name, typ) =>
         val elem = dataMap.getOrElse(name, null)
@@ -490,22 +493,28 @@ class Fetcher(kvStore: KVStore,
         }
     }
     val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
-    val bytes = codec.encodeBinary(avroRecord)
-    val isConsistent = schema.fields.length >= dataMap.keys.size
-    (bytes, isConsistent)
+    codec.encodeBinary(avroRecord)
   }
 
   private def logResponse(resp: Response, ts: Long): Response = {
     val joinContext = resp.request.context
     val loggingTs = resp.request.atMillis.getOrElse(ts)
-    val (joinCodecTry, shouldLogSchema) = getJoinCodecs.applyAndGetStatus(resp.request.name)
-    val loggingTry: Try[Boolean] = joinCodecTry.map(codec => {
-      if (shouldLogSchema) {
-        logControlEvent(codec, loggingTs)
-      }
+    var joinConfTry = getJoinConf(resp.request.name)
+    var joinCodecTry = getJoinCodecs(resp.request.name)
+
+    // it is possible for joinConf and joinCodec to get out of sync, so we double check the semanticHash
+    // returned from the two caches, and force update joinCodec if they are not in sync
+    // there is a very small chance that the joinConf is updated after the fetch but before the log,
+    // thus even the force-update does not ensure consistency.
+    if (joinConfTry.map(_.semanticHash) != joinCodecTry.map(_.conf.semanticHash)) {
+      joinConfTry = getJoinConf.force(resp.request.name)
+      joinCodecTry = getJoinCodecs.force(resp.request.name)
+    }
+
+    val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
       val metaData = codec.conf.join.metaData
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
-      val (keyBytes, keyIsConsistent) = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
+      val keyBytes = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
 
       val hash = if (samplePercent > 0) {
         Math.abs(HashUtils.md5Long(keyBytes))
@@ -526,10 +535,10 @@ class Fetcher(kvStore: KVStore,
                |""".stripMargin)
         }
 
-        val (valueBytes, valueIsConsistent) =
+        val valueBytes =
           resp.values.toOption
             .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))
-            .getOrElse((null, false))
+            .orNull
         val loggableResponse = LoggableResponse(
           keyBytes,
           valueBytes,
@@ -544,10 +553,6 @@ class Fetcher(kvStore: KVStore,
             println(s"join data logged successfully with schema_hash ${codec.loggingSchemaHash}")
           }
         }
-        keyIsConsistent && valueIsConsistent
-      } else {
-        // logging is skipped, default to true
-        true
       }
     })
     loggingTry match {
@@ -555,10 +560,6 @@ class Fetcher(kvStore: KVStore,
         getJoinCodecs.refresh(resp.request.name)
         joinContext.foreach(_.incrementException(exception))
         println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
-      }
-      case Success(false) => {
-        // logging is successful but likely contains only partial logging, force a cache update
-        getJoinCodecs.refresh(resp.request.name)
       }
       case _ => {}
     }
