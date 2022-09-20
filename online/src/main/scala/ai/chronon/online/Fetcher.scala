@@ -507,8 +507,8 @@ class Fetcher(kvStore: KVStore,
     // there is a very small chance that the joinConf is updated after the fetch but before the log,
     // so we need to refresh the joinConf too to ensure consistency
     if (joinConfTry.map(_.semanticHash) != joinCodecTry.map(_.conf.semanticHash)) {
-      joinConfTry = getJoinConf.force(resp.request.name)
-      joinCodecTry = getJoinCodecs.force(resp.request.name)
+      joinConfTry = getJoinConf.refresh(resp.request.name)
+      joinCodecTry = getJoinCodecs.refresh(resp.request.name)
     }
 
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
