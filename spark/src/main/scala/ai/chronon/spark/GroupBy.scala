@@ -47,8 +47,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     StructType(valuesIndices.map(inputDf.schema))
   }
 
-  lazy val outputSchema: api.StructType =
+  lazy val outputSchema: api.StructType = if (aggregations != null) {
     api.StructType("", windowAggregator.outputSchema.map(tup => api.StructField(tup._1, tup._2)))
+  } else {
+    val excludeCols = (keyColumns ++ Constants.ReservedColumns)
+    api.StructType(
+      "",
+      selectedSchema
+        .filterNot(tup => excludeCols.contains(tup._1))
+        .map(tup => api.StructField(tup._1, tup._2)))
+  }
 
   lazy val aggregationParts = aggregations.flatMap(_.unpack)
 

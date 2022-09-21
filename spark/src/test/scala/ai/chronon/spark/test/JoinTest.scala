@@ -7,6 +7,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
+import org.apache.parquet.schema.Types.BaseMapBuilder
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
@@ -398,6 +399,12 @@ class JoinTest {
       metaData = Builders.MetaData(name = "join_analyzer_test.new_item_views", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
+    val noAggViewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      metaData = Builders.MetaData(name = "join_analyzer_test.new_item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
@@ -412,7 +419,8 @@ class JoinTest {
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
         Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one"),
-        Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two")
+        Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two"),
+        Builders.JoinPart(groupBy = noAggViewsGroupBy, prefix = "prefix_three")
       ),
       metaData = Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
     )
