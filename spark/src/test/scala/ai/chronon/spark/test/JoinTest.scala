@@ -7,7 +7,6 @@ import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
-import org.apache.parquet.schema.Types.BaseMapBuilder
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
@@ -402,7 +401,7 @@ class JoinTest {
     val noAggViewsGroupBy = Builders.GroupBy(
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
-      metaData = Builders.MetaData(name = "join_analyzer_test.new_item_views", namespace = namespace),
+      metaData = Builders.MetaData(name = "join_analyzer_test.no_agg_item_views", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
 
