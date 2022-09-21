@@ -557,6 +557,7 @@ class Fetcher(kvStore: KVStore,
     })
     loggingTry match {
       case Failure(exception) => {
+        // to handle GroupByServingInfo staleness that results in encoding failure
         getJoinCodecs.refresh(resp.request.name)
         joinContext.foreach(_.incrementException(exception))
         println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
