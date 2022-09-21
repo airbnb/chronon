@@ -10,7 +10,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.consistency.ConsistencyJob
+import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.test.FetcherTest.buildInMemoryKVStore
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
@@ -22,7 +22,7 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}

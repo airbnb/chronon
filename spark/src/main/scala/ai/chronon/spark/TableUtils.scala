@@ -126,9 +126,10 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def sql(query: String): DataFrame = {
-    println(s"\n----[Running query]----\n$query\n----[End of Query]----\n")
+    val numPartitions = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    println(s"\n----[Running query (coalesced to $numPartitions)]----\n$query\n----[End of Query]----\n")
     val df = sparkSession.sql(query)
-    df
+    df.coalesce(numPartitions)
   }
 
   def insertUnPartitioned(df: DataFrame,

@@ -2,7 +2,7 @@ package ai.chronon.spark.streaming
 
 import ai.chronon.aggregator.base.BottomK
 import ai.chronon.api.UnknownType
-import ai.chronon.spark.consistency.EditDistance
+import ai.chronon.spark.stats.EditDistance
 import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, ListTopicsOptions}
 
 import java.util

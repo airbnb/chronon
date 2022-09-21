@@ -1,4 +1,4 @@
-package ai.chronon.spark.consistency
+package ai.chronon.spark.stats
 
 object EditDistance {
 

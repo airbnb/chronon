@@ -1,4 +1,4 @@
-package ai.chronon.spark.consistency
+package ai.chronon.spark.stats
 
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}

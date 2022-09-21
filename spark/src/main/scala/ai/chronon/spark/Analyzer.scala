@@ -132,6 +132,7 @@ class Analyzer(tableUtils: TableUtils,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false): (api.StructType) = {
+    groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
@@ -166,7 +167,6 @@ class Analyzer(tableUtils: TableUtils,
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-
     var rightSchema = ListBuffer[String]()
     joinConf.joinParts.asScala.par.foreach { part =>
       val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
