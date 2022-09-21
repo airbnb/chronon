@@ -4,7 +4,7 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{Fetcher, JoinCodec, MetadataStore}
+import ai.chronon.online.{Fetcher, JoinCodec, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{Conversions, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
@@ -238,6 +238,18 @@ class SchemaEvolutionTest extends TestCase {
     fetcher.getGroupByServingInfo.cMap.clear()
   }
 
+  private def extractDataEventAndControlEvent(
+      logs: Seq[LoggableResponseBase64]): (LoggableResponseBase64, LoggableResponseBase64) = {
+    assertEquals(2, logs.length)
+    val controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
+    val dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
+    assertEquals(
+      Base64.getEncoder.encodeToString(dataEvent.schemaHash.getBytes(Constants.UTF8)),
+      controlEvent.keyBase64
+    )
+    (dataEvent, controlEvent)
+  }
+
   def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
@@ -250,64 +262,45 @@ class SchemaEvolutionTest extends TestCase {
     /* STAGE 1: Create join v1 and upload the conf to MetadataStore */
     metadataStore.putJoinConf(joinSuiteV1.joinConf)
     val fetcher = mockApi.buildFetcher(true)
-    var response = fetchJoin(fetcher, joinSuiteV1)
-    assertTrue(response.values.get.keys.exists(_.endsWith("_exception")))
-    assertEquals(joinSuiteV1.groupBys.length, response.values.get.keys.size)
+    val response1 = fetchJoin(fetcher, joinSuiteV1)
+    assertTrue(response1.values.get.keys.exists(_.endsWith("_exception")))
+    assertEquals(joinSuiteV1.groupBys.length, response1.values.get.keys.size)
 
     // empty responses are still logged and this schema version is still tracked
-    var logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    var controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
-    var dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
-    assertEquals(
-      Base64.getEncoder.encodeToString(dataEvent.schemaHash.getBytes(Constants.UTF8)),
-      controlEvent.keyBase64
-    )
-    assertEquals("", dataEvent.keyBase64)
-    assertEquals("", dataEvent.valueBase64)
+    val (dataEvent1, _) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    assertEquals("", dataEvent1.keyBase64)
+    assertEquals("", dataEvent1.valueBase64)
 
     /* STAGE 2: GroupBy upload completes and start having successful fetches & logs */
     runGBUpload(namespace, joinSuiteV1, tableUtils, inMemoryKvStore)
     clearTTLCache(fetcher)
-    response = fetchJoin(fetcher, joinSuiteV1)
+    val response2 = fetchJoin(fetcher, joinSuiteV1)
+    assertEquals(joinSuiteV1.fetchExpectations._2, response2.values.get)
 
-    assertEquals(joinSuiteV1.fetchExpectations._2, response.values.get)
-
-    logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
-    assertEquals(
-      Base64.getEncoder.encodeToString(dataEvent.schemaHash.getBytes(Constants.UTF8)),
-      controlEvent.keyBase64
-    )
-    var schemaHash = dataEvent.schemaHash
-    var schemaValue = new String(Base64.getDecoder.decode(controlEvent.valueBase64), StandardCharsets.UTF_8)
-    val joinV1Codec = JoinCodec.fromLoggingSchema(schemaValue, joinSuiteV1.joinConf)
-    assertEquals(schemaHash, joinV1Codec.loggingSchemaHash)
+    val (dataEvent2, controlEvent2) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    val schema2 = new String(Base64.getDecoder.decode(controlEvent2.valueBase64), StandardCharsets.UTF_8)
+    val joinV1Codec = JoinCodec.fromLoggingSchema(schema2, joinSuiteV1.joinConf)
+    assertEquals(dataEvent2.schemaHash, joinV1Codec.loggingSchemaHash)
 
     /* STAGE 3: Join is modified and updated to MetadataStore */
     metadataStore.putJoinConf(joinSuiteV2.joinConf)
     clearTTLCache(fetcher)
-    response = fetchJoin(fetcher, joinSuiteV2)
+    val response3 = fetchJoin(fetcher, joinSuiteV2)
 
     val newGroupBys = joinSuiteV2.groupBys.filter(gb => !joinSuiteV1.groupBys.exists(g => g.name == gb.name))
     val existingGroupBys = joinSuiteV2.groupBys.filter(gb => joinSuiteV1.groupBys.exists(g => g.name == gb.name))
     val removedGroupBys = joinSuiteV1.groupBys.filter(gb => !joinSuiteV2.groupBys.exists(g => g.name == gb.name))
-    val newSubMapExpected = joinSuiteV2.fetchExpectations._2.filter {
-      case (key, value) => newGroupBys.exists(gb => key.contains(gb.name))
-    }
     val existingSubMapExpected = joinSuiteV2.fetchExpectations._2.filter {
-      case (key, value) => existingGroupBys.exists(gb => key.contains(gb.name))
+      case (key, _) => existingGroupBys.exists(gb => key.contains(gb.name))
     }
-    val newSubMapActual = response.values.get.filter {
-      case (key, value) => newGroupBys.exists(gb => key.contains(gb.name))
+    val newSubMapActual = response3.values.get.filter {
+      case (key, _) => newGroupBys.exists(gb => key.contains(gb.name))
     }
-    val existingSubMapActual = response.values.get.filter {
-      case (key, value) => existingGroupBys.exists(gb => key.contains(gb.name))
+    val existingSubMapActual = response3.values.get.filter {
+      case (key, _) => existingGroupBys.exists(gb => key.contains(gb.name))
     }
     val removedSubMapOriginalData = joinSuiteV1.fetchExpectations._2.filter {
-      case (key, value) => removedGroupBys.exists(gb => key.contains(gb.name))
+      case (key, _) => removedGroupBys.exists(gb => key.contains(gb.name))
     }
     assertEquals(existingSubMapActual, existingSubMapExpected)
     val newGroupByCount = newGroupBys.length
@@ -316,41 +309,33 @@ class SchemaEvolutionTest extends TestCase {
       // new GroupBy fetches will fail because upload has not run
       assertTrue(newSubMapActual.keys.exists(_.endsWith("_exception")))
     }
-    assertFalse(response.values.get.keys.exists(k => removedSubMapOriginalData.keys.toSet.contains(k)))
+    assertFalse(response3.values.get.keys.exists(k => removedSubMapOriginalData.keys.toSet.contains(k)))
 
-    logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
-
-    val controlEventSchemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
-    assertEquals(dataEvent.schemaHash, controlEventSchemaHash)
-
+    val (dataEvent3, _) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
     if (removedGroupBys.isEmpty) {
-      // verify that schemaHash is NOT changed in this scenario because we skip failed JoinPart
-      assertEquals(schemaHash, dataEvent.schemaHash)
+      // verify that schemaHash is NOT changed in this scenario because newly added GroupBys are skipped
+      // because GroupByUpload for them has NOT run and GBServingInfo is not found.
+      assertEquals(dataEvent2.schemaHash, dataEvent3.schemaHash)
     } else {
       // verify that schemaHash is changed because some groupBys are removed from the join
-      assertNotEquals(schemaHash, dataEvent.schemaHash)
+      assertNotEquals(dataEvent2.schemaHash, dataEvent3.schemaHash)
     }
 
     /* STAGE 4: GroupBy upload completes for the new GroupBy */
     runGBUpload(namespace, joinSuiteV2, tableUtils, inMemoryKvStore)
     clearTTLCache(fetcher)
-    response = fetchJoin(fetcher, joinSuiteV2)
-    assertEquals(joinSuiteV2.fetchExpectations._2, response.values.get)
+    val response4 = fetchJoin(fetcher, joinSuiteV2)
+    assertEquals(joinSuiteV2.fetchExpectations._2, response4.values.get)
 
-    logs = mockApi.flushLoggedValues
-    assertEquals(2, logs.length)
-    controlEvent = logs.filter(_.name == Constants.SchemaPublishEvent).head
-    dataEvent = logs.filter(_.name != Constants.SchemaPublishEvent).head
-
-    assertNotEquals(schemaHash, dataEvent.schemaHash)
-    schemaHash = new String(Base64.getDecoder.decode(controlEvent.keyBase64), StandardCharsets.UTF_8)
-    schemaValue = new String(Base64.getDecoder.decode(controlEvent.valueBase64), StandardCharsets.UTF_8)
-    assertEquals(schemaHash, dataEvent.schemaHash)
-    val joinV2Codec = JoinCodec.fromLoggingSchema(schemaValue, joinSuiteV2.joinConf)
-    assertEquals(schemaHash, joinV2Codec.loggingSchemaHash)
+    val (dataEvent4, controlEvent4) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    if (newGroupBys.nonEmpty) {
+      assertNotEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
+    } else {
+      assertEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
+    }
+    val schema4 = new String(Base64.getDecoder.decode(controlEvent4.valueBase64), StandardCharsets.UTF_8)
+    val joinV2Codec = JoinCodec.fromLoggingSchema(schema4, joinSuiteV2.joinConf)
+    assertEquals(dataEvent4.schemaHash, joinV2Codec.loggingSchemaHash)
   }
 
   def testAddFeatures(): Unit = {
