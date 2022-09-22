@@ -11,7 +11,7 @@ import java.time.{Instant, ZoneId}
 import scala.util.{Success, Try}
 case class TableUtils(sparkSession: SparkSession) {
 
-  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyy_MM_dd_HH_mm_ss"
+  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
