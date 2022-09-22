@@ -401,6 +401,7 @@ class JoinTest {
     val noAggViewsGroupBy = Builders.GroupBy(
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
+      aggregations = null,
       metaData = Builders.MetaData(name = "join_analyzer_test.no_agg_item_views", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
