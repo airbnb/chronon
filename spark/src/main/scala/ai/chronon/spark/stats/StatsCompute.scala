@@ -4,31 +4,35 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.WindowUtils
 import ai.chronon.api._
 import ai.chronon.spark.Conversions
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.lit
-import org.apache.spark.sql.{Column, DataFrame, SparkSession, functions}
+import org.apache.spark.sql.{Column, DataFrame, SparkSession, functions, Row => SparkRow}
 
 object StatsGenerator {
-  /*
-   * Base definition for stats metrics.
-   */
+
+  // TODO: unify with OOC
   case class MetricTransform(name: String, expression: Column, operation: Operation)
 
-  /*
-   * Stats applied to any column
-   */
+  private val nullPrefix = "nulls__"
+  // Stats applied to any column
   def anyTransforms(column: Column): Seq[MetricTransform] = Seq(
-      MetricTransform(s"null_count_$column", column.isNull, operation = Operation.SUM)
-    // TODO: Figure out serialization issue.
-    //, MetricTransform(s"approx_unique_count_$column", column, operation = Operation.APPROX_UNIQUE_COUNT)
+      MetricTransform(s"$nullPrefix$column", column.isNull, operation = Operation.SUM)
+    , MetricTransform(s"$column", column, operation = Operation.APPROX_UNIQUE_COUNT)
   )
 
-  /*
-   * Stats applied to numeric columns
-   */
+  // Stats applied to numeric columns
   def numericTransforms(column: Column): Seq[MetricTransform] = anyTransforms(column) ++ Seq(
-    //MetricTransform(s"tdigest_$column", column, operation = Operation.APPROX_PERCENTILE)
-    // T-Digest placeholder MetricTransform...
-  )
+    MetricTransform(s"$column", column, operation = Operation.APPROX_PERCENTILE))
+
+  def addDerivedMetrics(df: DataFrame): DataFrame = {
+    val nullColumns = df.columns.filter(p => p.startsWith(nullPrefix))
+    val withNullRates = nullColumns.foldLeft(df){
+      (tmpDf, column) =>
+        tmpDf.withColumn(s"rate_$column", tmpDf.col(column) / tmpDf.col("total_count"))}
+    withNullRates
+  }
+  // null rate, median, p95, p99, p25 (for numeric)
 
   def buildMetrics(fields: Array[(String, DataType)]): Seq[MetricTransform] = {
     val metrics = fields.flatMap {
@@ -57,10 +61,8 @@ object StatsGenerator {
     new RowAggregator(schema, aggParts)
   }
 
-  /*
-   * Navigate the dataframe and compute the statistics.
-   */
-  def summary(inputDf: DataFrame, keys: Seq[String], sparkSession: SparkSession): Array[Any] = {
+  // Navigate the dataframe and compute the statistics.
+  def summary(inputDf: DataFrame, keys: Seq[String]): DataFrame = {
     val noKeysDf = inputDf.select(inputDf.columns.filter(colName => !keys.contains(colName))
       .map(colName => new Column(colName)): _*)
     val metrics = buildMetrics(Conversions.toChrononSchema(noKeysDf.schema))
@@ -70,9 +72,12 @@ object StatsGenerator {
       .rdd
       .map(Conversions.toChrononRow(_, -1))
       .treeAggregate(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
+    val finalized = aggregator.finalize(result)
 
-    result
-    // Having the result of the aggregations we could do post process to return null rates for example.
-    //sparkSession.createDataFrame(List(new GenericRow(resultRdd)).map(a => a.asInstanceOf[SparkRow]).asJava, Conversions.fromChrononSchema(aggregator.outputSchema))
+    // Pack and send as a dataframe.
+    val resultRow = Conversions.toSparkRow(finalized, StructType.from("", aggregator.outputSchema)).asInstanceOf[GenericRow]
+    val rdd: RDD[SparkRow] = inputDf.sparkSession.sparkContext.parallelize(Seq(resultRow))
+    val df = inputDf.sparkSession.createDataFrame(rowRDD=rdd, schema=Conversions.fromChrononSchema(aggregator.outputSchema))
+    addDerivedMetrics(df)
   }
 }
