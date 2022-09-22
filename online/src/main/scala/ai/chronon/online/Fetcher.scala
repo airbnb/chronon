@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
-import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -15,17 +15,17 @@ import org.apache.avro.generic.GenericRecord
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import java.util.function.Consumer
-import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Future
-import scala.util.hashing.MurmurHash3
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Fetcher {
   case class Request(name: String,
                      keys: Map[String, AnyRef],
                      atMillis: Option[Long] = None,
                      context: Option[Metrics.Context] = None)
+
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
 }
 
@@ -366,6 +366,45 @@ case class JoinCodec(conf: JoinOps,
     StructField("ds", StringType)
   )
   val outputFields: Array[StructField] = keyFields ++ valueFields ++ timeFields
+
+  /*
+   * Get the serialized string repr. of the logging schema.
+   * key_schema and value_schema are first converted to strings and then serialized as part of Map[String, String] => String conversion.
+   *
+   * Example:
+   * {"join_name":"unit_test/test_join","key_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_key\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"listing\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}","value_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_value\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"unit_test_listing_views_v1_m_guests_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"},{\"name\":\"unit_test_listing_views_v1_m_views_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}"}
+   */
+  lazy val loggingSchema: String = {
+    val schemaMap = Map(
+      "join_name" -> conf.join.metaData.name,
+      "key_schema" -> keyCodec.schemaStr,
+      "value_schema" -> valueCodec.schemaStr
+    )
+    new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
+  }
+  lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
+}
+
+object JoinCodec {
+
+  def fromLoggingSchema(loggingSchema: String, joinConf: Join): JoinCodec = {
+    val schemaMap = new Gson()
+      .fromJson(
+        loggingSchema,
+        classOf[java.util.Map[java.lang.String, java.lang.String]]
+      )
+      .asScala
+    val keyCodec = new AvroCodec(schemaMap("key_schema"))
+    val valueCodec = new AvroCodec(schemaMap("value_schema"))
+
+    JoinCodec(
+      joinConf,
+      keyCodec.chrononSchema.asInstanceOf[StructType],
+      valueCodec.chrononSchema.asInstanceOf[StructType],
+      keyCodec,
+      valueCodec
+    )
+  }
 }
 
 // BaseFetcher + Logging
@@ -415,62 +454,123 @@ class Fetcher(kvStore: KVStore,
         val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
         val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
         val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
-        JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+        val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+        logControlEvent(joinCodec)
+        joinCodec
     }
   })
+
+  private def logControlEvent(enc: JoinCodec): Unit = {
+    val ts = System.currentTimeMillis()
+    val controlEvent = LoggableResponse(
+      enc.loggingSchemaHash.getBytes(UTF8),
+      enc.loggingSchema.getBytes(UTF8),
+      Constants.SchemaPublishEvent,
+      ts,
+      null
+    )
+    if (logFunc != null) {
+      logFunc.accept(controlEvent)
+      if (debug) {
+        println(s"schema data logged successfully with schema_hash ${enc.loggingSchemaHash}")
+      }
+    }
+  }
+
+  private def encode(schema: StructType,
+                     codec: AvroCodec,
+                     dataMap: Map[String, AnyRef],
+                     cast: Boolean = false): Array[Byte] = {
+    val data = schema.fields.map {
+      case StructField(name, typ) =>
+        val elem = dataMap.getOrElse(name, null)
+        // handle cases where a join contains keys of the same name but different types
+        // e.g. `listing` is a long in one groupby, but a string in another groupby
+        if (cast) {
+          ColumnAggregator.castTo(elem, typ)
+        } else {
+          elem
+        }
+    }
+    val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
+    codec.encodeBinary(avroRecord)
+  }
+
+  private def logResponse(resp: Response, ts: Long): Response = {
+    val joinContext = resp.request.context
+    val loggingTs = resp.request.atMillis.getOrElse(ts)
+    var joinConfTry = getJoinConf(resp.request.name)
+    var joinCodecTry = getJoinCodecs(resp.request.name)
+
+    // it is possible for joinConf and joinCodec to get out of sync, so we double check the semanticHash
+    // returned from the two caches, and force update joinCodec if they are not in sync
+    // there is a very small chance that the joinConf is updated after the fetch but before the log,
+    // so we need to refresh the joinConf too to ensure consistency
+    if (joinConfTry.map(_.semanticHash) != joinCodecTry.map(_.conf.semanticHash)) {
+      joinConfTry = getJoinConf.refresh(resp.request.name)
+      joinCodecTry = getJoinCodecs.refresh(resp.request.name)
+    }
+
+    val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
+      val metaData = codec.conf.join.metaData
+      val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+      val keyBytes = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
+
+      val hash = if (samplePercent > 0) {
+        Math.abs(HashUtils.md5Long(keyBytes))
+      } else {
+        -1
+      }
+      val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
+      if (shouldPublishLog || debug) {
+        if (debug) {
+          println(s"Passed ${resp.request.keys} : $hash : ${hash % 100000}: $samplePercent")
+          val gson = new Gson()
+          val valuesFormatted = resp.values.map {
+            _.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
+          }
+          println(s"""Sampled join fetch
+               |Key Map: ${resp.request.keys}
+               |Value Map: [${valuesFormatted}]
+               |""".stripMargin)
+        }
+
+        val valueBytes =
+          resp.values.toOption
+            .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))
+            .orNull
+        val loggableResponse = LoggableResponse(
+          keyBytes,
+          valueBytes,
+          resp.request.name,
+          loggingTs,
+          codec.loggingSchemaHash
+        )
+        if (logFunc != null) {
+          logFunc.accept(loggableResponse)
+          joinContext.foreach(context => context.increment("logging_request.count"))
+          if (debug) {
+            println(s"join data logged successfully with schema_hash ${codec.loggingSchemaHash}")
+          }
+        }
+      }
+    })
+    loggingTry match {
+      case Failure(exception) => {
+        // to handle GroupByServingInfo staleness that results in encoding failure
+        getJoinCodecs.refresh(resp.request.name)
+        joinContext.foreach(_.incrementException(exception))
+        println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
+      }
+      case _ => {}
+    }
+    resp
+  }
 
   override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     super
       .fetchJoin(requests)
-      .map(_.iterator.map { resp =>
-        val joinCodecTry = getJoinCodecs(resp.request.name)
-        val loggingTry = joinCodecTry.map {
-          enc =>
-            val metaData = enc.conf.join.metaData
-            val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
-            val hash = if (samplePercent > 0) Math.abs(MurmurHash3.orderedHash(resp.request.keys.values)) else -1
-            if ((hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))) {
-              val joinName = resp.request.name
-              if (debug) {
-                println(s"Passed ${resp.request.keys} : $hash : ${hash % 100000}: $samplePercent")
-                val gson = new Gson()
-                println(s"""Sampled join fetch
-                     |Key Map: ${resp.request.keys}
-                     |Value Map: [${resp.values.map {
-                  _.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
-                }}]
-                     |""".stripMargin)
-              }
-              val keyArr = enc.keys.map(resp.request.keys.getOrElse(_, null))
-              val keys = AvroConversions.fromChrononRow(keyArr, enc.keySchema).asInstanceOf[GenericRecord]
-              val keyBytes = enc.keyCodec.encodeBinary(keys)
-              val valueBytes = resp.values
-                .map { valueMap =>
-                  val valueArr = enc.values.map(valueMap.getOrElse(_, null))
-                  val valueRecord =
-                    AvroConversions.fromChrononRow(valueArr, enc.valueSchema).asInstanceOf[GenericRecord]
-                  enc.valueCodec.encodeBinary(valueRecord)
-                }
-                .getOrElse(null)
-
-              // TODO: populate the correct schema_hash
-              val loggableResponse =
-                LoggableResponse(keyBytes, valueBytes, joinName, resp.request.atMillis.getOrElse(ts), null)
-              if (logFunc != null)
-                logFunc.accept(loggableResponse)
-              val joinContext = Metrics.Context(Metrics.Environment.JoinFetching, enc.conf.join)
-              joinContext.increment("logging_request.count")
-            }
-        }
-        if (loggingTry.isFailure && (debug || Math.random() < 0.01)) {
-          println(s"logging failed due to ${loggingTry.failed.get.getStackTrace.mkString("Array(", ", ", ")")}")
-        }
-        resp
-      }.toSeq)
-  }
-
-  override def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    super.fetchGroupBys(requests)
+      .map(_.iterator.map(logResponse(_, ts)).toSeq)
   }
 }

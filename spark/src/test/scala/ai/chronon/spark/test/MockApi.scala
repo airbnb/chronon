@@ -3,7 +3,6 @@ package ai.chronon.spark.test
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
