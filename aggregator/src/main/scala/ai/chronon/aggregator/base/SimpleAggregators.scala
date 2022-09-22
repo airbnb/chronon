@@ -5,15 +5,10 @@ import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
-import com.yahoo.sketches.{
-  ArrayOfDoublesSerDe,
-  ArrayOfItemsSerDe,
-  ArrayOfLongsSerDe,
-  ArrayOfNumbersSerDe,
-  ArrayOfStringsSerDe
-}
+import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfNumbersSerDe, ArrayOfStringsSerDe}
 
 import java.util
+import scala.collection.JavaConversions.asScalaBuffer
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -306,7 +301,7 @@ class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, In
   override def isDeletable: Boolean = true
 }
 
-trait CpcFriendly[Input] {
+trait CpcFriendly[Input] extends Serializable {
   def update(sketch: CpcSketch, input: Input): Unit
 }
 
