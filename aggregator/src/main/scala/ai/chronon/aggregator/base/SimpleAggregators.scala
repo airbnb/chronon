@@ -437,7 +437,7 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
     CpcSketch.heapify(normalized.asInstanceOf[Array[Byte]])
 }
 
-class ApproxPercentiles(k: Int = 128, bins: Int = 41) extends SimpleAggregator[Float, KllFloatsSketch, Array[Float]] {
+class ApproxPercentiles(k: Int = 128, percentiles: Array[Double]) extends SimpleAggregator[Float, KllFloatsSketch, Array[Float]] {
   override def outputType: DataType = ListType(FloatType)
 
   override def irType: DataType = BinaryType
@@ -463,7 +463,10 @@ class ApproxPercentiles(k: Int = 128, bins: Int = 41) extends SimpleAggregator[F
     KllFloatsSketch.heapify(Memory.wrap(ir.toByteArray))
   }
 
-  override def finalize(ir: KllFloatsSketch): Array[Float] = ir.getQuantiles(bins)
+  // Produce percentile values for the specified percentiles ex: [0.1, 0.5, 0.95]
+  override def finalize(ir: KllFloatsSketch): Array[Float] = {
+    ir.getQuantiles(percentiles)
+  }
 
   override def normalize(ir: KllFloatsSketch): Array[Byte] = ir.toByteArray
 

@@ -33,4 +33,12 @@ Chronon currently doesn't expose the tuning param, but it can be done quite easi
 The tuning is based on a error vs. size table [here](https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180).
 
 ### Approx Percentile
-This produces
+
+For percentiles the underlying implementation is [KLLSketch](https://datasketches.apache.org/docs/KLL/KLLSketch.html). There are two additional inputs that can be given in the
+`argMap` for percentiles:
+
+* **k** (Optional, Int): Affects the accuracy and size of the sketch.
+* **percentiles** (Required, String): Comma separated string of percentiles to be finalized (Ex: "0.25, 0.5, 0.75").
+
+As such it's possible to add more percentiles to be finalized to an existing aggregation, as the intermediate result
+stored is independent of this value.

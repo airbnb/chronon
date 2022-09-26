@@ -7,11 +7,11 @@ import org.junit.Assert._
 import scala.util.Random
 
 class ApproxPercentilesTest extends TestCase {
-  def testBasicImpl(nums: Int, slide: Int, k: Int, bins: Int, errorPercent: Float): Unit = {
+  def testBasicImpl(nums: Int, slide: Int, k: Int, percentiles: Array[Double], errorPercent: Float): Unit = {
     val sorted = (0 to nums).map(_.toFloat)
     val elems = Random.shuffle(sorted.toList).toArray
     val chunks = elems.sliding(slide, slide)
-    val agg = new ApproxPercentiles(k, bins)
+    val agg = new ApproxPercentiles(k, percentiles)
     val irs = chunks.map { chunk =>
       val init = agg.prepare(chunk.head)
       chunk.tail.foldLeft(init)(agg.update)
@@ -35,8 +35,8 @@ class ApproxPercentilesTest extends TestCase {
   }
 
   def testBasic: Unit = {
-    testBasicImpl(3000, 5, 100, 31, errorPercent = 4)
-    testBasicImpl(30000, 50, 200, 31, errorPercent = 2)
-    testBasicImpl(30000, 50, 50, 31, errorPercent = 5)
+    testBasicImpl(3000, 5, 100, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 4)
+    testBasicImpl(30000, 50, 200, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 2)
+    testBasicImpl(30000, 50, 50, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 5)
   }
 }

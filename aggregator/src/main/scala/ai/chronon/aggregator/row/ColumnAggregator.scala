@@ -257,8 +257,8 @@ object ColumnAggregator {
 
       case Operation.APPROX_PERCENTILE =>
         val k = aggregationPart.getInt("k", Some(128))
-        val bins = aggregationPart.getInt("bins", Some(40))
-        val agg = new ApproxPercentiles(k, bins)
+        val percentiles = aggregationPart.argMap.get("percentiles").split(",").map(_.toDouble)
+        val agg = new ApproxPercentiles(k, percentiles)
         inputType match {
           case IntType    => simple(agg, toFloat[Int])
           case LongType   => simple(agg, toFloat[Long])
