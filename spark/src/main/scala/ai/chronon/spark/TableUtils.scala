@@ -2,13 +2,15 @@ package ai.chronon.spark
 
 import ai.chronon.api.Constants
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{rand, round}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.functions.{col, lit, rand, round}
+import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+import scala.collection.mutable
 import scala.util.{Success, Try}
+
 case class TableUtils(sparkSession: SparkSession) {
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
@@ -100,7 +102,8 @@ case class TableUtils(sparkSession: SparkSession) {
                        tableProperties: Map[String, String] = null,
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
-                       fileFormat: String = "PARQUET"): Unit = {
+                       fileFormat: String = "PARQUET",
+                       autoExpand: Boolean = false): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -122,9 +125,29 @@ case class TableUtils(sparkSession: SparkSession) {
       if (tableProperties != null && tableProperties.nonEmpty) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
+
+      if (autoExpand) {
+        expandTable(tableName, dfRearranged.schema)
+      }
     }
 
-    repartitionAndWrite(dfRearranged, tableName, saveMode)
+    val finalizedDf = if (autoExpand) {
+      // reselect the columns so that an deprecated columns will be selected as NULL before write
+      val updatedSchema = getSchemaFromTable(tableName)
+      val finalColumns = updatedSchema.fieldNames.map(fieldName => {
+        if (dfRearranged.schema.fieldNames.contains(fieldName)) {
+          col(fieldName)
+        } else {
+          lit(null).as(fieldName)
+        }
+      })
+      dfRearranged.select(finalColumns: _*)
+    } else {
+      // if autoExpand is set to false, and an inconsistent df is passed, we want to pass in the df as in
+      // so that an exception will be thrown below
+      dfRearranged
+    }
+    repartitionAndWrite(finalizedDf, tableName, saveMode)
   }
 
   def sql(query: String): DataFrame = {
@@ -318,5 +341,88 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
     }
+  }
+
+  /*
+   * This method detects new columns that appear in newSchema but not in current table,
+   * and append those new columns at the end of the existing table. This allows continuous evolution
+   * of a Hive table without dropping or archiving data.
+   *
+   * Warning: ALTER TABLE behavior also depends on underlying storage solution.
+   * To read using Hive, which differentiates Table-level schema and Partition-level schema, it is required to
+   * take an extra step to sync Table-level schema into Partition-level schema in order to read updated data
+   * in Hive. To read from Spark, this is not required since it always uses the Table-level schema.
+   */
+  private def expandTable(tableName: String, newSchema: StructType): Unit = {
+
+    val existingSchema = getSchemaFromTable(tableName)
+    val existingFieldsMap = existingSchema.fields.map(field => (field.name, field)).toMap
+
+    val inconsistentFields = mutable.ListBuffer[(String, DataType, DataType)]()
+    val newFields = mutable.ListBuffer[StructField]()
+
+    newSchema.fields.foreach(field => {
+      val fieldName = field.name
+      if (existingFieldsMap.contains(fieldName)) {
+        val existingDataType = existingFieldsMap(fieldName).dataType
+
+        // compare on catalogString so that we don't check nullability which is not relevant for hive tables
+        if (existingDataType.catalogString != field.dataType.catalogString) {
+          inconsistentFields += ((fieldName, existingDataType, field.dataType))
+        }
+      } else {
+        newFields += field
+      }
+    })
+
+    if (inconsistentFields.nonEmpty) {
+      throw IncompatibleSchemaException(inconsistentFields)
+    }
+
+    val newFieldDefinitions = newFields.map(newField => s"${newField.name} ${newField.dataType.catalogString}")
+    val expandTableQueryOpt = if (newFieldDefinitions.nonEmpty) {
+      val tableLevelAlterSql =
+        s"""ALTER TABLE ${tableName}
+           |ADD COLUMNS (
+           |    ${newFieldDefinitions.mkString(",\n    ")}
+           |)
+           |""".stripMargin
+
+      Some(tableLevelAlterSql)
+    } else {
+      None
+    }
+
+    /* check if any old columns are skipped in new field and send warning */
+    val updatedFieldsMap = newSchema.fields.map(field => (field.name, field)).toMap
+    val excludedFields = existingFieldsMap.filter {
+      case (name, _) => !updatedFieldsMap.contains(name)
+    }.toSeq
+
+    if (excludedFields.nonEmpty) {
+      val excludedFieldsStr =
+        excludedFields.map(tuple => s"columnName: ${tuple._1} dataType: ${tuple._2.dataType.catalogString}")
+      println(
+        s"""Warning. Detected columns that exist in Hive table but not in updated schema. These are ignored in DDL.
+           |${excludedFieldsStr.mkString("\n")}
+           |""".stripMargin)
+    }
+
+    if (expandTableQueryOpt.nonEmpty) {
+      sql(expandTableQueryOpt.get)
+
+      // set a flag in table props to indicate that this is a dynamic table
+      sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
+    }
+  }
+}
+
+sealed case class IncompatibleSchemaException(inconsistencies: Seq[(String, DataType, DataType)]) extends Exception {
+  override def getMessage: String = {
+    val inconsistenciesStr =
+      inconsistencies.map(tuple => s"columnName: ${tuple._1} existingType: ${tuple._2} newType: ${tuple._3}")
+    s"""Existing columns cannot be modified:
+       |${inconsistenciesStr.mkString("\n")}
+       |""".stripMargin
   }
 }
