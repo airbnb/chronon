@@ -187,6 +187,15 @@ Keys {unselected_keys}, are unselected in source
             assert (agg.inputColumn in columns) or (agg.inputColumn == 'ts'), (
                 f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
                 f"input_column: {agg.inputColumn}")
+            if agg.operation == ttypes.Operation.APPROX_PERCENTILE:
+                if (
+                    agg.argMap is None or
+                    agg.argMap.get("percentiles") is None or
+                    (not all([float(p) >= 0 and float(p) <= 1 for p in agg.argMap["percentiles"].split(",")]))
+                ):
+                    raise ValueError(
+                        f"[Percentiles] Unsupported arguments for {op_to_str(agg.operation)}, "
+                        "example required: {'k': '128', 'percentiles': '0.4,0.5,0.95'}," f" received: {agg.argMap}\n")
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.

@@ -18,4 +18,5 @@ v1 = GroupBy(
         Aggregation(input_column="entity", operation=Operation.LAST),
         Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)]),
     ],
+    online=True,
 )

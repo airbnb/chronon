@@ -23,4 +23,5 @@ v1 = GroupBy(
         Aggregation(input_column="event", operation=Operation.SUM, windows=[Window(7, TimeUnit.DAYS)]),
     ],
     additional_argument="To be placed in customJson",
+    online=True,
 )

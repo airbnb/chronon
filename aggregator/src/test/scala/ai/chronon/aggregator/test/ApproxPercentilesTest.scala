@@ -34,9 +34,11 @@ class ApproxPercentilesTest extends TestCase {
     diffs.foreach(diff => assertTrue(diff < errorMargin))
   }
 
-  def testBasic: Unit = {
-    testBasicImpl(3000, 5, 100, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 4)
-    testBasicImpl(30000, 50, 200, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 2)
-    testBasicImpl(30000, 50, 50, Array(0.25, 0.5, 0.75, 0.95, 0.99), errorPercent = 5)
+  def testBasicPercentiles: Unit = {
+    val percentiles_tested: Int = 31
+    val percentiles: Array[Double] =  (0 to percentiles_tested).toArray.map(i => i * 1.0/ percentiles_tested)
+    testBasicImpl(3000, 5, 100, percentiles, errorPercent = 4)
+    testBasicImpl(30000, 50, 200, percentiles, errorPercent = 2)
+    testBasicImpl(30000, 50, 50, percentiles, errorPercent = 5)
   }
 }

@@ -110,6 +110,17 @@ def test_validator_ok():
         ),
     )
     assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
+    group_by.validate_group_by(gb)
+    with pytest.raises(ValueError):
+        fail_gb = group_by.GroupBy(
+            sources=event_source("table"),
+            keys=["subject"],
+            aggregations=group_by.Aggregations(
+                percentile=group_by.Aggregation(
+                    input_column="event_id", operation=group_by.Operation.APPROX_PERCENTILE([1.5])
+                ),
+            ),
+        )
 
 
 def test_generic_collector():
