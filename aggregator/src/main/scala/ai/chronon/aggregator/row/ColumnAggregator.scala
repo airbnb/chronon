@@ -120,6 +120,7 @@ object ColumnAggregator {
       case i: java.lang.Byte    => new java.lang.Long(i.longValue())
       case i: java.lang.Double  => new java.lang.Long(i.longValue())
       case i: java.lang.Float   => new java.lang.Long(i.longValue())
+      case i: java.lang.String  => new java.lang.Long(java.lang.Long.parseLong(i))
       case _                    => value
     }
 
@@ -130,6 +131,7 @@ object ColumnAggregator {
       case i: java.lang.Byte    => new java.lang.Double(i.doubleValue())
       case i: java.lang.Float   => new java.lang.Double(i.doubleValue())
       case i: java.lang.Long    => new java.lang.Double(i.doubleValue())
+      case i: java.lang.String  => new java.lang.Double(java.lang.Double.parseDouble(i))
       case _                    => value
     }
 

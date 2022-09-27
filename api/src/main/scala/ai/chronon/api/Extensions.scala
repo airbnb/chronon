@@ -94,7 +94,7 @@ object Extensions {
     def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
 
     // helper function to extract values from customJson
-    def customJson(key: String): Any = {
+    def customJsonLookUp(key: String): Any = {
       if (metaData.customJson == null) return null
       val mapper = new ObjectMapper();
       val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}

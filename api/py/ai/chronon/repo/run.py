@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import time
 import json
 import logging
 import os
@@ -51,6 +52,26 @@ ROUTES = {
 APP_NAME_TEMPLATE = "chronon_{conf_type}_{mode}_{context}_{name}"
 
 
+def retry_decorator(retries=3, backoff=20):
+    def wrapper(func):
+        def wrapped(*args, **kwargs):
+            attempt = 0
+            while attempt <= retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempt += 1
+                    logging.exception(e)
+                    sleep_time = attempt * backoff
+                    logging.info(
+                        "[{}] Retry: {} out of {}/ Sleeping for {}"
+                        .format(func.__name__, attempt, retries, sleep_time))
+                    time.sleep(sleep_time)
+            return func(*args, **kwargs)
+        return wrapped
+    return wrapper
+
+
 def check_call(cmd):
     print("Running command: " + cmd)
     return subprocess.check_call(cmd.split())
@@ -83,8 +104,8 @@ def download_only_once(url, path):
         check_call('curl {} -o {} --connect-timeout 10'.format(url, path))
 
 
+@retry_decorator(retries=3, backoff=50)
 def download_jar(version, jar_type='uber', release_tag=None):
-    # TODO(Open Sourcing) this should be hard coded to mavencentral path
     base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_2.11".format(
         jar_type)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)

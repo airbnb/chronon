@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
 import ai.chronon.online.KVStore
-import ai.chronon.spark.{Conversions, GroupByUpload, TableUtils}
+import ai.chronon.spark.{Conversions, GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
 import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
@@ -40,5 +40,9 @@ object OnlineUtils {
       inMemoryKvStore.create(groupByConf.streamingDataset)
       OnlineUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)
     }
+  }
+
+  def buildInMemoryKVStore(sessionName: String): InMemoryKvStore = {
+    InMemoryKvStore.build(sessionName, { () => TableUtils(SparkSessionBuilder.build(sessionName, local = true)) })
   }
 }

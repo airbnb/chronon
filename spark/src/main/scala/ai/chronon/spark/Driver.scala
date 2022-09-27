@@ -10,24 +10,21 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.io.File
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
+import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions
@@ -178,35 +175,88 @@ object Driver {
   object FetcherCli {
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
-      val keyJson: ScallopOption[String] = opt[String](required = true, descr = "json of the keys to fetch")
+      val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
         choice(Seq("join", "group-by"), descr = "the type of conf to fetch", default = Some("join"))
+      val keyJsonFile: ScallopOption[String] = opt[String](
+        required = false,
+        descr = "file path to json of the keys to fetch",
+        short = 'f'
+      )
+      val interval: ScallopOption[Int] = opt[Int](
+        required = false,
+        descr = "interval between requests in seconds",
+        default = Some(1)
+      )
+      val loop: ScallopOption[Boolean] = opt[Boolean](
+        required = false,
+        descr = "flag - loop over the requests until manually killed",
+        default = Some(false)
+      )
     }
 
     def run(args: Args): Unit = {
-      val objectMapper = new ObjectMapper()
-      val keyMap = objectMapper.readValue(args.keyJson(), classOf[java.util.Map[String, AnyRef]]).asScala.toMap
-      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
-      val startNs = System.nanoTime
-      val requests = Seq(Fetcher.Request(args.name(), keyMap))
-      val resultFuture = if (args.`type`() == "join") {
-        fetcher.fetchJoin(requests)
-      } else {
-        fetcher.fetchGroupBys(requests)
+      if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
+        throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
-      val result = Await.result(resultFuture, 5.seconds)
-      val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
+      val objectMapper = new ObjectMapper()
+      def readMap: String => Map[String, AnyRef] = { json =>
+        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap}
+      def readMapList: String => Seq[Map[String, AnyRef]] = { jsonList =>
+        objectMapper.readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
+        .asScala.map(_.asScala.toMap).toSeq
+      }
+      val keyMapList =
+        if (args.keyJson.isDefined) {
+          Try(readMapList(args.keyJson())).toOption.getOrElse(Seq(readMap(args.keyJson())))
+        } else {
+          println(s"Reading requests from ${args.keyJsonFile()}")
+          val file = Source.fromFile(args.keyJsonFile())
+          val mapList = file.getLines().map(json => readMap(json)).toList
+          file.close()
+          mapList
+        }
 
-      // treeMap to produce a sorted result
-      val tMap = new java.util.TreeMap[String, AnyRef]()
-      result.foreach(r =>
-        r.values match {
-          case Success(valMap)    => valMap.foreach { case (k, v) => tMap.put(k, v) }
-          case Failure(exception) => throw exception
+      if (keyMapList.length > 1) {
+        println(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
+      }
+      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
+      def iterate(): Unit = {
+        keyMapList.foreach(keyMap => {
+          println(s"--- [START FETCHING for ${keyMap}] ---")
+          val startNs = System.nanoTime
+          val requests = Seq(Fetcher.Request(args.name(), keyMap))
+          val resultFuture = if (args.`type`() == "join") {
+            fetcher.fetchJoin(requests)
+          } else {
+            fetcher.fetchGroupBys(requests)
+          }
+          val result = Await.result(resultFuture, 5.seconds)
+          val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
+
+          // treeMap to produce a sorted result
+          val tMap = new java.util.TreeMap[String, AnyRef]()
+          result.foreach(r =>
+            r.values match {
+              case Success(valMap)    => {
+                valMap.foreach { case (k, v) => tMap.put(k, v) }
+                println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                println(s"Fetched in: $awaitTimeMs ms")
+              }
+              case Failure(exception) => {
+                exception.printStackTrace()
+              }
+            })
+          Thread.sleep(args.interval() * 1000)
         })
-      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
-      println(s"Fetched in: $awaitTimeMs ms")
+      }
+
+      iterate()
+      while (args.loop()) {
+        println("loop is set to true, start next iteration. will only exit if manually killed.")
+        iterate()
+      }
     }
   }
 

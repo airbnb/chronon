@@ -132,6 +132,7 @@ class Analyzer(tableUtils: TableUtils,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false): Array[api.FeatureColumn] = {
+    groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
@@ -163,6 +164,7 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[api.FeatureColumn]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
+    joinConf.setups.foreach(tableUtils.sql)
     val leftDf = new Join(joinConf, endDate, tableUtils).leftDf(range).get
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
