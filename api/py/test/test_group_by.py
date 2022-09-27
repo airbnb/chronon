@@ -104,9 +104,18 @@ def test_validator_ok():
             random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM),
             event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
             cnt=ttypes.Aggregation(operation=ttypes.Operation.COUNT),
+            percentile=group_by.Aggregation(
+                input_column="event_id", operation=group_by.Operation.APPROX_PERCENTILE([0.5, 0.75])
+            ),
         ),
     )
     assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
+
+
+def test_generic_collector():
+    aggregation = group_by.Aggregation(
+        input_column="test", operation=group_by.Operation.APPROX_PERCENTILE([0.4, 0.2]))
+    assert aggregation.argMap == {"k": "128", "percentiles": "0.4,0.2"}
 
 
 def test_select_sanitization():

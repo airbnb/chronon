@@ -20,6 +20,10 @@ v1 = GroupBy(
         Aggregation(
             input_column="event",
             operation=Operation.SUM
+        ),
+        Aggregation(
+            input_column="event",
+            operation=Operation.APPROX_PERCENTILES([0.99, 0.95, 0.5]), # p99, p95, Median
         )
     ],
     online=True,

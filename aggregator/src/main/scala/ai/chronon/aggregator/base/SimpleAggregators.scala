@@ -464,9 +464,7 @@ class ApproxPercentiles(k: Int = 128, percentiles: Array[Double]) extends Simple
   }
 
   // Produce percentile values for the specified percentiles ex: [0.1, 0.5, 0.95]
-  override def finalize(ir: KllFloatsSketch): Array[Float] = {
-    ir.getQuantiles(percentiles)
-  }
+  override def finalize(ir: KllFloatsSketch): Array[Float] = ir.getQuantiles(percentiles)
 
   override def normalize(ir: KllFloatsSketch): Array[Byte] = ir.toByteArray
 

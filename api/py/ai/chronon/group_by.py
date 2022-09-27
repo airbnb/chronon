@@ -19,6 +19,22 @@ def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes
     return lambda k: (op, {"k": str(k)})
 
 
+def stringify(arg):
+    if isinstance(arg, list):
+        return ",".join([str(p) for p in arg])
+    return str(arg)
+
+
+def generic_collector(op: ttypes.Operation, required, **kwargs):
+    def _collector(*args, **other_args):
+        arguments = kwargs.copy() if kwargs else {}
+        for idx, arg in enumerate(required):
+            arguments[arg] = args[idx]
+        arguments.update(other_args)
+        return (op, {k: stringify(v) for k, v in arguments.items()})
+    return _collector
+
+
 # To simplify imports
 class Accuracy(ttypes.Accuracy):
     pass
@@ -46,6 +62,7 @@ class Operation():
     LAST_K = collector(ttypes.Operation.LAST_K)
     TOP_K = collector(ttypes.Operation.TOP_K)
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
+    APPROX_PERCENTILE = generic_collector(ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128)
 
 
 def Aggregations(**agg_dict):

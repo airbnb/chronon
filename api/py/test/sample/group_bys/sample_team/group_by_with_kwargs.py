@@ -19,6 +19,7 @@ v1 = GroupBy(
     keys=["group_by_subject"],
     aggregations=[
         Aggregation(input_column="event", operation=Operation.SUM),
+        Aggregation(input_column="event", operation=Operation.APPROX_PERCENTILE([0.5])),
         Aggregation(input_column="event", operation=Operation.SUM, windows=[Window(7, TimeUnit.DAYS)]),
     ],
     additional_argument="To be placed in customJson",
