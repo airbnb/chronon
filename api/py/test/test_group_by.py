@@ -126,7 +126,7 @@ def test_validator_ok():
 def test_generic_collector():
     aggregation = group_by.Aggregation(
         input_column="test", operation=group_by.Operation.APPROX_PERCENTILE([0.4, 0.2]))
-    assert aggregation.argMap == {"k": "128", "percentiles": "0.4,0.2"}
+    assert aggregation.argMap == {"k": "128", "percentiles": "[0.4, 0.2]"}
 
 
 def test_select_sanitization():

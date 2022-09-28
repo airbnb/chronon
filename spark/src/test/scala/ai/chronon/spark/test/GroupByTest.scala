@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -405,7 +405,6 @@ class GroupByTest {
   @Test
   def testPercentiles(): Unit = {
     val (source, endPartition) = createTestSource(suffix = "_percentile")
-
     val tableUtils = TableUtils(spark)
     val namespace = "test_percentiles"
     val aggs = Seq(
@@ -415,7 +414,7 @@ class GroupByTest {
           new Window(15, TimeUnit.DAYS),
           new Window(60, TimeUnit.DAYS)
         ),
-        argMap = Map("k" -> "128", "percentiles" -> "0.5, 0.25, 0.95")
+        argMap = Map("k" -> "128", "percentiles" -> "[0.5, 0.25, 0.75]")
       )
     )
     backfill(name = "unit_test_group_by_percentiles",

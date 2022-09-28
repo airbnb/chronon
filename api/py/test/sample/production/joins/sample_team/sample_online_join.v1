@@ -89,7 +89,7 @@
             "operation": 12,
             "argMap": {
               "k": "200",
-              "percentiles": "0.99,0.95,0.5"
+              "percentiles": "[0.99, 0.95, 0.5]"
             }
           }
         ]
@@ -219,7 +219,7 @@
             "operation": 12,
             "argMap": {
               "k": "128",
-              "percentiles": "0.5"
+              "percentiles": "[0.5]"
             }
           },
           {

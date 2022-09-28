@@ -20,7 +20,7 @@ object ConsistencyMetrics {
   val bins = 41
   val percentilesArgMap: util.Map[String,String] = Map(
     "k" -> "128",
-    "percentiles" -> (0 to bins).map(i => i * 1.0 / bins).mkString(","))
+    "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
 
   case class MetricTransform(name: String,
                              expr: Column,

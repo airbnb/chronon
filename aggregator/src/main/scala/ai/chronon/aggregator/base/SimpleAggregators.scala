@@ -437,7 +437,7 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
     CpcSketch.heapify(normalized.asInstanceOf[Array[Byte]])
 }
 
-class ApproxPercentiles(k: Int = 128, percentiles: Array[Double]) extends SimpleAggregator[Float, KllFloatsSketch, Array[Float]] {
+class ApproxPercentiles(k: Int = 128, percentiles: Array[Double] = Array(0.5)) extends SimpleAggregator[Float, KllFloatsSketch, Array[Float]] {
   override def outputType: DataType = ListType(FloatType)
 
   override def irType: DataType = BinaryType

@@ -58,7 +58,7 @@
       "operation": 12,
       "argMap": {
         "k": "128",
-        "percentiles": "0.5"
+        "percentiles": "[0.5]"
       }
     },
     {

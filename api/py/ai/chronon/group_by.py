@@ -19,19 +19,13 @@ def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes
     return lambda k: (op, {"k": str(k)})
 
 
-def stringify(arg):
-    if isinstance(arg, list):
-        return ",".join([str(p) for p in arg])
-    return str(arg)
-
-
 def generic_collector(op: ttypes.Operation, required, **kwargs):
     def _collector(*args, **other_args):
         arguments = kwargs.copy() if kwargs else {}
         for idx, arg in enumerate(required):
             arguments[arg] = args[idx]
         arguments.update(other_args)
-        return (op, {k: stringify(v) for k, v in arguments.items()})
+        return (op, {k: str(v) for k, v in arguments.items()})
     return _collector
 
 
@@ -191,11 +185,12 @@ Keys {unselected_keys}, are unselected in source
                 if (
                     agg.argMap is None or
                     agg.argMap.get("percentiles") is None or
-                    (not all([float(p) >= 0 and float(p) <= 1 for p in agg.argMap["percentiles"].split(",")]))
+                    (not all([float(p) >= 0 and float(p) <= 1 for p in json.loads(agg.argMap["percentiles"])]))
                 ):
                     raise ValueError(
                         f"[Percentiles] Unsupported arguments for {op_to_str(agg.operation)}, "
-                        "example required: {'k': '128', 'percentiles': '0.4,0.5,0.95'}," f" received: {agg.argMap}\n")
+                        "example required: {'k': '128', 'percentiles': '[0.4,0.5,0.95]'},"
+                        f" received: {agg.argMap}\n")
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.
