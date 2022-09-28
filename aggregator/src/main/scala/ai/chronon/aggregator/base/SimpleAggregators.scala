@@ -8,7 +8,6 @@ import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfNumbersSerDe, ArrayOfStringsSerDe}
 
 import java.util
-import scala.collection.JavaConversions.asScalaBuffer
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
