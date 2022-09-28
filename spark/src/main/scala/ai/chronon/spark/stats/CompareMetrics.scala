@@ -14,8 +14,9 @@ import java.util
 import scala.collection.immutable.SortedMap
 
 object CompareMetrics {
-  val loggedSuffix = "_logged"
-  val backfilledSuffix = "_backfilled"
+  val leftSuffix = "_left"
+  val rightSuffix = "_right"
+  val comparisonViewNameSuffix = "_comparison"
 
   case class MetricTransform(name: String,
                              expr: Column,
@@ -24,53 +25,53 @@ object CompareMetrics {
                              additionalExprs: Seq[(String, String)] = null)
 
   private def edit_distance: UserDefinedFunction =
-    functions.udf((logged: Object, backfilled: Object) => EditDistance.between(logged, backfilled))
+    functions.udf((left: Object, right: Object) => EditDistance.between(left, right))
 
   def buildMetrics(valueFields: Array[StructField]): Seq[MetricTransform] =
     valueFields.flatMap { field =>
-      val logged = functions.col(field.name + loggedSuffix)
-      val backfilled = functions.col(field.name + backfilledSuffix)
+      val left = functions.col(field.name + leftSuffix)
+      val right = functions.col(field.name + rightSuffix)
       val universalMetrics = Seq(
-        MetricTransform("both_null", logged.isNull.and(backfilled.isNull), Operation.SUM),
-        MetricTransform("logged_null", logged.isNull.and(backfilled.isNotNull), Operation.SUM),
-        MetricTransform("backfilled_null", logged.isNotNull.and(backfilled.isNull), Operation.SUM)
+        MetricTransform("both_null", left.isNull.and(right.isNull), Operation.SUM),
+        MetricTransform("left_null", left.isNull.and(right.isNotNull), Operation.SUM),
+        MetricTransform("right_null", left.isNotNull.and(right.isNull), Operation.SUM)
       )
-      val smape_denom = functions.abs(logged) + functions.abs(backfilled)
+      val smape_denom = functions.abs(left) + functions.abs(right)
       val numericMetrics = Seq(
         MetricTransform(
           "smape",
           functions
             .when(
               smape_denom.notEqual(0.0),
-              (functions.abs(logged - backfilled) * 2).cast(types.DoubleType) / smape_denom
+              (functions.abs(left - right) * 2).cast(types.DoubleType) / smape_denom
             )
             .otherwise(0.0),
           Operation.AVERAGE
         ),
-        MetricTransform("logged_minus_backfilled", logged - backfilled, Operation.APPROX_PERCENTILE),
-        MetricTransform("logged", logged, Operation.APPROX_PERCENTILE),
-        MetricTransform("backfilled", backfilled, Operation.APPROX_PERCENTILE)
+        MetricTransform("left_minus_right", left - right, Operation.APPROX_PERCENTILE),
+        MetricTransform("left", left, Operation.APPROX_PERCENTILE),
+        MetricTransform("right", right, Operation.APPROX_PERCENTILE)
       )
 
       val sequenceMetrics = Seq(
         MetricTransform(
           "edit_distance",
-          edit_distance(logged, backfilled),
+          edit_distance(left, right),
           Operation.APPROX_PERCENTILE,
           additionalExprs = Seq(
             "insert" -> ".insert",
             "delete" -> ".delete"
           )
         ),
-        MetricTransform("logged_length", functions.size(logged), Operation.APPROX_PERCENTILE),
-        MetricTransform("backfilled_length", functions.size(backfilled), Operation.APPROX_PERCENTILE)
+        MetricTransform("left_length", functions.size(left), Operation.APPROX_PERCENTILE),
+        MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE)
       )
 
       val equalityMetric =
         if (!DataType.isMap(field.fieldType))
           Some(
             MetricTransform("mismatch",
-                            logged.isNotNull.and(backfilled.isNotNull).and(logged.notEqual(backfilled)),
+                            left.isNotNull.and(right.isNotNull).and(left.notEqual(right)),
                             Operation.SUM))
         else None
 
@@ -139,6 +140,7 @@ object CompareMetrics {
         Seq(metric.name)
       }
     }
+    // TODO: We are currently bucketing based on the time but we should extend it to support other bucketing strategy.
     val secondPassDf = selectedDf.selectExpr(secondPassSelects :+ Constants.TimeColumn: _*)
     val rowAggregator = buildRowAggregator(metrics, secondPassDf)
     val bucketMs = 1000 * 60 * timeBucketMinutes
