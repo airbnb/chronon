@@ -3,19 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -25,6 +13,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
+import scala.collection.JavaConversions.asScalaBuffer
 import scala.collection.mutable
 
 class GroupByTest {
@@ -280,12 +269,19 @@ class GroupByTest {
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = Constants.Partition.at(System.currentTimeMillis())
 
-    val groupBySchema = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val featureColumns = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
-    groupBySchema.fields.map(field => s"${field.name} => ${field.fieldType}")
+    featureColumns.map(feature => s"${feature.name} => ${feature.columnType}")
       .foreach(s => assertTrue(expectedSchema.contains(s)))
+
+    // feature name is constructed by input_column_operation_window
+    // assert feature columns attributes mapping
+    featureColumns.foreach(feature => {
+      assertTrue(feature.name.contains(feature.operation.toLowerCase))
+      assertTrue(feature.name.contains(feature.inputColumn.toLowerCase))
+    })
   }
 
 

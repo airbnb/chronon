@@ -442,6 +442,11 @@ object Extensions {
     def constructJoinPartSchema(schemaField: StructField): StructField = {
       StructField(joinPart.fullPrefix + "_" + schemaField.name, schemaField.fieldType)
     }
+
+    def constructJoinPartFeatureColumn(featureColumn: FeatureColumn): FeatureColumn = {
+      FeatureColumn(joinPart.fullPrefix + "_" + featureColumn.name, featureColumn.columnType,
+        featureColumn.operation, featureColumn.window, featureColumn.inputColumn)
+    }
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {

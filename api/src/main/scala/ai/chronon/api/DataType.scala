@@ -158,6 +158,13 @@ object StructType {
   }
 }
 
+// Rich version of structType which includes additional info for a groupBy feature schema
+case class FeatureColumn(name: String,
+                         columnType: String,
+                         operation: String = null,
+                         window: String = null,
+                         inputColumn: String = null)
+
 // mechanism to accept unknown types into the ai.chronon.aggregator.row
 // while retaining the original type object for reconstructing the source type information
 case class UnknownType(any: Any) extends DataType

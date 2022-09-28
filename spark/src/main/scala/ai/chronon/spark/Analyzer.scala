@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{Constants, DataType}
+import ai.chronon.api.{Constants}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
@@ -9,7 +9,7 @@ import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
-import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.sql.types.StringType
 
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.asScalaBufferConverter
@@ -131,7 +131,7 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false): (api.StructType) = {
+                     enableHitter: Boolean = false): Array[api.FeatureColumn] = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -158,10 +158,10 @@ class Analyzer(tableUtils: TableUtils,
                |------ END --------------
                |""".stripMargin)
 
-    groupBy.outputSchema
+    groupBy.featureColumns
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): Array[String] = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[api.FeatureColumn]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
@@ -169,12 +169,13 @@ class Analyzer(tableUtils: TableUtils,
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
-    var rightSchema = ListBuffer[String]()
+    var featureColumns = ListBuffer[api.FeatureColumn]()
     joinConf.joinParts.asScala.par.foreach { part =>
-      val groupBySchema = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
-      rightSchema ++= groupBySchema.map { field => part.constructJoinPartSchema(field)}
-          .map {field => s"  ${field.name} => ${field.fieldType}"}
+      val features = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
+      featureColumns ++= features.map { feature => part.constructJoinPartFeatureColumn(feature)}
     }
+
+    val rightSchema = featureColumns.map {feature => s"  ${feature.name} => ${feature.columnType}"}
     println(s"""
                |ANALYSIS for join/${joinConf.metaData.cleanName}:
                |$analysis
@@ -186,8 +187,9 @@ class Analyzer(tableUtils: TableUtils,
                |${rightSchema.mkString("\n")}
                |------ END ------------------
                |""".stripMargin)
-    
-    leftSchema ++ rightSchema
+
+    // (cli print output, right side feature columns for metadata upload)
+    (leftSchema ++ rightSchema, featureColumns)
   }
 
   def run(): Unit =
