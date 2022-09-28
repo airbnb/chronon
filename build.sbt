@@ -42,7 +42,7 @@ lazy val publishSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_uber_31, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -147,16 +147,15 @@ lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
-    libraryDependencies ++= sparkLibs("2.4.0").map(_ % "provided")
-  )
-
-lazy val spark_uber_31 = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online)
-  .settings(
-    sparkBaseSettings,
-    scalaVersion := scala212,
-    libraryDependencies ++= sparkLibs("3.1.1").map(_ % "provided"),
-    target := target.value.toPath.resolveSibling("target-31").toFile
+    crossScalaVersions := Seq(scala211, scala212),
+    libraryDependencies ++= {
+      CrossVersion.partialVersion(scalaVersion.value) match {
+        case Some((2, major)) if major == 12 =>
+          sparkLibs("3.1.1").map(_ % "provided")
+        case _ =>
+          sparkLibs("2.4.0").map(_ % "provided")
+      }
+    }
   )
 
 // Project for running with embedded spark for local testing
