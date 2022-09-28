@@ -282,7 +282,8 @@ if __name__ == "__main__":
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
                         default=os.environ.get('CHRONON_ONLINE_CLASS', None))
     parser.add_argument('--version', help='Chronon version to use.', default=None)
-    parser.add_argument('--spark-version', help='Spark version to use for downloading jar.', default='2.4.0')
+    parser.add_argument('--spark-version', help='Spark version to use for downloading jar.',
+                        default=os.environ.get('SPARK_VERSION', '2.4.0')),
     parser.add_argument('--spark-submit-path',
                         help='Path to spark-submit',
                         default=os.path.join(chronon_repo_path, 'scripts/spark_submit.sh'))
