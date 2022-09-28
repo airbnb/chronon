@@ -48,6 +48,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     //kryo.setWarnUnregisteredClasses(true)
     val common = Seq(
       "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
+      "org.apache.spark.sql.execution.joins.LongHashedRelation",
+      "org.apache.spark.sql.execution.joins.LongToUnsafeRowMap",
       "org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage",
       "org.apache.spark.sql.execution.datasources.ExecutedWriteSummary",
       "org.apache.spark.sql.execution.datasources.BasicWriteTaskStats",

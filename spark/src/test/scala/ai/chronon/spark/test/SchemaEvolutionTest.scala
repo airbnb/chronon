@@ -8,7 +8,8 @@ import ai.chronon.online.{Fetcher, JoinCodec, LoggableResponseBase64, MetadataSt
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{Conversions, LogFlattenerJob, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.functions.{col, lit, rank}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 
@@ -52,7 +53,7 @@ class SchemaEvolutionTest extends TestCase {
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   private val fetchingDs = "2022-10-03"
 
-  def createViewsGroupBy(namespace: String, spark: SparkSession): GroupByTestSuite = {
+  def createViewsGroupBy(namespace: String): GroupByTestSuite = {
     val name = "listing_views"
     val schema = StructType(
       name,
@@ -112,7 +113,7 @@ class SchemaEvolutionTest extends TestCase {
     )
   }
 
-  def createAttributesGroupBy(namespace: String, spark: SparkSession): GroupByTestSuite = {
+  def createAttributesGroupBy(namespace: String): GroupByTestSuite = {
     val name = "listing_attributes"
     val schema = StructType(
       "listing_attributes",
@@ -126,8 +127,10 @@ class SchemaEvolutionTest extends TestCase {
     val rows = List(
       Row(1L, 4, "ENTIRE_HOME", "2022-10-01"),
       Row(1L, 4, "ENTIRE_HOME", "2022-10-02"),
+      Row(1L, 4, "ENTIRE_HOME", "2022-10-03"),
       Row(2L, 1, "PRIVATE_ROOM", "2022-10-01"),
-      Row(2L, 1, "PRIVATE_ROOM", "2022-10-02")
+      Row(2L, 1, "PRIVATE_ROOM", "2022-10-02"),
+      Row(2L, 1, "PRIVATE_ROOM", "2022-10-03")
     )
     val source = Builders.Source.entities(
       query = Builders.Query(
@@ -157,10 +160,73 @@ class SchemaEvolutionTest extends TestCase {
     )
   }
 
+  def createCheckoutsGroupBy(namespace: String): GroupByTestSuite = {
+    val name = "checkouts"
+    val schema = StructType(
+      "checkouts",
+      Array(
+        StructField("user_id", LongType),
+        StructField("listing_id", LongType),
+        StructField("ts", LongType),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 1L, 1664625600000L, "2022-10-01"), // "2022-10-01 12:00:00.000"
+      Row(2L, 1L, 1664625600000L, "2022-10-01"), // "2022-10-01 12:00:00.000"
+      Row(3L, 1L, 1664625600000L, "2022-10-01"), // "2022-10-01 12:00:00.000"
+      Row(2L, 2L, 1664712000000L, "2022-10-02"), // "2022-10-02 12:00:00.000"
+      Row(3L, 2L, 1664712000000L, "2022-10-02"), // "2022-10-02 12:00:00.000"
+      Row(3L, 3L, 1664740800000L, "2022-10-02") // "2022-10-02 20:00:00.000"
+    )
+    val source = Builders.Source.events(
+      query = Builders.Query(
+        selects = Map(
+          "user" -> "user_id",
+          "listing" -> "listing_id"
+        ),
+        timeColumn = "ts"
+      ),
+      table = s"${namespace}.${name}"
+    )
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.COUNT,
+          inputColumn = "listing",
+          windows = null
+        )
+      ),
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
+    )
+    val df = spark.createDataFrame(
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      Conversions.fromChrononSchema(schema)
+    )
+    GroupByTestSuite(
+      name,
+      conf,
+      df
+    )
+  }
+
+  def createTestDriverTable(namespace: String, selects: Seq[String]): Source = {
+    Builders.Source.events(
+      Builders.Query(
+        selects = Builders.Selects(selects: _*),
+        timeColumn = "ts"
+      ),
+      table = s"$namespace.test_driver_table"
+    )
+  }
+
   def createV1Join(namespace: String): JoinTestSuite = {
-    val viewsGroupBy = createViewsGroupBy(namespace, spark)
+    val viewsGroupBy = createViewsGroupBy(namespace)
     val joinConf = Builders.Join(
-      left = viewsGroupBy.groupByConf.sources.get(0),
+      left = createTestDriverTable(namespace, Seq("listing")),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)),
       metaData =
         Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
@@ -180,10 +246,10 @@ class SchemaEvolutionTest extends TestCase {
   }
 
   def createV2Join(namespace: String): JoinTestSuite = {
-    val viewsGroupBy = createViewsGroupBy(namespace, spark)
-    val attributesGroupBy = createAttributesGroupBy(namespace, spark)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val attributesGroupBy = createAttributesGroupBy(namespace)
     val joinConf = Builders.Join(
-      left = viewsGroupBy.groupByConf.sources.get(0),
+      left = createTestDriverTable(namespace, Seq("listing")),
       joinParts = Seq(
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
         Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
@@ -201,6 +267,35 @@ class SchemaEvolutionTest extends TestCase {
           "unit_test_listing_views_m_views_sum" -> 50L.asInstanceOf[AnyRef],
           "unit_test_listing_attributes_dim_bedrooms" -> 4.asInstanceOf[AnyRef],
           "unit_test_listing_attributes_dim_room_type" -> "ENTIRE_HOME"
+        )
+      )
+    )
+  }
+
+  def createV3Join(namespace: String): JoinTestSuite = {
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val checkoutsGroupBy = createCheckoutsGroupBy(namespace)
+    val joinConf = Builders.Join(
+      left = createTestDriverTable(namespace, Seq("listing", "user")),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
+        Builders.JoinPart(groupBy = checkoutsGroupBy.groupByConf)
+      ),
+      metaData =
+        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
+    )
+    JoinTestSuite(
+      joinConf,
+      Seq(viewsGroupBy, checkoutsGroupBy),
+      (
+        Map(
+          "listing" -> 1L.asInstanceOf[AnyRef],
+          "user" -> 3L.asInstanceOf[AnyRef]
+        ),
+        Map(
+          "unit_test_listing_views_m_guests_sum" -> 5L.asInstanceOf[AnyRef],
+          "unit_test_listing_views_m_views_sum" -> 50L.asInstanceOf[AnyRef],
+          "unit_test_checkouts_listing_count" -> 3L.asInstanceOf[AnyRef]
         )
       )
     )
@@ -255,10 +350,16 @@ class SchemaEvolutionTest extends TestCase {
 
   private def insertLogsToHive(mockApi: MockApi, logs: Seq[LoggableResponseBase64], ds: String): Unit = {
     val logDf = mockApi.loggedValuesToDf(logs, spark)
+
+    // populate timestamp for each row that is unique and falls within ds
+    val adjustedDf = logDf
+      .withColumn("ds", lit(ds))
+      .withColumn("id", rank().over(Window.orderBy("ts_millis")))
+      .withPartitionBasedTimestamp("ts_millis")
+      .withColumn("ts_millis", col("ts_millis") + col("id"))
+      .drop("id")
     TableUtils(spark).insertPartitions(
-      logDf
-        .withColumn("ds", lit(ds))
-        .withPartitionBasedTimestamp("ts_millis"),
+      adjustedDf,
       mockApi.logTable,
       partitionColumns = Seq("ds", "name")
     )
@@ -287,6 +388,51 @@ class SchemaEvolutionTest extends TestCase {
         .values
         .nonEmpty)
     flattenedDf
+  }
+
+  /*
+   * Simulate a stagingQuery that saves listing/ts pairs from flattened log table into a Hive table to be
+   * served as the left of the join.
+   *
+   * newKeys specifies new feature keys added in this join, which we will manually add to the DF
+   */
+  private def prepareDriverTable(ds: String,
+                                 joinConf: Join,
+                                 namespace: String,
+                                 tableUtils: TableUtils,
+                                 keysFallback: Map[String, String] = Map.empty): DataFrame = {
+
+    val keys =
+      ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(joinConf.left.getEvents.query.selects).keys
+    // handle new keys during schema evolution: fill as NULL
+    val selects = keys.map { key =>
+      if (keysFallback.contains(key)) {
+        key -> keysFallback(key)
+      } else {
+        key -> key
+      }
+    }.toMap
+    val notNullFilter = s"(${keys.filterNot(keysFallback.contains).map(k => s"$k IS NOT NULL").mkString(" OR ")})"
+    val query = QueryUtils.build(
+      selects ++ Map("ts" -> "ts", "ds" -> "ds"),
+      from = joinConf.metaData.loggedTable,
+      wheres = Seq(notNullFilter, s"${Constants.PartitionColumn} = '$ds'", "ts IS NOT NULL")
+    )
+    val df = tableUtils.sql(query)
+    tableUtils.insertPartitions(df, s"$namespace.test_driver_table", autoExpand = true)
+    df
+  }
+
+  private def runJoinCompute(ds: String, joinConf: Join, tableUtils: TableUtils): DataFrame = {
+
+    val joinJob = new ai.chronon.spark.Join(
+      joinConf,
+      ds,
+      tableUtils
+    )
+    joinJob.computeJoin()
+    val df = spark.table(joinConf.metaData.outputTable)
+    df
   }
 
   def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
@@ -323,13 +469,22 @@ class SchemaEvolutionTest extends TestCase {
     val joinV1Codec = JoinCodec.fromLoggingSchema(schema2, joinSuiteV1.joinConf)
     assertEquals(dataEvent2.schemaHash, joinV1Codec.loggingSchemaHash)
 
+    val offlineDs12 = "2022-10-03"
     val flattenedDf12 = verifyOfflineTables(
       logs1 ++ logs2, // combine logs from stage 1 and stage 2 into offline DS = 2022-10-03
-      offlineDs = "2022-10-03",
+      offlineDs = offlineDs12,
       mockApi,
       joinSuiteV1.joinConf,
       tableUtils
     )
+
+    // run driver table preparation to insert from logs of ds1
+    val driverDf2 = prepareDriverTable(offlineDs12, joinSuiteV1.joinConf, namespace, tableUtils)
+    assertEquals(1, driverDf2.count())
+
+    // run join to pull from logs
+    val joinDf2 = runJoinCompute(offlineDs12, joinSuiteV1.joinConf, tableUtils)
+    assertEquals(1, joinDf2.count())
 
     /* STAGE 3: Join is modified and updated to MetadataStore */
     metadataStore.putJoinConf(joinSuiteV2.joinConf)
@@ -354,6 +509,9 @@ class SchemaEvolutionTest extends TestCase {
     val removedSubMapOriginalData = joinSuiteV1.fetchExpectations._2.filter {
       case (key, _) => removedGroupBys.exists(gb => key.contains(gb.name))
     }
+    val newFeatures = newSubMapExpected.keySet
+    val removedFeatures = removedSubMapOriginalData.keySet
+
     assertEquals(existingSubMapActual, existingSubMapExpected)
     val newGroupByCount = newGroupBys.length
     assertEquals(newGroupByCount, newSubMapActual.keys.size)
@@ -374,8 +532,25 @@ class SchemaEvolutionTest extends TestCase {
       assertNotEquals(dataEvent2.schemaHash, dataEvent3.schemaHash)
     }
 
-    /* STAGE 4: GroupBy upload completes for the new GroupBy */
+    // run GB upload now to prepare the offline tables and then verify the offline backfill behavior
     runGBUpload(namespace, joinSuiteV2, tableUtils, inMemoryKvStore)
+    val offlineDs34 = "2022-10-04" // override ds to simplify offline data generation
+    val newKeys = ScalaVersionSpecificCollectionsConverter
+      .convertJavaMapToScala(joinSuiteV2.joinConf.left.getEvents.query.selects)
+      .keys
+      .filterNot(joinSuiteV1.joinConf.left.getEvents.query.selects.keySet().contains)
+
+    // rerun driver preparation for ds1 to add new column
+    val driverDf3 =
+      prepareDriverTable(offlineDs12, joinSuiteV2.joinConf, namespace, tableUtils, newKeys.map(k => k -> "3L").toMap)
+    assertEquals(1, driverDf3.count())
+
+    // run join to backfill new features
+    val joinDf3 = runJoinCompute(offlineDs12, joinSuiteV2.joinConf, tableUtils)
+    assertEquals(1, joinDf3.count())
+    assertTrue(newFeatures.forall(joinDf3.columns.contains))
+
+    /* STAGE 4: GroupBy upload completes for the new GroupBy */
     clearTTLCache(fetcher)
     val response4 = fetchJoin(fetcher, joinSuiteV2)
     assertEquals(joinSuiteV2.fetchExpectations._2, response4.values.get)
@@ -396,16 +571,11 @@ class SchemaEvolutionTest extends TestCase {
 
     val flattenedDf34 = verifyOfflineTables(
       logs3 ++ logs4, // combine logs from stage 3 and stage 4 into offline DS = 2022-10-04
-      offlineDs = "2022-10-04",
+      offlineDs = offlineDs34,
       mockApi,
       joinSuiteV2.joinConf,
       tableUtils
     )
-
-    /* verify offline table schema between schema evolution */
-
-    val newFeatures = newSubMapExpected.keySet
-    val removedFeatures = removedSubMapOriginalData.keySet
 
     /* new features are appended as new columns */
     assertTrue(newFeatures.forall(!flattenedDf12.schema.fieldNames.contains(_)))
@@ -414,6 +584,19 @@ class SchemaEvolutionTest extends TestCase {
     /* removed features are never removed from the table */
     assertTrue(removedFeatures.forall(flattenedDf12.schema.fieldNames.contains(_)))
     assertTrue(removedFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
+
+    // run driver preparation for ds2 to insert the logs of ds2
+    val driverDf4 = prepareDriverTable(offlineDs34,
+                                       joinSuiteV2.joinConf,
+                                       namespace,
+                                       tableUtils,
+                                       newKeys.map(k => k -> s"COALESCE($k, 3L)").toMap)
+    assertEquals(2, driverDf4.count())
+
+    // run join for new ds and expect to pull from logs
+    val joinDf4 = runJoinCompute(offlineDs34, joinSuiteV2.joinConf, tableUtils)
+    assertEquals(3, joinDf4.count())
+    assertTrue(newFeatures.forall(feat => joinDf4.collect().forall(row => !row.isNullAt(row.fieldIndex(feat)))))
   }
 
   def testAddFeatures(): Unit = {
@@ -424,5 +607,15 @@ class SchemaEvolutionTest extends TestCase {
   def testRemoveFeatures(): Unit = {
     val namespace = "remove_features"
     testSchemaEvolution(namespace, createV2Join(namespace), createV1Join(namespace))
+  }
+
+  def testAddKeyAndFeatures(): Unit = {
+    val namespace = "add_key_and_features"
+    testSchemaEvolution(namespace, createV1Join(namespace), createV3Join(namespace))
+  }
+
+  def testRemoveKeyAndFeatures(): Unit = {
+    val namespace = "remove_key_and_features"
+    testSchemaEvolution(namespace, createV3Join(namespace), createV1Join(namespace))
   }
 }

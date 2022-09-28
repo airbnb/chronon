@@ -356,11 +356,11 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      valueCodec: AvroCodec)
     extends Serializable {
-  val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
-  val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
+  lazy val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
+  lazy val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
 
-  val keyFields: Array[StructField] = keySchema.fields
-  val valueFields: Array[StructField] = valueSchema.fields
+  lazy val keyFields: Array[StructField] = keySchema.fields
+  lazy val valueFields: Array[StructField] = valueSchema.fields
 
   /*
    * Get the serialized string repr. of the logging schema.

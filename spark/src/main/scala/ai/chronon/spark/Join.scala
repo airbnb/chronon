@@ -3,17 +3,15 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
-import ai.chronon.online.Metrics
+import ai.chronon.api.{Accuracy, Constants, JoinPart, StructField}
+import ai.chronon.online.{JoinCodec, Metrics}
 import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.util.sketch.BloomFilter
+import org.apache.spark.sql.functions._
 
 import java.time.Instant
-import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
-import scala.collection.parallel.ParMap
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -52,22 +50,12 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
-    val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
+    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     val keys = partLeftKeys ++ additionalKeys
 
     val partName = joinPart.groupBy.metaData.name
-
-    println(s"""Join keys for $partName: ${keys.mkString(", ")}
-         |Left Schema:
-         |${leftDf.schema.pretty}
-         |  
-         |Right Schema:
-         |${prefixedRight.schema.pretty}
-         |  
-         |""".stripMargin)
 
     import org.apache.spark.sql.functions.{col, date_add, date_format}
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
@@ -81,14 +69,72 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       prefixedRight
     }
 
-    leftDf.validateJoinKeys(joinableRight, keys)
-    leftDf.join(joinableRight, keys, "left")
+    val finalDf = mergeDFs(leftDf, joinableRight, keys)
+    println(s"""Join keys for $partName: ${keys.mkString(", ")}
+         |Left Schema:
+         |${leftDf.schema.pretty}
+         |Right Schema:
+         |${joinableRight.schema.pretty}
+         |Final Schema:
+         |${finalDf.schema.pretty}
+         |""".stripMargin)
+
+    finalDf
   }
 
-  private def computeJoinPart(leftDf: DataFrame,
-                              joinPart: JoinPart,
-                              unfilledRange: PartitionRange,
-                              leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
+  private def mergeDFs(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String]): DataFrame = {
+    leftDf.validateJoinKeys(rightDf, keys)
+    val joinedDf = leftDf.join(rightDf, keys, "left")
+
+    // find columns that exist both on left and right that are not keys and merge them.
+    // this could happen in waterfall: left => log => backfill
+    val sharedColumns = rightDf.columns.intersect(leftDf.columns)
+    val selects = keys.map(col) ++
+      leftDf.columns.flatMap { colName =>
+        if (keys.contains(colName)) {
+          None
+        } else if (sharedColumns.contains(colName)) {
+          Some(coalesce(leftDf(colName), rightDf(colName)).as(colName))
+        } else {
+          Some(leftDf(colName))
+        }
+      } ++
+      rightDf.columns.flatMap { colName =>
+        if (keys.contains(colName)) {
+          None
+        } else if (sharedColumns.contains(colName)) {
+          None
+        } else {
+          Some(rightDf(colName))
+        }
+      }
+    val finalDf = joinedDf.select(selects: _*)
+    finalDf
+  }
+
+  private def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart): Option[DataFrame] = {
+
+    val stats = leftDf
+      .select(
+        count(lit(1)),
+        min(Constants.PartitionColumn),
+        max(Constants.PartitionColumn)
+      )
+      .head()
+    val rowCount = stats.getLong(0)
+
+    // construct unfilledRange based on the remaining rows where logs are not available
+    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))
+    if (rowCount == 0) {
+      // happens when all rows are already filled by logs
+      println(s"leftDf empty for joinPart ${joinPart.groupBy.metaData.name} and unfilled range ${unfilledRange}")
+      return None
+    }
+
+    val leftBlooms = joinConf.leftKeyCols.par.map { key =>
+      key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
+    }.toMap
+
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
@@ -99,22 +145,22 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
          |  right type: ${joinPart.groupBy.dataModel}, 
          |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
          |  part unfilled range: $unfilledRange,
+         |  left row count: $rowCount
          |  bloom sizes: $bloomSizes
          |  groupBy: ${joinPart.groupBy.toString}
          |""".stripMargin)
 
+    def genGroupBy(partitionRange: PartitionRange) =
+      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+
     // all lazy vals - so evaluated only when needed by each case.
-    lazy val partitionRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+    lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
 
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
       println(s"left unfilled time range: $timeRange")
       timeRange
     }
-
-    def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     val leftSkewFilter = joinConf.skewFilter(Some(joinPart.rightToLeft.values.toSeq))
     // this is the second time we apply skew filter - but this filters only on the keys
@@ -140,7 +186,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       }
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
-    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
+    val rightDf = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
       case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
       case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
       case (Events, Events, Accuracy.SNAPSHOT) =>
@@ -155,66 +201,182 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
       }
     }
+    Some(rightDf)
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  private def getUnfilledRows(joinPart: JoinPart,
+                              leftLogJoinDf: DataFrame,
+                              valueSchemas: Map[String, Set[StructField]],
+                              joinPartFields: Array[StructField]): DataFrame = {
+
+    val validHashes = valueSchemas
+      .filter(entry => joinPartFields.forall(entry._2.contains))
+      .keys
+      .toSeq
+
+    println(
+      s"Splitting left into filled vs unfilled by validHashes: ${validHashes.pretty} for joinPart: ${joinPart.groupBy.metaData.name}")
+
+    if (joinPartFields.map(_.name).exists(n => !leftLogJoinDf.columns.contains(n))) {
+      return leftLogJoinDf
+    }
+    if (!leftLogJoinDf.columns.contains(Constants.SchemaHash)) {
+      return leftLogJoinDf
+    }
+    leftLogJoinDf.where(not(col(Constants.SchemaHash).isin(validHashes: _*)))
+  }
+
+  /*
+   * if rowIdColumns is set, use it as the join key,
+   * otherwise, use keys + ts, which has to be conditionally based on schema_hash.
+   *
+   * we need to handle the scenario where a new key is added to driver so it only exists on the left but not in the log
+   */
+  private def joinLeftWithLogTable(leftDf: DataFrame,
+                                   leftRange: PartitionRange,
+                                   keySchemas: Map[String, Set[StructField]]): DataFrame = {
+    if (tableUtils.tableExists(joinConf.metaData.loggedTable)) {
+      // We require that logs are in the same date range as the left rows
+      val unfilledRangeOpt = tableUtils.unfilledRange(joinConf.metaData.leftLogJoinTable, leftRange)
+      unfilledRangeOpt.foreach { unfilledRange =>
+        val leftDfInRange = leftDf.prunePartition(unfilledRange)
+
+        // separately define logDf for each schemaHash to avoid the spark ambiguous join problem
+        def logDf(schemaHash: Option[String] = None): DataFrame = {
+          val scanQuery =
+            tableUtils.sql(unfilledRange.genScanQuery(query = null, table = joinConf.metaData.loggedTable))
+          if (schemaHash.isDefined) {
+            scanQuery.where(col(Constants.SchemaHash) === schemaHash.get)
+          } else {
+            scanQuery
+          }
+        }
+
+        val leftLogJoinedDf = if (joinConf.isSetRowIdColumns) {
+          mergeDFs(leftDfInRange, logDf(), joinConf.rowIdColumns.asScala)
+        } else {
+          val joinableRights = keySchemas.toSeq.flatMap {
+            case (hash, keys) =>
+              val sharedKeys = keys.map(_.name).toSeq.intersect(leftDfInRange.columns)
+              if (sharedKeys.isEmpty) {
+                None
+              } else {
+                Some((logDf(Some(hash)), sharedKeys :+ "ts"))
+              }
+          }
+          joinableRights.foldLeft(leftDfInRange) {
+            case (partialLeftDf, (rightDf, keys)) => mergeDFs(partialLeftDf, rightDf, keys)
+          }
+        }
+        tableUtils.insertPartitions(
+          leftLogJoinedDf,
+          joinConf.metaData.leftLogJoinTable,
+          tableProps,
+          autoExpand = true
+        )
+      }
+      tableUtils.sql(leftRange.genScanQuery(query = null, table = joinConf.metaData.leftLogJoinTable))
+    } else {
+      leftDf
+    }
+  }
+
+  private def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
-    val leftDfCount = leftTaggedDf.count()
-    val leftBlooms = joinConf.leftKeyCols.par.map { key =>
-      key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
-    }.toMap
+    val loggingSchemas = LogFlattenerJob
+      .readSchemaTableProperties(tableUtils, joinConf)
+      .mapValues(value =>
+        (
+          JoinCodec.fromLoggingSchema(value, joinConf).keyFields.toSet,
+          JoinCodec.fromLoggingSchema(value, joinConf).valueFields.toSet
+        ))
+    val leftLogJoinDf = joinLeftWithLogTable(leftTaggedDf, leftRange, loggingSchemas.mapValues(_._1))
 
-    // compute joinParts in parallel
-    val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
-      val partMetrics = Metrics.Context(metrics, joinPart)
-      if (joinPart.groupBy.aggregations == null) {
-        // no need to generate join part cache if there are no aggregations
-        computeJoinPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
-      } else {
-        // compute only the missing piece
-        val joinPartTableName = joinConf.partOutputTable(joinPart)
-        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
-        println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
-
-        if (rightUnfilledRange.isDefined) {
-          try {
-            val start = System.currentTimeMillis()
-            println(s"Writing to join part table: $joinPartTableName")
-            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get, leftBlooms)
-            // cache the join-part output into table partitions
-            rightDf.save(joinPartTableName, tableProps)
-            val elapsedMins = (System.currentTimeMillis() - start) / 60000
-            partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-            partMetrics.gauge(Metrics.Name.PartitionCount, rightUnfilledRange.get.partitions.length)
-            println(s"Wrote to join part table: $joinPartTableName in $elapsedMins minutes")
-          } catch {
-            case e: Exception =>
-              println(
-                s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
-              throw e
-          }
-        }
-        val scanRange =
-          if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-            // the events of a ds will join with
-            leftDf.timeRange.toPartitionRange.shift(-1)
-          } else {
-            leftRange
-          }
-        tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
-      }
+    val parts = joinConf.joinParts.asScala.map { jp =>
+      val partFields =
+        GroupBy.from(jp.groupBy, leftRange, tableUtils).outputSchema.fields.map(jp.constructJoinPartSchema)
+      (jp, partFields)
     }
 
-    val joined = rightDfs.zip(joinConf.joinParts.asScala).foldLeft(leftTaggedDf) {
+    // compute joinParts in parallel
+    val rights = parts.par.flatMap {
+      case (joinPart, joinPartFields) =>
+        val partMetrics = Metrics.Context(metrics, joinPart)
+
+        // filter down to rows where features are NOT populated by logging
+        val unfilledLeftDf =
+          getUnfilledRows(joinPart, leftLogJoinDf, loggingSchemas.mapValues(_._2), joinPartFields)
+            .select(leftTaggedDf.columns.head, leftTaggedDf.columns.tail: _*)
+
+        if (joinPart.groupBy.aggregations == null) {
+          // no need to generate join part cache if there are no aggregations
+          computeJoinPart(unfilledLeftDf, joinPart).map(df => (df, joinPart))
+        } else {
+          // compute only the missing piece
+          val joinPartTableName = joinConf.partOutputTable(joinPart)
+          val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
+          println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
+
+          if (rightUnfilledRange.isDefined) {
+            try {
+              val start = System.currentTimeMillis()
+              val filledDf = computeJoinPart(
+                unfilledLeftDf.prunePartition(rightUnfilledRange.get),
+                joinPart
+              )
+              // cache the join-part output into table partitions
+              filledDf.foreach { df =>
+                println(s"Writing to join part table: $joinPartTableName")
+                df.save(joinPartTableName, tableProps)
+                val elapsedMins = (System.currentTimeMillis() - start) / 60000
+                partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
+                partMetrics.gauge(Metrics.Name.PartitionCount, rightUnfilledRange.get.partitions.length)
+                println(s"Wrote to join part table: $joinPartTableName in $elapsedMins minutes")
+              }
+            } catch {
+              case e: Exception =>
+                println(
+                  s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
+                throw e
+            }
+          }
+          val scanRange =
+            if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+              // the events of a ds will join with
+              leftDf.timeRange.toPartitionRange.shift(-1)
+            } else {
+              leftRange
+            }
+
+          if (tableUtils.tableExists(joinPartTableName)) {
+            Some(
+              tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName)),
+              joinPart
+            )
+          } else {
+            None
+          }
+        }
+    }
+
+    val joined = rights.foldLeft(leftLogJoinDf) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
     joined.explain()
-    joined.drop(Constants.TimePartitionColumn)
+
+    // select required columns to exclude old features pulled from logs that no longer exist in join definition
+    val outputDataColumns = leftTaggedDf.columns ++ parts.flatMap(_._2.map(_.name))
+    val outputColumns = if (joined.columns.contains(Constants.SchemaHash)) {
+      Constants.SchemaHash +: outputDataColumns
+    } else {
+      outputDataColumns
+    }
+    joined.select(outputColumns.map(col): _*).drop(Constants.TimePartitionColumn)
   }
 
   def tablesToRecompute(): Option[Seq[String]] = {
@@ -223,7 +385,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
       oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
     ) yield {
-      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash");
+      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash.pretty},\nOld: ${oldSemanticHash.pretty}")
       joinConf.tablesToDrop(oldSemanticHash)
     }
   }
@@ -299,7 +461,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(range).map { leftDfInRange =>
-          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          // set autoExpand = true to ensure backward compatibility due to column ordering changes
+          computeRange(leftDfInRange, range).save(outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

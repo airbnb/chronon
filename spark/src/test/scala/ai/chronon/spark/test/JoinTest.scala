@@ -9,7 +9,7 @@ import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
@@ -415,7 +415,8 @@ class JoinTest {
         Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one"),
         Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two")
       ),
-      metaData = Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
     )
 
     //run analyzer and validate output schema
@@ -733,9 +734,10 @@ class JoinTest {
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.tablesToRecompute().get
-    assertEquals(leftChangeRecompute.size, 2)
+    assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
-    assertEquals(leftChangeRecompute, Seq(partTable, leftChangeJoinConf.metaData.outputTable))
+    assertEquals(leftChangeRecompute,
+                 Seq(partTable, leftChangeJoinConf.metaData.leftLogJoinTable, leftChangeJoinConf.metaData.outputTable))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -943,7 +945,7 @@ class JoinTest {
     new SummaryJob(spark, join, today).dailyRun(stepDays = Some(30))
   }
 
-  def genTestEventSource() : api.Source = {
+  def genTestEventSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -957,5 +959,63 @@ class JoinTest {
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
       table = viewsTable
     )
+  }
+
+  @Test
+  def testLogJoin(): Unit = {
+    val nameSuffix = "_log_test"
+
+    /* prepare left table */
+    val leftColumns = List(Column("key", api.StringType, 20))
+    val leftTableName = s"$namespace.left_$nameSuffix"
+    val leftDf = DataFrameGen.events(spark, leftColumns, 100, partitions = 5)
+    leftDf.save(leftTableName)
+    val leftStart = Constants.Partition.minus(today, new Window(5, TimeUnit.DAYS))
+
+    /* prepare group by */
+    val rightColumns = List(
+      Column("key", api.StringType, 20),
+      Column("value", api.LongType, 100)
+    )
+    val rightTableName = s"$namespace.right_$nameSuffix"
+    val rightDf = DataFrameGen.events(spark, rightColumns, count = 600, partitions = 30)
+    rightDf.save(rightTableName)
+
+    val gbSource = Builders.Source.events(
+      table = rightTableName,
+      query = Builders.Query(selects = Builders.Selects("value"), startPartition = yearAgo)
+    )
+    val gb = Builders.GroupBy(
+      sources = Seq(gbSource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "value")
+      ),
+      metaData = Builders.MetaData(name = s"unit_test.gb_$nameSuffix", namespace = namespace, team = "test"),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    /* prepare the join */
+    val join = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = leftStart), table = leftTableName),
+      joinParts = Seq(Builders.JoinPart(groupBy = gb)),
+      metaData = Builders.MetaData(name = s"unit_test.join_$nameSuffix", namespace = namespace, team = "test")
+    )
+
+    /* prepare the log table */
+    val logDf = leftDf
+      .where(col(Constants.PartitionColumn) === today)
+      .withColumn(s"unit_test_gb_${nameSuffix}_value_count", lit(1000L))
+    logDf.save(join.metaData.loggedTable)
+
+    /* run the join pipeline */
+    val toCompute = new Join(join, today, tableUtils)
+    val finalData = toCompute.computeJoin().collect()
+
+    // verify that the left rows that have corresponding logs use logged values in the join compute
+    assertTrue(
+      finalData
+        .filter(row => row.getString(3) == Constants.PartitionColumn)
+        .forall(row => row.getLong(2) == 1000L))
   }
 }

@@ -177,6 +177,7 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    5: optional list<string> rowIdColumns
 }
 
 

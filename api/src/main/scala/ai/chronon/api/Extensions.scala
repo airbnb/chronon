@@ -6,7 +6,6 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object Extensions {
@@ -74,7 +73,8 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
-    def loggedTable = s"${outputTable}_logged"
+    def loggedTable = s"${outputTable}_logged" // join-level flattened log table
+    def leftLogJoinTable = s"${outputTable}_left_log" // intermediate table with output of log <> flattened log join
     private def comparisonPrefix = "comparison"
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
@@ -474,7 +474,8 @@ object Extensions {
       val newSemanticHash = semanticHash
       // drop everything if left source changes
       val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
-        oldSemanticHash.keys.filter(_ != leftSourceKey).toSeq
+        val joinPartTables = oldSemanticHash.keys.filter(_ != leftSourceKey).toSeq
+        joinPartTables :+ join.metaData.leftLogJoinTable
       } else {
         val changed = newSemanticHash.flatMap {
           case (key, newVal) =>
@@ -572,6 +573,16 @@ object Extensions {
         "\n    " + strs.mkString(",\n    ") + "\n"
       else
         ""
+    }
+  }
+
+  implicit class StringMapOps(map: Map[String, String]) {
+    def pretty: String = {
+      "\n    " + map.toSeq.sorted
+        .map {
+          case (k, v) => s"$k -> $v"
+        }
+        .mkString("\n    ") + "\n    "
     }
   }
 
