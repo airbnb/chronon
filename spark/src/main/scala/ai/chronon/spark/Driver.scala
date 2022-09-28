@@ -1,6 +1,6 @@
 package ai.chronon.spark
 
-import ai.chronon.api
+import ai.chronon.{MetadataExporter, api}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
@@ -19,9 +19,9 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.io.File
 import java.nio.file.{Files, Paths}
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -127,6 +127,21 @@ object Driver {
                    args.count(),
                    args.sample(),
                    args.enableHitter()).run
+    }
+  }
+
+  object MetadataExport {
+    class Args extends Subcommand("metadataExport") with OfflineSubcommand {
+      val inputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path of config repo to export from")
+      val outputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path to write output metadata files to")
+    }
+
+    def run(args: Args): Unit = {
+      MetadataExporter.run(args.basePath(), args.outputRootPath())
     }
   }
 
