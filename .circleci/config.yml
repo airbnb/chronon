@@ -58,12 +58,12 @@ jobs:
                         docker push patyoon/zipline-ci:base
                     fi
 
-    "Spark 2 Scala Tests":
+    "Scala 11 -- Spark 2 Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
             - run:
-                  name: Run Chronon tests
+                  name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       # Increase if we see OOM.
@@ -74,7 +74,7 @@ jobs:
             - store_test_results:
                   path: /zipline/aggregator/target/test-reports
 
-    "Spark 3 Scala Tests":
+    "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
         steps:
             - full_checkout
@@ -84,11 +84,23 @@ jobs:
                   command: |
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.12.12 spark_uber/test"
+                      sbt "++ 2.12.12 test"
             - store_test_results:
                   path: /zipline/spark/target/test-reports
             - store_test_results:
                   path: /zipline/aggregator/target/test-reports
+
+    "Scala 13 -- Tests":
+        executor: docker_baseimg_executor
+        steps:
+            - full_checkout
+            - run:
+                  name: Run Scala 13 tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      # Increase if we see OOM.
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      sbt "++ 2.13.6 test"
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
@@ -128,13 +140,19 @@ workflows:
                 filters:  # required since `Publish JARs` has tag filters AND requires this step
                     tags:
                         only: /.*/
-            - "Spark 2 Scala Tests":
+            - "Scala 11 -- Spark 2 Tests":
                   requires:
                       - "Docker Base Build"
                   filters:
                       tags:
                           ignore: /^release-zl-.*/
-            - "Spark 3 Scala Tests":
+            - "Scala 12 -- Spark 3 Tests":
+                  requires:
+                      - "Docker Base Build"
+                  filters:
+                      tags:
+                          ignore: /^release-zl-.*/
+            - "Scala 13 -- Tests":
                   requires:
                       - "Docker Base Build"
                   filters:
