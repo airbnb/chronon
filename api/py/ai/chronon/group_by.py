@@ -16,6 +16,7 @@ DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 LOGGER = logging.getLogger()
 
+
 def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
     return lambda k: (op, {"k": str(k)})
 
