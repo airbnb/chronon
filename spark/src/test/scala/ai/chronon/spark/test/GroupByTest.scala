@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -336,7 +336,7 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-  private def createTestSource(windowSize: Int = 365): (Source, String) = {
+  private def createTestSource(windowSize: Int = 365, suffix: String = ""): (Source, String) = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val startPartition = Constants.Partition.minus(today, new Window(windowSize, TimeUnit.DAYS))
     val endPartition = Constants.Partition.at(System.currentTimeMillis())
@@ -346,7 +346,7 @@ class GroupByTest {
       Column("time_spent_ms", LongType, 5000)
     )
     val namespace = "chronon_test"
-    val sourceTable = s"$namespace.test_group_by_steps"
+    val sourceTable = s"$namespace.test_group_by_steps$suffix"
 
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
@@ -399,5 +399,29 @@ class GroupByTest {
       backfillStartDate =
         Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
     )
+  }
+
+  // Test percentile Impl on Spark.
+  @Test
+  def testPercentiles(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_percentile")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_percentiles"
+    val aggs = Seq(
+      Builders.Aggregation(operation = Operation.APPROX_PERCENTILE,
+        inputColumn = "ts",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "128", "percentiles" -> "[0.5, 0.25, 0.75]")
+      )
+    )
+    backfill(name = "unit_test_group_by_percentiles",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

@@ -3,6 +3,7 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base._
 import ai.chronon.api.Extensions.{AggregationPartOps, OperationOps}
 import ai.chronon.api._
+import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
@@ -257,8 +258,9 @@ object ColumnAggregator {
 
       case Operation.APPROX_PERCENTILE =>
         val k = aggregationPart.getInt("k", Some(128))
-        val bins = aggregationPart.getInt("bins", Some(40))
-        val agg = new ApproxPercentiles(k, bins)
+        val mapper = new ObjectMapper()
+        val percentiles = mapper.readValue(aggregationPart.argMap.getOrDefault("percentiles", "[0.5]"), classOf[Array[Double]])
+        val agg = new ApproxPercentiles(k, percentiles)
         inputType match {
           case IntType    => simple(agg, toFloat[Int])
           case LongType   => simple(agg, toFloat[Long])

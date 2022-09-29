@@ -12,10 +12,15 @@ import org.apache.spark.sql.{Column, DataFrame, functions, types, Row => SparkRo
 
 import java.util
 import scala.collection.immutable.SortedMap
+import collection.JavaConversions._
 
 object ConsistencyMetrics {
   val loggedSuffix = "_logged"
   val backfilledSuffix = "_backfilled"
+  val bins = 41
+  val percentilesArgMap: util.Map[String,String] = Map(
+    "k" -> "128",
+    "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
 
   case class MetricTransform(name: String,
                              expr: Column,
@@ -47,9 +52,9 @@ object ConsistencyMetrics {
             .otherwise(0.0),
           Operation.AVERAGE
         ),
-        MetricTransform("logged_minus_backfilled", logged - backfilled, Operation.APPROX_PERCENTILE),
-        MetricTransform("logged", logged, Operation.APPROX_PERCENTILE),
-        MetricTransform("backfilled", backfilled, Operation.APPROX_PERCENTILE)
+        MetricTransform("logged_minus_backfilled", logged - backfilled, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap),
+        MetricTransform("logged", logged, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap),
+        MetricTransform("backfilled", backfilled, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap)
       )
 
       val sequenceMetrics = Seq(
@@ -57,13 +62,14 @@ object ConsistencyMetrics {
           "edit_distance",
           edit_distance(logged, backfilled),
           Operation.APPROX_PERCENTILE,
+          percentilesArgMap,
           additionalExprs = Seq(
             "insert" -> ".insert",
             "delete" -> ".delete"
           )
         ),
-        MetricTransform("logged_length", functions.size(logged), Operation.APPROX_PERCENTILE),
-        MetricTransform("backfilled_length", functions.size(backfilled), Operation.APPROX_PERCENTILE)
+        MetricTransform("logged_length", functions.size(logged), Operation.APPROX_PERCENTILE, percentilesArgMap),
+        MetricTransform("backfilled_length", functions.size(backfilled), Operation.APPROX_PERCENTILE, percentilesArgMap)
       )
 
       val equalityMetric =

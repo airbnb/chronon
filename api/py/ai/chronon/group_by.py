@@ -1,5 +1,6 @@
 import ai.chronon.api.ttypes as ttypes
 import ai.chronon.utils as utils
+import logging
 import inspect
 import json
 from typing import List, Optional, Union, Dict, Callable, Tuple
@@ -13,10 +14,21 @@ OperationType = int  # type(zthrift.Operation.FIRST)
 # unless it is explicitly marked as online/production on the GroupBy itself.
 DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
+LOGGER = logging.getLogger()
 
 
 def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
     return lambda k: (op, {"k": str(k)})
+
+
+def generic_collector(op: ttypes.Operation, required, **kwargs):
+    def _collector(*args, **other_args):
+        arguments = kwargs.copy() if kwargs else {}
+        for idx, arg in enumerate(required):
+            arguments[arg] = args[idx]
+        arguments.update(other_args)
+        return (op, {k: str(v) for k, v in arguments.items()})
+    return _collector
 
 
 # To simplify imports
@@ -46,6 +58,7 @@ class Operation():
     LAST_K = collector(ttypes.Operation.LAST_K)
     TOP_K = collector(ttypes.Operation.TOP_K)
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
+    APPROX_PERCENTILE = generic_collector(ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128)
 
 
 def Aggregations(**agg_dict):
@@ -170,6 +183,25 @@ Keys {unselected_keys}, are unselected in source
             assert (agg.inputColumn in columns) or (agg.inputColumn == 'ts'), (
                 f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
                 f"input_column: {agg.inputColumn}")
+            if agg.operation == ttypes.Operation.APPROX_PERCENTILE:
+                if (
+                    agg.argMap is not None and
+                    agg.argMap.get("percentiles") is not None
+                ):
+                    try:
+                        percentile_array = json.loads(agg.argMap["percentiles"])
+                        assert isinstance(percentile_array, list)
+                        assert all([float(p) >= 0 and float(p) <= 1 for p in percentile_array])
+                    except Exception as e:
+                        LOGGER.exception(e)
+                        raise ValueError(
+                            "[Percentiles] Unable to decode percentiles value, expected json array with values between"
+                            f" 0 and 1 inclusive (ex: [0.6, 0.1]), received: {agg.argMap['percentiles']}")
+                else:
+                    raise ValueError(
+                        f"[Percentiles] Unsupported arguments for {op_to_str(agg.operation)}, "
+                        "example required: {'k': '128', 'percentiles': '[0.4,0.5,0.95]'},"
+                        f" received: {agg.argMap}\n")
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.

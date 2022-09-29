@@ -10,3 +10,10 @@ def rootdir():
 @pytest.fixture
 def teams_json(rootdir):
     return os.path.join(rootdir, 'sample/teams.json')
+
+
+@pytest.fixture
+def sleepless():
+    def justpass(seconds):
+        pass
+    return justpass

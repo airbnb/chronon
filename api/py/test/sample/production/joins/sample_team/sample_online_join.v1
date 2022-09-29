@@ -3,10 +3,11 @@
     "name": "sample_team.sample_online_join.v1",
     "online": 1,
     "production": 0,
-    "customJson": "{\"check_consistency\": false, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}, \"lag\": 0}",
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
       "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
+      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}",
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
       "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
@@ -54,8 +55,7 @@
               "query": {
                 "selects": {
                   "event": "event_expr",
-                  "group_by_subject": "group_by_expr",
-                  "ts": "ts"
+                  "group_by_subject": "group_by_expr"
                 },
                 "startPartition": "2021-04-09",
                 "timeColumn": "ts",
@@ -83,6 +83,14 @@
             "inputColumn": "event",
             "operation": 7,
             "argMap": {}
+          },
+          {
+            "inputColumn": "event",
+            "operation": 12,
+            "argMap": {
+              "k": "200",
+              "percentiles": "[0.99, 0.95, 0.5]"
+            }
           }
         ]
       },
@@ -94,9 +102,11 @@
       "groupBy": {
         "metaData": {
           "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "online": 1,
           "customJson": "{\"lag\": 0}",
           "dependencies": [
-            "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
+            "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
+            "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
           "tableProperties": {
             "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
@@ -108,11 +118,12 @@
           {
             "entities": {
               "snapshotTable": "sample_table.sample_entity_snapshot",
+              "mutationTable": "sample_table.sample_entity_mutations/hr=00:00",
+              "mutationTopic": "sample_topic",
               "query": {
                 "selects": {
                   "group_by_subject": "group_by_subject_expr",
-                  "entity": "entity_expr",
-                  "ts": "ts"
+                  "entity": "entity_expr"
                 },
                 "startPartition": "2021-03-01",
                 "timeColumn": "ts",
@@ -151,6 +162,7 @@
       "groupBy": {
         "metaData": {
           "name": "sample_team.group_by_with_kwargs.v1",
+          "online": 1,
           "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
@@ -169,8 +181,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "group_by_subject_expr_old_version",
-                  "event": "event_expr_old_version",
-                  "ts": "UNIX_TIMESTAMP(ts) * 1000"
+                  "event": "event_expr_old_version"
                 },
                 "startPartition": "2021-03-01",
                 "endPartition": "2021-04-09",
@@ -185,8 +196,7 @@
               "query": {
                 "selects": {
                   "group_by_subject": "possibly_different_group_by_subject_expr",
-                  "event": "possibly_different_event_expr",
-                  "ts": "__timestamp"
+                  "event": "possibly_different_event_expr"
                 },
                 "startPartition": "2021-03-01",
                 "timeColumn": "__timestamp",
@@ -203,6 +213,14 @@
             "inputColumn": "event",
             "operation": 7,
             "argMap": {}
+          },
+          {
+            "inputColumn": "event",
+            "operation": 12,
+            "argMap": {
+              "k": "128",
+              "percentiles": "[0.5]"
+            }
           },
           {
             "inputColumn": "event",
