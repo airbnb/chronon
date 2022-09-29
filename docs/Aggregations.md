@@ -38,7 +38,7 @@ For percentiles the underlying implementation is [KLLSketch](https://datasketche
 `argMap` for percentiles:
 
 * **k** (Optional, Int): Affects the accuracy and size of the sketch.
-* **percentiles** (Required, String): Comma separated string of percentiles to be finalized (Ex: "0.25, 0.5, 0.75").
+* **percentiles** (Required, String): JSON array of percentiles to be finalized (Ex: "[0.25, 0.5, 0.75]").
 
 As such it's possible to add more percentiles to be finalized to an existing aggregation, as the intermediate result
 stored is independent of this value.
