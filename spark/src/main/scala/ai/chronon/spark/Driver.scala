@@ -141,7 +141,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      MetadataExporter.run(args.basePath(), args.outputRootPath())
+      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
     }
   }
 
