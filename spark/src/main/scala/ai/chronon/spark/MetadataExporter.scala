@@ -1,8 +1,9 @@
 package ai.chronon.spark
 
 import java.io.{BufferedWriter, File, FileWriter}
-import com.fasterxml.jackson.databind.json.JsonMapper
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
+
+import ai.chronon.spark.Driver.parseConf
+import com.fasterxml.jackson.databind.ObjectMapper
 
 object MetadataExporter {
 
@@ -17,16 +18,28 @@ object MetadataExporter {
       .map(_.getPath)
   }
 
-  def writeGroupByOutput(groupByPath: String, outputDirectory: String): Unit = {
-    val mapper = JsonMapper.builder()
-      .addModule(DefaultScalaModule)
-      .build()
+  def getEnrichedGroupByMetadata(groupByPath: String): String = {
+    val mapper = new ObjectMapper()
     val configData = mapper.readValue(groupByPath, classOf[Map[String, Any]])
-    val enrichedData = configData + {"features" -> "TODO"} // Integrate with new analyzer
-    val outputFileName = outputDirectory + GROUPBY_PATH_SUFFIX + "/" + groupByPath.split("/").last
-    val file = new File(outputFileName)
+    val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
+    val analyzer = new Analyzer(tableUtils, groupByPath, null, null)
+    val featureMetadata = analyzer.analyzeGroupBy(parseConf(groupByPath)).map{ featureCol =>
+      Map(
+        "name" -> featureCol.name,
+        "window" -> featureCol.window,
+        "columnType" -> featureCol.columnType,
+        "inputColumn" -> featureCol.inputColumn,
+        "operation" -> featureCol.operation
+      )
+    }
+    val enrichedData = configData + {"features" -> featureMetadata}
+    mapper.writeValueAsString(enrichedData)
+  }
+
+  def writeGroupByOutput(groupByPath: String, outputDirectory: String): Unit = {
+    val file = new File(outputDirectory + GROUPBY_PATH_SUFFIX + groupByPath.split("/").last)
     val writer = new BufferedWriter(new FileWriter(file))
-    writer.write(mapper.writeValueAsString(enrichedData))
+    writer.write(getEnrichedGroupByMetadata(groupByPath))
     writer.close()
   }
 
@@ -39,5 +52,4 @@ object MetadataExporter {
   def run(inputPath: String, outputPath: String): Unit = {
     processGroupBys(inputPath, outputPath)
   }
-
 }
