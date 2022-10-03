@@ -10,7 +10,7 @@ ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
 // ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
 git.useGitDescribe := true
-git.baseVersion := "2.0.0"
+git.baseVersion := "3.2.0"
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -52,14 +52,27 @@ lazy val root = (project in file("."))
   )
   .enablePlugins(GitVersioning, GitBranchPrompt)
 
+git.gitTagToVersionNumber := { tag :String =>
+  //streams.value.log.info(s"$tag")
+  val branchTag = if (git.gitCurrentBranch.value == "master") "" else "-" + git.gitCurrentBranch.value
+  val uncommit = if (git.gitUncommittedChanges.value) "-U" else ""
+
+  tag match {
+    case v if v.matches("v\\d+.\\d+") => Some(s"$v.0${branchTag}${uncommit}".drop(1))
+    case v if v.matches("v\\d+.\\d+-.*") => Some(s"${v.replaceFirst("-",".")}${branchTag}${uncommit}".drop(1))
+    case _ => None
+  }}
+
+/*
 val VersionRegex = "v([0-9]+.[0-9]+.[0-9]+)-?(.*)?".r
 git.gitTagToVersionNumber := {
   case VersionRegex(v,"") => Some(v)
   case VersionRegex(v,"SNAPSHOT") => Some(s"$v-SNAPSHOT")
   case VersionRegex(v,s) => Some(s"$v-$s-SNAPSHOT")
   case _ => None
+  streams.value.log.info(s"$v")
 }
-
+*/
 
 lazy val api = project
   .settings(
