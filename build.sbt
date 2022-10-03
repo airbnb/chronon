@@ -8,7 +8,9 @@ lazy val scala213 = "2.13.6"
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
-ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
+// ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
+git.useGitDescribe := true
+git.baseVersion := "2.0.0"
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -48,6 +50,16 @@ lazy val root = (project in file("."))
     crossScalaVersions := Nil,
     name := "chronon"
   )
+  .enablePlugins(GitVersioning, GitBranchPrompt)
+
+val VersionRegex = "v([0-9]+.[0-9]+.[0-9]+)-?(.*)?".r
+git.gitTagToVersionNumber := {
+  case VersionRegex(v,"") => Some(v)
+  case VersionRegex(v,"SNAPSHOT") => Some(s"$v-SNAPSHOT")
+  case VersionRegex(v,s) => Some(s"$v-$s-SNAPSHOT")
+  case _ => None
+}
+
 
 lazy val api = project
   .settings(
