@@ -5,6 +5,9 @@ lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
 
+releaseVersionBump := sbtrelease.Version.Bump.Major
+releaseUseGlobalVersion := false
+
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
