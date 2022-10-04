@@ -8,7 +8,6 @@ lazy val scala213 = "2.13.6"
 // Release related configs
 import ReleaseTransformations._
 lazy val releaseSettings = Seq(
-  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Minor,
   releaseProcess := Seq[ReleaseStep](
@@ -19,7 +18,7 @@ lazy val releaseSettings = Seq(
     setReleaseVersion,                      // : ReleaseStep
     commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
     tagRelease,                             // : ReleaseStep
-    releaseStepCommandAndRemaining("+ publishSigned"),                   // : ReleaseStep, checks whether `publishTo` is properly set up
+    releaseStepCommandAndRemaining("+ publishSigned"),  // : ReleaseStep, checks whether `publishTo` is properly set up
     setNextVersion,                         // : ReleaseStep
     commitNextVersion                      // : ReleaseStep
     //pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
