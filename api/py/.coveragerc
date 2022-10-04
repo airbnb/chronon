@@ -1,2 +1,2 @@
 [run]
-omit = ai/zipline/api/*
+omit = ai/chronon/api/*
