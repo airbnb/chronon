@@ -1,6 +1,6 @@
 package ai.chronon.spark
 
-import ai.chronon.{MetadataExporter, api}
+import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
@@ -487,6 +487,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object MetadataExportArgs extends MetadataExport.Args
+    addSubcommand(MetadataExportArgs)
     requireSubcommand()
     verify()
   }
@@ -521,6 +523,7 @@ object Driver {
             ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
+          case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
           case _                 => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
