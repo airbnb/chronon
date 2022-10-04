@@ -69,16 +69,26 @@ lazy val root = (project in file("."))
 
 git.useGitDescribe := true
 
-git.gitTagToVersionNumber := { tag :String =>
-  //streams.value.log.info(s"$tag")
-  val branchTag = if (git.gitCurrentBranch.value == "master") "" else "-" + git.gitCurrentBranch.value
-  val uncommit = if (git.gitUncommittedChanges.value) "-U" else ""
+git.gitTagToVersionNumber := { tag: String =>
+  val uncommit = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
+  val branchTag = git.gitCurrentBranch.value
+  if (branchTag == "master") {
+    Some(s"${uncommit}")
+  } else {
+    Some(s"${branchTag}-${uncommit}")
+    //streams.value.log.info(s"$tag")
+    /*
+    val branchTag = if (git.gitCurrentBranch.value == "master") "" else "-" + git.gitCurrentBranch.value
+    val uncommit = if (git.gitUncommittedChanges.value) "-U" else ""
 
-  tag match {
-    case v if v.matches("v\\d+.\\d+") => Some(s"$v.0${branchTag}${uncommit}".drop(1))
-    case v if v.matches("v\\d+.\\d+-.*") => Some(s"${v.replaceFirst("-",".")}${branchTag}${uncommit}".drop(1))
-    case _ => None
-  }}
+    tag match {
+      case v if v.matches("v\\d+.\\d+") => Some(s"$v.0${branchTag}${uncommit}".drop(1))
+      case v if v.matches("v\\d+.\\d+-.*") => Some(s"${v.replaceFirst("-", ".")}${branchTag}${uncommit}".drop(1))
+      case _ => None
+    }
+    */
+  }
+}
 
 lazy val api = project
   .settings(
