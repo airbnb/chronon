@@ -5,26 +5,6 @@ lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
 
-// Release related configs
-import ReleaseTransformations._
-lazy val releaseSettings = Seq(
-  releaseUseGlobalVersion := false,
-  releaseVersionBump := sbtrelease.Version.Bump.Minor,
-  releasePublishArtifactsAction := PgpKeys.publishSigned.value, // This step has internal issues working for downstream builds (workaround in place).
-  releaseProcess := Seq[ReleaseStep](
-    checkSnapshotDependencies,              // : ReleaseStep
-    inquireVersions,                        // : ReleaseStep
-    runClean,                               // : ReleaseStep
-    //runTest,                                // : ReleaseStep
-    setReleaseVersion,                      // : ReleaseStep
-    commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
-    tagRelease,                             // : ReleaseStep
-    //releaseStepCommandAndRemaining("+ publishSigned"),  // : ReleaseStep, checks whether `publishTo` is properly set up
-    setNextVersion,                         // : ReleaseStep
-    commitNextVersion,                      // : ReleaseStep
-    pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
-  )
-)
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -58,6 +38,28 @@ lazy val publishSettings = Seq(
   publishMavenStyle := true
 )
 
+// Release related configs
+import ReleaseTransformations._
+lazy val releaseSettings = Seq(
+  releaseUseGlobalVersion := false,
+  releaseVersionBump := sbtrelease.Version.Bump.Minor,
+  // This step has internal issues working for downstream builds (workaround in place).
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+  releaseProcess := Seq[ReleaseStep](
+    checkSnapshotDependencies,
+    inquireVersions,
+    runClean,
+    //runTest,                                        // Skipping tests as part of release process
+    setReleaseVersion,
+    commitReleaseVersion,
+    tagRelease,
+    // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
+    releaseStepCommandAndRemaining("+ publishSigned"),
+    setNextVersion,
+    commitNextVersion,
+    //pushChanges                                     // : Pushes the local Git changes to GitHub
+  )
+)
 
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
