@@ -22,6 +22,7 @@ releaseProcess := Seq[ReleaseStep](
   commitNextVersion,                      // : ReleaseStep
   //pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
 )
+releasePublishArtifactsAction := PgpKeys.publishSigned.value
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
