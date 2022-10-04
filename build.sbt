@@ -68,6 +68,7 @@ lazy val root = (project in file("."))
     crossScalaVersions := Nil,
     name := "chronon"
   )
+  .settings(releaseSettings: _*)
   .enablePlugins(GitVersioning, GitBranchPrompt)
 
 // Git related config
