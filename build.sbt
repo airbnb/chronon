@@ -1,31 +1,17 @@
 import sbt.Keys._
 import sbt.Test
-import ReleaseTransformations._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
 
+// Release related configs
 releaseUseGlobalVersion := false
 releaseVersionBump := sbtrelease.Version.Bump.Minor
-
-releaseProcess := Seq[ReleaseStep](
-  checkSnapshotDependencies,              // : ReleaseStep
-  inquireVersions,                        // : ReleaseStep
-  runClean,                               // : ReleaseStep
-  setReleaseVersion,                      // : ReleaseStep
-  commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
-  tagRelease,                             // : ReleaseStep
-  publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
-  setNextVersion,                         // : ReleaseStep
-  commitNextVersion,                      // : ReleaseStep
-  pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
-)
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
-//ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -67,8 +53,8 @@ lazy val root = (project in file("."))
   )
   .enablePlugins(GitVersioning, GitBranchPrompt)
 
+// Git related config
 git.useGitDescribe := true
-
 git.gitTagToVersionNumber := { tag: String =>
   // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
   val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
