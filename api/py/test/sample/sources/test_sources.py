@@ -23,6 +23,8 @@ event_source = ttypes.Source(events=ttypes.EventSource(
 # Sample Entity Source
 entity_source = ttypes.Source(entities=ttypes.EntitySource(
     snapshotTable="sample_table.sample_entity_snapshot",
+    # hr partition is not necessary - just to demo that we support various 
+    # partitioning schemes
     mutationTable="sample_table.sample_entity_mutations/hr=00:00",
     mutationTopic="sample_topic",
     query=Query(

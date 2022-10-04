@@ -10,16 +10,24 @@ Chronon supports:
   - Require real-time aggregations over raw data
   - Midnight accurate aggregation over raw data
   - Or contain pre-aggregated data.
-- Powerful [Aggregation](./Aggregations.md) primitive with windowing, bucketing and auto-unpacking support over arbitrary complex/nested data types.
-- Spark Sql Expressions with udf & built-in function [library](https://spark.apache.org/docs/latest/api/sql/index.html) for projections (select clauses) or filtering (where clauses).
+- Powerful [Aggregation](./Aggregations.md) primitive with windowing, bucketing and auto-unpacking support over 
+  arbitrary complex/nested data types.
+- Spark Sql Expressions with udfs & built-in function [library](https://spark.apache.org/docs/latest/api/sql/index.html) 
+  for projections (select clauses) or filtering (where clauses).
 - Computing features in realtime based on traditional event streams or change-capture streams of databases.
 - Backfilling features without waiting to accumulate logs.
-- Data source types as first-class citizens. Data source type refers to patterns in which new data is ingested into the warehouse's partitions.
-  - Entites - new partitions contain snapshot of the state of an entity - like user bank balances. Snapshots of db tables and dimension tables are examples.
-  - Events - new partitions contain all the events that occureed in the time duration of the partition value (`date`, `hour` etc.,)
-  - Cumulative Events - new partitions contains all events that have occured from the beginning of time. So newer partition are simply a superset of older partitions and hence it is sufficient to always read just the latest partition.
+- Data source types as first-class citizens. Data source type refers to patterns in which new data is ingested into the 
+  warehouse's partitions.
+  - Entites - new partitions contain snapshot of the state of an entity - like user bank balances. Snapshots of db 
+    tables and dimension tables are examples.
+  - Events - new partitions contain all the events that occureed in the time duration of the partition value 
+    (`date`, `hour` etc.,)
+  - Cumulative Events - new partitions contains all events that have occured from the beginning of time. So newer 
+    partition are simply a superset of older partitions and hence it is sufficient to always read just the latest 
+    partition.
 - Arbitrary spark queries to implement complex logic to prepare data for non-realtime accurate features.
-- Idempotent computation - new runs automatically fill all partitions starting from last filled partition. This is counter to the airflow convention of each run filling only the partition of that day.
+- Idempotent computation - new runs automatically fill all partitions starting from last filled partition. This is 
+  counter to the airflow convention of each run filling only the partition of that day.
 
 Chronon comes packaged with tools to manage a repository of feature definitions. `explore.py`, `compile.py` and `run.py` are the primary tools provided via the `chronon-ai` pip package for discovering, validating and running feature definitions respectively. The repository has a notion of a `team` that can own feature definitions and configure the execution parameters of feature computation pipelines.
 
@@ -92,7 +100,7 @@ view_features = GroupBy(
     aggregations=[
         Aggregation(
             operation=Operation.COUNT, 
-            swindows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
+            windows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
     ])
 ```
 
@@ -113,38 +121,111 @@ item_rec_features = Join(
 
 Full code [example](https://gist.github.com/nikhilsimha/13cf46b93116bc3b0b08b4adc1483bd1)
 
-## Components
+## More Examples
+
+The document below goes into a bit more detail about each of the concepts. 
+You can find examples [here](../api/py/test/sample/) instead.
 
 ## Source
+Source in chronon refers to a logical group of underlying physical data sources. There are two types of sources
+- Events
+- Entities 
+- Cumulative 
 
-Source in chronon refers to a logical group of underlying physical data sources. For each source you can specify a Query that can transform the actual input
+The following diagram visualizes these sources
+![Data Landscape](./images/Data_landscape.png)
+
+### Events
+Events represent log of immutable events - like user views, clicks, transactions etc. Events are represented by
+two data elements
+
+- table => A daily partitioned hive table with each partition containing the events that occur during that day only. You
+  can also use any `fact` table that is derived from some other offline logic - if you don't care about realtime-ness. 
+- topic => A kafka topic that the events flow through before ending up in hive. This is optional, and only needed if you
+are trying to produce realtime-features
+  
+Usually you will have a naming convention between the topic name and table name. It is a good idea to capture that in a
+helper method that is re-used across your organization.
+
+```python
+# Example assuming arbitrary naming convention
+def MyEventSource(event_name, *args, **kwargs):
+    return EventSource(table=f"some_namespace.{event_name}_log",                
+                        topic=f"{event_name}_mutations/host=YOUR_KAFKA_HOST/port=YOUR_KAFKA_PORT",
+                        *args, **kwargs)
+```
+
+>**Note**: The dates and timestamps below are shortened for brevity. You should have dates in `yyyy-MM-dd`
+> format, and timestamps as long values representing milliseconds since epoch in UTC. You can specify a time 
+> transformation as an argument to `EventSource.query.timeColumn`. 
+
+![events example](./images/Events_example.png)
 
 ### Entities
 
-In the average rating example above we have a `snapshotTable`, a `mutationTable` and a `mutationTopic` that are specified together as an `EntitySource`.
+In purple we have a group of data elements, that represents changing data in an online database table that 
+application services use. 
 
-`snapshotTable` is a daily-partitioned hive table with each partition containing a snapshot of the `ratings` transactional database table as of midnight. The transactional table might have been used to store and serve ratings data in application servers. One would use a tool like [Sqoop](https://sqoop.apache.org/) and [Airflow](https://airflow.apache.org/) to setup a regular pipeline to capture a snapshot of the transactional table into hive.
+ - `snapshotTable` => A daily partitioned table in hive with full snapshot of online table taken every midnight. A tool 
+   like [Sqoop](https://sqoop.apache.org/) etc can produce these snapshotTables into hive. You should already have a 
+   mechanism that captures online table snapshots into hive periodically. This can also be any `dim` / `dimension` table.
+ - `mutationTopic` => A topic in kafka containing mutations to the table rows. A tool like [Debezium](https://debezium.io/)
+   can be attached to your online database to stream mutations into kafka.
+ - `mutationTable` => A daily partitioned hive table containing mutations that happened in a particular day in each partition.
 
-`mutationsTopic` is a kafka topic containing the mutations to the rows of the transactional table. One could attach a tool like [Debezium](https://debezium.io/) to a transactional databases like mysql, postgres, oracle or sql server. Debezium will then begin streaming  mutations into kafka topics.
+> **Note**: that `mutationTopic` and `mutationTable` are only necessary for realtime feature serving and PITC backfill 
+> respectively. If you don't have these two sources, you can still use just the `snapshotTable` for constructing 
+> midnight accurate (non-realtime) features. 
 
-`mutationTable` is also a daily-partitioned hive table, but with each partition containing a log of mutations that occured on the transactional table during that particular day.
+If you have a convention around the all db related tables, it might be worth creating a method that produces a full 
+entity source with all three elements specified. 
+```python
+# Example assuming arbitrary naming convention
+def DBExportSource(table_name, *args, **kwargs):
+    return EntitySource(snapshotTable=f"{table_name}_snapshots",
+                        mutationTable=f"{table_name}_mutations",
+                        mutationTopic=f"{table_name}_mutations/host=YOUR_KAFKA_HOST/port=YOUR_KAFKA_PORT",
+                        *args, **kwargs)
+```
 
-To visualize lets say we have a ratings table that looks like so
+See example ratings table 
+![Entities Example](./images/Entities_example.png)
 
-| user_id |   item_id |  rating | rating_timestamp |
-|---------|-----------|---------|------------------|
-|  alice  |    pizza  |    5    |  2021-08-16 5:24 |
-|   bob   | ice_cream |    3    |  2021-08-16 5:24 |
-|  carl   | ice_cream |    4    |  2021-08-16 5:24 |
-| dominic |    pizza  |    1    |  2021-10-21 7:44 |
-|  eva    |    pizza  |    4    |  2021-10-21 7:44 |
-|  fred   | ice_cream |    4    |  2021-10-21 7:44 |
-
-### Events
+>**Note**: Dates and timestamps are shortened for brevity. MutationTable is an unpacked version. There are three kinds of
+> mutations deletes, updates and inserts. `mutationTs` is modified for brevity, but it should be a long representing
+> the time at which the update occurred in milliseconds since epoch.
+> - Updates are unpacked into two rows - a before-update-row: `is_before = True` 
+> and an after-update-row: `is_before = False`.  
+> 
+> - Inserts are unpacked into a single row where `is_before = False`.
+> 
+> - Deletes are unpacked into a single row where `is_before = True`.
+> 
+> You can expand the DBExportSource method above to fit your mutation data into these conventions once for your company.
+ 
 
 ### Cumulative Events
 
-### Start & End Partitions
+This is the case where, only new rows are added into new partitions, and old rows's columns that you care about are never 
+ modified. This implies that latest partition always contain all data from the previous partition. The advantage of 
+this is that we can always look at latest partition instead of a historical range.
+
+This is specified as a sub-case of Events as `Events(cumulative=True)`.
+
+See example
+![Cumulative Example](./images/Cumulative_example.png)
+
+> Note: Declaring a source as Cumulative one comes with enormous performance benefits compared to EntitySource. But
+> you need to be 100% sure that the columns you want to consume are never modified.
+
+## Query
+
+Once you have chosen the right source type, the next step is to specify a query that can scan the **necessary** data.
+That is where the `Query` comes in.  
+row level transformation and filtering. We use spark sql expressions to power this & all built-in functions & UDFs are 
+supported.
+
+
 
 ---
 
@@ -160,39 +241,109 @@ Consider the following group of aggregations from an user purchase stream `(user
 
 The above example illustrates the computation of aggregates in several contexts.
 
-- **served online** in **realtime** - you can utilize the Chronon client (java/scala) to query for the aggregate values as of **now**. The client would reply with realtime updated aggregate values. This would require a *stream* of user purchases and also a warehouse (hive) *table* of historical user purchases.
+- **served online**, updated in **realtime** - you can utilize the Chronon client (java/scala) to query for the aggregate values as of **now**. The client would reply with realtime updated aggregate values. This would require a *stream* of user purchases and also a warehouse (hive) *table* of historical user purchases.
 
-- **served online** as **midnight snapshots** - you can utilize the client to query for the aggregate values as of **today's midnight**. The values are only refreshed every midnight. This would require just the warehouse (hive) table of historical user purchases that receives a new partition every midnight.
+- **served online**, updated at **midnight** - you can utilize the client to query for the aggregate values as of **today's midnight**. The values are only refreshed every midnight. This would require just the warehouse (hive) table of historical user purchases that receives a new partition every midnight.
   - *Note: Users can configure accuracy to be midnight or realtime*
 
 - **standalone backfilled** - daily snapshots of aggregate values. The result is a date partitioned Hive Table where each partition contains aggregates as of that day, for each user that has row in the largest window ending that day.
 
 - **backfilled against another source** - see [Join](#join) below. Most commonly used to enrich labelled data with aggregates coming from many different sources & GroupBy's at once.
 
-**selecting the right Source for your `GroupBy`** is a crucial first step to correctly defining a `GroupBy`. See the section below, `Sources` for more info on the options and when to use each.
+**selecting the right Source for your `GroupBy`** is a crucial first step to correctly defining a `GroupBy`. 
+See the [Sources](#Source) section above for more info on the options and when to use each.
 
-Often, you might want to chain together aggregations (i.e. first run `LAST` then run `SUM` on the output). This can be achieved by using the output of one `GroupBy` as the input to the next.
+Often, you might want to chain together aggregations (i.e., first run `LAST` then run `SUM` on the output). 
+This can be achieved by using the output of one `GroupBy` as the input to the next.
 
 ### Aggregations
-
-#### Windows
-
-#### Buckets
-
-#### Auto-Flattening
+Chronon supports a powerful aggregation primitive that supports time windows, bucketing and auto-exploding as first class
+primitives. [See aggregations.md](./Aggregations.md) for more details. 
 
 ### Accuracy
+`accuracy` is a toggle that can be supplied to `GroupBy`. It can be either `SNAPSHOT` or `TEMPORAL`.
+`SNAPSHOT` accuracy means that feature values are computed as of midnight only and refreshed once daily.
+`TEMPORAL` accuracy means that feature values are computed in realtime while serving, and in point-in-time-correct 
+fashion while backfilling.
+When topic or mutationTopic is specified, we default to `TEMPORAL` otherwise `SNAPSHOT`.
+
 
 ### GroupBy Online (Serving)
+`online` is a toggle to specify if the pipelines necessary to maintain feature views should be scheduled. This is for 
+online low-latency serving. 
+
+```python
+your_gb = GroupBy(
+  ...,
+  online=True
+)
+```
+> Note: Once a groupBy is marked online, the compiler `compile.py` will prevent you from updating it. This is so that
+> you don't accidentally merge a change that release modified features out-of-band with model updates. You can overwrite
+> this behavior by deleting the older compiled output. Our recommendation is to create a new version `your_gb_v2` instead.
 
 ---
 
 ## Join
 
-### Scan Logic Table
+A join can pull data from GroupBy's that are keyed on different entities. As you saw in the [example section](#Example) 
+above, `view_features` are keyed by `item` & `user` and `ratings_features` are keyed only by `item`.
+Key feature of a join is that it can operate both online and offline with consistency. Meaning the offline back-filled 
+values are the same as online served values, and there is a single definition governing both.
 
-### Join Serving
+Chronon runs daily pipelines that measure inconsistency between an offline join, and an online joins.
 
+[Join](../api/py/ai/chronon/join.py#L50) has essentially two things - a `left` source and `right_parts`. 
+ - `left` source is the source against which aggregates are being computed for. The left source only matter for offline 
+   backfilling and not used in serving.
+   - One of the main things to determine about your left source, is whether it is an event or an entity. 
+   - Only events can be used to trigger realtime / point-in-time-correct backfills. Entities always trigger a daily accurate backfill.
+   - If you are predicting online - in a service in realtime, you usually want an EventSource as your `left`. In this case
+     providing a `timeColumn` - as milliseconds in UTC since epoch - is essential.
+   - If you are predicting offline - once every day, you want an Entity source on your `left`.
+ - `right_parts` is a list of [JoinPart](../api/py/ai/chronon/join.py#L14)s containing group_by's to join with. This has an optional `prefix` and key re-mapping facility. 
+    - `prefix` - just adds the specified string to the names of the columns from group_by
+    - `keyMapping` - is a map of string to string. This is used to re-map keys from left side into right side. You could have 
+   a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
+   can use the remapping facility to specify this relation for each group_by.
+
+> NOTE: The online flag in a Join states that this join is going to be fetched online. Metadata about the join is 
+> uploaded and there are checks to make sure each GroupBy used by the Join is set to online as well.
+
+> NOTE: The production flag in a Join states that the join is not in development anymore and critical alerting and 
+> monitoring are expected. If a Join is marked as production it cannot reference any non-production GroupBys.
 ---
 
 ## Staging Query
+A StagingQuery can be used to express free form ETL (including joins/group by) within Chronon. They are typically used
+to express more complex logic that won't fit into the simple `query` facility provided by the source.
+
+```python
+v1 = StagingQuery(
+    query="select * from namespace.table a JOIN namespace.table_2 b on a.key=b.key ",
+    startPartition="2020-04-01",
+    setups=[
+        "ADD JAR s3://path/to/your/jar",
+        "CREATE TEMPORARY FUNCTION YOUR_FUNCTION AS 'com.you_company.udf.your_team.YourUdfClass'",
+    ],
+    metaData=MetaData(
+        dependencies=["namespace.table", "namespace.table_2"],
+    )
+)
+```
+
+The StagingQuery can then be used in both GroupBy and Join. For ex:
+```python
+from staging_queries.team_name_folder import file_name
+from ai.chronon.utils import get_staging_query_output_table_name
+v1 = Join(
+    left=EventSource(
+        table=get_staging_query_output_table_name(file_name.staging_query_var_name)
+        ...
+    )
+)
+```
+
+Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
+metadata is extracted from [teams.json](../api/py/test/sample/teams.json) in (or default team if one is not set).
+

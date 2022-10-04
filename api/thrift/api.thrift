@@ -15,7 +15,19 @@ struct Query {
     8: optional string reversalColumn
 }
 
+/**
+    Staging Query encapsulates arbitrary spark computation. One key feature is that the computation follows a
+    "fill-what's-missing" pattern. Basically instead of explicitly specifying dates you specify two macros.
+    `{{ start_date }}` and `{{end_date}}`. Chronon will pass in earliest-missing-partition for `start_date` and
+    execution-date / today for `end_date`. So the query will compute multiple partitions at once.
 
+    :param metaData: Contains name, team, output_namespace, execution parameters etc. Things that don't change the
+                     semantics of the computation itself.
+    :param query: The spark sql query with date templates.
+    :param startPartition: This is where start_date will be applied from. We expect the query to also produce output
+                           hive tables partitioned data starting from startPartition.
+    :param setups: Spark SQL setup statements. Used typically to register UDFs.
+ */
 struct StagingQuery {
     1: optional MetaData metaData
     // query should be written with `{{ start_date }}`, `{{ end_date }}` and `{{ latest_date }}` templates
@@ -28,7 +40,18 @@ struct StagingQuery {
     4: optional list<string> setups
 }
 
-// Table names can contain a subpartition spec, example db.table/subpartition=mobile
+/**
+    Event source captures data that is essentially immutable - like user clicks, impressions etc.
+    It has two parts, an offline table and an online topic. The term `fact` table from star-schema also maps to this
+    concepts. But lacks a notion of topic.
+
+    :param table: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+    :param topic: Topic is a kafka table. The table contains all the events historically came through this topic.
+    :param query: The logic used to scan both the table and the topic. Contains row level transformations and filtering
+                  expressed as Spark SQL statements.
+    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
+                         events since the begininng. The key property is that the events are not mutated across partitions.
+ */
 struct EventSource {
     1: optional string table
     2: optional string topic
@@ -38,6 +61,21 @@ struct EventSource {
     4: optional bool isCumulative
 }
 
+
+/**
+    Entity Sources represent data that gets mutated over-time - at row-level. This is a group of three data elements.
+    snapshotTable, mutationTable and mutationTopic. mutationTable and mutationTopic are only necessary if we are trying
+    to create realtime or point-in-time aggregations over these sources. Entity sources usually map 1:1 with a database
+    tables in your OLTP store that typically serves live application traffic. When mutation data is absent they map 1:1
+    to `dim` tables in star schema.
+
+    :param snapshotTable: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+    :param mutationTable: Topic is a kafka table. The table contains all the events historically came through this topic.
+    :param mutationTopic: The logic used to scan both the table and the topic. Contains row level transformations and filtering
+                  expressed as Spark SQL statements.
+    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
+                         events since the begininng. The key property is that the events are not mutated across partitions.
+ */
 struct EntitySource {
     1: optional string snapshotTable
     2: optional string mutationTable

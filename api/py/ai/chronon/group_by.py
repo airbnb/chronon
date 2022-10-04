@@ -107,9 +107,18 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def Aggregation(input_column: str = None,
+# See docs/Aggregations.md
+def Aggregation(
+                # input columns specified on the keys of the `select` in the `Query`'s `Source`
+                input_column: str = None,
+                # operation to use to aggregate the input columns on
+                # some operations have arguments, like last_k, approx_percentiles etc.,
                 operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+                # minimum window size is 1hr. Maximum can be arbitrary. When not defined, the computation
+                # is un-windowed.
                 windows: List[ttypes.Window] = None,
+                # besides the GroupBy.keys, this is another level of keys for just this aggregation
+                # This means the output is going to be a map of string to aggregate.
                 buckets: List[str] = None) -> ttypes.Aggregation:
     # Default to last
     operation = operation if operation is not None else Operation.LAST
@@ -232,6 +241,55 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
             **kwargs) -> ttypes.GroupBy:
+    """
+
+    :param sources:
+        can be constructed as entities or events::
+
+            import ai.chronon.api.ttypes as chronon
+            events = chronon.Source(events=chronon.Events(
+                table=YOUR_TABLE,
+                topic=YOUR_TOPIC #  <- OPTIONAL for serving
+                query=chronon.Query(...)
+                isCumulative=False  # <- defaults to false.
+            ))
+            Or
+            entities = chronon.Source(events=chronon.Events(
+                snapshotTable=YOUR_TABLE,
+                mutationTopic=YOUR_TOPIC,
+                mutationTable=YOUR_MUTATION_TABLE
+                query=chronon.Query(...)
+            ))
+
+        You can also stitch together multiple sources into one.
+    :type sources:
+    :param keys:
+    :type keys:
+    :param aggregations:
+    :type aggregations:
+    :param online:
+    :type online:
+    :param production:
+    :type production:
+    :param backfill_start_date:
+    :type backfill_start_date:
+    :param dependencies:
+    :type dependencies:
+    :param env:
+    :type env:
+    :param table_properties:
+    :type table_properties:
+    :param output_namespace:
+    :type output_namespace:
+    :param accuracy:
+    :type accuracy:
+    :param lag:
+    :type lag:
+    :param kwargs:
+    :type kwargs:
+    :return:
+        A GroupBy object that can represent realtime aggregation
+    """
     assert sources, "Sources are not specified"
 
     agg_inputs = []
