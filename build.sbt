@@ -7,22 +7,24 @@ lazy val scala213 = "2.13.6"
 
 // Release related configs
 import ReleaseTransformations._
-releaseUseGlobalVersion := false
-releaseVersionBump := sbtrelease.Version.Bump.Minor
-releaseProcess := Seq[ReleaseStep](
-  checkSnapshotDependencies,              // : ReleaseStep
-  inquireVersions,                        // : ReleaseStep
-  runClean,                               // : ReleaseStep
-  //runTest,                                // : ReleaseStep
-  setReleaseVersion,                      // : ReleaseStep
-  commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
-  tagRelease,                             // : ReleaseStep
-  publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
-  setNextVersion,                         // : ReleaseStep
-  commitNextVersion,                      // : ReleaseStep
-  //pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
+lazy val releaseSettings = Seq(
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+  releaseUseGlobalVersion := false,
+  releaseVersionBump := sbtrelease.Version.Bump.Minor,
+  releaseProcess := Seq[ReleaseStep](
+    checkSnapshotDependencies,              // : ReleaseStep
+    inquireVersions,                        // : ReleaseStep
+    runClean,                               // : ReleaseStep
+    //runTest,                                // : ReleaseStep
+    setReleaseVersion,                      // : ReleaseStep
+    commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
+    tagRelease,                             // : ReleaseStep
+    publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
+    setNextVersion,                         // : ReleaseStep
+    commitNextVersion                      // : ReleaseStep
+    //pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
+  )
 )
-releasePublishArtifactsAction := PgpKeys.publishSigned.value
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
