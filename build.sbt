@@ -10,6 +10,7 @@ import ReleaseTransformations._
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Minor,
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value, // This step has internal issues working for downstream builds (workaround in place).
   releaseProcess := Seq[ReleaseStep](
     checkSnapshotDependencies,              // : ReleaseStep
     inquireVersions,                        // : ReleaseStep
