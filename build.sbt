@@ -1,5 +1,6 @@
 import sbt.Keys._
 import sbt.Test
+import ReleaseTransformations._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -7,6 +8,18 @@ lazy val scala213 = "2.13.6"
 
 releaseUseGlobalVersion := false
 releaseVersionBump := sbtrelease.Version.Bump.Minor
+
+releaseProcess := Seq[ReleaseStep](
+  checkSnapshotDependencies,              // : ReleaseStep
+  inquireVersions,                        // : ReleaseStep
+  runClean,                               // : ReleaseStep
+  setReleaseVersion,                      // : ReleaseStep
+  commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
+  tagRelease,                             // : ReleaseStep
+  setNextVersion,                         // : ReleaseStep
+  commitNextVersion,                      // : ReleaseStep
+  pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
+)
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
