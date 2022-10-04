@@ -3,6 +3,7 @@ package ai.chronon.spark
 import java.io.{BufferedWriter, File, FileWriter}
 
 import ai.chronon.api
+import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.spark.Driver.parseConf
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
@@ -26,7 +27,8 @@ object MetadataExporter {
     val configData = mapper.readValue(new File(groupByPath), classOf[Map[String, Any]])
     val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
     val analyzer = new Analyzer(tableUtils, groupByPath, "2022-09-01", "2022-09-02")
-    val featureMetadata = analyzer.analyzeGroupBy(parseConf[api.GroupBy](groupByPath)).map{ featureCol =>
+    val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](groupByPath, check = false)
+    val featureMetadata = analyzer.analyzeGroupBy(groupBy).map{ featureCol =>
       Map(
         "name" -> featureCol.name,
         "window" -> featureCol.window,
