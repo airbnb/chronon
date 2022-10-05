@@ -119,6 +119,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
   def logTable: String
+  def schemaTable: String
 
   private var fetcherObj: Fetcher = null
 

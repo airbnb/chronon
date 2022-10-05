@@ -65,10 +65,11 @@ class FlattenerJob(session: SparkSession, joinConf: Join, endDate: String, impl:
     val outputSchema: StructType = StructType("", joinCodec.outputFields)
     val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
     val outputRdd: RDD[Row] = rawDf
-      .select("key_base64", "value_base64", "ts_millis", "ds")
+      .select("key_base64", "value_base64", "ts_millis", "ds", "schema_hash")
       .rdd
       .map { row =>
         val keyBytes = Base64.getDecoder.decode(row.getString(0))
+        val schemaHash = Base64.getDecoder.decode(row.getString(5))
         val keyRow = joinCodec.keyCodec.decodeRow(keyBytes)
         val valueBytes = Base64.getDecoder.decode(row.getString(1))
 
