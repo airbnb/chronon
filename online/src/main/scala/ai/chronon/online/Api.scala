@@ -107,7 +107,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   /** logged responses should be made available in [[logTable]]
     *  with columns
-    *     key_bytes, value_bytes, ts_millis, join_name and ds (date string)
+    *     key_bytes, value_bytes, ts_millis, join_name, schema_hash and ds (date string)
     *  partitioned by `join_name` and `ds`
     *  Note the camel case to snake case conversion: Hive doesn't like camel case.
     *  The key bytes and value bytes will be transformed by chronon to human readable columns for each join.
@@ -119,6 +119,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
   def logTable: String
+  def schemaTable: String
 
   private var fetcherObj: Fetcher = null
 
