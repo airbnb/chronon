@@ -31,9 +31,12 @@ ThisBuild / developers := List(
 
 lazy val publishSettings = Seq(
   publishTo := {
-    val nexus = "https://s01.oss.sonatype.org/"
-    if (isSnapshot.value) Some("snapshots" at "https://artifactory.d.musta.ch/artifactory/maven-airbnb-snapshots")
-    else Some("releases" at nexus + "service/local/staging/deploy/maven2")
+    if (isSnapshot.value) {
+      Some("snapshots" at sys.env.get("CHRONON_SNAPSHOT_REPO").getOrElse("unknown-repo") + "/")
+    } else {
+      val nexus = "https://s01.oss.sonatype.org/"
+      Some("releases" at nexus + "service/local/staging/deploy/maven2")
+    }
   },
   publishMavenStyle := true
 )
@@ -42,7 +45,7 @@ lazy val publishSettings = Seq(
 import ReleaseTransformations._
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
-  releaseVersionBump := sbtrelease.Version.Bump.Minor,
+  releaseVersionBump := sbtrelease.Version.Bump.Next,
   // This step has internal issues working for downstream builds (workaround in place).
   releasePublishArtifactsAction := PgpKeys.publishSigned.value,
   releaseProcess := Seq[ReleaseStep](

@@ -129,11 +129,53 @@ python3 -m build
 twine upload dist/*
 ```
 
+# Chronon Build Process
+* Inside the `$CHRONON_OS` directory.
 
-## Setup for Publishing libraries to MavenCentral (via sonatype)
-1. Create a sonatype account if you don't have
+To build all the Chronon artifacts locally (builds all the JARs)
+```shell
+sbt package
+```
+
+Note: This will create the artifacts with the version specific naming specified under `version.sbt`
+```text
+Builds on master will result in:
+<artifact-name>-<version>.jar
+chronon_2.11-0.7.0-SNAPSHOT.jar
+
+Builds on user branches will result in:
+<artifact-name>-<branch-name>-<version>.jar
+chronon_2.11-jdoe--branch-0.7.0-SNAPSHOT.jar
+```
+
+# Chronon Artifacts Publish Process
+* Inside the `$CHRONON_OS` directory.
+
+To publish all the Chronon artifacts of the current git HEAD (builds and publishes all the JARs)
+```shell
+sbt publish
+```
+
+* All the SNAPSHOT ones are published to the maven repository as specified by the env variable `$CHRONON_SNAPSHOT_REPO`.
+* All the final artifacts are published to the MavenCentral (via Sonatype)
+
+## Setup for publishing artifacts to the JFrog artifactory
+1. Login into JFrog artifactory webapp console and create an API Key under user profile section.
+2. In `~/.sbt/1.0/jfrog.sbt` add
+```scala
+credentials += Credentials(Path.userHome / ".sbt" / "jfrog_credentials")
+```
+4. In `~/.sbt/jfrog_credentials` add
+```
+realm=Artifactory Realm
+host=<Artifactory domain of $CHRONON_SNAPSHOT_REPO>
+user=<your username>
+password=<API Key>
+```
+
+## Setup for Publishing artifacts to MavenCentral (via sonatype)
+1. Create a sonatype account if you don't have one.
 2. `brew install gpg` on your mac
-
 3. In `~/.sbt/1.0/sonatype.sbt` add
 ```scala
 credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credentials")
@@ -145,19 +187,28 @@ host=s01.oss.sonatype.org
 user=<your username>
 password=<your password>
 ```
-
 5. setup gpg - just first step in this [link](https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html#step+1%3A+PGP+Signatures)
 
+
+# Chronon Release Process
+
 ## Publishing libraries to maven central
-1.Run publish
+1. Run release command in the right HEAD of chronon repository.
 ```
-CHRONON_VERSION=0.0.X GPG_TTY=$(tty) sbt +publishSigned
+GPG_TTY=$(tty) sbt release
 ```
+This command will take into the account of `version.sbt` and handles a series of events:
+* Marks the current SNAPSHOT codebase as final (git commits).
+* Creates a new git tag (e.g v0.7.0) pointing to the release commit.
+* Builds the artifacts with released versioning suffix and pushes them to Sonatype.
+* Updates the `version.sbt` to point to the next in line developmental version (git commits).
+
 2. login into the [staging repo](https://s01.oss.sonatype.org/#stagingRepositories) in nexus (same password as sonatype jira) 
 3. In the staging repos list - select your publish 
      1. select "close" wait for the steps to finish
      2. Select "refresh" and "release"
      3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/) or [sonatype UI](https://search.maven.org/search?q=g:ai.chronon)
+4. Push the local release commits, and the new tag created from step 1 to Github. 
 
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
