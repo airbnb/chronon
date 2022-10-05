@@ -1,7 +1,7 @@
 package ai.chronon.aggregator.row
 
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
-import ai.chronon.api.{AggregationPart, DataType, FeatureColumn, Row, StringType}
+import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
@@ -48,11 +48,6 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     .map(_.outputColumnName)
     .toArray
     .zip(columnAggregators.map(_.outputType))
-
-  val featureColumns: Array[FeatureColumn] = aggregationParts
-    .zip(columnAggregators.map(_.outputType.toString))
-    .map( part => FeatureColumn(part._1.outputColumnName, part._2, part._1.operation.toString.toLowerCase,
-      part._1.window.str.toLowerCase, part._1.inputColumn.toLowerCase)).toArray
 
   val isNotDeletable: Boolean = columnAggregators.forall(!_.isDeletable)
 

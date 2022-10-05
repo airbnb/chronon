@@ -269,18 +269,18 @@ class GroupByTest {
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = Constants.Partition.at(System.currentTimeMillis())
 
-    val featureColumns = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
-    featureColumns.map(feature => s"${feature.name} => ${feature.columnType}")
+    aggregationsMetadata.map(agg => s"${agg.name} => ${agg.columnType}")
       .foreach(s => assertTrue(expectedSchema.contains(s)))
 
     // feature name is constructed by input_column_operation_window
     // assert feature columns attributes mapping
-    featureColumns.foreach(feature => {
-      assertTrue(feature.name.contains(feature.operation.toLowerCase))
-      assertTrue(feature.name.contains(feature.inputColumn.toLowerCase))
+    aggregationsMetadata.foreach(aggregation => {
+      assertTrue(aggregation.name.contains(aggregation.operation.toLowerCase))
+      assertTrue(aggregation.name.contains(aggregation.inputColumn.toLowerCase))
     })
   }
 
