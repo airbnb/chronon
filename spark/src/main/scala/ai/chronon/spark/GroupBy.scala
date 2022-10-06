@@ -4,7 +4,7 @@ import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Constants, FeatureColumn}
+import ai.chronon.api.{Constants}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
@@ -50,14 +50,11 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val outputSchema: api.StructType =
     api.StructType("", windowAggregator.outputSchema.map(tup => api.StructField(tup._1, tup._2)))
 
-  lazy val featureColumns: Array[api.FeatureColumn] = if (aggregations != null) {
-    windowAggregator.featureColumns
-  } else {
-    // no aggregations in groupBy
-    selectedSchema
-      .filterNot(tup => (keyColumns ++ Constants.ReservedColumns).contains(tup._1))
-      .map(tup => FeatureColumn(tup._1, tup._2.toString))
-  }
+  lazy val aggregationParts = aggregations.flatMap(_.unpack)
+
+  lazy val columnAggregators = (new RowAggregator(selectedSchema, aggregationParts)).columnAggregators
+
+  lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
 
   lazy val postAggSchema: StructType = {
     val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
