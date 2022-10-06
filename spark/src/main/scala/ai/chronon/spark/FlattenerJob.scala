@@ -1,36 +1,32 @@
-package ai.chronon.spark.consistency
+package ai.chronon.spark
 
-import ai.chronon.api.Extensions.MetadataOps
-import ai.chronon.api.{Join, StructType}
-import ai.chronon.online.{Api, JoinCodec}
-import ai.chronon.spark.{Conversions, PartitionRange, TableUtils}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.GenericRow
+
+import ai.chronon.api
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
-import ai.chronon.spark.Extensions._
-import scala.collection.JavaConverters._
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.expressions.GenericRow
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util.Base64
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
-class FlattenerJob(session: SparkSession, joinConf: Join, endDate: String, impl: Api) extends Serializable {
+class FlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String, impl: Api) extends Serializable {
   val rawTable: String = impl.logTable
   val tableUtils: TableUtils = TableUtils(session)
-  val tblProperties = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
+  val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
+    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
     .getOrElse(Map.empty[String, String])
 
   private def unfilledRange(inputTable: String, outputTable: String): Option[PartitionRange] = {
     val joinName = joinConf.metaData.nameToFilePath
     val inputPartitions = session.sqlContext
-      .sql(
-        s"""
-           |select distinct ${Constants.PartitionColumn}
-           |from $inputTable
-           |where name = '$joinName' """.stripMargin)
+      .sql(s"SHOW PARTITIONS $inputTable")
       .collect()
-      .map(row => row.getString(0))
+      .flatMap { row => tableUtils.parsePartition(row.getString(0)) }
+      .filter(_._2.equals(joinName))
+      .map(_._1)
       .toSet
 
     val inputStart = inputPartitions.reduceOption(Ordering[String].min)
@@ -61,7 +57,7 @@ class FlattenerJob(session: SparkSession, joinConf: Join, endDate: String, impl:
     Some(PartitionRange(missingPartitions.min, missingPartitions.max))
   }
 
-  def flattenKeyValueBytes(rawDf: Dataset[Row], joinCodec: JoinCodec, outputSize: Int): DataFrame = {
+  def flattenKeyValueBytes(rawDf: Dataset[Row]): DataFrame = {
     val outputSchema: StructType = StructType("", joinCodec.outputFields)
     val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
     val outputRdd: RDD[Row] = rawDf
@@ -94,8 +90,7 @@ class FlattenerJob(session: SparkSession, joinConf: Join, endDate: String, impl:
     val rawTableScan = unfilled.get.genScanQuery(null, rawTable)
     val rawDf = tableUtils.sql(rawTableScan).where(s"name = '$joinName'")
     println(s"scanned data for $joinName")
-    val outputSize = joinCodec.outputFields.length
-    tableUtils.insertPartitions(flattenKeyValueBytes(rawDf, joinCodec, outputSize),
+    tableUtils.insertPartitions(flattenKeyValueBytes(rawDf),
       joinConf.metaData.loggedTable, tableProperties = tblProperties)
   }
 }
