@@ -77,9 +77,9 @@ class GroupBy(inputStream: DataFrame,
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { arr =>
+        ingressContext.increment(Metrics.Name.RowCount)
+        ingressContext.count(Metrics.Name.Bytes, arr.length)
         try {
-          ingressContext.increment(Metrics.Name.RowCount)
-          ingressContext.count(Metrics.Name.Bytes, arr.length)
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
