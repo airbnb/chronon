@@ -41,9 +41,10 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
   override def schema: StructType = inputSchema
 }
 
-class MockApi(kvStore: () => KVStore, namespace: String) extends Api(null) {
+class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
 
-  val loggedResponseList: ConcurrentLinkedQueue[LoggableResponseBase64] = new ConcurrentLinkedQueue[LoggableResponseBase64]
+  val loggedResponseList: ConcurrentLinkedQueue[LoggableResponseBase64] =
+    new ConcurrentLinkedQueue[LoggableResponseBase64]
 
   var streamSchema: StructType = null
 
@@ -57,15 +58,17 @@ class MockApi(kvStore: () => KVStore, namespace: String) extends Api(null) {
   }
 
   override def logResponse(loggableResponse: LoggableResponse): Unit =
-    loggedResponseList.add(LoggableResponseBase64(
-      keyBase64 = Base64.getEncoder.encodeToString(loggableResponse.keyBytes),
-      valueBase64 = Base64.getEncoder.encodeToString(loggableResponse.valueBytes),
-      name = loggableResponse.joinName,
-      tsMillis = loggableResponse.tsMillis,
-      schemaHash = loggableResponse.schemaHash
-    ))
+    loggedResponseList.add(
+      LoggableResponseBase64(
+        keyBase64 = Base64.getEncoder.encodeToString(loggableResponse.keyBytes),
+        valueBase64 = Base64.getEncoder.encodeToString(loggableResponse.valueBytes),
+        name = loggableResponse.joinName,
+        tsMillis = loggableResponse.tsMillis,
+        schemaHash = loggableResponse.schemaHash
+      ))
 
-  override def logTable: String = s"$namespace.mock_log_table"
+  val logTable: String = s"$namespace.mock_log_table"
+  val schemaTable: String = s"$namespace.mock_schema_table"
 
   def flushLoggedValues: Seq[LoggableResponseBase64] = {
     val loggedValues = loggedResponseList.iterator().asScala.toSeq

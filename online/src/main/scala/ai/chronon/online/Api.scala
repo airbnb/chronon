@@ -105,7 +105,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
   def genKvStore: KVStore
 
-  /** logged responses should be made available in [[logTable]]
+  /** logged responses should be made available to an offline log table in Hive
     *  with columns
     *     key_bytes, value_bytes, ts_millis, join_name, schema_hash and ds (date string)
     *  partitioned by `join_name` and `ds`
@@ -118,8 +118,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     *    <logTable>_consistency_summary
     */
   def logResponse(resp: LoggableResponse): Unit
-  def logTable: String
-  def schemaTable: String
 
   private var fetcherObj: Fetcher = null
 

@@ -361,11 +361,6 @@ case class JoinCodec(conf: JoinOps,
 
   val keyFields: Array[StructField] = keySchema.fields
   val valueFields: Array[StructField] = valueSchema.fields
-  val timeFields: Array[StructField] = Array(
-    StructField("ts", LongType),
-    StructField("ds", StringType)
-  )
-  val outputFields: Array[StructField] = keyFields ++ valueFields ++ timeFields
 
   /*
    * Get the serialized string repr. of the logging schema.
@@ -383,17 +378,26 @@ case class JoinCodec(conf: JoinOps,
     new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
   }
   lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
+
+  lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
+  lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap
 }
 
 object JoinCodec {
 
+  val timeFields: Array[StructField] = Array(
+    StructField("ts", LongType),
+    StructField("ds", StringType)
+  )
+
   def fromLoggingSchema(loggingSchema: String, joinConf: Join): JoinCodec = {
-    val schemaMap = new Gson()
-      .fromJson(
-        loggingSchema,
-        classOf[java.util.Map[java.lang.String, java.lang.String]]
-      )
-      .asScala
+    val schemaMap = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala[String, String](
+      new Gson()
+        .fromJson(
+          loggingSchema,
+          classOf[java.util.Map[java.lang.String, java.lang.String]]
+        ))
+
     val keyCodec = new AvroCodec(schemaMap("key_schema"))
     val valueCodec = new AvroCodec(schemaMap("value_schema"))
 
@@ -480,20 +484,34 @@ class Fetcher(kvStore: KVStore,
   private def encode(schema: StructType,
                      codec: AvroCodec,
                      dataMap: Map[String, AnyRef],
-                     cast: Boolean = false): Array[Byte] = {
-    val data = schema.fields.map {
-      case StructField(name, typ) =>
-        val elem = dataMap.getOrElse(name, null)
-        // handle cases where a join contains keys of the same name but different types
-        // e.g. `listing` is a long in one groupby, but a string in another groupby
-        if (cast) {
-          ColumnAggregator.castTo(elem, typ)
-        } else {
-          elem
-        }
+                     cast: Boolean = false,
+                     tries: Int = 3): Array[Byte] = {
+    def encodeOnce(schema: StructType,
+                   codec: AvroCodec,
+                   dataMap: Map[String, AnyRef],
+                   cast: Boolean = false): Array[Byte] = {
+      val data = schema.fields.map {
+        case StructField(name, typ) =>
+          val elem = dataMap.getOrElse(name, null)
+          // handle cases where a join contains keys of the same name but different types
+          // e.g. `listing` is a long in one groupby, but a string in another groupby
+          if (cast) {
+            ColumnAggregator.castTo(elem, typ)
+          } else {
+            elem
+          }
+      }
+      val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
+      codec.encodeBinary(avroRecord)
     }
-    val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
-    codec.encodeBinary(avroRecord)
+
+    def tryOnce(lastTry: Try[Array[Byte]], tries: Int): Try[Array[Byte]] = {
+      if (tries == 0 || (lastTry != null && lastTry.isSuccess)) return lastTry
+      val binary = encodeOnce(schema, codec, dataMap, cast)
+      tryOnce(Try(codec.decodeRow(binary)).map(_ => binary), tries - 1)
+    }
+
+    tryOnce(null, tries).get
   }
 
   private def logResponse(resp: Response, ts: Long): Response = {
@@ -539,6 +557,7 @@ class Fetcher(kvStore: KVStore,
           resp.values.toOption
             .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))
             .orNull
+
         val loggableResponse = LoggableResponse(
           keyBytes,
           valueBytes,

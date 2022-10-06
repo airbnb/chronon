@@ -16,6 +16,8 @@ object Metrics {
     val JoinOffline = "join.offline"
     val GroupByOffline = "group_by.offline"
     val StagingQueryOffline = "staging_query.offline"
+
+    val JoinLogFlatten = "join.log_flatten"
   }
   import Environment._
 
@@ -39,6 +41,9 @@ object Metrics {
     val PartitionCount = "partition.count"
     val RowCount = "row.count"
     val RequestCount = "request.count"
+    val ColumnBeforeCount = "column.before.count"
+    val ColumnAfterCount = "column.after.count"
+    val FailureCount = "failure.ratio"
 
     val Bytes = "bytes"
     val KeyBytes = "key.bytes"
