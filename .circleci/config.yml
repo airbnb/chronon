@@ -112,6 +112,7 @@ jobs:
                   command: |
                       conda activate zipline_py
                       cd /zipline/api/py/ai/chronon
+                      pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
                       flake8 --extend-ignore=W605,Q000,F631
 
     "Chronon Python Tests":
