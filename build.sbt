@@ -5,10 +5,10 @@ lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
 
+
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
-ThisBuild / version := sys.env.get("CHRONON_VERSION").getOrElse("local")
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -31,13 +31,38 @@ ThisBuild / developers := List(
 
 lazy val publishSettings = Seq(
   publishTo := {
-    val nexus = "https://s01.oss.sonatype.org/"
-    if (isSnapshot.value) Some("snapshots" at nexus + "content/repositories/snapshots")
-    else Some("releases" at nexus + "service/local/staging/deploy/maven2")
+    if (isSnapshot.value) {
+      Some("snapshots" at sys.env.get("CHRONON_SNAPSHOT_REPO").getOrElse("unknown-repo") + "/")
+    } else {
+      val nexus = "https://s01.oss.sonatype.org/"
+      Some("releases" at nexus + "service/local/staging/deploy/maven2")
+    }
   },
   publishMavenStyle := true
 )
 
+// Release related configs
+import ReleaseTransformations._
+lazy val releaseSettings = Seq(
+  releaseUseGlobalVersion := false,
+  releaseVersionBump := sbtrelease.Version.Bump.Next,
+  // This step has internal issues working for downstream builds (workaround in place).
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+  releaseProcess := Seq[ReleaseStep](
+    checkSnapshotDependencies,
+    inquireVersions,
+    runClean,
+    //runTest,                                        // Skipping tests as part of release process
+    setReleaseVersion,
+    commitReleaseVersion,
+    tagRelease,
+    // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
+    releaseStepCommandAndRemaining("+ publishSigned"),
+    setNextVersion,
+    commitNextVersion,
+    //pushChanges                                     // : Pushes the local Git changes to GitHub
+  )
+)
 
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
@@ -48,6 +73,23 @@ lazy val root = (project in file("."))
     crossScalaVersions := Nil,
     name := "chronon"
   )
+  .settings(releaseSettings: _*)
+  .enablePlugins(GitVersioning, GitBranchPrompt)
+
+// Git related config
+git.useGitDescribe := true
+git.gitTagToVersionNumber := { tag: String =>
+  // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
+  val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
+  val branchTag = git.gitCurrentBranch.value
+  if (branchTag == "master") {
+    // For master branches, we tag the packages as <package-name>-<build-version>
+    Some(s"${versionStr}")
+  } else {
+    // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
+    Some(s"${branchTag}-${versionStr}")
+  }
+}
 
 lazy val api = project
   .settings(
