@@ -6,7 +6,6 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object Extensions {
@@ -413,7 +412,48 @@ object Extensions {
     def cleanSpec: String = string.split("/").head
   }
 
-  implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {}
+  implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
+    private def schemaNames(schema: TDataType): Array[String] =
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(schema.params)
+        .map(_.name)
+        .toArray
+    lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
+    lazy val valueNames: Array[String] = schemaNames(externalSource.valueSchema)
+  }
+
+  object KeyMappingHelper {
+    // key mapping is defined as {left_col1: right_col1}, on the right there can be two keys [right_col1, right_col2]
+    // Left is implicitly assumed to have right_col2
+    // We need to convert a map {left_col1: a, right_col2: b, irrelevant_col: c} into {right_col1: a, right_col2: b}
+    // The way to do this efficiently is to "flip" the keymapping into {right_col1: left_col1} and save it.
+    // And later "apply" the flipped mapping.
+    def flip(leftToRight: java.util.Map[String, String]): Map[String, String] = {
+      Option(leftToRight)
+        .map(mp =>
+          ScalaVersionSpecificCollectionsConverter
+            .convertJavaMapToScala(mp)
+            .map({ case (key, value) => value -> key }))
+        .getOrElse(Map.empty[String, String])
+    }
+
+    def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
+      // TODO: Long-term we could bring in derivations here.
+      right_keys.map { k => k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef] }.toMap
+    }
+  }
+
+  implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
+    lazy val fullName: String =
+      "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.name.sanitize
+
+    def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
+      KeyMappingHelper.apply(query, rightToLeft, keyNames)
+
+    private lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
+    private lazy val keyNames = externalPart.source.keyNames
+  }
+
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }

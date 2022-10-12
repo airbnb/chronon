@@ -84,15 +84,10 @@ struct EntitySource {
 }
 
 struct ExternalSource {
-    1: optional string name
-    2: optional TDataType keySchema
-    3: optional TDataType valueSchema
-
-    // OPTIONAL prefix
-    // used to distinguish between different semantic entities that need to query the same end-point
-    // host country & guest country for example
-    // the final value names will this prefix in hive tables and fetcher response's map's keys.
-    4: optional string prefix
+    1: optional MetaData metadata
+    2: optional string name
+    3: optional TDataType keySchema
+    4: optional TDataType valueSchema
 }
 
 union Source {

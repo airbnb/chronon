@@ -18,18 +18,22 @@ class ExternalSourceRegistry {
 
   def fetchRequests(requests: Seq[Request], context: Metrics.Context)(implicit
       ec: ExecutionContext): Future[Seq[Response]] = {
-    val responsesByNameF = requests
-      .groupBy(_.name) // group reqs for an end point
-      //.par // issue requests in parallel (might not be necessary if the executor parallelizes)
+    val startTime = System.currentTimeMillis()
+    // we make issue one batch request per external source and flatten out it later
+    val responsesByNameF: Iterable[Future[Seq[Response]]] = requests
+      .groupBy(_.name)
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
             val ctx = context.copy(groupBy = s"external_source_$name")
-            handlerMap(name).fetch(requests).map { responses =>
+            val responses = handlerMap(name).fetch(requests)
+            responses.foreach { responses =>
               val failures = responses.count(_.values.isFailure)
-              responses.foreach(size => ctx.histogram("response_size", _))
+              ctx.histogram("response.latency", System.currentTimeMillis() - startTime)
+              ctx.histogram("response.failures", failures)
+              ctx.histogram("response.successes", responses.size - failures)
             } // issue batch request to endpoint
-
+            responses
           } else {
             val failure = Failure(
               new IllegalArgumentException(
@@ -37,7 +41,7 @@ class ExternalSourceRegistry {
             Future(requests.map(request => Response(request, failure)))
           }
       }
-    //.seq
+
     Future.sequence(responsesByNameF).map { responsesByName =>
       val allResponses = responsesByName.flatten
       requests.map(req =>
@@ -50,6 +54,4 @@ class ExternalSourceRegistry {
           )))
     }
   }
-
-  def
 }

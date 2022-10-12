@@ -146,12 +146,15 @@ object Metrics {
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
 
+    // There can be multiple joins - when issued as a batch request
+    lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
+
     private[Metrics] def toTags: Array[String] = {
       assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
-      val buffer = new Array[String](8)
+      val buffer = new Array[String](7 + joinNames.length)
       var counter = 0
       def addTag(key: String, value: String): Unit = {
         if (value == null) return
@@ -159,8 +162,7 @@ object Metrics {
         buffer.update(counter, buildTag(key, value))
         counter += 1
       }
-
-      addTag(Tag.Join, join)
+      joinNames.foreach(addTag(Tag.Join, _))
       addTag(Tag.GroupBy, groupBy)
       addTag(Tag.StagingQuery, stagingQuery)
       addTag(Tag.Production, production.toString)

@@ -4,11 +4,11 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
-import ai.chronon.api.Extensions.{JoinOps, StringOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
-import ai.chronon.online.Metrics.Name
+import ai.chronon.online.Metrics.{Context, Environment, Name}
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
@@ -16,6 +16,7 @@ import java.io.{PrintWriter, StringWriter}
 import java.util
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
@@ -269,6 +270,7 @@ class BaseFetcher(kvStore: KVStore,
   def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
+
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
       requests.map { request =>
         val joinTry = getJoinConf(request.name)
@@ -416,7 +418,8 @@ class Fetcher(kvStore: KVStore,
               metaDataSet: String = ChrononMetadataKey,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
-              debug: Boolean = false)
+              debug: Boolean = false,
+              externalSourceRegistry: ExternalSourceRegistry = null)
     extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
 
   // key and value schemas
@@ -452,12 +455,6 @@ class Fetcher(kvStore: KVStore,
             }
       }
 
-      val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
-      val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
-      val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-      val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
-      val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
-
       // gather key schema and value schema from external sources.
       Option(joinConf.join.onlineExternalParts).foreach {
         externals =>
@@ -466,7 +463,6 @@ class Fetcher(kvStore: KVStore,
             .asScala
             .foreach { part =>
               val source = part.source
-              val prefix = Option(source.prefix).map(_ + "_").getOrElse("") + source.name.sanitize + "_"
               def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
                 DataType
                   .fromTDataType(schema)
@@ -474,11 +470,15 @@ class Fetcher(kvStore: KVStore,
                   .fields
                   .map(f => StructField(prefix + f.name, f.fieldType))
               buildFields(source.getKeySchema).filterNot(keyFields.contains).foreach(f => keyFields.append(f))
-              buildFields(source.getValueSchema, prefix).foreach(f => keyFields.append(f))
+              buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
             }
-
       }
 
+      val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
+      val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
+      val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
+      val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+      val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
       logControlEvent(joinCodec)
       joinCodec
     }
@@ -594,20 +594,97 @@ class Fetcher(kvStore: KVStore,
         }
       }
     })
-    loggingTry match {
-      case Failure(exception) => {
-        // to handle GroupByServingInfo staleness that results in encoding failure
-        getJoinCodecs.refresh(resp.request.name)
-        joinContext.foreach(_.incrementException(exception))
-        println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
-      }
-      case _ => {}
+    loggingTry.failed.map { exception =>
+      // to handle GroupByServingInfo staleness that results in encoding failure
+      getJoinCodecs.refresh(resp.request.name)
+      joinContext.foreach(_.incrementException(exception))
+      println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
     }
     resp
   }
 
+  // we need to pull external requests per join query the registry and map back the values into join responses
+  // muxing and demuxing + handling partial failures is what makes this logic involved.
+  def fetchExternal(joinRequests: scala.collection.Seq[Request],
+                    registry: ExternalSourceRegistry): Future[scala.collection.Seq[Response]] = {
+    val startTime = System.currentTimeMillis()
+    val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.HashMap[String, Any]]]
+    var invalidCount = 0
+    val validRequests = new ListBuffer[Request]
+
+    // step-1 handle invalid requests and collect valid ones
+    joinRequests.foreach { request =>
+      val joinName = request.name
+      val joinConfTry = getJoinConf(joinName)
+      if (joinConfTry.isFailure) {
+        resultMap.update(
+          request,
+          Failure(new IllegalArgumentException(s"Failed to fetch join for $joinName", joinConfTry.failed.get)))
+        invalidCount += 1
+      } else if (joinConfTry.get.join.onlineExternalParts == null) {
+        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
+      } else {
+        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
+        validRequests.append(request)
+      }
+    }
+
+    // step-2 dedup external requests across joins
+    val externalRequestToJoinRequestMap: Map[Request, scala.collection.Seq[ExternalToJoinRequest]] = validRequests
+      .flatMap { joinRequest =>
+        val parts =
+          getJoinConf(joinRequest.name).get.join.onlineExternalParts // cheap since it is cached, valid since step-1
+        parts.iterator().asScala.map { part =>
+          val mappedKeys = part.applyMapping(joinRequest.keys)
+          ExternalToJoinRequest(Request(part.source.name, mappedKeys), joinRequest, part)
+        }
+      }
+      .groupBy(_.externalRequest)
+      .mapValues(_.toSeq)
+      .toMap
+    val context =
+      Metrics.Context(environment = Environment.JoinFetching, join = validRequests.iterator.map(_.name).mkString(","))
+    context.histogram("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
+    context.histogram("response.external_invalid_joins.count", invalidCount)
+    val responseFutures = externalSourceRegistry.fetchRequests(externalRequestToJoinRequestMap.keys.toSeq, context)
+
+    // step-3 walk the response, find all the joins to update and the result map
+    responseFutures.map { responses =>
+      responses.foreach { response =>
+        val responseTry: Try[Map[String, Any]] = response.values
+        val joinsToUpdate: Seq[ExternalToJoinRequest] = externalRequestToJoinRequestMap(response.request)
+        joinsToUpdate.foreach { externalToJoin =>
+          val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
+          val prefix = externalToJoin.part.fullName + "_"
+          responseTry match {
+            case Failure(exception) =>
+              resultValueMap.update(prefix + "exception", exception)
+              externalToJoin.context.incrementException(exception)
+            case Success(responseMap) =>
+              externalToJoin.context.count("response.value_count", responseMap.size)
+              responseMap.foreach { case (name, value) => resultValueMap.update(prefix + name, value) }
+          }
+        }
+      }
+
+      // step-4 convert the resultMap into Responses
+      joinRequests.map { req =>
+        Response(req, resultMap(req).map(_.toMap.mapValues(_.asInstanceOf[AnyRef]).toMap))
+      }
+    }
+  }
+
+  private case class ExternalToJoinRequest(externalRequest: Request, joinRequest: Request, part: ExternalPart) {
+    lazy val context: Metrics.Context =
+      Metrics.Context(Environment.JoinFetching, join = joinRequest.name, groupBy = part.fullName)
+  }
+
   override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
+    val rightPartResponses = super.fetchJoin(requests)
+    val uniqueExternalRequests = requests.flatMap(_.name)
+    val externalPartResponses = externalSourceRegistry.fetchRequests(requests, null)
+
     super
       .fetchJoin(requests)
       .map(_.iterator.map(logResponse(_, ts)).toSeq)
