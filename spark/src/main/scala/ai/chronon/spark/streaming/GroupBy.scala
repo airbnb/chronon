@@ -79,10 +79,17 @@ class GroupBy(inputStream: DataFrame,
       .map { arr =>
         ingressContext.increment(Metrics.Name.RowCount)
         ingressContext.count(Metrics.Name.Bytes, arr.length)
-        streamDecoder.decode(arr)
+        try {
+          streamDecoder.decode(arr)
+        } catch {
+          case ex: Throwable =>
+            println(s"Error while decoding streaming events ${ex.printStackTrace()}")
+            ingressContext.incrementException(ex)
+            null
+        }
       }
-      .filter(mutation =>
-        !(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after))
+      .filter(mutation => mutation != null && (
+        !(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after)))
 
     val streamSchema = Conversions.fromChrononSchema(streamDecoder.schema)
     println(s"""
