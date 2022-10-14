@@ -7,6 +7,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
+import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
@@ -938,6 +939,8 @@ class JoinTest {
     )
     val toCompute = new Join(join, today, tableUtils)
     toCompute.computeJoin()
+    // Add stats
+    new SummaryJob(spark, join, today).dailyRun(stepDays = Some(30))
   }
 
   def genTestEventSource() : api.Source = {

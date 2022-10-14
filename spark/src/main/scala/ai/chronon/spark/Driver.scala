@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.consistency.ConsistencyJob
+import ai.chronon.spark.stats.SummaryJob
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
@@ -131,6 +132,24 @@ object Driver {
         TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}_backfill"))
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
+    }
+  }
+
+  object DailyStats {
+    class Args extends Subcommand("stats-summary") with OfflineSubcommand {
+      //TODO: Add sample as an arg.
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+          descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+          default = Option(30))
+
+    }
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      new SummaryJob(
+        SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
+        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()))
     }
   }
 
@@ -412,6 +431,7 @@ object Driver {
     addSubcommand(GroupByStreamingArgs)
     object AnalyzerArgs extends Analyzer.Args
     addSubcommand(AnalyzerArgs)
+    object DailyStatsArgs extends DailyStats.Args
     requireSubcommand()
     verify()
   }
@@ -444,6 +464,7 @@ object Driver {
           case args.ConsistencyMetricsUploaderArgs =>
             ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
           case _                 => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")

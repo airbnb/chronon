@@ -15,7 +15,7 @@ OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
-SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload', 'analyze']
+SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload', 'analyze', 'stats-summary']
 
 # Constants for supporting multiple spark versions.
 SUPPORTED_SPARK = ['2.4.0', '3.1.1']
@@ -27,6 +27,7 @@ SCALA_VERSION_FOR_SPARK = {
 MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
+    'stats-summary': OFFLINE_ARGS,
     'analyze': OFFLINE_ARGS,
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
@@ -49,6 +50,7 @@ ROUTES = {
         'metadata-upload': 'metadata-upload',
         'fetch': 'fetch',
         'consistency-metrics-upload': 'consistency-metrics-upload',
+        'stats-summary': 'stats-summary',
         'analyze': 'analyze'
     },
     'staging_queries': {

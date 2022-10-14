@@ -19,11 +19,22 @@ class StatsComputeTest {
     )
     val columns = Seq("keyId", "value", "double_value", "string_value")
     val rdd = spark.sparkContext.parallelize(data)
-    val df = spark.createDataFrame(rdd).toDF(columns:_*)
+    val df = spark.createDataFrame(rdd).toDF(columns: _*)
     val result = StatsGenerator.normalizedSummary(df, Seq("keyId"))
     result.show()
     result.printSchema()
   }
+
+    @Test
+    def dailySummaryTest(): Unit = {
+      val schema = List(
+        Column("user", StringType, 10),
+        Column("session_length", IntType, 10000)
+      )
+      val df = DataFrameGen.events(spark, schema, 100000, 10)
+      val result = StatsGenerator.dailySummary(df, Seq("user") ).toFlatDf
+      result.show()
+    }
 
   @Test
   def driftTest(): Unit = {
@@ -34,7 +45,7 @@ class StatsComputeTest {
     )
     val df1 = DataFrameGen.events(spark, schema, 100000, 10)
     val df2 = DataFrameGen.events(spark, schema, 100000, 10)
-    val drift = StatsGenerator.drift(df1, df2, keys=Seq("user"))
+    val drift = StatsGenerator.summaryWithDrift(df1, df2, keys=Seq("user"))
     println(drift)
     drift.foreach(println(_))
   }
