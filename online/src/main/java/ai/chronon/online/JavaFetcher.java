@@ -18,20 +18,8 @@ public class JavaFetcher  {
   public static final Long DEFAULT_TIMEOUT = 10000L;
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false);
-  }
-
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, boolean debug) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, debug);
-  }
-
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Consumer<LoggableResponse> logFunc) {
-    this(kvStore, metaDataSet, DEFAULT_TIMEOUT, logFunc);
-  }
-
-  public JavaFetcher(KVStore kvStore, Consumer<LoggableResponse> logFunc) {
-    this(kvStore, Constants.ChrononMetadataKey(), DEFAULT_TIMEOUT, logFunc);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

@@ -5,6 +5,7 @@ import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
+import java.io.{PrintWriter, StringWriter}
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -623,6 +624,15 @@ object Extensions {
           ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
         )
         .getOrElse(Seq.empty)
+    }
+  }
+
+  implicit class ThrowableOps(throwable: Throwable) {
+    def traceString: String = {
+      val sw = new StringWriter()
+      val pw = new PrintWriter(sw)
+      throwable.printStackTrace(pw)
+      sw.toString();
     }
   }
 }

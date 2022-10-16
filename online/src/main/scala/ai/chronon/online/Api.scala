@@ -96,9 +96,17 @@ trait KVStore {
   */
 case class Mutation(schema: StructType = null, before: Array[Any] = null, after: Array[Any] = null)
 
-case class LoggableResponse(keyBytes: Array[Byte], valueBytes: Array[Byte], joinName: String, tsMillis: Long, schemaHash: String)
+case class LoggableResponse(keyBytes: Array[Byte],
+                            valueBytes: Array[Byte],
+                            joinName: String,
+                            tsMillis: Long,
+                            schemaHash: String)
 
-case class LoggableResponseBase64(keyBase64: String, valueBase64: String, name: String, tsMillis: Long, schemaHash: String)
+case class LoggableResponseBase64(keyBase64: String,
+                                  valueBase64: String,
+                                  name: String,
+                                  tsMillis: Long,
+                                  schemaHash: String)
 
 abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
@@ -155,9 +163,15 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
-    new Fetcher(genKvStore, logFunc = responseConsumer, debug = debug)
+    new Fetcher(genKvStore,
+                Constants.ChrononMetadataKey,
+                logFunc = responseConsumer,
+                debug = debug,
+                externalSourceRegistry = externalRegistry,
+                timeoutMillis = 10000)
 
-  final def buildJavaFetcher(): JavaFetcher = new JavaFetcher(genKvStore, responseConsumer)
+  final def buildJavaFetcher(): JavaFetcher =
+    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, 10000, responseConsumer, externalRegistry)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {

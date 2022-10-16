@@ -1,10 +1,11 @@
 package ai.chronon.online
 
+import ai.chronon.api.Constants
 import ai.chronon.online.Fetcher.{Request, Response}
 
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Failure
+import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
 // keys and values need to match schema in ExternalSource - chronon will validate automatically
@@ -24,7 +25,14 @@ class ExternalSourceRegistry {
       .groupBy(_.name)
       .map {
         case (name, requests) =>
-          if (handlerMap.contains(name)) {
+          // contextual features are specified as
+          // Contextual(schema) => ExternalSource(keySchema = schema, valueSchema = schema)
+          // keys are what need to be returned as is.
+          if (name == Constants.ContextualSourceName) {
+            Future(requests.map { request =>
+              Response(request = request, values = Success(request.keys))
+            })
+          } else if (handlerMap.contains(name)) {
             val ctx = context.copy(groupBy = s"external_source_$name")
             val responses = handlerMap(name).fetch(requests)
             responses.foreach { responses =>
