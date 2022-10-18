@@ -6,17 +6,10 @@ import org.apache.spark.sql.functions.{col, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
-import java.time.format.DateTimeFormatter
-import java.time.{Instant, ZoneId}
 import scala.collection.mutable
 import scala.util.{Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
-
-  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
-  private lazy val archiveTimestampFormatter = DateTimeFormatter
-    .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
-    .withZone(ZoneId.systemDefault())
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -282,11 +275,22 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
+  private def dropTableIfExists(tableName: String): Unit = {
+    val command = s"DROP TABLE IF EXISTS $tableName"
+    println(s"Dropping table with command: $command")
+    sql(command)
+  }
+
+  // archive table by replacing the second character in the table name to "_" such that length of the archived table
+  // name is unchanged to circumvent table name cap. assume that table name length is at least 2.
+  // only keeps one version and drop older ones.
+  def archiveTableIfExists(tableName: String): Unit = {
     if (sparkSession.catalog.tableExists(tableName)) {
-      val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
-      val finalArchiveTableName = s"${tableName}_${humanReadableTimestamp}"
-      val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
+      val archivedTableName = tableName.substring(0, 1) + "_" + tableName.substring(2, tableName.length)
+      if (sparkSession.catalog.tableExists(archivedTableName)) {
+        dropTableIfExists(archivedTableName)
+      }
+      val command = s"ALTER TABLE $tableName RENAME TO $archivedTableName"
       println(s"Archiving table with command: $command")
       sql(command)
     }

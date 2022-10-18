@@ -265,8 +265,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     }
 
     // First run command to archive tables that have changed semantically since the last run
-    val jobRunTimestamp = Instant.now()
-    tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName, jobRunTimestamp)))
+    tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName)))
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)
