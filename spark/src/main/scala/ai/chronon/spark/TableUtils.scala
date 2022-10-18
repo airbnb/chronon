@@ -286,11 +286,14 @@ case class TableUtils(sparkSession: SparkSession) {
   // only keeps one version and drop older ones.
   def archiveTableIfExists(tableName: String): Unit = {
     if (sparkSession.catalog.tableExists(tableName)) {
-      val archivedTableName = tableName.substring(0, 1) + "_" + tableName.substring(2, tableName.length)
-      if (sparkSession.catalog.tableExists(archivedTableName)) {
-        dropTableIfExists(archivedTableName)
+      val db = tableName.split('.')(0)
+      val table = tableName.split('.')(1)
+      val archivedTable = table.substring(0, 1) + "_" + table.substring(2, table.length)
+      val archivedFullTableName = s"$db.$archivedTable"
+      if (sparkSession.catalog.tableExists(archivedFullTableName)) {
+        dropTableIfExists(archivedFullTableName)
       }
-      val command = s"ALTER TABLE $tableName RENAME TO $archivedTableName"
+      val command = s"ALTER TABLE $tableName RENAME TO $archivedFullTableName"
       println(s"Archiving table with command: $command")
       sql(command)
     }
