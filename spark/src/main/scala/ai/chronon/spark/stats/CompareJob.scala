@@ -7,15 +7,42 @@ import ai.chronon.api._
 import ai.chronon.online._
 import ai.chronon.spark.{Conversions, PartitionRange, TableUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.types.DataType
 
 object CompareJob {
+
+  def checkConsistency(leftDf: DataFrame, rightDf: DataFrame, mapping: Map[String, String] = Map.empty): Unit = {
+    val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    // Make sure the number of fields are the same on either side
+    assert(leftFields.size == rightFields.size,
+      s"Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}")
+
+    // Verify that the mapping and the datatypes match
+    leftFields.foreach { leftField =>
+      val rightFieldName = if (mapping.contains(leftField._1)) mapping.get(leftField._1).get else leftField._1
+      assert(rightFields.contains(rightFieldName),
+        s"Mapping column on the right table is not present; column name: ${rightFieldName}")
+
+      // Make sure the data types match for proper comparison
+      val rightFieldType = rightFields.get(rightFieldName).get
+      assert(leftField._2 == rightFieldType,
+        s"Comparison data types do not match; left side: ${leftField._2}, right side: ${rightFieldType}")
+    }
+
+    // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
+    assert(mapping.keySet.subsetOf(leftFields.keySet),
+      s"Invalid mapping provided missing fields; provided: ${mapping.keySet}, expected to be subset of: ${leftFields.keySet}")
+    assert(mapping.values.toSet.subsetOf(rightFields.keySet),
+      s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}, expected to be subset of: ${rightFields.keySet}")
+  }
+
   /*
   * Navigate the dataframes and compare them and fetch statistics.
   */
   def compare(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String], mapping: Map[String, String] = Map.empty): DataMetrics = {
     // 1. Check for schema consistency issues
-    // TODO: Check for datatypes, number of arguments, mapping to match the cols on each side
-    // TODO: Mapping should either be empty or filled out completely no partial mapping is allowed.
+    checkConsistency(leftDf, rightDf, mapping)
 
     // 2. Build comparison dataframe
     // TODO: Should consider the partition column as a separate thing from keys
