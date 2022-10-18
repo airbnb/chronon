@@ -261,7 +261,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
                 query=chronon.Query(...)
             ))
 
-        You can also stitch together multiple sources into one.
+        Multiple sources can be supplied to backfill the historical values with their respective start and end
+        partitions. However, only one source is allowed to be a streaming one.
     :type sources:
     :param keys:
     :type keys:
@@ -288,7 +289,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     :param kwargs:
     :type kwargs:
     :return:
-        A GroupBy object that can represent realtime aggregation
+        A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
 

@@ -111,7 +111,7 @@ There are essentially four integration points:
   - KVStore - for storing and serving features in low latency. This can be any kv store that can support point write, point lookup, scan and bulk write.
   - StreamDecoder - for reading bytes from kafka and converting them into a Chronon Event or a Chronon Mutation. If you have a convention between how you convert data in kafka into data in warehouse, you would need to follow that same convention to decode as well.
 
-- Airflow - for scheduling spark pipelines that backfill training.
+- Airflow - for scheduling spark pipelines that periodically checks and triggers missing tasks, join backfills, group by uploads, meta data uploads, etc. 
 
 ### Repository Setup
 
