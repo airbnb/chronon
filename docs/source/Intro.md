@@ -124,7 +124,7 @@ Full code [example](https://gist.github.com/nikhilsimha/13cf46b93116bc3b0b08b4ad
 ## More Examples
 
 The document below goes into a bit more detail about each of the concepts. 
-You can find examples [here](../api/py/test/sample/) instead.
+You can find examples [here](../../api/py/test/sample/) instead.
 
 ## Source
 Source in chronon refers to a logical group of underlying physical data sources. There are two types of sources
@@ -133,7 +133,7 @@ Source in chronon refers to a logical group of underlying physical data sources.
 - Cumulative 
 
 The following diagram visualizes these sources
-![Data Landscape](./images/Data_landscape.png)
+![Data Landscape](../images/Data_landscape.png)
 
 ### Events
 Events represent log of immutable events - like user views, clicks, transactions etc. Events are represented by
@@ -159,7 +159,7 @@ def MyEventSource(event_name, *args, **kwargs):
 > format, and timestamps as long values representing milliseconds since epoch in UTC. You can specify a time 
 > transformation as an argument to `EventSource.query.timeColumn`. 
 
-![events example](./images/Events_example.png)
+![events example](../images/Events_example.png)
 
 ### Entities
 
@@ -189,7 +189,7 @@ def DBExportSource(table_name, *args, **kwargs):
 ```
 
 See example ratings table 
-![Entities Example](./images/Entities_example.png)
+![Entities Example](../images/Entities_example.png)
 
 >**Note**: Dates and timestamps are shortened for brevity. MutationTable is an unpacked version. There are three kinds of
 > mutations deletes, updates and inserts. `mutationTs` is modified for brevity, but it should be a long representing
@@ -213,7 +213,7 @@ this is that we can always look at latest partition instead of a historical rang
 This is specified as a sub-case of Events as `Events(cumulative=True)`.
 
 See example
-![Cumulative Example](./images/Cumulative_example.png)
+![Cumulative Example](../images/Cumulative_example.png)
 
 > Note: Declaring a source as Cumulative one comes with enormous performance benefits compared to EntitySource. But
 > you need to be 100% sure that the columns you want to consume are never modified.
@@ -293,15 +293,16 @@ values are the same as online served values, and there is a single definition go
 
 Chronon runs daily pipelines that measure inconsistency between an offline join, and an online joins.
 
-[Join](../api/py/ai/chronon/join.py#L50) has essentially two things - a `left` source and `right_parts`. 
+[Join](../../api/py/ai/chronon/join.py) has essentially two things - a `left` source and `right_parts`. 
  - `left` source is the source against which aggregates are being computed for. The left source only matter for offline 
    backfilling and not used in serving.
    - One of the main things to determine about your left source, is whether it is an event or an entity. 
    - Only events can be used to trigger realtime / point-in-time-correct backfills. Entities always trigger a daily accurate backfill.
+   - Only events can be used to trigger realtime / point-in-time-correct backfills. Entities always trigger a daily accurate backfill.
    - If you are predicting online - in a service in realtime, you usually want an EventSource as your `left`. In this case
      providing a `timeColumn` - as milliseconds in UTC since epoch - is essential.
    - If you are predicting offline - once every day, you want an Entity source on your `left`.
- - `right_parts` is a list of [JoinPart](../api/py/ai/chronon/join.py#L14)s containing group_by's to join with. This has an optional `prefix` and key re-mapping facility. 
+ - `right_parts` is a list of [JoinPart](../../api/py/ai/chronon/join.py)s containing group_by's to join with. This has an optional `prefix` and key re-mapping facility. 
     - `prefix` - just adds the specified string to the names of the columns from group_by
     - `keyMapping` - is a map of string to string. This is used to re-map keys from left side into right side. You could have 
    a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
@@ -345,5 +346,5 @@ v1 = Join(
 ```
 
 Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
-metadata is extracted from [teams.json](../api/py/test/sample/teams.json) in (or default team if one is not set).
+metadata is extracted from [teams.json](../../api/py/test/sample/teams.json) in (or default team if one is not set).
 

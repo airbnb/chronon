@@ -46,7 +46,7 @@ compile.py --conf=<conf_type>/<team>/<conf_name>.py
 ```
 
 - `conf_type` can be "staging_queries" or "group_bys" or "joins"
-- `team` is your team name as registered in [teams.json](../api/py/test/sample/teams.json)
+- `team` is your team name as registered in [teams.json](../../api/py/test/sample/teams.json)
 - `conf_name.py` is the python file where you put your compute definition.
 
 ### Run
@@ -79,8 +79,8 @@ You can run the configs in their modes using run command
 run.py --mode=<MODE> --conf=<PATH>/<TO>/<YOUR>/<DEFINITION>
 ```
 
-You can directly tune the parameters setup as env-vars set in [spark_submit.sh](../api/py/test/sample/scripts/spark_submit.sh)
-or [spark_submit_streaming.sh](../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script
+You can directly tune the parameters setup as env-vars set in [spark_submit.sh](../../api/py/test/sample/scripts/spark_submit.sh)
+or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script
 
 ```shell
 EXECUTOR_MEMORY=16G PARALLELISM=2000 run.py --mode=backfill --conf=production/joins/<your_team>/<your_join>
@@ -99,7 +99,7 @@ explore.py <KEYWORD>
 
 ## Integrations
 
-![Architecture](./images/Overall%20Architecture.png)
+![Architecture](../images/Overall Architecture.png)
 
 There are essentially four integration points:
 

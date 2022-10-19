@@ -1,3 +1,5 @@
+# Code Guidelines
+
 ## Scala Language usage Philosophy
 
 There are two phases of execution in chronon code. Hot path & control path.
@@ -25,7 +27,7 @@ Any row/column level operation is a part of the inner loop. This is true across 
               } else if (o.isInstance[Long]) { 
                 o.asInstanceOf[Long].toDouble
               } 
-              ...
+              . . .
           }
           
           df.rdd.map(toDouble(row(columnIndex)))
@@ -66,5 +68,5 @@ in terms of power. Also Spark APIs are mainly in Scala2.
 
 Every new behavior should be unit-tested. We have implemented a fuzzing framework 
 that can produce data randomly as scala objects or 
-spark tables - [see](../spark/src/test/scala/ai/chronon/spark/test/DataFrameGen.scala). Use it for testing.
-Python code is also covered by tests - [see](../api/py/test).
+spark tables - [see](../../spark/src/test/scala/ai/chronon/spark/test/DataFrameGen.scala). Use it for testing.
+Python code is also covered by tests - [see](../../api/py/test).

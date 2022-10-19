@@ -1,4 +1,3 @@
-
 # Aggregations
 
 ## Supported aggregations
@@ -64,7 +63,7 @@ hence stale - missing most recent events. This is not accepable for machine lear
 hopping windows without the loss of most recent events. Sawtooth windows will have variable window interval size - and
 in this particular example we will aggregate events between `1:20` - `2:27`.
 
-![Windows Illustrated](images/windows.png)
+![Windows Illustrated](../images/windows.png)
 
 TODO: Windowing Code Example
 
@@ -87,23 +86,23 @@ source, which contains `item_prices` as a `list` of values in each row - represe
 Simply put, `GroupBy.aggregations[i].input_column` can refer to a columnname which contains lists as values. In
 traditional SQL this would require an expensive `explode` command and is supported natively in `Chronon`.
 
----
+
 ### NOTE: Windowing, Bucketing and Flattening can be flexibly mixed and matched.
----
+
 ## Table of properties for aggregations
 
-|aggregation            | input type       | output type      | reversible | parameters         | bounded memory |
-|-----------------------|------------------|------------------|------------|--------------------|----------------|
-| count                 | all types        | long             | yes        |                    | yes            |
-| min, max              | primitive types  | input            | no         |                    | yes            |
-| top_k, bottom_k       | primitive types  | list<input>      | no         | k                  | yes            |
-| first, last           | all types        | input            | no         |                    | yes            |
-| first_k, last_k       | all types        | list<input>      | no         | k                  | yes            |
-| average, variance     | numeric types    | double           | yes        |                    | yes            |
-| histogram             | string           | map<string, long>| yes        | k=inf              | no             |
-| approx_unique_count   | primitive types  | long             | no         | k=8                | yes            |
-| approx_percentile     | primitive types  | list<input>      | no         | k=128, percentiles | yes            |
-| unique_count          | primitive types  | long             | no         |                    | no             |
+|aggregation            | input type       | output type       | reversible | parameters         | bounded memory |
+|-----------------------|------------------|-------------------|------------|--------------------|----------------|
+| count                 | all types        | long              | yes        |                    | yes            |
+| min, max              | primitive types  | input             | no         |                    | yes            |
+| top_k, bottom_k       | primitive types  | list<input,>      | no         | k                  | yes            |
+| first, last           | all types        | input             | no         |                    | yes            |
+| first_k, last_k       | all types        | list<input,>      | no         | k                  | yes            |
+| average, variance     | numeric types    | double            | yes        |                    | yes            |
+| histogram             | string           | map<string, long> | yes        | k=inf              | no             |
+| approx_unique_count   | primitive types  | long              | no         | k=8                | yes            |
+| approx_percentile     | primitive types  | list<input,>      | no         | k=128, percentiles | yes            |
+| unique_count          | primitive types  | long              | no         |                    | no             |
 
 
 ## Tuning
