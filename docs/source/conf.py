@@ -17,6 +17,9 @@ release = '0.0.10'
 extensions = [
     'sphinx.ext.duration',
     'myst_parser',
+    'sphinx.ext.autodoc',
+    'sphinx.ext.todo',
+    'sphinx.ext.coverage',
 ]
 
 source_parsers = {

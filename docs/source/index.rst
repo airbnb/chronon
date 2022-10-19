@@ -15,6 +15,7 @@ Welcome to Chronon's documentation!
    Code Guidelines
    Aggregations
    Online Offline Consistency
+   code
 
 Indices and tables
 ==================
