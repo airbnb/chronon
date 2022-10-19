@@ -116,9 +116,11 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
+    archive_namespace = teams.get_team_conf(teams_path, team_name, "archive_namespace")
     table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
+    obj.metaData.archiveNamespace = obj.metaData.archiveNamespace or archive_namespace
     obj.metaData.team = team_name
 
 
