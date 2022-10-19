@@ -9,6 +9,7 @@
         "hive_cli_conn_id": "hive-default-cli",
         "maintainer_emails": ["chronon@airbnb.com"],
         "namespace": "default_namespace",
+        "archive_namespace": "archive_namespace",
         "one_airbnb_team_name": "Default Team Name",
         "online_spark_cluster": "",
         "online_spark_queue": "",
