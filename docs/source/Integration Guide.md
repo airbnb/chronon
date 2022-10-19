@@ -1,4 +1,4 @@
-# Intro
+# Integration Guide
 
 Chronon essentially can operate in two modes - online and offline.
 In this doc we are going to talk about how to integrate Chronon online.
