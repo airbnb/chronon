@@ -91,6 +91,30 @@ object Driver {
     }
   }
 
+  object LabelJoin {
+    class Args extends Subcommand("label-join") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+          descr = "Runs label join in steps, step-days at a time. Default is 30 days",
+          default = Option(30))
+      val skipEqualCheck: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          default = Some(false),
+          descr = "Check if this join has already run with a different conf, if so it will fail the job")
+    }
+
+    def run(args: Args): Unit = {
+      val labelJoinConf = parseConf[api.LabelJoin](args.confPath())
+      val labelJoin = new LabelJoin(
+        labelJoinConf.getJoin,
+        labelJoinConf.left_start_offset,
+        labelJoinConf.left_end_offset,
+        TableUtils(SparkSessionBuilder.build(s"label_join_${labelJoinConf.getJoin.metaData.name}"))
+      )
+      labelJoin.computeLabelJoin(args.stepDays.toOption)
+    }
+  }
+
   object Analyzer {
     class Args extends Subcommand("analyze") with OfflineSubcommand {
       val startDate: ScallopOption[String] =

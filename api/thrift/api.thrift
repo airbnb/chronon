@@ -189,6 +189,16 @@ enum Accuracy {
     SNAPSHOT = 1
 }
 
+enum Cadence {
+    WEEKLY = 0,
+    DAILY = 1
+}
+
+enum JoinType {
+    OUTER = 0,
+    INNER = 1
+}
+
 struct MetaData {
     1: optional string name
     // marking this as true means that the conf can be served online
@@ -265,6 +275,18 @@ struct Join {
     // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
+}
+
+// A label join - with a root source, with multiple groupby's.
+struct LabelJoin {
+    1: Join join
+    // The earliest date label should be refreshed
+    4: i32 left_start_offset
+    // The most rencet date label should be refreshed.
+    // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'today'
+    5: i32 left_end_offset
+    6: optional Cadence cadence
+    7: optional JoinType joinType
 }
 
 
