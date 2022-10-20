@@ -208,8 +208,14 @@ This command will take into the account of `version.sbt` and handles a series of
      1. select "close" wait for the steps to finish
      2. Select "refresh" and "release"
      3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/) or [sonatype UI](https://search.maven.org/search?q=g:ai.chronon)
-4. Push the local release commits, and the new tag created from step 1 to Github. 
+4. Push the local release commits (DO NOT SQUASH), and the new tag created from step 1 to Github. 
 
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
 Currently the repo is not public and the run.py script can't reach it.
+
+# Chronon Documentation via Sphinx
+Run the sbt sphinx command to generate the sphinx docs locally and open it.
+```
+sbt sphinx
+```

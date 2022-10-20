@@ -21,3 +21,6 @@ ${VIRTUAL_ENV}/bin/sphinx-build -b html docs/source/ ${BUILD_DIR}/html
 
 # Exit the virtualenv
 deactivate
+
+# Open the docs entry page locally
+open docs/build/html/index.html
