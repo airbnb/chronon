@@ -116,8 +116,14 @@ def download_jar(version, jar_type='uber', release_tag=None, spark_version="2.4.
     assert spark_version in SUPPORTED_SPARK, (
         f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}")
     scala_version = SCALA_VERSION_FOR_SPARK[spark_version]
-    base_url = "https://s01.oss.sonatype.org/service/local/repositories/public/content/ai/chronon/spark_{}_{}".format(
-        jar_type, scala_version)
+    maven_url_prefix = os.environ.get('CHRONON_MAVEN_MIRROR_PREFIX', None)
+    default_url_prefix = "https://s01.oss.sonatype.org/service/local/repositories/public/content"
+    url_prefix = maven_url_prefix if maven_url_prefix else default_url_prefix
+    base_url = "{}/ai/chronon/spark_{}_{}".format(
+        url_prefix,
+        jar_type,
+        scala_version)
+    print("Downloading jar from url: " + base_url)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
         if version is None:
@@ -308,5 +314,7 @@ if __name__ == "__main__":
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(
-        args.version, jar_type=jar_type, release_tag=args.release_tag, spark_version=args.spark_version)
+        args.version, jar_type=jar_type,
+        release_tag=args.release_tag,
+        spark_version=args.spark_version)
     Runner(args, jar_path).run()
