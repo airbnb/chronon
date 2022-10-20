@@ -8,12 +8,14 @@ ratings_features = GroupBy(
     sources=[
         EntitySource(
             snapshotTable="item_info.ratings_snapshots_table",
-            mutationsTable="item_info.ratings_mutations_table",
-            mutationsTopic="ratings_mutations_topic",
+            mutationTable="item_info.ratings_mutations_table",
+            mutationTopic="ratings_mutations_topic",
             query=query.Query(
                 selects={
                     "rating": "CAST(rating as DOUBLE)",
-                }))
+                },
+                time_column="ts",
+            ))
     ],
     keys=["item"],
     aggregations=[
@@ -51,8 +53,7 @@ item_rec_features = Join(
         query=query.Query(
             start_partition='2021-06-30'
         )
-    )
-    assert group_by.contains_windowed_aggregation(aggregations)
+    ))
 
 
 def test_validator_ok():
