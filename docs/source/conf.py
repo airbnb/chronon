@@ -20,6 +20,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
+    'sphinx_design',
 ]
 
 source_parsers = {
@@ -40,4 +41,16 @@ exclude_patterns = []
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'pydata_sphinx_theme'
+html_theme_options = {
+    "github_url": "https://github.com/airbnb/chronon",
+    "collapse_navigation": True,
+}
+
+html_title = "Airbnb Chronon Manual"
 html_static_path = ['_static']
+html_css_files = ["chronon.css"]
+html_context = {"default_mode": "light"}
+html_use_modindex = True
+html_copy_source = False
+html_domain_indices = False
+html_file_suffix = '.html'

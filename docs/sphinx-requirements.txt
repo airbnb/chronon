@@ -2,3 +2,4 @@ sphinx
 myst-parser
 pydata-sphinx-theme
 build
+sphinx-design

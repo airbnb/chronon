@@ -19,4 +19,5 @@ pip install api/py/dist/chronon-ai*.tar.gz
 # Run the Sphinx build
 ${VIRTUAL_ENV}/bin/sphinx-build -b html docs/source/ ${BUILD_DIR}/html
 
+# Exit the virtualenv
 deactivate

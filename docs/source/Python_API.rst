@@ -1,4 +1,4 @@
-Documentation for the Code
+Python API
 **************************
 
 .. automodule:: ai.chronon.group_by
