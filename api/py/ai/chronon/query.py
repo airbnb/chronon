@@ -25,7 +25,8 @@ def Query(selects: Dict[str, str] = None,
         See: https://spark.apache.org/docs/latest/api/sql/#built-in-functions
         When none, we will assume that no transformations are needed and will pick columns necessary for aggregations.
     :type selects: List[str], optional
-    :param wheres: Used for filtering. Same as above, but each expression must return boolean. Expressions are joined using AND.
+    :param wheres: Used for filtering. Same as above, but each expression must return boolean.
+        Expressions are joined using AND.
     :type wheres: List[str], optional
     :param start_partition: From which partition of the source is the data valid from - inclusive.
         When absent we will consider all available data is usable.
@@ -39,8 +40,9 @@ def Query(selects: Dict[str, str] = None,
     :param setups: you can register UDFs using setups
         ["ADD JAR YOUR_JAR", "create temporary function YOU_UDF_NAME as YOUR_CLASS"]
     :type setups: List[str], optional
-    :param mutation_time_column: For entities, with real time accuracy, you need to specify an expression that represents mutation time
-        Time should be milliseconds since epoch. This is not necessary for event sources, defaults to "mutation_ts"
+    :param mutation_time_column: For entities, with real time accuracy, you need to specify an expression that
+        represents mutation time. Time should be milliseconds since epoch.
+        This is not necessary for event sources, defaults to "mutation_ts"
     :type mutation_time_column: str, optional
     :param reversal_column: str, optional
         For entities with realtime accuracy, we divide updates into two additions & reversal.

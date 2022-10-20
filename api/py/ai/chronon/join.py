@@ -103,7 +103,7 @@ def Join(left: api.Source,
         Deprecated, see env
     :type additional_env: List[str]
     :param dependencies:
-        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for.
+        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for
         Typically used by engines like airflow to create partition sensors.
     :type dependencies: List[str]
     :param online:
@@ -115,8 +115,8 @@ def Join(left: api.Source,
         system yourself.
     :type production: bool
     :param output_namespace:
-        In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be written
-        into. You can set this at the teams.json leve.
+        In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be
+        written into. You can set this at the teams.json leve.
     :type output_namespace: str
     :param table_properties:
         Specifies the properties on output hive tables. Can be specified in teams.json.
