@@ -292,7 +292,7 @@ if __name__ == "__main__":
                         default=os.path.join(chronon_repo_path, 'scripts/spark_streaming.sh'))
     parser.add_argument('--online-jar-fetch',
                         help='Path to script that can pull online jar. ' +
-                             'This will run only when a file doesn\'t exist at location specified by online_jar',
+                             "This will run only when a file doesn't exist at location specified by online_jar",
                         default=os.path.join(chronon_repo_path, 'scripts/fetch_online_jar.py'))
     parser.add_argument('--sub-help', action='store_true', help='print help command of the underlying jar and exit')
     parser.add_argument('--conf-type', default='group_bys',

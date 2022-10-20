@@ -227,7 +227,7 @@ def prettify_entry(entry, target, modification, show=10, root=CWD, trim_paths=Fa
         name = " "*(15 - len(column)) + column
         if column in FILTER_COLUMNS and len(values) > show:
             values = [value for value in set(values) if target in value]
-            if(len(values) > show):
+            if (len(values) > show):
                 truncated = ', '.join(values[:show])
                 remaining = len(values) - show
                 values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"

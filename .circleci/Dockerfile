@@ -73,7 +73,7 @@ RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
 RUN conda create -y -n zipline_py python=3.7
 RUN conda install -y -q -n zipline_py --no-deps virtualenv
 RUN  /opt/conda/envs/zipline_py/bin/pip install \
-   flake8==3.8.3 flake8-quotes==0.13.0 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7
+   flake8==5.0.4 flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7
 
 WORKDIR /
 RUN rm -rf /img-build
