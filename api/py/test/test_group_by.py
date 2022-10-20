@@ -1,59 +1,98 @@
-from ai.chronon import query
+import pytest
+
+from ai.chronon import group_by, query
 from ai.chronon.group_by import GroupBy, TimeUnit, Window
-from ai.chronon.api.ttypes import EventSource, EntitySource, Aggregation, Operation, JoinPart
+from ai.chronon.api import ttypes
+from ai.chronon.api.ttypes import EventSource, EntitySource, Aggregation, Operation
 
 
-
-ratings_features = GroupBy(
-    sources=[
-        EntitySource(
-            snapshotTable="item_info.ratings_snapshots_table",
-            mutationTable="item_info.ratings_mutations_table",
-            mutationTopic="ratings_mutations_topic",
-            query=query.Query(
-                selects={
-                    "rating": "CAST(rating as DOUBLE)",
-                },
-                time_column="ts",
-            ))
-    ],
-    keys=["item"],
-    aggregations=[
-        Aggregation(operation=Operation.AVERAGE, windows=[Window(length=90, timeUnit=TimeUnit.DAYS)]),
-    ],
-)
+@pytest.fixture
+def sum_op():
+    return ttypes.Operation.SUM
 
 
-view_features = GroupBy(
-      sources=[
-          EventSource(
-              table="user_activity.user_views_table",
-              topic="user_views_stream",
-              query=query.Query(
-                  selects={
-                      "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
-                  },
-                  wheres=["user != null"]
-              )
-          )
-      ],
-      keys=["user", "item"],
-      aggregations=[
-          Aggregation(operation=Operation.COUNT, windows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
-      ],
-)
+@pytest.fixture
+def min_op():
+    return ttypes.Operation.MIN
 
 
-from ai.chronon.join import Join, JoinPart
-from ai.chronon.api.ttypes import EventSource
+@pytest.fixture
+def days_unit():
+    return ttypes.TimeUnit.DAYS
 
-item_rec_features = Join(
-    left=EventSource(
-        table="user_activity.view_purchases",
-        query=query.Query(
-            start_partition='2021-06-30'
+
+@pytest.fixture
+def hours_unit():
+    return ttypes.TimeUnit.HOURS
+
+
+def event_source(table):
+    """
+    Sample left join
+    """
+    return ttypes.EventSource(
+        table=table,
+        query=ttypes.Query(
+            startPartition="2020-04-09",
+            selects={
+                "subject": "subject_sql",
+                "event_id": "event_sql",
+                "cnt": 1
+            },
+            timeColumn="CAST(ts AS DOUBLE)",
+        ),
+    )
+
+
+def test_pretty_window_str(days_unit, hours_unit):
+    """
+    Test pretty window utils.
+    """
+    window = ttypes.Window(
+        length=7,
+        timeUnit=days_unit
+    )
+    assert group_by.window_to_str_pretty(window) == "7 days"
+    window = ttypes.Window(
+        length=2,
+        timeUnit=hours_unit
+    )
+    assert group_by.window_to_str_pretty(window) == "2 hours"
+
+
+def test_pretty_operation_str(sum_op, min_op):
+    """
+    Test pretty operation util.
+    """
+    assert group_by.op_to_str(sum_op) == "sum"
+    assert group_by.op_to_str(min_op) == "min"
+
+
+def test_select():
+    """
+    Test select builder
+    """
+    assert query.select('subject', event="event_expr") == {"subject": "subject", "event": "event_expr"}
+
+
+def test_contains_windowed_aggregation(sum_op, min_op, days_unit):
+    """
+    Test checker for windowed aggregations
+    """
+    assert not group_by.contains_windowed_aggregation([])
+    aggregations = [
+        ttypes.Aggregation(inputColumn='event', operation=sum_op),
+        ttypes.Aggregation(inputColumn='event', operation=min_op),
+    ]
+    assert not group_by.contains_windowed_aggregation(aggregations)
+    aggregations.append(
+        ttypes.Aggregation(
+            inputColumn='event',
+            operation=sum_op,
+            windows=[ttypes.Window(length=7, timeUnit=days_unit)]
         )
-    ))
+    )
+    assert group_by.contains_windowed_aggregation(aggregations)
 
 
 def test_validator_ok():
@@ -146,3 +185,52 @@ def test_snapshot_with_hour_aggregation():
             ),
             backfill_start_date="2021-01-04",
         )
+
+
+ratings_features = GroupBy(
+    sources=[
+        EntitySource(
+            snapshotTable="item_info.ratings_snapshots_table",
+            mutationTable="item_info.ratings_mutations_table",
+            mutationTopic="ratings_mutations_topic",
+            query=query.Query(
+                selects={
+                    "rating": "CAST(rating as DOUBLE)",
+                },
+                time_column="ts",
+            ))
+    ],
+    keys=["item"],
+    aggregations=[
+        Aggregation(
+            inputColumn="rating",
+            operation=Operation.AVERAGE,
+            windows=[Window(length=90, timeUnit=TimeUnit.DAYS)],
+        ),
+    ],
+)
+
+
+view_features = GroupBy(
+    sources=[
+        EventSource(
+            table="user_activity.user_views_table",
+            topic="user_views_stream",
+            query=query.Query(
+                selects={
+                    "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
+                },
+                wheres=["user != null"],
+                time_column="ts",
+            )
+        )
+    ],
+    keys=["user", "item"],
+    aggregations=[
+        Aggregation(
+            inputColumn="view",
+            operation=Operation.COUNT,
+            windows=[Window(length=5, timeUnit=TimeUnit.HOURS)],
+        ),
+    ],
+)
