@@ -54,7 +54,7 @@ object MetadataExporter {
     val processSuccess = getGroupByPaths(inputPath + GROUPBY_PATH_SUFFIX).map{ path =>
       try {
         writeGroupByOutput(path, outputPath + GROUPBY_PATH_SUFFIX)
-        (path, true, "")
+        (path, true, None)
       } catch {
         case exception: Throwable => (path, false, exception.getMessage)
       }
