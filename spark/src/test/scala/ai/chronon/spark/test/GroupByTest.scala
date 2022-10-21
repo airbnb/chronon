@@ -13,7 +13,6 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
-import scala.collection.JavaConversions.asScalaBuffer
 import scala.collection.mutable
 
 class GroupByTest {
@@ -268,7 +267,6 @@ class GroupByTest {
     val namespace = "test_analyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = Constants.Partition.at(System.currentTimeMillis())
-
     val aggregationsMetadata = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
@@ -283,6 +281,31 @@ class GroupByTest {
       assertTrue(aggregation.name.contains(aggregation.inputColumn.toLowerCase))
     })
   }
+
+  @Test
+  def testGroupByNoAggregationAnalyzer(): Unit = {
+    val (source, endPartition) = createTestSource(30)
+    val testName = "unit_analyze_test_item_no_agg"
+
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_analyzer"
+    val groupByConf =  Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = null,
+      metaData = Builders.MetaData(name = testName, namespace = namespace, team = "chronon"),
+      backfillStartDate =
+        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
+    )
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val aggregationsMetadata = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+
+    print(aggregationsMetadata)
+    assertTrue(aggregationsMetadata.length == 1)
+    assertEquals(aggregationsMetadata(0).name, "time_spent_ms")
+    assertEquals(aggregationsMetadata(0).columnType, "LongType")
+  }
+
 
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
