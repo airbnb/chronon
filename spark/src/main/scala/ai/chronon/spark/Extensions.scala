@@ -80,6 +80,10 @@ object Extensions {
       TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties, partitionColumns)
     }
 
+    def appendColumn(colName: String, colValue: String): DataFrame = {
+       df.withColumn(colName, lit(colValue))
+    }
+
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
     }
