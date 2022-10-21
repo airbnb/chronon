@@ -42,15 +42,15 @@ object MetadataExporter {
   }
 
   def writeGroupByOutput(groupByPath: String, outputDirectory: String): Unit = {
-    val file = new File(outputDirectory + GROUPBY_PATH_SUFFIX + groupByPath.split("/").last)
+    val data = getEnrichedGroupByMetadata(groupByPath)
+    val file = new File(outputDirectory + "/" + groupByPath.split("/").last)
     file.createNewFile()
     val writer = new BufferedWriter(new FileWriter(file))
-    writer.write(getEnrichedGroupByMetadata(groupByPath))
+    writer.write(data)
     writer.close()
   }
 
   def processGroupBys(inputPath: String, outputPath: String): Unit = {
-
     val processSuccess = getGroupByPaths(inputPath + GROUPBY_PATH_SUFFIX).map{ path =>
       try {
         writeGroupByOutput(path, outputPath + GROUPBY_PATH_SUFFIX)
