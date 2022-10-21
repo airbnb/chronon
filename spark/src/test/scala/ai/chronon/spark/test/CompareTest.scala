@@ -46,4 +46,42 @@ class CompareTest {
     //result.show()
   }
 
+  @Test
+  def mappingTest(): Unit = {
+    val leftData = Seq(
+      (1, Some(1), 1.0, "a", toTs("2021-04-10 09:00:00"), "2021-04-10"),
+      (1, Some(2), 2.0, "b", toTs("2021-04-10 11:00:00"), "2021-04-10"),
+      (2, Some(2), 2.0, "c", toTs("2021-04-10 15:00:00"), "2021-04-10"),
+      (3, None, 1.0, "d", toTs("2021-04-10 19:00:00"), "2021-04-10")
+    )
+
+    val rightData = Seq(
+      (1, Some(1), 5.0, "a", toTs("2021-04-10 09:00:00"), "2021-04-10"),
+      (2, Some(3), 2.0, "b", toTs("2021-04-10 11:00:00"), "2021-04-10"),
+      (2, Some(5), 6.0, "c", toTs("2021-04-10 15:00:00"), "2021-04-10"),
+      (3, None, 1.0, "d", toTs("2021-04-10 19:00:00"), "2021-04-10")
+    )
+
+    val leftColumns = Seq("serial", "value", "rating", "keyId", "ts", "ds")
+    val leftRdd = spark.sparkContext.parallelize(leftData)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val rightColumns = Seq("rev_serial", "rev_value", "rev_rating", "keyId", "ts", "ds")
+    val rightRdd = spark.sparkContext.parallelize(rightData)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+
+    leftDf.show()
+    rightDf.show()
+
+    val result = CompareJob.compare(
+        leftDf,
+        rightDf,
+        Seq("keyId", "ts", "ds"),
+        Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
+    )
+    println(result)
+    val gson = new Gson()
+    println(gson.toJson(result))
+    //result.show()
+  }
+
 }

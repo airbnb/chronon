@@ -27,10 +27,14 @@ object CompareMetrics {
   private def edit_distance: UserDefinedFunction =
     functions.udf((left: Object, right: Object) => EditDistance.between(left, right))
 
-  def buildMetrics(valueFields: Array[StructField]): Seq[MetricTransform] =
+  def buildMetrics(valueFields: Array[StructField], mapping: Map[String, String] = Map.empty): Seq[MetricTransform] =
     valueFields.flatMap { field =>
       val left = functions.col(field.name + leftSuffix)
-      val right = functions.col(field.name + rightSuffix)
+      val right = if (mapping.contains(field.name)) {
+        functions.col(mapping.get(field.name).get + rightSuffix)
+      } else {
+        functions.col(field.name + rightSuffix)
+      }
       val universalMetrics = Seq(
         MetricTransform("both_null", left.isNull.and(right.isNull), Operation.SUM),
         MetricTransform("left_null", left.isNull.and(right.isNotNull), Operation.SUM),
@@ -120,6 +124,7 @@ object CompareMetrics {
 
   def compute(valueFields: Array[StructField],
               inputDf: DataFrame,
+              mapping: Map[String, String] = Map.empty,
               timeBucketMinutes: Long = 60): (DataFrame, DataMetrics) = {
     // spark maps cannot be directly compared, for now we compare the string representation
     // TODO 1: For Maps, we should find missing keys, extra keys and mismatched keys
@@ -129,7 +134,7 @@ object CompareMetrics {
         case MapType(_, _) => StructField(field.name, StringType)
         case _             => field
       })
-    val metrics = buildMetrics(valueSchema)
+    val metrics = buildMetrics(valueSchema, mapping)
     val selectedDf = Comparison
       .stringifyMaps(inputDf)
       .select(metrics.map(_.expr) :+ functions.col(Constants.TimeColumn): _*)
