@@ -1,6 +1,7 @@
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.windowing.TsUtils
+import ai.chronon.online.DataMetrics
 import ai.chronon.spark.stats.CompareJob
 import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import com.google.gson.Gson
@@ -39,11 +40,23 @@ class CompareTest {
     leftDf.show()
     rightDf.show()
 
-    val result = CompareJob.compare(leftDf, rightDf, Seq("keyId", "ts", "ds"))
+    val keys = Seq("keyId", "ts", "ds")
+    val result: DataMetrics = CompareJob.compare(leftDf, rightDf, keys)
     println(result)
-    val gson = new Gson()
-    println(gson.toJson(result))
-    //result.show()
+    assert(result.series.length == 4, "Invalid result length")
+    for (rowIndex <- 0 until leftData.length) {
+      for ((colName, index) <- columns.zipWithIndex) {
+        // The current column is either a key or a time column skipping it
+        if (!keys.contains(colName)) {
+          val actualMismatchCount = result.series(rowIndex)._2(s"${colName}_mismatch_sum")
+          if (leftData(rowIndex).productElement(index) == rightData(rowIndex).productElement(index)) {
+            assert(actualMismatchCount == 0, "Expected no mismatches")
+          } else {
+            assert(actualMismatchCount == 1, "Expected one mismatch")
+          }
+        }
+      }
+    }
   }
 
   @Test
@@ -72,16 +85,27 @@ class CompareTest {
     leftDf.show()
     rightDf.show()
 
+    val keys = Seq("keyId", "ts", "ds")
     val result = CompareJob.compare(
         leftDf,
         rightDf,
-        Seq("keyId", "ts", "ds"),
+        keys,
         Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
     )
     println(result)
-    val gson = new Gson()
-    println(gson.toJson(result))
-    //result.show()
+    assert(result.series.length == 4, "Invalid result length")
+    for (rowIndex <- 0 until leftData.length) {
+      for ((colName, index) <- leftColumns.zipWithIndex) {
+        // The current column is either a key or a time column skipping it
+        if (!keys.contains(colName)) {
+          val actualMismatchCount = result.series(rowIndex)._2(s"${colName}_mismatch_sum")
+          if (leftData(rowIndex).productElement(index) == rightData(rowIndex).productElement(index)) {
+            assert(actualMismatchCount == 0, "Expected no mismatches")
+          } else {
+            assert(actualMismatchCount == 1, "Expected one mismatch")
+          }
+        }
+      }
+    }
   }
-
 }
