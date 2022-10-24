@@ -4,7 +4,6 @@ import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.online.DataMetrics
 import ai.chronon.spark.stats.CompareJob
 import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
-import com.google.gson.Gson
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 

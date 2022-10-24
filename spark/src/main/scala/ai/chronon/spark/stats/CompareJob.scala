@@ -58,7 +58,6 @@ object CompareJob {
     checkConsistency(leftDf, rightDf, keys, mapping)
 
     // 2. Build comparison dataframe
-    // TODO: Should consider the partition column as a separate thing from keys
     println(s"""Join keys: ${keys.mkString(", ")}
         |Left Schema:
         |${leftDf.schema.pretty}
