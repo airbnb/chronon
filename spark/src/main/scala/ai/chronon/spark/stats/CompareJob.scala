@@ -1,17 +1,20 @@
 package ai.chronon.spark.stats
 
-import ai.chronon
-import ai.chronon.api.Extensions._
-import ai.chronon.spark.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
-import ai.chronon.spark.{Conversions, PartitionRange, TableUtils}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import ai.chronon.spark.Conversions
+import ai.chronon.spark.Extensions._
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 
 object CompareJob {
 
-  def checkConsistency(leftDf: DataFrame, rightDf: DataFrame, mapping: Map[String, String] = Map.empty): Unit = {
+  def checkConsistency(
+      leftDf: DataFrame,
+      rightDf: DataFrame,
+      keys: Seq[String],
+      mapping: Map[String, String] = Map.empty
+  ): Unit = {
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     // Make sure the number of fields are the same on either side
@@ -32,17 +35,27 @@ object CompareJob {
 
     // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
     assert(mapping.keySet.subsetOf(leftFields.keySet),
-      s"Invalid mapping provided missing fields; provided: ${mapping.keySet}, expected to be subset of: ${leftFields.keySet}")
+        s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
+        s" expected to be subset of: ${leftFields.keySet}")
     assert(mapping.values.toSet.subsetOf(rightFields.keySet),
-      s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}, expected to be subset of: ${rightFields.keySet}")
+        s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
+        s" expected to be subset of: ${rightFields.keySet}")
+
+    // Make sure the passed keys has one of the time elements in it
+    assert(keys.intersect(Constants.ReservedColumns).length != 0, "Ensure that one of the key columns is a time column")
   }
 
   /*
   * Navigate the dataframes and compare them and fetch statistics.
   */
-  def compare(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String], mapping: Map[String, String] = Map.empty): DataMetrics = {
+  def compare(
+      leftDf: DataFrame,
+      rightDf: DataFrame,
+      keys: Seq[String],
+      mapping: Map[String, String] = Map.empty
+  ): DataMetrics = {
     // 1. Check for schema consistency issues
-    checkConsistency(leftDf, rightDf, mapping)
+    checkConsistency(leftDf, rightDf, keys, mapping)
 
     // 2. Build comparison dataframe
     // TODO: Should consider the partition column as a separate thing from keys
