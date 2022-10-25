@@ -143,6 +143,10 @@ class Analyzer(tableUtils: TableUtils,
       aggPart.inputColumn.toLowerCase)
   }
 
+  def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
+    AggregationMetadata(columnName, columnType.toString)
+  }
+
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
@@ -173,7 +177,11 @@ class Analyzer(tableUtils: TableUtils,
                |------ END --------------
                |""".stripMargin)
 
-    groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2)}.toArray
+    if(groupByConf.aggregations != null) {
+      groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
+    } else {
+      groupBy.outputSchema.map {tup => toAggregationMetadata(tup.name, tup.fieldType)}.toArray
+    }
   }
 
   def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {

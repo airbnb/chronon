@@ -47,13 +47,20 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     StructType(valuesIndices.map(inputDf.schema))
   }
 
-  lazy val outputSchema: api.StructType =
-    api.StructType("", windowAggregator.outputSchema.map(tup => api.StructField(tup._1, tup._2)))
+  lazy val outputSchema: api.StructType = {
+    val columns = if (aggregations != null) {
+      windowAggregator.outputSchema
+    } else {
+      Conversions.toChrononSchema(preAggSchema)
+    }
+    api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+  }
 
   lazy val aggregationParts = aggregations.flatMap(_.unpack)
 
   lazy val columnAggregators = (new RowAggregator(selectedSchema, aggregationParts)).columnAggregators
 
+  //should be only used when aggregations != null
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
 
   lazy val postAggSchema: StructType = {
