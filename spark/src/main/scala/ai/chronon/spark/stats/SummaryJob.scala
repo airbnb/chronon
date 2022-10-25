@@ -43,7 +43,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
            |FROM ${joinConf.metaData.outputTable}
            |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
            |""".stripMargin)
-        val summaryKvRdd = StatsGenerator.dailySummary(inputDf, joinConf.leftKeyCols, 0.1)
+        val stats = new StatsCompute(inputDf, joinConf.leftKeyCols)
+        val summaryKvRdd = stats.bucketedSummary(0.1)
         if (joinConf.metaData.online) {
           // Store an Avro encoded KV Table and the schemas.
           val avroDf = summaryKvRdd.toAvroDf

@@ -1,10 +1,11 @@
 package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.SparkSessionBuilder
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
-import ai.chronon.spark.stats.StatsGenerator
+import ai.chronon.spark.stats.{StatsCompute, StatsGenerator}
 
 class StatsComputeTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
@@ -20,31 +21,31 @@ class StatsComputeTest {
     val columns = Seq("keyId", "value", "double_value", "string_value")
     val rdd = spark.sparkContext.parallelize(data)
     val df = spark.createDataFrame(rdd).toDF(columns: _*)
-    val result = StatsGenerator.normalizedSummary(df, Seq("keyId"))
+    val stats = new StatsCompute(df, Seq("keyId"))
+    val result = stats.normalizedSummary()
     result.show()
   }
 
   @Test
-  def dailySummaryTest(): Unit = {
+  def generatedSummaryTest(): Unit = {
     val schema = List(
       Column("user", StringType, 10),
       Column("session_length", IntType, 10000)
     )
     val df = DataFrameGen.events(spark, schema, 100000, 10)
-    val result = StatsGenerator.dailySummary(df, Seq("user") ).toFlatDf
-    result.show()
-  }
+    val stats = new StatsCompute(df, Seq("user"))
+    val daily = stats.dailySummary().toFlatDf
 
-  @Test
-  def driftTest(): Unit = {
-    // Generate two datasets with the same distribution and check the drift
-    val schema = List(
-      Column("user", StringType, 10),
-      Column("session_length", IntType, 10000)
-    )
-    val df1 = DataFrameGen.events(spark, schema, 100000, 10)
-    val df2 = DataFrameGen.events(spark, schema, 100000, 10)
-    val drift = StatsGenerator.summaryWithDrift(df1, df2, keys=Seq("user"))
-    drift.foreach(println(_))
+    println("Daily Stats")
+    daily.show()
+    val bucketed = stats.bucketedSummary().toFlatDf
+      .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
+
+    println("Bucketed Stats")
+    bucketed.show()
+    val overall = stats.normalizedSummary()
+
+    println("Overall Stats")
+    overall.show()
   }
 }
