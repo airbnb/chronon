@@ -96,7 +96,7 @@ object CompareJob {
         .map(tup => StructField(tup._1, tup._2)))
 
     // 4. Run the consistency check
-    val (df, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, mapping)
+    val (df, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
 
     // 5. Optionally save the compare results to a table
     // TODO Save the results to a table

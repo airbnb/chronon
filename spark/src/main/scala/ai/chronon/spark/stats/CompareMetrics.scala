@@ -12,11 +12,16 @@ import org.apache.spark.sql.{Column, DataFrame, functions, types, Row => SparkRo
 
 import java.util
 import scala.collection.immutable.SortedMap
+import collection.JavaConversions._
 
 object CompareMetrics {
   val leftSuffix = "_left"
   val rightSuffix = "_right"
   val comparisonViewNameSuffix = "_comparison"
+  val bins = 41
+  val percentilesArgMap: util.Map[String,String] = Map(
+    "k" -> "128",
+    "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
 
   case class MetricTransform(name: String,
                              expr: Column,
@@ -52,9 +57,9 @@ object CompareMetrics {
             .otherwise(0.0),
           Operation.AVERAGE
         ),
-        MetricTransform("left_minus_right", left - right, Operation.APPROX_PERCENTILE),
-        MetricTransform("left", left, Operation.APPROX_PERCENTILE),
-        MetricTransform("right", right, Operation.APPROX_PERCENTILE)
+        MetricTransform("left_minus_right", left - right, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap),
+        MetricTransform("left", left, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap),
+        MetricTransform("right", right, Operation.APPROX_PERCENTILE, argMap = percentilesArgMap)
       )
 
       val sequenceMetrics = Seq(
@@ -62,13 +67,14 @@ object CompareMetrics {
           "edit_distance",
           edit_distance(left, right),
           Operation.APPROX_PERCENTILE,
+          percentilesArgMap,
           additionalExprs = Seq(
             "insert" -> ".insert",
             "delete" -> ".delete"
           )
         ),
-        MetricTransform("left_length", functions.size(left), Operation.APPROX_PERCENTILE),
-        MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE)
+        MetricTransform("left_length", functions.size(left), Operation.APPROX_PERCENTILE, percentilesArgMap),
+        MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE, percentilesArgMap)
       )
 
       val equalityMetric =
@@ -124,6 +130,7 @@ object CompareMetrics {
 
   def compute(valueFields: Array[StructField],
               inputDf: DataFrame,
+              keys: Seq[String],
               mapping: Map[String, String] = Map.empty,
               timeBucketMinutes: Long = 60): (DataFrame, DataMetrics) = {
     // spark maps cannot be directly compared, for now we compare the string representation
@@ -135,9 +142,17 @@ object CompareMetrics {
         case _             => field
       })
     val metrics = buildMetrics(valueSchema, mapping)
+    val timeColumn: String = if (keys.contains(Constants.TimeColumn)) {
+      Constants.TimeColumn
+    } else if (keys.contains(Constants.PartitionColumn)) {
+      Constants.PartitionColumn
+    } else {
+      throw new IllegalArgumentException("Keys doesn't contain the time column")
+    }
+
     val selectedDf = Comparison
       .stringifyMaps(inputDf)
-      .select(metrics.map(_.expr) :+ functions.col(Constants.TimeColumn): _*)
+      .select(metrics.map(_.expr) :+ functions.col(timeColumn): _*)
     val secondPassSelects = metrics.flatMap { metric =>
       if (metric.additionalExprs != null) {
         metric.additionalExprs.map { case (name, expr) => (s"$expr as $name") }
@@ -146,14 +161,14 @@ object CompareMetrics {
       }
     }
     // TODO: We are currently bucketing based on the time but we should extend it to support other bucketing strategy.
-    val secondPassDf = selectedDf.selectExpr(secondPassSelects :+ Constants.TimeColumn: _*)
+    val secondPassDf = selectedDf.selectExpr(secondPassSelects :+ timeColumn: _*)
     val rowAggregator = buildRowAggregator(metrics, secondPassDf)
     val bucketMs = 1000 * 60 * timeBucketMinutes
-    val tsIndex = secondPassDf.schema.fieldIndex(Constants.TimeColumn)
+    val timeIndex = secondPassDf.schema.fieldIndex(timeColumn)
     val outputColumns = rowAggregator.aggregationParts.map(_.outputColumnName).toArray
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
-      .keyBy(row => (row.getLong(tsIndex) / bucketMs) * bucketMs) // bin
+      .keyBy(row => (row.getLong(timeIndex) / bucketMs) * bucketMs) // bin
       .mapValues(Conversions.toChrononRow(_, -1))
       .aggregateByKey(rowAggregator.init)(rowAggregator.updateWithReturn, rowAggregator.merge) // aggregate
       .mapValues(rowAggregator.finalize)
