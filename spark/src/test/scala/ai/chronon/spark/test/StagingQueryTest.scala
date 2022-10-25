@@ -59,4 +59,60 @@ class StagingQueryTest {
     }
     assertEquals(0, diff.count())
   }
+
+  /** Test that latest date is not changed between step ranges.
+    * Compute in several step ranges a trivial query and for the first step range (first partition) the latest_date
+    * value should be that of the latest partition (today).
+    */
+  @Test
+  def testStagingQueryLatestDate(): Unit = {
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 1000)
+    )
+
+    val df = DataFrameGen
+      .events(spark, schema, count = 1000, partitions = 100)
+      .dropDuplicates("ts") // duplicates can create issues in comparisons
+    val viewName = s"$namespace.test_staging_query_latest_date"
+    df.save(viewName)
+
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"""
+            |SELECT
+            |  *
+            |  , '{{ latest_date }}' AS latest_ds
+            |FROM $viewName
+            |WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'""".stripMargin,
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.staging_latest_date",
+        namespace = namespace,
+        tableProperties = Map("key" -> "val"))
+    )
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+    val expected =
+      tableUtils.sql(s"""
+                   |SELECT
+                   |  *
+                   |  , '$today' as latest_ds
+                   |FROM $viewName
+                   |WHERE ds = '$ninetyDaysAgo' AND user IS NOT NULL""".stripMargin)
+
+    val computed = tableUtils.sql(s"""
+      |SELECT * FROM ${stagingQueryConf.metaData.outputTable}
+      |WHERE user IS NOT NULL AND ds = '$ninetyDaysAgo'
+      |""".stripMargin)
+    val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${expected.count()}")
+      println(expected.show())
+      println(s"Computed count: ${computed.count()}")
+      println(computed.show())
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
 }

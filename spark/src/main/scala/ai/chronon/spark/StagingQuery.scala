@@ -22,6 +22,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
   private final val StartDateRegex = replacementRegexFor("start_date")
   private final val EndDateRegex = replacementRegexFor("end_date")
+  // Useful for cumulative tables. So the split on step days always get the latest partition.
+  private final val LatestDateRegex = replacementRegexFor("latest_date")
   private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
@@ -48,6 +50,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         val renderedQuery = stagingQueryConf.query
           .replaceAll(StartDateRegex, range.start)
           .replaceAll(EndDateRegex, range.end)
+          .replaceAll(LatestDateRegex, endPartition)
         println(s"Rendered Staging Query to run is:\n$renderedQuery")
         val df = tableUtils.sql(renderedQuery)
         tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
