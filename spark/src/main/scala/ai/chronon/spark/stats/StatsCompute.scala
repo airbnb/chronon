@@ -92,7 +92,6 @@ object StatsGenerator {
       .map(colName => new Column(colName)): _*)
     val metrics = buildMetrics(Conversions.toChrononSchema(noKeysDf.schema))
     val selectedDf = noKeysDf.select(col(api.Constants.PartitionColumn) +: metrics.map(m => m.expression): _*).toDF(api.Constants.PartitionColumn +: metrics.map(m => m.name): _*)
-    selectedDf.printSchema()
     val partitionIdx = selectedDf.schema.fieldIndex(api.Constants.PartitionColumn)
     val aggregator = buildAggregator(metrics, selectedDf)
     val result = selectedDf
