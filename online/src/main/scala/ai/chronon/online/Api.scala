@@ -118,6 +118,7 @@ abstract class StreamDecoder extends Serializable {
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
 abstract class ExternalSourceHandler {
+  implicit val executionContext: ExecutionContext = ExecutionContext.global
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
 }
 

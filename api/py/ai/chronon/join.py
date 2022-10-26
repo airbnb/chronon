@@ -6,7 +6,7 @@ import gc
 import importlib
 import json
 import logging
-from typing import List, Dict
+from typing import List, Dict, Tuple, Union
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,6 +62,132 @@ def JoinPart(group_by: api.GroupBy,
     return join_part
 
 
+FieldsType = List[Tuple(str, api.TDataType)]
+
+
+class DataType():
+    """
+    could be a primitive type like int, string, bytes etc, or higher-order type
+    like map, list or stuct
+    """
+    BOOLEAN = api.TDataType(api.DataKind.BOOLEAN)
+    BYTE = api.TDataType(api.DataKind.BYTE)
+    SHORT = api.TDataType(api.DataKind.SHORT)
+    INT = api.TDataType(api.DataKind.INT)
+    LONG = api.TDataType(api.DataKind.LONG)
+    FLOAT = api.TDataType(api.DataKind.FLOAT)
+    DOUBLE = api.TDataType(api.DataKind.DOUBLE)
+    STRING = api.TDataType(api.DataKind.STRING)
+    BINARY = api.TDataType(api.DataKind.BINARY)
+    DATE = api.TDataType(api.DataKind.DATE)
+    TIMESTAMP = api.TDataType(api.DataKind.TIMESTAMP)
+
+    def MAP(key_type: api.TDataType,
+            value_type: api.TDataType) -> api.TDataType:
+        return api.TDataType(
+            api.DataKind.MAP,
+            params=[
+                api.DataField("key", key_type),
+                api.DataField("value", value_type)]
+        )
+
+    def LIST(elem_type: api.TDataType) -> api.TDataType:
+        return api.TDataType(
+            api.DataKind.LIST,
+            params=[
+                api.DataField("elem", elem_type)]
+        )
+
+    def STRUCT(name: str,
+               *fields: FieldsType) -> api.TDataType:
+        return api.TDataType(
+            api.DataKind.STRUCT,
+            params=[api.DataField(name, data_type)
+                    for (name, data_type) in fields],
+            name=name
+        )
+
+
+def ExternalSource(name: str,
+                   key_fields: FieldsType,
+                   value_fields: FieldsType) -> api.ExternalSource:
+    """
+    External sources are online only data sources. During fetching, using
+    chronon java client, they consume a Request containing a key map
+    (name string to value). And produce a Response containing a value map.
+
+    This is primarily used in Joins. We also expose a fetchExternal method in
+    java client library that can be used to fetch a batch of External source
+    requests efficiently.
+
+    Internally Chronon will batch these requests to the service and parallelize
+    fetching from different services, while de-duplicating given a batch of
+    join requests.
+
+    The implementation of how to fetch is an `ExternalSourceHandler` in
+    scala/java api that needs to be registered while implementing
+    ai.chronon.online.Api with the name used in the ExternalSource. This is
+    meant for re-usability of external source definitions.
+
+    :param name: name of the external source to fetch from. Should match
+                 the name in the registry.
+    :param key_fields: List of tuples of string and DataType. This is what
+        will be given to ExternalSource handler registered in Java API.
+        Eg., `[('key1', DataType.INT, 'key2', DataType.STRING)]`
+    :type value_fields: List of tuples of string and DataType. This is what
+        the ExternalSource handler will respond with.
+        Eg.,
+        ```[('value0', DataType.INT,
+            ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
+            ('value2', DataType.STRUCT(
+                name = 'Context',
+                ('field1', DataType.INT),
+                ('field2', DataType.DOUBLE)
+            ))]
+        ```
+    """
+    return api.ExternalSource(
+        name,
+        keySchema=DataType.STRUCT("ext_{name}_keys", *key_fields),
+        valueSchema=DataType.STRUCT("ext_{name}_values", *value_fields),
+    )
+
+
+def ExternalPart(source: api.ExternalSource,
+                 key_mapping: Dict[str, str],
+                 prefix: str) -> api.ExternalPart:
+    """
+    Used to describe which ExternalSources to pull features from while fetching
+    online. This data also goes into logs based on sample percent.
+
+    Just as in JoinPart, key_mapping is used to map the join left's keys to
+    external source's keys. "vendor" and "buyer" on left side (query map)
+    could both map to a "user" in an account data external source. You would
+    create one ExternalPart for vendor with params:
+        `(mapping={vendor: user}, prefix=vendor)`
+    another for buyer.
+
+    Internally Chronon will batch these requests to the service and parallelize
+    fetching from different services, while de-duplicating requests across a
+    batch of Joins.
+
+    This doesn't have any implications offline besides logging. "right_parts"
+    can be both backfilled and logged. Whereas, "external_parts" can only be
+    logged. If you need the ability to backfill an external source, look into
+    creating an EntitySource with mutation data for point-in-time-correctness.
+
+    The implementation of how to fetch is a scala/java api that needs to be
+    registered while implementing ai.chronon.online.Api with the name used
+    in the ExternalSource. This is meant for re-usability of external source
+    definitions.
+    """
+    return api.ExternalPart(
+        source=source,
+        keyMapping=key_mapping,
+        prefix=prefix
+    )
+
+
 def Join(left: api.Source,
          right_parts: List[api.JoinPart],
          check_consistency: bool = False,
@@ -76,6 +202,7 @@ def Join(left: api.Source,
          lag: int = 0,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
+         online_external_parts: List[api.ExternalPart] = None,
          **kwargs
          ) -> api.Join:
     """
@@ -199,5 +326,6 @@ def Join(left: api.Source,
         left=updated_left,
         joinParts=right_parts,
         metaData=metadata,
-        skewKeys=skew_keys
+        skewKeys=skew_keys,
+        onlineExternalParts=online_external_parts
     )

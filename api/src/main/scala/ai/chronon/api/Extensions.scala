@@ -61,9 +61,9 @@ object Extensions {
       } else if (millis % Hour.millis == 0) {
         new Window((millis / Hour.millis).toInt, TimeUnit.HOURS).str
       } else if (millis % Minute == 0) {
-        s"${millis / Minute}mins"
+        s"${millis / Minute} minutes"
       } else if (millis % SecondMillis == 0) {
-        s"${millis / SecondMillis}secs"
+        s"${millis / SecondMillis} seconds"
       } else {
         s"${millis}ms"
       }

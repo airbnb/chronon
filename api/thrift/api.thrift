@@ -85,9 +85,8 @@ struct EntitySource {
 
 struct ExternalSource {
     1: optional MetaData metadata
-    2: optional string name
-    3: optional TDataType keySchema
-    4: optional TDataType valueSchema
+    2: optional TDataType keySchema
+    3: optional TDataType valueSchema
 }
 
 union Source {
