@@ -446,7 +446,7 @@ object Extensions {
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
     lazy val fullName: String =
-      "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.name.sanitize
+      "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.metadata.name.sanitize
 
     def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
       KeyMappingHelper.apply(query, rightToLeft, keyNames)

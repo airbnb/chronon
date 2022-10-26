@@ -346,7 +346,7 @@ class Fetcher(kvStore: KVStore,
           getJoinConf(joinRequest.name).get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().asScala.map { part =>
           val mappedKeys = part.applyMapping(joinRequest.keys)
-          ExternalToJoinRequest(Request(part.source.name, mappedKeys), joinRequest, part)
+          ExternalToJoinRequest(Request(part.source.metadata.name, mappedKeys), joinRequest, part)
         }
       }
       .groupBy(_.externalRequest)

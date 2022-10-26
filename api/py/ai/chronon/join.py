@@ -67,8 +67,9 @@ FieldsType = List[Tuple(str, api.TDataType)]
 
 class DataType():
     """
-    could be a primitive type like int, string, bytes etc, or higher-order type
-    like map, list or stuct
+    Helper class to generate data types for declaring schema.
+    This supports primitive like numerics, string etc., and complex
+    types like Map, List, Struct etc.
     """
     BOOLEAN = api.TDataType(api.DataKind.BOOLEAN)
     BYTE = api.TDataType(api.DataKind.BYTE)
@@ -109,8 +110,10 @@ class DataType():
 
 
 def ExternalSource(name: str,
+                   team: str,
                    key_fields: FieldsType,
-                   value_fields: FieldsType) -> api.ExternalSource:
+                   value_fields: FieldsType,
+                   custom_json: str) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
     chronon java client, they consume a Request containing a key map
@@ -147,7 +150,7 @@ def ExternalSource(name: str,
         ```
     """
     return api.ExternalSource(
-        name,
+        metadata=api.MetaData(name=name, team=team, customJson=custom_json),
         keySchema=DataType.STRUCT("ext_{name}_keys", *key_fields),
         valueSchema=DataType.STRUCT("ext_{name}_values", *value_fields),
     )
