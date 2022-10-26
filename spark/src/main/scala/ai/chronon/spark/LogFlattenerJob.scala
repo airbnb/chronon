@@ -105,7 +105,7 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
       .rdd
       .flatMap { row =>
         if (row.isNullAt(4)) {
-          // ignore logs that do not have schema_hash info
+          // ignore older logs that do not have schema_hash info
           None
         } else {
           val joinCodec = codecMap(row.getString(4))
@@ -203,8 +203,10 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
     val columnAfterCount = columnCount()
     val outputRowCount = flattenedDf.count()
     val inputRowCount = rawDf.count()
+    val failureCount = inputRowCount - outputRowCount
     metrics.gauge(Metrics.Name.RowCount, outputRowCount)
-    metrics.gauge(Metrics.Name.FailureCount, inputRowCount - outputRowCount)
+    metrics.gauge(Metrics.Name.FailureCount, failureCount)
+    println(s"Processed logs: ${outputRowCount} rows success, ${failureCount} rows failed.")
     metrics.gauge(Metrics.Name.ColumnBeforeCount, columnBeforeCount)
     metrics.gauge(Metrics.Name.ColumnAfterCount, columnAfterCount)
     val elapsedMins = (System.currentTimeMillis() - start) / 60000

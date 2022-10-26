@@ -162,7 +162,8 @@ class SchemaEvolutionTest extends TestCase {
     val joinConf = Builders.Join(
       left = viewsGroupBy.groupByConf.sources.get(0),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)),
-      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
     )
 
     JoinTestSuite(
@@ -187,7 +188,8 @@ class SchemaEvolutionTest extends TestCase {
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
         Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
       ),
-      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
     )
     JoinTestSuite(
       joinConf,
@@ -262,6 +264,31 @@ class SchemaEvolutionTest extends TestCase {
     )
   }
 
+  /*
+   * Run through (1) dump raw logs into hive, (2) construct schema table, (3) run log flattening
+   */
+  private def verifyOfflineTables(logsDelta: Seq[LoggableResponseBase64],
+                                  offlineDs: String,
+                                  mockApi: MockApi,
+                                  joinConf: Join,
+                                  tableUtils: TableUtils): DataFrame = {
+    insertLogsToHive(mockApi, logsDelta, offlineDs)
+    SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, offlineDs, "2022-10-01")
+    val flattenerJob = new LogFlattenerJob(spark, joinConf, offlineDs, mockApi.logTable, mockApi.schemaTable)
+    flattenerJob.buildLogTable()
+    val flattenedDf = spark
+      .table(joinConf.metaData.loggedTable)
+      .where(col(Constants.PartitionColumn) === offlineDs)
+    assertEquals(2, flattenedDf.count())
+    assertTrue(
+      LogFlattenerJob
+        .readSchemaTblProps(tableUtils, joinConf)
+        .mapValues(JoinCodec.fromLoggingSchema(_, joinConf))
+        .values
+        .nonEmpty)
+    flattenedDf
+  }
+
   def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
@@ -296,23 +323,13 @@ class SchemaEvolutionTest extends TestCase {
     val joinV1Codec = JoinCodec.fromLoggingSchema(schema2, joinSuiteV1.joinConf)
     assertEquals(dataEvent2.schemaHash, joinV1Codec.loggingSchemaHash)
 
-    // Verify offline tables
-    val logsDay1 = logs1 ++ logs2
-    val ds1 = "2022-10-03" // override ds to simplify offline data generation
-    insertLogsToHive(mockApi, logsDay1, ds1)
-    SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, ds1, "2022-10-01")
-    val flattenerJob = new LogFlattenerJob(spark, joinSuiteV1.joinConf, ds1, mockApi.logTable, mockApi.schemaTable)
-    flattenerJob.buildLogTable()
-    val flattenedDf = spark
-      .table(joinSuiteV1.joinConf.metaData.loggedTable)
-      .where(col(Constants.PartitionColumn) === ds1)
-    assertEquals(2, flattenedDf.count())
-    assertTrue(
-      LogFlattenerJob
-        .readSchemaTblProps(tableUtils, joinSuiteV1.joinConf)
-        .mapValues(JoinCodec.fromLoggingSchema(_, joinSuiteV1.joinConf))
-        .values
-        .nonEmpty)
+    val flattenedDf12 = verifyOfflineTables(
+      logs1 ++ logs2, // combine logs from stage 1 and stage 2 into offline DS = 2022-10-03
+      offlineDs = "2022-10-03",
+      mockApi,
+      joinSuiteV1.joinConf,
+      tableUtils
+    )
 
     /* STAGE 3: Join is modified and updated to MetadataStore */
     metadataStore.putJoinConf(joinSuiteV2.joinConf)
@@ -366,43 +383,37 @@ class SchemaEvolutionTest extends TestCase {
     val logs4 = mockApi.flushLoggedValues
     val (dataEvent4, controlEvent4) = extractDataEventAndControlEvent(logs4)
     if (newGroupBys.nonEmpty) {
+      // verify that schemaHash is changed in this scenario because newly added GroupBys are now being successfully
+      // fetched.
       assertNotEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
     } else {
+      // verify that schemaHash is unchanged if there is no new groupBys added
       assertEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
     }
     val schema4 = new String(Base64.getDecoder.decode(controlEvent4.valueBase64), StandardCharsets.UTF_8)
     val joinV2Codec = JoinCodec.fromLoggingSchema(schema4, joinSuiteV2.joinConf)
     assertEquals(dataEvent4.schemaHash, joinV2Codec.loggingSchemaHash)
 
-    // Verify offline tables
-    val logsDay2 = logs3 ++ logs4
-    val ds2 = "2022-10-04" // override ds to simplify offline data generation
-    insertLogsToHive(mockApi, logsDay2, ds2)
-    SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, ds2, "2022-10-01")
-    val flattenerJob2 = new LogFlattenerJob(spark, joinSuiteV2.joinConf, ds2, mockApi.logTable, mockApi.schemaTable)
-    flattenerJob2.buildLogTable()
-    val flattenedDf2 = spark
-      .table(joinSuiteV2.joinConf.metaData.loggedTable)
-      .where(col(Constants.PartitionColumn) === ds2)
-    assertEquals(2, flattenedDf2.count())
+    val flattenedDf34 = verifyOfflineTables(
+      logs3 ++ logs4, // combine logs from stage 3 and stage 4 into offline DS = 2022-10-04
+      offlineDs = "2022-10-04",
+      mockApi,
+      joinSuiteV2.joinConf,
+      tableUtils
+    )
 
-    assertTrue(
-      LogFlattenerJob
-        .readSchemaTblProps(tableUtils, joinSuiteV2.joinConf)
-        .mapValues(JoinCodec.fromLoggingSchema(_, joinSuiteV2.joinConf))
-        .values
-        .nonEmpty)
+    /* verify offline table schema between schema evolution */
 
     val newFeatures = newSubMapExpected.keySet
     val removedFeatures = removedSubMapOriginalData.keySet
 
     /* new features are appended as new columns */
-    assertTrue(newFeatures.forall(!flattenedDf.schema.fieldNames.contains(_)))
-    assertTrue(newFeatures.forall(flattenedDf2.schema.fieldNames.contains(_)))
+    assertTrue(newFeatures.forall(!flattenedDf12.schema.fieldNames.contains(_)))
+    assertTrue(newFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
 
     /* removed features are never removed from the table */
-    assertTrue(removedFeatures.forall(flattenedDf.schema.fieldNames.contains(_)))
-    assertTrue(removedFeatures.forall(flattenedDf2.schema.fieldNames.contains(_)))
+    assertTrue(removedFeatures.forall(flattenedDf12.schema.fieldNames.contains(_)))
+    assertTrue(removedFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
   }
 
   def testAddFeatures(): Unit = {
