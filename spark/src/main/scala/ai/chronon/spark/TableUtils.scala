@@ -30,13 +30,31 @@ case class TableUtils(sparkSession: SparkSession) {
       .toMap
   }
 
-  def partitions(tableName: String): Seq[String] = {
+  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
-    if (isIcebergTable(tableName)) return getIcebergPartitions(tableName)
+    if (isIcebergTable(tableName)) {
+      if (subPartitionsFilter.nonEmpty) {
+        throw new NotImplementedError("subPartitionsFilter is not supported on Iceberg tables yet.")
+      }
+      return getIcebergPartitions(tableName)
+    }
     sparkSession.sqlContext
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
-      .flatMap { row => parsePartition(row.getString(0)).get(Constants.PartitionColumn) }
+      .flatMap { row =>
+        {
+          val partitionMap = parsePartition(row.getString(0))
+          if (
+            subPartitionsFilter.forall {
+              case (k, v) => partitionMap.get(k).contains(v)
+            }
+          ) {
+            partitionMap.get(Constants.PartitionColumn)
+          } else {
+            None
+          }
+        }
+      }
   }
 
   private def isIcebergTable(tableName: String): Boolean =
@@ -90,12 +108,11 @@ case class TableUtils(sparkSession: SparkSession) {
     sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
-  def lastAvailablePartition(tableName: String): Option[String] =
-    partitions(tableName).reduceOption(Ordering[String].max)
+  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
+    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
 
-  def firstAvailablePartition(tableName: String): Option[String] =
-    partitions(tableName)
-      .reduceOption(Ordering[String].min)
+  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
+    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].min)
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
@@ -244,9 +261,10 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
-                    inputTable: Option[String] = None): Option[PartitionRange] = {
+                    inputTable: Option[String] = None,
+                    inputSubPartitionFilters: Map[String, String] = Map.empty): Option[PartitionRange] = {
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTable.flatMap(firstAvailablePartition)
+      val inputStart = inputTable.flatMap(firstAvailablePartition(_, inputSubPartitionFilters))
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or 
@@ -260,7 +278,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions = validPartitionRange.partitions.toSet
     val outputMissing = fillablePartitions -- partitions(outputTable)
-    val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
+    val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_, inputSubPartitionFilters))
     val missingPartitions = outputMissing -- inputMissing
     println(s"""
                  |Unfilled range computation:                             

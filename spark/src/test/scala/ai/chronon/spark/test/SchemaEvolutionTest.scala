@@ -282,7 +282,7 @@ class SchemaEvolutionTest extends TestCase {
     assertEquals(2, flattenedDf.count())
     assertTrue(
       LogFlattenerJob
-        .readSchemaTblProps(tableUtils, joinConf)
+        .readSchemaTableProperties(tableUtils, joinConf)
         .mapValues(JoinCodec.fromLoggingSchema(_, joinConf))
         .values
         .nonEmpty)
