@@ -31,6 +31,8 @@ object Extensions {
         case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
         case _                                                                       => true
       }
+    def stringified: String = operation.toString.toLowerCase
+
   }
 
   implicit class WindowOps(window: Window) {
@@ -123,7 +125,7 @@ object Extensions {
         case FIRST_K  => s"first${getInt("k")}"
         case TOP_K    => s"top${getInt("k")}"
         case BOTTOM_K => s"bottom${getInt("k")}"
-        case other    => other.toString.toLowerCase
+        case other    => other.stringified
       }
 
     private def bucketSuffix = Option(aggregationPart.bucket).map("_by_" + _).getOrElse("")
