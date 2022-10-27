@@ -3,12 +3,12 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, BooleanType, Builders, Constants, DataModel, DoubleType, IntType, ListType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.MetadataOps
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, KVStore, LoggableResponse, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.consistency.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -434,7 +434,7 @@ class FetcherTest extends TestCase {
       TableUtils(spark).insertPartitions(
         loggedDf,
         mockApi.logTable,
-        partitionColumns = Seq("ds")
+        partitionColumns = Seq("ds", "name")
       )
     }
     if (samplePercent > 0) {
@@ -457,7 +457,8 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp => OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
+    joinConf.joinParts.asScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
@@ -494,7 +495,12 @@ class FetcherTest extends TestCase {
         .drop("ts_lagged")
       println("corrected lagged response")
       correctedLaggedResponse.show()
-      correctedLaggedResponse.save(mockApi.logTable)
+      correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
+
+      // build flattened log table
+      SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, today)
+      val flattenerJob = new LogFlattenerJob(spark, joinConf, today, mockApi.logTable, mockApi.schemaTable)
+      flattenerJob.buildLogTable()
 
       // build consistency metrics
       val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)

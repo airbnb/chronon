@@ -11,7 +11,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -106,14 +110,23 @@ object Driver {
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
       val enableHitter: ScallopOption[Boolean] =
-        opt[Boolean](required = false,
-          descr = "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
-          default = Some(false))
+        opt[Boolean](
+          required = false,
+          descr =
+            "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
+          default = Some(false)
+        )
     }
 
     def run(args: Args): Unit = {
       val tableUtils = TableUtils(SparkSessionBuilder.build("analyzer_util"))
-      new Analyzer(tableUtils, args.confPath(), args.startDate(), args.endDate(), args.count(), args.sample(), args.enableHitter()).run
+      new Analyzer(tableUtils,
+                   args.confPath(),
+                   args.startDate(),
+                   args.endDate(),
+                   args.count(),
+                   args.sample(),
+                   args.enableHitter()).run
     }
   }
 
@@ -221,10 +234,14 @@ object Driver {
       }
       val objectMapper = new ObjectMapper()
       def readMap: String => Map[String, AnyRef] = { json =>
-        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap}
+        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+      }
       def readMapList: String => Seq[Map[String, AnyRef]] = { jsonList =>
-        objectMapper.readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
-        .asScala.map(_.asScala.toMap).toSeq
+        objectMapper
+          .readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
+          .asScala
+          .map(_.asScala.toMap)
+          .toSeq
       }
       val keyMapList =
         if (args.keyJson.isDefined) {
@@ -258,9 +275,10 @@ object Driver {
           val tMap = new java.util.TreeMap[String, AnyRef]()
           result.foreach(r =>
             r.values match {
-              case Success(valMap)    => {
+              case Success(valMap) => {
                 valMap.foreach { case (k, v) => tMap.put(k, v) }
-                println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                println(
+                  s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
                 println(s"Fetched in: $awaitTimeMs ms")
               }
               case Failure(exception) => {
@@ -293,31 +311,50 @@ object Driver {
     }
   }
 
-  object ConsistencyMetricsUploader {
-    class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
-      val confPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
-      val endDate: ScallopOption[String] =
-        opt[String](required = false, descr = "End date to compute metrics until.")
-      // todo: implement step day logic for ConsistencyJob.scala
+  object LogFlattener {
+    class Args extends Subcommand("log-flattener") with OfflineSubcommand {
+      val logTable: ScallopOption[String] =
+        opt[String](required = true, descr = "Hive table with partitioned raw logs")
+
+      val schemaTable: ScallopOption[String] =
+        opt[String](required = true, descr = "Hive table with mapping from schema_hash to schema_value_last")
+
+      // todo: implement step day logic for LogFlattener.scala
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs consistency metrics job in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
     }
 
-    /**
-      * class ConsistencyJob(session: SparkSession,
-                     joinConf: api.Join,
-                     endDate: String,
-                     joinCodec: JoinCodec,
-                     rawTable: String) {
-      * */
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      val spark = SparkSessionBuilder.build(s"log_flattener_join_${joinConf.metaData.name}")
+      val logFlattenerJob = new LogFlattenerJob(
+        spark,
+        joinConf,
+        args.endDate(),
+        args.logTable(),
+        args.schemaTable()
+      )
+      logFlattenerJob.buildLogTable()
+    }
+  }
+
+  object ConsistencyMetricsUploader {
+    class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
+      val confPath: ScallopOption[String] =
+        opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
+      val endDate: ScallopOption[String] =
+        opt[String](required = false, descr = "End date to compute metrics until.")
+    }
+
     def run(args: Args): Unit = {
       val apiImpl = args.impl(args.serializableProps)
       val joinConf = parseConf[api.Join](args.confPath())
+      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
+
       new ConsistencyJob(
-        SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}"),
+        sparkSession,
         joinConf,
         args.endDate(),
         apiImpl
@@ -415,6 +452,8 @@ object Driver {
   class Args(args: Array[String]) extends ScallopConf(args) {
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
+    object LogFlattenerArgs extends LogFlattener.Args
+    addSubcommand(LogFlattenerArgs)
     object ConsistencyMetricsUploaderArgs extends ConsistencyMetricsUploader.Args
     addSubcommand(ConsistencyMetricsUploaderArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
@@ -461,6 +500,7 @@ object Driver {
 
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsUploaderArgs =>
             ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)

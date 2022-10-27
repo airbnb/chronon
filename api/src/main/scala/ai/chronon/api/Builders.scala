@@ -12,6 +12,12 @@ object Builders {
     def apply(clauses: String*): Map[String, String] = {
       clauses.map { col => col -> col }.toMap
     }
+
+    def exprs(clauses: (String, String)*): Map[String, String] = {
+      clauses.map {
+        case (col, expr) => col -> expr
+      }.toMap
+    }
   }
 
   object Query {
@@ -169,7 +175,7 @@ object Builders {
         namespace: String = null,
         team: String = null,
         samplePercent: Double = 0,
-        tableProperties: Map[String,String] = Map.empty
+        tableProperties: Map[String, String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)

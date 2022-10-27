@@ -6,8 +6,9 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{Fetcher, JoinCodec, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{Conversions, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Conversions, LogFlattenerJob, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
+import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 
@@ -161,7 +162,8 @@ class SchemaEvolutionTest extends TestCase {
     val joinConf = Builders.Join(
       left = viewsGroupBy.groupByConf.sources.get(0),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)),
-      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
     )
 
     JoinTestSuite(
@@ -186,7 +188,8 @@ class SchemaEvolutionTest extends TestCase {
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
         Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
       ),
-      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
     )
     JoinTestSuite(
       joinConf,
@@ -250,6 +253,42 @@ class SchemaEvolutionTest extends TestCase {
     (dataEvent, controlEvent)
   }
 
+  private def insertLogsToHive(mockApi: MockApi, logs: Seq[LoggableResponseBase64], ds: String): Unit = {
+    val logDf = mockApi.loggedValuesToDf(logs, spark)
+    TableUtils(spark).insertPartitions(
+      logDf
+        .withColumn("ds", lit(ds))
+        .withPartitionBasedTimestamp("ts_millis"),
+      mockApi.logTable,
+      partitionColumns = Seq("ds", "name")
+    )
+  }
+
+  /*
+   * Run through (1) dump raw logs into hive, (2) construct schema table, (3) run log flattening
+   */
+  private def verifyOfflineTables(logsDelta: Seq[LoggableResponseBase64],
+                                  offlineDs: String,
+                                  mockApi: MockApi,
+                                  joinConf: Join,
+                                  tableUtils: TableUtils): DataFrame = {
+    insertLogsToHive(mockApi, logsDelta, offlineDs)
+    SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, offlineDs, "2022-10-01")
+    val flattenerJob = new LogFlattenerJob(spark, joinConf, offlineDs, mockApi.logTable, mockApi.schemaTable)
+    flattenerJob.buildLogTable()
+    val flattenedDf = spark
+      .table(joinConf.metaData.loggedTable)
+      .where(col(Constants.PartitionColumn) === offlineDs)
+    assertEquals(2, flattenedDf.count())
+    assertTrue(
+      LogFlattenerJob
+        .readSchemaTableProperties(tableUtils, joinConf)
+        .mapValues(JoinCodec.fromLoggingSchema(_, joinConf))
+        .values
+        .nonEmpty)
+    flattenedDf
+  }
+
   def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
@@ -267,7 +306,8 @@ class SchemaEvolutionTest extends TestCase {
     assertEquals(joinSuiteV1.groupBys.length, response1.values.get.keys.size)
 
     // empty responses are still logged and this schema version is still tracked
-    val (dataEvent1, _) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    val logs1 = mockApi.flushLoggedValues
+    val (dataEvent1, _) = extractDataEventAndControlEvent(logs1)
     assertEquals("", dataEvent1.keyBase64)
     assertEquals("", dataEvent1.valueBase64)
 
@@ -277,10 +317,19 @@ class SchemaEvolutionTest extends TestCase {
     val response2 = fetchJoin(fetcher, joinSuiteV1)
     assertEquals(joinSuiteV1.fetchExpectations._2, response2.values.get)
 
-    val (dataEvent2, controlEvent2) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    val logs2 = mockApi.flushLoggedValues
+    val (dataEvent2, controlEvent2) = extractDataEventAndControlEvent(logs2)
     val schema2 = new String(Base64.getDecoder.decode(controlEvent2.valueBase64), StandardCharsets.UTF_8)
     val joinV1Codec = JoinCodec.fromLoggingSchema(schema2, joinSuiteV1.joinConf)
     assertEquals(dataEvent2.schemaHash, joinV1Codec.loggingSchemaHash)
+
+    val flattenedDf12 = verifyOfflineTables(
+      logs1 ++ logs2, // combine logs from stage 1 and stage 2 into offline DS = 2022-10-03
+      offlineDs = "2022-10-03",
+      mockApi,
+      joinSuiteV1.joinConf,
+      tableUtils
+    )
 
     /* STAGE 3: Join is modified and updated to MetadataStore */
     metadataStore.putJoinConf(joinSuiteV2.joinConf)
@@ -292,6 +341,9 @@ class SchemaEvolutionTest extends TestCase {
     val removedGroupBys = joinSuiteV1.groupBys.filter(gb => !joinSuiteV2.groupBys.exists(g => g.name == gb.name))
     val existingSubMapExpected = joinSuiteV2.fetchExpectations._2.filter {
       case (key, _) => existingGroupBys.exists(gb => key.contains(gb.name))
+    }
+    val newSubMapExpected = joinSuiteV2.fetchExpectations._2.filter {
+      case (key, _) => newGroupBys.exists(gb => key.contains(gb.name))
     }
     val newSubMapActual = response3.values.get.filter {
       case (key, _) => newGroupBys.exists(gb => key.contains(gb.name))
@@ -311,7 +363,8 @@ class SchemaEvolutionTest extends TestCase {
     }
     assertFalse(response3.values.get.keys.exists(k => removedSubMapOriginalData.keys.toSet.contains(k)))
 
-    val (dataEvent3, _) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    val logs3 = mockApi.flushLoggedValues
+    val (dataEvent3, _) = extractDataEventAndControlEvent(logs3)
     if (removedGroupBys.isEmpty) {
       // verify that schemaHash is NOT changed in this scenario because newly added GroupBys are skipped
       // because GroupByUpload for them has NOT run and GBServingInfo is not found.
@@ -327,15 +380,40 @@ class SchemaEvolutionTest extends TestCase {
     val response4 = fetchJoin(fetcher, joinSuiteV2)
     assertEquals(joinSuiteV2.fetchExpectations._2, response4.values.get)
 
-    val (dataEvent4, controlEvent4) = extractDataEventAndControlEvent(mockApi.flushLoggedValues)
+    val logs4 = mockApi.flushLoggedValues
+    val (dataEvent4, controlEvent4) = extractDataEventAndControlEvent(logs4)
     if (newGroupBys.nonEmpty) {
+      // verify that schemaHash is changed in this scenario because newly added GroupBys are now being successfully
+      // fetched.
       assertNotEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
     } else {
+      // verify that schemaHash is unchanged if there is no new groupBys added
       assertEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
     }
     val schema4 = new String(Base64.getDecoder.decode(controlEvent4.valueBase64), StandardCharsets.UTF_8)
     val joinV2Codec = JoinCodec.fromLoggingSchema(schema4, joinSuiteV2.joinConf)
     assertEquals(dataEvent4.schemaHash, joinV2Codec.loggingSchemaHash)
+
+    val flattenedDf34 = verifyOfflineTables(
+      logs3 ++ logs4, // combine logs from stage 3 and stage 4 into offline DS = 2022-10-04
+      offlineDs = "2022-10-04",
+      mockApi,
+      joinSuiteV2.joinConf,
+      tableUtils
+    )
+
+    /* verify offline table schema between schema evolution */
+
+    val newFeatures = newSubMapExpected.keySet
+    val removedFeatures = removedSubMapOriginalData.keySet
+
+    /* new features are appended as new columns */
+    assertTrue(newFeatures.forall(!flattenedDf12.schema.fieldNames.contains(_)))
+    assertTrue(newFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
+
+    /* removed features are never removed from the table */
+    assertTrue(removedFeatures.forall(flattenedDf12.schema.fieldNames.contains(_)))
+    assertTrue(removedFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
   }
 
   def testAddFeatures(): Unit = {
