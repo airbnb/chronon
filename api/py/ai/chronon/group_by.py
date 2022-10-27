@@ -263,31 +263,67 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
 
         Multiple sources can be supplied to backfill the historical values with their respective start and end
         partitions. However, only one source is allowed to be a streaming one.
-    :type sources:
+    :type sources: List[ai.chronon.api.ttypes.Events|ai.chronon.api.ttypes.Entities]
     :param keys:
-    :type keys:
+        List of primary keys that defines the data that needs to be collected in the result table. Similar to the
+        GroupBy in the SQL context.
+    :type keys: List[String]
     :param aggregations:
-    :type aggregations:
+        List of aggregations that needs to be computed for the data following the grouping defined by the keys.
+
+        import ai.chronon.api.ttypes as chronon
+        aggregations = [
+            chronon.Aggregation(input_column="entity", operation=Operation.LAST),
+            chronon.Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)]),
+        ],
+
+    :type aggregations: List[ai.chronon.api.ttypes.Aggregation]
     :param online:
-    :type online:
+        Should we upload the result data of this conf into the KV store so that we can fetch/serve this GroupBy online.
+        Once Online is set to True, you ideally should not change the conf.
+    :type online: bool
     :param production:
-    :type production:
+        This when set can be integrated to trigger alerts. You will have to integrate this flag into your alerting
+        system yourself.
+    :type production: bool
     :param backfill_start_date:
-    :type backfill_start_date:
+        Start date from which GroupBy data should be computed. This will determine how back of a time that Chronon would
+        goto to compute the resultant table and its aggregations.
+    :type backfill_start_date: str
     :param dependencies:
-    :type dependencies:
+        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for
+        Typically used by engines like airflow to create partition sensors.
+    :type dependencies: List[str]
     :param env:
-    :type env:
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
+        These vars are set in run.py and the underlying spark_submit.sh.
+        There override vars set in teams.json/production/<MODE NAME>
+        The priority order (descending) is:
+            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+            var set here in Join's env param
+            var set in team.json/<team>/<production>/<MODE NAME>
+            var set in team.json/default/<production>/<MODE NAME>
+    :type env: Dict[str, Dict[str, str]]
     :param table_properties:
-    :type table_properties:
+        Specifies the properties on output hive tables. Can be specified in teams.json.
+    :type table_properties: Dict[str, str]
     :param output_namespace:
-    :type output_namespace:
+        In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be
+        written into. You can set this at the teams.json level.
+    :type output_namespace: str
     :param accuracy:
-    :type accuracy:
+        Defines the computing accuracy of the GroupBy.
+        If "Snapshot" is selected, the aggregations are computed based on the partition identifier - "ds" time column.
+        If "Temporal" is selected, the aggregations are computed based on the event time - "ts" time column.
+    :type accuracy: ai.chronon.api.ttypes.SNAPSHOT or ai.chronon.api.ttypes.TEMPORAL
     :param lag:
-    :type lag:
+        Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
+        This is used by airflow integration to pick an older hive partition to wait on.
+    :type lag: int
     :param kwargs:
-    :type kwargs:
+        Additional properties that would be passed to run.py if specified under additional_args property.
+        And provides an option to pass custom values to the processing logic.
+    :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
     """

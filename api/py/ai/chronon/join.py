@@ -116,7 +116,7 @@ def Join(left: api.Source,
     :type production: bool
     :param output_namespace:
         In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be
-        written into. You can set this at the teams.json leve.
+        written into. You can set this at the teams.json level.
     :type output_namespace: str
     :param table_properties:
         Specifies the properties on output hive tables. Can be specified in teams.json.
