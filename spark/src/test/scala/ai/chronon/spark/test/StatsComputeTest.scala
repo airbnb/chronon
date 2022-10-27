@@ -6,6 +6,7 @@ import ai.chronon.spark.SparkSessionBuilder
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 import ai.chronon.spark.stats.{StatsCompute, StatsGenerator}
+import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
@@ -20,10 +21,11 @@ class StatsComputeTest {
     )
     val columns = Seq("keyId", "value", "double_value", "string_value")
     val rdd = spark.sparkContext.parallelize(data)
-    val df = spark.createDataFrame(rdd).toDF(columns: _*)
+    val df = spark.createDataFrame(rdd).toDF(columns: _*).withColumn(Constants.PartitionColumn, lit("2022-04-09"))
     val stats = new StatsCompute(df, Seq("keyId"))
-    val result = stats.normalizedSummary()
-    result.show()
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val result = stats.dailySummary(aggregator).toFlatDf
+    stats.addDerivedMetrics(result, aggregator).show()
   }
 
   @Test
@@ -34,18 +36,15 @@ class StatsComputeTest {
     )
     val df = DataFrameGen.events(spark, schema, 100000, 10)
     val stats = new StatsCompute(df, Seq("user"))
-    val daily = stats.dailySummary().toFlatDf
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
     println("Daily Stats")
     daily.show()
-    val bucketed = stats.bucketedSummary().toFlatDf
+    val bucketed = stats.dailySummary(aggregator).toFlatDf
       .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
 
     println("Bucketed Stats")
     bucketed.show()
-    val overall = stats.normalizedSummary()
-
-    println("Overall Stats")
-    overall.show()
   }
 }

@@ -5,7 +5,7 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.spark.Extensions._
 import ai.chronon.api.Extensions._
 import ai.chronon.api
-import ai.chronon.spark.{Conversions, KvRdd}
+import ai.chronon.spark.{Conversions, KvRdd, RowWrapper}
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -88,7 +88,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
   val selectedDf: DataFrame = noKeysDf.select(keyColumns.map(col) ++ metrics.map(m => m.expression): _*).toDF(keyColumns ++ metrics.map(m => m.name): _*)
 
   /** Given a summary Dataframe that computed the stats. Add derived data (example: null rate, median, etc) */
-  def addDerivedMetrics(df: DataFrame): DataFrame = {
+  def addDerivedMetrics(df: DataFrame, aggregator: RowAggregator): DataFrame = {
     val nullColumns = df.columns.filter(p => p.startsWith(StatsGenerator.nullPrefix))
     nullColumns.foldLeft(df) {
       (tmpDf, column) =>
@@ -106,14 +106,17 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
     * For entity on the left we use daily partition as the key. For events we bucket by timeBucketMinutes (def. 1 hr)
     * Since the stats are mergeable coarser granularities can be obtained through fetcher merging.
     */
-  def dailySummary(sample: Double = 1.0): KvRdd = {
-    val aggregator = StatsGenerator.buildAggregator(metrics, selectedDf)
+  def dailySummary(aggregator: RowAggregator, sample: Double = 1.0, timeBucketMinutes: Long = 60): KvRdd = {
     val partitionIdx = selectedDf.schema.fieldIndex(api.Constants.PartitionColumn)
+    val bucketMs = timeBucketMinutes * 1000 * 60
+    val tsIdx = if(selectedDf.columns.contains(api.Constants.TimeColumn)) selectedDf.schema.fieldIndex(api.Constants.TimeColumn) else -1
+    val hourlyCompute = tsIdx >= 0 && timeBucketMinutes > 0
+    val keyField = if (hourlyCompute) StructField(api.Constants.TimeColumn, LongType) else StructField(api.Constants.PartitionColumn, StringType)
     val result = selectedDf
       .sample(sample)
       .rdd
-      .map(Conversions.toChrononRow(_, -1))
-      .keyBy(row => row.get(partitionIdx))
+      .map(Conversions.toChrononRow(_, tsIdx))
+      .keyBy(row => if(hourlyCompute) ((row.ts / bucketMs) * bucketMs).asInstanceOf[Any] else row.get(partitionIdx))
       .aggregateByKey(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
       .mapValues(aggregator.normalize(_))
       .map{ case (k, v) => (Array(k), v) }  // To use KvRdd
@@ -121,52 +124,8 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
     implicit val sparkSession = inputDf.sparkSession
     KvRdd(
       result,
-      StructType(Array(StructField(api.Constants.PartitionColumn, StringType))),
+      StructType(Array(keyField)),
       Conversions.fromChrononSchema(aggregator.irSchema)
     )
   }
-
-  /** Create DF of summary stats key by time buckets. */
-  def bucketedSummary(sample: Double = 1.0, timeBucketMinutes: Long = 60): KvRdd = {
-    val aggregator = StatsGenerator.buildAggregator(metrics, selectedDf)
-    val tsIdx = selectedDf.schema.fieldIndex(api.Constants.TimeColumn)
-    val bucketMs = timeBucketMinutes * 1000 * 60
-    val result = selectedDf
-      .sample(sample)
-      .rdd
-      .map(Conversions.toChrononRow(_, tsIdx))
-      .keyBy(row => (row.ts / bucketMs) * bucketMs )
-      .aggregateByKey(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
-      .mapValues(aggregator.normalize(_))
-      .map { case (k, v) => (Array(k.asInstanceOf[Any]), v) } // To use KvRdd
-
-    implicit val sparkSession = inputDf.sparkSession
-    KvRdd(
-      result,
-      StructType(Array(StructField(api.Constants.TimeColumn, LongType))),
-      Conversions.fromChrononSchema(aggregator.irSchema)
-    )
-  }
-
-  /** Navigate the dataframe and compute the statistics without any keys
-    *
-    * Main job to produce a normalized DataFrame with Statistics for the columns.
-    * Uses tree aggregate and does not partition, useful for multiple partition computation.
-    */
-  def normalizedSummary(sample: Double = 1.0): DataFrame = {
-    val aggregator = StatsGenerator.buildAggregator(metrics, selectedDf)
-    val result = selectedDf
-      .sample(sample)
-      .rdd
-      .map(Conversions.toChrononRow(_, -1))
-      .treeAggregate(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
-    val finalized = aggregator.normalize(result)
-
-    // Pack and send as a dataframe.
-    val resultRow = Conversions.toSparkRow(finalized, api.StructType.from("", aggregator.irSchema)).asInstanceOf[GenericRow]
-    val rdd: RDD[SparkRow] = inputDf.sparkSession.sparkContext.parallelize(Seq(resultRow))
-    val df = inputDf.sparkSession.createDataFrame(rdd, Conversions.fromChrononSchema(aggregator.irSchema))
-    addDerivedMetrics(df)
-  }
-
 }
