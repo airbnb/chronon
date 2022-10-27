@@ -61,7 +61,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
             .save(dailyStatsAvroTable, tblProperties)
         }
         // TODO:Finalize some values before storing in warehouse for readability.
-        summaryKvRdd.toFlatDf.save(dailyStatsTable)
+        summaryKvRdd.toFlatDf.withTimeBasedColumn(Constants.PartitionColumn).save(dailyStatsTable)
         println(s"Finished range [${index +1}/${stepRanges.size}].")
     }
     println("Finished writing stats.")
