@@ -18,10 +18,12 @@ struct Query {
 
 struct StagingQuery {
     1: optional MetaData metaData
-    // query should be written with `{{ start_date }}` and `{{ end_date }}` templates
+    // query should be written with `{{ start_date }}`, `{{ end_date }}` and `{{ latest_date }}` templates
     2: optional string query
     // on the first run, `{{ start_date }}` will be set to this user provided start date, future incremental runs will
-    // set it to the latest existing partition + 1 day
+    // set it to the latest existing partition + 1 day.
+    // `{{ end_date }}` is the end partition of the computing range.
+    // `{{ latest_date }}` is the end partition independent of the computing range (meant for cumulative sources).
     3: optional string startPartition
     4: optional list<string> setups
 }
