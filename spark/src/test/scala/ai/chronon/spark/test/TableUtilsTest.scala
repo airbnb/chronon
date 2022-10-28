@@ -1,6 +1,6 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
+import ai.chronon.api.{StructField, _}
 import ai.chronon.spark.{Conversions, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
@@ -209,4 +209,36 @@ class TableUtilsTest {
     assertEquals(expected, actual)
   }
 
+  def testDropPartitions(): Unit = {
+    val tableName = "db.test_drop_partitions_table"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("ds", StringType),
+      StructField("label_ds", StringType)
+    )
+    val df1 = makeDf(
+      StructType(
+        tableName,
+        columns1
+      ),
+      List(
+        Row(1L, 2, "2022-10-01", "2022-11-01"),
+        Row(2L, 2, "2022-10-02", "2022-11-02"),
+        Row(3L, 8, "2022-10-05", "2022-11-03")
+      )
+    )
+    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.dropPartitions(tableName, Seq("2022-10-01", "2022-10-02"), labelPartition = "2022-11-02")
+    val updated = tableUtils.sql(
+      s"""
+         |SELECT * from ${tableName}
+         |""".stripMargin)
+    assertEquals(updated.count(), 2)
+    assertTrue(updated.collect().sameElements(List(
+      Row(1L, 2, "2022-10-01", "2022-11-01"),
+      Row(3L, 8, "2022-10-05", "2022-11-03")
+    )))
+  }
 }

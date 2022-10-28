@@ -385,7 +385,8 @@ case class TableUtils(sparkSession: SparkSession) {
   @deprecated
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
-                              partitionRange: PartitionRange): Option[String] = {
+                              partitionRange: PartitionRange,
+                              labelPartition: String = ""): Option[String] = {
 
     def partitionsInRange(table: String): Set[String] = {
       val allParts = partitions(table)
@@ -402,19 +403,25 @@ case class TableUtils(sparkSession: SparkSession) {
                    |Earliest hole at $hole in output table $outputTable, relative to $inputTable
                    |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")} 
+                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
+                   |Label Partition : ${labelPartition.mkString}
           """.stripMargin)
-      dropPartitions(outputTable, toDrop.toArray.sorted)
+      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartition)
     }
     earliestHoleOpt
   }
 
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
-                     partitionColumn: String = Constants.PartitionColumn): Unit = {
+                     partitionColumn: String = Constants.PartitionColumn,
+                     labelPartition: String = ""): Unit = {
     if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
-      val partitionSpecs =
+      val partitionSpecs = if (labelPartition.isEmpty) {
         partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
+      } else {
+        partitions.map(partition => s"PARTITION ($partitionColumn='$partition', " +
+          s"${Constants.LabelPartitionColumn}='$labelPartition')").mkString(", ".stripMargin)
+      }
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)
     } else {

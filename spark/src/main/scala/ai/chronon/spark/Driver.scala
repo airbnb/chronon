@@ -97,10 +97,6 @@ object Driver {
         opt[Int](required = false,
           descr = "Runs label join in steps, step-days at a time. Default is 30 days",
           default = Option(30))
-      val skipEqualCheck: ScallopOption[Boolean] =
-        opt[Boolean](required = false,
-          default = Some(false),
-          descr = "Check if this join has already run with a different conf, if so it will fail the job")
     }
 
     def run(args: Args): Unit = {

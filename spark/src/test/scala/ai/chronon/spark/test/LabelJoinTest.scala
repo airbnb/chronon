@@ -1,261 +1,115 @@
 package ai.chronon.spark.test
 
-import ai.chronon.aggregator.test.Column
-import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Constants, IntType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
-import ai.chronon.spark.Extensions._
-import ai.chronon.spark._
-import org.apache.spark.sql.{Row, SparkSession}
-import org.junit.Test
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import ai.chronon.api.{Builders, Constants, Join}
+import ai.chronon.spark._
+import org.apache.spark.sql.{SparkSession}
+import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Test
 
 class LabelJoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
-
-  private val namespace = "test_join"
+  private val namespace = "label_join"
+  private val tableName = "test_label_join"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-
+  private val today = Constants.Partition.at(System.currentTimeMillis())
   private val tableUtils = TableUtils(spark)
 
-  @Test
-  def testEventsEntitiesSnapshot(): Unit = {
-    val dollarTransactions = List(
-      Column("user", StringType, 5),
-      Column("ts", LongType, 100),
-      Column("amount_dollars", LongType, 20)
-    )
-
-    val dollarTable = s"$namespace.dollar_transactions"
-    spark.sql(s"DROP TABLE IF EXISTS $dollarTable")
-    DataFrameGen.entities(spark, dollarTransactions, 100, partitions = 60).save(dollarTable, Map("tblProp1" -> "1"))
-
-    val dollarSource = Builders.Source.entities(
-      query = Builders.Query(
-        selects = Builders.Selects("ts", "amount_dollars"),
-        startPartition = yearAgo,
-        endPartition = today,
-        setups =
-          Seq("create temporary function temp_replace_right_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'")
-      ),
-      snapshotTable = dollarTable
-    )
-
-    val groupBy = Builders.GroupBy(
-      sources = Seq(dollarSource),
-      keyColumns = Seq("user"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.SUM,
-          inputColumn = "amount_dollars",
-          windows = Seq(new Window(60, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "chronon")
-    )
-    val queriesSchema = List(
-      Column("user", api.StringType,5)
-    )
-
-    val queryTable = s"$namespace.queries"
-    DataFrameGen
-      .events(spark, queriesSchema, 50, partitions = 20)
-      .save(queryTable)
-
-    val start = Constants.Partition.minus(today, new Window(20, TimeUnit.DAYS))
-    val end = Constants.Partition.minus(today, new Window(10, TimeUnit.DAYS))
-    val joinConf = Builders.Join(
-      left = Builders.Source.events(
-        query = Builders.Query(
-          startPartition = start
-        ),
-        table = queryTable
-      ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
-    )
-
-    val runner1 = new Join(joinConf, end, tableUtils)
-    val computed = runner1.computeJoin()
-    println(s"join start = $start")
-
-    println("--- computed ----")
-    println(computed.count())
-    computed.show(200)
-
-    val left = spark.sql(
-      s"""
-         |SELECT user,
-         |         ts,
-         |         ds
-         |     from test_label_join.queries
-         |     where user IS NOT null
-         |         AND ts IS NOT NULL
-         |         AND ds IS NOT NULL
-         |         AND ds >= '2022-10-05'
-         |         AND ds <= '2022-10-15'
-         |""".stripMargin)
-
-    println(left.count())
-    left.show(200)
-
-    val right = spark.sql(
-      s"""
-         |SELECT *
-         |     from test_label_join.dollar_transactions
-         |     where user IS NOT null
-         |         AND ts IS NOT NULL
-         |         AND ds IS NOT NULL
-         |     order by ds desc
-         |""".stripMargin)
-
-    println(right.count())
-    right.show(200)
-  }
+  private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
+  private val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark)
 
   @Test
   def testLabelJoin(): Unit = {
-    val namespace = "label_join"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-
-    val joinTestSuite = createJoin(namespace)
-    val runner = new LabelJoin(joinTestSuite.joinConf, 30,20, tableUtils)
+    val joinConf = createTestJoin(namespace)
+    //TODO make dates dynamic
+    val runner = new LabelJoin(joinConf, 180,20, tableUtils)
     val computed = runner.computeLabelJoin()
-    println(computed.count())
-    println(computed.show(100))
+    println(" == Computed == ")
+    computed.show()
+    val expected = tableUtils.sql(s"""
+                                     SELECT v.listing_id as listing,
+                                        ts,
+                                        m_guests,
+                                        m_views,
+                                        dim_bedrooms as listing_attributes_dim_bedrooms,
+                                        dim_room_type as listing_attributes_dim_room_type,
+                                        v.ds
+                                     FROM label_join.listing_views as v
+                                     LEFT OUTER JOIN label_join.listing_attributes as a
+                                     ON v.ds = a.ds AND v.listing_id = a.listing_id""".stripMargin)
+    println(" == Expected == ")
+    expected.show()
+    assertEquals(computed.count(), expected.count())
+    println(computed.select("label_ds").show(1))
+
+    val diff = Comparison.sideBySide(computed.drop("label_ds"), expected,
+      List("listing", "ds", "m_guests", "m_views",
+        "listing_attributes_dim_room_type", "listing_attributes_dim_bedrooms"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 
-  def createJoin(namespace: String): JoinTestSuite = {
-    val viewsGroupBy = createViewsGroupBy(namespace, spark)
-    val attributesGroupBy = createAttributesGroupBy(namespace, spark)
+  @Test
+  def testLabelRefresh(): Unit = {
+    val joinConf = createTestJoin(namespace)
+    val runner = new LabelJoin(joinConf, 60,20, tableUtils)
+    val computed = runner.computeLabelJoin()
+    println(" == Computed == ")
+    computed.show()
+    assertEquals(computed.count(),6)
+
+    // drop partition in middle to test hole logic
+    tableUtils.dropPartitions(s"${namespace}.${tableName}", Seq("2022-10-02"), labelPartition = s"${today}")
+
+    val runner2 = new LabelJoin(joinConf, 60,20, tableUtils)
+    val refreshed = runner2.computeLabelJoin()
+    println(" == Refreshed == ")
+    refreshed.show()
+    assertEquals(refreshed.count(),6)
+    assertTrue(computed.collect() sameElements(refreshed.collect()))
+  }
+
+  @Test(expected = classOf[AssertionError])
+  def testLabelJoinInvalidSource(): Unit = {
+     // Invalid left data model entities
+    val joinConf = Builders.Join(
+      left = labelGroupBy.groupByConf.sources.get(0),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
+      ),
+      metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
+    )
+    new LabelJoin(joinConf, 30,20, tableUtils).computeLabelJoin()
+  }
+
+  @Test(expected = classOf[AssertionError])
+  def testLabelJoinInvalidGroupBy(): Unit = {
+    // Invalid label data model
     val joinConf = Builders.Join(
       left = viewsGroupBy.groupByConf.sources.get(0), //events
       joinParts = Seq(
-        Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
+        Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)
       ),
-      metaData = Builders.MetaData(name = "test_join", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     )
-    JoinTestSuite(
-      joinConf,
-      Seq(viewsGroupBy, attributesGroupBy),
-      (
-        Map("listing" -> 1L.asInstanceOf[AnyRef]),
-        Map(
-          "unit_test_listing_attributes_dim_bedrooms" -> 4.asInstanceOf[AnyRef],
-          "unit_test_listing_attributes_dim_room_type" -> "ENTIRE_HOME"
-        )
-      )
-    )
+    new LabelJoin(joinConf, 30, 20, tableUtils).computeLabelJoin()
   }
 
- // event
-  def createViewsGroupBy(namespace: String, spark: SparkSession): GroupByTestSuite = {
-    val name = "listing_views"
-    val schema = StructType(
-      name,
-      Array(
-        StructField("listing_id", LongType),
-        StructField("m_guests", LongType),
-        StructField("m_views", LongType),
-        StructField("ts", StringType),
-        StructField("ds", StringType)
-      )
-    )
-    val rows = List(
-      Row(1L, 2L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(1L, 3L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(2L, 1L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(2L, 2L, 20L, "2022-10-02 10:00:00", "2022-10-02")
-    )
-    val source = Builders.Source.events(
-      query = Builders.Query(
-        selects = Map(
-          "listing" -> "listing_id",
-          "m_guests" -> "m_guests",
-          "m_views" -> "m_views"
-        ),
-        timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
+  def createTestJoin(namespace: String): Join = {
+    Builders.Join(
+      left = viewsGroupBy.groupByConf.sources.get(0), //events
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
-      table = s"${namespace}.${name}",
-      topic = null,
-      isCumulative = false
-    )
-    val conf = Builders.GroupBy(
-      sources = Seq(source),
-      keyColumns = Seq("listing"),
-      aggregations = Seq(
-        Builders.Aggregation(
-          operation = Operation.SUM,
-          inputColumn = "m_guests",
-          windows = null
-        ),
-        Builders.Aggregation(
-          operation = Operation.SUM,
-          inputColumn = "m_views",
-          windows = null
-        )
-      ),
-      accuracy = Accuracy.SNAPSHOT,
-      metaData = Builders.MetaData(name = s"${name}", namespace = namespace, team = "chronon")
-    )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
-    )
-    df.save(s"${namespace}.${name}")
-    GroupByTestSuite(
-      name,
-      conf,
-      df
-    )
-  }
-
-  //entity
-  def createAttributesGroupBy(namespace: String, spark: SparkSession): GroupByTestSuite = {
-    val name = "listing_attributes"
-    val schema = StructType(
-      "listing_attributes",
-      Array(
-        StructField("listing_id", LongType),
-        StructField("dim_bedrooms", IntType),
-        StructField("dim_room_type", StringType),
-        StructField("ds", StringType)
-      )
-    )
-    val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "2022-10-01"),
-      Row(1L, 4, "ENTIRE_HOME", "2022-10-02"),
-      Row(2L, 1, "PRIVATE_ROOM", "2022-10-01"),
-      Row(2L, 1, "PRIVATE_ROOM", "2022-10-02")
-    )
-    val source = Builders.Source.entities(
-      query = Builders.Query(
-        selects = Map(
-          "listing" -> "listing_id",
-          "dim_bedrooms" -> "dim_bedrooms",
-          "dim_room_type" -> "dim_room_type"
-        )
-      ),
-      snapshotTable = s"${namespace}.${name}"
-    )
-    val conf = Builders.GroupBy(
-      sources = Seq(source),
-      keyColumns = Seq("listing"),
-      aggregations = null,
-      accuracy = Accuracy.SNAPSHOT,
-      metaData = Builders.MetaData(name = s"${name}", namespace = namespace, team = "chronon")
-    )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
-    )
-    df.save(s"${namespace}.${name}")
-    GroupByTestSuite(
-      name,
-      conf,
-      df
+      metaData = Builders.MetaData(name = tableName, namespace = namespace, team = "chronon")
     )
   }
 }

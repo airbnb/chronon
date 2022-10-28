@@ -16,7 +16,7 @@ import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 import scala.util.Try
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, labelJoin:Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -70,12 +70,13 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
          |""".stripMargin)
 
     import org.apache.spark.sql.functions.{col, date_add, date_format}
+    val dateOffset = if(labelJoin) 0 else 1
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
       prefixedRight
         .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
+                    date_format(date_add(col(Constants.PartitionColumn), dateOffset), Constants.Partition.format))
         .drop(Constants.PartitionColumn)
     } else {
       prefixedRight
@@ -148,8 +149,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       case (Events, Events, Accuracy.TEMPORAL) =>
         genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
 
-      case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
-
+      case (Events, Entities, Accuracy.SNAPSHOT) => {
+        if (labelJoin) genGroupBy(unfilledTimeRange.toPartitionRange).snapshotEntities
+        else genGroupBy(shiftedPartitionRange).snapshotEntities
+      }
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
@@ -285,7 +288,12 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
+    val earliestHoleOpt = if(labelJoin) {
+      val today = Constants.Partition.at(System.currentTimeMillis())
+      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, today)
+    } else {
+      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
+    }
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -309,7 +317,14 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(range).map { leftDfInRange =>
-          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          if(labelJoin) {
+            val today = Constants.Partition.at(System.currentTimeMillis())
+            computeRange(leftDfInRange, range)
+              .appendColumn(Constants.LabelPartitionColumn, today)
+              .save(outputTable, tableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn))
+          } else {
+            computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          }
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
