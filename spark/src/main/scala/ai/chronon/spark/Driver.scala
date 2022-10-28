@@ -471,6 +471,7 @@ object Driver {
     object AnalyzerArgs extends Analyzer.Args
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
+    addSubcommand(DailyStatsArgs)
     requireSubcommand()
     verify()
   }

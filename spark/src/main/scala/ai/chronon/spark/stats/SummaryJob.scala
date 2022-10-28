@@ -22,8 +22,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
   val tableUtils: TableUtils = TableUtils(session)
-  private val dailyStatsTable: String = s"${joinConf.metaData.cleanName}_stats_daily"
-  private val dailyStatsAvroTable: String = s"${joinConf.metaData.cleanName}_stats_daily_upload"
+  private val dailyStatsTable: String = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily"
+  private val dailyStatsAvroTable: String = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily_upload"
 
   def dailyRun(stepDays: Option[Int] = None): Unit = {
     val unfilledRange = tableUtils.unfilledRange(dailyStatsTable, PartitionRange(null, endDate), Some(joinConf.metaData.outputTable))
