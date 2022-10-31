@@ -1,7 +1,7 @@
 package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
+import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -31,12 +31,6 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      valueCodec: AvroCodec)
     extends Serializable {
-  val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
-  val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
-
-  val keyFields: Array[StructField] = keySchema.fields
-  val valueFields: Array[StructField] = valueSchema.fields
-
   /*
    * Get the serialized string repr. of the logging schema.
    * key_schema and value_schema are first converted to strings and then serialized as part of Map[String, String] => String conversion.
@@ -87,12 +81,12 @@ object JoinCodec {
 }
 
 // BaseFetcher + Logging + External service calls
-class Fetcher(kvStore: KVStore,
+class Fetcher(val kvStore: KVStore,
               metaDataSet: String,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              externalSourceRegistry: ExternalSourceRegistry = null)
+              val externalSourceRegistry: ExternalSourceRegistry = null)
     extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
 
   // key and value schemas
@@ -136,12 +130,14 @@ class Fetcher(kvStore: KVStore,
             .asScala
             .foreach { part =>
               val source = part.source
+
               def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
                 DataType
                   .fromTDataType(schema)
                   .asInstanceOf[StructType]
                   .fields
                   .map(f => StructField(prefix + f.name, f.fieldType))
+
               buildFields(source.getKeySchema).filterNot(keyFields.contains).foreach(f => keyFields.append(f))
               buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
             }
@@ -306,15 +302,10 @@ class Fetcher(kvStore: KVStore,
     codec.encodeBinary(avroRecord)
   }
 
-  // we need to pull external requests per join query the registry and map back the values into join responses
-  // This logic does the following
-  // deduplicates requests,
-  // batches the fanout of external requests from a batch of join requests - by handler name,
-  // issues parallel fetch calls
-  // unpacks the results and maps them back into the correct join request
+  // Pulling external features in a batched fashion across services in-parallel
   def fetchExternal(joinRequests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTime = System.currentTimeMillis()
-    val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.HashMap[String, Any]]]
+    val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.LinkedHashMap[String, Any]]]
     var invalidCount = 0
     val validRequests = new ListBuffer[Request]
 
@@ -332,9 +323,9 @@ class Fetcher(kvStore: KVStore,
         )
         invalidCount += 1
       } else if (joinConfTry.get.join.onlineExternalParts == null) {
-        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
+        resultMap.update(request, Success(mutable.LinkedHashMap.empty[String, Any]))
       } else {
-        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
+        resultMap.update(request, Success(mutable.LinkedHashMap.empty[String, Any]))
         validRequests.append(request)
       }
     }
@@ -353,7 +344,8 @@ class Fetcher(kvStore: KVStore,
       .mapValues(_.toSeq)
       .toMap
     val context =
-      Metrics.Context(environment = Environment.JoinFetching, join = validRequests.iterator.map(_.name).mkString(","))
+      Metrics.Context(environment = Environment.JoinFetching,
+                      join = validRequests.iterator.map(_.name).toSeq.distinct.mkString(","))
     context.histogram("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.histogram("response.external_invalid_joins.count", invalidCount)
     val responseFutures = externalSourceRegistry.fetchRequests(externalRequestToJoinRequestMap.keys.toSeq, context)
@@ -364,7 +356,7 @@ class Fetcher(kvStore: KVStore,
         val responseTry: Try[Map[String, Any]] = response.values
         val joinsToUpdate: Seq[ExternalToJoinRequest] = externalRequestToJoinRequestMap(response.request)
         joinsToUpdate.foreach { externalToJoin =>
-          val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
+          val resultValueMap: mutable.LinkedHashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
           val prefix = externalToJoin.part.fullName + "_"
           responseTry match {
             case Failure(exception) =>

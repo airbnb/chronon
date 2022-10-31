@@ -10,10 +10,23 @@ import scala.util.{Failure, Success}
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
 // keys and values need to match schema in ExternalSource - chronon will validate automatically
 class ExternalSourceRegistry {
-  val handlerMap: mutable.Map[String, ExternalSourceHandler] =
-    new mutable.HashMap[String, ExternalSourceHandler]()
+  class ContextualHandler extends ExternalSourceHandler {
+    override def fetch(requests: Seq[Request]): Future[Seq[Response]] = {
+      Future(requests.map { request =>
+        Response(request = request, values = Success(request.keys))
+      })
+    }
+  }
+
+  val handlerMap: mutable.Map[String, ExternalSourceHandler] = {
+    val result = new mutable.HashMap[String, ExternalSourceHandler]()
+    result.put(Constants.ContextualSourceName, new ContextualHandler())
+    result
+  }
 
   def add(name: String, handler: ExternalSourceHandler): Unit = {
+    assert(!handlerMap.contains(name),
+      s"A handler by the name $name already exists. Existing: ${handlerMap.keys.mkString("[",", ", "]")}")
     handlerMap.put(name, handler)
   }
 
@@ -25,14 +38,7 @@ class ExternalSourceRegistry {
       .groupBy(_.name)
       .map {
         case (name, requests) =>
-          // contextual features are specified as
-          // Contextual(schema) => ExternalSource(keySchema = schema, valueSchema = schema)
-          // keys are what need to be returned as is.
-          if (name == Constants.ContextualSourceName) {
-            Future(requests.map { request =>
-              Response(request = request, values = Success(request.keys))
-            })
-          } else if (handlerMap.contains(name)) {
+          if (handlerMap.contains(name)) {
             val ctx = context.copy(groupBy = s"external_source_$name")
             val responses = handlerMap(name).fetch(requests)
             responses.foreach { responses =>

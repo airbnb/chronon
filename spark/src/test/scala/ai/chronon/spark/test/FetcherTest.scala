@@ -335,10 +335,8 @@ class FetcherTest extends TestCase {
       accuracy = Accuracy.TEMPORAL
     )
 
-    val externalKeyCol = Column("ext_key", IntType, 100)
-    val contextualCol = Column("context_col", StringType, 100)
     // queries
-    val queryCols = Seq(userCol, vendorCol, externalKeyCol, contextualCol)
+    val queryCols = Seq(userCol, vendorCol)
     val queriesTable = s"$namespace.queries_table"
     val queriesDf = DataFrameGen
       .events(spark, queryCols, rowCount, 4)
@@ -357,15 +355,6 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = reviewGroupBy),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
-      ),
-      externalParts = Seq(
-        Builders.ExternalPart(
-          Builders.ExternalSource(
-            metadata = Builders.MetaData(
-              name
-            )
-          )
-        )
       ),
       metaData =
         Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)

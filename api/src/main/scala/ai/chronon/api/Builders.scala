@@ -1,5 +1,6 @@
 package ai.chronon.api
 
+import ai.chronon.api.DataType.toTDataType
 import ai.chronon.api.Extensions.WindowUtils
 
 import scala.collection.JavaConverters._
@@ -152,11 +153,11 @@ object Builders {
   }
 
   object ExternalSource {
-    def apply(metadata: MetaData, keySchema: TDataType, valueSchema: TDataType): ExternalSource = {
+    def apply(metadata: MetaData, keySchema: DataType, valueSchema: DataType): ExternalSource = {
       val result = new ExternalSource()
       result.setMetadata(metadata)
-      result.setKeySchema(keySchema)
-      result.setValueSchema(valueSchema)
+      result.setKeySchema(toTDataType(keySchema))
+      result.setValueSchema(toTDataType(valueSchema))
       result
     }
   }
