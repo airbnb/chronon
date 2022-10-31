@@ -26,7 +26,7 @@ class ExternalSourceRegistry {
 
   def add(name: String, handler: ExternalSourceHandler): Unit = {
     assert(!handlerMap.contains(name),
-      s"A handler by the name $name already exists. Existing: ${handlerMap.keys.mkString("[",", ", "]")}")
+           s"A handler by the name $name already exists. Existing: ${handlerMap.keys.mkString("[", ", ", "]")}")
     handlerMap.put(name, handler)
   }
 
@@ -39,7 +39,7 @@ class ExternalSourceRegistry {
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
-            val ctx = context.copy(groupBy = s"external_source_$name")
+            val ctx = context.copy(groupBy = s"ext_$name")
             val responses = handlerMap(name).fetch(requests)
             responses.foreach { responses =>
               val failures = responses.count(_.values.isFailure)

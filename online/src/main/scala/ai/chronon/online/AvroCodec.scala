@@ -89,7 +89,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
     val output = AvroConversions
       .toChrononRow(decode(bytes), chrononSchema)
       .asInstanceOf[Array[Any]]
-    fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+    fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
   }
 }
 

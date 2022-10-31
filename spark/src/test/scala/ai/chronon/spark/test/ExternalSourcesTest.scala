@@ -1,10 +1,11 @@
 package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.{Builders, Constants, IntType, StructField, StructType}
+import ai.chronon.api.{Builders, Constants, IntType, StringType, StructField, StructType}
 import ai.chronon.online.Fetcher.Request
 import org.junit.Assert._
 import org.junit.Test
 
+import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
 
@@ -23,8 +24,8 @@ class ExternalSourcesTest {
       metadata = Builders.MetaData(
         name = "always_fails"
       ),
-      keySchema = StructType("keys_always_fails", Array(StructField("str", IntType))),
-      valueSchema = StructType("values_always_fails", Array(StructField("str", IntType)))
+      keySchema = StructType("keys_always_fails", Array(StructField("str", StringType))),
+      valueSchema = StructType("values_always_fails", Array(StructField("str", StringType)))
     )
 
     val javaPlusOneSource = Builders.ExternalSource(
@@ -50,7 +51,8 @@ class ExternalSourcesTest {
     val namespace = "external_source_test"
     val join = Builders.Join(
       // left defined here shouldn't really matter for this test
-      left = Builders.Source.events(Builders.Query(selects = Map("number" -> "number", "str" -> "test_str")), table = "non_existent_table"),
+      left = Builders.Source.events(Builders.Query(selects = Map("number" -> "number", "str" -> "test_str")),
+                                    table = "non_existent_table"),
       externalParts = Seq(
         Builders.ExternalPart(
           plusOneSource,
@@ -83,14 +85,29 @@ class ExternalSourcesTest {
     fetcher.kvStore.create(ChrononMetadataKey)
     fetcher.putJoinConf(join)
 
-    val requests = (10 until 21).map(x => Request(join.metaData.name, Map(
-      "number" -> new Integer(x),
-      "str" -> "a",
-      "context_1" -> new Integer(2 + x),
-      "context_2" -> new Integer(3 + x)
-    )))
-    val responsesF = fetcher.fetchExternal(requests)
+    val requests = (10 until 21).map(x =>
+      Request(join.metaData.name,
+              Map(
+                "number" -> new Integer(x),
+                "str" -> "a",
+                "context_1" -> new Integer(2 + x),
+                "context_2" -> new Integer(3 + x)
+              )))
+    val responsesF = fetcher.fetchJoin(requests)
     val responses = Await.result(responsesF, Duration(10, SECONDS))
-    responses.map(_.values).foreach(println)
+    val numbers = mutable.Buffer.empty[Int]
+    val keys = Set(
+      "ext_p1_plus_one_number",
+      "ext_p2_plus_one_number",
+      "ext_always_fails_exception",
+      "ext_p3_java_plus_one_number",
+      "ext_p3_java_plus_one_number_mapped",
+      "ext_contextual_context_1",
+      "ext_contextual_context_2"
+    )
+    responses.map(_.values).foreach { m =>
+      assertTrue(m.isSuccess)
+      assertEquals(m.get.keysIterator.toSet, keys)
+    }
   }
 }

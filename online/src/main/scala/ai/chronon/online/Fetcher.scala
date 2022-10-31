@@ -160,11 +160,16 @@ class Fetcher(val kvStore: KVStore,
       case (internalResponses, externalResponses) =>
         internalResponses.zip(externalResponses).map {
           case (internalResponse, externalResponse) =>
+            if (debug) {
+              println(internalResponse.values.get.keys.toSeq)
+              println(externalResponse.values.get.keys.toSeq)
+            }
+            val cleanInternalRequest = internalResponse.request.copy(context = None)
             assert(
-              internalResponse.request == externalResponse.request,
+              cleanInternalRequest == externalResponse.request,
               s"""
                  |Logic error. Responses are not aligned to requests
-                 |mismatching requests:  ${internalResponse.request}, ${externalResponse.request}
+                 |mismatching requests:  ${cleanInternalRequest}, ${externalResponse.request}
                  |  requests:            ${requests.map(_.name)}
                  |  internalResponses:   ${internalResponses.map(_.request.name)}
                  |  externalResponses:   ${externalResponses.map(_.request.name)}""".stripMargin
@@ -242,7 +247,7 @@ class Fetcher(val kvStore: KVStore,
       val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
       if (shouldPublishLog || debug) {
         if (debug) {
-          println(s"Passed ${resp.request.keys} : $hash : ${hash % 100000}: $samplePercent")
+          println(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
           val gson = new Gson()
           val valuesFormatted = resp.values.map {
             _.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
@@ -269,7 +274,7 @@ class Fetcher(val kvStore: KVStore,
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
           if (debug) {
-            println(s"join data logged successfully with schema_hash ${codec.loggingSchemaHash}")
+            println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
           }
         }
       }
@@ -278,7 +283,7 @@ class Fetcher(val kvStore: KVStore,
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
       joinContext.foreach(_.incrementException(exception))
-      println(s"logging failed due to ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
+      println(s"logging failed due to ${exception.traceString}")
     }
     resp
   }
@@ -305,7 +310,7 @@ class Fetcher(val kvStore: KVStore,
   // Pulling external features in a batched fashion across services in-parallel
   def fetchExternal(joinRequests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTime = System.currentTimeMillis()
-    val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.LinkedHashMap[String, Any]]]
+    val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.HashMap[String, Any]]]
     var invalidCount = 0
     val validRequests = new ListBuffer[Request]
 
@@ -323,9 +328,9 @@ class Fetcher(val kvStore: KVStore,
         )
         invalidCount += 1
       } else if (joinConfTry.get.join.onlineExternalParts == null) {
-        resultMap.update(request, Success(mutable.LinkedHashMap.empty[String, Any]))
+        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
       } else {
-        resultMap.update(request, Success(mutable.LinkedHashMap.empty[String, Any]))
+        resultMap.update(request, Success(mutable.HashMap.empty[String, Any]))
         validRequests.append(request)
       }
     }
@@ -343,6 +348,7 @@ class Fetcher(val kvStore: KVStore,
       .groupBy(_.externalRequest)
       .mapValues(_.toSeq)
       .toMap
+
     val context =
       Metrics.Context(environment = Environment.JoinFetching,
                       join = validRequests.iterator.map(_.name).toSeq.distinct.mkString(","))
@@ -356,7 +362,7 @@ class Fetcher(val kvStore: KVStore,
         val responseTry: Try[Map[String, Any]] = response.values
         val joinsToUpdate: Seq[ExternalToJoinRequest] = externalRequestToJoinRequestMap(response.request)
         joinsToUpdate.foreach { externalToJoin =>
-          val resultValueMap: mutable.LinkedHashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
+          val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
           val prefix = externalToJoin.part.fullName + "_"
           responseTry match {
             case Failure(exception) =>
@@ -371,7 +377,7 @@ class Fetcher(val kvStore: KVStore,
 
       // step-4 convert the resultMap into Responses
       joinRequests.map { req =>
-        Response(req, resultMap(req).map(_.toMap.mapValues(_.asInstanceOf[AnyRef]).toMap))
+        Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }
   }

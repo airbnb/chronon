@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
+import java.util
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -605,7 +606,10 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts).toSeq.map(new JoinPartOps(_))
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
+        .toSeq
+        .map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

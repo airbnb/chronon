@@ -11,7 +11,7 @@ import ai.chronon.online.Metrics.Name
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
@@ -81,7 +81,7 @@ class BaseFetcher(kvStore: KVStore,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
-        servingInfo.outputCodec.fieldNames.zip(output.map(_.asInstanceOf[AnyRef])).toMap
+        servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
     context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
@@ -295,7 +295,7 @@ class BaseFetcher(kvStore: KVStore,
         val responses = joinDecomposed.iterator.map {
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
-              val result = groupByRequestsWithPrefix.iterator.flatMap {
+              groupByRequestsWithPrefix.iterator.flatMap {
                 case PrefixedRequest(prefix, groupByRequest) =>
                   responseMap
                     .getOrElse(groupByRequest,
@@ -322,7 +322,6 @@ class BaseFetcher(kvStore: KVStore,
                     }
                     .get
               }.toMap
-              result
             }
             joinValuesTry match {
               case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
