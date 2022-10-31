@@ -282,6 +282,8 @@ your_gb = GroupBy(
 > you don't accidentally merge a change that release modified features out-of-band with model updates. You can overwrite
 > this behavior by deleting the older compiled output. Our recommendation is to create a new version `your_gb_v2` instead.
 
+#### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys)
+
 ---
 
 ## Join
@@ -313,6 +315,8 @@ Chronon runs daily pipelines that measure inconsistency between an offline join,
 
 > NOTE: The production flag in a Join states that the join is not in development anymore and critical alerting and 
 > monitoring are expected. If a Join is marked as production it cannot reference any non-production GroupBys.
+#### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins)
+
 ---
 
 ## Staging Query
@@ -348,3 +352,4 @@ v1 = Join(
 Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
 metadata is extracted from [teams.json](../../api/py/test/sample/teams.json) in (or default team if one is not set).
 
+#### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)
