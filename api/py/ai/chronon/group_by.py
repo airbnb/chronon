@@ -114,7 +114,6 @@ def Aggregation(
     windows: List[ttypes.Window] = None,
     buckets: List[str] = None) -> ttypes.Aggregation:
     """
-
     :param input_column:
         Column on which the aggregation needs to be performed.
         This should be one of the input columns specified on the keys of the `select` in the `Query`'s `Source`
