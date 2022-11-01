@@ -323,9 +323,3 @@ struct TDataType {
     2: optional list<DataField> params
     3: optional string name // required only for struct types
 }
-
-struct ExternalSource {
-    1: optional string name
-    2: optional TDataType keySchema
-    3: optional TDataType valueSchema
-}
