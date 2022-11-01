@@ -208,7 +208,10 @@ This command will take into the account of `version.sbt` and handles a series of
      1. select "close" wait for the steps to finish
      2. Select "refresh" and "release"
      3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/) or [sonatype UI](https://search.maven.org/search?q=g:ai.chronon)
-4. Push the local release commits (DO NOT SQUASH), and the new tag created from step 1 to Github. 
+4. Push the local release commits (DO NOT SQUASH), and the new tag created from step 1 to Github.
+     1. chronon repo disallow push to master directly, so instead push commits to a branch `git push origin master:your-name--release-xxx`
+     2. your PR should contain exactly two commits, 1 setting the release version, 1 setting the new snapshot version. 
+     3. make sure to use **Rebase pull request** instead of the regular Merge or Squash options when merging the PR. 
 
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
