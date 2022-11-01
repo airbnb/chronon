@@ -6,6 +6,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.api.Extensions._
 import ai.chronon.api
 import ai.chronon.spark.{Conversions, KvRdd, RowWrapper}
+import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -90,10 +91,27 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
   /** Given a summary Dataframe that computed the stats. Add derived data (example: null rate, median, etc) */
   def addDerivedMetrics(df: DataFrame, aggregator: RowAggregator): DataFrame = {
     val nullColumns = df.columns.filter(p => p.startsWith(StatsGenerator.nullPrefix))
-    nullColumns.foldLeft(df) {
+    val withNullRatesDF = nullColumns.foldLeft(df) {
       (tmpDf, column) =>
         tmpDf.withColumn(s"${StatsGenerator.nullRatePrefix}${column.stripPrefix(StatsGenerator.nullPrefix)}",
           tmpDf.col(column) / tmpDf.col(Seq(StatsGenerator.totalColumn, api.Operation.COUNT).mkString("_")))
+    }
+    
+    val percentiles = aggregator
+      .aggregationParts.filter(_.operation == api.Operation.APPROX_PERCENTILE)
+    val percentileColumns = percentiles.map(_.outputColumnName)
+    def finalizePercentiles: (Array[Byte] => Map[String, String]) = {
+      s =>
+        KllFloatsSketch.heapify(Memory.wrap(s))
+          .getQuantiles(StatsGenerator.finalizedPercentiles.toArray)
+          .zip(StatsGenerator.finalizedPercentiles).map(f => f._2.toString -> f._1.toString).toMap
+
+    }
+    import org.apache.spark.sql.functions.udf
+    val percentileFinalizerUdf = udf(finalizePercentiles)
+    percentileColumns.foldLeft(withNullRatesDF) {
+      (tmpDf, column) =>
+        tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
     }
   }
 

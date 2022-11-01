@@ -23,6 +23,8 @@ object Constants {
   val StreamingInputTable = "input_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
+  val StatsKeySchemaKey = "key_schema"
+  val StatsValueSchemaKey = "value_schema"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)

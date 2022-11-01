@@ -45,13 +45,13 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
            |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
            |""".stripMargin)
         val stats = new StatsCompute(inputDf, joinConf.leftKeyCols)
-      val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+        val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
         val summaryKvRdd = stats.dailySummary(aggregator,0.1)
         if (joinConf.metaData.online) {
           // Store an Avro encoded KV Table and the schemas.
           val avroDf = summaryKvRdd.toAvroDf
           val schemas = Seq(summaryKvRdd.keyZSchema, summaryKvRdd.valueZSchema).map(AvroConversions.fromChrononSchema(_).toString(true))
-          val schemaKeys = Seq("keySchemas", "valueSchemas") // TODO: Store this in API if we follow this path. Fetcher needs it.
+          val schemaKeys = Seq(Constants.StatsKeySchemaKey, Constants.StatsValueSchemaKey)
           val metaRows = schemaKeys.zip(schemas).map{
             case (k, schema) => Row(k.getBytes(Constants.UTF8), schema.getBytes(Constants.UTF8), k, schema)
           }
@@ -61,8 +61,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
             .union(metaDf).withColumn(Constants.PartitionColumn, lit(endDate))
             .save(dailyStatsAvroTable, tableProps)
         }
-        // TODO:Finalize some values before storing in warehouse for readability.
-        summaryKvRdd.toFlatDf.withTimeBasedColumn(Constants.PartitionColumn).save(dailyStatsTable, tableProps)
+        stats.addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
+          .withTimeBasedColumn(Constants.PartitionColumn).save(dailyStatsTable, tableProps)
         println(s"Finished range [${index +1}/${stepRanges.size}].")
     }
     println("Finished writing stats.")
