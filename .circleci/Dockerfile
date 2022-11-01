@@ -3,7 +3,7 @@ FROM ${base_image}
 USER root
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
 ENV PATH /opt/conda/bin:$PATH
-ENV THRIFT_VERSION 0.11.0
+ENV THRIFT_VERSION 0.13.0
 
 WORKDIR /img-build
 
@@ -70,10 +70,8 @@ RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm ~/*.sh
 
-RUN conda create -y -n zipline_py python=3.7
+RUN conda create -y -n zipline_py python=3.8
 RUN conda install -y -q -n zipline_py --no-deps virtualenv
-RUN  /opt/conda/envs/zipline_py/bin/pip install \
-   flake8==5.0.4 flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7
 
 WORKDIR /
 RUN rm -rf /img-build

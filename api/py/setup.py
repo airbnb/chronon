@@ -14,7 +14,7 @@ __version__ = "0.0.9"
 
 setup(
     classifiers=[
-        "Programming Language :: Python :: 3.7"
+        "Programming Language :: Python :: 3.8"
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -28,7 +28,7 @@ setup(
         # Extra requirement to have access to cli commands in python2 environments.
         "pip2compat": ["click<8"]
     },
-    python_requires=">=3.7",
+    python_requires=">=3.8",
     url=None,
     version=__version__,
     zip_safe=False,
