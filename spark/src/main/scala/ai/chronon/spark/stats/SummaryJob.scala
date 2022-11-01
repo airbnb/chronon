@@ -9,6 +9,7 @@ import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{Row, SparkSession}
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 /**
   * Summary Job for daily upload of stats.
@@ -18,12 +19,12 @@ import scala.collection.JavaConverters._
   */
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
-  val tblProperties = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .getOrElse(Map.empty[String, String])
   val tableUtils: TableUtils = TableUtils(session)
   private val dailyStatsTable: String = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily"
   private val dailyStatsAvroTable: String = s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily_upload"
+  private val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
+    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
+    .orNull
 
   def dailyRun(stepDays: Option[Int] = None): Unit = {
     val unfilledRange = tableUtils.unfilledRange(dailyStatsTable, PartitionRange(null, endDate), Some(joinConf.metaData.outputTable))
@@ -58,10 +59,10 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, avroDf.schema)
           avroDf
             .union(metaDf).withColumn(Constants.PartitionColumn, lit(endDate))
-            .save(dailyStatsAvroTable, tblProperties)
+            .save(dailyStatsAvroTable, tableProps)
         }
         // TODO:Finalize some values before storing in warehouse for readability.
-        summaryKvRdd.toFlatDf.withTimeBasedColumn(Constants.PartitionColumn).save(dailyStatsTable)
+        summaryKvRdd.toFlatDf.withTimeBasedColumn(Constants.PartitionColumn).save(dailyStatsTable, tableProps)
         println(s"Finished range [${index +1}/${stepRanges.size}].")
     }
     println("Finished writing stats.")
