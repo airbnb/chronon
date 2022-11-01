@@ -14,6 +14,7 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
+import scala.util.Try
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -266,7 +267,17 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
 
     // First run command to archive tables that have changed semantically since the last run
     val jobRunTimestamp = Instant.now()
-    tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName, jobRunTimestamp)))
+    tablesToRecompute().foreach(_.foreach(tableName => {
+      val archiveTry = Try(tableUtils.archiveTableIfExists(tableName, jobRunTimestamp))
+      if (archiveTry.isFailure) {
+        println(
+          s"""Fail to archive table ${tableName}
+             |${archiveTry.failed.get.getMessage}
+             |Proceed to dropping the table instead.
+             |""".stripMargin)
+        tableUtils.dropTableIfExists(tableName)
+      }
+    }))
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)

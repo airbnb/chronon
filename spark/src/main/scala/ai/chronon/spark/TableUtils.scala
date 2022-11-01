@@ -300,6 +300,12 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  def dropTableIfExists(tableName: String): Unit = {
+    val command = s"DROP TABLE IF EXISTS $tableName"
+    println(s"Dropping table with command: $command")
+    sql(command)
+  }
+
   def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
     if (sparkSession.catalog.tableExists(tableName)) {
       val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
