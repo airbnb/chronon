@@ -1,11 +1,12 @@
+import os
 from setuptools import find_packages, setup
 
-
-with open("README.md", "r") as fh:
+current_dir = os.path.dirname(__file__)
+with open(os.path.join(current_dir, "README.md"), "r") as fh:
     long_description = fh.read()
 
 
-with open("requirements/base.in", "r") as infile:
+with open(os.path.join(current_dir, "requirements/base.in"), "r") as infile:
     basic_requirements = [line for line in infile]
 
 

@@ -18,6 +18,9 @@ api/py/.coverage
 api/py/htmlcov/
 **/derby.log
 
+# Documentation builds
+docs/build/
+
 # Python distribution and packaging
 api/py/dist/
 api/py/eggs/

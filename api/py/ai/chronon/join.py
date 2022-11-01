@@ -12,9 +12,28 @@ logging.basicConfig(level=logging.INFO)
 
 
 def JoinPart(group_by: api.GroupBy,
-             key_mapping: Dict[str, str] = None,  # mapping of key columns from the join
-             prefix: str = None  # all aggregations will be prefixed with that name
-             ) -> api.JoinPart:
+             key_mapping: Dict[str, str] = None,
+             prefix: str = None) -> api.JoinPart:
+    """
+    Specifies HOW to join the `left` of a Join with GroupBy's.
+
+    :param group_by:
+        The GroupBy object to join with. Keys on left are used to equi join with keys on right.
+        When left is entities all GroupBy's are computed as of midnight.
+        When left is events, we do a point-in-time join when right.accuracy == TEMPORAL OR right.source.topic != null
+    :type group_by: ai.chronon.api.GroupBy
+    :param key_mapping:
+        Names of keys don't always match on left and right, this mapping tells us how to map when they don't.
+    :type key_mapping: Dict[str, str]
+    :param prefix:
+        All the output columns of the groupBy will be prefixed with this string. This is used when you need to join
+        the same groupBy more than once with `left`. Say on the left you have seller and buyer, on the group you have
+        a user's avg_price, and you want to join the left (seller, buyer) with (seller_avg_price, buyer_avg_price) you
+        would use key_mapping and prefix parameters.
+    :return:
+        JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
+        components like GroupBys.
+    """
     # used for reset for next run
     import_copy = __builtins__['__import__']
     # get group_by's module info from garbage collector
@@ -59,6 +78,70 @@ def Join(left: api.Source,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          **kwargs
          ) -> api.Join:
+    """
+    Construct a join object. A join can pull together data from various GroupBy's both offline and online. This is also
+    the focal point for logging, data quality computation and monitoring. A join maps 1:1 to models in ML usage.
+
+    :param left:
+        The source on the left side, when Entities, all GroupBys are join with SNAPSHOT accuracy (midnight values).
+        When left is events, if on the right, either when GroupBy's are TEMPORAL, or when topic is specified, we perform
+        a TEMPORAL / point-in-time join.
+    :type left: ai.chronon.api.Source
+    :param right_parts:
+        The list of groupBy's to join with. GroupBy's are wrapped in a JoinPart, which contains additional information
+        on how to join the left side with the GroupBy.
+    :type right_parts: List[ai.chronon.api.JoinPart]
+    :param check_consistency:
+        If online serving data should be compared with backfill data - as online-offline-consistency metrics.
+        The metrics go into hive and your configured kv store for further visualization and monitoring.
+    :type check_consistency: bool
+    :param additional_args:
+        Additional args go into `customJson` of `ai.chronon.api.MetaData` within the `ai.chronon.api.Join` object.
+        This is a place for arbitrary information you want to tag your conf with.
+    :type additional_args: List[str]
+    :param additional_env:
+        Deprecated, see env
+    :type additional_env: List[str]
+    :param dependencies:
+        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for
+        Typically used by engines like airflow to create partition sensors.
+    :type dependencies: List[str]
+    :param online:
+        Should we upload this conf into kv store so that we can fetch/serve this join online.
+        Once Online is set to True, you ideally should not change the conf.
+    :type online: bool
+    :param production:
+        This when set can be integrated to trigger alerts. You will have to integrate this flag into your alerting
+        system yourself.
+    :type production: bool
+    :param output_namespace:
+        In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be
+        written into. You can set this at the teams.json level.
+    :type output_namespace: str
+    :param table_properties:
+        Specifies the properties on output hive tables. Can be specified in teams.json.
+    :param env:
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
+        These vars are set in run.py and the underlying spark_submit.sh.
+        There override vars set in teams.json/production/<MODE NAME>
+        The priority order (descending) is::
+
+            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+            var set here in Join's env param
+            var set in team.json/<team>/<production>/<MODE NAME>
+            var set in team.json/default/<production>/<MODE NAME>
+    :type env: Dict[str, Dict[str, str]]
+    :param lag:
+        Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
+        This is used by airflow integration to pick an older hive partition to wait on.
+    :param skew_keys:
+        While back-filling, if there are known irrelevant keys - like user_id = 0 / NULL etc. You can specify them here.
+        This is used to blacklist crawlers etc
+    :param sample_percent:
+        Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
+    :return:
+        A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
+    """
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)

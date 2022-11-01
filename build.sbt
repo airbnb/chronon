@@ -1,5 +1,6 @@
 import sbt.Keys._
 import sbt.Test
+import scala.sys.process._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -210,5 +211,18 @@ lazy val spark_embedded = (project in file("spark"))
     embeddedAssemblyStrategy,
     Test / test := {}
   )
+
+// Build Sphinx documentation
+lazy val sphinx = taskKey[Unit]("Build Sphinx Documentation")
+sphinx := {
+  // Sbt has limited support for Sphinx and thus we are using bash script to achieve the same.
+  val s: TaskStreams = streams.value
+  s.log.info("Building Sphinx documentation...")
+  if (("docs/build-sphinx.sh" !) == 0) {
+    s.log.success("Built Sphinx documentation")
+  } else {
+    throw new IllegalStateException("Sphinx build failed!")
+  }
+}
 
 exportJars := true

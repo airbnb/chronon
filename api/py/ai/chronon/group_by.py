@@ -107,10 +107,32 @@ def op_to_str(operation: OperationType):
     return ttypes.Operation._VALUES_TO_NAMES[operation].lower()
 
 
-def Aggregation(input_column: str = None,
-                operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-                windows: List[ttypes.Window] = None,
-                buckets: List[str] = None) -> ttypes.Aggregation:
+# See docs/Aggregations.md
+def Aggregation(
+    input_column: str = None,
+    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+    windows: List[ttypes.Window] = None,
+    buckets: List[str] = None) -> ttypes.Aggregation:
+    """
+    :param input_column:
+        Column on which the aggregation needs to be performed.
+        This should be one of the input columns specified on the keys of the `select` in the `Query`'s `Source`
+    :type input_column: str
+    :param operation:
+        Operation to use to aggregate the input columns. For example, MAX, MIN, COUNT
+        Some operations have arguments, like last_k, approx_percentiles etc.,
+        Defaults to "LAST".
+    :type operation: ttypes.Operation
+    :param windows:
+        Length to window to calculate the aggregates on.
+        Minimum window size is 1hr. Maximum can be arbitrary. When not defined, the computation is un-windowed.
+    :type windows: List[ttypes.Window]
+    :param buckets:
+        Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
+        Using this would create an output as a map of string to aggregate.
+    :type buckets: List[str]
+    :return: An aggregate defined with the specified operation.
+    """
     # Default to last
     operation = operation if operation is not None else Operation.LAST
     arg_map = {}
@@ -232,6 +254,92 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
             **kwargs) -> ttypes.GroupBy:
+    """
+
+    :param sources:
+        can be constructed as entities or events::
+
+            import ai.chronon.api.ttypes as chronon
+            events = chronon.Source(events=chronon.Events(
+                table=YOUR_TABLE,
+                topic=YOUR_TOPIC #  <- OPTIONAL for serving
+                query=chronon.Query(...)
+                isCumulative=False  # <- defaults to false.
+            ))
+            Or
+            entities = chronon.Source(events=chronon.Events(
+                snapshotTable=YOUR_TABLE,
+                mutationTopic=YOUR_TOPIC,
+                mutationTable=YOUR_MUTATION_TABLE
+                query=chronon.Query(...)
+            ))
+
+        Multiple sources can be supplied to backfill the historical values with their respective start and end
+        partitions. However, only one source is allowed to be a streaming one.
+    :type sources: List[ai.chronon.api.ttypes.Events|ai.chronon.api.ttypes.Entities]
+    :param keys:
+        List of primary keys that defines the data that needs to be collected in the result table. Similar to the
+        GroupBy in the SQL context.
+    :type keys: List[String]
+    :param aggregations:
+        List of aggregations that needs to be computed for the data following the grouping defined by the keys::
+
+            import ai.chronon.api.ttypes as chronon
+            aggregations = [
+                chronon.Aggregation(input_column="entity", operation=Operation.LAST),
+                chronon.Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)])
+            ],
+    :type aggregations: List[ai.chronon.api.ttypes.Aggregation]
+    :param online:
+        Should we upload the result data of this conf into the KV store so that we can fetch/serve this GroupBy online.
+        Once Online is set to True, you ideally should not change the conf.
+    :type online: bool
+    :param production:
+        This when set can be integrated to trigger alerts. You will have to integrate this flag into your alerting
+        system yourself.
+    :type production: bool
+    :param backfill_start_date:
+        Start date from which GroupBy data should be computed. This will determine how back of a time that Chronon would
+        goto to compute the resultant table and its aggregations.
+    :type backfill_start_date: str
+    :param dependencies:
+        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for
+        Typically used by engines like airflow to create partition sensors.
+    :type dependencies: List[str]
+    :param env:
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
+        These vars are set in run.py and the underlying spark_submit.sh.
+        There override vars set in teams.json/production/<MODE NAME>
+        The priority order (descending) is::
+
+            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+            var set here in Join's env param
+            var set in team.json/<team>/<production>/<MODE NAME>
+            var set in team.json/default/<production>/<MODE NAME>
+    :type env: Dict[str, Dict[str, str]]
+    :param table_properties:
+        Specifies the properties on output hive tables. Can be specified in teams.json.
+    :type table_properties: Dict[str, str]
+    :param output_namespace:
+        In backfill mode, we will produce data into hive. This represents the hive namespace that the data will be
+        written into. You can set this at the teams.json level.
+    :type output_namespace: str
+    :param accuracy:
+        Defines the computing accuracy of the GroupBy.
+        If "Snapshot" is selected, the aggregations are computed based on the partition identifier - "ds" time column.
+        If "Temporal" is selected, the aggregations are computed based on the event time - "ts" time column.
+    :type accuracy: ai.chronon.api.ttypes.SNAPSHOT or ai.chronon.api.ttypes.TEMPORAL
+    :param lag:
+        Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
+        This is used by airflow integration to pick an older hive partition to wait on.
+    :type lag: int
+    :param kwargs:
+        Additional properties that would be passed to run.py if specified under additional_args property.
+        And provides an option to pass custom values to the processing logic.
+    :type kwargs: Dict[str, str]
+    :return:
+        A GroupBy object containing specified aggregations.
+    """
     assert sources, "Sources are not specified"
 
     agg_inputs = []
