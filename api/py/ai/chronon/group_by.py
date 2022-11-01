@@ -109,17 +109,31 @@ def op_to_str(operation: OperationType):
 
 # See docs/Aggregations.md
 def Aggregation(
-                # input columns specified on the keys of the `select` in the `Query`'s `Source`
-                input_column: str = None,
-                # operation to use to aggregate the input columns on
-                # some operations have arguments, like last_k, approx_percentiles etc.,
-                operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-                # minimum window size is 1hr. Maximum can be arbitrary. When not defined, the computation
-                # is un-windowed.
-                windows: List[ttypes.Window] = None,
-                # besides the GroupBy.keys, this is another level of keys for just this aggregation
-                # This means the output is going to be a map of string to aggregate.
-                buckets: List[str] = None) -> ttypes.Aggregation:
+    input_column: str = None,
+    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+    windows: List[ttypes.Window] = None,
+    buckets: List[str] = None) -> ttypes.Aggregation:
+    """
+
+    :param input_column:
+        Column on which the aggregation needs to be performed.
+        This should be one of the input columns specified on the keys of the `select` in the `Query`'s `Source`
+    :type input_column: str
+    :param operation:
+        Operation to use to aggregate the input columns. For example, MAX, MIN, COUNT
+        Some operations have arguments, like last_k, approx_percentiles etc.,
+        Defaults to "LAST".
+    :type operation: ttypes.Operation
+    :param windows:
+        Length to window to calculate the aggregates on.
+        Minimum window size is 1hr. Maximum can be arbitrary. When not defined, the computation is un-windowed.
+    :type windows: List[ttypes.Window]
+    :param buckets:
+        Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
+        Using this would create an output as a map of string to aggregate.
+    :type buckets: List[str]
+    :return: An aggregate defined with the specified operation.
+    """
     # Default to last
     operation = operation if operation is not None else Operation.LAST
     arg_map = {}
@@ -269,14 +283,13 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         GroupBy in the SQL context.
     :type keys: List[String]
     :param aggregations:
-        List of aggregations that needs to be computed for the data following the grouping defined by the keys.
+        List of aggregations that needs to be computed for the data following the grouping defined by the keys::
 
-        import ai.chronon.api.ttypes as chronon
-        aggregations = [
-            chronon.Aggregation(input_column="entity", operation=Operation.LAST),
-            chronon.Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)]),
-        ],
-
+            import ai.chronon.api.ttypes as chronon
+            aggregations = [
+                chronon.Aggregation(input_column="entity", operation=Operation.LAST),
+                chronon.Aggregation(input_column="entity", operation=Operation.LAST, windows=[Window(7, TimeUnit.DAYS)])
+            ],
     :type aggregations: List[ai.chronon.api.ttypes.Aggregation]
     :param online:
         Should we upload the result data of this conf into the KV store so that we can fetch/serve this GroupBy online.
@@ -298,7 +311,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
         These vars are set in run.py and the underlying spark_submit.sh.
         There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is:
+        The priority order (descending) is::
+
             var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
             var set here in Join's env param
             var set in team.json/<team>/<production>/<MODE NAME>

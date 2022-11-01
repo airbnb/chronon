@@ -17,11 +17,12 @@ def Query(selects: Dict[str, str] = None,
     for TEMPORAL entities.
 
     :param selects: Spark sql expressions with only arithmetic, function application & inline lambdas.
-        You can also apply udfs see setups param below.
-        Example: {
-            "alias": "built_in_function(col1) * my_udf(col2)",
-            "alias1": "aggregate(array_col, 0, (acc, x) -> acc + x)"
-        }
+        You can also apply udfs see setups param below.::
+
+            Example: {
+                "alias": "built_in_function(col1) * my_udf(col2)",
+                "alias1": "aggregate(array_col, 0, (acc, x) -> acc + x)"
+            }
         See: https://spark.apache.org/docs/latest/api/sql/#built-in-functions
         When none, we will assume that no transformations are needed and will pick columns necessary for aggregations.
     :type selects: List[str], optional

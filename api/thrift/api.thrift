@@ -132,27 +132,31 @@ struct Window {
 /**
     Chronon provides a powerful aggregations primitive - that takes the familiar aggregation operation, via groupBy in
     SQL and extends it with three things - windowing, bucketing and auto-explode.
-      0. Input column - the column as specified in source.query.selects - on which we need to aggregate with.
 
-      1. Operation - If the input
-                        type is a list of integers and you intend to perform a sum of the integers inside, chronon will
-                        automatically support
-      1. Time windowing - For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas,
-                          the tail only hops ahead, at discrete points in time. Hop is determined by the window
-                          size automatically. The maximum hop size is 1/12 of window size. You can specify multiple such
-                          windows at once.
-                              Window > 12 days  -> Hop Size = 1 day
-                              Window > 12 hours -> Hop Size = 1 hr
-                              Window > 1hr      -> Hop Size = 5 minutes
-      2. Bucketing - This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view"
-                     count by "item_category". This will produce one row per user, with column containing map of "item_category"
-                     to "view_count". You can specify multiple such buckets at once.
-    :param snapshotTable: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
-    :param mutationTable: Topic is a kafka table. The table contains all the events historically came through this topic.
-    :param mutationTopic: The logic used to scan both the table and the topic. Contains row level transformations and filtering
-                  expressed as Spark SQL statements.
-    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
-                         events since the begininng. The key property is that the events are not mutated across partitions.
+    :param inputColumn:
+        The column as specified in source.query.selects - on which we need to aggregate with.
+
+    :param operation:
+        The type of aggregation that needs to be performed on the inputColumn.
+
+    :param argMap:
+        Extra arguments that needs to be passed to some of the operations like LAST_K, APPROX_PERCENTILE.
+
+    :param windows:
+        For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas,
+        the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically.
+        The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
+
+            Window > 12 days  -> Hop Size = 1 day
+
+            Window > 12 hours -> Hop Size = 1 hr
+
+            Window > 1hr      -> Hop Size = 5 minutes
+
+    :param buckets:
+        This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view"
+        count by "item_category". This will produce one row per user, with column containing map of "item_category"
+        to "view_count". You can specify multiple such buckets at once.
  */
 struct Aggregation {
     1: optional string inputColumn

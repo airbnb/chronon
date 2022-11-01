@@ -9,3 +9,6 @@ Python API
 
 .. automodule:: ai.chronon.query
    :members:
+
+.. automodule:: ai.chronon.api.ttypes
+   :members: StagingQuery, EventSource, EntitySource, Window, Aggregation

@@ -124,7 +124,8 @@ def Join(left: api.Source,
         This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
         These vars are set in run.py and the underlying spark_submit.sh.
         There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is:
+        The priority order (descending) is::
+
             var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
             var set here in Join's env param
             var set in team.json/<team>/<production>/<MODE NAME>
