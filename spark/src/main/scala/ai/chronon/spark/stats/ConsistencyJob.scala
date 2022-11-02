@@ -1,10 +1,10 @@
-package ai.chronon.spark.consistency
+package ai.chronon.spark.stats
 
 import ai.chronon
 import ai.chronon.api.Extensions._
+import ai.chronon.spark.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
-import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
 
@@ -13,8 +13,6 @@ import scala.collection.JavaConverters._
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, impl: Api) extends Serializable {
 
-  val kvStore: KVStore = impl.genKvStore
-  val metadataStore = new MetadataStore(kvStore, timeoutMillis = 10000)
   val fetcher: Fetcher = impl.fetcher
   val joinCodec = fetcher.getJoinCodecs(joinConf.metaData.nameToFilePath).get
   val tblProperties = Option(joinConf.metaData.tableProperties)
@@ -22,14 +20,13 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
     .getOrElse(Map.empty[String, String])
   val tableUtils: TableUtils = TableUtils(session)
 
-  // replace join's left side with the logged table
+  // Replace join's left side with the logged table events to determine offline values of the aggregations.
   private def buildComparisonJoin(): Join = {
     val copiedJoin = joinConf.deepCopy()
     val loggedSource: Source = new Source()
     val loggedEvents: EventSource = new EventSource()
     val query = new Query()
     val mapping = joinCodec.keyFields.map(_.name).map(k => k -> k) ++
-      joinCodec.valueFields.map(_.name).map(v => s"$v${ConsistencyMetrics.loggedSuffix}" -> v) ++
       JoinCodec.timeFields.map(_.name).map(t => t -> t)
     val selects = new util.HashMap[String, String]()
     mapping.foreach { case (key, value) => selects.put(key, value) }
@@ -59,12 +56,9 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, imp
                                             Some(joinConf.metaData.comparisonTable))
     if (unfilled.isEmpty) return null
     val comparisonDf = tableUtils.sql(unfilled.get.genScanQuery(null, joinConf.metaData.comparisonTable))
-    val renamedDf =
-      joinCodec.valueFields.foldLeft(comparisonDf)((df, field) =>
-        df.withColumnRenamed(field.name, s"${field.name}${ConsistencyMetrics.backfilledSuffix}"))
-    val (df, metrics) = ConsistencyMetrics.compute(joinCodec.valueFields, renamedDf)
+    val loggedDf = tableUtils.sql(unfilled.get.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
+    val (df, metrics) = CompareJob.compare(comparisonDf, loggedDf, keys = JoinCodec.timeFields.map(_.name))
     df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
-    metadataStore.putConsistencyMetrics(joinConf, metrics)
     metrics
   }
 }

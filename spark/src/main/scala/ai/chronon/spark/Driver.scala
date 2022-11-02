@@ -4,8 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.consistency.ConsistencyJob
-import ai.chronon.spark.stats.SummaryJob
+import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
