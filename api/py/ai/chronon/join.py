@@ -62,7 +62,7 @@ def JoinPart(group_by: api.GroupBy,
     return join_part
 
 
-FieldsType = List[Tuple(str, api.TDataType)]
+FieldsType = List[Tuple[str, api.TDataType]]
 
 
 class DataType():

@@ -154,6 +154,7 @@ class Fetcher(val kvStore: KVStore,
   })
 
   override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+    val ts = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {

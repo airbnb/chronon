@@ -169,6 +169,9 @@ struct Aggregation {
     2: optional Operation operation
     3: optional map<string, string> argMap
     4: optional list<Window> windows
+    /**
+    * This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    **/
     5: optional list<string> buckets
 }
 

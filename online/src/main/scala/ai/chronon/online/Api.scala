@@ -136,15 +136,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def genKvStore: KVStore
 
-  def externalRegistry: ExternalSourceRegistry;
-
-  type FetchFunction: Map[String, Any] => Future[Map[String, Any]]
-
-  def addExternalSource(name: String, fetchFunction: FetchFunction): Unit = {
-    externalRegistry.put(name, fetchFunction)
-  }
-
-  private val externalRegistry: mutable.Map[String, FetchFunction]
+  def externalRegistry: ExternalSourceRegistry
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
