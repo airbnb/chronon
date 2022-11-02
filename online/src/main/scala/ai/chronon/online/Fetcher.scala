@@ -48,6 +48,11 @@ case class JoinCodec(conf: JoinOps,
   }
   lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
 
+  val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
+  val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
+
+  val keyFields: Array[StructField] = keySchema.fields
+  val valueFields: Array[StructField] = valueSchema.fields
   lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap
 }
@@ -287,25 +292,6 @@ class Fetcher(val kvStore: KVStore,
       println(s"logging failed due to ${exception.traceString}")
     }
     resp
-  }
-
-  private def encode(schema: StructType,
-                     codec: AvroCodec,
-                     dataMap: Map[String, AnyRef],
-                     cast: Boolean = false): Array[Byte] = {
-    val data = schema.fields.map {
-      case StructField(name, typ) =>
-        val elem = dataMap.getOrElse(name, null)
-        // handle cases where a join contains keys of the same name but different types
-        // e.g. `listing` is a long in one groupby, but a string in another groupby
-        if (cast) {
-          ColumnAggregator.castTo(elem, typ)
-        } else {
-          elem
-        }
-    }
-    val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
-    codec.encodeBinary(avroRecord)
   }
 
   // Pulling external features in a batched fashion across services in-parallel
