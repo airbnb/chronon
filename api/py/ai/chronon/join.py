@@ -6,7 +6,7 @@ import gc
 import importlib
 import json
 import logging
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Tuple
 
 logging.basicConfig(level=logging.INFO)
 
@@ -170,19 +170,19 @@ def ExternalPart(source: api.ExternalSource,
         `(mapping={vendor: user}, prefix=vendor)`
     another for buyer.
 
-    Internally Chronon will batch these requests to the service and parallelize
-    fetching from different services, while de-duplicating requests across a
-    batch of Joins.
-
     This doesn't have any implications offline besides logging. "right_parts"
     can be both backfilled and logged. Whereas, "external_parts" can only be
     logged. If you need the ability to backfill an external source, look into
     creating an EntitySource with mutation data for point-in-time-correctness.
 
-    The implementation of how to fetch is a scala/java api that needs to be
-    registered while implementing ai.chronon.online.Api with the name used
-    in the ExternalSource. This is meant for re-usability of external source
-    definitions.
+    :param source: External source to join with
+    :param key_mapping: How to map the keys from the query/left side to the
+                        source
+    :param prefix: Sometime you want to use the same source to fetch data for
+                   different entities in the query. Eg., A transaction
+                   between a buyer and a seller might query "user information"
+                   serivce/source that has information about both buyer &
+                   seller
     """
     return api.ExternalPart(
         source=source,
