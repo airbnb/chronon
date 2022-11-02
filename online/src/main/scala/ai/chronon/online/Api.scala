@@ -49,7 +49,6 @@ trait KVStore {
     }
   }
 
-  // helper methods to do single put and single get
   def get(request: GetRequest): Future[GetResponse] = {
     multiGet(Seq(request))
       .map(_.head)

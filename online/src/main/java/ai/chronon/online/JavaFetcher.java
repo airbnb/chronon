@@ -15,7 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 public class JavaFetcher  {
-  public static final Long DEFAULT_TIMEOUT = 10000L;
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {

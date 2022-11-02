@@ -260,7 +260,7 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
-    // users can register external sources into Api implementation. Zipline fetcher can invoke the implementation.
+    // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
 }
