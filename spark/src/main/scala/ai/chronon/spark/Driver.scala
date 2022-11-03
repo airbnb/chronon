@@ -131,7 +131,7 @@ object Driver {
   }
 
   object MetadataExport {
-    class Args extends Subcommand("metadataExport") with OfflineSubcommand {
+    class Args extends Subcommand("metadata-export") with OfflineSubcommand {
       val inputRootPath: ScallopOption[String] =
         opt[String](required = true,
           descr = "Base path of config repo to export from")
