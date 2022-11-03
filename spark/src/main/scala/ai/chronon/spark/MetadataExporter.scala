@@ -57,12 +57,12 @@ object MetadataExporter {
         writeGroupByOutput(path, outputPath + GROUPBY_PATH_SUFFIX)
         (path, true, None)
       } catch {
-        case exception: Throwable => (path, false, exception.getMessage)
+        case exception: Throwable => (path, false, exception.getStackTrace)
       }
     }
-    val failedGroupBys = processSuccess.filter(!_._2)
+    val failuresAndTraces = processSuccess.filter(!_._2)
     println(s"Successfully processed ${processSuccess.filter(_._2).length} GroupBys \n " +
-      s"Failed to process ${failedGroupBys.length} GroupBys: \n $failedGroupBys")
+      s"Failed to process ${failuresAndTraces.length} GroupBys: \n $failuresAndTraces \n ")
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
