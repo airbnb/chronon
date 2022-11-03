@@ -452,7 +452,7 @@ object Extensions {
     def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
       KeyMappingHelper.apply(query, rightToLeft, keyNames)
 
-    private lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
+    lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
     private lazy val keyNames = externalPart.source.keyNames
   }
 

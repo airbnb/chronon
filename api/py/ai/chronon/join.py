@@ -1,3 +1,4 @@
+from collections import Counter
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
@@ -153,6 +154,18 @@ def ExternalSource(name: str,
         metadata=api.MetaData(name=name, team=team, customJson=custom_json),
         keySchema=DataType.STRUCT("ext_{name}_keys", *key_fields),
         valueSchema=DataType.STRUCT("ext_{name}_values", *value_fields),
+    )
+
+
+def ContextualSource(fields: FieldsType) -> api.ExternalSource:
+    """
+    Contextual source values are passed along for logging. No external request is
+    actually made.
+    """
+    return api.ExternalSource(
+        metadata=api.MetaData(name="contextual", team="default"),
+        keySchema=DataType.STRUCT("contextual_keys", *fields),
+        valueSchema=DataType.STRUCT("contexual_values", *fields),
     )
 
 
@@ -324,6 +337,16 @@ def Join(left: api.Source,
         modeToEnvMap=env,
         samplePercent=sample_percent
     )
+
+    # external parts need to be unique on (prefix, part.source.metaData.name)
+    if online_external_parts:
+        count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
+        has_duplicates = False
+        for key, count in count_map.items():
+            if count > 1:
+                has_duplicates = True
+                print(f"Found {count - 1} duplicate(s) for external part {key}")
+        assert(not has_duplicates)
 
     return api.Join(
         left=updated_left,

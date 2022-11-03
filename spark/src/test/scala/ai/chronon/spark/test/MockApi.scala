@@ -111,7 +111,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   val schemaTable: String = s"$namespace.mock_schema_table"
 
   def flushLoggedValues: Seq[LoggableResponseBase64] = {
-    val loggedValues = loggedResponseList.iterator().asScala.toSeq
+    val loggedValues = loggedResponseList.iterator().asScala.toArray
     loggedResponseList.clear()
     loggedValues
   }

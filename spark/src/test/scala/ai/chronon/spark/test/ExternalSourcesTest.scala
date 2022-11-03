@@ -2,9 +2,11 @@ package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.{Builders, Constants, IntType, StringType, StructField, StructType}
 import ai.chronon.online.Fetcher.Request
+import ai.chronon.online.JoinCodec
 import org.junit.Assert._
 import org.junit.Test
 
+import java.util.Base64
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -95,7 +97,7 @@ class ExternalSourcesTest {
               )))
     val responsesF = fetcher.fetchJoin(requests)
     val responses = Await.result(responsesF, Duration(10, SECONDS))
-    val numbers = mutable.Buffer.empty[Int]
+    val numbers = mutable.HashSet.empty[Int]
     val keys = Set(
       "ext_p1_plus_one_number",
       "ext_p2_plus_one_number",
@@ -108,6 +110,36 @@ class ExternalSourcesTest {
     responses.map(_.values).foreach { m =>
       assertTrue(m.isSuccess)
       assertEquals(m.get.keysIterator.toSet, keys)
+      numbers.add(m.get("ext_p1_plus_one_number").asInstanceOf[Int])
     }
+    assert(numbers == (11 until 22).toSet)
+    val logs = mockApi.flushLoggedValues
+    val controlEvent = logs.find(_.name == Constants.SchemaPublishEvent).get
+    val codec = JoinCodec.fromLoggingSchema(
+      new String(Base64.getDecoder.decode(controlEvent.valueBase64), Constants.UTF8),
+      join
+    )
+    assertEquals(
+      Set(
+        "number",
+        "str",
+        "context_1",
+        "context_2"
+      ),
+      codec.keys.toSet
+    )
+    assertEquals(
+      Set(
+        "ext_p1_plus_one_number",
+        "ext_p2_plus_one_number",
+        "ext_always_fails_str",
+        "ext_p3_java_plus_one_number",
+        "ext_p3_java_plus_one_number_mapped",
+        "ext_contextual_context_1",
+        "ext_contextual_context_2"
+      ),
+      codec.values.toSet
+    )
+    assertEquals(responses.length + 1, logs.length)
   }
 }

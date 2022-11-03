@@ -99,35 +99,35 @@ class Fetcher(val kvStore: KVStore,
     val joinConfTry = getJoinConf(joinName)
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
-    joinConfTry.map {
-      joinConf =>
-        joinConf.joinPartOps.foreach {
-          joinPart =>
-            val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
-            servingInfoTry
-              .map {
-                servingInfo =>
-                  val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-                  joinPart.leftToRight
-                    .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
-                    .foreach {
-                      case (name, dType) =>
-                        val keyField = StructField(name, dType)
-                        keyFields.add(keyField)
-                    }
-                  val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
-                    servingInfo.selectedChrononSchema
-                  } else {
-                    servingInfo.outputChrononSchema
+    joinConfTry.map { joinConf =>
+      joinConf.joinPartOps.foreach {
+        joinPart =>
+          val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
+          servingInfoTry
+            .map {
+              servingInfo =>
+                val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+                joinPart.leftToRight
+                  .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
+                  .foreach {
+                    case (name, dType) =>
+                      val keyField = StructField(name, dType)
+                      keyFields.add(keyField)
                   }
-                  baseValueSchema.fields.foreach { sf =>
-                    valueFields.append(joinPart.constructJoinPartSchema(sf))
-                  }
-              }
-        }
+                val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+                  servingInfo.selectedChrononSchema
+                } else {
+                  servingInfo.outputChrononSchema
+                }
+                baseValueSchema.fields.foreach { sf =>
+                  valueFields.append(joinPart.constructJoinPartSchema(sf))
+                }
+            }
+      }
 
-        // gather key schema and value schema from external sources.
-        Option(joinConf.join.onlineExternalParts).foreach { externals =>
+      // gather key schema and value schema from external sources.
+      Option(joinConf.join.onlineExternalParts).foreach {
+        externals =>
           externals
             .iterator()
             .asScala
@@ -141,18 +141,19 @@ class Fetcher(val kvStore: KVStore,
                   .fields
                   .map(f => StructField(prefix + f.name, f.fieldType))
 
-              buildFields(source.getKeySchema).foreach(f => keyFields.add(f))
+              buildFields(source.getKeySchema).foreach(f =>
+                keyFields.add(f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))))
               buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
             }
-        }
+      }
 
-        val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
-        val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
-        val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-        val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
-        val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
-        logControlEvent(joinCodec)
-        joinCodec
+      val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
+      val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
+      val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
+      val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+      val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+      logControlEvent(joinCodec)
+      joinCodec
     }
   })
 
