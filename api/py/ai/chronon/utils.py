@@ -140,21 +140,19 @@ def get_dependencies(
         dependencies: List[str] = None,
         meta_data: api.MetaData = None,
         lag: int = 0) -> List[str]:
-    if meta_data is not None:
-        deps = meta_data.dependencies
-    else:
-        deps = dependencies
     table = get_table(src)
     query = get_query(src)
     start = query.startPartition
     end = query.endPartition
-    if deps:
+    if meta_data is not None:
+        result = [json.loads(dep) for dep in meta_data.dependencies]
+    elif dependencies:
         result = [{
             "name": wait_for_name(dep, table),
             "spec": dep,
-            "start": query.startPartition,
-            "end": query.endPartition
-        } for dep in deps]
+            "start": start,
+            "end": end
+        } for dep in dependencies]
     else:
         if src.entities and src.entities.mutationTable:
             # Opting to use no lag for all use cases because that the "safe catch-all" case when
