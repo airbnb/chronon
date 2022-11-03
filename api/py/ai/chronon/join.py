@@ -110,6 +110,8 @@ class DataType():
         )
 
 
+# TODO: custom_json can take privacy information per column, we can propagate
+# it into a governance system
 def ExternalSource(name: str,
                    team: str,
                    key_fields: FieldsType,
@@ -141,7 +143,7 @@ def ExternalSource(name: str,
     :type value_fields: List of tuples of string and DataType. This is what
         the ExternalSource handler will respond with.
         Eg.,
-        ```[('value0', DataType.INT,
+        ```[('value0', DataType.INT),
             ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
             ('value2', DataType.STRUCT(
                 name = 'Context',
@@ -150,6 +152,7 @@ def ExternalSource(name: str,
             ))]
         ```
     """
+    assert name != "contextual", "Please use `ContextualSource`"
     return api.ExternalSource(
         metadata=api.MetaData(name=name, team=team, customJson=custom_json),
         keySchema=DataType.STRUCT("ext_{name}_keys", *key_fields),
@@ -180,7 +183,7 @@ def ExternalPart(source: api.ExternalSource,
     external source's keys. "vendor" and "buyer" on left side (query map)
     could both map to a "user" in an account data external source. You would
     create one ExternalPart for vendor with params:
-        `(mapping={vendor: user}, prefix=vendor)`
+        `(key_mapping={vendor: user}, prefix=vendor)`
     another for buyer.
 
     This doesn't have any implications offline besides logging. "right_parts"

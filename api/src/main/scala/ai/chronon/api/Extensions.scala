@@ -438,19 +438,25 @@ object Extensions {
             .map({ case (key, value) => value -> key }))
         .getOrElse(Map.empty[String, String])
     }
-
-    def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
-      // TODO: Long-term we could bring in derivations here.
-      right_keys.map { k => k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef] }.toMap
-    }
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
     lazy val fullName: String =
       "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.metadata.name.sanitize
 
+    def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
+      // TODO: Long-term we could bring in derivations here.
+      right_keys.map { k =>
+        val queryKey = flipped.getOrElse(k, k)
+        if (!flipped.contains(queryKey)) {
+          throw new RuntimeException(s"Missing required key, ${queryKey} for ${externalPart.source.metadata.name}")
+        }
+        k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef]
+      }.toMap
+    }
+
     def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
-      KeyMappingHelper.apply(query, rightToLeft, keyNames)
+      apply(query, rightToLeft, keyNames)
 
     lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
     private lazy val keyNames = externalPart.source.keyNames

@@ -30,6 +30,10 @@ class ExternalSourceRegistry {
     handlerMap.put(name, handler)
   }
 
+  // TODO: validation of externally fetched data
+  // 1. keys match
+  // 2. report missing & extra values
+  // 3. schema integrity of returned values
   def fetchRequests(requests: Seq[Request], context: Metrics.Context)(implicit
       ec: ExecutionContext): Future[Seq[Response]] = {
     val startTime = System.currentTimeMillis()
