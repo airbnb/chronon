@@ -342,7 +342,6 @@ class FetcherTest extends TestCase {
       .events(spark, queryCols, rowCount, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
-      .withColumnRenamed("contextual_col", "vendor_id")
     queriesDf.show()
     queriesDf.save(queriesTable)
 

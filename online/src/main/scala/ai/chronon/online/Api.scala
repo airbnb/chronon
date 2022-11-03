@@ -151,8 +151,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
-  def logTable: String
-
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
     new Fetcher(genKvStore,
