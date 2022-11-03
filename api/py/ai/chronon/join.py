@@ -342,11 +342,11 @@ def Join(left: api.Source,
     if online_external_parts:
         count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
         has_duplicates = False
-        for key, count in count_map.items():
+        for (key, count) in count_map.items():
             if count > 1:
                 has_duplicates = True
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
-        assert(not has_duplicates)
+        assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
     return api.Join(
         left=updated_left,

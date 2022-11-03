@@ -59,7 +59,7 @@ public abstract class JTry<V> {
 
         @Override
         public Exception getException() {
-            return null;
+            return exception;
         }
 
         @Override
