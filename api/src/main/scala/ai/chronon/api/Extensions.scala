@@ -448,7 +448,7 @@ object Extensions {
       // TODO: Long-term we could bring in derivations here.
       right_keys.map { k =>
         val queryKey = flipped.getOrElse(k, k)
-        if (!flipped.contains(queryKey)) {
+        if (!query.contains(queryKey)) {
           throw new RuntimeException(s"Missing required key, ${queryKey} for ${externalPart.source.metadata.name}")
         }
         k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef]
