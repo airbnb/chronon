@@ -29,20 +29,14 @@ public class JavaRequest {
     }
   }
 
-  public Fetcher.Request toScalaRequest(Boolean isGroupBy) {
+  public static JavaRequest fromScalaRequest(Fetcher.Request scalaRequest) {
+    return new JavaRequest(scalaRequest);
+  }
+
+  public Fetcher.Request toScalaRequest() {
     scala.collection.immutable.Map<String, Object> scalaKeys = null;
     if (keys != null) {
       scalaKeys = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(keys);
-    }
-    String gb= null;
-    String join= null;
-    String method;
-    if (isGroupBy) {
-      gb = this.name;
-      method = "fetchGroupBys";
-    } else {
-      join = this.name;
-      method = "fetchJoin";
     }
 
     return new Fetcher.Request(

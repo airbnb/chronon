@@ -1,5 +1,6 @@
 package ai.chronon.api
 
+import ai.chronon.api.DataType.toTDataType
 import ai.chronon.api.Extensions.WindowUtils
 
 import scala.collection.JavaConverters._
@@ -136,12 +137,42 @@ object Builders {
   }
 
   object Join {
-    def apply(metaData: MetaData = null, left: Source = null, joinParts: Seq[JoinPart] = null): Join = {
+    def apply(metaData: MetaData = null,
+              left: Source = null,
+              joinParts: Seq[JoinPart] = null,
+              externalParts: Seq[ExternalPart] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
       if (joinParts != null)
         result.setJoinParts(joinParts.asJava)
+      if (externalParts != null)
+        result.setOnlineExternalParts(externalParts.asJava)
+      result
+    }
+  }
+
+  object ExternalSource {
+    def apply(metadata: MetaData, keySchema: DataType, valueSchema: DataType): ExternalSource = {
+      val result = new ExternalSource()
+      result.setMetadata(metadata)
+      result.setKeySchema(toTDataType(keySchema))
+      result.setValueSchema(toTDataType(valueSchema))
+      result
+    }
+  }
+
+  object ExternalPart {
+    def apply(
+        externalSource: ExternalSource,
+        keyMapping: Map[String, String] = null,
+        prefix: String = null
+    ): ExternalPart = {
+      val result = new ExternalPart()
+      result.setSource(externalSource)
+      if (keyMapping != null)
+        result.setKeyMapping(keyMapping.asJava)
+      result.setPrefix(prefix)
       result
     }
   }

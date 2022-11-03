@@ -108,11 +108,10 @@ def op_to_str(operation: OperationType):
 
 
 # See docs/Aggregations.md
-def Aggregation(
-    input_column: str = None,
-    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-    windows: List[ttypes.Window] = None,
-    buckets: List[str] = None) -> ttypes.Aggregation:
+def Aggregation(input_column: str = None,
+                operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+                windows: List[ttypes.Window] = None,
+                buckets: List[str] = None) -> ttypes.Aggregation:
     """
     :param input_column:
         Column on which the aggregation needs to be performed.

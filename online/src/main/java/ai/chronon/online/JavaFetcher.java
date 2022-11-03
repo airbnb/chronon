@@ -15,23 +15,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 public class JavaFetcher  {
-  public static final Long DEFAULT_TIMEOUT = 10000L;
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false);
-  }
-
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, boolean debug) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, debug);
-  }
-
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Consumer<LoggableResponse> logFunc) {
-    this(kvStore, metaDataSet, DEFAULT_TIMEOUT, logFunc);
-  }
-
-  public JavaFetcher(KVStore kvStore, Consumer<LoggableResponse> logFunc) {
-    this(kvStore, Constants.ChrononMetadataKey(), DEFAULT_TIMEOUT, logFunc);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
@@ -50,10 +37,10 @@ public class JavaFetcher  {
         .thenApply(JavaFetcher::toJavaResponses);
   }
 
-  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests, Boolean isGroupBy) {
+  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
     ArrayBuffer<Request> scalaRequests = new ArrayBuffer<>();
     for (JavaRequest request : requests) {
-      Request convertedRequest = request.toScalaRequest(isGroupBy);
+      Request convertedRequest = request.toScalaRequest();
       scalaRequests.$plus$eq(convertedRequest);
     }
     return scalaRequests.toSeq();
@@ -61,13 +48,13 @@ public class JavaFetcher  {
 
   public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests, true));
+    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }
 
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
-    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests, false));
+    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
   }

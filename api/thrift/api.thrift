@@ -83,6 +83,12 @@ struct EntitySource {
     4: optional Query query
 }
 
+struct ExternalSource {
+    1: optional MetaData metadata
+    2: optional TDataType keySchema
+    3: optional TDataType valueSchema
+}
+
 union Source {
     1: EventSource events
     2: EntitySource entities
@@ -163,6 +169,9 @@ struct Aggregation {
     2: optional Operation operation
     3: optional map<string, string> argMap
     4: optional list<Window> windows
+    /**
+    * This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    **/
     5: optional list<string> buckets
 }
 
@@ -229,8 +238,16 @@ struct AggregationSelector {
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors
+    3: optional list<AggregationSelector> selectors # deprecated
     4: optional string prefix
+}
+
+struct ExternalPart {
+    1: optional ExternalSource source
+    // what keys on the left becomes what keys in the external source
+    // currently this only supports renaming, in the future this will run catalyst expressions
+    2: optional map<string, string> keyMapping
+    3: optional string prefix
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -243,6 +260,9 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
+    // This is applicable only for online fetching. Offline this will not be produce any values.
+    5: optional list<ExternalPart> onlineExternalParts
 }
 
 

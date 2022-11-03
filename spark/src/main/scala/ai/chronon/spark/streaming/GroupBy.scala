@@ -61,7 +61,7 @@ class GroupBy(inputStream: DataFrame,
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val kvStore = onlineImpl.genKvStore
-    val fetcher = new Fetcher(kvStore)
+    val fetcher = onlineImpl.buildFetcher(local)
     val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
@@ -130,7 +130,7 @@ class GroupBy(inputStream: DataFrame,
 
     val keyZSchema: api.StructType = groupByServingInfo.keyChrononSchema
     val valueZSchema: api.StructType = groupByConf.dataModel match {
-      case chronon.api.DataModel.Events => groupByServingInfo.valueChrononSchema
+      case chronon.api.DataModel.Events   => groupByServingInfo.valueChrononSchema
       case chronon.api.DataModel.Entities => groupByServingInfo.mutationValueChrononSchema
     }
 

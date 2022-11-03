@@ -26,7 +26,7 @@ import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-import scala.util.Try
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
@@ -386,8 +386,10 @@ class FetcherTest extends TestCase {
             FutureConverters
               .toScala(javaResponse)
               .map(_.asScala.map(jres =>
-                Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
-                         Try(jres.values.asScala.toMap))))
+                Response(
+                  Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                  jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+                )))
           } else {
             fetcher.fetchJoin(r)
           }

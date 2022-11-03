@@ -5,6 +5,7 @@ import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
 import java.util.concurrent.Executors
 import java.util.function.Consumer
+import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -33,14 +34,6 @@ trait KVStore {
   def multiPut(keyValueDatasets: Seq[PutRequest]): Future[Seq[Boolean]]
 
   def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit
-  // helper methods to do single put and single get
-  def get(request: GetRequest): Future[GetResponse] =
-    multiGet(Seq(request)).map(_.head).recover {
-      case e: java.util.NoSuchElementException =>
-        println(
-          s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
-        throw e
-    }
 
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
@@ -54,6 +47,17 @@ trait KVStore {
     } else {
       Success(new String(response.latest.get.bytes, Constants.UTF8))
     }
+  }
+
+  def get(request: GetRequest): Future[GetResponse] = {
+    multiGet(Seq(request))
+      .map(_.head)
+      .recover {
+        case e: java.util.NoSuchElementException =>
+          println(
+            s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
+          throw e
+      }
   }
 }
 
@@ -91,20 +95,47 @@ trait KVStore {
   */
 case class Mutation(schema: StructType = null, before: Array[Any] = null, after: Array[Any] = null)
 
-case class LoggableResponse(keyBytes: Array[Byte], valueBytes: Array[Byte], joinName: String, tsMillis: Long, schemaHash: String)
+case class LoggableResponse(keyBytes: Array[Byte],
+                            valueBytes: Array[Byte],
+                            joinName: String,
+                            tsMillis: Long,
+                            schemaHash: String)
 
-case class LoggableResponseBase64(keyBase64: String, valueBase64: String, name: String, tsMillis: Long, schemaHash: String)
+case class LoggableResponseBase64(keyBase64: String,
+                                  valueBase64: String,
+                                  name: String,
+                                  tsMillis: Long,
+                                  schemaHash: String)
 
 abstract class StreamDecoder extends Serializable {
   def decode(bytes: Array[Byte]): Mutation
   def schema: StructType
 }
 
+// user facing class that needs to be implemented for external sources defined in a join
+// Chronon issues the request in parallel to groupBy fetches.
+// There is a Java Friendly Handler that extends this and handles conversions
+// see: [[ai.chronon.online.JavaExternalSourceHandler]]
+abstract class ExternalSourceHandler {
+  implicit val executionContext: ExecutionContext = ExecutionContext.global
+  def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
+}
+
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
+  lazy val fetcher: Fetcher = {
+    if (fetcherObj == null)
+      fetcherObj = buildFetcher()
+    fetcherObj
+  }
+  private var fetcherObj: Fetcher = null
+
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
+
   def genKvStore: KVStore
+
+  def externalRegistry: ExternalSourceRegistry
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
@@ -120,19 +151,17 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
-  private var fetcherObj: Fetcher = null
-
-  lazy val fetcher: Fetcher = {
-    if (fetcherObj == null)
-      fetcherObj = buildFetcher()
-    fetcherObj
-  }
-
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
-    new Fetcher(genKvStore, logFunc = responseConsumer, debug = debug)
+    new Fetcher(genKvStore,
+                Constants.ChrononMetadataKey,
+                logFunc = responseConsumer,
+                debug = debug,
+                externalSourceRegistry = externalRegistry,
+                timeoutMillis = 10000)
 
-  final def buildJavaFetcher(): JavaFetcher = new JavaFetcher(genKvStore, responseConsumer)
+  final def buildJavaFetcher(): JavaFetcher =
+    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, 10000, responseConsumer, externalRegistry)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {

@@ -53,8 +53,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
-    val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
+    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     val keys = partLeftKeys ++ additionalKeys

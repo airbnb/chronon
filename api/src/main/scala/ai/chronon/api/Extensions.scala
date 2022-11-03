@@ -5,8 +5,9 @@ import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
+import java.io.{PrintWriter, StringWriter}
+import java.util
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object Extensions {
@@ -61,9 +62,9 @@ object Extensions {
       } else if (millis % Hour.millis == 0) {
         new Window((millis / Hour.millis).toInt, TimeUnit.HOURS).str
       } else if (millis % Minute == 0) {
-        s"${millis / Minute}mins"
+        s"${millis / Minute} minutes"
       } else if (millis % SecondMillis == 0) {
-        s"${millis / SecondMillis}secs"
+        s"${millis / SecondMillis} seconds"
       } else {
         s"${millis}ms"
       }
@@ -413,6 +414,54 @@ object Extensions {
     def cleanSpec: String = string.split("/").head
   }
 
+  implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
+    private def schemaNames(schema: TDataType): Array[String] =
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(schema.params)
+        .map(_.name)
+        .toArray
+    lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
+    lazy val valueNames: Array[String] = schemaNames(externalSource.valueSchema)
+  }
+
+  object KeyMappingHelper {
+    // key mapping is defined as {left_col1: right_col1}, on the right there can be two keys [right_col1, right_col2]
+    // Left is implicitly assumed to have right_col2
+    // We need to convert a map {left_col1: a, right_col2: b, irrelevant_col: c} into {right_col1: a, right_col2: b}
+    // The way to do this efficiently is to "flip" the keymapping into {right_col1: left_col1} and save it.
+    // And later "apply" the flipped mapping.
+    def flip(leftToRight: java.util.Map[String, String]): Map[String, String] = {
+      Option(leftToRight)
+        .map(mp =>
+          ScalaVersionSpecificCollectionsConverter
+            .convertJavaMapToScala(mp)
+            .map({ case (key, value) => value -> key }))
+        .getOrElse(Map.empty[String, String])
+    }
+  }
+
+  implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
+    lazy val fullName: String =
+      "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.metadata.name.sanitize
+
+    def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
+      // TODO: Long-term we could bring in derivations here.
+      right_keys.map { k =>
+        val queryKey = flipped.getOrElse(k, k)
+        if (!query.contains(queryKey)) {
+          throw new RuntimeException(s"Missing required key, ${queryKey} for ${externalPart.source.metadata.name}")
+        }
+        k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef]
+      }.toMap
+    }
+
+    def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
+      apply(query, rightToLeft, keyNames)
+
+    lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
+    private lazy val keyNames = externalPart.source.keyNames
+  }
+
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
@@ -563,7 +612,10 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts).toSeq.map(new JoinPartOps(_))
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
+        .toSeq
+        .map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -582,6 +634,15 @@ object Extensions {
           ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
         )
         .getOrElse(Seq.empty)
+    }
+  }
+
+  implicit class ThrowableOps(throwable: Throwable) {
+    def traceString: String = {
+      val sw = new StringWriter()
+      val pw = new PrintWriter(sw)
+      throwable.printStackTrace(pw)
+      sw.toString();
     }
   }
 }

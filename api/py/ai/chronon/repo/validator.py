@@ -15,13 +15,16 @@ from typing import List, Dict
 
 # Fields that indicate stutus of the entities.
 SKIPPED_FIELDS = frozenset(['metaData'])
+EXTERNAL_KEY = 'onlineExternalParts'
 
 
-def _filter_skipped_fields_from_joinparts(json_obj: Dict, skipped_fields):
+def _filter_skipped_fields_from_join(json_obj: Dict, skipped_fields):
     for join_part in json_obj['joinParts']:
         group_by = join_part['groupBy']
         for field in skipped_fields:
             group_by.pop(field, None)
+    if EXTERNAL_KEY in json_obj:
+        json_obj.pop(EXTERNAL_KEY, None)
 
 
 def is_valid_conf(conf: object) -> bool:
@@ -130,8 +133,8 @@ class ChrononRepoValidator(object):
         old_json = {k: v for k, v in json.loads(thrift_simple_json(old_obj)).items()
                     if k not in skipped_fields}
         if isinstance(obj, Join):
-            _filter_skipped_fields_from_joinparts(new_json, skipped_fields)
-            _filter_skipped_fields_from_joinparts(old_json, skipped_fields)
+            _filter_skipped_fields_from_join(new_json, skipped_fields)
+            _filter_skipped_fields_from_join(old_json, skipped_fields)
         return new_json != old_json
 
     def safe_to_overwrite(self, obj: object) -> bool:
