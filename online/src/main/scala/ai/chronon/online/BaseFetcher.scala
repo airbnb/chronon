@@ -183,7 +183,12 @@ class BaseFetcher(kvStore: KVStore,
     }
 
     val startTimeMs = System.currentTimeMillis()
-    val kvResponseFuture: Future[Seq[GetResponse]] = kvStore.multiGet(allRequests)
+    val kvResponseFuture: Future[Seq[GetResponse]] = if (allRequests.nonEmpty) {
+      kvStore.multiGet(allRequests)
+    } else {
+      Future(Seq.empty[GetResponse])
+    }
+
     kvResponseFuture
       .map { kvResponses: Seq[GetResponse] =>
         val multiGetMillis = System.currentTimeMillis() - startTimeMs
@@ -286,6 +291,7 @@ class BaseFetcher(kvStore: KVStore,
           case Success(requests) => requests.iterator.map(_.request)
         }
     }
+
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
 
     // re-attach groupBy responses to join
