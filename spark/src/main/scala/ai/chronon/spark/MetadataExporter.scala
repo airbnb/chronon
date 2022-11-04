@@ -54,7 +54,7 @@ object MetadataExporter {
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
     println(s"Successfully processed ${processSuccess.filter(_._2).length} GroupBys \n " +
-      s"Failed to process ${failuresAndTraces.length} GroupBys: \n $failuresAndTraces \n ")
+      s"Failed to process ${failuresAndTraces.length} GroupBys: \n ${failuresAndTraces.mkString("\n")}")
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
