@@ -311,12 +311,12 @@ def Join(left: api.Source,
     #    Root only selected: {root_keys}
     #    """
 
-    right_sources = [join_part.groupBy.sources for join_part in right_parts]
-    # flattening
-    right_sources = [source for source_list in right_sources for source in source_list]
     left_dependencies = utils.get_dependencies(left, dependencies, lag=lag)
-    right_dependencies = [dep for source in right_sources for dep in
-                          utils.get_dependencies(source, dependencies, lag=lag)]
+
+    right_info = [(join_part.groupBy.sources, join_part.groupBy.metaData) for join_part in right_parts]
+    right_info = [(source, meta_data) for (sources, meta_data) in right_info for source in sources]
+    right_dependencies = [dep for (source, meta_data) in right_info for dep in
+                          utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
 
     custom_json = {
         "check_consistency": check_consistency,
