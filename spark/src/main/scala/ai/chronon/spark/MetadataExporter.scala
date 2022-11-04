@@ -29,15 +29,7 @@ object MetadataExporter {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val analyzer = new Analyzer(tableUtils, groupByPath, today, today)
     val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](groupByPath, check = false)
-    val featureMetadata = analyzer.analyzeGroupBy(groupBy).map{ featureCol =>
-      Map(
-        "name" -> featureCol.name,
-        "window" -> featureCol.window,
-        "columnType" -> featureCol.columnType,
-        "inputColumn" -> featureCol.inputColumn,
-        "operation" -> featureCol.operation
-      )
-    }
+    val featureMetadata = analyzer.analyzeGroupBy(groupBy).map(ThriftJsonCodec.toJsonStr(_))
     val enrichedData = configData + {"features" -> featureMetadata}
     mapper.writeValueAsString(enrichedData)
   }
