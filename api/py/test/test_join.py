@@ -88,6 +88,6 @@ def test_dependencies_propagation():
     expected = [
         ("wait_for_left_1_ds", "left_1/ds={{ ds }}"),
         ("wait_for_table_1_ds", "table_1/ds={{ ds }}"),
-        ("wait_for_table_2_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value")
+        ("wait_for_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value")
     ]
     assert expected == actual

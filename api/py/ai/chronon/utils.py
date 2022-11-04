@@ -140,7 +140,6 @@ def get_dependencies(
         dependencies: List[str] = None,
         meta_data: api.MetaData = None,
         lag: int = 0) -> List[str]:
-    table = get_table(src)
     query = get_query(src)
     start = query.startPartition
     end = query.endPartition
@@ -148,7 +147,7 @@ def get_dependencies(
         result = [json.loads(dep) for dep in meta_data.dependencies]
     elif dependencies:
         result = [{
-            "name": wait_for_name(dep, table),
+            "name": wait_for_name(dep),
             "spec": dep,
             "start": start,
             "end": end
@@ -186,9 +185,9 @@ def wait_for_simple_schema(table, lag, start, end):
     }
 
 
-def wait_for_name(dep, table):
+def wait_for_name(dep):
     replace_nonalphanumeric = re.sub('[^a-zA-Z0-9]', '_', dep)
-    name = f"wait_for_{table}_{replace_nonalphanumeric}"
+    name = f"wait_for_{replace_nonalphanumeric}"
     return re.sub('_+', '_', name).rstrip('_')
 
 
