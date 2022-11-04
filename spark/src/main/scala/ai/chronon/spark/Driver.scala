@@ -19,9 +19,9 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.io.File
 import java.nio.file.{Files, Paths}
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -127,6 +127,21 @@ object Driver {
                    args.count(),
                    args.sample(),
                    args.enableHitter()).run
+    }
+  }
+
+  object MetadataExport {
+    class Args extends Subcommand("metadata-export") with OfflineSubcommand {
+      val inputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path of config repo to export from")
+      val outputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path to write output metadata files to")
+    }
+
+    def run(args: Args): Unit = {
+      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
     }
   }
 
@@ -472,6 +487,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object MetadataExportArgs extends MetadataExport.Args
+    addSubcommand(MetadataExportArgs)
     requireSubcommand()
     verify()
   }
@@ -506,6 +523,7 @@ object Driver {
             ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
+          case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
           case _                 => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
