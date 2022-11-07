@@ -31,7 +31,7 @@ public abstract class JTry<V> {
 
     public abstract Exception getException();
 
-    public abstract V getValue();
+    public abstract V getValue() throws Exception;
 
     public abstract <U> JTry<U> map(Function<? super V, ? extends U> f);
 
@@ -63,8 +63,8 @@ public abstract class JTry<V> {
         }
 
         @Override
-        public V getValue() {
-            throw new RuntimeException("call getValue on a Failure object");
+        public V getValue() throws Exception {
+            throw this.exception;
         }
 
         @Override
