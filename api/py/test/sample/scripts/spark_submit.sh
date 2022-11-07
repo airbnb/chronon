@@ -5,8 +5,9 @@
 ### ******************* END ****************************
 
 set -euxo pipefail
-mkdir -p ${CHRONON_TMPDIR:-/tmp}/${USER}
-export LOG4J_FILE="${CHRONON_TMPDIR:-/tmp}/${USER}/log4j_file"
+CHRONON_WORKING_DIR=${CHRONON_TMPDIR:-/tmp}/${USER}
+mkdir -p ${CHRONON_WORKING_DIR}
+export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j_file"
 cat > ${LOG4J_FILE} << EOF
 log4j.rootLogger=INFO, stdout
 log4j.appender.stdout=org.apache.log4j.ConsoleAppender
@@ -54,8 +55,8 @@ spark-submit \
 --conf spark.maxRemoteBlockSizeFetchToMem=2G \
 --conf spark.network.timeout=230s \
 --conf spark.executor.heartbeatInterval=200s \
---conf spark.local.dir=${CHRONON_TMPDIR:-/tmp} \
---conf spark.jars.ivy=${CHRONON_TMPDIR:-/tmp} \
+--conf spark.local.dir=${CHRONON_WORKING_DIR} \
+--conf spark.jars.ivy=${CHRONON_WORKING_DIR} \
 --conf spark.executor.cores=${EXECUTOR_CORES:-1} \
 --conf spark.sql.files.maxPartitionBytes=1073741824 \
 --conf spark.debug.maxToStringFields=1000 \
@@ -76,4 +77,4 @@ grep -v "ClosedChannelException"           |
 grep -v "TransportResponseHandler:154"     |
 grep -v "TransportRequestHandler:293"      |
 grep -v "TransportResponseHandler:144"     |
-tee /tmp/${APP_NAME}_spark.log
+tee ${CHRONON_WORKING_DIR}/${APP_NAME}_spark.log
