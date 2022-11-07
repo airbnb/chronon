@@ -334,8 +334,8 @@ case class TableUtils(sparkSession: SparkSession) {
       tables.flatMap{ table=>
         partitions(table)
       }
-    }
-    val inputMissing = fillablePartitions -- allInputExisting.getOrElse(Set.empty[String])
+    }.getOrElse(fillablePartitions)
+    val inputMissing = fillablePartitions -- allInputExisting
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)
     println(s"""
