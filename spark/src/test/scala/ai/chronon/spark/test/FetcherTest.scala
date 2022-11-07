@@ -505,7 +505,7 @@ class FetcherTest extends TestCase {
       flattenerJob.buildLogTable()
 
       // build consistency metrics
-      val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
+      val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
       println(s"ooc metrics: $metrics".stripMargin)
     }
