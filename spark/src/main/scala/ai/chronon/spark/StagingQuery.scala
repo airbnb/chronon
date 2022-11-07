@@ -68,7 +68,6 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       throw new RuntimeException(exceptions.mkString("\n"))
     }
   }
-
 }
 
 object StagingQuery {
