@@ -63,9 +63,9 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         case err: Throwable =>
           exceptions :+ s"Error handling range ${stagingQueryUnfilledRange} : ${err.getStackTrace}"
       }
-      if (exceptions.nonEmpty) {
-        throw new RuntimeException(exceptions.mkString("\n"))
-      }
+    }
+    if (exceptions.nonEmpty) {
+      throw new RuntimeException(exceptions.mkString("\n"))
     }
   }
 
