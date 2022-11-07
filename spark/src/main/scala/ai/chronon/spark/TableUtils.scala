@@ -305,14 +305,14 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def unfilledRanges(outputTable: String,
                      partitionRange: PartitionRange,
-                     inputTable: Option[String] = None): Option[Seq[PartitionRange]] = {
+                     inputTables: Option[Seq[String]] = None): Option[Seq[PartitionRange]] = {
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTable.flatMap(firstAvailablePartition(_))
+      val inputStart = inputTables.flatMap(_.map(firstAvailablePartition(_)).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
            |an input table with valid data needs to be present
-           |inputTable: ${inputTable}, partitionRange: ${partitionRange}
+           |inputTables: ${inputTables}, partitionRange: ${partitionRange}
            |""".stripMargin
       )
       partitionRange.copy(start = inputStart.get)
@@ -330,7 +330,12 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
     val outputMissing = fillablePartitions -- outputExisting
-    val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
+    val allInputExisting = inputTables.map{ tables =>
+      tables.flatMap{ table=>
+        partitions(table)
+      }
+    }
+    val inputMissing = fillablePartitions -- allInputExisting.getOrElse(Set.empty[String])
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)
     println(s"""

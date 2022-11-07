@@ -531,8 +531,9 @@ object GroupBy {
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
+    val inputTables = groupByConf.getSources.asScala.map(_.table)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(outputTable))
+      tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(inputTables))
     if (groupByUnfilledRangesOpt.isEmpty) {
       println(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
