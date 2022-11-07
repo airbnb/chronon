@@ -330,7 +330,6 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
     val outputMissing = fillablePartitions -- outputExisting
-
     val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_))
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)
