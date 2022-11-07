@@ -37,7 +37,11 @@ public abstract class JTry<V> {
 
     public Try<V> toScala() {
         if (this.isSuccess()) {
-            return new scala.util.Success<>(getValue());
+            try {
+                return new scala.util.Success<>(getValue());
+            } catch (Exception e) {
+                throw new IllegalStateException("Invalid try with isSuccess=True " + this);
+            }
         } else {
             return new scala.util.Failure(getException());
         }

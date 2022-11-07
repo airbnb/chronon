@@ -21,7 +21,7 @@ public class JavaResponse {
                 .map(ScalaVersionSpecificCollectionsConverter::convertScalaMapToJava);
     }
 
-    public Fetcher.Response toScala(){
+    public Fetcher.Response toScala() {
         return new Fetcher.Response(
                 request.toScalaRequest(),
                 values.map(ScalaVersionSpecificCollectionsConverter::convertJavaMapToScala).toScala());
