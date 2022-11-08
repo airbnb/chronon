@@ -8,7 +8,6 @@ import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{Row, SparkSession}
 
-import scala.collection.JavaConverters._
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 /**
@@ -26,7 +25,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
     .orNull
 
-  def dailyRun(stepDays: Option[Int] = None): Unit = {
+  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
     val unfilledRange = tableUtils.unfilledRange(dailyStatsTable, PartitionRange(null, endDate), Some(joinConf.metaData.outputTable))
     if (unfilledRange.isEmpty) {
       println(s"No data to compute for $dailyStatsTable")
@@ -40,13 +39,14 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
-        val inputDf = tableUtils.sql(s"""SELECT *
+        val inputDf = tableUtils.sql(s"""
+           |SELECT *
            |FROM ${joinConf.metaData.outputTable}
            |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
            |""".stripMargin)
         val stats = new StatsCompute(inputDf, joinConf.leftKeyCols)
         val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
-        val summaryKvRdd = stats.dailySummary(aggregator,0.1)
+        val summaryKvRdd = stats.dailySummary(aggregator,sample)
         if (joinConf.metaData.online) {
           // Store an Avro encoded KV Table and the schemas.
           val avroDf = summaryKvRdd.toAvroDf

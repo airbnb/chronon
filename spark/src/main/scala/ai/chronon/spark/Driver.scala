@@ -165,11 +165,14 @@ object Driver {
 
   object DailyStats {
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
-      //TODO: Add sample as an arg.
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
           descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
           default = Option(30))
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false,
+          descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
+          default = Option(0.1))
 
     }
 
@@ -177,7 +180,7 @@ object Driver {
       val joinConf = parseConf[api.Join](args.confPath())
       new SummaryJob(
         SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
-        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()))
+        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
     }
   }
 

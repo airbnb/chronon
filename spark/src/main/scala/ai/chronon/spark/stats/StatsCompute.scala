@@ -16,6 +16,7 @@ import org.apache.spark.sql.{Column, DataFrame, functions, Row => SparkRow}
 
 import java.util
 import collection.JavaConversions._
+import scala.util.Try
 
 /**
   * StatsGenerator takes care of computation of metadata for dataframes as well as
@@ -100,15 +101,13 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
     val percentiles = aggregator
       .aggregationParts.filter(_.operation == api.Operation.APPROX_PERCENTILE)
     val percentileColumns = percentiles.map(_.outputColumnName)
-    def finalizePercentiles: (Array[Byte] => Map[String, String]) = {
-      s =>
-        KllFloatsSketch.heapify(Memory.wrap(s))
-          .getQuantiles(StatsGenerator.finalizedPercentiles.toArray)
-          .zip(StatsGenerator.finalizedPercentiles).map(f => f._2.toString -> f._1.toString).toMap
-
-    }
     import org.apache.spark.sql.functions.udf
-    val percentileFinalizerUdf = udf(finalizePercentiles)
+    val percentileFinalizerUdf = udf(
+      (s: Array[Byte]) =>
+        Try(KllFloatsSketch.heapify(Memory.wrap(s))
+          .getQuantiles(StatsGenerator.finalizedPercentiles.toArray)
+          .zip(StatsGenerator.finalizedPercentiles).map(f => f._2.toString -> f._1.toString).toMap).toOption
+    )
     percentileColumns.foldLeft(withNullRatesDF) {
       (tmpDf, column) =>
         tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
