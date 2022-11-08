@@ -168,7 +168,7 @@ def ContextualSource(fields: FieldsType) -> api.ExternalSource:
     return api.ExternalSource(
         metadata=api.MetaData(name="contextual", team="default"),
         keySchema=DataType.STRUCT("contextual_keys", *fields),
-        valueSchema=DataType.STRUCT("contexual_values", *fields),
+        valueSchema=DataType.STRUCT("contextual_values", *fields),
     )
 
 
