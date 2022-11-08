@@ -116,7 +116,7 @@ def ExternalSource(name: str,
                    team: str,
                    key_fields: FieldsType,
                    value_fields: FieldsType,
-                   custom_json: str) -> api.ExternalSource:
+                   custom_json: str = None) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
     chronon java client, they consume a Request containing a key map
@@ -173,8 +173,8 @@ def ContextualSource(fields: FieldsType) -> api.ExternalSource:
 
 
 def ExternalPart(source: api.ExternalSource,
-                 key_mapping: Dict[str, str],
-                 prefix: str) -> api.ExternalPart:
+                 key_mapping: Dict[str, str] = None,
+                 prefix: str = None) -> api.ExternalPart:
     """
     Used to describe which ExternalSources to pull features from while fetching
     online. This data also goes into logs based on sample percent.
