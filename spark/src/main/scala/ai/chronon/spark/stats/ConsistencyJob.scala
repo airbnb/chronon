@@ -30,6 +30,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     mapping.foreach { case (key, value) => selects.put(key, value) }
     query.setSelects(selects)
     query.setTimeColumn(Constants.TimeColumn)
+    query.setStartPartition(joinConf.left.query.startPartition)
     loggedEvents.setQuery(query)
     loggedEvents.setTable(joinConf.metaData.loggedTable)
     loggedSource.setEvents(loggedEvents)

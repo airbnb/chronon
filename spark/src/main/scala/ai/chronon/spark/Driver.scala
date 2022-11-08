@@ -197,7 +197,6 @@ object Driver {
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
       val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
-
       new ConsistencyJob(
         sparkSession,
         joinConf,
