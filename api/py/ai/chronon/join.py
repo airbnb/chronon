@@ -160,13 +160,13 @@ def ExternalSource(name: str,
     )
 
 
-def ContextualSource(fields: FieldsType) -> api.ExternalSource:
+def ContextualSource(fields: FieldsType, team="default") -> api.ExternalSource:
     """
     Contextual source values are passed along for logging. No external request is
     actually made.
     """
     return api.ExternalSource(
-        metadata=api.MetaData(name="contextual", team="default"),
+        metadata=api.MetaData(name="contextual", team=team),
         keySchema=DataType.STRUCT("contextual_keys", *fields),
         valueSchema=DataType.STRUCT("contextual_values", *fields),
     )
