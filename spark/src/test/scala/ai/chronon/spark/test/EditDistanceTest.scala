@@ -12,6 +12,8 @@ class EditDistanceTest {
     def ofString(a: String, b: String) = EditDistance.betweenStrings(a, b)
 
     assertEquals(0, of(null, null).total)
+    assertEquals(0, of(Seq.empty[String], null).total)
+    assertEquals(0, of(null, Seq.empty[String]).total)
     assertEquals(0, of(Seq.empty[String], Seq.empty[String]).total)
     assertEquals(2, of(Seq("abc", "def"), null).total)
     assertEquals(2, of(Seq("abc", "def"), Seq.empty[String]).total)
