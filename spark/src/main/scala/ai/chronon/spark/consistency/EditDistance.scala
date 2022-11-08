@@ -39,7 +39,7 @@ object EditDistance {
     // null & empty cases
     lazy val leftVals = left.asInstanceOf[Seq[Any]]
     lazy val rightVals = right.asInstanceOf[Seq[Any]]
-    lazy val leftEmpty = (left == null || leftVals.isEmpty)
+    lazy val leftEmpty = left == null || leftVals.isEmpty
     lazy val rightEmpty = right == null || rightVals.isEmpty
     if (leftEmpty && rightEmpty) return Distance(0, 0)
     if (leftEmpty) return Distance(0, rightVals.length)

@@ -39,12 +39,12 @@ object EditDistance {
     // null & empty cases
     lazy val leftVals = left.asInstanceOf[Seq[Any]]
     lazy val rightVals = right.asInstanceOf[Seq[Any]]
-    lazy val leftEmpty = (left == null || leftVals.isEmpty)
+    lazy val leftEmpty = left == null || leftVals.isEmpty
     lazy val rightEmpty = right == null || rightVals.isEmpty
     if (leftEmpty && rightEmpty) return Distance(0, 0)
     if (leftEmpty) return Distance(0, rightVals.length)
     if (rightEmpty) return Distance(leftVals.length, 0)
-    
+
     // initialize (we don't create the whole nxm grid - we just create two)
     val editDistances0 = new Array[Distance](leftVals.length + 1)
     val editDistances1 = new Array[Distance](leftVals.length + 1)
