@@ -1,11 +1,10 @@
 package ai.chronon.spark
 
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, PartitionSpec}
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{col, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import scala.collection.mutable
@@ -259,15 +258,28 @@ case class TableUtils(sparkSession: SparkSession) {
     s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
   }
 
+  def chunk(partitions: Set[String]): Seq[PartitionRange] = {
+    val sortedDates = partitions.toSeq.sorted
+    sortedDates.foldLeft(Seq[PartitionRange]()){ (ranges, nextDate) =>
+      if (ranges.isEmpty || Constants.Partition.after(ranges.last.end) != nextDate) {
+        ranges :+ PartitionRange(nextDate, nextDate)
+      } else {
+        val newRange = PartitionRange(ranges.last.start, nextDate)
+        ranges.dropRight(1) :+ newRange
+      }
+    }
+  }
+
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
                     inputTable: Option[String] = None,
                     inputSubPartitionFilters: Map[String, String] = Map.empty): Option[PartitionRange] = {
+      // TODO: delete this after feature stiching PR
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTable.flatMap(firstAvailablePartition(_, inputSubPartitionFilters))
       assert(
         inputStart.isDefined,
-        s"""Either partition range needs to have a valid start or 
+        s"""Either partition range needs to have a valid start or
            |an input table with valid data needs to be present
            |inputTable: ${inputTable}, partitionRange: ${partitionRange}
            |""".stripMargin
@@ -281,14 +293,61 @@ case class TableUtils(sparkSession: SparkSession) {
     val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_, inputSubPartitionFilters))
     val missingPartitions = outputMissing -- inputMissing
     println(s"""
-                 |Unfilled range computation:                             
-                 |   Output table: $outputTable
-                 |   Missing output partitions: $outputMissing
-                 |   Missing input partitions: $inputMissing
-                 |   Unfilled Partitions: $missingPartitions
-                 |""".stripMargin)
+               |Unfilled range computation:
+               |   Output table: $outputTable
+               |   Missing output partitions: $outputMissing
+               |   Missing input partitions: $inputMissing
+               |   Unfilled Partitions: $missingPartitions
+               |""".stripMargin)
     if (missingPartitions.isEmpty) return None
     Some(PartitionRange(missingPartitions.min, missingPartitions.max))
+  }
+
+  def unfilledRanges(outputTable: String,
+                     partitionRange: PartitionRange,
+                     inputTables: Option[Seq[String]] = None): Option[Seq[PartitionRange]] = {
+    val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
+      val inputStart = inputTables.flatMap(_.map(firstAvailablePartition(_)).min)
+      assert(
+        inputStart.isDefined,
+        s"""Either partition range needs to have a valid start or
+           |an input table with valid data needs to be present
+           |inputTables: ${inputTables}, partitionRange: ${partitionRange}
+           |""".stripMargin
+      )
+      partitionRange.copy(start = inputStart.get)
+    } else {
+      partitionRange
+    }
+    val outputExisting = partitions(outputTable)
+    // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
+    // If a user fills a new partition in the newer end of the range, then we will never fill any partitions before that range.
+    // We instead log a message saying why we won't fill the earliest hole.
+    val cutoffPartition = if (outputExisting.nonEmpty) {
+      Seq[String](outputExisting.min, partitionRange.start).filter(_ != null).max
+    } else {
+      validPartitionRange.start
+    }
+    val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
+    val outputMissing = fillablePartitions -- outputExisting
+    val allInputExisting = inputTables.map{ tables =>
+      tables.flatMap{ table=>
+        partitions(table)
+      }
+    }.getOrElse(fillablePartitions)
+    val inputMissing = fillablePartitions -- allInputExisting
+    val missingPartitions = outputMissing -- inputMissing
+    val missingChunks = chunk(missingPartitions)
+    println(s"""
+               |Unfilled range computation:
+               |   Output table: $outputTable
+               |   Missing output partitions: $outputMissing
+               |   Missing input partitions: $inputMissing
+               |   Unfilled Partitions: $missingPartitions
+               |   Unfilled ranges: $missingChunks
+               |""".stripMargin)
+    if (missingPartitions.isEmpty) return None
+    Some(missingChunks)
   }
 
   def getTableProperties(tableName: String): Option[Map[String, String]] = {
