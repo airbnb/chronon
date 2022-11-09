@@ -46,5 +46,9 @@ class StatsComputeTest {
 
     println("Bucketed Stats")
     bucketed.show()
+
+    val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
+    println("With Derived Data")
+    denormalized.show(truncate = false)
   }
 }
