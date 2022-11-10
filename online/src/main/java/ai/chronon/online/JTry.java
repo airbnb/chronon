@@ -31,13 +31,17 @@ public abstract class JTry<V> {
 
     public abstract Exception getException();
 
-    public abstract V getValue();
+    public abstract V getValue() throws Exception;
 
     public abstract <U> JTry<U> map(Function<? super V, ? extends U> f);
 
     public Try<V> toScala() {
         if (this.isSuccess()) {
-            return new scala.util.Success<>(getValue());
+            try {
+                return new scala.util.Success<>(getValue());
+            } catch (Exception e) {
+                throw new IllegalStateException("Invalid try with isSuccess=True " + this);
+            }
         } else {
             return new scala.util.Failure(getException());
         }
@@ -63,8 +67,8 @@ public abstract class JTry<V> {
         }
 
         @Override
-        public V getValue() {
-            throw new RuntimeException("call getValue on a Failure object");
+        public V getValue() throws Exception {
+            throw this.exception;
         }
 
         @Override
