@@ -67,8 +67,8 @@ public abstract class JTry<V> {
         }
 
         @Override
-        public V getValue() throws Exception {
-            throw this.exception;
+        public V getValue() {
+            throw new RuntimeException(this.exception);
         }
 
         @Override
