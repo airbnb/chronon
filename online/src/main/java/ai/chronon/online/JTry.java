@@ -31,7 +31,7 @@ public abstract class JTry<V> {
 
     public abstract Exception getException();
 
-    public abstract V getValue() throws Exception;
+    public abstract V getValue();
 
     public abstract <U> JTry<U> map(Function<? super V, ? extends U> f);
 
