@@ -137,7 +137,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def externalRegistry: ExternalSourceRegistry
 
-  var timeoutMillis: Long = 10000
+  private var timeoutMillis: Long = 10000
 
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
