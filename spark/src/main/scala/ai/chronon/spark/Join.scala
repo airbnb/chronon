@@ -16,7 +16,7 @@ import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 import scala.util.Try
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, labelJoin:Boolean = false) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, labelJoin: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -257,7 +257,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
     Some(result)
   }
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None,
+                  labelDS: Option[String] = None,
+                  labelPartition: Option[String] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -286,11 +288,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
       .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
     val rangeToFill = PartitionRange(leftStart, leftEnd)
+    val today =  Constants.Partition.at(System.currentTimeMillis())
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     val earliestHoleOpt = if(labelJoin) {
-      val today = Constants.Partition.at(System.currentTimeMillis())
-      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, today)
+      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, Option(labelDS.getOrElse(today)))
     } else {
       tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     }
@@ -318,10 +320,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
         println(s"Computing join for range: $range  $progress")
         leftDf(range).map { leftDfInRange =>
           if(labelJoin) {
-            val today = Constants.Partition.at(System.currentTimeMillis())
+            val labelPartitionName = labelPartition.getOrElse(Constants.LabelPartitionColumn)
             computeRange(leftDfInRange, range)
-              .appendColumn(Constants.LabelPartitionColumn, today)
-              .save(outputTable, tableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn))
+              .appendColumn(labelPartitionName, labelDS.getOrElse(today))
+              .save(outputTable, tableProps, Seq(labelPartitionName, Constants.PartitionColumn))
           } else {
             computeRange(leftDfInRange, range).save(outputTable, tableProps)
           }

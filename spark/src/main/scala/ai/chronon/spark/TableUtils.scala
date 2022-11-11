@@ -386,7 +386,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange,
-                              labelPartition: String = ""): Option[String] = {
+                              labelPartition: Option[String] = None): Option[String] = {
 
     def partitionsInRange(table: String): Set[String] = {
       val allParts = partitions(table)
@@ -414,13 +414,13 @@ case class TableUtils(sparkSession: SparkSession) {
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
-                     labelPartition: String = ""): Unit = {
+                     labelPartition: Option[String] = None): Unit = {
     if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
       val partitionSpecs = if (labelPartition.isEmpty) {
         partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
       } else {
         partitions.map(partition => s"PARTITION ($partitionColumn='$partition', " +
-          s"${Constants.LabelPartitionColumn}='$labelPartition')").mkString(", ".stripMargin)
+          s"${Constants.LabelPartitionColumn}='${labelPartition.get}')").mkString(", ".stripMargin)
       }
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)

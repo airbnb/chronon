@@ -230,7 +230,7 @@ class TableUtilsTest {
       )
     )
     tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
-    tableUtils.dropPartitions(tableName, Seq("2022-10-01", "2022-10-02"), labelPartition = "2022-11-02")
+    tableUtils.dropPartitions(tableName, Seq("2022-10-01", "2022-10-02"), labelPartition = Option("2022-11-02"))
     val updated = tableUtils.sql(
       s"""
          |SELECT * from ${tableName}

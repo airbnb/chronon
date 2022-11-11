@@ -14,7 +14,7 @@ class LabelJoinTest {
   private val namespace = "label_join"
   private val tableName = "test_label_join"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val labelDS = "2022-10-30"
   private val tableUtils = TableUtils(spark)
 
   private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
@@ -23,8 +23,7 @@ class LabelJoinTest {
   @Test
   def testLabelJoin(): Unit = {
     val joinConf = createTestJoin(namespace)
-    //TODO make dates dynamic
-    val runner = new LabelJoin(joinConf, 180,20, tableUtils)
+    val runner = new LabelJoin(joinConf, 30,20, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
@@ -42,7 +41,7 @@ class LabelJoinTest {
     println(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
-    println(computed.select("label_ds").show(1))
+    assertEquals(computed.select("label_ds").first().get(0), labelDS)
 
     val diff = Comparison.sideBySide(computed.drop("label_ds"), expected,
       List("listing", "ds", "m_guests", "m_views",
@@ -60,21 +59,23 @@ class LabelJoinTest {
   @Test
   def testLabelRefresh(): Unit = {
     val joinConf = createTestJoin(namespace)
-    val runner = new LabelJoin(joinConf, 60,20, tableUtils)
+    val runner = new LabelJoin(joinConf, 60,20, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
     assertEquals(computed.count(),6)
-
+    val computedRows = computed.collect()
     // drop partition in middle to test hole logic
-    tableUtils.dropPartitions(s"${namespace}.${tableName}", Seq("2022-10-02"), labelPartition = s"${today}")
+    tableUtils.dropPartitions(s"${namespace}.${tableName}",
+      Seq("2022-10-02"),
+      labelPartition = Option(s"${labelDS}"))
 
-    val runner2 = new LabelJoin(joinConf, 60,20, tableUtils)
+    val runner2 = new LabelJoin(joinConf, 60,20, tableUtils, labelDS)
     val refreshed = runner2.computeLabelJoin()
     println(" == Refreshed == ")
     refreshed.show()
     assertEquals(refreshed.count(),6)
-    assertTrue(computed.collect() sameElements(refreshed.collect()))
+    assertTrue(computedRows sameElements(refreshed.collect()))
   }
 
   @Test(expected = classOf[AssertionError])
@@ -87,7 +88,7 @@ class LabelJoinTest {
       ),
       metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     )
-    new LabelJoin(joinConf, 30,20, tableUtils).computeLabelJoin()
+    new LabelJoin(joinConf, 30,20, tableUtils, labelDS).computeLabelJoin()
   }
 
   @Test(expected = classOf[AssertionError])
@@ -100,7 +101,7 @@ class LabelJoinTest {
       ),
       metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     )
-    new LabelJoin(joinConf, 30, 20, tableUtils).computeLabelJoin()
+    new LabelJoin(joinConf, 30, 20, tableUtils, labelDS).computeLabelJoin()
   }
 
   def createTestJoin(namespace: String): Join = {

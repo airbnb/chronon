@@ -265,9 +265,9 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
 
-    def updateQueryPartitions(start: String = "", end: String = ""): Source = {
-      val updatedStartQuery = if(!start.isEmpty) source.query.setStartPartition(start) else source.query
-      val updatedQuery = if(!end.isEmpty) updatedStartQuery.setEndPartition(end) else updatedStartQuery
+    def updateQueryPartitions(start: Option[String] = None, end: Option[String] = None): Source = {
+      val updatedStartQuery = if(!start.isEmpty) source.query.setStartPartition(start.get) else source.query
+      val updatedQuery = if(!end.isEmpty) updatedStartQuery.setEndPartition(end.get) else updatedStartQuery
 
       if (source.isSetEntities) {
         source.setEntities(source.getEntities.setQuery(updatedQuery))

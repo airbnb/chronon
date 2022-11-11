@@ -97,6 +97,14 @@ object Driver {
         opt[Int](required = false,
           descr = "Runs label join in steps, step-days at a time. Default is 30 days",
           default = Option(30))
+      val labelDs: ScallopOption[String] =
+        opt[String](required = false,
+          descr = "Label version ds, default to be label join job running date",
+          default = Some(Constants.Partition.now))
+      val labelPartitionName: ScallopOption[String] =
+        opt[String](required = false,
+          descr = "Label ds partition column name, default to be label_ds",
+          default = Some("label_ds"))
     }
 
     def run(args: Args): Unit = {
@@ -105,7 +113,9 @@ object Driver {
         labelJoinConf.getJoin,
         labelJoinConf.left_start_offset,
         labelJoinConf.left_end_offset,
-        TableUtils(SparkSessionBuilder.build(s"label_join_${labelJoinConf.getJoin.metaData.name}"))
+        TableUtils(SparkSessionBuilder.build(s"label_join_${labelJoinConf.getJoin.metaData.name}")),
+        args.labelDs(),
+        args.labelPartitionName()
       )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
     }
