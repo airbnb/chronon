@@ -137,6 +137,10 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def externalRegistry: ExternalSourceRegistry
 
+  private var timeoutMillis: Long = 10000
+
+  def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
+
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
     *     key_bytes, value_bytes, ts_millis, join_name, schema_hash and ds (date string)
@@ -158,10 +162,10 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 logFunc = responseConsumer,
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
-                timeoutMillis = 10000)
+                timeoutMillis = timeoutMillis)
 
   final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, 10000, responseConsumer, externalRegistry)
+    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
