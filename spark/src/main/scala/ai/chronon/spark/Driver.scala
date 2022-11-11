@@ -108,12 +108,11 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val labelJoinConf = parseConf[api.LabelJoin](args.confPath())
+      val labelJoinConf = parseConf[api.Join](args.confPath())
       val labelJoin = new LabelJoin(
-        labelJoinConf.getJoin,
-        labelJoinConf.left_start_offset,
-        labelJoinConf.left_end_offset,
-        TableUtils(SparkSessionBuilder.build(s"label_join_${labelJoinConf.getJoin.metaData.name}")),
+        labelJoinConf.getLabelJoin,
+        labelJoinConf.getLeft,
+        TableUtils(SparkSessionBuilder.build(s"label_join_${labelJoinConf.metaData.name}")),
         args.labelDs(),
         args.labelPartitionName()
       )

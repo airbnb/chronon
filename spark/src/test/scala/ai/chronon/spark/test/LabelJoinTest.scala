@@ -19,11 +19,12 @@ class LabelJoinTest {
 
   private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
   private val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark)
+  private val left = viewsGroupBy.groupByConf.sources.get(0)
 
   @Test
   def testLabelJoin(): Unit = {
-    val joinConf = createTestJoin(namespace)
-    val runner = new LabelJoin(joinConf, 30,20, tableUtils, labelDS)
+    val joinConf = createTestLabelJoin(namespace, 30, 20)
+    val runner = new LabelJoin(joinConf, left, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
@@ -58,8 +59,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelRefresh(): Unit = {
-    val joinConf = createTestJoin(namespace)
-    val runner = new LabelJoin(joinConf, 60,20, tableUtils, labelDS)
+    val joinConf = createTestLabelJoin(namespace, 60, 20)
+    val runner = new LabelJoin(joinConf, left, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
@@ -70,7 +71,7 @@ class LabelJoinTest {
       Seq("2022-10-02"),
       labelPartition = Option(s"${labelDS}"))
 
-    val runner2 = new LabelJoin(joinConf, 60,20, tableUtils, labelDS)
+    val runner2 = new LabelJoin(joinConf, left, tableUtils, labelDS)
     val refreshed = runner2.computeLabelJoin()
     println(" == Refreshed == ")
     refreshed.show()
@@ -81,35 +82,40 @@ class LabelJoinTest {
   @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidSource(): Unit = {
      // Invalid left data model entities
-    val joinConf = Builders.Join(
-      left = labelGroupBy.groupByConf.sources.get(0),
-      joinParts = Seq(
+    val labelJoin = Builders.LabelJoin(
+      labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
+      leftStartOffset = 10,
+      leftEndOffset = 3,
       metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     )
-    new LabelJoin(joinConf, 30,20, tableUtils, labelDS).computeLabelJoin()
+    val invalidLeft = labelGroupBy.groupByConf.sources.get(0)
+    new LabelJoin(labelJoin, invalidLeft, tableUtils, labelDS).computeLabelJoin()
   }
 
   @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidGroupBy(): Unit = {
     // Invalid label data model
-    val joinConf = Builders.Join(
-      left = viewsGroupBy.groupByConf.sources.get(0), //events
-      joinParts = Seq(
+    val labelJoin = Builders.LabelJoin(
+      labels = Seq(
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)
       ),
+      leftStartOffset = 10,
+      leftEndOffset = 3,
       metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     )
-    new LabelJoin(joinConf, 30, 20, tableUtils, labelDS).computeLabelJoin()
+
+    new LabelJoin(labelJoin, left, tableUtils, labelDS).computeLabelJoin()
   }
 
-  def createTestJoin(namespace: String): Join = {
-    Builders.Join(
-      left = viewsGroupBy.groupByConf.sources.get(0), //events
-      joinParts = Seq(
+  def createTestLabelJoin(namespace: String, startOffset: Int, endOffset: Int): ai.chronon.api.LabelJoin = {
+    Builders.LabelJoin(
+      labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
+      leftStartOffset = startOffset,
+      leftEndOffset = endOffset,
       metaData = Builders.MetaData(name = tableName, namespace = namespace, team = "chronon")
     )
   }
