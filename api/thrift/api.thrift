@@ -273,6 +273,23 @@ struct Join {
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
     6: optional LabelPart labelPart
+
+    /**
+    * Map of a derived column name to the expression based on joinPart / externalPart columns
+    * The expression can be any valid Spark SQL select clause without aggregation functions.
+    *
+    * joinPart column names are automatically constructed according to the below convention
+    *  `{join_part_prefix}_{group_by_name}_{input_column_name}_{aggregation_operation}_{window}_{by_bucket}`
+    *  prefix, window and bucket are optional. You can find the type information of columns using the analyzer tool.
+    *
+    * externalPart column names are automatically constructed according to the below convention
+    *  `ext_{external_source_name}_{value_column}`
+    * Types are defined along with the schema by users for external sources.
+    *
+    * Including a column with key "*" and value "*", means that every raw column will be included along with the derived
+    * columns.
+    **/
+    7: optional map<string, string> derivations
 }
 
 // Label join parts and params
@@ -283,7 +300,6 @@ struct LabelPart {
     // The most rencet date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
     3: optional i32 leftEndOffset
-//    4: optional JoinType joinType
 }
 
 // This is written by the bulk upload process into the metaDataset
