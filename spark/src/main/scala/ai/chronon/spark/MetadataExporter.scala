@@ -1,10 +1,8 @@
 package ai.chronon.spark
 
 import java.io.{BufferedWriter, File, FileWriter}
-
 import ai.chronon.api
 import ai.chronon.api.{Constants, ThriftJsonCodec}
-import ai.chronon.spark.Driver.parseConf
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 
@@ -44,11 +42,13 @@ object MetadataExporter {
 
   def writeGroupByOutput(groupByPath: String, outputDirectory: String): Unit = {
     val data = getEnrichedGroupByMetadata(groupByPath)
+    println("Metadata generated. Writing to output directory... ")
     val file = new File(outputDirectory + "/" + groupByPath.split("/").last)
     file.createNewFile()
     val writer = new BufferedWriter(new FileWriter(file))
     writer.write(data)
     writer.close()
+    println("Wrote to output directory successfully")
   }
 
   def processGroupBys(inputPath: String, outputPath: String): Unit = {

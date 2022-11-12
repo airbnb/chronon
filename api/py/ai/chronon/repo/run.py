@@ -227,14 +227,14 @@ class Runner:
             teams_json = json.load(teams_file)
 
         if not self.app_name:
-            if self.mode != 'metadata-export':
+            if self.mode == 'metadata-export':
+                self.app_name = "chronon_metadata_export"
+            else:
                 self.app_name = APP_NAME_TEMPLATE.format(
                     mode=self.mode,
                     conf_type=self.conf_type,
                     context=self.context,
                     name=conf_json['metaData']['name'])
-            else:
-                self.app_name = "chronon_metadata_export"
 
         # env priority already set >> conf.metaData.modeToEnvMap >> team.env >> default_team.env
         # default env & conf env are optional, team env is not.
