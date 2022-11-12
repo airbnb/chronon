@@ -526,9 +526,13 @@ object Extensions {
     }
 
     def onlineSemanticHash: Map[String, String] = {
+      if (join.onlineExternalParts == null) {
+        return Map.empty[String, String]
+      }
+
       val externalPartHashes = ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(join.onlineExternalParts)
-        .map { oep => oep.fullName -> oep.semanticHash }
+        .map { part => part.fullName -> part.semanticHash }
         .toMap
 
       externalPartHashes ++ semanticHash
