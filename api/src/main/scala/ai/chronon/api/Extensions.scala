@@ -460,6 +460,12 @@ object Extensions {
 
     lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
     private lazy val keyNames = externalPart.source.keyNames
+
+    def semanticHash: String = {
+      val newExternalPart = externalPart.deepCopy()
+      newExternalPart.source.unsetMetadata()
+      ThriftJsonCodec.md5Digest(newExternalPart)
+    }
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
@@ -517,6 +523,15 @@ object Extensions {
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
       partHashes ++ Map(leftSourceKey -> leftHash)
+    }
+
+    def onlineSemanticHash: Map[String, String] = {
+      val externalPartHashes = ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(join.onlineExternalParts)
+        .map { oep => oep.fullName -> oep.semanticHash }
+        .toMap
+
+      externalPartHashes ++ semanticHash
     }
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
