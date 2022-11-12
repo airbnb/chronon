@@ -16,7 +16,7 @@ ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
 SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload',
-               'analyze', 'stats-summary', 'log-flattener']
+               'analyze', 'stats-summary', 'log-flattener', 'metadata-export']
 
 
 # Constants for supporting multiple spark versions.
@@ -36,7 +36,8 @@ MODE_ARGS = {
     'fetch': ONLINE_ARGS,
     'consistency-metrics-upload': ONLINE_OFFLINE_WRITE_ARGS,
     'local-streaming': ONLINE_WRITE_ARGS + ' -d',
-    'log-flattener': OFFLINE_ARGS
+    'log-flattener': OFFLINE_ARGS,
+    'metadata-export': OFFLINE_ARGS,
 }
 
 ROUTES = {
@@ -46,7 +47,8 @@ ROUTES = {
         'streaming': 'group-by-streaming',
         'local-streaming': 'group-by-streaming',
         'fetch': 'fetch',
-        'analyze': 'analyze'
+        'analyze': 'analyze',
+        'metadata-export': 'metadata-export',
     },
     'joins': {
         'backfill': 'join',
@@ -55,10 +57,12 @@ ROUTES = {
         'consistency-metrics-upload': 'consistency-metrics-upload',
         'stats-summary': 'stats-summary',
         'analyze': 'analyze',
-        'log-flattener': 'log-flattener'
+        'log-flattener': 'log-flattener',
+        'metadata-export': 'metadata-export',
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
+        'metadata-export': 'metadata-export',
     },
 }
 
@@ -223,11 +227,14 @@ class Runner:
             teams_json = json.load(teams_file)
 
         if not self.app_name:
-            self.app_name = APP_NAME_TEMPLATE.format(
-                mode=self.mode,
-                conf_type=self.conf_type,
-                context=self.context,
-                name=conf_json['metaData']['name'])
+            if self.mode != 'metadata-export':
+                self.app_name = APP_NAME_TEMPLATE.format(
+                    mode=self.mode,
+                    conf_type=self.conf_type,
+                    context=self.context,
+                    name=conf_json['metaData']['name'])
+            else:
+                self.app_name = "chronon_metadata_export"
 
         # env priority already set >> conf.metaData.modeToEnvMap >> team.env >> default_team.env
         # default env & conf env are optional, team env is not.
