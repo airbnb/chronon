@@ -68,12 +68,18 @@ object AvroConversions {
           false, // isError
           fields
             .map { chrononField =>
-              val defaultValue: AnyRef = null
-              new Field(
-                addName(chrononField.name),
-                Schema.createUnion(Schema.create(Schema.Type.NULL), fromChrononSchema(chrononField.fieldType, nameSet)),
-                "",
-                defaultValue)
+              val name = chrononField.name
+              val fType = chrononField.fieldType
+              try {
+                val defaultValue: AnyRef = null
+                val fieldType = fromChrononSchema(fType, nameSet)
+                new Field(addName(name),
+                          Schema.createUnion(Schema.create(Schema.Type.NULL), fieldType),
+                          "",
+                          defaultValue)
+              } catch {
+                case e: Exception => throw new RuntimeException(s"Failed to handle column ${name}, a ${fType}", e)
+              }
             }
             .toList
             .asJava
@@ -96,7 +102,7 @@ object AvroConversions {
     }
   }
 
-  def fromChrononRow(value: Any, dataType: DataType,  extraneousRecord: Any => Array[Any] = null): Any = {
+  def fromChrononRow(value: Any, dataType: DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
