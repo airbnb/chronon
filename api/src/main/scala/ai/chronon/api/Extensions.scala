@@ -460,6 +460,12 @@ object Extensions {
 
     lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
     private lazy val keyNames = externalPart.source.keyNames
+
+    def semanticHash: String = {
+      val newExternalPart = externalPart.deepCopy()
+      newExternalPart.source.unsetMetadata()
+      ThriftJsonCodec.md5Digest(newExternalPart)
+    }
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
@@ -510,6 +516,10 @@ object Extensions {
 
     private val leftSourceKey: String = "left_source"
 
+    /*
+     * semanticHash contains hashes of left side and each join part, and is used to detect join definition
+     * changes and determine whether any intermediate/final tables of the join need to be recomputed.
+     */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       val partHashes = ScalaVersionSpecificCollectionsConverter
@@ -517,6 +527,24 @@ object Extensions {
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
       partHashes ++ Map(leftSourceKey -> leftHash)
+    }
+
+    /*
+     * onlineSemanticHash includes everything in semanticHash as well as hashes of each onlineExternalParts (which only
+     * affect online serving but not offline table generation).
+     * It is used to detect join definition change in online serving and to update ttl-cached conf files.
+     */
+    def onlineSemanticHash: Map[String, String] = {
+      if (join.onlineExternalParts == null) {
+        return Map.empty[String, String]
+      }
+
+      val externalPartHashes = ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(join.onlineExternalParts)
+        .map { part => part.fullName -> part.semanticHash }
+        .toMap
+
+      externalPartHashes ++ semanticHash
     }
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {

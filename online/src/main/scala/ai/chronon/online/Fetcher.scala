@@ -234,7 +234,7 @@ class Fetcher(val kvStore: KVStore,
     // returned from the two caches, and force update joinCodec if they are not in sync
     // there is a very small chance that the joinConf is updated after the fetch but before the log,
     // so we need to refresh the joinConf too to ensure consistency
-    if (joinConfTry.map(_.semanticHash) != joinCodecTry.map(_.conf.semanticHash)) {
+    if (joinConfTry.map(_.onlineSemanticHash) != joinCodecTry.map(_.conf.onlineSemanticHash)) {
       joinConfTry = getJoinConf.refresh(resp.request.name)
       joinCodecTry = getJoinCodecs.refresh(resp.request.name)
     }
