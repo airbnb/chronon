@@ -30,6 +30,9 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
+    println(s"""
+                 ==== Sub Partition Filter: ${subPartitionsFilter.toArray.mkString("Array(", ", ",")")}
+          """.stripMargin)
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {
@@ -386,10 +389,13 @@ case class TableUtils(sparkSession: SparkSession) {
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange,
-                              labelPartition: Option[String] = None): Option[String] = {
+                              labelPartition: Map[String, String] = Map.empty): Option[String] = {
 
-    def partitionsInRange(table: String): Set[String] = {
-      val allParts = partitions(table)
+    def partitionsInRange(table: String, partitionFilter: Map[String, String] = Map.empty): Set[String] = {
+      println(s"""
+                 ##### Partition Filter: ${labelPartition.toArray.mkString("Array(", ", ",")")}
+          """.stripMargin)
+      val allParts = partitions(table, partitionFilter)
       val startPrunedParts = Option(partitionRange.start).map(start => allParts.filter(_ >= start)).getOrElse(allParts)
       Option(partitionRange.end).map(end => startPrunedParts.filter(_ <= end)).getOrElse(startPrunedParts).toSet
     }
@@ -404,9 +410,10 @@ case class TableUtils(sparkSession: SparkSession) {
                    |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Label Partition : ${labelPartition.mkString}
+                   |Label Partition: ${labelPartition.toArray.mkString("Array(", ", ",")")}
           """.stripMargin)
-      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartition)
+      // only single label ds is valid
+      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = Option(labelPartition.values.toArray.head))
     }
     earliestHoleOpt
   }

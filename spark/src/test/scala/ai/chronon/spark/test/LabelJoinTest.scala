@@ -9,7 +9,7 @@ import org.junit.Test
 
 class LabelJoinTest {
 
-  val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
+  val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
 
   private val namespace = "label_join"
   private val tableName = "test_label_join"
@@ -23,8 +23,13 @@ class LabelJoinTest {
 
   @Test
   def testLabelJoin(): Unit = {
-    val joinConf = createTestLabelJoin(namespace, 30, 20)
-    val runner = new LabelJoin(joinConf, left, tableUtils, labelDS)
+    val labelJoinConf = createTestLabelJoin(30, 20)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      labelJoin = labelJoinConf
+    )
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
@@ -59,8 +64,14 @@ class LabelJoinTest {
 
   @Test
   def testLabelRefresh(): Unit = {
-    val joinConf = createTestLabelJoin(namespace, 60, 20)
-    val runner = new LabelJoin(joinConf, left, tableUtils, labelDS)
+    val labelJoinConf = createTestLabelJoin(60, 20)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      labelJoin = labelJoinConf
+    )
+
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == Computed == ")
     computed.show()
@@ -71,12 +82,48 @@ class LabelJoinTest {
       Seq("2022-10-02"),
       labelPartition = Option(s"${labelDS}"))
 
-    val runner2 = new LabelJoin(joinConf, left, tableUtils, labelDS)
+    val runner2 = new LabelJoin(joinConf, tableUtils, labelDS)
     val refreshed = runner2.computeLabelJoin()
     println(" == Refreshed == ")
     refreshed.show()
     assertEquals(refreshed.count(),6)
     assertTrue(computedRows sameElements(refreshed.collect()))
+  }
+
+  @Test
+  def testLabelEvolution(): Unit = {
+    val labelJoinConf = createTestLabelJoin(60, 20)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      labelJoin = labelJoinConf
+    )
+    val runner = new LabelJoin(joinConf, tableUtils,labelDS)
+    val computed = runner.computeLabelJoin()
+    println(" == First Run == ")
+    computed.show()
+    assertEquals(computed.count(),6)
+    val computedRows = computed.collect()
+
+    val updatedLabelGroupBy = TestUtils.createAttributesGroupByV2(namespace, spark)
+    val updatedLabelJoin = Builders.LabelJoin(
+      labels = Seq(
+        Builders.JoinPart(groupBy = updatedLabelGroupBy.groupByConf)
+      ),
+      leftStartOffset = 60,
+      leftEndOffset = 20
+    )
+    val updatedJoinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      labelJoin = updatedLabelJoin
+    )
+    val runner2 = new LabelJoin(updatedJoinConf, tableUtils, "2022-10-31")
+    val updated = runner2.computeLabelJoin()
+    println(" == Updated Run == ")
+    updated.show()
+    assertEquals(updated.count(),6)
+//    assertTrue(computedRows sameElements(updated.collect()))
   }
 
   @Test(expected = classOf[AssertionError])
@@ -87,11 +134,16 @@ class LabelJoinTest {
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = 10,
-      leftEndOffset = 3,
-      metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
+      leftEndOffset = 3
     )
     val invalidLeft = labelGroupBy.groupByConf.sources.get(0)
-    new LabelJoin(labelJoin, invalidLeft, tableUtils, labelDS).computeLabelJoin()
+    val invalidJoinConf = Builders.Join(
+      Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon"),
+      invalidLeft,
+      labelJoin = labelJoin
+    )
+
+    new LabelJoin(invalidJoinConf, tableUtils, labelDS).computeLabelJoin()
   }
 
   @Test(expected = classOf[AssertionError])
@@ -102,21 +154,24 @@ class LabelJoinTest {
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)
       ),
       leftStartOffset = 10,
-      leftEndOffset = 3,
-      metaData = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
+      leftEndOffset = 3
     )
-
-    new LabelJoin(labelJoin, left, tableUtils, labelDS).computeLabelJoin()
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon"),
+      left,
+      labelJoin = labelJoin
+    )
+    val metadata = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
+    new LabelJoin(joinConf, tableUtils, labelDS).computeLabelJoin()
   }
 
-  def createTestLabelJoin(namespace: String, startOffset: Int, endOffset: Int): ai.chronon.api.LabelJoin = {
+  def createTestLabelJoin(startOffset: Int, endOffset: Int): ai.chronon.api.LabelJoin = {
     Builders.LabelJoin(
       labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = startOffset,
-      leftEndOffset = endOffset,
-      metaData = Builders.MetaData(name = tableName, namespace = namespace, team = "chronon")
+      leftEndOffset = endOffset
     )
   }
 }

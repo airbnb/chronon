@@ -10,8 +10,7 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 object TestUtils {
   def createViewsGroupBy(namespace: String,
                          spark: SparkSession,
-                         tableName: String = "listing_views",
-                         rowsOverride: List[Row] = List.empty): GroupByTestSuite = {
+                         tableName: String = "listing_views"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -74,9 +73,8 @@ object TestUtils {
   }
 
   def createAttributesGroupBy(namespace: String,
-                              spark: SparkSession,
-                              tableName: String = "listing_attributes",
-                              rowsOverride: List[Row] = List.empty): GroupByTestSuite = {
+                                spark: SparkSession,
+                                tableName: String = "listing_attributes"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -116,6 +114,57 @@ object TestUtils {
       Conversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
+    GroupByTestSuite(
+      tableName,
+      conf,
+      df
+    )
+  }
+
+  def createAttributesGroupByV2(namespace: String,
+                              spark: SparkSession,
+                              tableName: String = "listing_attributes"): GroupByTestSuite = {
+    val schema = StructType(
+      tableName,
+      Array(
+        StructField("listing_id", LongType),
+        StructField("dim_bedrooms", IntType),
+        StructField("dim_room_type", StringType),
+        StructField("dim_host_type", StringType),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST","2022-10-01"),
+      Row(1L, 4, "ENTIRE_HOME_2","SUPER_HOST_2", "2022-10-02"),
+      Row(2L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-10-01"),
+      Row(2L, 1, "PRIVATE_ROOM_2", "NEW_HOST_2", "2022-10-02"),
+      Row(3L, 1, "PRIVATE_ROOM_3", "SUPER_HOST_3", "2022-10-03"),
+      Row(1L, 4, "ENTIRE_HOME_3", "SUPER_HOST_3", "2022-10-03")
+    )
+    val source = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Map(
+          "listing" -> "listing_id",
+          "dim_bedrooms" -> "dim_bedrooms",
+          "dim_room_type" -> "dim_room_type",
+          "dim_host_type" -> "dim_host_type"
+        )
+      ),
+      snapshotTable = s"${namespace}.${tableName}"
+    )
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("listing"),
+      aggregations = null,
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
+    )
+    val df = spark.createDataFrame(
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      Conversions.fromChrononSchema(schema)
+    )
+    df.save(s"${namespace}.${tableName}", autoExpand = true)
     GroupByTestSuite(
       tableName,
       conf,

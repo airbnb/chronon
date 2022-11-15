@@ -11,12 +11,11 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
-import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
-import scala.collection.parallel.ParMap
+import scala.collection.parallel.{ParMap}
 import scala.util.Try
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, labelJoin: Boolean = false) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -70,13 +69,12 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
          |""".stripMargin)
 
     import org.apache.spark.sql.functions.{col, date_add, date_format}
-    val dateOffset = if(labelJoin) 0 else 1
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
       prefixedRight
         .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(col(Constants.PartitionColumn), dateOffset), Constants.Partition.format))
+                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
         .drop(Constants.PartitionColumn)
     } else {
       prefixedRight
@@ -149,10 +147,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
       case (Events, Events, Accuracy.TEMPORAL) =>
         genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
 
-      case (Events, Entities, Accuracy.SNAPSHOT) => {
-        if (labelJoin) genGroupBy(unfilledTimeRange.toPartitionRange).snapshotEntities
-        else genGroupBy(shiftedPartitionRange).snapshotEntities
-      }
+      case (Events, Entities, Accuracy.SNAPSHOT) =>
+        genGroupBy(shiftedPartitionRange).snapshotEntities
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
@@ -288,14 +284,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
       .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
     val rangeToFill = PartitionRange(leftStart, leftEnd)
-    val today =  Constants.Partition.at(System.currentTimeMillis())
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    val earliestHoleOpt = if(labelJoin) {
-      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, Option(labelDS.getOrElse(today)))
-    } else {
-      tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
-    }
+    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -319,14 +310,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, lab
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(range).map { leftDfInRange =>
-          if(labelJoin) {
-            val labelPartitionName = labelPartition.getOrElse(Constants.LabelPartitionColumn)
-            computeRange(leftDfInRange, range)
-              .appendColumn(labelPartitionName, labelDS.getOrElse(today))
-              .save(outputTable, tableProps, Seq(labelPartitionName, Constants.PartitionColumn))
-          } else {
-            computeRange(leftDfInRange, range).save(outputTable, tableProps)
-          }
+          computeRange(leftDfInRange, range).save(outputTable, tableProps)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

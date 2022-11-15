@@ -223,6 +223,7 @@ struct MetaData {
     11: optional double samplePercent
     // cron expression for airflow DAG schedule
     12: optional string offlineSchedule
+    13: optional list<string> labelDependencies
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -280,15 +281,14 @@ struct Join {
 
 // Label join parts and params
 struct LabelJoin {
-    1: optional MetaData metaData
-    2: optional list<JoinPart> labels
+    1: optional list<JoinPart> labels
     // The earliest date label should be refreshed
-    3: optional i32 leftStartOffset
+    2: optional i32 leftStartOffset
     // The most rencet date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
-    4: optional i32 leftEndOffset
-    5: optional Cadence cadence
-    6: optional JoinType joinType
+    3: optional i32 leftEndOffset
+    4: optional Cadence cadence
+    5: optional JoinType joinType
 }
 
 // This is written by the bulk upload process into the metaDataset

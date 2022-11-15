@@ -190,15 +190,13 @@ object Builders {
   }
 
   object LabelJoin {
-    def apply(metaData: MetaData = null,
-              labels: Seq[JoinPart] = null,
+    def apply(labels: Seq[JoinPart] = null,
               leftStartOffset: Int = 0,
               leftEndOffset: Int = 0,
               cadence: Cadence = null,
               joinType: JoinType = null
              ): LabelJoin = {
       val result = new LabelJoin()
-      result.setMetaData(metaData)
       result.setLeftStartOffset(leftStartOffset)
       result.setLeftEndOffset(leftEndOffset)
       if (labels != null)
