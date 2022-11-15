@@ -1,6 +1,7 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api._
+import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.{Conversions, SparkSessionBuilder}
 import ai.chronon.spark.test.CatalystUtil.IteratorWrapper
 import junit.framework.TestCase
@@ -164,11 +165,13 @@ class CatalystUtil(expressions: Map[String, String],
                    session: SparkSession,
                    sessionName: String) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
-  private val query = s"SELECT $selectClauses FROM $sessionName"
+  private val sessionTable = s"q${selectClauses.hashCode}_f${inputSparkSchema.pretty.hashCode}"
+  private val query = s"SELECT $selectClauses FROM $sessionTable"
   private val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
   private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
     initializeIterator(iteratorWrapper)
   private val outputDecoder = InternalRowConversions.from(outputSparkSchema)
+  @transient lazy val inputSparkSchema = Conversions.fromChrononSchema(inputSchema)
   private val inputEncoder = InternalRowConversions.to(Conversions.fromChrononSchema(inputSchema))
 
   def performSql(values: Map[String, Any]): Map[String, Any] = {
@@ -187,7 +190,7 @@ class CatalystUtil(expressions: Map[String, String],
     val emptyRowRdd = session.emptyDataFrame.rdd
     val inputSparkSchema = Conversions.fromChrononSchema(inputSchema)
     val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
-    emptyDf.createOrReplaceTempView(sessionName)
+    emptyDf.createOrReplaceTempView(sessionTable)
     val outputSchema = session.sql(query).schema
     val logicalPlan = session.sessionState.sqlParser.parsePlan(query)
     val plan = session.sessionState.executePlan(logicalPlan)
@@ -208,7 +211,12 @@ class CatalystUtilTest extends TestCase {
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
-    val session = SparkSessionBuilder.build("catalyst_test", true)
+    val session = SparkSession
+      .builder()
+      .appName("catalyst_util_test")
+      .master("local[*]")
+      .getOrCreate()
+
     val ctUtil = new CatalystUtil(
       Map("a_plus" -> "a + 1",
           "b_str" -> "CAST(b as string)",
