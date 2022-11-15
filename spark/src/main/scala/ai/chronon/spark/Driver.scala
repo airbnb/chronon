@@ -4,8 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.consistency.ConsistencyJob
-import ai.chronon.spark.stats.SummaryJob
+import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
@@ -192,6 +191,20 @@ object Driver {
     }
   }
 
+  object ConsistencyMetricsCompute {
+    class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {}
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
+      new ConsistencyJob(
+        sparkSession,
+        joinConf,
+        args.endDate()
+      ).buildConsistencyMetrics()
+    }
+  }
+
   // common arguments to all online commands
   trait OnlineSubcommand { s: ScallopConf =>
     // this is `-Z` and not `-D` because sbt-pack plugin uses that for JAVA_OPTS
@@ -358,28 +371,6 @@ object Driver {
     }
   }
 
-  object ConsistencyMetricsUploader {
-    class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
-      val confPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
-      val endDate: ScallopOption[String] =
-        opt[String](required = false, descr = "End date to compute metrics until.")
-    }
-
-    def run(args: Args): Unit = {
-      val apiImpl = args.impl(args.serializableProps)
-      val joinConf = parseConf[api.Join](args.confPath())
-      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
-
-      new ConsistencyJob(
-        sparkSession,
-        joinConf,
-        args.endDate(),
-        apiImpl
-      ).buildConsistencyMetrics()
-    }
-  }
-
   object GroupByStreaming {
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
@@ -472,8 +463,8 @@ object Driver {
     addSubcommand(JoinBackFillArgs)
     object LogFlattenerArgs extends LogFlattener.Args
     addSubcommand(LogFlattenerArgs)
-    object ConsistencyMetricsUploaderArgs extends ConsistencyMetricsUploader.Args
-    addSubcommand(ConsistencyMetricsUploaderArgs)
+    object ConsistencyMetricsArgs extends ConsistencyMetricsCompute.Args
+    addSubcommand(ConsistencyMetricsArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
     addSubcommand(GroupByBackfillArgs)
     object StagingQueryBackfillArgs extends StagingQueryBackfill.Args
@@ -522,8 +513,8 @@ object Driver {
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsUploaderArgs =>
-            ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
+          case args.ConsistencyMetricsArgs =>
+            ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)

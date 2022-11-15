@@ -10,7 +10,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.consistency.ConsistencyJob
+import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -21,7 +21,7 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
@@ -505,7 +505,7 @@ class FetcherTest extends TestCase {
       flattenerJob.buildLogTable()
 
       // build consistency metrics
-      val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
+      val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
       println(s"ooc metrics: $metrics".stripMargin)
     }

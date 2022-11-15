@@ -14,10 +14,9 @@ ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class} '
 OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
-ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming', 'consistency-metrics-upload']
-SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-upload',
+ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
+SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-compute',
                'analyze', 'stats-summary', 'log-flattener', 'metadata-export']
-
 
 # Constants for supporting multiple spark versions.
 SUPPORTED_SPARK = ['2.4.0', '3.1.1']
@@ -34,7 +33,7 @@ MODE_ARGS = {
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
     'fetch': ONLINE_ARGS,
-    'consistency-metrics-upload': ONLINE_OFFLINE_WRITE_ARGS,
+    'consistency-metrics-compute': OFFLINE_ARGS,
     'local-streaming': ONLINE_WRITE_ARGS + ' -d',
     'log-flattener': OFFLINE_ARGS,
     'metadata-export': OFFLINE_ARGS,
@@ -54,7 +53,7 @@ ROUTES = {
         'backfill': 'join',
         'metadata-upload': 'metadata-upload',
         'fetch': 'fetch',
-        'consistency-metrics-upload': 'consistency-metrics-upload',
+        'consistency-metrics-compute': 'consistency-metrics-compute',
         'stats-summary': 'stats-summary',
         'analyze': 'analyze',
         'log-flattener': 'log-flattener',
