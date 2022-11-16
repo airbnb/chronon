@@ -236,6 +236,7 @@ object Driver {
   }
 
   object FetcherCli {
+    val EMPTY_RESPONSE = "Empty"
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
@@ -307,9 +308,15 @@ object Driver {
           result.foreach(r =>
             r.values match {
               case Success(valMap) => {
-                valMap.foreach { case (k, v) => tMap.put(k, v) }
-                println(
-                  s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                val resultString = {
+                  if (valMap != null) {
+                    valMap.foreach { case (k, v) => tMap.put(k, v) }
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)
+                  } else {
+                    EMPTY_RESPONSE
+                  }
+                }
+                println(s"--- [FETCHED RESULT] ---\n${resultString}")
                 println(s"Fetched in: $awaitTimeMs ms")
               }
               case Failure(exception) => {
