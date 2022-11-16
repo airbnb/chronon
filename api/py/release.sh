@@ -26,12 +26,12 @@ cd $SCRIPT_DIR && tox
 if [[ $? -eq 0 ]]; then
   echo "Checking for straggling files."
   git add .
-#  git diff-index --cached --quiet HEAD
+  git diff-index --cached --quiet HEAD
   if [[ $? -eq 0 ]]; then
     echo "Building"
     python -m build
-#    echo "Running upload."
-#    python -m twine upload --repository $1 dist/*
+    echo "Running upload."
+    python -m twine upload --repository $1 dist/*
   else
     echo "Found straggling git files. Run git status for details."
     exit 1

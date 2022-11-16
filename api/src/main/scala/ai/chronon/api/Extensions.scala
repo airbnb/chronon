@@ -554,7 +554,7 @@ object Extensions {
      * semanticHash contains hashes of left side and each join part, and is used to detect join definition
      * changes and determine whether any intermediate/final tables of the join need to be recomputed.
      */
-    def semanticHash(): Map[String, String] = {
+    def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       val partHashes = ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(join.joinParts)

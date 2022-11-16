@@ -407,7 +407,8 @@ case class TableUtils(sparkSession: SparkSession) {
                    |Label Partition: ${labelPartition.toArray.mkString("Array(", ", ",")")}
           """.stripMargin)
       // only single label ds is valid
-      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = Option(labelPartition.values.toArray.head))
+      val labelPartitionOption = if(labelPartition.isEmpty) Option.empty else Option(labelPartition.values.toArray.head)
+      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartitionOption)
     }
     earliestHoleOpt
   }

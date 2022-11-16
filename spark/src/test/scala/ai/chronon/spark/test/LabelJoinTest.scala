@@ -1,9 +1,9 @@
 package ai.chronon.spark.test
 
 
-import ai.chronon.api.{Builders, Constants, Join}
+import ai.chronon.api.Builders
 import ai.chronon.spark._
-import org.apache.spark.sql.{SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
@@ -66,7 +66,7 @@ class LabelJoinTest {
   def testLabelRefresh(): Unit = {
     val labelJoinConf = createTestLabelJoin(60, 20)
     val joinConf = Builders.Join(
-      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      Builders.MetaData(name = "label_refresh", namespace = namespace, team = "chronon"),
       left,
       labelJoin = labelJoinConf
     )
@@ -92,7 +92,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelEvolution(): Unit = {
-    val labelJoinConf = createTestLabelJoin(30, 20)
+    val labelJoinConf = createTestLabelJoin(30, 20, "listing_labels")
+    val tableName = "label_evolution"
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
@@ -105,7 +106,7 @@ class LabelJoinTest {
     assertEquals(computed.count(),6)
 
     //add additional label column
-    val updatedLabelGroupBy = TestUtils.createAttributesGroupByV2(namespace, spark)
+    val updatedLabelGroupBy = TestUtils.createAttributesGroupByV2(namespace, spark, "listing_labels")
     val updatedLabelJoin = Builders.LabelJoin(
       labels = Seq(
         Builders.JoinPart(groupBy = updatedLabelGroupBy.groupByConf)
@@ -127,7 +128,7 @@ class LabelJoinTest {
     // expected
     // 3|  5|     15|   1|    PRIVATE_ROOM_3|   SUPER_HOST_3|2022-10-31|2022-10-03|
     assertEquals(updated.where(updated("label_ds") === "2022-10-31" && updated("listing") === "3")
-      .select("listing_attributes_dim_host_type").first().get(0),"SUPER_HOST_3")
+      .select("listing_labels_dim_host_type").first().get(0),"SUPER_HOST_3")
   }
 
   @Test(expected = classOf[AssertionError])
@@ -146,7 +147,6 @@ class LabelJoinTest {
       invalidLeft,
       labelJoin = labelJoin
     )
-
     new LabelJoin(invalidJoinConf, tableUtils, labelDS).computeLabelJoin()
   }
 
@@ -165,11 +165,12 @@ class LabelJoinTest {
       left,
       labelJoin = labelJoin
     )
-    val metadata = Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon")
     new LabelJoin(joinConf, tableUtils, labelDS).computeLabelJoin()
   }
 
-  def createTestLabelJoin(startOffset: Int, endOffset: Int): ai.chronon.api.LabelJoin = {
+  def createTestLabelJoin(startOffset: Int, endOffset: Int,
+                          groupByTableName: String = "listing_attributes"): ai.chronon.api.LabelJoin = {
+    val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark, groupByTableName)
     Builders.LabelJoin(
       labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
