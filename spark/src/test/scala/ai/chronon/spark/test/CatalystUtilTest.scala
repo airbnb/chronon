@@ -207,12 +207,11 @@ class CatalystUtil(expressions: Map[String, String],
 }
 
 class CatalystUtilTest extends TestCase {
+  lazy val session = SparkSessionBuilder.build("catalyst_test", true)
 
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
-    val session = SparkSessionBuilder.build("catalyst_test", true)
-
     val ctUtil = new CatalystUtil(
       Map("a_plus" -> "a + 1",
           "b_str" -> "CAST(b as string)",
