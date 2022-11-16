@@ -211,11 +211,7 @@ class CatalystUtilTest extends TestCase {
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
-    val session = SparkSession
-      .builder()
-      .appName("catalyst_util_test")
-      .master("local[*]")
-      .getOrCreate()
+    val session = SparkSessionBuilder.build("catalyst_test", true)
 
     val ctUtil = new CatalystUtil(
       Map("a_plus" -> "a + 1",
