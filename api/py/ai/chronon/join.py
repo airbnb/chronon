@@ -222,6 +222,7 @@ def Join(left: api.Source,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
+         frontfill: bool = True,
          **kwargs
          ) -> api.Join:
     """
@@ -285,6 +286,11 @@ def Join(left: api.Source,
         This is used to blacklist crawlers etc
     :param sample_percent:
         Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
+    :param online_external_parts:
+        users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
+        This is applicable only for online fetching. Offline this will not be produce any values.
+    :param frontfill:
+        Creates an airflow DAG that runs join offline compute daily if set to True
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -320,7 +326,8 @@ def Join(left: api.Source,
 
     custom_json = {
         "check_consistency": check_consistency,
-        "lag": lag
+        "lag": lag,
+        "frontfill": frontfill
     }
 
     if additional_args:
