@@ -200,7 +200,6 @@ class CatalystUtil(expressions: Map[String, String],
     val (clazz, _) = CodeGenerator.compile(cleanedSource)
     val references = ctx.references.toArray
     val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
-    session.close()
     buffer.init(0, Array(iteratorWrapper))
     (buffer, outputSchema)
   }
