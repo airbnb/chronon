@@ -33,7 +33,7 @@ class LabelJoin(joinConf: api.Join,
   val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
 
   def computeLabelJoin(stepDays: Option[Int] = None): DataFrame = {
-
+    // validations
     assert(Option(joinConf.left.dataModel).equals(Option(Events)),
            s"join.left.dataMode needs to be Events for label join ${joinConf.metaData.name}")
 
@@ -53,7 +53,6 @@ class LabelJoin(joinConf: api.Join,
 
     labelJoinConf.setups.foreach(tableUtils.sql)
     // update time window
-    println(s"Join label window: ${joinConf.left.query.startPartition} - ${joinConf.left.query.endPartition}")
     val labelJoinLeft = joinConf.left.updateQueryPartitions(Option(leftStart), Option(leftEnd))
     println(s"Join label window: ${joinConf.left.query.startPartition} - ${joinConf.left.query.endPartition}")
 
@@ -71,6 +70,7 @@ class LabelJoin(joinConf: api.Join,
     val earliestHoleOpt =
       tableUtils.dropPartitionsAfterHole(left.table, outputTable, rangeToFill,
         Map(labelPartition.getOrElse(Constants.LabelPartitionColumn) -> labelDS.getOrElse(today)))
+    println(earliestHoleOpt)
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -93,7 +93,7 @@ class LabelJoin(joinConf: api.Join,
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing join for range: $range  $progress")
+        println(s"Computing join for range: $range  $labelDS $progress")
         leftDf(range).map { leftDfInRange =>
           val labelPartitionName = labelPartition.getOrElse(Constants.LabelPartitionColumn)
           computeRange(leftDfInRange, range)

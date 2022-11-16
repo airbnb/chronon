@@ -30,9 +30,6 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
-    println(s"""
-                 ==== Sub Partition Filter: ${subPartitionsFilter.toArray.mkString("Array(", ", ",")")}
-          """.stripMargin)
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {
@@ -392,16 +389,13 @@ case class TableUtils(sparkSession: SparkSession) {
                               labelPartition: Map[String, String] = Map.empty): Option[String] = {
 
     def partitionsInRange(table: String, partitionFilter: Map[String, String] = Map.empty): Set[String] = {
-      println(s"""
-                 ##### Partition Filter: ${labelPartition.toArray.mkString("Array(", ", ",")")}
-          """.stripMargin)
       val allParts = partitions(table, partitionFilter)
       val startPrunedParts = Option(partitionRange.start).map(start => allParts.filter(_ >= start)).getOrElse(allParts)
       Option(partitionRange.end).map(end => startPrunedParts.filter(_ <= end)).getOrElse(startPrunedParts).toSet
     }
 
     val inputPartitions = partitionsInRange(inputTable)
-    val outputPartitions = partitionsInRange(outputTable)
+    val outputPartitions = partitionsInRange(outputTable, labelPartition)
     val earliestHoleOpt = (inputPartitions -- outputPartitions).reduceLeftOption(Ordering[String].min)
     earliestHoleOpt.foreach { hole =>
       val toDrop = outputPartitions.filter(_ > hole)

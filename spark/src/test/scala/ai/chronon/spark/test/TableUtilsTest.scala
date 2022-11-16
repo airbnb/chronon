@@ -4,10 +4,9 @@ import ai.chronon.api.{StructField, _}
 import ai.chronon.spark.{Conversions, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}

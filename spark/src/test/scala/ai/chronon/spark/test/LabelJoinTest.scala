@@ -92,25 +92,25 @@ class LabelJoinTest {
 
   @Test
   def testLabelEvolution(): Unit = {
-    val labelJoinConf = createTestLabelJoin(60, 20)
+    val labelJoinConf = createTestLabelJoin(30, 20)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
       labelJoin = labelJoinConf
     )
-    val runner = new LabelJoin(joinConf, tableUtils,labelDS)
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin()
     println(" == First Run == ")
     computed.show()
     assertEquals(computed.count(),6)
-    val computedRows = computed.collect()
 
+    //add additional label column
     val updatedLabelGroupBy = TestUtils.createAttributesGroupByV2(namespace, spark)
     val updatedLabelJoin = Builders.LabelJoin(
       labels = Seq(
         Builders.JoinPart(groupBy = updatedLabelGroupBy.groupByConf)
       ),
-      leftStartOffset = 60,
+      leftStartOffset = 30,
       leftEndOffset = 20
     )
     val updatedJoinConf = Builders.Join(
@@ -122,8 +122,12 @@ class LabelJoinTest {
     val updated = runner2.computeLabelJoin()
     println(" == Updated Run == ")
     updated.show()
-    assertEquals(updated.count(),6)
-//    assertTrue(computedRows sameElements(updated.collect()))
+    assertEquals(updated.count(),12)
+    assertEquals(updated.where(updated("label_ds") === "2022-10-31").count(),6)
+    // expected
+    // 3|  5|     15|   1|    PRIVATE_ROOM_3|   SUPER_HOST_3|2022-10-31|2022-10-03|
+    assertEquals(updated.where(updated("label_ds") === "2022-10-31" && updated("listing") === "3")
+      .select("listing_attributes_dim_host_type").first().get(0),"SUPER_HOST_3")
   }
 
   @Test(expected = classOf[AssertionError])
