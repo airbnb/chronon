@@ -165,7 +165,7 @@ class CatalystUtil(expressions: Map[String, String],
                    session: SparkSession,
                    sessionName: String) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
-  private val sessionTable = s"q${selectClauses.hashCode}_f${inputSparkSchema.pretty.hashCode}"
+  private val sessionTable = s"q${math.abs(selectClauses.hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
   private val query = s"SELECT $selectClauses FROM $sessionTable"
   private val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
   private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
