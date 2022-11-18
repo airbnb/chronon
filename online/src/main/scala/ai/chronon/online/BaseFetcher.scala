@@ -7,11 +7,12 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
-import ai.chronon.online.Metrics.{Context, Name}
+import ai.chronon.online.Metrics.Name
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.JavaConverters._
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
