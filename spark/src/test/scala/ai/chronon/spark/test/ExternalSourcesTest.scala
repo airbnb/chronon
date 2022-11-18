@@ -40,14 +40,8 @@ class ExternalSourcesTest {
         StructType("values_java_plus_one", Array(StructField("number", IntType), StructField("number_mapped", IntType)))
     )
 
-    val contextualSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(
-        name = Constants.ContextualSourceName
-      ),
-      keySchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType))),
-      valueSchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType)))
+    val contextualSource = Builders.ContextualSource(
+      fields = Array(StructField("context_1", IntType), StructField("context_2", IntType))
     )
 
     val namespace = "external_source_test"
@@ -146,7 +140,16 @@ class ExternalSourcesTest {
     val emptyResponseF = fetcher.fetchJoin(Seq(Request(join.metaData.name, Map.empty)))
     val emptyResponseMap = Await.result(emptyResponseF, Duration(10, SECONDS)).head.values.get
 
-    assertEquals(join.onlineExternalParts.size(), emptyResponseMap.keys.size)
-    assertTrue(emptyResponseMap.keys.forall(_.endsWith("_exception")))
+    val expectedKeys = Set(
+      "ext_p1_plus_one_exception",
+      "ext_p2_plus_one_exception",
+      "ext_p3_java_plus_one_exception",
+      "ext_always_fails_exception",
+      "ext_contextual_context_1",
+      "ext_contextual_context_2"
+    )
+    assertEquals(expectedKeys, emptyResponseMap.keySet)
+    assertEquals(null, emptyResponseMap("ext_contextual_context_1"))
+    assertEquals(null, emptyResponseMap("ext_contextual_context_2"))
   }
 }
