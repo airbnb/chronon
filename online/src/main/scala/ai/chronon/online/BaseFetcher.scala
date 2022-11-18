@@ -309,7 +309,7 @@ class BaseFetcher(kvStore: KVStore,
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
                 case Right(keyMissingException) => {
-                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.trace)
+                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.getMessage)
                 }
                 case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap
