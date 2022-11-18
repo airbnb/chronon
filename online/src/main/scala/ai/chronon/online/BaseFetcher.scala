@@ -4,16 +4,15 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.{Accuracy, DataModel, Row, StructField}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.{Seq, mutable}
-import scala.concurrent.Future
 import scala.collection.JavaConverters._
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -266,7 +265,7 @@ class BaseFetcher(kvStore: KVStore,
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
 
-    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
         val joinTry = getJoinConf(request.name)
         var joinContext: Option[Metrics.Context] = None
@@ -275,10 +274,16 @@ class BaseFetcher(kvStore: KVStore,
           joinContext.get.increment("join_request.count")
           join.joinPartOps.map { part =>
             val joinContextInner = Metrics.Context(joinContext.get, part)
-            val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-            PrefixedRequest(
-              part.fullPrefix,
-              Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner)))
+            val groupByName = part.groupBy.getMetaData.getName
+            val missingKeys = part.leftToRight.keys.toSeq.filterNot(request.keys.contains)
+            if (missingKeys.nonEmpty) {
+              Right(KeyMissingException(groupByName, missingKeys))
+            } else {
+              val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+              Left(
+                PrefixedRequest(part.fullPrefix,
+                                Request(groupByName, rightKeys, request.atMillis, Some(joinContextInner))))
+            }
           }
         }
         request.copy(context = joinContext) -> decomposedTry
@@ -288,7 +293,7 @@ class BaseFetcher(kvStore: KVStore,
       case (_, gbTry) =>
         gbTry match {
           case Failure(_)        => Iterator.empty
-          case Success(requests) => requests.iterator.map(_.request)
+          case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
         }
     }
 
@@ -302,7 +307,10 @@ class BaseFetcher(kvStore: KVStore,
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
-                case PrefixedRequest(prefix, groupByRequest) =>
+                case Right(keyMissingException) => {
+                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.trace)
+                }
+                case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap
                     .getOrElse(groupByRequest,
                                Failure(new IllegalStateException(
@@ -327,6 +335,7 @@ class BaseFetcher(kvStore: KVStore,
                         Map(groupByRequest.name + "_exception" -> trace)
                     }
                     .get
+                }
               }.toMap
             }
             joinValuesTry match {
