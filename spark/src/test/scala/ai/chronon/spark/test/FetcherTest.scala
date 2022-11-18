@@ -206,10 +206,9 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateRandomData(namespace: String): api.Join = {
+  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-    val keyCount = 100
-    val rowCount = 1000 * keyCount
+    val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
     // temporal events
@@ -569,5 +568,27 @@ class FetcherTest extends TestCase {
                          Constants.Partition.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true)
+  }
+
+  // test soft-fail on missing keys
+  def testEmptyRequest(): Unit = {
+    val namespace = "empty_request"
+    val joinConf = generateRandomData(namespace, 5, 5)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ChrononMetadataKey)
+    metadataStore.putJoinConf(joinConf)
+
+    val request = Request(joinConf.metaData.nameToFilePath, Map.empty)
+    val (responses, _) = joinResponses(Array(request), mockApi)
+    val responseMap = responses.head.values.get
+
+    assertEquals(joinConf.joinParts.size(), responseMap.size)
+    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }

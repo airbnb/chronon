@@ -7,7 +7,7 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
-import ai.chronon.online.Metrics.Name
+import ai.chronon.online.Metrics.{Context, Name}
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -274,15 +274,15 @@ class BaseFetcher(kvStore: KVStore,
           joinContext.get.increment("join_request.count")
           join.joinPartOps.map { part =>
             val joinContextInner = Metrics.Context(joinContext.get, part)
-            val groupByName = part.groupBy.getMetaData.getName
             val missingKeys = part.leftToRight.keys.toSeq.filterNot(request.keys.contains)
             if (missingKeys.nonEmpty) {
-              Right(KeyMissingException(groupByName, missingKeys))
+              Right(KeyMissingException(part.fullPrefix, missingKeys))
             } else {
               val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
               Left(
-                PrefixedRequest(part.fullPrefix,
-                                Request(groupByName, rightKeys, request.atMillis, Some(joinContextInner))))
+                PrefixedRequest(
+                  part.fullPrefix,
+                  Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
             }
           }
         }

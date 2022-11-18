@@ -141,5 +141,12 @@ class ExternalSourcesTest {
       codec.values.toSet
     )
     assertEquals(responses.length + 1, logs.length)
+
+    // test soft-fail on missing keys
+    val emptyResponseF = fetcher.fetchJoin(Seq(Request(join.metaData.name, Map.empty)))
+    val emptyResponseMap = Await.result(emptyResponseF, Duration(10, SECONDS)).head.values.get
+
+    assertEquals(join.onlineExternalParts.size(), emptyResponseMap.keys.size)
+    assertTrue(emptyResponseMap.keys.forall(_.endsWith("_exception")))
   }
 }

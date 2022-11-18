@@ -447,7 +447,7 @@ object Extensions {
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       // TODO: Long-term we could bring in derivations here.
       val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
-      val missingKeys = rightToLeft.map(_._2).filterNot(query.contains)
+      val missingKeys = rightToLeft.map(_._2).filterNot(query.contains).distinct
       if (missingKeys.nonEmpty) {
         throw KeyMissingException(externalPart.source.metadata.name, missingKeys)
       }
