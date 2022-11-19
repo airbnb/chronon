@@ -8,6 +8,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
+import ai.chronon.api.Extensions.ThrowableOps
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -326,14 +327,10 @@ class BaseFetcher(kvStore: KVStore,
                     // prefix feature names
                     .recover { // capture exception as a key
                       case ex: Throwable =>
-                        val stringWriter = new StringWriter()
-                        val printWriter = new PrintWriter(stringWriter)
-                        ex.printStackTrace(printWriter)
-                        val trace = stringWriter.toString
                         if (debug || Math.random() < 0.001) {
-                          println(s"Failed to fetch $groupByRequest with \n$trace")
+                          println(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
                         }
-                        Map(groupByRequest.name + "_exception" -> trace)
+                        Map(groupByRequest.name + "_exception" -> ex.traceString)
                     }
                     .get
                 }
