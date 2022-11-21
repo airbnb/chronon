@@ -211,24 +211,13 @@ ThisBuild / python_api_build := {
 lazy val python_api = inputKey[Unit]("Build Python API")
 python_api := {
   // Sbt has limited support for python and thus we are using bash script to achieve the same.
-  val action: String = spaceDelimited("<arg>").parsed(0)
+  val action = spaceDelimited("<arg>").parsed.mkString(" ")
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
   s.log.info(s"Building Python API version: ${versionStr}, action: ${action} ...")
-  if ((s"api/py/build-python.sh ${versionStr} ${action}" !) == 0) {
+  if ((s"api/py/release.sh ${versionStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
-  } else {
-    throw new IllegalStateException("Python API build failed!")
-  }
-}
-
-val run2 = inputKey[Unit]("Runs the main class twice with different argument lists separated by --")
-run2 := {
-  val one: Seq[String] = spaceDelimited("<arg>").parsed
-  val DEFAULT_ACTION = "build"
-  if ((s"api/py/build-python.sh ${(api / version).value} " !) == 0) {
-    assert(false)
   } else {
     throw new IllegalStateException("Python API build failed!")
   }
