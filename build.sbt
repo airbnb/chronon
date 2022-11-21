@@ -2,6 +2,7 @@ import sbt.Keys._
 import sbt.Test
 
 import scala.sys.process._
+import complete.DefaultParsers._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -63,12 +64,15 @@ lazy val releaseSettings = Seq(
     commitReleaseVersion,
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
+    releaseStepCommandAndRemaining("+ python_api release"),
     releaseStepCommandAndRemaining("+ publishSigned"),
     setNextVersion,
     commitNextVersion
     //pushChanges                                     // : Pushes the local Git changes to GitHub
   )
 )
+
+enablePlugins(GitVersioning, GitBranchPrompt)
 
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
@@ -80,7 +84,6 @@ lazy val root = (project in file("."))
     name := "chronon"
   )
   .settings(releaseSettings: _*)
-  .enablePlugins(GitVersioning, GitBranchPrompt)
 
 // Git related config
 git.useGitDescribe := true
@@ -178,6 +181,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
+    sourceGenerators in Compile += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++
@@ -188,6 +192,47 @@ lazy val api = project
           "com.novocode" % "junit-interface" % "0.11" % "test"
         )
   )
+
+lazy val py_thrift = taskKey[Seq[File]]("Build thrift generated files")
+py_thrift := {
+  val apiDirectory = baseDirectory.value / "api"
+  val inputThrift = apiDirectory / "thrift" / "api.thrift"
+  val outputPy = apiDirectory / "py" / "ai" / "chronon"
+  Thrift.gen(inputThrift.getPath, outputPy.getPath, "py", "api")
+}
+
+lazy val python_api_build = taskKey[Seq[File]]("Build thrift generated files")
+ThisBuild / python_api_build := {
+  python_api.toTask(" build").value
+  Seq()
+}
+
+// Task for building Python API of Chronon
+lazy val python_api = inputKey[Unit]("Build Python API")
+python_api := {
+  // Sbt has limited support for python and thus we are using bash script to achieve the same.
+  val action: String = spaceDelimited("<arg>").parsed(0)
+  val thrift = py_thrift.value
+  val s: TaskStreams = streams.value
+  val versionStr = (api / version).value
+  s.log.info(s"Building Python API version: ${versionStr}, action: ${action} ...")
+  if ((s"api/py/build-python.sh ${versionStr} ${action}" !) == 0) {
+    s.log.success("Built Python API")
+  } else {
+    throw new IllegalStateException("Python API build failed!")
+  }
+}
+
+val run2 = inputKey[Unit]("Runs the main class twice with different argument lists separated by --")
+run2 := {
+  val one: Seq[String] = spaceDelimited("<arg>").parsed
+  val DEFAULT_ACTION = "build"
+  if ((s"api/py/build-python.sh ${(api / version).value} " !) == 0) {
+    assert(false)
+  } else {
+    throw new IllegalStateException("Python API build failed!")
+  }
+}
 
 lazy val aggregator = project
   .dependsOn(api.%("compile->compile;test->test"))
@@ -281,6 +326,8 @@ lazy val spark_embedded = (project in file("spark"))
 lazy val sphinx = taskKey[Unit]("Build Sphinx Documentation")
 sphinx := {
   // Sbt has limited support for Sphinx and thus we are using bash script to achieve the same.
+  // Generate thrift files for API dependency
+  py_thrift.value
   val s: TaskStreams = streams.value
   s.log.info("Building Sphinx documentation...")
   if (("docs/build-sphinx.sh" !) == 0) {

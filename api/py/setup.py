@@ -1,7 +1,7 @@
 import os
 from setuptools import find_packages, setup
 
-current_dir = os.path.dirname(__file__)
+current_dir = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(current_dir, "README.md"), "r") as fh:
     long_description = fh.read()
 
@@ -10,7 +10,9 @@ with open(os.path.join(current_dir, "requirements/base.in"), "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.35"
+__version__ = "local"
+def get_version():
+    return os.environ.get("CHRONON_PY_VERSION", __version__)
 
 
 setup(
@@ -31,6 +33,6 @@ setup(
     },
     python_requires=">=3.7",
     url=None,
-    version=__version__,
+    version=get_version(),
     zip_safe=False
 )
