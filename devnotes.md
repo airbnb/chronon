@@ -25,6 +25,11 @@ brew extract --version=0.13.0 thrift $USER/local-thrift
 brew install thrift@0.13.0
 ```
 
+### Install Python dependency packages for API
+```shell
+python3 -m pip install -U tox build
+```
+
 ### Configuring IntelliJ
 
 Be sure to open the project from the `build.sbt` file (at the root level of the git directory).
