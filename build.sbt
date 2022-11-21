@@ -64,7 +64,7 @@ lazy val releaseSettings = Seq(
     commitReleaseVersion,
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
-    releaseStepCommandAndRemaining("+ python_api release"),
+    releaseStepInputTask(python_api, " release"),
     releaseStepCommandAndRemaining("+ publishSigned"),
     setNextVersion,
     commitNextVersion
