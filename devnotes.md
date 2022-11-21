@@ -5,7 +5,7 @@
 ***All commands assume you are in the root directory of this project***.
 For me, that looks like `~/repos/chronon`.
 
-### Prerequisites
+## Prerequisites
 
 Add the following to your shell run command files e.g. `~/.bashrc`.
 
@@ -13,6 +13,16 @@ Add the following to your shell run command files e.g. `~/.bashrc`.
 export CHRONON_OS=<path/to/chronon/repo>
 export CHRONON_API=$CHRONON_OS/api/py
 alias materialize="PYTHONPATH=$CHRONON_API:$PYTHONPATH $CHRONON_API/ai/chronon/repo/compile.py"
+```
+
+### Install specific version of thrift
+
+Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
+
+```shell
+brew tap-new $USER/local-thrift
+brew extract --version=0.13.0 thrift $USER/local-thrift
+brew install thrift@0.13.0
 ```
 
 ### Configuring IntelliJ
@@ -43,18 +53,15 @@ sbt +assembly
 ### Generate python thrift definitions
 
 ```shell
-cd $CHRONON_OS
-thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
+sbt py_thrift
 ```
 
 ### Materializing confs
-
 ```
 materialize  --input_path=<path/to/conf>
 ```
 
 ### Testing
-
 All tests
 ```shell
 sbt test
@@ -78,74 +85,41 @@ sbt dependencyBrowseGraph
 sbt dependencyBrowseTree
 ```
 
-### Build a fat jar
-```shell
-sbt assembly
-```
-
-Building a fat jar for just one submodule
-```shell
-sbt 'spark_uber/assembly'
-```
-
-### Install specific version of thrift
-```shell
-brew tap-new $USER/local-thrift
-brew extract --version=0.13.0 thrift $USER/local-thrift
-brew install thrift@0.13.0
-```
-
-Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
-
-
-### Pushing python API package to a private Pypi repository
-
-[One-Time] Setup your pypi public account and contact nikhil to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
-
-[One-Time] Install build and twine
-```
-python3 -m pip install build twine
-```
-
-[One-Time] Make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
-```
-[distutils]
-index-servers = pypi
-
-[pypi]
-repository = https://upload.pypi.org/legacy/
-username = <pypi.org user name>
-```
-
-Check the [current version](https://pypi.org/manage/project/chronon-ai/releases/) - you are going to increment the version in `api/py/setup.py`
-
-Generate thrift files, build and upload package
-
-```shell
-cd $CHRONON_OS
-thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift
-cd api/py
-python3 -m build
-twine upload dist/*
-```
-
 # Chronon Build Process
 * Inside the `$CHRONON_OS` directory.
 
-To build all the Chronon artifacts locally (builds all the JARs)
+### To build all of the Chronon artifacts locally (builds all the JARs, and Python API)
 ```shell
 sbt package
+```
+
+### Build Python API
+```shell
+sbt python_api
 ```
 
 Note: This will create the artifacts with the version specific naming specified under `version.sbt`
 ```text
 Builds on master will result in:
-<artifact-name>-<version>.jar
-chronon_2.11-0.7.0-SNAPSHOT.jar
+<artifact-name>-<version>.jar 
+[JARs]   chronon_2.11-0.7.0-SNAPSHOT.jar
+[Python] chronon-ai-0.7.0-SNAPSHOT.tar.gz
+
 
 Builds on user branches will result in:
 <artifact-name>-<branch-name>-<version>.jar
-chronon_2.11-jdoe--branch-0.7.0-SNAPSHOT.jar
+[JARs]   chronon_2.11-jdoe--branch-0.7.0-SNAPSHOT.jar
+[Python] chronon-ai-jdoe--branch-ai-0.7.0-SNAPSHOT.tar.gz
+```
+
+### Build a fat jar
+```shell
+sbt assembly
+```
+
+### Building a fat jar for just one submodule
+```shell
+sbt 'spark_uber/assembly'
 ```
 
 # Chronon Artifacts Publish Process
@@ -158,6 +132,9 @@ sbt publish
 
 * All the SNAPSHOT ones are published to the maven repository as specified by the env variable `$CHRONON_SNAPSHOT_REPO`.
 * All the final artifacts are published to the MavenCentral (via Sonatype)
+
+NOTE: Python API package will also be generated, but it will not be pushed to any PyPi repository. Only `release` will
+push the Python artifacts to the public repository.
 
 ## Setup for publishing artifacts to the JFrog artifactory
 1. Login into JFrog artifactory webapp console and create an API Key under user profile section.
@@ -173,7 +150,7 @@ user=<your username>
 password=<API Key>
 ```
 
-## Setup for Publishing artifacts to MavenCentral (via sonatype)
+## Setup for publishing artifacts to MavenCentral (via sonatype)
 1. Create a sonatype account if you don't have one. 
    1. Sign up here https://issues.sonatype.org/ 
    2. Create an issue to add your username created above to `ai.chronon`. Here is a sample [issue](https://issues.sonatype.org/browse/OSSRH-88230).
@@ -191,10 +168,45 @@ password=<your password>
 ```
 5. setup gpg - just first step in this [link](https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html#step+1%3A+PGP+Signatures)
 
+## Setup for pushing python API package to PyPi repository
+
+1. Setup your pypi public account and contact @Nikhil to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
+2. Install `tox, build, twine`. There are three python requirements for the python build process.
+* tox: Module for testing. To run the tests run tox in the main project directory.
+* build: Module for building. To build run `python -m build` in the main project directory
+* twine: Module for publishing. To upload a distribution run `twine upload dist/<distribution>`
+```
+python3 -m pip install -U tox build twine
+```
+
+3. Fetch the user token from the PyPi website.
+4. Make sure you have the credentials configuration for the python repositories you manage. Normally in `~/.pypirc`
+```
+[distutils]
+  index-servers =
+    local
+    pypi
+    chronon-pypi
+
+[local]
+  repository = # local artifactory
+  username = # local username
+  password = # token or password
+
+[pypi]
+  username = # username or __token__
+  password = # password or token
+
+# Or if using a project specific token
+[chronon-pypi]
+  repository = https://upload.pypi.org/legacy/
+  username = __token__
+  password = # Project specific pypi token.
+```
 
 # Chronon Release Process
 
-## Publishing libraries to maven central
+## Publishing all the artifacts of Chronon
 1. Run release command in the right HEAD of chronon repository.
 ```
 GPG_TTY=$(tty) sbt release
@@ -202,7 +214,7 @@ GPG_TTY=$(tty) sbt release
 This command will take into the account of `version.sbt` and handles a series of events:
 * Marks the current SNAPSHOT codebase as final (git commits).
 * Creates a new git tag (e.g v0.7.0) pointing to the release commit.
-* Builds the artifacts with released versioning suffix and pushes them to Sonatype.
+* Builds the artifacts with released versioning suffix and pushes them to Sonatype, and PyPi central.
 * Updates the `version.sbt` to point to the next in line developmental version (git commits).
 
 2. login into the [staging repo](https://s01.oss.sonatype.org/#stagingRepositories) in nexus (same password as sonatype jira) 
@@ -224,6 +236,12 @@ This command will take into the account of `version.sbt` and handles a series of
         git push origin <tag-name>
       ```
      3. New tag should be available here  - https://github.com/airbnb/chronon/tags
+6. Verify the Python API from the [PyPi website](https://pypi.org/project/chronon-ai/) that we are pointing to the latest. 
+
+### Troubleshooting
+* Most common reason for Python failure is re-uploading a version that's already uploaded.
+
+>>>>>>> f61a5f31 (Updated Documentation)
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
 Currently the repo is not public and the run.py script can't reach it.

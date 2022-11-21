@@ -64,8 +64,8 @@ lazy val releaseSettings = Seq(
     commitReleaseVersion,
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
-    releaseStepInputTask(python_api, " release"),
     releaseStepCommandAndRemaining("+ publishSigned"),
+    releaseStepInputTask(python_api, " release"),  // This step handles the release of Python packages
     setNextVersion,
     commitNextVersion
     //pushChanges                                     // : Pushes the local Git changes to GitHub
@@ -216,7 +216,7 @@ python_api := {
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
   s.log.info(s"Building Python API version: ${versionStr}, action: ${action} ...")
-  if ((s"api/py/release.sh ${versionStr} ${action}" !) == 0) {
+  if ((s"api/py/python-api-build.sh ${versionStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
   } else {
     throw new IllegalStateException("Python API build failed!")
