@@ -18,7 +18,12 @@ if [[ -z "${ACTION}" ]] || [[ "${ACTION}" == "build" ]]; then
   python -m build
 elif [[ "${ACTION}" == "release" ]]; then
   PYPI_REPOSITORY="chronon-pypi"
-  # Check git state, Run Tests, Build, Release
+  # Sanity checks, git state, Run Tests, Build, Release
+  # Make sure the version string doesn't contain SNAPSHOT if so it signifies development build and cannot be released.
+  if [[ "${CHRONON_PY_VERSION}" == *"SNAPSHOT"* ]]; then
+    echo "Python releases cannot be done for in development versions. Version: ${CHRONON_PY_VERSION}"
+    exit 1
+  fi
   echo "Running tests, git check, build and release..."
   cd $SCRIPT_DIR && tox
   if [[ $? -eq 0 ]]; then
