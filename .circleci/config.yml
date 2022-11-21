@@ -66,6 +66,7 @@ jobs:
                   name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt test
@@ -82,6 +83,7 @@ jobs:
                   name: Run Spark 3.1.1 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.12.12 test"
@@ -98,6 +100,7 @@ jobs:
                   name: Run Scala 13 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.13.6 test"
