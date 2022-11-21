@@ -315,8 +315,8 @@ lazy val spark_embedded = (project in file("spark"))
 lazy val sphinx = taskKey[Unit]("Build Sphinx Documentation")
 sphinx := {
   // Sbt has limited support for Sphinx and thus we are using bash script to achieve the same.
-  // Generate thrift files for API dependency
-  py_thrift.value
+  // To generate Python API docs, we need to finish the build of Python API.
+  python_api_build.value
   val s: TaskStreams = streams.value
   s.log.info("Building Sphinx documentation...")
   if (("docs/build-sphinx.sh" !) == 0) {
