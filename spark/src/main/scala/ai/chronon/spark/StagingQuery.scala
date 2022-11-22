@@ -61,7 +61,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         println(s"Finished writing Staging Query data to $outputTable")
       } catch {
         case err: Throwable =>
-          exceptions :+ s"Error handling range ${stagingQueryUnfilledRange} : ${err.getStackTrace}"
+          exceptions.append(s"Error handling range ${stagingQueryUnfilledRange} : ${err.getStackTrace}")
       }
     }
     if (exceptions.nonEmpty) {
