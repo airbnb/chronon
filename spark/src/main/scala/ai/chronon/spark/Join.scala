@@ -198,9 +198,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     Some(result)
   }
 
-  def computeJoin(stepDays: Option[Int] = None,
-                  labelDS: Option[String] = None,
-                  labelPartition: Option[String] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")

@@ -40,7 +40,7 @@ class LabelJoin(joinConf: api.Join,
     assert(Option(joinConf.metaData.team).nonEmpty,
       s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    labelJoinConf.labels.asScala.foreach { jp =>
+    labelJoinConf.labelParts.asScala.foreach { jp =>
       assert(Option(jp.groupBy.dataModel).equals(Option(Entities)),
              s"groupBy.dataModel must be Entities for label join ${jp.groupBy.metaData.name}")
 
@@ -78,7 +78,7 @@ class LabelJoin(joinConf: api.Join,
     if (leftUnfilledRange.start != null && leftUnfilledRange.end != null) {
       metrics.gauge(Metrics.Name.PartitionCount, leftUnfilledRange.partitions.length)
     }
-    labelJoinConf.labels.asScala.foreach { joinPart =>
+    labelJoinConf.labelParts.asScala.foreach { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
       tableUtils.dropPartitionsAfterHole(left.table, partTable, rangeToFill,
@@ -147,7 +147,7 @@ class LabelJoin(joinConf: api.Join,
     }.toMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labels.asScala.par.map { joinPart =>
+    val rightDfs = labelJoinConf.labelParts.asScala.par.map { joinPart =>
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
         computeLabelPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
@@ -157,7 +157,7 @@ class LabelJoin(joinConf: api.Join,
       }
     }
 
-    val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftTaggedDf) {
+    val joined = rightDfs.zip(labelJoinConf.labelParts.asScala).foldLeft(leftTaggedDf) {
       case (partialDf, (rightDf, joinPart)) => JoinUtils.joinWithLeft(partialDf, rightDf, joinPart, joinConf.left, 0)
     }
 
@@ -193,7 +193,7 @@ class LabelJoin(joinConf: api.Join,
       GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
-      case (Events, Entities, Accuracy.SNAPSHOT) =>
+      case (Events, Entities, _) =>
         genGroupBy(unfilledTimeRange.toPartitionRange).snapshotEntities
       case (_, _, _) => {
         println("Label join only supports Events : Entities")

@@ -266,13 +266,13 @@ object Extensions {
     }
 
     def updateQueryPartitions(start: Option[String] = None, end: Option[String] = None): Source = {
-      val updatedStartQuery = if(!start.isEmpty) source.query.setStartPartition(start.get) else source.query
-      val updatedQuery = if(!end.isEmpty) updatedStartQuery.setEndPartition(end.get) else updatedStartQuery
+      if (!start.isEmpty) { query.setStartPartition(start.get) }
+      if (!end.isEmpty) { query.setEndPartition(end.get) }
 
       if (source.isSetEntities) {
-        source.setEntities(source.getEntities.setQuery(updatedQuery))
+        source.setEntities(source.getEntities.setQuery(query))
       } else {
-        source.setEvents(source.getEvents.setQuery(updatedQuery))
+        source.setEvents(source.getEvents.setQuery(query))
       }
       source
     }
@@ -522,7 +522,7 @@ object Extensions {
   implicit class LabelJoinOps(val labelJoin: LabelJoin) extends Serializable {
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labels)
+        .convertJavaListToScala(labelJoin.labelParts)
         .flatMap { _.rightToLeft.values }
         .toSet
         .toArray
@@ -530,7 +530,7 @@ object Extensions {
 
     def setups: Seq[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labels)
+        .convertJavaListToScala(labelJoin.labelParts)
         .flatMap(_.groupBy.setups).distinct
     }
   }

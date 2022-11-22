@@ -190,7 +190,7 @@ object Builders {
   }
 
   object LabelJoin {
-    def apply(labels: Seq[JoinPart] = null,
+    def apply(labelParts: Seq[JoinPart] = null,
               leftStartOffset: Int = 0,
               leftEndOffset: Int = 0,
               cadence: Cadence = null,
@@ -199,8 +199,8 @@ object Builders {
       val result = new LabelJoin()
       result.setLeftStartOffset(leftStartOffset)
       result.setLeftEndOffset(leftEndOffset)
-      if (labels != null)
-        result.setLabels(labels.asJava)
+      if (labelParts != null)
+        result.setLabelParts(labelParts.asJava)
       if (cadence != null)
         result.setCadence(cadence)
       if (joinType != null)

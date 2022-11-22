@@ -108,7 +108,7 @@ class LabelJoinTest {
     //add additional label column
     val updatedLabelGroupBy = TestUtils.createAttributesGroupByV2(namespace, spark, "listing_labels")
     val updatedLabelJoin = Builders.LabelJoin(
-      labels = Seq(
+      labelParts = Seq(
         Builders.JoinPart(groupBy = updatedLabelGroupBy.groupByConf)
       ),
       leftStartOffset = 30,
@@ -135,7 +135,7 @@ class LabelJoinTest {
   def testLabelJoinInvalidSource(): Unit = {
      // Invalid left data model entities
     val labelJoin = Builders.LabelJoin(
-      labels = Seq(
+      labelParts = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = 10,
@@ -154,7 +154,7 @@ class LabelJoinTest {
   def testLabelJoinInvalidGroupBy(): Unit = {
     // Invalid label data model
     val labelJoin = Builders.LabelJoin(
-      labels = Seq(
+      labelParts = Seq(
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)
       ),
       leftStartOffset = 10,
@@ -172,7 +172,7 @@ class LabelJoinTest {
                           groupByTableName: String = "listing_attributes"): ai.chronon.api.LabelJoin = {
     val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark, groupByTableName)
     Builders.LabelJoin(
-      labels = Seq(
+      labelParts = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = startOffset,

@@ -281,7 +281,7 @@ struct Join {
 
 // Label join parts and params
 struct LabelJoin {
-    1: optional list<JoinPart> labels
+    1: optional list<JoinPart> labelParts
     // The earliest date label should be refreshed
     2: optional i32 leftStartOffset
     // The most rencet date label should be refreshed.
