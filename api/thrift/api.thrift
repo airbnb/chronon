@@ -239,15 +239,9 @@ struct GroupBy {
     6: optional string backfillStartDate
 }
 
-struct AggregationSelector {
-  1: optional string name
-  2: optional list<Window> windows
-}
-
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors # deprecated
     4: optional string prefix
 }
 
@@ -257,6 +251,11 @@ struct ExternalPart {
     // currently this only supports renaming, in the future this will run catalyst expressions
     2: optional map<string, string> keyMapping
     3: optional string prefix
+}
+
+struct Derivation {
+    1: optional string name
+    2: optional string expression
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -275,7 +274,7 @@ struct Join {
     6: optional LabelPart labelPart
 
     /**
-    * Map of a derived column name to the expression based on joinPart / externalPart columns
+    * List of a derived column names to the expression based on joinPart / externalPart columns
     * The expression can be any valid Spark SQL select clause without aggregation functions.
     *
     * joinPart column names are automatically constructed according to the below convention
@@ -289,7 +288,7 @@ struct Join {
     * Including a column with key "*" and value "*", means that every raw column will be included along with the derived
     * columns.
     **/
-    7: optional map<string, string> derivations
+    7: optional list<Derivation> derivations
 }
 
 // Label join parts and params

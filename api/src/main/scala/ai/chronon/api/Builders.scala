@@ -207,16 +207,12 @@ object Builders {
     def apply(
         groupBy: GroupBy = null,
         keyMapping: Map[String, String] = null,
-        selectors: Seq[AggregationSelector] = null,
         prefix: String = null
     ): JoinPart = {
       val result = new JoinPart()
       result.setGroupBy(groupBy)
       if (keyMapping != null)
         result.setKeyMapping(keyMapping.asJava)
-
-      if (selectors != null) // TODO: selectors are unused right now - we select everything
-        result.setSelectors(selectors.asJava)
       result.setPrefix(prefix)
       result
     }
