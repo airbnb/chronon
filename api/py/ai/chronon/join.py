@@ -222,7 +222,7 @@ def Join(left: api.Source,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
-         skip_join_dag_creation: bool = False,
+         offline_schedule: str = 'daily',
          **kwargs
          ) -> api.Join:
     """
@@ -289,8 +289,8 @@ def Join(left: api.Source,
     :param online_external_parts:
         users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
         This is applicable only for online fetching. Offline this will not be produce any values.
-    :param skip_join_dag_creation:
-        Will not create the airflow DAG for the join if set to True
+    :param offline_schedule:
+        Cron expression for Airflow to schedule a DAG for offline join compute tasks
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -327,7 +327,7 @@ def Join(left: api.Source,
     custom_json = {
         "check_consistency": check_consistency,
         "lag": lag,
-        "skip_join_dag_creation": skip_join_dag_creation
+        "offline_schedule": offline_schedule
     }
 
     if additional_args:
