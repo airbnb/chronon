@@ -73,7 +73,6 @@ class DataType():
     types like Map, List, Struct etc.
     """
     BOOLEAN = api.TDataType(api.DataKind.BOOLEAN)
-    BYTE = api.TDataType(api.DataKind.BYTE)
     SHORT = api.TDataType(api.DataKind.SHORT)
     INT = api.TDataType(api.DataKind.INT)
     LONG = api.TDataType(api.DataKind.LONG)
@@ -81,11 +80,16 @@ class DataType():
     DOUBLE = api.TDataType(api.DataKind.DOUBLE)
     STRING = api.TDataType(api.DataKind.STRING)
     BINARY = api.TDataType(api.DataKind.BINARY)
-    DATE = api.TDataType(api.DataKind.DATE)
-    TIMESTAMP = api.TDataType(api.DataKind.TIMESTAMP)
+
+    # Types unsupported by Avro. See AvroConversions.scala#fromChrononSchema
+    # BYTE = api.TDataType(api.DataKind.BYTE)
+    # DATE = api.TDataType(api.DataKind.DATE)
+    # TIMESTAMP = api.TDataType(api.DataKind.TIMESTAMP)
 
     def MAP(key_type: api.TDataType,
             value_type: api.TDataType) -> api.TDataType:
+        assert key_type == api.TDataType(api.DataKind.STRING), "key_type has to STRING for MAP types"
+
         return api.TDataType(
             api.DataKind.MAP,
             params=[
