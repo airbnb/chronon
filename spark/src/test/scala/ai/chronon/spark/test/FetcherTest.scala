@@ -8,7 +8,7 @@ import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.{SparkConversions, JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -158,7 +158,9 @@ class FetcherTest extends TestCase {
 
     sourceData.foreach {
       case (schema, rows) =>
-        spark.createDataFrame(rows.asJava, Conversions.fromChrononSchema(schema)).save(s"$namespace.${schema.name}")
+        spark
+          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
+          .save(s"$namespace.${schema.name}")
 
     }
     println("saved all data hand written for fetcher test")
@@ -530,8 +532,8 @@ class FetcherTest extends TestCase {
             Map(Constants.PartitionColumn -> today) ++
             Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
         val values: Array[Any] = columns.map(all.get(_).orNull)
-        Conversions
-          .toSparkRow(values, StructType.from("record", Conversions.toChrononSchema(endDsExpected.schema)))
+        SparkConversions
+          .toSparkRow(values, StructType.from("record", SparkConversions.toChrononSchema(endDsExpected.schema)))
           .asInstanceOf[GenericRow]
       }
 
