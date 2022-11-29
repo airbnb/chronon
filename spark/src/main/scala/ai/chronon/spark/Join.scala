@@ -12,8 +12,9 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.collection.parallel.ParMap
-import scala.util.Try
+import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -212,8 +213,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
-    joined.explain()
-    joined.drop(Constants.TimePartitionColumn)
+    val finalJoined = joinConf.derivationSelects.map(exprs => joined.selectExpr(exprs: _*)).getOrElse(joined)
+    finalJoined.explain()
+    finalJoined.drop(Constants.TimePartitionColumn)
   }
 
   def tablesToRecompute(): Option[Seq[String]] = {
