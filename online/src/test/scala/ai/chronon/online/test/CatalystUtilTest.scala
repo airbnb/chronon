@@ -1,9 +1,9 @@
-package ai.chronon.spark.test
+package ai.chronon.online.test
 
 import ai.chronon.api._
-import ai.chronon.spark.Extensions.StructTypeOps
-import ai.chronon.spark.{Conversions, SparkSessionBuilder}
-import ai.chronon.spark.test.CatalystUtil.IteratorWrapper
+import ai.chronon.online.Extensions.StructTypeOps
+import ai.chronon.online.SparkConversions
+import ai.chronon.online.test.CatalystUtil.IteratorWrapper
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
@@ -17,7 +17,7 @@ import org.junit.Test
 
 import java.util
 import scala.collection.mutable
-import scala.jdk.CollectionConverters.asScalaIteratorConverter
+import scala.util.ScalaToJavaConversions.IteratorOps
 
 // TODO: move these classes to online module. We would need to figure out how to relocate spark deps so that they don't
 // pollute apps that depend on Chronon fetcher.
@@ -108,9 +108,9 @@ object InternalRowConversions {
         def mapConverter(x: Any): Any = {
           val mapData = x.asInstanceOf[util.HashMap[Any, Any]]
           val keyArray: ArrayData = new GenericArrayData(
-            mapData.entrySet().iterator().asScala.map(_.getKey).map(keyConverter).toArray)
+            mapData.entrySet().iterator().toScala.map(_.getKey).map(keyConverter).toArray)
           val valueArray: ArrayData = new GenericArrayData(
-            mapData.entrySet().iterator().asScala.map(_.getValue).map(valueConverter).toArray)
+            mapData.entrySet().iterator().toScala.map(_.getValue).map(valueConverter).toArray)
           new ArrayBasedMapData(keyArray, valueArray)
         }
 
@@ -120,7 +120,7 @@ object InternalRowConversions {
 
         def arrayConverter(x: Any): Any = {
           val arrayData = x.asInstanceOf[util.ArrayList[Any]]
-          new GenericArrayData(arrayData.iterator().asScala.map(elementConverter).toArray)
+          new GenericArrayData(arrayData.iterator().toScala.map(elementConverter).toArray)
         }
 
         arrayConverter
@@ -160,10 +160,7 @@ object CatalystUtil {
   }
 }
 
-class CatalystUtil(expressions: Map[String, String],
-                   inputSchema: StructType,
-                   session: SparkSession,
-                   sessionName: String) {
+class CatalystUtil(expressions: Map[String, String], inputSchema: StructType, session: SparkSession) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
   private val sessionTable = s"q${math.abs(selectClauses.hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
   private val query = s"SELECT $selectClauses FROM $sessionTable"
@@ -171,8 +168,8 @@ class CatalystUtil(expressions: Map[String, String],
   private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
     initializeIterator(iteratorWrapper)
   private val outputDecoder = InternalRowConversions.from(outputSparkSchema)
-  @transient lazy val inputSparkSchema = Conversions.fromChrononSchema(inputSchema)
-  private val inputEncoder = InternalRowConversions.to(Conversions.fromChrononSchema(inputSchema))
+  @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
+  private val inputEncoder = InternalRowConversions.to(SparkConversions.fromChrononSchema(inputSchema))
 
   def performSql(values: Map[String, Any]): Map[String, Any] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
@@ -188,7 +185,7 @@ class CatalystUtil(expressions: Map[String, String],
   private def initializeIterator(
       iteratorWrapper: IteratorWrapper[InternalRow]): (BufferedRowIterator, types.StructType) = {
     val emptyRowRdd = session.emptyDataFrame.rdd
-    val inputSparkSchema = Conversions.fromChrononSchema(inputSchema)
+    val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
     val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
     emptyDf.createOrReplaceTempView(sessionTable)
     val outputSchema = session.sql(query).schema
@@ -206,8 +203,11 @@ class CatalystUtil(expressions: Map[String, String],
 }
 
 class CatalystUtilTest extends TestCase {
-  lazy val session = SparkSessionBuilder.build("catalyst_test", true)
-
+  lazy val session = SparkSession
+    .builder()
+    .appName("catalyst_test")
+    .master("local[*]")
+    .getOrCreate()
   @Test
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
@@ -229,8 +229,7 @@ class CatalystUtilTest extends TestCase {
           StructField("ls", ListType(innerStruct))
         )
       ),
-      session,
-      "test_query"
+      session
     )
 
     val mapVal = new util.HashMap[Any, Any]()

@@ -1,7 +1,8 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
-import ai.chronon.spark._
+import ai.chronon.api.{StructField, _}
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
@@ -90,7 +91,7 @@ class TableUtilsTest {
   private def makeDf(schema: StructType, rows: List[Row]): DataFrame = {
     spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
   }
 
@@ -232,6 +233,7 @@ class TableUtilsTest {
     tableUtils.dropPartitions(tableName,
                               Seq("2022-10-01", "2022-10-02"),
                               subPartitionFilters = Map(Constants.LabelPartitionColumn -> "2022-11-02"))
+
     val updated = tableUtils.sql(s"""
          |SELECT * from ${tableName}
          |""".stripMargin)
@@ -268,8 +270,8 @@ class TableUtilsTest {
       )
     )
     tableUtils.insertPartitions(df1,
-      tableName,
-      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
 
   }
 

@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Constants
-import ai.chronon.online.{AvroCodec, AvroConversions}
+import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -31,7 +31,7 @@ object Extensions {
     }
 
     def toChrononSchema(name: String = null): api.StructType =
-      api.StructType.from(name, Conversions.toChrononSchema(schema))
+      api.StructType.from(name, SparkConversions.toChrononSchema(schema))
     def toAvroSchema(name: String = null): Schema = AvroConversions.fromChrononSchema(toChrononSchema(name))
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
