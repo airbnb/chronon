@@ -322,16 +322,22 @@ class Fetcher(val kvStore: KVStore,
     }
 
     // step-2 dedup external requests across joins
-    val externalRequestToJoinRequestMap: Map[Request, scala.collection.Seq[ExternalToJoinRequest]] = validRequests
+    val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests
       .flatMap { joinRequest =>
         val parts =
           getJoinConf(joinRequest.name).get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().asScala.map { part =>
-          val mappedKeys = part.applyMapping(joinRequest.keys)
-          ExternalToJoinRequest(Request(part.source.metadata.name, mappedKeys), joinRequest, part)
+          val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
+            case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
+            case Failure(exception: KeyMissingException) => Right(exception)
+            case Failure(otherException)                 => throw otherException
+          }
+          ExternalToJoinRequest(externalRequest, joinRequest, part)
         }
       }
-      .groupBy(_.externalRequest)
+    val validExternalRequestToJoinRequestMap = externalToJoinRequests
+      .filter(_.externalRequest.isLeft)
+      .groupBy(_.externalRequest.left.get)
       .mapValues(_.toSeq)
       .toMap
 
@@ -340,13 +346,13 @@ class Fetcher(val kvStore: KVStore,
                       join = validRequests.iterator.map(_.name).toSeq.distinct.mkString(","))
     context.histogram("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.histogram("response.external_invalid_joins.count", invalidCount)
-    val responseFutures = externalSourceRegistry.fetchRequests(externalRequestToJoinRequestMap.keys.toSeq, context)
+    val responseFutures = externalSourceRegistry.fetchRequests(validExternalRequestToJoinRequestMap.keys.toSeq, context)
 
     // step-3 walk the response, find all the joins to update and the result map
     responseFutures.map { responses =>
       responses.foreach { response =>
         val responseTry: Try[Map[String, Any]] = response.values
-        val joinsToUpdate: Seq[ExternalToJoinRequest] = externalRequestToJoinRequestMap(response.request)
+        val joinsToUpdate: Seq[ExternalToJoinRequest] = validExternalRequestToJoinRequestMap(response.request)
         joinsToUpdate.foreach { externalToJoin =>
           val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
           val prefix = externalToJoin.part.fullName + "_"
@@ -360,6 +366,15 @@ class Fetcher(val kvStore: KVStore,
           }
         }
       }
+
+      externalToJoinRequests
+        .filter(_.externalRequest.isRight)
+        .foreach(externalToJoin => {
+          val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
+          val KeyMissingException = externalToJoin.externalRequest.right.get
+          resultValueMap.update(externalToJoin.part.fullName + "_" + "exception", KeyMissingException)
+          externalToJoin.context.incrementException(KeyMissingException)
+        })
 
       // step-4 convert the resultMap into Responses
       joinRequests.map { req =>
@@ -385,7 +400,9 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  private case class ExternalToJoinRequest(externalRequest: Request, joinRequest: Request, part: ExternalPart) {
+  private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],
+                                           joinRequest: Request,
+                                           part: ExternalPart) {
     lazy val context: Metrics.Context =
       Metrics.Context(Environment.JoinFetching, join = joinRequest.name, groupBy = part.fullName)
   }

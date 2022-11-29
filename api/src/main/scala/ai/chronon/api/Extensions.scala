@@ -422,6 +422,8 @@ object Extensions {
         .toArray
     lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
     lazy val valueNames: Array[String] = schemaNames(externalSource.valueSchema)
+
+    def isContextualSource: Boolean = externalSource.metadata.name == Constants.ContextualSourceName
   }
 
   object KeyMappingHelper {
@@ -446,12 +448,16 @@ object Extensions {
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       // TODO: Long-term we could bring in derivations here.
-      right_keys.map { k =>
-        val queryKey = flipped.getOrElse(k, k)
-        if (!query.contains(queryKey)) {
-          throw new RuntimeException(s"Missing required key, ${queryKey} for ${externalPart.source.metadata.name}")
-        }
-        k -> query(flipped.getOrElse(k, k)).asInstanceOf[AnyRef]
+      val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
+      val missingKeys = rightToLeft.iterator.map(_._2).filterNot(query.contains).toSet
+
+      // for contextual features, we automatically populate null if any of the keys are missing
+      // otherwise, an exception is thrown which will be converted to soft-fail in Fetcher code
+      if (missingKeys.nonEmpty && !externalPart.source.isContextualSource) {
+        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq)
+      }
+      rightToLeft.map {
+        case (rightKey, leftKey) => rightKey -> query.getOrElse(leftKey, null).asInstanceOf[AnyRef]
       }.toMap
     }
 

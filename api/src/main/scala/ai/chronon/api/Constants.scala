@@ -30,4 +30,6 @@ object Constants {
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
   val ContextualSourceName: String = "contextual"
+  val ContextualSourceKeys: String = "contextual_keys"
+  val ContextualSourceValues: String = "contextual_values"
 }

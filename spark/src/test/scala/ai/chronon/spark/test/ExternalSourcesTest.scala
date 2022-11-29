@@ -1,6 +1,6 @@
 package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.{Builders, Constants, IntType, StringType, StructField, StructType}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.JoinCodec
 import org.junit.Assert._
@@ -40,14 +40,8 @@ class ExternalSourcesTest {
         StructType("values_java_plus_one", Array(StructField("number", IntType), StructField("number_mapped", IntType)))
     )
 
-    val contextualSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(
-        name = Constants.ContextualSourceName
-      ),
-      keySchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType))),
-      valueSchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType)))
+    val contextualSource = Builders.ContextualSource(
+      fields = Array(StructField("context_1", IntType), StructField("context_2", IntType))
     )
 
     val namespace = "external_source_test"
@@ -141,5 +135,21 @@ class ExternalSourcesTest {
       codec.values.toSet
     )
     assertEquals(responses.length + 1, logs.length)
+
+    // test soft-fail on missing keys
+    val emptyResponseF = fetcher.fetchJoin(Seq(Request(join.metaData.name, Map.empty)))
+    val emptyResponseMap = Await.result(emptyResponseF, Duration(10, SECONDS)).head.values.get
+
+    val expectedKeys = Set(
+      "ext_p1_plus_one_exception",
+      "ext_p2_plus_one_exception",
+      "ext_p3_java_plus_one_exception",
+      "ext_always_fails_exception",
+      "ext_contextual_context_1",
+      "ext_contextual_context_2"
+    )
+    assertEquals(expectedKeys, emptyResponseMap.keySet)
+    assertEquals(null, emptyResponseMap("ext_contextual_context_1"))
+    assertEquals(null, emptyResponseMap("ext_contextual_context_2"))
   }
 }

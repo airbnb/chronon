@@ -162,6 +162,15 @@ object Builders {
     }
   }
 
+  object ContextualSource {
+    def apply(fields: Array[StructField]): ExternalSource = {
+      val result = new ExternalSource
+      result.setMetadata(MetaData(name = Constants.ContextualSourceName))
+      result.setKeySchema(toTDataType(StructType(Constants.ContextualSourceKeys, fields)))
+      result.setValueSchema(toTDataType(StructType(Constants.ContextualSourceValues, fields)))
+    }
+  }
+
   object ExternalPart {
     def apply(
         externalSource: ExternalSource,
