@@ -44,11 +44,12 @@ class ItemSketchSerializable extends Serializable {
 
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
-               startDate: String,
-               endDate: String,
+               startDate: String = Constants.Partition.at(System.currentTimeMillis()),
+               endDate: String = Constants.Partition.at(System.currentTimeMillis()),
                count: Int = 64,
                sample: Double = 0.1,
-               enableHitter: Boolean = false) {
+               enableHitter: Boolean = false,
+               silenceMode: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
@@ -160,27 +161,34 @@ class Analyzer(tableUtils: TableUtils,
                            groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
-    println(s"""
-               |ANALYSIS for $name:
-               |$analysis
+    if (!silenceMode) {
+      println(
+        s"""
+           |ANALYSIS for $name:
+           |$analysis
                """.stripMargin)
-    if(includeOutputTableName)
-      println(s"""
-               |----- OUTPUT TABLE NAME -----
-               |${groupByConf.metaData.outputTable}
+      if (includeOutputTableName)
+        println(
+          s"""
+             |----- OUTPUT TABLE NAME -----
+             |${groupByConf.metaData.outputTable}
                """.stripMargin)
-    println(s"""
-               |----- KEY SCHEMA -----
-               |${keySchema.mkString("\n")}
-               |----- OUTPUT SCHEMA -----
-               |${schema.mkString("\n")}
-               |------ END --------------
-               |""".stripMargin)
+      println(
+        s"""
+           |----- KEY SCHEMA -----
+           |${keySchema.mkString("\n")}
+           |----- OUTPUT SCHEMA -----
+           |${schema.mkString("\n")}
+           |------ END --------------
+           |""".stripMargin)
+    } else {
+      println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
+    }
 
-    if(groupByConf.aggregations != null) {
+    if (groupByConf.aggregations != null) {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     } else {
-      groupBy.outputSchema.map {tup => toAggregationMetadata(tup.name, tup.fieldType)}.toArray
+      groupBy.outputSchema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     }
   }
 
@@ -192,7 +200,7 @@ class Analyzer(tableUtils: TableUtils,
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
-    var aggregationsMetadata = ListBuffer[AggregationMetadata]()
+    val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     joinConf.joinParts.asScala.par.foreach { part =>
       val aggMetadata = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
       aggregationsMetadata ++= aggMetadata.map { aggMeta => AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
@@ -203,18 +211,22 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     val rightSchema = aggregationsMetadata.map {aggregation => s"  ${aggregation.name} => ${aggregation.columnType}"}
-    println(s"""
-               |ANALYSIS for join/${joinConf.metaData.cleanName}:
-               |$analysis
-               |----- OUTPUT TABLE NAME -----
-               |${joinConf.metaData.outputTable}
-               |------ LEFT SIDE SCHEMA -------
-               |${leftSchema.mkString("\n")}
-               |------ RIGHT SIDE SCHEMA ----
-               |${rightSchema.mkString("\n")}
-               |------ END ------------------
-               |""".stripMargin)
-
+    if (!silenceMode) {
+      println(
+        s"""
+           |ANALYSIS for join/${joinConf.metaData.cleanName}:
+           |$analysis
+           |----- OUTPUT TABLE NAME -----
+           |${joinConf.metaData.outputTable}
+           |------ LEFT SIDE SCHEMA -------
+           |${leftSchema.mkString("\n")}
+           |------ RIGHT SIDE SCHEMA ----
+           |${rightSchema.mkString("\n")}
+           |------ END ------------------
+           |""".stripMargin)
+    } else {
+      println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
+    }
     // (cli print output, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata)
   }

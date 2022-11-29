@@ -27,8 +27,7 @@ object MetadataExporter {
     mapper.registerModule(DefaultScalaModule)
     val configData = mapper.readValue(new File(groupByPath), classOf[Map[String, Any]])
     val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
-    val today = Constants.Partition.at(System.currentTimeMillis())
-    val analyzer = new Analyzer(tableUtils, groupByPath, today, today)
+    val analyzer = new Analyzer(tableUtils, groupByPath, silenceMode = true)
     val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](groupByPath, check = false)
     val featureMetadata = analyzer.analyzeGroupBy(groupBy).map{ featureCol =>
       Map(
@@ -52,7 +51,7 @@ object MetadataExporter {
     val writer = new BufferedWriter(new FileWriter(file))
     writer.write(data)
     writer.close()
-    println(s" ${groupByPath} : Wrote to output directory successfully")
+    println(s"${groupByPath} : Wrote to output directory successfully")
   }
 
   def processGroupBys(inputPath: String, outputPath: String): Unit = {
