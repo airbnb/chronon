@@ -211,6 +211,8 @@ struct MetaData {
     9: optional map<string, map<string, string>> modeToEnvMap
     10: optional bool consistencyCheck
     11: optional double samplePercent
+    // cron expression for airflow DAG schedule
+    12: optional string offlineSchedule
 }
 
 // Equivalent to a FeatureSet in chronon terms

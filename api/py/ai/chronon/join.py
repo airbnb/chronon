@@ -326,8 +326,7 @@ def Join(left: api.Source,
 
     custom_json = {
         "check_consistency": check_consistency,
-        "lag": lag,
-        "offline_schedule": offline_schedule
+        "lag": lag
     }
 
     if additional_args:
@@ -345,7 +344,8 @@ def Join(left: api.Source,
         outputNamespace=output_namespace,
         tableProperties=table_properties,
         modeToEnvMap=env,
-        samplePercent=sample_percent
+        samplePercent=sample_percent,
+        offlineSchedule=offline_schedule
     )
 
     # external parts need to be unique on (prefix, part.source.metaData.name)
