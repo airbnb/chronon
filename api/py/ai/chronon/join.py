@@ -88,6 +88,8 @@ class DataType():
 
     def MAP(key_type: api.TDataType,
             value_type: api.TDataType) -> api.TDataType:
+        assert key_type == api.TDataType(api.DataKind.STRING), "key_type has to STRING for MAP types"
+
         return api.TDataType(
             api.DataKind.MAP,
             params=[
