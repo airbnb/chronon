@@ -222,7 +222,7 @@ def Join(left: api.Source,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
-         offline_schedule: str = 'daily',
+         offline_schedule: str = '@daily',
          **kwargs
          ) -> api.Join:
     """
