@@ -382,6 +382,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  @deprecated
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange): Option[String] = {
