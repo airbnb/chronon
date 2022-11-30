@@ -159,8 +159,8 @@ def ExternalSource(name: str,
     assert name != "contextual", "Please use `ContextualSource`"
     return api.ExternalSource(
         metadata=api.MetaData(name=name, team=team, customJson=custom_json),
-        keySchema=DataType.STRUCT("ext_{name}_keys", *key_fields),
-        valueSchema=DataType.STRUCT("ext_{name}_values", *value_fields),
+        keySchema=DataType.STRUCT(f"ext_{name}_keys", *key_fields),
+        valueSchema=DataType.STRUCT(f"ext_{name}_values", *value_fields),
     )
 
 
