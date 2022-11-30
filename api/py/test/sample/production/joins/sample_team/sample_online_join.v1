@@ -15,7 +15,8 @@
       "source": "chronon"
     },
     "outputNamespace": "# TODO: output namespace of hive tables that chronon produces",
-    "team": "sample_team"
+    "team": "sample_team",
+    "offlineSchedule": "@daily"
   },
   "left": {
     "events": {
