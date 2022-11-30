@@ -40,17 +40,19 @@ class LabelJoinTest {
                                         m_views,
                                         dim_bedrooms as listing_attributes_dim_bedrooms,
                                         dim_room_type as listing_attributes_dim_room_type,
-                                        v.ds
+                                        v.ds,
+                                        a.ds as label_ds
                                      FROM label_join.listing_views as v
                                      LEFT OUTER JOIN label_join.listing_attributes as a
-                                     ON v.ds = a.ds AND v.listing_id = a.listing_id""".stripMargin)
+                                     ON v.listing_id = a.listing_id
+                                     WHERE a.ds = '2022-10-30'""".stripMargin)
     println(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), labelDS)
 
-    val diff = Comparison.sideBySide(computed.drop("label_ds"), expected,
-      List("listing", "ds", "m_guests", "m_views",
+    val diff = Comparison.sideBySide(computed, expected,
+      List("listing", "ds", "label_ds", "m_guests", "m_views",
         "listing_attributes_dim_room_type", "listing_attributes_dim_bedrooms"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
@@ -111,7 +113,7 @@ class LabelJoinTest {
       labelParts = Seq(
         Builders.JoinPart(groupBy = updatedLabelGroupBy.groupByConf)
       ),
-      leftStartOffset = 30,
+      leftStartOffset = 35,
       leftEndOffset = 20
     )
     val updatedJoinConf = Builders.Join(
@@ -119,16 +121,16 @@ class LabelJoinTest {
       left,
       labelJoin = updatedLabelJoin
     )
-    val runner2 = new LabelJoin(updatedJoinConf, tableUtils, "2022-10-31")
+    val runner2 = new LabelJoin(updatedJoinConf, tableUtils, "2022-11-01")
     val updated = runner2.computeLabelJoin()
     println(" == Updated Run == ")
     updated.show()
     assertEquals(updated.count(),12)
-    assertEquals(updated.where(updated("label_ds") === "2022-10-31").count(),6)
+    assertEquals(updated.where(updated("label_ds") === "2022-11-01").count(),6)
     // expected
-    // 3|  5|     15|   1|    PRIVATE_ROOM_3|   SUPER_HOST_3|2022-10-31|2022-10-03|
-    assertEquals(updated.where(updated("label_ds") === "2022-10-31" && updated("listing") === "3")
-      .select("listing_labels_dim_host_type").first().get(0),"SUPER_HOST_3")
+    // 3|  5|     15|   1|    PRIVATE_ROOM|   NEW_HOST|2022-11-11|2022-10-03|
+    assertEquals(updated.where(updated("label_ds") === "2022-11-01" && updated("listing") === "3")
+      .select("listing_labels_dim_host_type").first().get(0),"NEW_HOST")
   }
 
   @Test(expected = classOf[AssertionError])

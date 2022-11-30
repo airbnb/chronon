@@ -194,6 +194,7 @@ enum Cadence {
     DAILY = 1
 }
 
+//TODO: to be supported
 enum JoinType {
     OUTER = 0,
     INNER = 1
@@ -223,6 +224,7 @@ struct MetaData {
     11: optional double samplePercent
     // cron expression for airflow DAG schedule
     12: optional string offlineSchedule
+    // dependencies used for label join only and independent of join dependencies
     13: optional list<string> labelDependencies
 }
 

@@ -23,11 +23,11 @@ object TestUtils {
     )
     val rows = List(
       Row(1L, 2L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(1L, 3L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(2L, 1L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(2L, 2L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(1L, 3L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
-      Row(3L, 5L, 15L, "2022-10-03 10:00:00", "2022-10-03")
+      Row(2L, 3L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(3L, 1L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+      Row(4L, 2L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(5L, 3L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+      Row(1L, 5L, 15L, "2022-10-03 10:00:00", "2022-10-03")
     )
     val source = Builders.Source.events(
       query = Builders.Query(
@@ -85,12 +85,12 @@ object TestUtils {
       )
     )
     val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "2022-10-01"),
-      Row(1L, 4, "ENTIRE_HOME_2", "2022-10-02"),
-      Row(2L, 1, "PRIVATE_ROOM", "2022-10-01"),
-      Row(2L, 1, "PRIVATE_ROOM_2", "2022-10-02"),
-      Row(3L, 1, "PRIVATE_ROOM_3", "2022-10-03"),
-      Row(1L, 4, "ENTIRE_HOME_3", "2022-10-03")
+      Row(1L, 4, "ENTIRE_HOME", "2022-10-30"),
+      Row(2L, 4, "ENTIRE_HOME", "2022-10-30"),
+      Row(3L, 1, "PRIVATE_ROOM", "2022-10-30"),
+      Row(4L, 1, "PRIVATE_ROOM", "2022-10-30"),
+      Row(5L, 1, "PRIVATE_ROOM", "2022-10-30"),
+      Row(1L, 4, "ENTIRE_HOME_2", "2022-11-11")
     )
     val source = Builders.Source.entities(
       query = Builders.Query(
@@ -135,13 +135,14 @@ object TestUtils {
       )
     )
     val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST","2022-10-01"),
-      Row(1L, 4, "ENTIRE_HOME_2","SUPER_HOST_2", "2022-10-02"),
-      Row(2L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-10-01"),
-      Row(2L, 1, "PRIVATE_ROOM_2", "NEW_HOST_2", "2022-10-02"),
-      Row(3L, 1, "PRIVATE_ROOM_3", "SUPER_HOST_3", "2022-10-03"),
-      Row(1L, 4, "ENTIRE_HOME_3", "SUPER_HOST_3", "2022-10-03")
+      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST","2022-11-01"),
+      Row(2L, 4, "ENTIRE_HOME","SUPER_HOST", "2022-11-01"),
+      Row(3L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
+      Row(4L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
+      Row(5L, 1, "PRIVATE_ROOM", "SUPER_HOST", "2022-11-01"),
+      Row(1L, 4, "ENTIRE_HOME_2", "SUPER_HOST_2", "2022-10-30")
     )
+
     val source = Builders.Source.entities(
       query = Builders.Query(
         selects = Map(

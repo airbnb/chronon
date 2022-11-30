@@ -101,10 +101,6 @@ object Driver {
         opt[String](required = false,
           descr = "Label version ds, default to be label join job running date",
           default = Some(Constants.Partition.now))
-      val labelPartitionName: ScallopOption[String] =
-        opt[String](required = false,
-          descr = "Label ds partition column name, default to be label_ds",
-          default = Some("label_ds"))
     }
 
     def run(args: Args): Unit = {
@@ -112,8 +108,7 @@ object Driver {
       val labelJoin = new LabelJoin(
         joinConf,
         TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}")),
-        args.labelDs(),
-        args.labelPartitionName()
+        args.labelDs()
       )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
     }
@@ -511,6 +506,8 @@ object Driver {
     addSubcommand(DailyStatsArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object LabelJoinArgs extends LabelJoin.Args
+    addSubcommand(LabelJoinArgs)
     requireSubcommand()
     verify()
   }

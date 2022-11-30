@@ -3,7 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, JoinPart, Source, TimeUnit, Window}
+import ai.chronon.api.{Constants, JoinPart, Source, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.Metrics
 import org.apache.spark.sql.DataFrame
@@ -14,15 +14,14 @@ import scala.collection.parallel.ParMap
 
 class LabelJoin(joinConf: api.Join,
                 tableUtils: TableUtils,
-                labelDS: String,
-                labelPartitionName: String = Constants.LabelPartitionColumn) {
+                labelDS: String) {
 
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   assert(joinConf.labelJoin.leftStartOffset >= joinConf.labelJoin.getLeftEndOffset,
     s"Start time offset ${joinConf.labelJoin.leftStartOffset} must be earlier than end offset " +
       s"${joinConf.labelJoin.leftEndOffset}")
 
-  val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
+  val metrics = Metrics.Context(Metrics.Environment.LabelJoin, joinConf)
   private val outputTable = joinConf.metaData.outputTable
   private val labelJoinConf = joinConf.labelJoin
   private val confTableProps = Option(joinConf.metaData.tableProperties)
@@ -56,20 +55,20 @@ class LabelJoin(joinConf: api.Join,
     val labelJoinLeft = joinConf.left.updateQueryPartitions(Option(leftStart), Option(leftEnd))
     println(s"Join label window: ${joinConf.left.query.startPartition} - ${joinConf.left.query.endPartition}")
 
-    compute(labelJoinLeft, stepDays, Option(labelDS), Option(labelPartitionName))
+    compute(labelJoinLeft, stepDays, Option(labelDS))
   }
 
   def compute(left: Source,
               stepDays: Option[Int] = None,
-              labelDS: Option[String] = None,
-              labelPartition: Option[String] = None): DataFrame = {
+              labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     val today =  Constants.Partition.at(System.currentTimeMillis())
-    println(s"Join range to fill $rangeToFill")
+    println(s"Label join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    //TODO: use unfilledRanges instead of dropPartitionsAfterHole
     val earliestHoleOpt =
       tableUtils.dropPartitionsAfterHole(left.table, outputTable, rangeToFill,
-        Map(labelPartition.getOrElse(Constants.LabelPartitionColumn) -> labelDS.getOrElse(today)))
+        Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -82,7 +81,7 @@ class LabelJoin(joinConf: api.Join,
       val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
       tableUtils.dropPartitionsAfterHole(left.table, partTable, rangeToFill,
-        Map(labelPartition.getOrElse(Constants.LabelPartitionColumn) -> labelDS.getOrElse(today)))
+        Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -92,12 +91,10 @@ class LabelJoin(joinConf: api.Join,
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing join for range: $range  $labelDS $progress")
-        leftDf(range).map { leftDfInRange =>
-          val labelPartitionName = labelPartition.getOrElse(Constants.LabelPartitionColumn)
+        println(s"Computing join for range: $range  ${labelDS.getOrElse(today)} $progress")
+        JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range)
-            .appendColumn(labelPartitionName, labelDS.getOrElse(today))
-            .save(outputTable, confTableProps, Seq(labelPartitionName, Constants.PartitionColumn), true)
+            .save(outputTable, confTableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn), true)
 
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
@@ -109,39 +106,8 @@ class LabelJoin(joinConf: api.Join,
     finalResult
   }
 
-  def leftDf(range: PartitionRange): Option[DataFrame] = {
-    val timeProjection = if (joinConf.left.dataModel == Events) {
-      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
-    } else {
-      Seq()
-    }
-    val scanQuery = range.genScanQuery(joinConf.left.query,
-      joinConf.left.table,
-      fillIfAbsent =
-        Map(Constants.PartitionColumn -> null) ++ timeProjection)
-
-    val df = tableUtils.sql(scanQuery)
-    val skewFilter = joinConf.skewFilter()
-    val result = skewFilter
-      .map(sf => {
-        println(s"left skew filter: $sf")
-        df.filter(sf)
-      })
-      .getOrElse(df)
-    if (result.isEmpty) {
-      println(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
-      return None
-    }
-    Some(result)
-  }
-
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
-    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
-    } else {
-      leftDf
-    }
-    val leftDfCount = leftTaggedDf.count()
+    val leftDfCount = leftDf.count()
     val leftBlooms = labelJoinConf.leftKeyCols.par.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
     }.toMap
@@ -150,23 +116,22 @@ class LabelJoin(joinConf: api.Join,
     val rightDfs = labelJoinConf.labelParts.asScala.par.map { joinPart =>
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
-        computeLabelPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
+        computeLabelPart(joinPart, leftRange, leftBlooms)
       } else {
         // not yet supported
         throw new IllegalArgumentException("Label Join aggregations not supported.")
       }
     }
 
-    val joined = rightDfs.zip(labelJoinConf.labelParts.asScala).foldLeft(leftTaggedDf) {
-      case (partialDf, (rightDf, joinPart)) => JoinUtils.joinWithLeft(partialDf, rightDf, joinPart, joinConf.left, 0)
+    val joined = rightDfs.zip(labelJoinConf.labelParts.asScala).foldLeft(leftDf) {
+      case (partialDf, (rightDf, joinPart)) => JoinUtils.joinWithLeft(partialDf, rightDf, joinPart)
     }
 
     joined.explain()
     joined.drop(Constants.TimePartitionColumn)
   }
 
-  private def computeLabelPart(leftDf: DataFrame,
-                              joinPart: JoinPart,
+  private def computeLabelPart(joinPart: JoinPart,
                               unfilledRange: PartitionRange,
                               leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
@@ -183,22 +148,16 @@ class LabelJoin(joinConf: api.Join,
                |  groupBy: ${joinPart.groupBy.toString}
                |""".stripMargin)
 
-    lazy val unfilledTimeRange = {
-      val timeRange = leftDf.timeRange
-      println(s"left unfilled time range: $timeRange")
-      timeRange
-    }
+    val groupBy = GroupBy.from(joinPart.groupBy, PartitionRange(labelDS, labelDS), tableUtils,
+      Option(rightBloomMap), rightSkewFilter)
 
-    def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
-
-    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
+    val df = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
       case (Events, Entities, _) =>
-        genGroupBy(unfilledTimeRange.toPartitionRange).snapshotEntities
-      case (_, _, _) => {
-        println("Label join only supports Events : Entities")
-        leftDf
-      }
+        groupBy.snapshotEntities
+      case (_, _, _) =>
+        throw new IllegalArgumentException(s"Data model type ${joinConf.left.dataModel}:${joinPart.groupBy.dataModel} " +
+          s"not supported for label join. Valid type [Events : Entities]")
     }
+    df.withColumnRenamed(Constants.PartitionColumn, Constants.LabelPartitionColumn)
   }
 }

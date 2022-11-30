@@ -266,8 +266,8 @@ object Extensions {
     }
 
     def updateQueryPartitions(start: Option[String] = None, end: Option[String] = None): Source = {
-      if (!start.isEmpty) { query.setStartPartition(start.get) }
-      if (!end.isEmpty) { query.setEndPartition(end.get) }
+      if (!start.isDefined) { query.setStartPartition(start.get) }
+      if (!end.isDefined) { query.setEndPartition(end.get) }
 
       if (source.isSetEntities) {
         source.setEntities(source.getEntities.setQuery(query))
