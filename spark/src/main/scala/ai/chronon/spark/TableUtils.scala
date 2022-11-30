@@ -270,6 +270,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  @deprecated
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
                     inputTable: Option[String] = None,
