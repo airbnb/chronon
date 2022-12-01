@@ -41,11 +41,11 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   }
 
   private def buildComparisonTable(): Unit = {
-    val unfilled = tableUtils.unfilledRange(joinConf.metaData.comparisonTable,
+    val unfilledRanges = tableUtils.unfilledRanges(joinConf.metaData.comparisonTable,
                                             PartitionRange(null, endDate),
-                                            Some(joinConf.metaData.loggedTable))
-    if (unfilled.isEmpty) return
-    val join = new chronon.spark.Join(buildComparisonJoin(), unfilled.get.end, TableUtils(session))
+                                            Some(Seq(joinConf.metaData.loggedTable))).getOrElse(Seq.empty)
+    if (unfilledRanges.isEmpty) return
+    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end, TableUtils(session))
     println("Starting compute Join for comparison table")
     join.computeJoin(Some(30))
   }
@@ -53,18 +53,21 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   def buildConsistencyMetrics(): DataMetrics = {
     buildComparisonTable()
     println("Determining Range between consistency table and comparison table")
-    val unfilled = tableUtils.unfilledRange(joinConf.metaData.consistencyTable,
+    val unfilledRanges = tableUtils.unfilledRanges(joinConf.metaData.consistencyTable,
                                             PartitionRange(null, endDate),
-                                            Some(joinConf.metaData.comparisonTable))
-    if (unfilled.isEmpty) return null
-    val comparisonDf = tableUtils.sql(unfilled.get.genScanQuery(null, joinConf.metaData.comparisonTable))
-    val loggedDf = tableUtils.sql(unfilled.get.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
-    println("Starting compare job for stats")
-    //TODO: Using timestamp as comparison key is a proxy for row_id as the latter is precise on ts and join key.
-    // Using solely timestamp can lead to issues for fetches that involve multiple keys.
-    val (df, metrics) = CompareJob.compare(comparisonDf, loggedDf, keys = JoinCodec.timeFields.map(_.name))
-    println("Saving output.")
-    df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
-    metrics
+                                            Some(Seq(joinConf.metaData.comparisonTable))).getOrElse(Seq.empty)
+    if (unfilledRanges.isEmpty) return null
+    val allMetrics = unfilledRanges.map { unfilled =>
+      val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
+      val loggedDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
+      println("Starting compare job for stats")
+      //TODO: Using timestamp as comparison key is a proxy for row_id as the latter is precise on ts and join key.
+      // Using solely timestamp can lead to issues for fetches that involve multiple keys.
+      val (df, metrics) = CompareJob.compare(comparisonDf, loggedDf, keys = JoinCodec.timeFields.map(_.name))
+      println("Saving output.")
+      df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
+      metrics
+    }
+    DataMetrics(allMetrics.flatMap(_.series))
   }
 }

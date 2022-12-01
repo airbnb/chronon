@@ -260,7 +260,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
-    sortedDates.foldLeft(Seq[PartitionRange]()){ (ranges, nextDate) =>
+    sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
       if (ranges.isEmpty || Constants.Partition.after(ranges.last.end) != nextDate) {
         ranges :+ PartitionRange(nextDate, nextDate)
       } else {
@@ -270,11 +270,12 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  @deprecated
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
                     inputTable: Option[String] = None,
                     inputSubPartitionFilters: Map[String, String] = Map.empty): Option[PartitionRange] = {
-      // TODO: delete this after feature stiching PR
+    // TODO: delete this after feature stiching PR
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTable.flatMap(firstAvailablePartition(_, inputSubPartitionFilters))
       assert(
@@ -303,11 +304,14 @@ case class TableUtils(sparkSession: SparkSession) {
     Some(PartitionRange(missingPartitions.min, missingPartitions.max))
   }
 
-  def unfilledRanges(outputTable: String,
-                     partitionRange: PartitionRange,
-                     inputTables: Option[Seq[String]] = None): Option[Seq[PartitionRange]] = {
+  def unfilledRanges(
+      outputTable: String,
+      partitionRange: PartitionRange,
+      inputTables: Option[Seq[String]] = None,
+      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty): Option[Seq[PartitionRange]] = {
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTables.flatMap(_.map(firstAvailablePartition(_)).min)
+      val inputStart = inputTables.flatMap(_.map(table =>
+        firstAvailablePartition(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
@@ -330,11 +334,14 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
     val outputMissing = fillablePartitions -- outputExisting
-    val allInputExisting = inputTables.map{ tables =>
-      tables.flatMap{ table=>
-        partitions(table)
+    val allInputExisting = inputTables
+      .map { tables =>
+        tables.flatMap { table =>
+          partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+        }
       }
-    }.getOrElse(fillablePartitions)
+      .getOrElse(fillablePartitions)
+
     val inputMissing = fillablePartitions -- allInputExisting
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)
@@ -375,6 +382,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  @deprecated
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange): Option[String] = {

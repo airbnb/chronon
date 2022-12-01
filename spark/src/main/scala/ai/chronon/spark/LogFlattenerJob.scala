@@ -32,15 +32,16 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
     .getOrElse(Map.empty[String, String])
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
-  private def getUnfilledRange(inputTable: String, outputTable: String): Option[PartitionRange] = {
+  private def getUnfilledRanges(inputTable: String, outputTable: String): Option[Seq[PartitionRange]] = {
     val partitionName: String = joinConf.metaData.nameToFilePath.replace("/", "%2F")
     val unfilledRangeTry = Try(
-      tableUtils.unfilledRange(
+      tableUtils.unfilledRanges(
         outputTable,
         PartitionRange(null, endDate),
-        Some(inputTable),
-        Map("name" -> partitionName)
-      ))
+        Some(Seq(inputTable)),
+        Map(inputTable -> Map("name" -> partitionName))
+      )
+    )
 
     unfilledRangeTry match {
       case Failure(_: AssertionError) => {
@@ -58,6 +59,7 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
       case Success(Some(partitionRange)) => {
         Some(partitionRange)
       }
+      case Failure(otherException) => throw otherException
     }
   }
 
@@ -164,35 +166,43 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
       println(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
       return
     }
-    val unfilled = getUnfilledRange(logTable, joinConf.metaData.loggedTable)
-    if (unfilled.isEmpty) return
-    val start = System.currentTimeMillis()
+    val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable).getOrElse(Seq())
+    if (unfilledRanges.isEmpty) return
     val joinName = joinConf.metaData.nameToFilePath
-    val rawTableScan = unfilled.get.genScanQuery(null, logTable)
-    val rawDf = tableUtils.sql(rawTableScan).where(col("name") === joinName)
-    println(s"scanned data for $joinName")
 
-    val schemaHashes = rawDf.select(col(Constants.SchemaHash)).distinct().collect().map(_.getString(0)).toSeq
-    val schemaMap = fetchSchemas(schemaHashes)
-
-    // we do not have exact joinConf at time of logging, and since it is not used during flattening, we pass in null
-    val codecMap = schemaMap.mapValues(JoinCodec.fromLoggingSchema(_, joinConf = null)).map(identity)
-    val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
-
-    val schemaTblProps = buildTableProperties(schemaMap)
-
+    val start = System.currentTimeMillis()
     val columnBeforeCount = columnCount()
-    tableUtils.insertPartitions(flattenedDf,
-                                joinConf.metaData.loggedTable,
-                                tableProperties = joinTblProps ++ schemaTblProps,
-                                autoExpand = true)
+    val rowCounts = unfilledRanges.map { unfilled =>
+      val rawTableScan = unfilled.genScanQuery(null, logTable)
+      val rawDf = tableUtils.sql(rawTableScan).where(col("name") === joinName)
+      val schemaHashes = rawDf.select(col(Constants.SchemaHash)).distinct().collect().map(_.getString(0)).toSeq
+      val schemaMap = fetchSchemas(schemaHashes)
+
+      // we do not have exact joinConf at time of logging, and since it is not used during flattening, we pass in null
+      val codecMap = schemaMap.mapValues(JoinCodec.fromLoggingSchema(_, joinConf = null)).map(identity)
+      val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
+
+      val schemaTblProps = buildTableProperties(schemaMap)
+
+      tableUtils.insertPartitions(flattenedDf,
+                                  joinConf.metaData.loggedTable,
+                                  tableProperties = joinTblProps ++ schemaTblProps,
+                                  autoExpand = true)
+
+      val inputRowCount = rawDf.count()
+      // read from output table to avoid recomputation
+      val outputRowCount = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).count()
+
+      (inputRowCount, outputRowCount)
+    }
+    val totalInputRowCount = rowCounts.map(_._1).sum
+    val totalOutputRowCount = rowCounts.map(_._2).sum
     val columnAfterCount = columnCount()
-    val outputRowCount = flattenedDf.count()
-    val inputRowCount = rawDf.count()
-    val failureCount = inputRowCount - outputRowCount
-    metrics.gauge(Metrics.Name.RowCount, outputRowCount)
+
+    val failureCount = totalInputRowCount - totalOutputRowCount
+    metrics.gauge(Metrics.Name.RowCount, totalOutputRowCount)
     metrics.gauge(Metrics.Name.FailureCount, failureCount)
-    println(s"Processed logs: ${outputRowCount} rows success, ${failureCount} rows failed.")
+    println(s"Processed logs: ${totalOutputRowCount} rows success, ${failureCount} rows failed.")
     metrics.gauge(Metrics.Name.ColumnBeforeCount, columnBeforeCount)
     metrics.gauge(Metrics.Name.ColumnAfterCount, columnAfterCount)
     val elapsedMins = (System.currentTimeMillis() - start) / 60000
