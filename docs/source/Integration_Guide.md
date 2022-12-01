@@ -23,8 +23,8 @@ export PYTHONPATH=$CHRONON_REPO_PATH:$PYTHONPATH
 ```
 2. Setup the chronon definition repo - one time setup per company 
 ```shell
-mkdir -p $CHRONON_DIR
-cd $CHRONON_DIR
+mkdir -p $CHRONON_REPO_PATH
+cd $CHRONON_REPO_PATH
 git init 
 git remote add -f origin git@github.com:airbnb/chronon.git
 git config core.sparseCheckout true
