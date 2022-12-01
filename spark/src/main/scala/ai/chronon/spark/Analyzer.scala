@@ -161,7 +161,9 @@ class Analyzer(tableUtils: TableUtils,
                            groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
-    if (!silenceMode) {
+    if (silenceMode) {
+      println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
+    } else {
       println(
         s"""
            |ANALYSIS for $name:
@@ -181,8 +183,6 @@ class Analyzer(tableUtils: TableUtils,
            |${schema.mkString("\n")}
            |------ END --------------
            |""".stripMargin)
-    } else {
-      println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     }
 
     if (groupByConf.aggregations != null) {
@@ -211,7 +211,9 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     val rightSchema = aggregationsMetadata.map {aggregation => s"  ${aggregation.name} => ${aggregation.columnType}"}
-    if (!silenceMode) {
+    if (silenceMode) {
+      println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
+    } else {
       println(
         s"""
            |ANALYSIS for join/${joinConf.metaData.cleanName}:
@@ -224,8 +226,6 @@ class Analyzer(tableUtils: TableUtils,
            |${rightSchema.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
-    } else {
-      println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     }
     // (cli print output, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata)
