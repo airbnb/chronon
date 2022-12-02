@@ -189,16 +189,11 @@ enum Accuracy {
     SNAPSHOT = 1
 }
 
-enum Cadence {
-    WEEKLY = 0,
-    DAILY = 1
-}
-
 //TODO: to be supported
-enum JoinType {
-    OUTER = 0,
-    INNER = 1
-}
+//enum JoinType {
+//    OUTER = 0,
+//    INNER = 1
+//}
 
 struct MetaData {
     1: optional string name
@@ -224,8 +219,6 @@ struct MetaData {
     11: optional double samplePercent
     // cron expression for airflow DAG schedule
     12: optional string offlineSchedule
-    // dependencies used for label join only and independent of join dependencies
-    13: optional list<string> labelDependencies
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -289,8 +282,7 @@ struct LabelJoin {
     // The most rencet date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
     3: optional i32 leftEndOffset
-    4: optional Cadence cadence
-    5: optional JoinType joinType
+//    4: optional JoinType joinType
 }
 
 // This is written by the bulk upload process into the metaDataset

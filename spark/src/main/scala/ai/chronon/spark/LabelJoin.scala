@@ -120,7 +120,7 @@ class LabelJoin(joinConf: api.Join,
     }
 
     val joined = rightDfs.zip(labelJoinConf.labelParts.asScala).foldLeft(leftDf) {
-      case (partialDf, (rightDf, joinPart)) => JoinUtils.joinWithLeft(partialDf, rightDf, joinPart)
+      case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
     joined.explain()
@@ -155,5 +155,36 @@ class LabelJoin(joinConf: api.Join,
           s"not supported for label join. Valid type [Events : Entities]")
     }
     df.withColumnRenamed(Constants.PartitionColumn, Constants.LabelPartitionColumn)
+  }
+
+  def joinWithLeft(leftDf: DataFrame,
+                   rightDf: DataFrame,
+                   joinPart: JoinPart): DataFrame = {
+    val partLeftKeys = joinPart.rightToLeft.values.toArray
+    // apply key-renaming to key columns
+    val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
+      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
+    }
+
+    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
+      Constants.PartitionColumn,
+      Constants.TimePartitionColumn,
+      Constants.LabelPartitionColumn)
+    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
+    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+
+    val partName = joinPart.groupBy.metaData.name
+
+    println(s"""Join keys for $partName: ${partLeftKeys.mkString(", ")}
+               |Left Schema:
+               |${leftDf.schema.pretty}
+               |
+               |Right Schema:
+               |${prefixedRight.schema.pretty}
+               |
+               |""".stripMargin)
+
+    leftDf.validateJoinKeys(prefixedRight, partLeftKeys)
+    leftDf.join(prefixedRight, partLeftKeys, "left_outer")
   }
 }
