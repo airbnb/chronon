@@ -265,18 +265,6 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
 
-    def updateQueryPartitions(start: Option[String] = None, end: Option[String] = None): Source = {
-      if (!start.isDefined) { query.setStartPartition(start.get) }
-      if (!end.isDefined) { query.setEndPartition(end.get) }
-
-      if (source.isSetEntities) {
-        source.setEntities(source.getEntities.setQuery(query))
-      } else {
-        source.setEvents(source.getEvents.setQuery(query))
-      }
-      source
-    }
-
     def table: String = {
       val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
       specTable.cleanSpec

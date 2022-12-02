@@ -51,11 +51,7 @@ class LabelJoin(joinConf: api.Join,
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    // update time window
-    val labelJoinLeft = joinConf.left.updateQueryPartitions(Option(leftStart), Option(leftEnd))
-    println(s"Join label window: ${joinConf.left.query.startPartition} - ${joinConf.left.query.endPartition}")
-
-    compute(labelJoinLeft, stepDays, Option(labelDS))
+    compute(joinConf.left, stepDays, Option(labelDS))
   }
 
   def compute(left: Source,
