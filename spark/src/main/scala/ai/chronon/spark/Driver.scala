@@ -68,7 +68,7 @@ object Driver {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
         val localSession = SparkSessionBuilder.build(sessionName, local = true)
-        CsvLoader.loadData(dir, localSession)
+        LocalDataLoader.loadData(dir, localSession)
         TableUtils(localSession)
       } else {
         TableUtils(SparkSessionBuilder.build(sessionName))

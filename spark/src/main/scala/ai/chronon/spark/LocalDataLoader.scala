@@ -7,14 +7,17 @@ import org.apache.spark.sql.types.StringType
 
 import java.io.File
 
-object CsvLoader {
+object LocalDataLoader {
   def writeTableFromCsv(file: File, tableName: String, session: SparkSession): Unit = {
-    var csvDf = session.read
-      .format("csv")
-      .option("header", "true")
+    val extension = file.getName.split("\\.").last
+    assert(Seq("csv", "json").contains(extension), s"Invalid local file to load: ${file.getPath}")
+    var reader = session.read
+      .format(extension)
       .option("inferSchema", "true")
-      .load(file.getPath)
-      .toDF
+    if (extension == "csv") {
+      reader = reader.option("header", "true")
+    }
+    var csvDf = reader.load(file.getPath).toDF
     val schema = csvDf.schema
 
     // for readability we want to allow timestamp specified as string
@@ -26,7 +29,7 @@ object CsvLoader {
         .drop("ts_string")
     }
 
-    println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema below")
+    println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
     csvDf.show(100)
     println(csvDf.schema.pretty)
 
