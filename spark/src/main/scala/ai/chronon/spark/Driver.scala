@@ -63,11 +63,19 @@ object Driver {
             |""".stripMargin
       )
 
+    val localWarehouseLocation: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = Some(System.getProperty("user.dir")),
+        descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
+      )
+
     def buildTableUtils(sessionName: String): TableUtils =
       if (localDataPath.isDefined) {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
-        val localSession = SparkSessionBuilder.build(sessionName, local = true)
+        val localSession =
+          SparkSessionBuilder.build(sessionName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
         LocalDataLoader.loadData(dir, localSession)
         TableUtils(localSession)
       } else {
