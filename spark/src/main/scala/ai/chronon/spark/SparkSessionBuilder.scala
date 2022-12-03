@@ -11,7 +11,8 @@ object SparkSessionBuilder {
 
   val warehouseDir = new File("spark-warehouse")
 
-  def build(name: String, local: Boolean = false): SparkSession = {
+  // we would want to share locally generated warehouse during CI testing
+  def build(name: String, local: Boolean = false, shareLocalWarehouse: Boolean = false): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
@@ -45,7 +46,7 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", "true")
-        .config("spark.local.dir", s"/tmp/$userName/$name")
+        .config("spark.local.dir", s"/tmp/$userName${if (shareLocalWarehouse) "/" + name else ""}")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
