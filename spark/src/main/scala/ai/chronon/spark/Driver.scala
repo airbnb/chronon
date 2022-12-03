@@ -4,23 +4,26 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
+import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
+import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{
   QueryProgressEvent,
   QueryStartedEvent,
   QueryTerminatedEvent
 }
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
+
 import java.io.File
 import java.nio.file.{Files, Paths}
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -48,6 +51,28 @@ object Driver {
       opt[String](required = false,
                   descr = "End date to compute as of, start date is taken from conf.",
                   default = Some(Constants.Partition.now))
+    val localDataPath: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr =
+          """Path to a folder containing csv data to load from. You can refer to these in Sources to run the backfill. 
+            |The name of each file should be in the format namespace.table.csv. They can be referred to in the confs
+            |as "namespace.table". When namespace is not specified we will default to 'default'. We can also 
+            |auto-convert ts columns encoded as readable strings  into longs values expected by Chronon automatically
+            |""".stripMargin
+      )
+
+    def buildTableUtils(sessionName: String): TableUtils =
+      if (localDataPath.isDefined) {
+        val dir = new File(localDataPath())
+        assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
+        val localSession = SparkSessionBuilder.build(sessionName, local = true)
+        CsvLoader.loadData(dir, localSession)
+        TableUtils(localSession)
+      } else {
+        TableUtils(SparkSessionBuilder.build(sessionName))
+      }
   }
 
   object JoinBackfill {
@@ -67,7 +92,7 @@ object Driver {
       val join = new Join(
         joinConf,
         args.endDate(),
-        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}"))
+        args.buildTableUtils(s"join_${joinConf.metaData.name}")
       )
       join.computeJoin(args.stepDays.toOption)
     }
@@ -141,7 +166,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val tableUtils = TableUtils(SparkSessionBuilder.build("analyzer_util"))
+      val tableUtils = args.buildTableUtils("analyzer_util")
       new Analyzer(tableUtils,
                    args.confPath(),
                    args.startDate(),
@@ -155,11 +180,9 @@ object Driver {
   object MetadataExport {
     class Args extends Subcommand("metadata-export") with OfflineSubcommand {
       val inputRootPath: ScallopOption[String] =
-        opt[String](required = true,
-          descr = "Base path of config repo to export from")
+        opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
-        opt[String](required = true,
-          descr = "Base path to write output metadata files to")
+        opt[String](required = true, descr = "Base path to write output metadata files to")
     }
 
     def run(args: Args): Unit = {
@@ -179,7 +202,7 @@ object Driver {
       val stagingQueryJob = new StagingQuery(
         stagingQueryConf,
         args.endDate(),
-        TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}_backfill"))
+        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
     }
@@ -189,20 +212,20 @@ object Driver {
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
-          descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-          default = Option(30))
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
       val sample: ScallopOption[Double] =
         opt[Double](required = false,
-          descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
-          default = Option(0.1))
+                    descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
+                    default = Option(0.1))
 
     }
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
-      new SummaryJob(
-        SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
-        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
+      new SummaryJob(SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
+                     joinConf = joinConf,
+                     endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
     }
   }
 
@@ -219,9 +242,8 @@ object Driver {
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
-      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
       new ConsistencyJob(
-        sparkSession,
+        args.buildTableUtils(s"consistency_metrics_join_${joinConf.metaData.name}").sparkSession,
         joinConf,
         args.endDate()
       ).buildConsistencyMetrics()
@@ -540,10 +562,10 @@ object Driver {
           case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsArgs =>
             ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
+          case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
-          case _                 => println(s"Unknown subcommand: $x")
+          case _                       => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
     }
