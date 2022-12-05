@@ -62,11 +62,10 @@ object Driver {
             |auto-convert ts columns encoded as readable strings  into longs values expected by Chronon automatically
             |""".stripMargin
       )
-
     val localWarehouseLocation: ScallopOption[String] =
       opt[String](
         required = false,
-        default = Some(System.getProperty("user.dir")),
+        default = Some(System.getProperty("user.dir") + "/local_warehouse"),
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 

@@ -21,8 +21,7 @@ unset PYSPARK_DRIVER_PYTHON
 unset PYSPARK_PYTHON
 unset SPARK_HOME
 unset SPARK_CONF_DIR
-# You will need to point your spark submit to the correct yarn cluster if you happen 
-spark-submit \
+$SPARK_SUBMIT_PATH \
 --driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
 --conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
 --conf spark.reducer.maxReqsInFlight=1024 \
@@ -62,7 +61,7 @@ spark-submit \
 --conf spark.debug.maxToStringFields=1000 \
 --conf spark.driver.maxResultSize=32G \
 --deploy-mode client \
---master yarn \
+--master "${JOB_MODE:-yarn}" \
 --executor-memory "${EXECUTOR_MEMORY:-8G}" \
 --driver-memory "${DRIVER_MEMORY:-8G}" \
 --conf spark.executor.memoryOverhead=2G \
