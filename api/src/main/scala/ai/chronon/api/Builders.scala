@@ -140,7 +140,8 @@ object Builders {
     def apply(metaData: MetaData = null,
               left: Source = null,
               joinParts: Seq[JoinPart] = null,
-              externalParts: Seq[ExternalPart] = null): Join = {
+              externalParts: Seq[ExternalPart] = null,
+              labelJoin: LabelJoin = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
@@ -148,6 +149,8 @@ object Builders {
         result.setJoinParts(joinParts.asJava)
       if (externalParts != null)
         result.setOnlineExternalParts(externalParts.asJava)
+      if (labelJoin != null)
+        result.setLabelJoin(labelJoin)
       result
     }
   }
@@ -182,6 +185,20 @@ object Builders {
       if (keyMapping != null)
         result.setKeyMapping(keyMapping.asJava)
       result.setPrefix(prefix)
+      result
+    }
+  }
+
+  object LabelJoin {
+    def apply(labelParts: Seq[JoinPart] = null,
+              leftStartOffset: Int = 0,
+              leftEndOffset: Int = 0
+             ): LabelJoin = {
+      val result = new LabelJoin()
+      result.setLeftStartOffset(leftStartOffset)
+      result.setLeftEndOffset(leftEndOffset)
+      if (labelParts != null)
+        result.setLabelParts(labelParts.asJava)
       result
     }
   }

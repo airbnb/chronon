@@ -189,6 +189,12 @@ enum Accuracy {
     SNAPSHOT = 1
 }
 
+//TODO: to be supported
+//enum JoinType {
+//    OUTER = 0,
+//    INNER = 1
+//}
+
 struct MetaData {
     1: optional string name
     // marking this as true means that the conf can be served online
@@ -265,8 +271,19 @@ struct Join {
     // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
+    6: optional LabelJoin labelJoin
 }
 
+// Label join parts and params
+struct LabelJoin {
+    1: optional list<JoinPart> labelParts
+    // The earliest date label should be refreshed
+    2: optional i32 leftStartOffset
+    // The most rencet date label should be refreshed.
+    // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
+    3: optional i32 leftEndOffset
+//    4: optional JoinType joinType
+}
 
 // This is written by the bulk upload process into the metaDataset
 // streaming uses this to

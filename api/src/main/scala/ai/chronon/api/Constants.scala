@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions._
 object Constants {
   val TimeColumn: String = "ts"
   val PartitionColumn: String = "ds"
+  val LabelPartitionColumn: String = "label_ds"
   val TimePartitionColumn: String = "ts_ds"
   val ReversalColumn: String = "is_before"
   val MutationTimeColumn: String = "mutation_ts"

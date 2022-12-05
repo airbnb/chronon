@@ -385,16 +385,17 @@ case class TableUtils(sparkSession: SparkSession) {
   @deprecated
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
-                              partitionRange: PartitionRange): Option[String] = {
+                              partitionRange: PartitionRange,
+                              labelPartition: Map[String, String] = Map.empty): Option[String] = {
 
-    def partitionsInRange(table: String): Set[String] = {
-      val allParts = partitions(table)
+    def partitionsInRange(table: String, partitionFilter: Map[String, String] = Map.empty): Set[String] = {
+      val allParts = partitions(table, partitionFilter)
       val startPrunedParts = Option(partitionRange.start).map(start => allParts.filter(_ >= start)).getOrElse(allParts)
       Option(partitionRange.end).map(end => startPrunedParts.filter(_ <= end)).getOrElse(startPrunedParts).toSet
     }
 
     val inputPartitions = partitionsInRange(inputTable)
-    val outputPartitions = partitionsInRange(outputTable)
+    val outputPartitions = partitionsInRange(outputTable, labelPartition)
     val earliestHoleOpt = (inputPartitions -- outputPartitions).reduceLeftOption(Ordering[String].min)
     earliestHoleOpt.foreach { hole =>
       val toDrop = outputPartitions.filter(_ > hole)
@@ -402,19 +403,27 @@ case class TableUtils(sparkSession: SparkSession) {
                    |Earliest hole at $hole in output table $outputTable, relative to $inputTable
                    |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")} 
+                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
+                   |Label Partition: ${labelPartition.toArray.mkString("Array(", ", ",")")}
           """.stripMargin)
-      dropPartitions(outputTable, toDrop.toArray.sorted)
+      // only single label ds is valid
+      val labelPartitionOption = if(labelPartition.isEmpty) Option.empty else Option(labelPartition.values.toArray.head)
+      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartitionOption)
     }
     earliestHoleOpt
   }
 
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
-                     partitionColumn: String = Constants.PartitionColumn): Unit = {
+                     partitionColumn: String = Constants.PartitionColumn,
+                     labelPartition: Option[String] = None): Unit = {
     if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
-      val partitionSpecs =
+      val partitionSpecs = if (labelPartition.isEmpty) {
         partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
+      } else {
+        partitions.map(partition => s"PARTITION ($partitionColumn='$partition', " +
+          s"${Constants.LabelPartitionColumn}='${labelPartition.get}')").mkString(", ".stripMargin)
+      }
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)
     } else {

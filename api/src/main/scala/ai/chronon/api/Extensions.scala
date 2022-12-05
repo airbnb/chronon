@@ -507,6 +507,22 @@ object Extensions {
     }
   }
 
+  implicit class LabelJoinOps(val labelJoin: LabelJoin) extends Serializable {
+    def leftKeyCols: Array[String] = {
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(labelJoin.labelParts)
+        .flatMap { _.rightToLeft.values }
+        .toSet
+        .toArray
+    }
+
+    def setups: Seq[String] = {
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(labelJoin.labelParts)
+        .flatMap(_.groupBy.setups).distinct
+    }
+  }
+
   implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
