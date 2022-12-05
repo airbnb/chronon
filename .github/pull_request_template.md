@@ -12,6 +12,9 @@ of these apply to every PR. -->
 - [ ] Added Unit Tests
 - [ ] Covered by existing CI
 - [ ] Integration tested
-- [ ] Changelog update
+
+## Checklist
+- [ ] Documentation update
 
 ## Reviewers
+
