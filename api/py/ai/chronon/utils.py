@@ -89,7 +89,7 @@ def get_streaming_sources(group_by: api.GroupBy) -> List[api.Source]:
 def is_streaming(source: api.Source) -> bool:
     """Checks if the source has streaming enabled."""
     return (source.entities and source.entities.mutationTopic is not None) or \
-        (source.events and source.events.topic is not None)
+           (source.events and source.events.topic is not None)
 
 
 def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource]:
@@ -128,11 +128,33 @@ def get_mod_name_from_gc(obj, mod_prefix):
     return mod_name
 
 
+def __set_name(obj, cls, mod_prefix):
+    module = importlib.import_module(get_mod_name_from_gc(obj, mod_prefix))
+    eo.import_module_set_name(module, cls)
+
+
+def output_table_name(obj, full_name: bool = False):
+    table_name = obj.metaData.name.replace('.', '_')
+    if full_name:
+        return obj.metaData.outputNamespace + "." + table_name
+    else:
+        return table_name
+
+
+def log_table_name(obj, full_name: bool = False):
+    return output_table_name(obj, full_name=full_name) + "_logged"
+
+
 def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     """generate output table name for staging query job"""
-    staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries"))
-    eo.import_module_set_name(staging_query_module, api.StagingQuery)
-    return staging_query.metaData.name.replace('.', '_')
+    __set_name(staging_query, api.StagingQuery, "staging_queries")
+    return output_table_name(staging_query, full_name=False)
+
+
+def get_join_output_table_name(join: api.Join):
+    """generate output table name for staging query job"""
+    __set_name(join, api.Join, "joins")
+    return output_table_name(join, full_name=False)
 
 
 def get_dependencies(

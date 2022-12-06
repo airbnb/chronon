@@ -32,6 +32,8 @@ case class TableUtils(sparkSession: SparkSession) {
       .toMap
   }
 
+  def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
+
   def isPartitioned(tableName: String): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
@@ -39,7 +41,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
-    if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
+    if (!tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {
         throw new NotImplementedError("subPartitionsFilter is not supported on Iceberg tables yet.")
@@ -137,7 +139,7 @@ case class TableUtils(sparkSession: SparkSession) {
       df
     }
 
-    if (!sparkSession.catalog.tableExists(tableName)) {
+    if (!tableExists(tableName)) {
       val creationSql = createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat)
       try {
         sql(creationSql)
@@ -189,7 +191,7 @@ case class TableUtils(sparkSession: SparkSession) {
                           saveMode: SaveMode = SaveMode.Overwrite,
                           fileFormat: String = "PARQUET"): Unit = {
 
-    if (!sparkSession.catalog.tableExists(tableName)) {
+    if (!tableExists(tableName)) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
@@ -382,7 +384,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
+    if (tableExists(tableName)) {
       val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
       val finalArchiveTableName = s"${tableName}_${humanReadableTimestamp}"
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
@@ -409,11 +411,11 @@ case class TableUtils(sparkSession: SparkSession) {
     earliestHoleOpt.foreach { hole =>
       val toDrop = outputPartitions.filter(_ > hole)
       println(s"""
-                   |Earliest hole at $hole in output table $outputTable, relative to $inputTable
-                   |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Sub Partitions: ${subPartitionFilters.map(kv => s"${kv._1}=${kv._2}").mkString("Array(", ", ", ")")}
+                 |Earliest hole at $hole in output table $outputTable, relative to $inputTable
+                 |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Sub Partitions: ${subPartitionFilters.map(kv => s"${kv._1}=${kv._2}").mkString("Array(", ", ", ")")}
           """.stripMargin)
       dropPartitions(outputTable, toDrop.toArray.sorted, Constants.PartitionColumn, subPartitionFilters)
     }
@@ -424,7 +426,7 @@ case class TableUtils(sparkSession: SparkSession) {
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
-    if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
+    if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = partitions
         .map { partition =>
           val mainSpec = s"$partitionColumn='$partition'"
@@ -445,7 +447,7 @@ case class TableUtils(sparkSession: SparkSession) {
                          startDate: String,
                          endDate: String,
                          subPartitionFilters: Map[String, String] = Map.empty): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
+    if (tableExists(tableName)) {
       val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
       dropPartitions(tableName, toDrop, Constants.PartitionColumn, subPartitionFilters)
     } else {

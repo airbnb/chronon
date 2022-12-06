@@ -141,7 +141,9 @@ object Builders {
               left: Source = null,
               joinParts: Seq[JoinPart] = null,
               externalParts: Seq[ExternalPart] = null,
-              labelPart: LabelPart = null): Join = {
+              labelPart: LabelPart = null,
+              bootstrapParts: Seq[BootstrapPart] = null,
+              rowIds: Seq[String] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
@@ -151,6 +153,10 @@ object Builders {
         result.setOnlineExternalParts(externalParts.asJava)
       if (labelPart != null)
         result.setLabelPart(labelPart)
+      if (bootstrapParts != null)
+        result.setBootstrapParts(bootstrapParts.asJava)
+      if (rowIds != null)
+        result.setRowIds(rowIds.asJava)
       result
     }
   }
@@ -190,10 +196,7 @@ object Builders {
   }
 
   object LabelPart {
-    def apply(labels: Seq[JoinPart] = null,
-              leftStartOffset: Int = 0,
-              leftEndOffset: Int = 0
-             ): LabelPart = {
+    def apply(labels: Seq[JoinPart] = null, leftStartOffset: Int = 0, leftEndOffset: Int = 0): LabelPart = {
       val result = new LabelPart()
       result.setLeftStartOffset(leftStartOffset)
       result.setLeftEndOffset(leftEndOffset)
@@ -264,6 +267,24 @@ object Builders {
       stagingQuery.setStartPartition(startPartition)
       if (setups != null) stagingQuery.setSetups(setups.asJava)
       stagingQuery
+    }
+  }
+
+  object BootstrapPart {
+    def apply(
+        query: Query = null,
+        table: String = null,
+        keyColumns: Seq[String] = null,
+        metaData: MetaData = null
+    ): BootstrapPart = {
+      val bootstrapPart = new BootstrapPart()
+      bootstrapPart.setQuery(query)
+      bootstrapPart.setTable(table)
+      Option(keyColumns)
+        .map(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava)
+        .foreach(bootstrapPart.setKeyColumns)
+      bootstrapPart.setMetaData(metaData)
+      bootstrapPart
     }
   }
 }

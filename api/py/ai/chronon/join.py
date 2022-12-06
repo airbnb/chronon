@@ -211,6 +211,25 @@ def ExternalPart(source: api.ExternalSource,
     )
 
 
+def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
+    """
+    Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
+    training data generation phase. Bootstrap can be used for many purposes:
+    - Generating ongoing feature values from logs
+    - Backfilling feature values for external features (in which case Chronon is unable to run backfill)
+    - Initializing a new Join by migrating old data from an older Join and reusing data
+
+    :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
+    :param key_columns: Keys to join bootstrap table to left table
+    :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.
+    """
+    return api.BootstrapPart(
+        table=table,
+        query=query,
+        keyColumns=key_columns
+    )
+
+
 def Join(left: api.Source,
          right_parts: List[api.JoinPart],
          check_consistency: bool = False,
@@ -227,6 +246,9 @@ def Join(left: api.Source,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
          offline_schedule: str = '@daily',
+         row_ids: List[str] = None,
+         bootstrap_parts: List[api.BootstrapPart] = None,
+         bootstrap_from_log: bool = False,
          **kwargs
          ) -> api.Join:
     """
@@ -295,6 +317,12 @@ def Join(left: api.Source,
         This is applicable only for online fetching. Offline this will not be produce any values.
     :param offline_schedule:
         Cron expression for Airflow to schedule a DAG for offline join compute tasks
+    :param row_ids:
+        Columns of the left table that uniquely define a training record. Used as default keys during bootstrap
+    :param bootstrap_parts:
+        A list of BootstrapPart used for the Join. See BootstrapPart doc for more details
+    :param bootstrap_from_log:
+        If set to True, will use logging table to generate training data by default and skip continuous backfill
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -362,10 +390,20 @@ def Join(left: api.Source,
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
         assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
+    if bootstrap_from_log and sample_percent > 0 and online:
+        bootstrap_parts = (bootstrap_parts or []) + [
+            api.BootstrapPart(
+                # templated values will be replaced when metaData.name is set at the end
+                table="{{ logged_table }}"
+            )
+        ]
+
     return api.Join(
         left=updated_left,
         joinParts=right_parts,
         metaData=metadata,
         skewKeys=skew_keys,
-        onlineExternalParts=online_external_parts
+        onlineExternalParts=online_external_parts,
+        bootstrapParts=bootstrap_parts,
+        rowIds=row_ids
     )

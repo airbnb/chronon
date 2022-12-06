@@ -20,6 +20,8 @@ object Constants {
   val lineTab = "\n    "
   val SemanticHashKey = "semantic_hash"
   val SchemaHash = "schema_hash"
+  val LogHashes = "log_hashes"
+  val TableHashes = "table_hashes"
   val ChrononDynamicTable = "chronon_dynamic_table"
   val StreamingInputTable = "input_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
