@@ -1,0 +1,16 @@
+network:
+  http_proxy_whitelist:
+    - artifactory-content.stripe.build
+jenkins_jobs:
+  - name: "stripe-private-oss-forks-chronon"
+    henson_tarball:
+      docker:
+        dockerfile: Dockerfile
+    network:
+      http_proxy_verbose: true
+      http_proxy_report_only: true
+publisher_settings:
+  run_test_publisher: true
+  run_cache_publisher: true
+  run_henson_tarball_publisher: true
+  henson_tarball_publisher_extra_regions: []
