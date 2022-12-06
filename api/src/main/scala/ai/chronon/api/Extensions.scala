@@ -444,7 +444,9 @@ object Extensions {
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
     lazy val fullName: String =
-      "ext_" + Option(externalPart.prefix).map(_ + "_").getOrElse("") + externalPart.source.metadata.name.sanitize
+      Constants.ExternalPrefix +
+        Option(externalPart.prefix).map(_ + "_").getOrElse("") +
+        externalPart.source.metadata.name.sanitize
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       // TODO: Long-term we could bring in derivations here.
