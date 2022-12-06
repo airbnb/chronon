@@ -43,7 +43,7 @@ class ExternalSourceRegistry {
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
-            val ctx = context.copy(groupBy = s"ext_$name")
+            val ctx = context.copy(groupBy = s"${Constants.ExternalPrefix}_$name")
             val responses = handlerMap(name).fetch(requests)
             responses.foreach { responses =>
               val failures = responses.count(_.values.isFailure)
