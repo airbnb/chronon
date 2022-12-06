@@ -444,7 +444,7 @@ object Extensions {
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
     lazy val fullName: String =
-      Constants.ExternalPrefix +
+      Constants.ExternalPrefix + "_" +
         Option(externalPart.prefix).map(_ + "_").getOrElse("") +
         externalPart.source.metadata.name.sanitize
 
