@@ -90,7 +90,9 @@ class FetcherTest extends TestCase {
     val eventData = Seq(
       Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
       Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
-      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10") // Query for mutated event
+      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10"), // Query for mutated event
+      Row(1L, toTs("2021-04-10 00:10:00"), "2021-04-10"), // query for added event
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event 
     )
     val snapshotData = Seq(
       Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
@@ -116,6 +118,7 @@ class FetcherTest extends TestCase {
       Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09", toTs("2021-04-09 07:00:00"), false),
       // {listing_id, ts, rating, ds, mutation_ts, is_before}
       Row(1L, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 00:30:00"), false),
+      Row(1L, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 02:30:00"), true), // mutation delete event
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 10:00:00"), false),
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 23:30:00"), true),
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 3, "2021-04-10", toTs("2021-04-10 23:30:00"), false)
@@ -192,6 +195,11 @@ class FetcherTest extends TestCase {
           operation = Operation.SUM,
           inputColumn = "rating",
           windows = null
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,

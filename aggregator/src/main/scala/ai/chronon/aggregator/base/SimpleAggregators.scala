@@ -127,7 +127,11 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def delete(ir: Array[Any], input: Double): Array[Any] = {
     ir.update(0, ir(0).asInstanceOf[Double] - input)
     ir.update(1, ir(1).asInstanceOf[Int] - 1)
-    ir
+    // For an entity source, the denominator could be zero
+    // due to the delete event from the streaming head rows
+    // therefore, the IR should reset to null to start over
+    if (ir(1).asInstanceOf[Int] == 0) null
+    else ir
   }
 
   override def clone(ir: Array[Any]): Array[Any] = {
