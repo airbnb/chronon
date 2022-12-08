@@ -24,7 +24,12 @@ import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, T
   * 4. unpack each row and adhere to the output schema
   * 5. save the schema info in the flattened log table properties (cumulatively)
   */
-class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String, logTable: String, schemaTable: String)
+class LogFlattenerJob(session: SparkSession,
+                      joinConf: api.Join,
+                      endDate: String,
+                      logTable: String,
+                      schemaTable: String,
+                      stepDays: Option[Int])
     extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
@@ -32,7 +37,7 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
     .getOrElse(Map.empty[String, String])
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
-  private def getUnfilledRanges(inputTable: String, outputTable: String): Option[Seq[PartitionRange]] = {
+  private def getUnfilledRanges(inputTable: String, outputTable: String): Seq[PartitionRange] = {
     val partitionName: String = joinConf.metaData.nameToFilePath.replace("/", "%2F")
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
@@ -43,23 +48,29 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
       )
     )
 
-    unfilledRangeTry match {
+    val ranges = unfilledRangeTry match {
       case Failure(_: AssertionError) => {
         println(s"""
              |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
              |Please double check your logging status""".stripMargin)
-        None
+        Seq()
       }
       case Success(None) => {
         println(
           s"$outputTable seems to be caught up - to either " +
             s"$inputTable(latest ${tableUtils.lastAvailablePartition(inputTable)}) or $endDate.")
-        None
+        Seq()
       }
       case Success(Some(partitionRange)) => {
-        Some(partitionRange)
+        partitionRange
       }
       case Failure(otherException) => throw otherException
+    }
+
+    if (stepDays.isEmpty) {
+      ranges
+    } else {
+      ranges.flatMap(_.steps(stepDays.get))
     }
   }
 
@@ -170,7 +181,7 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
       println(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
       return
     }
-    val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable).getOrElse(Seq())
+    val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable)
     if (unfilledRanges.isEmpty) return
     val joinName = joinConf.metaData.nameToFilePath
 

@@ -403,11 +403,10 @@ object Driver {
       val schemaTable: ScallopOption[String] =
         opt[String](required = true, descr = "Hive table with mapping from schema_hash to schema_value_last")
 
-      // todo: implement step day logic for LogFlattener.scala
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
-                 descr = "Runs consistency metrics job in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
+                 descr = "Runs consistency metrics job in steps, step-days at a time. Default is 15 days",
+                 default = Option(15))
     }
 
     def run(args: Args): Unit = {
@@ -418,7 +417,8 @@ object Driver {
         joinConf,
         args.endDate(),
         args.logTable(),
-        args.schemaTable()
+        args.schemaTable(),
+        Some(args.stepDays())
       )
       logFlattenerJob.buildLogTable()
     }
