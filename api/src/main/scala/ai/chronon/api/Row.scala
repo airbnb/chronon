@@ -133,7 +133,8 @@ object Row {
       case BinaryType => binarizer(value.asInstanceOf[Array[Byte]])
       case IntType => value.asInstanceOf[Number].intValue()
       case LongType => value.asInstanceOf[Number].longValue()
-      case DoubleType => value.asInstanceOf[Number].doubleValue()
+      // handle null cases when value is Double.NaN or Double.Infinity
+      case DoubleType => if (value != null) value.asInstanceOf[Number].doubleValue() else null
       case FloatType => value.asInstanceOf[Number].floatValue()
       case ShortType => value.asInstanceOf[Number].shortValue()
       case ByteType => value.asInstanceOf[Number].byteValue()
