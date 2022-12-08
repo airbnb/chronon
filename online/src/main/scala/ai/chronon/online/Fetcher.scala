@@ -205,11 +205,7 @@ class Fetcher(val kvStore: KVStore,
           val elem = dataMap.getOrElse(name, null)
           // handle cases where a join contains keys of the same name but different types
           // e.g. `listing` is a long in one groupby, but a string in another groupby
-          if (cast) {
-            ColumnAggregator.castTo(elem, typ)
-          } else {
-            elem
-          }
+          ColumnAggregator.castTo(elem, typ)
       }
       val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
       codec.encodeBinary(avroRecord)
@@ -265,7 +261,7 @@ class Fetcher(val kvStore: KVStore,
 
         val valueBytes =
           resp.values.toOption
-            .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))
+            .map(encode(codec.valueSchema, codec.valueCodec, _, cast = true))
             .orNull
 
         val loggableResponse = LoggableResponse(

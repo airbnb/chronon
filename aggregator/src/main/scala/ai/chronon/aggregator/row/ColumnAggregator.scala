@@ -134,6 +134,7 @@ object ColumnAggregator {
       case i: java.lang.Long    => new java.lang.Double(i.doubleValue())
       case i: java.lang.String  => new java.lang.Double(java.lang.Double.parseDouble(i))
       case i: java.lang.Double  => if (i.isNaN || i.isInfinite) null else i
+      case _                    => value
     }
 
   def castTo(value: AnyRef, typ: DataType): AnyRef =
