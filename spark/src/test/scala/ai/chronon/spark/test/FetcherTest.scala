@@ -92,7 +92,7 @@ class FetcherTest extends TestCase {
       Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
       Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10"), // Query for mutated event
       Row(1L, toTs("2021-04-10 00:10:00"), "2021-04-10"), // query for added event
-      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event 
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event
     )
     val snapshotData = Seq(
       Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),

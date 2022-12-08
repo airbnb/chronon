@@ -59,7 +59,6 @@ class RowAggregatorTest extends TestCase {
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
     sessionLengthAvgByTitle.put("A", 5.5)
     sessionLengthAvgByTitle.put("B", 6)
-    sessionLengthAvgByTitle.put("H", 1) // 0-1 / 0-1
 
     val histogram = new java.util.HashMap[String, Int]()
     histogram.put("A", 4)
