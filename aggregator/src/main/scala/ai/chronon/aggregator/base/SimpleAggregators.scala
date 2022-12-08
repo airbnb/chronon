@@ -109,38 +109,25 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
 
   // mutating
   override def update(ir: Array[Any], input: Double): Array[Any] = {
-    if (ir == null) {
-      prepare(input)
-    } else {
-      ir.update(0, ir(0).asInstanceOf[Double] + input)
-      ir.update(1, ir(1).asInstanceOf[Int] + 1)
-      ir
-    }
+    ir.update(0, ir(0).asInstanceOf[Double] + input)
+    ir.update(1, ir(1).asInstanceOf[Int] + 1)
+    ir
   }
 
   // mutating
   override def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
-    if (ir1 == null) ir2
-    else if (ir2 == null) ir1
-    else {
-      ir1.update(0, ir1(0).asInstanceOf[Double] + ir2(0).asInstanceOf[Double])
-      ir1.update(1, ir1(1).asInstanceOf[Int] + ir2(1).asInstanceOf[Int])
-      ir1
-    }
+    ir1.update(0, ir1(0).asInstanceOf[Double] + ir2(0).asInstanceOf[Double])
+    ir1.update(1, ir1(1).asInstanceOf[Int] + ir2(1).asInstanceOf[Int])
+    ir1
   }
 
   override def finalize(ir: Array[Any]): Double =
     ir(0).asInstanceOf[Double] / ir(1).asInstanceOf[Int].toDouble
 
   override def delete(ir: Array[Any], input: Double): Array[Any] = {
-    if (ir == null) return null
     ir.update(0, ir(0).asInstanceOf[Double] - input)
     ir.update(1, ir(1).asInstanceOf[Int] - 1)
-    // For an entity source, the denominator could be zero
-    // due to the delete event from the streaming head rows
-    // therefore, the IR should reset to null to start over
-    if (ir(1).asInstanceOf[Int] == 0) null
-    else ir
+    ir
   }
 
   override def clone(ir: Array[Any]): Array[Any] = {

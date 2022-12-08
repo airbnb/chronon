@@ -52,8 +52,16 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
   override def denormalize(ir: Any): Any = if (ir == null) null else agg.denormalize(ir)
   override def clone(ir: Any): Any = guardedApply(agg.clone, ir)
   private def guardedApply[ValueType, NewValueType](f: ValueType => NewValueType, ir: Any): Any = {
-    if (ir == null) null else f(ir.asInstanceOf[ValueType])
+    if (ir == null) null else numberSanityCheck(f(ir.asInstanceOf[ValueType]))
   }
 
   override def isDeletable: Boolean = agg.isDeletable
+
+  def numberSanityCheck(value: Any): Any = {
+    value match {
+      case i: java.lang.Float   => if (i.isNaN || i.isInfinite) null else i
+      case i: java.lang.Double    => if (i.isNaN || i.isInfinite) null else i
+      case _                    => value
+    }
+  }
 }
