@@ -59,8 +59,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
 
     val partName = joinPart.groupBy.metaData.name
 
-    println(
-      s"""Join keys for $partName: ${keys.mkString(", ")}
+    println(s"""Join keys for $partName: ${keys.mkString(", ")}
          |Left Schema:
          |${leftDf.schema.pretty}
          |
@@ -243,8 +242,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     tablesToRecompute().foreach(_.foreach(tableName => {
       val archiveTry = Try(tableUtils.archiveTableIfExists(tableName, jobRunTimestamp))
       if (archiveTry.isFailure) {
-        println(
-          s"""Fail to archive table ${tableName}
+        println(s"""Fail to archive table ${tableName}
              |${archiveTry.failed.get.getMessage}
              |Proceed to dropping the table instead.
              |""".stripMargin)
