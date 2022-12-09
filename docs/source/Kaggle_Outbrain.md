@@ -45,3 +45,8 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet \
 --ds=2016-07-01 --step-days=1
 ```
+
+### You can find the resulting parquet data
+```shell
+tree -h ~/kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
+```
