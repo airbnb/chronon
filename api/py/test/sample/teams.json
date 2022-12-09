@@ -40,5 +40,9 @@
                 "EXECUTOR_CORES": "4"
             }
         }
+    },
+    "kaggle": {
+        "description": "Workspace for kaggle compeitions",
+        "namespace": "default"
     }
 }

@@ -59,7 +59,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.executor.cores=${EXECUTOR_CORES:-1} \
 --conf spark.sql.files.maxPartitionBytes=1073741824 \
 --conf spark.debug.maxToStringFields=1000 \
---conf spark.driver.maxResultSize=32G \
+--conf spark.driver.maxResultSize=4G \
 --deploy-mode client \
 --master "${JOB_MODE:-yarn}" \
 --executor-memory "${EXECUTOR_MEMORY:-8G}" \

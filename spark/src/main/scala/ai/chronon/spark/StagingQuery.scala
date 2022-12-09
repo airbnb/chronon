@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
+import ai.chronon.spark.Extensions._
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -28,6 +29,11 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
+    // the input table is not partitioned, usually for data testing or for kaggle demos
+    if (stagingQueryConf.startPartition == null) {
+      tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      return
+    }
     val unfilledRanges =
       tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
 
@@ -41,7 +47,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     val stagingQueryUnfilledRanges = unfilledRanges.get
     println(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]
-    stagingQueryUnfilledRanges.foreach{ case stagingQueryUnfilledRange =>
+    stagingQueryUnfilledRanges.foreach { stagingQueryUnfilledRange =>
       try {
         val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
         println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
@@ -61,7 +67,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         println(s"Finished writing Staging Query data to $outputTable")
       } catch {
         case err: Throwable =>
-          exceptions.append(s"Error handling range ${stagingQueryUnfilledRange} : ${err.getStackTrace}")
+          exceptions.append(
+            s"Error handling range $stagingQueryUnfilledRange : ${err.getStackTrace.mkString("Array(", ", ", ")")}")
       }
     }
     if (exceptions.nonEmpty) {

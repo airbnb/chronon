@@ -10,6 +10,7 @@ import java.io.File
 
 object LocalDataLoader {
   def writeTableFromFile(file: File, tableName: String, session: SparkSession): Unit = {
+    if (session.catalog.tableExists(tableName)) return
     val extension = file.getName.split("\\.").last
     if (!Seq("csv", "json", "jsonl").contains(extension)) {
       println(s"Unable to load file due to invalid extension from file: ${file.getPath}")
@@ -39,12 +40,10 @@ object LocalDataLoader {
     df.show(100)
     println(df.schema.pretty)
 
-    if (!session.catalog.tableExists(tableName)) {
-      if (df.schema.map(_.name).contains("ds")) {
-        df.write.partitionBy("ds").saveAsTable(tableName)
-      } else {
-        df.write.saveAsTable(tableName)
-      }
+    if (df.schema.map(_.name).contains("ds")) {
+      df.write.partitionBy("ds").saveAsTable(tableName)
+    } else {
+      df.write.saveAsTable(tableName)
     }
   }
 
@@ -58,7 +57,10 @@ object LocalDataLoader {
     } else {
       val (ns, table) = if (splits.size == 2) { nsFields -> splits(0) }
       else { (nsFields :+ splits(0)) -> splits(1) }
-      writeTableFromFile(f, ns.mkString("_") + "." + table, session)
+      val namespace = ns.mkString("_")
+      if (!session.catalog.databaseExists(namespace))
+        session.sql(s"CREATE DATABASE $namespace")
+      writeTableFromFile(f, namespace + "." + table, session)
     }
   }
 }
