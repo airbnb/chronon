@@ -46,6 +46,7 @@ struct StagingQuery {
     concepts. But lacks a notion of topic.
 
     :param table: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+                  Table names can contain subpartition specs, example db.table/system=mobile/currency=USD
     :param topic: Topic is a kafka table. The table contains all the events historically came through this topic.
     :param query: The logic used to scan both the table and the topic. Contains row level transformations and filtering
                   expressed as Spark SQL statements.

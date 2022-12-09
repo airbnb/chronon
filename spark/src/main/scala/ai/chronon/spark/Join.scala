@@ -94,9 +94,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     println(s"""
          |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metaData.name}, 
-         |  left type : ${joinConf.left.dataModel}, 
-         |  right type: ${joinPart.groupBy.dataModel}, 
+         |  part name : ${joinPart.groupBy.metaData.name},
+         |  left type : ${joinConf.left.dataModel},
+         |  right type: ${joinPart.groupBy.dataModel},
          |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
          |  part unfilled range: $unfilledRange,
          |  bloom sizes: $bloomSizes
@@ -254,7 +254,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
+      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     println(s"Join range to fill $rangeToFill")

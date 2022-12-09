@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
 
@@ -270,6 +270,27 @@ object Extensions {
       specTable.cleanSpec
     }
 
+    def subPartitionFilters: Map[String, String] = {
+      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+
+      val subPartitionFiltersTry = Try(
+        specTable
+          .split("/")
+          .tail
+          .map { partitionDef =>
+            val splitPartitionDef = partitionDef.split("=")
+            (splitPartitionDef.head, splitPartitionDef(1))
+          }
+          .toMap)
+
+      subPartitionFiltersTry match {
+        case Success(value) => value
+        case Failure(exception) => {
+          throw new Exception(s"Table ${specTable} has mal-formatted sub-partitions", exception)
+        }
+      }
+    }
+
     def topic: String = {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
     }
@@ -521,7 +542,8 @@ object Extensions {
     def setups: Seq[String] = {
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(labelJoin.labelParts)
-        .flatMap(_.groupBy.setups).distinct
+        .flatMap(_.groupBy.setups)
+        .distinct
     }
   }
 
