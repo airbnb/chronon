@@ -1,0 +1,105 @@
+{
+  "metaData": {
+    "name": "kaggle.outbrain.training_set",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0}",
+    "dependencies": [
+      "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "kaggle",
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "kaggle_outbrain_base_table",
+      "query": {
+        "selects": {
+          "display_id": "display_id",
+          "ad_id": "ad_id",
+          "document_id": "document_id",
+          "clicked": "clicked",
+          "ts": "ts"
+        },
+        "timeColumn": "ts",
+        "setups": []
+      },
+      "isCumulative": 1
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "kaggle.outbrain.ad_doc_features",
+          "customJson": "{\"lag\": 0}",
+          "dependencies": [
+            "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "kaggle"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "kaggle_outbrain_base_table",
+              "query": {
+                "selects": {
+                  "ad_id": "ad_id",
+                  "document_id": "document_id",
+                  "clicked": "clicked"
+                },
+                "timeColumn": "ts",
+                "setups": []
+              },
+              "isCumulative": 1
+            }
+          }
+        ],
+        "keyColumns": [
+          "ad_id",
+          "document_id"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "clicked",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 3,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "clicked",
+            "operation": 6,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 3,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "clicked",
+            "operation": 8,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 3,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ],
+        "accuracy": 0
+      }
+    }
+  ]
+}
