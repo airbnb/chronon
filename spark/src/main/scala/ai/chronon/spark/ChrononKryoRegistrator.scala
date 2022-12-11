@@ -100,7 +100,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements"
+      "scala.collection.IndexedSeqLike$Elements",
+      "scala.reflect.ManifestFactory$$anon$1"
     )
     val spark3 = Seq(
       "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",

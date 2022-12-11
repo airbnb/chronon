@@ -36,6 +36,15 @@ PYTHONPATH=/Users/nikhil_simha/repos/chronon/api/py/:/Users/nikhil_simha/repos/c
 python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/outbrain.py
 ```
 
+### Run the staging query
+```shell
+DRIVER_MEMORY=4G EXECUTOR_CORES=6 EXECUTOR_MEMORY=18G PARALLELISM=10 MAX_EXECUTORS=1 \
+python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
+--chronon-jar=/Users/$USER/repos/chronon/spark/target/scala-2.11/spark_uber-assembly-csv_tool-0.0.18-SNAPSHOT.jar \
+--conf=production/staging_queries/kaggle/outbrain.base_table \
+--local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
+```
+
 ### Run the join
 ```shell
 DRIVER_MEMORY=16G EXECUTOR_MEMORY=16G EXECUTOR_CORES=6 PARALLELISM=100 MAX_EXECUTORS=1 \
@@ -49,4 +58,4 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 ### You can find the resulting parquet data
 ```shell
 tree -h ~/kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
-```
+``` 

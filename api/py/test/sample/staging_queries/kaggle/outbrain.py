@@ -7,6 +7,9 @@ base_table = StagingQuery(
             clicks_train.ad_id,
             clicks_train.clicked,
             events.document_id,
+            events.uuid,
+            events.platform,
+            events.geo_location,
             CAST(events.timestamp as LONG) + 1465876799998 as ts,
             from_unixtime((CAST(events.timestamp as LONG) + 1465876799998)/1000, 'yyyy-MM-dd') as ds
         FROM

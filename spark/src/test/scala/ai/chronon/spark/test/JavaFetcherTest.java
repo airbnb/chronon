@@ -22,7 +22,7 @@ import static scala.compat.java8.JFunction.func;
 
 public class JavaFetcherTest {
     String namespace = "java_fetcher_test";
-    SparkSession session = SparkSessionBuilder.build(namespace, true);
+    SparkSession session = SparkSessionBuilder.build(namespace, true, scala.Option.apply(null));
     TableUtils tu = new TableUtils(session);
     InMemoryKvStore kvStore = new InMemoryKvStore(func(() -> tu));
     MockApi mockApi = new MockApi(func(() -> kvStore), "java_fetcher_test");
