@@ -123,6 +123,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       try {
         kryo.register(Class.forName(name))
         kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+      } catch {
+        case _: ClassNotFoundException => println(s"Unrecognized class $name")
       }
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
