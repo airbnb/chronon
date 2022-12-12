@@ -265,16 +265,14 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
 
-    def table: String = {
-      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
-      specTable.cleanSpec
-    }
+    lazy val rawTable: String =
+      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+
+    def table: String = rawTable.cleanSpec
 
     def subPartitionFilters: Map[String, String] = {
-      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
-
       val subPartitionFiltersTry = Try(
-        specTable
+        rawTable
           .split("/")
           .tail
           .map { partitionDef =>
@@ -286,7 +284,7 @@ object Extensions {
       subPartitionFiltersTry match {
         case Success(value) => value
         case Failure(exception) => {
-          throw new Exception(s"Table ${specTable} has mal-formatted sub-partitions", exception)
+          throw new Exception(s"Table ${rawTable} has mal-formatted sub-partitions", exception)
         }
       }
     }
