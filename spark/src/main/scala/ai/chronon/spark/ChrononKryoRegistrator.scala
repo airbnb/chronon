@@ -120,8 +120,10 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     )
     val names = if (SPARK_VERSION.startsWith("2")) common ++ spark2 else common ++ spark3
     names.foreach { name =>
-      kryo.register(Class.forName(name))
-      kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+      try {
+        kryo.register(Class.forName(name))
+        kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+      }
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
