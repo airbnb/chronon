@@ -59,7 +59,8 @@ object Driver {
           """Path to a folder containing csv data to load from. You can refer to these in Sources to run the backfill. 
             |The name of each file should be in the format namespace.table.csv. They can be referred to in the confs
             |as "namespace.table". When namespace is not specified we will default to 'default'. We can also 
-            |auto-convert ts columns encoded as readable strings  into longs values expected by Chronon automatically
+            |auto-convert ts columns encoded as readable strings in the format 'yyyy-MM-dd HH:mm:ss'',
+            |into longs values expected by Chronon automatically.
             |""".stripMargin
       )
     val localWarehouseLocation: ScallopOption[String] =
