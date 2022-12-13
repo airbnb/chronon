@@ -9,7 +9,8 @@ ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 
 RUN curl -sSL "https://github.com/sbt/sbt/releases/download/v1.5.0/sbt-1.5.0.tgz" -o sbt-1.5.0.tgz
 RUN tar xzvf sbt-1.5.0.tgz -C /usr/share/
-ENV PATH /opt/conda/bin:/usr/share/sbt/bin:$PATH
+ENV PATH $JAVA_HOME/bin:/opt/conda/bin:/usr/share/sbt/bin:$PATH
+RUN export JAVA_HOME
 
 # Install prereqs
 RUN apt-get update && apt-get -y -q install \
@@ -46,7 +47,7 @@ RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THR
 	&& rm -rf /usr/src/thrift
 
 # Install Scala
-ENV SCALA_VERSION 2.12.10
+ENV SCALA_VERSION 2.12.12
 ENV SCALA_DEB http://www.scala-lang.org/files/archive/scala-$SCALA_VERSION.deb
 
 RUN curl -sSL $SCALA_DEB -o scala.deb && \

@@ -7,10 +7,9 @@ echo Building Chronon.
 # The steps in this file largely follow the commands in .circleci/config.yml
 
 # Build the Scala code
-# TODO: Enable tests once we have them passing (currently a large number fail)
 # Increase if we see OOMs
 export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-sbt "++ 2.12.12 compile"
+sbt "++ 2.12.12 test"
 
 echo Kicking off Python tests and build
 
