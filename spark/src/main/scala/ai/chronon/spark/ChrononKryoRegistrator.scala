@@ -86,6 +86,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
       "scala.reflect.ClassTag$$anon$1",
+      "scala.reflect.ClassTag$GenericClassTag",
       "scala.math.Ordering$$anon$4",
       "org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering",
       "org.apache.spark.sql.catalyst.expressions.SortOrder",
