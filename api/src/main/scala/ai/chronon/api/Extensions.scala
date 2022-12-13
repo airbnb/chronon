@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
 
@@ -265,9 +265,28 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
 
-    def table: String = {
-      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
-      specTable.cleanSpec
+    lazy val rawTable: String =
+      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+
+    def table: String = rawTable.cleanSpec
+
+    def subPartitionFilters: Map[String, String] = {
+      val subPartitionFiltersTry = Try(
+        rawTable
+          .split("/")
+          .tail
+          .map { partitionDef =>
+            val splitPartitionDef = partitionDef.split("=")
+            (splitPartitionDef.head, splitPartitionDef(1))
+          }
+          .toMap)
+
+      subPartitionFiltersTry match {
+        case Success(value) => value
+        case Failure(exception) => {
+          throw new Exception(s"Table ${rawTable} has mal-formatted sub-partitions", exception)
+        }
+      }
     }
 
     def topic: String = {
@@ -521,7 +540,8 @@ object Extensions {
     def setups: Seq[String] = {
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(labelJoin.labelParts)
-        .flatMap(_.groupBy.setups).distinct
+        .flatMap(_.groupBy.setups)
+        .distinct
     }
   }
 
