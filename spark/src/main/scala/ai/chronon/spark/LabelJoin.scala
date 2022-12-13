@@ -12,18 +12,18 @@ import org.apache.spark.util.sketch.BloomFilter
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 
-class LabelJoin(joinConf: api.Join,
-                tableUtils: TableUtils,
-                labelDS: String) {
+class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  assert(joinConf.labelJoin.leftStartOffset >= joinConf.labelJoin.getLeftEndOffset,
-    s"Start time offset ${joinConf.labelJoin.leftStartOffset} must be earlier than end offset " +
-      s"${joinConf.labelJoin.leftEndOffset}")
+  assert(
+    joinConf.labelPart.leftStartOffset >= joinConf.labelPart.getLeftEndOffset,
+    s"Start time offset ${joinConf.labelPart.leftStartOffset} must be earlier than end offset " +
+      s"${joinConf.labelPart.leftEndOffset}"
+  )
 
   val metrics = Metrics.Context(Metrics.Environment.LabelJoin, joinConf)
   private val outputTable = joinConf.metaData.outputTable
-  private val labelJoinConf = joinConf.labelJoin
+  private val labelJoinConf = joinConf.labelPart
   private val confTableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
@@ -37,9 +37,9 @@ class LabelJoin(joinConf: api.Join,
            s"join.left.dataMode needs to be Events for label join ${joinConf.metaData.name}")
 
     assert(Option(joinConf.metaData.team).nonEmpty,
-      s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
+           s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    labelJoinConf.labelParts.asScala.foreach { jp =>
+    labelJoinConf.labels.asScala.foreach { jp =>
       assert(Option(jp.groupBy.dataModel).equals(Option(Entities)),
              s"groupBy.dataModel must be Entities for label join ${jp.groupBy.metaData.name}")
 
@@ -47,24 +47,24 @@ class LabelJoin(joinConf: api.Join,
              s"groupBy.aggregations not yet supported for label join ${jp.groupBy.metaData.name}")
 
       assert(Option(jp.groupBy.metaData.team).nonEmpty,
-        s"groupBy.metaData.team needs to be set for label join ${jp.groupBy.metaData.name}")
+             s"groupBy.metaData.team needs to be set for label join ${jp.groupBy.metaData.name}")
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
     compute(joinConf.left, stepDays, Option(labelDS))
   }
 
-  def compute(left: Source,
-              stepDays: Option[Int] = None,
-              labelDS: Option[String] = None): DataFrame = {
+  def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
-    val today =  Constants.Partition.at(System.currentTimeMillis())
+    val today = Constants.Partition.at(System.currentTimeMillis())
     println(s"Label join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     //TODO: use unfilledRanges instead of dropPartitionsAfterHole
     val earliestHoleOpt =
-      tableUtils.dropPartitionsAfterHole(left.table, outputTable, rangeToFill,
-        Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
+      tableUtils.dropPartitionsAfterHole(left.table,
+                                         outputTable,
+                                         rangeToFill,
+                                         Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -73,11 +73,13 @@ class LabelJoin(joinConf: api.Join,
     if (leftUnfilledRange.start != null && leftUnfilledRange.end != null) {
       metrics.gauge(Metrics.Name.PartitionCount, leftUnfilledRange.partitions.length)
     }
-    labelJoinConf.labelParts.asScala.foreach { joinPart =>
+    labelJoinConf.labels.asScala.foreach { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
-      tableUtils.dropPartitionsAfterHole(left.table, partTable, rangeToFill,
-        Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
+      tableUtils.dropPartitionsAfterHole(left.table,
+                                         partTable,
+                                         rangeToFill,
+                                         Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -109,7 +111,7 @@ class LabelJoin(joinConf: api.Join,
     }.toMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labelParts.asScala.par.map { joinPart =>
+    val rightDfs = labelJoinConf.labels.asScala.par.map { joinPart =>
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
         computeLabelPart(joinPart, leftRange, leftBlooms)
@@ -119,7 +121,7 @@ class LabelJoin(joinConf: api.Join,
       }
     }
 
-    val joined = rightDfs.zip(labelJoinConf.labelParts.asScala).foldLeft(leftDf) {
+    val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftDf) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
@@ -128,8 +130,8 @@ class LabelJoin(joinConf: api.Join,
   }
 
   private def computeLabelPart(joinPart: JoinPart,
-                              unfilledRange: PartitionRange,
-                              leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
+                               unfilledRange: PartitionRange,
+                               leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
@@ -144,22 +146,24 @@ class LabelJoin(joinConf: api.Join,
                |  groupBy: ${joinPart.groupBy.toString}
                |""".stripMargin)
 
-    val groupBy = GroupBy.from(joinPart.groupBy, PartitionRange(labelDS, labelDS), tableUtils,
-      Option(rightBloomMap), rightSkewFilter)
+    val groupBy = GroupBy.from(joinPart.groupBy,
+                               PartitionRange(labelDS, labelDS),
+                               tableUtils,
+                               Option(rightBloomMap),
+                               rightSkewFilter)
 
     val df = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
       case (Events, Entities, _) =>
         groupBy.snapshotEntities
       case (_, _, _) =>
-        throw new IllegalArgumentException(s"Data model type ${joinConf.left.dataModel}:${joinPart.groupBy.dataModel} " +
-          s"not supported for label join. Valid type [Events : Entities]")
+        throw new IllegalArgumentException(
+          s"Data model type ${joinConf.left.dataModel}:${joinPart.groupBy.dataModel} " +
+            s"not supported for label join. Valid type [Events : Entities]")
     }
     df.withColumnRenamed(Constants.PartitionColumn, Constants.LabelPartitionColumn)
   }
 
-  def joinWithLeft(leftDf: DataFrame,
-                   rightDf: DataFrame,
-                   joinPart: JoinPart): DataFrame = {
+  def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
     // apply key-renaming to key columns
     val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
@@ -167,9 +171,9 @@ class LabelJoin(joinConf: api.Join,
     }
 
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-      Constants.PartitionColumn,
-      Constants.TimePartitionColumn,
-      Constants.LabelPartitionColumn)
+                                                                     Constants.PartitionColumn,
+                                                                     Constants.TimePartitionColumn,
+                                                                     Constants.LabelPartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
 
