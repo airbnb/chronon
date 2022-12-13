@@ -69,7 +69,6 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           }
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
-            .withTimeBasedColumn(Constants.PartitionColumn)
             .save(dailyStatsTable, tableProps)
           println(s"Finished range [${index + 1}/${stepRanges.size}].")
       }
