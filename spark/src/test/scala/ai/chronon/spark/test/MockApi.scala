@@ -1,6 +1,6 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api.{Builders, Constants, StructType}
+import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
@@ -12,13 +12,12 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.io.{ByteArrayInputStream, InputStream}
 import java.util
-import java.util.{Base64, function}
+import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
-import java.util.stream.{Collector, Collectors}
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success}
+import scala.util.{ScalaVersionSpecificCollectionsConverter, Success}
 
 class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
 
