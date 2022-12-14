@@ -9,7 +9,7 @@ public abstract class JTry<V> {
     private JTry() {
     }
 
-    public static <V> JTry<V> failure(Exception t) {
+    public static <V> JTry<V> failure(Throwable t) {
         Objects.requireNonNull(t);
         return new Failure<>(t);
     }
@@ -29,7 +29,7 @@ public abstract class JTry<V> {
 
     public abstract boolean isSuccess();
 
-    public abstract Exception getException();
+    public abstract Throwable getException();
 
     public abstract V getValue();
 
@@ -49,7 +49,7 @@ public abstract class JTry<V> {
 
     private static class Failure<V> extends JTry<V> {
 
-        private final Exception exception;
+        private final Throwable exception;
 
         public Failure(Throwable t) {
             super();
@@ -62,7 +62,7 @@ public abstract class JTry<V> {
         }
 
         @Override
-        public Exception getException() {
+        public Throwable getException() {
             return exception;
         }
 
