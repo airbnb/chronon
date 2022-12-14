@@ -53,7 +53,7 @@ public abstract class JTry<V> {
 
         public Failure(Throwable t) {
             super();
-            this.exception = new RuntimeException(t);
+            this.exception = t;
         }
 
         @Override
