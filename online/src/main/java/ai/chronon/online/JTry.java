@@ -39,7 +39,7 @@ public abstract class JTry<V> {
         if (this.isSuccess()) {
             try {
                 return new scala.util.Success<>(getValue());
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 throw new IllegalStateException("Invalid try with isSuccess=True " + this);
             }
         } else {
@@ -93,7 +93,7 @@ public abstract class JTry<V> {
         }
 
         @Override
-        public Exception getException() {
+        public Throwable getException() {
             throw new RuntimeException("Calling get exception on a successful object");
         }
 
@@ -107,7 +107,7 @@ public abstract class JTry<V> {
             Objects.requireNonNull(f);
             try {
                 return JTry.success(f.apply(value));
-            } catch (Exception t) {
+            } catch (Throwable t) {
                 return JTry.failure(t);
             }
         }
