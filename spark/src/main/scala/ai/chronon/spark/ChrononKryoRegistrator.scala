@@ -53,6 +53,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.datasources.BasicWriteTaskStats",
       "org.apache.spark.sql.execution.datasources.WriteTaskResult",
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex",
+      "org.apache.spark.sql.execution.joins.LongHashedRelation",
+      "org.apache.spark.sql.execution.joins.LongToUnsafeRowMap",
       "org.apache.spark.sql.execution.streaming.sources.ForeachWriterCommitMessage$",
       "org.apache.spark.sql.types.Metadata",
       "ai.chronon.api.Row",

@@ -4,8 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.consistency.ConsistencyJob
-import ai.chronon.spark.stats.SummaryJob
+import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
@@ -19,9 +18,9 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.io.File
 import java.nio.file.{Files, Paths}
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -92,6 +91,29 @@ object Driver {
     }
   }
 
+  object LabelJoin {
+    class Args extends Subcommand("label-join") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+          descr = "Runs label join in steps, step-days at a time. Default is 30 days",
+          default = Option(30))
+      val labelDs: ScallopOption[String] =
+        opt[String](required = false,
+          descr = "Label version ds, default to be label join job running date",
+          default = Some(Constants.Partition.now))
+    }
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      val labelJoin = new LabelJoin(
+        joinConf,
+        TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}")),
+        args.labelDs()
+      )
+      labelJoin.computeLabelJoin(args.stepDays.toOption)
+    }
+  }
+
   object Analyzer {
     class Args extends Subcommand("analyze") with OfflineSubcommand {
       val startDate: ScallopOption[String] =
@@ -130,6 +152,21 @@ object Driver {
     }
   }
 
+  object MetadataExport {
+    class Args extends Subcommand("metadata-export") with OfflineSubcommand {
+      val inputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path of config repo to export from")
+      val outputRootPath: ScallopOption[String] =
+        opt[String](required = true,
+          descr = "Base path to write output metadata files to")
+    }
+
+    def run(args: Args): Unit = {
+      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
+    }
+  }
+
   object StagingQueryBackfill {
     class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
@@ -150,11 +187,14 @@ object Driver {
 
   object DailyStats {
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
-      //TODO: Add sample as an arg.
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
           descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
           default = Option(30))
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false,
+          descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
+          default = Option(0.1))
 
     }
 
@@ -162,7 +202,7 @@ object Driver {
       val joinConf = parseConf[api.Join](args.confPath())
       new SummaryJob(
         SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
-        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()))
+        joinConf = joinConf, endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
     }
   }
 
@@ -171,6 +211,20 @@ object Driver {
 
     def run(args: Args): Unit = {
       GroupByUpload.run(parseConf[api.GroupBy](args.confPath()), args.endDate())
+    }
+  }
+
+  object ConsistencyMetricsCompute {
+    class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {}
+
+    def run(args: Args): Unit = {
+      val joinConf = parseConf[api.Join](args.confPath())
+      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
+      new ConsistencyJob(
+        sparkSession,
+        joinConf,
+        args.endDate()
+      ).buildConsistencyMetrics()
     }
   }
 
@@ -340,28 +394,6 @@ object Driver {
     }
   }
 
-  object ConsistencyMetricsUploader {
-    class Args extends Subcommand("consistency-metrics-upload") with OnlineSubcommand {
-      val confPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Path to the Chronon join conf file to compute consistency for")
-      val endDate: ScallopOption[String] =
-        opt[String](required = false, descr = "End date to compute metrics until.")
-    }
-
-    def run(args: Args): Unit = {
-      val apiImpl = args.impl(args.serializableProps)
-      val joinConf = parseConf[api.Join](args.confPath())
-      val sparkSession = SparkSessionBuilder.build(s"consistency_metrics_join_${joinConf.metaData.name}")
-
-      new ConsistencyJob(
-        sparkSession,
-        joinConf,
-        args.endDate(),
-        apiImpl
-      ).buildConsistencyMetrics()
-    }
-  }
-
   object GroupByStreaming {
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
@@ -454,8 +486,8 @@ object Driver {
     addSubcommand(JoinBackFillArgs)
     object LogFlattenerArgs extends LogFlattener.Args
     addSubcommand(LogFlattenerArgs)
-    object ConsistencyMetricsUploaderArgs extends ConsistencyMetricsUploader.Args
-    addSubcommand(ConsistencyMetricsUploaderArgs)
+    object ConsistencyMetricsArgs extends ConsistencyMetricsCompute.Args
+    addSubcommand(ConsistencyMetricsArgs)
     object GroupByBackfillArgs extends GroupByBackfill.Args
     addSubcommand(GroupByBackfillArgs)
     object StagingQueryBackfillArgs extends StagingQueryBackfill.Args
@@ -471,6 +503,11 @@ object Driver {
     object AnalyzerArgs extends Analyzer.Args
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
+    addSubcommand(DailyStatsArgs)
+    object MetadataExportArgs extends MetadataExport.Args
+    addSubcommand(MetadataExportArgs)
+    object LabelJoinArgs extends LabelJoin.Args
+    addSubcommand(LabelJoinArgs)
     requireSubcommand()
     verify()
   }
@@ -501,10 +538,11 @@ object Driver {
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsUploaderArgs =>
-            ConsistencyMetricsUploader.run(args.ConsistencyMetricsUploaderArgs)
+          case args.ConsistencyMetricsArgs =>
+            ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
           case args.AnalyzerArgs => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs => DailyStats.run(args.DailyStatsArgs)
+          case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
           case _                 => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")

@@ -1,9 +1,11 @@
+# Code Guidelines
+
 ## Scala Language usage Philosophy
 
 There are two phases of execution in chronon code. Hot path & control path.
 Hot path is in sense the "inner loop" of the larger program. The speed of the the inner
 loop controls the speed of the whole program. While changes to control path are less impactful.
-Any row level operation is a part of the inner loop. This is true across all online & offline workflows.
+Any row/column level operation is a part of the inner loop. This is true across all online & offline workflows.
 
 ### Rules for inner loops
 
@@ -17,13 +19,15 @@ Any row level operation is a part of the inner loop. This is true across all onl
         - Example: Convert arbitrary numeric value of a `df` at position `columnIndex`
           Branches in hot path (two `isInstance` calls per value)
           ```scala
+          // inefficient version
+          
           def toDouble(o: Any): Double = {
               if (o.isInstance[Int]) { 
                 o.asInstanceOf[Int].toDouble
               } else if (o.isInstance[Long]) { 
                 o.asInstanceOf[Long].toDouble
               } 
-              ...
+              . . .
           }
           
           df.rdd.map(toDouble(row(columnIndex)))
@@ -31,6 +35,8 @@ Any row level operation is a part of the inner loop. This is true across all onl
 
           Branches in control path (one `isInstance` call per value)
           ```scala
+          // efficient version
+          
           def toDoubleFunc(inputType: DataType): Any => Double = {
               inputType match { 
                 case IntType => x: Any => x.asInstanceOf[Int].toDouble 
@@ -50,10 +56,17 @@ The biggest culprit is the overloading of the
 keyword.
 
 We have restricted the code base to use implicit only to retroactively extend 
-classes. A.K.A as extension objects. Every other use is banned.
+classes. A.K.A as extension objects. Every other use should be minimized.
 
 Scala 3 fixes a lot of these design mistakes, but the world is quite far from 
-adopting Scala 3 (as I write this).
+adopting Scala 3.
 
 Having said all that, Scala 2 is leagues ahead of any other language on JVM, 
-in terms of power today. Most importantly, Spark APIs are mainly in Scala.  
+in terms of power. Also Spark APIs are mainly in Scala2.  
+
+### Testing
+
+Every new behavior should be unit-tested. We have implemented a fuzzing framework 
+that can produce data randomly as scala objects or 
+spark tables - [see](../../spark/src/test/scala/ai/chronon/spark/test/DataFrameGen.scala). Use it for testing.
+Python code is also covered by tests - [see](../../api/py/test).

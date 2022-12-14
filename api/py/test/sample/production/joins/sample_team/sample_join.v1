@@ -11,7 +11,8 @@
       "config_json": "{\"sample_key\": \"sample_value\"}"
     },
     "outputNamespace": "sample_namespace",
-    "team": "sample_team"
+    "team": "sample_team",
+    "offlineSchedule": "@daily"
   },
   "left": {
     "entities": {

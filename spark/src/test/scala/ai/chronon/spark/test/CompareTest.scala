@@ -42,7 +42,8 @@ class CompareTest {
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val result: DataMetrics = CompareJob.compare(leftDf, rightDf, keys)
+    val (df, result): (DataFrame, DataMetrics) = CompareJob.compare(leftDf, rightDf, keys)
+    df.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {
@@ -71,12 +72,13 @@ class CompareTest {
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val result = CompareJob.compare(
+    val (df, result) = CompareJob.compare(
         leftDf,
         rightDf,
         keys,
         Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
     )
+    df.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {

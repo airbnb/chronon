@@ -11,9 +11,9 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
-import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
+import scala.util.Try
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -52,21 +52,21 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
                                                                      Constants.PartitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val fullPrefix = (Option(joinPart.prefix) ++ Some(joinPart.groupBy.metaData.cleanName)).mkString("_")
-    val prefixedRight = keyRenamedRight.prefixColumnNames(fullPrefix, valueColumns)
+    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     val keys = partLeftKeys ++ additionalKeys
 
     val partName = joinPart.groupBy.metaData.name
 
-    println(s"""Join keys for $partName: ${keys.mkString(", ")}
+    println(
+      s"""Join keys for $partName: ${keys.mkString(", ")}
          |Left Schema:
          |${leftDf.schema.pretty}
-         |  
+         |
          |Right Schema:
          |${prefixedRight.schema.pretty}
-         |  
+         |
          |""".stripMargin)
 
     import org.apache.spark.sql.functions.{col, date_add, date_format}
@@ -228,32 +228,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     }
   }
 
-  def leftDf(range: PartitionRange): Option[DataFrame] = {
-    val timeProjection = if (joinConf.left.dataModel == Events) {
-      Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
-    } else {
-      Seq()
-    }
-    val scanQuery = range.genScanQuery(joinConf.left.query,
-                                       joinConf.left.table,
-                                       fillIfAbsent =
-                                         Map(Constants.PartitionColumn -> null) ++ timeProjection)
-
-    val df = tableUtils.sql(scanQuery)
-    val skewFilter = joinConf.skewFilter()
-    val result = skewFilter
-      .map(sf => {
-        println(s"left skew filter: $sf")
-        df.filter(sf)
-      })
-      .getOrElse(df)
-    if (result.isEmpty) {
-      println(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
-      return None
-    }
-    Some(result)
-  }
-
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
@@ -266,7 +240,17 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
 
     // First run command to archive tables that have changed semantically since the last run
     val jobRunTimestamp = Instant.now()
-    tablesToRecompute().foreach(_.foreach(tableName => tableUtils.archiveTableIfExists(tableName, jobRunTimestamp)))
+    tablesToRecompute().foreach(_.foreach(tableName => {
+      val archiveTry = Try(tableUtils.archiveTableIfExists(tableName, jobRunTimestamp))
+      if (archiveTry.isFailure) {
+        println(
+          s"""Fail to archive table ${tableName}
+             |${archiveTry.failed.get.getMessage}
+             |Proceed to dropping the table instead.
+             |""".stripMargin)
+        tableUtils.dropTableIfExists(tableName)
+      }
+    }))
 
     joinConf.setups.foreach(tableUtils.sql)
     val leftStart = Option(joinConf.left.query.startPartition)
@@ -298,7 +282,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        leftDf(range).map { leftDfInRange =>
+        JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range).save(outputTable, tableProps)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)

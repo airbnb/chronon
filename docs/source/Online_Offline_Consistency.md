@@ -1,3 +1,5 @@
+# Online Offline Consistency
+
 ### Problem
 Chronon produces data in two contexts. **Offline** as hive tables and 
 **Online** via a low latency kv-store. In the context of a machine learning

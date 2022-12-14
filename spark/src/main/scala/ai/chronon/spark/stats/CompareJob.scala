@@ -19,7 +19,13 @@ object CompareJob {
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     // Make sure the number of fields are the same on either side
     assert(leftFields.size == rightFields.size,
-      s"Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}")
+      s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
+         |Left side fields:
+         | - ${leftFields.mkString("\n - ")}
+         |
+         |Right side fields:
+         | - ${rightFields.mkString("\n - ")}
+         |""".stripMargin)
 
     // Verify that the mapping and the datatypes match
     leftFields.foreach { leftField =>
@@ -53,7 +59,7 @@ object CompareJob {
       rightDf: DataFrame,
       keys: Seq[String],
       mapping: Map[String, String] = Map.empty
-  ): DataMetrics = {
+  ): (DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
     checkConsistency(leftDf, rightDf, keys, mapping)
 
@@ -96,13 +102,7 @@ object CompareJob {
         .map(tup => StructField(tup._1, tup._2)))
 
     // 4. Run the consistency check
-    val (df, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
-
-    // 5. Optionally save the compare results to a table
-    // TODO Save the results to a table
-    // df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
-
-    metrics
+    CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
   }
 }
 

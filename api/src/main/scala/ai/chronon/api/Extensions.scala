@@ -5,8 +5,9 @@ import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
+import java.io.{PrintWriter, StringWriter}
+import java.util
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object Extensions {
@@ -61,9 +62,9 @@ object Extensions {
       } else if (millis % Hour.millis == 0) {
         new Window((millis / Hour.millis).toInt, TimeUnit.HOURS).str
       } else if (millis % Minute == 0) {
-        s"${millis / Minute}mins"
+        s"${millis / Minute} minutes"
       } else if (millis % SecondMillis == 0) {
-        s"${millis / SecondMillis}secs"
+        s"${millis / SecondMillis} seconds"
       } else {
         s"${millis}ms"
       }
@@ -413,6 +414,68 @@ object Extensions {
     def cleanSpec: String = string.split("/").head
   }
 
+  implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
+    private def schemaNames(schema: TDataType): Array[String] =
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(schema.params)
+        .map(_.name)
+        .toArray
+    lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
+    lazy val valueNames: Array[String] = schemaNames(externalSource.valueSchema)
+
+    def isContextualSource: Boolean = externalSource.metadata.name == Constants.ContextualSourceName
+  }
+
+  object KeyMappingHelper {
+    // key mapping is defined as {left_col1: right_col1}, on the right there can be two keys [right_col1, right_col2]
+    // Left is implicitly assumed to have right_col2
+    // We need to convert a map {left_col1: a, right_col2: b, irrelevant_col: c} into {right_col1: a, right_col2: b}
+    // The way to do this efficiently is to "flip" the keymapping into {right_col1: left_col1} and save it.
+    // And later "apply" the flipped mapping.
+    def flip(leftToRight: java.util.Map[String, String]): Map[String, String] = {
+      Option(leftToRight)
+        .map(mp =>
+          ScalaVersionSpecificCollectionsConverter
+            .convertJavaMapToScala(mp)
+            .map({ case (key, value) => value -> key }))
+        .getOrElse(Map.empty[String, String])
+    }
+  }
+
+  implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
+    lazy val fullName: String =
+      Constants.ExternalPrefix + "_" +
+        Option(externalPart.prefix).map(_ + "_").getOrElse("") +
+        externalPart.source.metadata.name.sanitize
+
+    def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
+      // TODO: Long-term we could bring in derivations here.
+      val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
+      val missingKeys = rightToLeft.iterator.map(_._2).filterNot(query.contains).toSet
+
+      // for contextual features, we automatically populate null if any of the keys are missing
+      // otherwise, an exception is thrown which will be converted to soft-fail in Fetcher code
+      if (missingKeys.nonEmpty && !externalPart.source.isContextualSource) {
+        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq)
+      }
+      rightToLeft.map {
+        case (rightKey, leftKey) => rightKey -> query.getOrElse(leftKey, null).asInstanceOf[AnyRef]
+      }.toMap
+    }
+
+    def applyMapping(query: Map[String, Any]): Map[String, AnyRef] =
+      apply(query, rightToLeft, keyNames)
+
+    lazy val rightToLeft: Map[String, String] = KeyMappingHelper.flip(externalPart.keyMapping)
+    private lazy val keyNames = externalPart.source.keyNames
+
+    def semanticHash: String = {
+      val newExternalPart = externalPart.deepCopy()
+      newExternalPart.source.unsetMetadata()
+      ThriftJsonCodec.md5Digest(newExternalPart)
+    }
+  }
+
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
@@ -446,6 +509,22 @@ object Extensions {
     }
   }
 
+  implicit class LabelJoinOps(val labelJoin: LabelJoin) extends Serializable {
+    def leftKeyCols: Array[String] = {
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(labelJoin.labelParts)
+        .flatMap { _.rightToLeft.values }
+        .toSet
+        .toArray
+    }
+
+    def setups: Seq[String] = {
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(labelJoin.labelParts)
+        .flatMap(_.groupBy.setups).distinct
+    }
+  }
+
   implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
@@ -461,6 +540,10 @@ object Extensions {
 
     private val leftSourceKey: String = "left_source"
 
+    /*
+     * semanticHash contains hashes of left side and each join part, and is used to detect join definition
+     * changes and determine whether any intermediate/final tables of the join need to be recomputed.
+     */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       val partHashes = ScalaVersionSpecificCollectionsConverter
@@ -468,6 +551,24 @@ object Extensions {
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
       partHashes ++ Map(leftSourceKey -> leftHash)
+    }
+
+    /*
+     * onlineSemanticHash includes everything in semanticHash as well as hashes of each onlineExternalParts (which only
+     * affect online serving but not offline table generation).
+     * It is used to detect join definition change in online serving and to update ttl-cached conf files.
+     */
+    def onlineSemanticHash: Map[String, String] = {
+      if (join.onlineExternalParts == null) {
+        return Map.empty[String, String]
+      }
+
+      val externalPartHashes = ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(join.onlineExternalParts)
+        .map { part => part.fullName -> part.semanticHash }
+        .toMap
+
+      externalPartHashes ++ semanticHash
     }
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
@@ -563,7 +664,10 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.joinParts).toSeq.map(new JoinPartOps(_))
+      ScalaVersionSpecificCollectionsConverter
+        .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
+        .toSeq
+        .map(new JoinPartOps(_))
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -582,6 +686,15 @@ object Extensions {
           ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
         )
         .getOrElse(Seq.empty)
+    }
+  }
+
+  implicit class ThrowableOps(throwable: Throwable) {
+    def traceString: String = {
+      val sw = new StringWriter()
+      val pw = new PrintWriter(sw)
+      throwable.printStackTrace(pw)
+      sw.toString();
     }
   }
 }

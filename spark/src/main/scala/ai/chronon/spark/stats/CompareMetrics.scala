@@ -74,7 +74,9 @@ object CompareMetrics {
           )
         ),
         MetricTransform("left_length", functions.size(left), Operation.APPROX_PERCENTILE, percentilesArgMap),
-        MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE, percentilesArgMap)
+        MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE, percentilesArgMap),
+        MetricTransform("mismatch_length",
+          left.isNotNull.and(right.isNotNull).and(functions.size(left).notEqual(functions.size(right))), Operation.SUM)
       )
 
       val equalityMetric =
@@ -93,7 +95,7 @@ object CompareMetrics {
         Seq.empty[MetricTransform]
       }
 
-      val allMetrics = (universalMetrics ++ typeSpecificMetrics ++ equalityMetric)
+      val allMetrics = (universalMetrics ++ typeSpecificMetrics ++ equalityMetric :+ MetricTransform("total", functions.lit(true), Operation.COUNT))
         .map { m =>
           val fullName = field.name + "_" + m.name
           m.copy(

@@ -15,7 +15,19 @@ struct Query {
     8: optional string reversalColumn
 }
 
+/**
+    Staging Query encapsulates arbitrary spark computation. One key feature is that the computation follows a
+    "fill-what's-missing" pattern. Basically instead of explicitly specifying dates you specify two macros.
+    `{{ start_date }}` and `{{end_date}}`. Chronon will pass in earliest-missing-partition for `start_date` and
+    execution-date / today for `end_date`. So the query will compute multiple partitions at once.
 
+    :param metaData: Contains name, team, output_namespace, execution parameters etc. Things that don't change the
+                     semantics of the computation itself.
+    :param query: The spark sql query with date templates.
+    :param startPartition: This is where start_date will be applied from. We expect the query to also produce output
+                           hive tables partitioned data starting from startPartition.
+    :param setups: Spark SQL setup statements. Used typically to register UDFs.
+ */
 struct StagingQuery {
     1: optional MetaData metaData
     // query should be written with `{{ start_date }}`, `{{ end_date }}` and `{{ latest_date }}` templates
@@ -28,7 +40,18 @@ struct StagingQuery {
     4: optional list<string> setups
 }
 
-// Table names can contain a subpartition spec, example db.table/subpartition=mobile
+/**
+    Event source captures data that is essentially immutable - like user clicks, impressions etc.
+    It has two parts, an offline table and an online topic. The term `fact` table from star-schema also maps to this
+    concepts. But lacks a notion of topic.
+
+    :param table: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+    :param topic: Topic is a kafka table. The table contains all the events historically came through this topic.
+    :param query: The logic used to scan both the table and the topic. Contains row level transformations and filtering
+                  expressed as Spark SQL statements.
+    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
+                         events since the begininng. The key property is that the events are not mutated across partitions.
+ */
 struct EventSource {
     1: optional string table
     2: optional string topic
@@ -38,11 +61,32 @@ struct EventSource {
     4: optional bool isCumulative
 }
 
+
+/**
+    Entity Sources represent data that gets mutated over-time - at row-level. This is a group of three data elements.
+    snapshotTable, mutationTable and mutationTopic. mutationTable and mutationTopic are only necessary if we are trying
+    to create realtime or point-in-time aggregations over these sources. Entity sources usually map 1:1 with a database
+    tables in your OLTP store that typically serves live application traffic. When mutation data is absent they map 1:1
+    to `dim` tables in star schema.
+
+    :param snapshotTable: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+    :param mutationTable: Topic is a kafka table. The table contains all the events historically came through this topic.
+    :param mutationTopic: The logic used to scan both the table and the topic. Contains row level transformations and filtering
+                  expressed as Spark SQL statements.
+    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
+                         events since the begininng. The key property is that the events are not mutated across partitions.
+ */
 struct EntitySource {
     1: optional string snapshotTable
     2: optional string mutationTable
     3: optional string mutationTopic
     4: optional Query query
+}
+
+struct ExternalSource {
+    1: optional MetaData metadata
+    2: optional TDataType keySchema
+    3: optional TDataType valueSchema
 }
 
 union Source {
@@ -91,12 +135,43 @@ struct Window {
     2: TimeUnit timeUnit
 }
 
-// maps to multiple output fields - one per window definition
+/**
+    Chronon provides a powerful aggregations primitive - that takes the familiar aggregation operation, via groupBy in
+    SQL and extends it with three things - windowing, bucketing and auto-explode.
+
+    :param inputColumn:
+        The column as specified in source.query.selects - on which we need to aggregate with.
+
+    :param operation:
+        The type of aggregation that needs to be performed on the inputColumn.
+
+    :param argMap:
+        Extra arguments that needs to be passed to some of the operations like LAST_K, APPROX_PERCENTILE.
+
+    :param windows:
+        For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas,
+        the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically.
+        The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
+
+            Window > 12 days  -> Hop Size = 1 day
+
+            Window > 12 hours -> Hop Size = 1 hr
+
+            Window > 1hr      -> Hop Size = 5 minutes
+
+    :param buckets:
+        This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view"
+        count by "item_category". This will produce one row per user, with column containing map of "item_category"
+        to "view_count". You can specify multiple such buckets at once.
+ */
 struct Aggregation {
     1: optional string inputColumn
     2: optional Operation operation
     3: optional map<string, string> argMap
     4: optional list<Window> windows
+    /**
+    * This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    **/
     5: optional list<string> buckets
 }
 
@@ -113,6 +188,12 @@ enum Accuracy {
     TEMPORAL = 0,
     SNAPSHOT = 1
 }
+
+//TODO: to be supported
+//enum JoinType {
+//    OUTER = 0,
+//    INNER = 1
+//}
 
 struct MetaData {
     1: optional string name
@@ -136,6 +217,8 @@ struct MetaData {
     9: optional map<string, map<string, string>> modeToEnvMap
     10: optional bool consistencyCheck
     11: optional double samplePercent
+    // cron expression for airflow DAG schedule
+    12: optional string offlineSchedule
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -163,8 +246,16 @@ struct AggregationSelector {
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors
+    3: optional list<AggregationSelector> selectors # deprecated
     4: optional string prefix
+}
+
+struct ExternalPart {
+    1: optional ExternalSource source
+    // what keys on the left becomes what keys in the external source
+    // currently this only supports renaming, in the future this will run catalyst expressions
+    2: optional map<string, string> keyMapping
+    3: optional string prefix
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -177,8 +268,22 @@ struct Join {
     // specifying skew keys will also help us scan less raw data before aggregation & join
     // example: {"zipcode": ["94107", "78934"], "country": ["'US'", "'IN'"]}
     4: optional map<string,list<string>> skewKeys
+    // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
+    // This is applicable only for online fetching. Offline this will not be produce any values.
+    5: optional list<ExternalPart> onlineExternalParts
+    6: optional LabelJoin labelJoin
 }
 
+// Label join parts and params
+struct LabelJoin {
+    1: optional list<JoinPart> labelParts
+    // The earliest date label should be refreshed
+    2: optional i32 leftStartOffset
+    // The most rencet date label should be refreshed.
+    // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
+    3: optional i32 leftEndOffset
+//    4: optional JoinType joinType
+}
 
 // This is written by the bulk upload process into the metaDataset
 // streaming uses this to

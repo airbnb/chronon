@@ -10,7 +10,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.consistency.ConsistencyJob
+import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -21,12 +21,12 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.collection.JavaConverters._
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-import scala.util.Try
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
@@ -90,7 +90,9 @@ class FetcherTest extends TestCase {
     val eventData = Seq(
       Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
       Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
-      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10") // Query for mutated event
+      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10"), // Query for mutated event
+      Row(1L, toTs("2021-04-10 00:10:00"), "2021-04-10"), // query for added event
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event
     )
     val snapshotData = Seq(
       Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
@@ -116,6 +118,7 @@ class FetcherTest extends TestCase {
       Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09", toTs("2021-04-09 07:00:00"), false),
       // {listing_id, ts, rating, ds, mutation_ts, is_before}
       Row(1L, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 00:30:00"), false),
+      Row(1L, toTs("2021-04-10 00:30:00"), 5, "2021-04-10", toTs("2021-04-10 02:30:00"), true), // mutation delete event
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 10:00:00"), false),
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 4, "2021-04-10", toTs("2021-04-10 23:30:00"), true),
       Row(595125622443733822L, toTs("2021-04-10 10:00:00"), 3, "2021-04-10", toTs("2021-04-10 23:30:00"), false)
@@ -192,6 +195,11 @@ class FetcherTest extends TestCase {
           operation = Operation.SUM,
           inputColumn = "rating",
           windows = null
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -206,10 +214,9 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateRandomData(namespace: String): api.Join = {
+  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-    val keyCount = 100
-    val rowCount = 1000 * keyCount
+    val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
     // temporal events
@@ -386,8 +393,10 @@ class FetcherTest extends TestCase {
             FutureConverters
               .toScala(javaResponse)
               .map(_.asScala.map(jres =>
-                Response(Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
-                         Try(jres.values.asScala.toMap))))
+                Response(
+                  Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                  jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+                )))
           } else {
             fetcher.fetchJoin(r)
           }
@@ -503,7 +512,7 @@ class FetcherTest extends TestCase {
       flattenerJob.buildLogTable()
 
       // build consistency metrics
-      val consistencyJob = new ConsistencyJob(spark, joinConf, today, mockApi)
+      val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
       println(s"ooc metrics: $metrics".stripMargin)
     }
@@ -567,5 +576,27 @@ class FetcherTest extends TestCase {
                          Constants.Partition.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true)
+  }
+
+  // test soft-fail on missing keys
+  def testEmptyRequest(): Unit = {
+    val namespace = "empty_request"
+    val joinConf = generateRandomData(namespace, 5, 5)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ChrononMetadataKey)
+    metadataStore.putJoinConf(joinConf)
+
+    val request = Request(joinConf.metaData.nameToFilePath, Map.empty)
+    val (responses, _) = joinResponses(Array(request), mockApi)
+    val responseMap = responses.head.values.get
+
+    assertEquals(joinConf.joinParts.size(), responseMap.size)
+    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }

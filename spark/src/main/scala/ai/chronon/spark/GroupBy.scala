@@ -4,7 +4,7 @@ import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Constants}
+import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
@@ -12,9 +12,10 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
-
 import java.util
+
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -524,37 +525,50 @@ object GroupBy {
                       stepDays: Option[Int] = None): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
-      s"GroupBy:{$groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
+      s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
-    val groupByUnfilledRangeOpt =
-      tableUtils.unfilledRange(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition))
-    if (groupByUnfilledRangeOpt.isEmpty) {
-      println(s"""Nothing to backfill for $outputTable - given 
+    val inputTables = groupByConf.getSources.asScala.map(_.table)
+    val groupByUnfilledRangesOpt =
+      tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(inputTables))
+    if (groupByUnfilledRangesOpt.isEmpty) {
+      println(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
-           |backfill start of ${groupByConf.backfillStartDate} 
+           |backfill start of ${groupByConf.backfillStartDate}
            |Exiting...""".stripMargin)
       return
     }
-    val groupByUnfilledRange = groupByUnfilledRangeOpt.get
-    println(s"group by unfilled range: $groupByUnfilledRange")
-    val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-    println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
-    stepRanges.zipWithIndex.foreach {
-      case (range, index) =>
-        println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-        val groupByBackfill = from(groupByConf, range, tableUtils)
-        (groupByConf.dataModel match {
-          // group by backfills have to be snapshot only
-          case Entities => groupByBackfill.snapshotEntities
-          case Events   => groupByBackfill.snapshotEvents(range)
-        }).save(outputTable, tableProps)
-        println(s"Wrote to table $outputTable, into partitions: $range")
+    val groupByUnfilledRanges = groupByUnfilledRangesOpt.get
+    println(s"group by unfilled ranges: $groupByUnfilledRanges")
+    val exceptions = mutable.Buffer.empty[String]
+    groupByUnfilledRanges.foreach {
+      case groupByUnfilledRange =>
+        try {
+          val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
+          println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+          stepRanges.zipWithIndex.foreach {
+            case (range, index) =>
+              println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
+              val groupByBackfill = from(groupByConf, range, tableUtils)
+              (groupByConf.dataModel match {
+                // group by backfills have to be snapshot only
+                case Entities => groupByBackfill.snapshotEntities
+                case Events   => groupByBackfill.snapshotEvents(range)
+              }).save(outputTable, tableProps)
+              println(s"Wrote to table $outputTable, into partitions: $range")
+          }
+          println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+        } catch {
+          case err: Throwable =>
+            exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}"
+        }
     }
-    println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+    if (exceptions.nonEmpty) {
+      throw new RuntimeException(exceptions.mkString("\n"))
+    }
   }
 
   def main(args: Array[String]): Unit = {

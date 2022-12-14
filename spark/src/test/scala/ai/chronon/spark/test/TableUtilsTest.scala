@@ -1,10 +1,12 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
+import ai.chronon.api.{StructField, _}
 import ai.chronon.spark.{Conversions, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
@@ -194,5 +196,48 @@ class TableUtilsTest {
     )
 
     testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+  }
+
+  @Test
+  def ChunkTest(): Unit = {
+    val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
+    val expected = Seq(
+      PartitionRange("2021-01-01", "2021-01-02"),
+      PartitionRange("2021-01-05", "2021-01-05"),
+      PartitionRange("2021-01-07", "2021-01-07"))
+    assertEquals(expected, actual)
+  }
+
+  def testDropPartitions(): Unit = {
+    val tableName = "db.test_drop_partitions_table"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("ds", StringType),
+      StructField("label_ds", StringType)
+    )
+    val df1 = makeDf(
+      StructType(
+        tableName,
+        columns1
+      ),
+      List(
+        Row(1L, 2, "2022-10-01", "2022-11-01"),
+        Row(2L, 2, "2022-10-02", "2022-11-02"),
+        Row(3L, 8, "2022-10-05", "2022-11-03")
+      )
+    )
+    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.dropPartitions(tableName, Seq("2022-10-01", "2022-10-02"), labelPartition = Option("2022-11-02"))
+    val updated = tableUtils.sql(
+      s"""
+         |SELECT * from ${tableName}
+         |""".stripMargin)
+    assertEquals(updated.count(), 2)
+    assertTrue(updated.collect().sameElements(List(
+      Row(1L, 2, "2022-10-01", "2022-11-01"),
+      Row(3L, 8, "2022-10-05", "2022-11-03")
+    )))
   }
 }

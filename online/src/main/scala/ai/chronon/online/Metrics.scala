@@ -18,6 +18,7 @@ object Metrics {
     val StagingQueryOffline = "staging_query.offline"
 
     val JoinLogFlatten = "join.log_flatten"
+    val LabelJoin = "label_join"
   }
   import Environment._
 
@@ -89,13 +90,14 @@ object Metrics {
       )
     }
 
+    val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
         println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
         new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
                                     "localhost",
-                                    8125,
+                                    statsPort,
                                     ctx.toTags: _*)
       },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
@@ -145,12 +147,15 @@ object Metrics {
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
 
+    // There can be multiple joins - when issued as a batch request
+    lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
+
     private[Metrics] def toTags: Array[String] = {
       assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
-      val buffer = new Array[String](8)
+      val buffer = new Array[String](7 + joinNames.length)
       var counter = 0
       def addTag(key: String, value: String): Unit = {
         if (value == null) return
@@ -158,8 +163,7 @@ object Metrics {
         buffer.update(counter, buildTag(key, value))
         counter += 1
       }
-
-      addTag(Tag.Join, join)
+      joinNames.foreach(addTag(Tag.Join, _))
       addTag(Tag.GroupBy, groupBy)
       addTag(Tag.StagingQuery, stagingQuery)
       addTag(Tag.Production, production.toString)

@@ -1,10 +1,9 @@
-"""
-Module for testing code paths not covered in normal compile.
-"""
-from ai.chronon import group_by, query
-from ai.chronon.api import ttypes
-
 import pytest
+
+from ai.chronon import group_by, query
+from ai.chronon.group_by import GroupBy, TimeUnit, Window
+from ai.chronon.api import ttypes
+from ai.chronon.api.ttypes import EventSource, EntitySource, Aggregation, Operation
 
 
 @pytest.fixture
@@ -186,3 +185,52 @@ def test_snapshot_with_hour_aggregation():
             ),
             backfill_start_date="2021-01-04",
         )
+
+
+ratings_features = GroupBy(
+    sources=[
+        EntitySource(
+            snapshotTable="item_info.ratings_snapshots_table",
+            mutationTable="item_info.ratings_mutations_table",
+            mutationTopic="ratings_mutations_topic",
+            query=query.Query(
+                selects={
+                    "rating": "CAST(rating as DOUBLE)",
+                },
+                time_column="ts",
+            ))
+    ],
+    keys=["item"],
+    aggregations=[
+        Aggregation(
+            inputColumn="rating",
+            operation=Operation.AVERAGE,
+            windows=[Window(length=90, timeUnit=TimeUnit.DAYS)],
+        ),
+    ],
+)
+
+
+view_features = GroupBy(
+    sources=[
+        EventSource(
+            table="user_activity.user_views_table",
+            topic="user_views_stream",
+            query=query.Query(
+                selects={
+                    "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
+                },
+                wheres=["user != null"],
+                time_column="ts",
+            )
+        )
+    ],
+    keys=["user", "item"],
+    aggregations=[
+        Aggregation(
+            inputColumn="view",
+            operation=Operation.COUNT,
+            windows=[Window(length=5, timeUnit=TimeUnit.HOURS)],
+        ),
+    ],
+)
