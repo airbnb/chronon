@@ -15,12 +15,12 @@ from ai.chronon.utils import get_staging_query_output_table_name
 from staging_queries.kaggle.outbrain import base_table
 
 
-def outbrain_left_events(*cols):
+def outbrain_left_events(*columns):
     return Source(events=EventSource(
         isCumulative=True,
         table=get_staging_query_output_table_name(base_table),
         query=Query(
-            selects=select(*cols),
+            selects=select(*columns),
             time_column="ts",
         ),
     ))

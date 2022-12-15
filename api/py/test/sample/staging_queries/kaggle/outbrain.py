@@ -11,9 +11,12 @@ base_table = StagingQuery(
             events.platform,
             events.geo_location,
             CAST(events.timestamp as LONG) + 1465876799998 as ts,
-            from_unixtime((CAST(events.timestamp as LONG) + 1465876799998)/1000, 'yyyy-MM-dd') as ds
+            FROM_UNIXTIME((CAST(events.timestamp as LONG) + 1465876799998)/1000, 'yyyy-MM-dd') as ds
         FROM
-            kaggle_outbrain.clicks_train as clicks_train JOIN kaggle_outbrain.events as events ON clicks_train.display_id = events.display_id
+            kaggle_outbrain.clicks_train as clicks_train
+        JOIN
+            kaggle_outbrain.events as events
+        ON clicks_train.display_id = events.display_id
     """,
     metaData=MetaData(
         name='outbrain_left',
