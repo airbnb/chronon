@@ -10,7 +10,7 @@ with open(os.path.join(current_dir, "requirements/base.in"), "r") as infile:
     basic_requirements = [line for line in infile]
 
 
-__version__ = "0.0.18"
+__version__ = "0.0.19"
 
 
 setup(
