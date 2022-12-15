@@ -528,10 +528,10 @@ object Extensions {
     }
   }
 
-  implicit class LabelJoinOps(val labelJoin: LabelJoin) extends Serializable {
+  implicit class LabelPartOps(val labelPart: LabelPart) extends Serializable {
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labelParts)
+        .convertJavaListToScala(labelPart.labels)
         .flatMap { _.rightToLeft.values }
         .toSet
         .toArray
@@ -539,7 +539,7 @@ object Extensions {
 
     def setups: Seq[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labelParts)
+        .convertJavaListToScala(labelPart.labels)
         .flatMap(_.groupBy.setups)
         .distinct
     }

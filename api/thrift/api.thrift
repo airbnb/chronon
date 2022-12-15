@@ -272,12 +272,12 @@ struct Join {
     // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
-    6: optional LabelJoin labelJoin
+    6: optional LabelPart labelPart
 }
 
 // Label join parts and params
-struct LabelJoin {
-    1: optional list<JoinPart> labelParts
+struct LabelPart {
+    1: optional list<JoinPart> labels
     // The earliest date label should be refreshed
     2: optional i32 leftStartOffset
     // The most rencet date label should be refreshed.
