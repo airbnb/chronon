@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api.Constants
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, lit, rand, round}
+import org.apache.spark.sql.functions.{col, count, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
