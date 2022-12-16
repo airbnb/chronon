@@ -61,14 +61,15 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
       val loggedDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
       // external columns are logged during online env, therefore they could not be used for computing OOC
-      val externalCols: Seq[String] = if (!joinConf.onlineExternalParts.isEmpty) {
-        joinConf.onlineExternalParts.asScala.map { part => {
-          val keys = part.source.getKeySchema.params.asScala.map(_.name)
-          val values = part.source.getValueSchema.params.asScala.map(_.name)
-          keys ++ values
-        }
-        }.flatMap(_.toSet)
-      } else Seq.empty
+      val externalCols: Seq[String] = Option(joinConf.onlineExternalParts)
+        .map(_.asScala.map {
+          part => {
+            val keys = part.source.getKeySchema.params.asScala.map(_.name)
+            val values = part.source.getValueSchema.params.asScala.map(_.name)
+            keys ++ values
+          }
+        }.flatMap(_.toSet)).getOrElse(Seq.empty)
+
       println(s"drop external columns ${externalCols.mkString(",")}")
       val loggedDfNoExternalCols = loggedDf.drop(externalCols: _*)
 
