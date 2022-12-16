@@ -461,13 +461,14 @@ object GroupBy {
       case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
       case Events =>
         if (Option(source.getEvents.isCumulative).getOrElse(false)) {
-          lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
+          lazy val latestAvailable: Option[String] =
+            tableUtils.lastAvailablePartition(source.table, source.subPartitionFilters)
           val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
           SourceDataProfile(latestValid, latestValid, latestValid)
         } else {
           val minQuery = Constants.Partition.before(queryStart)
           val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
-          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
+          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters)
           val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
           SourceDataProfile(windowStart, sourceStart, effectiveEnd)
         }
@@ -533,7 +534,9 @@ object GroupBy {
       .orNull
     val inputTables = groupByConf.getSources.asScala.map(_.table)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(inputTables))
+      tableUtils.unfilledRanges(outputTable,
+                                PartitionRange(groupByConf.backfillStartDate, endPartition),
+                                Some(inputTables))
     if (groupByUnfilledRangesOpt.isEmpty) {
       println(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition

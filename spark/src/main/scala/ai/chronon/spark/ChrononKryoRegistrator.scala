@@ -80,6 +80,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.StringType$",
       "org.apache.spark.sql.types.IntegerType$",
       "org.apache.spark.sql.types.BinaryType",
+      "org.apache.spark.sql.types.DataType",
+      "org.apache.spark.sql.types.NullType$",
       "org.apache.spark.sql.types.DoubleType$",
       "org.apache.spark.sql.types.BooleanType$",
       "org.apache.spark.sql.types.BinaryType$",
@@ -87,6 +89,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.TimestampType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
+      "org.apache.spark.util.collection.CompactBuffer",
       "scala.reflect.ClassTag$$anon$1",
       "scala.math.Ordering$$anon$4",
       "org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering",
@@ -97,7 +100,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements"
+      "scala.collection.IndexedSeqLike$Elements",
+      "scala.reflect.ManifestFactory$$anon$1"
     )
     val spark3 = Seq(
       "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
@@ -116,8 +120,12 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     )
     val names = if (SPARK_VERSION.startsWith("2")) common ++ spark2 else common ++ spark3
     names.foreach { name =>
-      kryo.register(Class.forName(name))
-      kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+      try {
+        kryo.register(Class.forName(name))
+        kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+      } catch {
+        case _: ClassNotFoundException => println(s"Unrecognized class $name")
+      }
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])

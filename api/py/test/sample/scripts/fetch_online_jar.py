@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # TODO: Implement how to fetch your jar for online implementation of ai.chronon.online.Api interface/trait
 # For example some companies host their jars on artifactory and you can pull from there 
 # We expect the output of this script to be a string path to where the file is downloaded

@@ -50,7 +50,9 @@ object StatsGenerator {
       case (name, dataType) =>
         if (ignoreColumns.contains(name)) {
           Seq.empty
-        } else if (api.DataType.isNumeric(dataType)) {
+        } else if (api.DataType.isNumeric(dataType) && dataType != api.ByteType) {
+          // ByteTypes are not supported due to Avro Encodings and limited support on aggregators.
+          // Needs to be casted on source if required.
           numericTransforms(functions.col(name))
         } else {
           anyTransforms(functions.col(name))
@@ -108,9 +110,14 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
           .getQuantiles(StatsGenerator.finalizedPercentiles.toArray)
           .zip(StatsGenerator.finalizedPercentiles).map(f => f._2.toString -> f._1.toString).toMap).toOption
     )
-    percentileColumns.foldLeft(withNullRatesDF) {
+    val addedPercentilesDf = percentileColumns.foldLeft(withNullRatesDF) {
       (tmpDf, column) =>
         tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
+    }
+    if (selectedDf.columns.contains(api.Constants.TimeColumn)) {
+      addedPercentilesDf.withTimeBasedColumn(api.Constants.PartitionColumn)
+    } else {
+      addedPercentilesDf
     }
   }
 

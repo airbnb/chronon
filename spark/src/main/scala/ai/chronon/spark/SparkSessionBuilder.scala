@@ -2,22 +2,25 @@ package ai.chronon.spark
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SPARK_VERSION
+
 import java.io.File
 import java.util.logging.Logger
-
+import scala.reflect.io.Path
 import scala.util.Properties
 
 object SparkSessionBuilder {
 
-  val warehouseDir = new File("spark-warehouse")
+  val DefaultWarehouseDir = new File("spark-warehouse")
 
-  def build(name: String, local: Boolean = false): SparkSession = {
+  def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
+  // we would want to share locally generated warehouse during CI testing
+  def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
     val userName = Properties.userName
-
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     val baseBuilder = SparkSession
       .builder()
       .appName(name)
@@ -31,7 +34,6 @@ object SparkSessionBuilder {
       .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
-      .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
 
@@ -41,12 +43,19 @@ object SparkSessionBuilder {
     }
 
     val builder = if (local) {
+      println(s"Building local spark session with warehouse at $warehouseDir")
+      val metastoreDb = if (localWarehouseLocation.isDefined) {
+        s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
+      } else {
+        "jdbc:derby:memory:myInMemDB;create=true"
+      }
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
-        .config("spark.kryo.registrationRequired", "true")
+        .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isDefined}")
         .config("spark.local.dir", s"/tmp/$userName/$name")
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
+        .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder
