@@ -70,12 +70,12 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
         }.flatMap(_.toSet)
       } else Seq.empty
       println(s"drop external columns ${externalCols.mkString(",")}")
-      loggedDf.drop(externalCols: _*)
+      val loggedDfNoExternalCols = loggedDf.drop(externalCols: _*)
 
       println("Starting compare job for stats")
       //TODO: Using timestamp as comparison key is a proxy for row_id as the latter is precise on ts and join key.
       // Using solely timestamp can lead to issues for fetches that involve multiple keys.
-      val (df, metrics) = CompareJob.compare(comparisonDf, loggedDf, keys = JoinCodec.timeFields.map(_.name))
+      val (df, metrics) = CompareJob.compare(comparisonDf, loggedDfNoExternalCols, keys = JoinCodec.timeFields.map(_.name))
       println("Saving output.")
       df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
       metrics
