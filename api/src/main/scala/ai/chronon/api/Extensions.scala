@@ -574,6 +574,22 @@ object Extensions {
     }
 
     /*
+    External features computed in online env and logged
+    This method will get the external feature column names 
+     */
+    def getExternalFeatureCols: Seq[String] = {
+      Option(join.onlineExternalParts)
+        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).map {
+          part => {
+            val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(part.source.getKeySchema.params).map(_.name)
+            val values = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(part.source.getValueSchema.params).map(_.name)
+            keys ++ values
+          }
+        }.flatMap(_.toSet))
+        .getOrElse(Seq.empty)
+    }
+
+    /*
      * onlineSemanticHash includes everything in semanticHash as well as hashes of each onlineExternalParts (which only
      * affect online serving but not offline table generation).
      * It is used to detect join definition change in online serving and to update ttl-cached conf files.

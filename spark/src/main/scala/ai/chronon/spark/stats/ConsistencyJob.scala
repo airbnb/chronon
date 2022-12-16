@@ -61,15 +61,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
       val loggedDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
       // external columns are logged during online env, therefore they could not be used for computing OOC
-      val externalCols: Seq[String] = Option(joinConf.onlineExternalParts)
-        .map(_.asScala.map {
-          part => {
-            val keys = part.source.getKeySchema.params.asScala.map(_.name)
-            val values = part.source.getValueSchema.params.asScala.map(_.name)
-            keys ++ values
-          }
-        }.flatMap(_.toSet))
-        .getOrElse(Seq.empty)
+      val externalCols: Seq[String] = joinConf.getExternalFeatureCols
 
       println(s"drop external columns ${externalCols.mkString(",")}")
       val loggedDfNoExternalCols = loggedDf.drop(externalCols: _*)
@@ -79,7 +71,6 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       // Using solely timestamp can lead to issues for fetches that involve multiple keys.
       val (df, metrics) = CompareJob.compare(comparisonDf, loggedDfNoExternalCols, keys = JoinCodec.timeFields.map(_.name))
       println("Saving output.")
-      df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
       metrics
     }
     DataMetrics(allMetrics.flatMap(_.series))
