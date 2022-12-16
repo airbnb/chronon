@@ -2,9 +2,9 @@ package ai.chronon.spark.stats
 
 import ai.chronon
 import ai.chronon.api.Extensions._
-import ai.chronon.spark.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
 
@@ -60,12 +60,19 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     val allMetrics = unfilledRanges.map { unfilled =>
       val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
       val loggedDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
+      // there could be external columns that are logged during online env, therefore they could not be used for computing OOC
+      val loggedDfNoExternalCols = loggedDf.select(comparisonDf.columns.map(org.apache.spark.sql.functions.col):_*)
       println("Starting compare job for stats")
       //TODO: Using timestamp as comparison key is a proxy for row_id as the latter is precise on ts and join key.
       // Using solely timestamp can lead to issues for fetches that involve multiple keys.
-      val (df, metrics) = CompareJob.compare(comparisonDf, loggedDf, keys = JoinCodec.timeFields.map(_.name))
+      val (df, metrics) = CompareJob.compare(comparisonDf, loggedDfNoExternalCols, keys = JoinCodec.timeFields.map(_.name))
       println("Saving output.")
-      df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
+      val outputDf = df.withTimeBasedColumn("ds")
+      println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+      tableUtils.insertPartitions(outputDf,
+        joinConf.metaData.consistencyTable,
+        tableProperties = tblProperties,
+        autoExpand = true)
       metrics
     }
     DataMetrics(allMetrics.flatMap(_.series))
