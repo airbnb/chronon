@@ -4,13 +4,14 @@
             "source": "chronon"
         },
         "common_env": {
-            "CHRONON_ONLINE_CLASS": "ONLINE TODO: name of your online class",
-            "CHRONON_ONLINE_ARGS": "ONLINE TODO: set any params you want with -Z prefix: -Zkv-host=<YOUR_HOST> -Zkv-port=<YOUR_PORT>"
+            "SPARK_SUBMIT_PATH": "[TODO]/path/to/spark-submit",
+            "JOB_MODE": "local[*]",
+            "HADOOP_DIR": "[STREAMING-TODO]/path/to/folder/containing",
+            "CHRONON_ONLINE_CLASS": "[ONLINE-TODO]your.online.class",
+            "CHRONON_ONLINE_ARGS": "[ONLINE-TODO]args prefixed with -Z become constructor map for your implementation of ai.chronon.online.Api, -Zkv-host=<YOUR_HOST> -Zkv-port=<YOUR_PORT>"
         },
         "production": {            
             "backfill" : {
-                "EMR_CLUSTER": "TODO: YOUR BACKFILL CLUSTER",
-                "EMR_QUEUE": "TODO: YOUR BACKFILL QUEUE",
                 "EXECUTOR_CORES": "1",
                 "DRIVER_MEMORY": "15G",
                 "EXECUTOR_MEMORY": "8G",
@@ -18,16 +19,12 @@
                 "MAX_EXECUTORS": "1000"
             },
             "upload" : {
-                "EMR_CLUSTER": "TODO: YOUR ONLINE CLUSTER - better SLA than backfill cluster",
-                "EMR_QUEUE": "TODO: YOUR ONLINE QUEUE - better SLA than backfill cluster",
                 "EXECUTOR_CORES": "1",
                 "EXECUTOR_MEMORY": "8G",
                 "PARALLELISM": "1000",
                 "MAX_EXECUTORS": "1000"
             },
             "streaming" : {
-                "EMR_CLUSTER": "TODO: YOUR STREAMING CLUSTER - better SLA than backfill cluster",
-                "EMR_QUEUE": "TODO: YOUR STREAMING QUEUE - better SLA than backfill cluster",
                 "EXECUTOR_CORES": "2",
                 "EXECUTOR_MEMORY": "4G",
                 "PARALLELISM": "16"
@@ -40,17 +37,12 @@
         "user": "# TODO: ldap user name to run the jobs as, from airflow or your own scheduler",
         "production": {
             "backfill" : {
-                "EMR_CLUSTER": "sample_team_backfill_cluster",
-                "EMR_QUEUE": "sample_team_backfill_queue"
-            },
-            "upload" : {
-                "EMR_CLUSTER": "sample_team_low_sla_cluster",
-                "EMR_QUEUE": "default"
-            },
-            "streaming" : {
-                "EMR_CLUSTER": "sample_team_streaming_cluster",
-                "EMR_QUEUE": "default"
+                "EXECUTOR_CORES": "4"
             }
         }
+    },
+    "kaggle": {
+        "description": "Workspace for kaggle compeitions",
+        "namespace": "default"
     }
 }

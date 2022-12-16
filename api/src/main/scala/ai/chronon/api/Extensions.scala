@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
 
@@ -265,9 +265,28 @@ object Extensions {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
 
-    def table: String = {
-      val specTable = if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
-      specTable.cleanSpec
+    lazy val rawTable: String =
+      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+
+    def table: String = rawTable.cleanSpec
+
+    def subPartitionFilters: Map[String, String] = {
+      val subPartitionFiltersTry = Try(
+        rawTable
+          .split("/")
+          .tail
+          .map { partitionDef =>
+            val splitPartitionDef = partitionDef.split("=")
+            (splitPartitionDef.head, splitPartitionDef(1))
+          }
+          .toMap)
+
+      subPartitionFiltersTry match {
+        case Success(value) => value
+        case Failure(exception) => {
+          throw new Exception(s"Table ${rawTable} has mal-formatted sub-partitions", exception)
+        }
+      }
     }
 
     def topic: String = {
@@ -509,10 +528,10 @@ object Extensions {
     }
   }
 
-  implicit class LabelJoinOps(val labelJoin: LabelJoin) extends Serializable {
+  implicit class LabelPartOps(val labelPart: LabelPart) extends Serializable {
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labelParts)
+        .convertJavaListToScala(labelPart.labels)
         .flatMap { _.rightToLeft.values }
         .toSet
         .toArray
@@ -520,8 +539,9 @@ object Extensions {
 
     def setups: Seq[String] = {
       ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelJoin.labelParts)
-        .flatMap(_.groupBy.setups).distinct
+        .convertJavaListToScala(labelPart.labels)
+        .flatMap(_.groupBy.setups)
+        .distinct
     }
   }
 
@@ -551,6 +571,22 @@ object Extensions {
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
       partHashes ++ Map(leftSourceKey -> leftHash)
+    }
+
+    /*
+    External features computed in online env and logged
+    This method will get the external feature column names
+     */
+    def getExternalFeatureCols: Seq[String] = {
+      Option(join.onlineExternalParts)
+        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).map {
+          part => {
+            val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(part.source.getKeySchema.params).map(_.name)
+            val values = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(part.source.getValueSchema.params).map(_.name)
+            keys ++ values
+          }
+        }.flatMap(_.toSet))
+        .getOrElse(Seq.empty)
     }
 
     /*

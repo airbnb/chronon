@@ -51,4 +51,58 @@ class StatsComputeTest {
     println("With Derived Data")
     denormalized.show(truncate = false)
   }
+
+  @Test
+  def generatedSummaryNoTsTest(): Unit = {
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
+    )
+    val df = DataFrameGen.events(spark, schema, 100000, 10)
+      .drop(Constants.TimeColumn)
+    val stats = new StatsCompute(df, Seq("user"))
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
+
+    println("Daily Stats")
+    daily.show()
+    val bucketed = stats.dailySummary(aggregator).toFlatDf
+
+    println("Bucketed Stats")
+    bucketed.show()
+
+    val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
+    println("With Derived Data")
+    denormalized.show(truncate = false)
+  }
+
+  /**
+    * Test to make sure aggregations are generated when it makes sense.
+    * Example, percentiles are not currently supported for byte.
+    */
+  @Test
+  def generatedSummaryByteTest(): Unit = {
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
+    )
+    val byteSample = 1.toByte
+    val df = DataFrameGen.events(spark, schema, 100000, 10)
+      .withColumn("byte_column", lit(byteSample))
+    val stats = new StatsCompute(df, Seq("user"))
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
+
+    println("Daily Stats")
+    daily.show()
+    val bucketed = stats.dailySummary(aggregator).toFlatDf
+      .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
+
+    println("Bucketed Stats")
+    bucketed.show()
+
+    val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
+    println("With Derived Data")
+    denormalized.show(truncate = false)
+  }
 }

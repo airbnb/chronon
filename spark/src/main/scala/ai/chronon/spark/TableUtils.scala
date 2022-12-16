@@ -1,10 +1,11 @@
 package ai.chronon.spark
 
-import ai.chronon.api.{Constants, PartitionSpec}
+import ai.chronon.api.Constants
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, lit, rand, round}
+import org.apache.spark.sql.functions.{col, count, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import scala.collection.mutable
@@ -386,7 +387,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange,
-                              labelPartition: Map[String, String] = Map.empty): Option[String] = {
+                              subPartitionFilters: Map[String, String] = Map.empty): Option[String] = {
 
     def partitionsInRange(table: String, partitionFilter: Map[String, String] = Map.empty): Set[String] = {
       val allParts = partitions(table, partitionFilter)
@@ -395,7 +396,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
 
     val inputPartitions = partitionsInRange(inputTable)
-    val outputPartitions = partitionsInRange(outputTable, labelPartition)
+    val outputPartitions = partitionsInRange(outputTable, subPartitionFilters)
     val earliestHoleOpt = (inputPartitions -- outputPartitions).reduceLeftOption(Ordering[String].min)
     earliestHoleOpt.foreach { hole =>
       val toDrop = outputPartitions.filter(_ > hole)
@@ -404,11 +405,9 @@ case class TableUtils(sparkSession: SparkSession) {
                    |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
                    |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Label Partition: ${labelPartition.toArray.mkString("Array(", ", ",")")}
+                   |Sub Partitions: ${subPartitionFilters.map(kv => s"${kv._1}=${kv._2}").mkString("Array(", ", ", ")")}
           """.stripMargin)
-      // only single label ds is valid
-      val labelPartitionOption = if(labelPartition.isEmpty) Option.empty else Option(labelPartition.values.toArray.head)
-      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartitionOption)
+      dropPartitions(outputTable, toDrop.toArray.sorted, Constants.PartitionColumn, subPartitionFilters)
     }
     earliestHoleOpt
   }
@@ -416,14 +415,17 @@ case class TableUtils(sparkSession: SparkSession) {
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
-                     labelPartition: Option[String] = None): Unit = {
+                     subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
-      val partitionSpecs = if (labelPartition.isEmpty) {
-        partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
-      } else {
-        partitions.map(partition => s"PARTITION ($partitionColumn='$partition', " +
-          s"${Constants.LabelPartitionColumn}='${labelPartition.get}')").mkString(", ".stripMargin)
-      }
+      val partitionSpecs = partitions
+        .map { partition =>
+          val mainSpec = s"$partitionColumn='$partition'"
+          val specs = mainSpec +: subPartitionFilters.map {
+            case (key, value) => s"${key}='${value}'"
+          }.toSeq
+          specs.mkString("PARTITION (", ",", ")")
+        }
+        .mkString(",")
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)
     } else {
@@ -431,13 +433,13 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {
+  def dropPartitionRange(tableName: String,
+                         startDate: String,
+                         endDate: String,
+                         subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (sparkSession.catalog.tableExists(tableName)) {
       val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
-      val partitionSpecs =
-        toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
-      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
-      sql(dropSql)
+      dropPartitions(tableName, toDrop, Constants.PartitionColumn, subPartitionFilters)
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
     }

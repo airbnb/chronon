@@ -46,6 +46,7 @@ struct StagingQuery {
     concepts. But lacks a notion of topic.
 
     :param table: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+                  Table names can contain subpartition specs, example db.table/system=mobile/currency=USD
     :param topic: Topic is a kafka table. The table contains all the events historically came through this topic.
     :param query: The logic used to scan both the table and the topic. Contains row level transformations and filtering
                   expressed as Spark SQL statements.
@@ -271,12 +272,12 @@ struct Join {
     // users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
-    6: optional LabelJoin labelJoin
+    6: optional LabelPart labelPart
 }
 
 // Label join parts and params
-struct LabelJoin {
-    1: optional list<JoinPart> labelParts
+struct LabelPart {
+    1: optional list<JoinPart> labels
     // The earliest date label should be refreshed
     2: optional i32 leftStartOffset
     // The most rencet date label should be refreshed.
