@@ -17,15 +17,6 @@ object CompareJob {
   ): Unit = {
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
-    // Make sure the number of fields are the same on either side
-    assert(leftFields.size == rightFields.size,
-      s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
-         |Left side fields:
-         | - ${leftFields.mkString("\n - ")}
-         |
-         |Right side fields:
-         | - ${rightFields.mkString("\n - ")}
-         |""".stripMargin)
 
     // Verify that the mapping and the datatypes match
     leftFields.foreach { leftField =>
