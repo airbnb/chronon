@@ -575,7 +575,7 @@ object Extensions {
 
     /*
     External features computed in online env and logged
-    This method will get the external feature column names 
+    This method will get the external feature column names
      */
     def getExternalFeatureCols: Seq[String] = {
       Option(join.onlineExternalParts)

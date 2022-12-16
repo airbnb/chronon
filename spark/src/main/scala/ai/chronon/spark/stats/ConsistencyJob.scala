@@ -71,6 +71,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       // Using solely timestamp can lead to issues for fetches that involve multiple keys.
       val (df, metrics) = CompareJob.compare(comparisonDf, loggedDfNoExternalCols, keys = JoinCodec.timeFields.map(_.name))
       println("Saving output.")
+      df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
       metrics
     }
     DataMetrics(allMetrics.flatMap(_.series))
