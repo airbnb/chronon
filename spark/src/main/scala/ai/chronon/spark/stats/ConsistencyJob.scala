@@ -68,7 +68,8 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
             val values = part.source.getValueSchema.params.asScala.map(_.name)
             keys ++ values
           }
-        }.flatMap(_.toSet)).getOrElse(Seq.empty)
+        }.flatMap(_.toSet))
+        .getOrElse(Seq.empty)
 
       println(s"drop external columns ${externalCols.mkString(",")}")
       val loggedDfNoExternalCols = loggedDf.drop(externalCols: _*)
