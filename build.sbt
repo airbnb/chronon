@@ -95,6 +95,8 @@ git.gitTagToVersionNumber := { tag: String =>
 lazy val api = project
   .settings(
     publishSettings,
+    // TODO(andrewlee) This doesn't seem to be running locally, so we have to explicitly trigger it in our container.
+    //  Wonder why.
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
