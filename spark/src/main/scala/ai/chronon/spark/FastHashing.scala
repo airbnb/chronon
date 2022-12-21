@@ -48,7 +48,7 @@ object FastHashing {
           }
           case StringType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putString(row.getAs[String](index))
+              hasher.putUnencodedChars(row.getAs[String](index))
           }
           case BinaryType => {
             case (hasher: Hasher, row: Row) =>
