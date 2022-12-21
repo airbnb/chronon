@@ -71,24 +71,22 @@ RUN curl -sSL $SCALA_DEB -o scala.deb && \
     dpkg -i scala.deb && \
     rm -f *.deb
 
-# Install conda
 # TODO(andrewlee) Commenting because this seems to be hanging. Do we need it?
-# RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
+# RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure
 
-# TODO(andrewlee) don't need this yet, but need to figure out arm64
-#RUN curl -sSL https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -o ~/miniconda.sh && \
-#    bash ~/miniconda.sh -b -p /opt/conda && \
-#    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-#    # clean up
-#    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-#    rm ~/*.sh
+# Install conda
+# Since we're on an M1, we need an ARM Miniconda install script for Linux, and the only
+# one available is the Graviton one. It installs successfully so I think we're ok?
+RUN curl -sSL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh -o ~/miniconda.sh
+RUN bash ~/miniconda.sh -b -p /opt/conda
+RUN ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    # clean up
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm ~/*.sh
 
-#RUN conda create -y -n zipline_py python=3.7
-#RUN conda install -y -q -n zipline_py --no-deps virtualenv
-#RUN  /opt/conda/envs/zipline_py/bin/pip install \
-#   flake8==5.0.4 build flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7 distlib>=0.3.4 filelock>=3.7.0 platformdirs>=2.5.2
-
-# WORKDIR /src
-# ENV PATH $PATH:/src/
+RUN conda create -y -n zipline_py python=3.7
+RUN conda install -y -q -n zipline_py --no-deps virtualenv
+RUN  /opt/conda/envs/zipline_py/bin/pip install \
+   flake8==5.0.4 build flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7 distlib>=0.3.4 filelock>=3.7.0 platformdirs>=2.5.2
 
 CMD /bin/bash
