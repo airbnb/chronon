@@ -95,6 +95,9 @@ git.gitTagToVersionNumber := { tag: String =>
 lazy val api = project
   .settings(
     publishSettings,
+    // TODO(andrewlee) the Thrift.gen() call below autogenerates Thrift java classes as part of the sbt build.
+    //  It works in CI but appears to silently fail when running locally. Right now we can get around that
+    //  by manually running thrift from the cli (see README) but I plan to look into this more later.
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
