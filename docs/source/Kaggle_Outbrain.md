@@ -93,12 +93,16 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --input_path=staging_q
 
 Now that we have our compiled file, we can pass it into the `run.py` runner which will execute the SQL and produce an output table for us to use next. 
 ```shell
+mkdir ~/kaggle_outbrain
+
 DRIVER_MEMORY=4G EXECUTOR_CORES=6 EXECUTOR_MEMORY=18G PARALLELISM=10 MAX_EXECUTORS=1 \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
---chronon-jar=/Users/$USER/repos/chronon/spark/target/scala-2.11/spark_uber-assembly-csv_tool-0.0.18-SNAPSHOT.jar \
+--chronon-jar=/Users/$USER/repos/chronon/spark/target/scala-2.11/{your-jar-file-name} \
 --conf=production/staging_queries/kaggle/outbrain.base_table \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
 ```
+
+**Note: you need to replace `{your-jar-file-name}` in the command above.** The sbt build command will suffix the filename with the name of your branch, so it might be something like spark_uber-assembly--dev-branch.jar.
 
 ### Step 2 - Create some GroupBys
 
