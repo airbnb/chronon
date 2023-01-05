@@ -45,6 +45,7 @@ class BaseFetcher(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
+    if (debug) println(s"fetched group-by: ${oldServingInfo.groupByOps.metaData.getName}")
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
@@ -70,18 +71,26 @@ class BaseFetcher(kvStore: KVStore,
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+        if (debug) println("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Iterator[Row] = streamingResponses.iterator
+        val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+          .toArray
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
                          queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
+        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        if (debug) println(s"""
+             |batch ir: $batchIr
+             |streamingRows: $streamingRows
+             |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+             |queryTime in millis: $queryTimeMs
+             |""".stripMargin)
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }

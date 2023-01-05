@@ -128,12 +128,12 @@ object Driver {
     class Args extends Subcommand("label-join") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
-          descr = "Runs label join in steps, step-days at a time. Default is 30 days",
-          default = Option(30))
+                 descr = "Runs label join in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
       val labelDs: ScallopOption[String] =
         opt[String](required = false,
-          descr = "Label version ds, default to be label join job running date",
-          default = Some(Constants.Partition.now))
+                    descr = "Label version ds, default to be label join job running date",
+                    default = Some(Constants.Partition.now))
     }
 
     def run(args: Args): Unit = {
@@ -360,9 +360,13 @@ object Driver {
           result.foreach(r =>
             r.values match {
               case Success(valMap) => {
-                valMap.foreach { case (k, v) => tMap.put(k, v) }
-                println(
-                  s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                if (valMap == null) {
+                  println("No data present for the provided key.")
+                } else {
+                  valMap.foreach { case (k, v) => tMap.put(k, v) }
+                  println(
+                    s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                }
                 println(s"Fetched in: $awaitTimeMs ms")
               }
               case Failure(exception) => {

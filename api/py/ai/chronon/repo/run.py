@@ -92,12 +92,12 @@ def retry_decorator(retries=3, backoff=20):
 
 def check_call(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_call(cmd.split())
+    return subprocess.check_call(cmd.split(), bufsize=0)
 
 
 def check_output(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_output(cmd.split()).strip()
+    return subprocess.check_output(cmd.split(), bufsize=0).strip()
 
 
 def download_only_once(url, path):
