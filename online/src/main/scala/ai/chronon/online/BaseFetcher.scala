@@ -45,7 +45,6 @@ class BaseFetcher(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
-    if (debug) println(s"fetched group-by: ${oldServingInfo.groupByOps.metaData.getName}")
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
@@ -225,6 +224,10 @@ class BaseFetcher(kvStore: KVStore,
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
+                if (debug)
+                  println(
+                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                      s"for keys: ${request.keys}")
                 constructGroupByResponse(batchResponseTryAll,
                                          streamingResponsesOpt,
                                          groupByServingInfo,
