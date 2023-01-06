@@ -168,7 +168,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
     }.toMap
 
     // compute joinParts in parallel
-    val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
+    val rightDfs = joinConf.joinParts.asScala.map { joinPart =>
       val partMetrics = Metrics.Context(metrics, joinPart)
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations

@@ -12,12 +12,21 @@ Does not include:
 ## Setup
 One time steps to get up and running with Chronon.
 
-#### 0. Setup the chronon repo
+#### 0.0 Setup the chronon repo
 ```shell
 cd ~/repos
 git clone git@github.com:airbnb/chronon.git
 export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
 ```
+
+#### 0.1 Download Kaggle data
+
+https://www.kaggle.com/competitions/outbrain-click-prediction/data
+
+```aidl
+
+```
+
 
 #### 1. Download and setup spark (assuming you have a jdk already setup)
 ```shell
@@ -104,6 +113,8 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 
 **Note: you need to replace `{your-jar-file-name}` in the command above.** The sbt build command will suffix the filename with the name of your branch, so it might be something like spark_uber-assembly--dev-branch.jar.
 
+As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully. Some shell settings might have TODO
+
 ### Step 2 - Create some GroupBys
 
 GroupBys are the primary API for creating features in Chronon. Each one is a set of features that share a data source and a primary key.
@@ -126,7 +137,7 @@ See detailed documentation on Join [here](https://chronon-ai.pages.dev/Introduct
 
 Again, compiling creates a runnable serialized file out of your python definition.
 ```shell
-PYTHONPATH=/Users/nikhil_simha/repos/chronon/api/py/:/Users/nikhil_simha/repos/chronon/api/py/test/sample/ \
+PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/outbrain.py
 ```
 

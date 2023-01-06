@@ -2,6 +2,12 @@
 
 ### ******************* NOTE ***************************
 ### This is just a template, you will most likely need to modify this file to get things to work
+
+### Consider adding the following arguments to spark submit in your prod env. We do not include them by default, because it can cause issues on local runs on M1 Macbooks.
+###--conf spark.io.compression.codec=zstd \
+###--conf spark.io.compression.zstd.level=2 \
+###--conf spark.io.compression.zstd.bufferSize=1M \
+
 ### ******************* END ****************************
 
 set -euxo pipefail
@@ -41,9 +47,6 @@ $SPARK_SUBMIT_PATH \
 --conf spark.rdd.compress=true \
 --conf spark.shuffle.compress=true \
 --conf spark.shuffle.spill.compress=true \
---conf spark.io.compression.codec=zstd \
---conf spark.io.compression.zstd.level=2 \
---conf spark.io.compression.zstd.bufferSize=1M \
 --conf spark.dynamicAllocation.enabled=true \
 --conf spark.dynamicAllocation.minExecutors=2 \
 --conf spark.dynamicAllocation.maxExecutors=${MAX_EXECUTORS:-1000} \
@@ -67,13 +70,16 @@ $SPARK_SUBMIT_PATH \
 --conf spark.executor.memoryOverhead=2G \
 --conf spark.app.name=${APP_NAME} \
 --jars "${CHRONON_ONLINE_JAR:-}" \
-"$@" 2>&1                                  |
-grep -v "YarnScheduler:70"                 |
-grep -v "TransportResponseHandler:144"     |
-grep -v "TransportClient:331"              |
-grep -v "io.netty.channel.AbstractChannel" |
-grep -v "ClosedChannelException"           |
-grep -v "TransportResponseHandler:154"     |
-grep -v "TransportRequestHandler:293"      |
-grep -v "TransportResponseHandler:144"     |
+"$@" 2>&1                                                  |
+grep --line-buffered -v "YarnScheduler:70"                 |
+grep --line-buffered -v "TransportResponseHandler:144"     |
+grep --line-buffered -v "TransportClient:331"              |
+grep --line-buffered -v "io.netty.channel.AbstractChannel" |
+grep --line-buffered -v "ClosedChannelException"           |
+grep --line-buffered -v "TransportResponseHandler:154"     |
+grep --line-buffered -v "TransportRequestHandler:293"      |
+grep --line-buffered -v "TransportResponseHandler:144"     |
 tee ${CHRONON_WORKING_DIR}/${APP_NAME}_spark.log
+
+
+
