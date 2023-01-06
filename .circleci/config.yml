@@ -26,7 +26,7 @@ executors:
         resource_class: xlarge
         working_directory: /zipline
         docker:
-            - image: patyoon/zipline-ci:base--${CIRCLE_BRANCH}
+            - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
 
 jobs:
     "Docker Base Build":
