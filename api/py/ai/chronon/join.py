@@ -44,9 +44,10 @@ def JoinPart(group_by: api.GroupBy,
         if '__name__' in ref and ref['__name__'].startswith("group_bys"):
             group_by_module_name = ref['__name__']
             break
-    logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-    group_by_module = importlib.import_module(group_by_module_name)
-    __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
+    if group_by_module_name:
+        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+        group_by_module = importlib.import_module(group_by_module_name)
+        __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
     if key_mapping:
         utils.check_contains(key_mapping.values(),
                              group_by.keyColumns,
@@ -210,6 +211,19 @@ def ExternalPart(source: api.ExternalSource,
         prefix=prefix
     )
 
+def LabelPart(labels: List[api.JoinPart],
+              leftStartOffset: int,
+              leftEndOffset: int) -> api.LabelPart:
+    """
+    Used to describe label parts in join
+
+    :param:
+    """
+    return api.LabelPart(
+        labels=labels,
+        leftStartOffset=leftStartOffset,
+        leftEndOffset=leftEndOffset
+    )
 
 def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
     """
@@ -245,6 +259,7 @@ def Join(left: api.Source,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
+         label_part: api.LabelPart = None,
          offline_schedule: str = '@daily',
          row_ids: List[str] = None,
          bootstrap_parts: List[api.BootstrapPart] = None,
@@ -407,5 +422,6 @@ def Join(left: api.Source,
         skewKeys=skew_keys,
         onlineExternalParts=online_external_parts,
         bootstrapParts=bootstrap_parts,
-        rowIds=row_ids
+        rowIds=row_ids,
+        labelPart=label_part
     )
