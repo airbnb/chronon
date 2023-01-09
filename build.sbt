@@ -83,13 +83,10 @@ git.gitTagToVersionNumber := { tag: String =>
   // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
   val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
   val branchTag = git.gitCurrentBranch.value
-  if (branchTag == "master") {
-    // For master branches, we tag the packages as <package-name>-<build-version>
-    Some(s"${versionStr}")
-  } else {
-    // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
-    Some(s"${branchTag}-${versionStr}")
-  }
+  // [stripe] We tag all packages consistently irrespective of the branch being used and
+  // rely on appropriate versioning
+  // For master branches, we tag the packages as <package-name>-<build-version>
+  Some(s"${versionStr}")
 }
 
 lazy val api = project
