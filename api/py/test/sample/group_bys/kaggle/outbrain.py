@@ -29,7 +29,6 @@ def outbrain_left_events(*columns):
     Defines a source based off of the output table of the `base_table` StagingQuery
     """
     return Source(events=EventSource(
-        isCumulative=True,
         table=get_staging_query_output_table_name(base_table),
         query=Query(
             selects=select(*columns),
@@ -43,7 +42,6 @@ def outbrain_left_events_sampled(*columns):
     Same as above, but sampled down to 10%
     """
     return Source(events=EventSource(
-        isCumulative=True,
         table=get_staging_query_output_table_name(base_table),
         query=Query(
             selects=select(*columns),
@@ -78,7 +76,6 @@ def ctr_group_by(*keys, accuracy=Accuracy.TEMPORAL):
             )
         ],
         accuracy=accuracy,
-        isCumulative=True
     )
 
 

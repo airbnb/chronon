@@ -33,8 +33,7 @@
         ],
         "timeColumn": "ts",
         "setups": []
-      },
-      "isCumulative": 1
+      }
     }
   },
   "joinParts": [
@@ -42,7 +41,7 @@
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_doc",
-          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],
@@ -60,8 +59,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -111,7 +109,7 @@
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_uuid",
-          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],
@@ -129,8 +127,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -198,8 +195,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -248,7 +244,7 @@
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_platform",
-          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
+          "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],
@@ -267,8 +263,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],

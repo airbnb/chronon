@@ -30,7 +30,6 @@ the fields that we care about (`ad_id`, `clicked`, and `ts` columns), it will mi
 
 source = Source(
     events=EventSource(
-        isCumulative=True,
         table=get_staging_query_output_table_name(base_table), # Here we use the staging query output table because it has the necessary fields, but for a true streaming source we would likely use a log table
         topic="some_topic", # You would set your streaming source topic here
         query=Query(
