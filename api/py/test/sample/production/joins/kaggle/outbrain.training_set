@@ -29,7 +29,7 @@
           "ts": "ts"
         },
         "wheres": [
-          "RAND() < 0.01"
+          "HASH(ad_id) % 100 < 10"
         ],
         "timeColumn": "ts",
         "setups": []
@@ -42,7 +42,7 @@
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_doc",
-          "customJson": "{\"lag\": 0}",
+          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],
@@ -104,14 +104,14 @@
             ]
           }
         ],
-        "accuracy": 0
+        "accuracy": 1
       }
     },
     {
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_uuid",
-          "customJson": "{\"lag\": 0}",
+          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],
@@ -179,7 +179,7 @@
     {
       "groupBy": {
         "metaData": {
-          "name": "kaggle.outbrain.ad",
+          "name": "kaggle.clicks.ad_streaming",
           "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
@@ -190,6 +190,7 @@
           {
             "events": {
               "table": "kaggle_outbrain_base_table",
+              "topic": "some_topic",
               "query": {
                 "selects": {
                   "ad_id": "ad_id",
@@ -247,7 +248,7 @@
       "groupBy": {
         "metaData": {
           "name": "kaggle.outbrain.ad_platform",
-          "customJson": "{\"lag\": 0}",
+          "customJson": "{\"isCumulative\": true, \"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
           ],

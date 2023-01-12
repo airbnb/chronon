@@ -159,6 +159,40 @@ You can now see the parquet data here.
 tree -h ~/kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
 ``` 
 
-### Step 4 - Model Training (out of scope for this demo)
+You can also query it using the spark sql shell:
 
-Steps 1-3 conclude the data generation using Chronon. Next, you would take the resulting Join data and move on to model training.
+```aidl
+cd ~/kaggle_outbrain_parquet 
+~/spark-2.4.8-bin-hadoop2.7/bin/spark-sql
+```
+
+And then: 
+
+```
+spark-sql> SELECT * FROM kaggle_outbrain_training_set
+spark-sql> WHERE kaggle_outbrain_ad_uuid_clicked_sum_3d IS NOT NULL
+spark-sql> LIMIT 10;
+```
+
+**Note that if you have a spark-sql session active, it will likely put a transaction lock on your local metastore which will cause an error if you try to run other spark jobs.** So just close the sql session if you want to go back and modify the join.
+
+### Modifying / Iterating on a Join
+
+Chronon aims to make it as easy as possible to iterate on Joins. The steps are outlined here:
+
+1. Modify the GroupBy to add whatever field you want (or create a new GroupBy and add it to the join's `right_parts`)
+2. Rerun the `compile` step to generate the compiled join file
+3. Rerun the join computation step.
+
+
+Schema changes and backfills are all handled for you under the hood. All you need to do is make your semantic modifications and rerun the job, and Chronon will figure out what needs to be backfilled.
+
+For example, if you change the `left` side of your Join query, Chronon will recompute all of the data for that join (because the left side of the join controls the rows in the whole table).
+
+However, if you simple modify one of the GroupBys, Chronon will only backfill the columns associated with that GroupBy, and will leverage existing computation for the rest of the data. It achieves this by utilising intermediate tables produced by each run of Join computation.
+
+### Next Steps
+
+Steps 1-3 conclude the data generation using Chronon. Next you could consider training a model with the `kaggle_outbrain_training_set` data (out of scope of this demo), or adding more features (see the section above).
+
+

@@ -361,6 +361,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 // TODO: truncate queryRange for caching
 object GroupBy {
 
+  // Need to use a case class here to allow null matching
+  case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
+
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
@@ -441,22 +444,11 @@ object GroupBy {
                 finalize = finalize)
   }
 
-  def renderDataSourceQuery(source: api.Source,
-                            keys: Seq[String],
-                            queryRange: PartitionRange,
-                            tableUtils: TableUtils,
-                            window: Option[api.Window],
-                            accuracy: api.Accuracy,
-                            mutations: Boolean = false): String = {
+  def getIntersectedRange(source: api.Source, queryRange: PartitionRange, tableUtils: TableUtils, window: Option[api.Window]): PartitionRange = {
     val PartitionRange(queryStart, queryEnd) = queryRange
-
     val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
       .reduceLeftOption(Ordering[String].min)
       .orNull
-
-    // Need to use a case class here to allow null matching
-    case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
-
     val dataProfile: SourceDataProfile = source.dataModel match {
       case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
       case Events =>
@@ -477,7 +469,34 @@ object GroupBy {
     val sourceRange = PartitionRange(dataProfile.earliestPresent, dataProfile.latestAllowed)
     val queryableDataRange = PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
-    // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
+    println(s"""
+               |Computing intersected range as:
+               |   query range: $queryRange
+               |   query window: $window
+               |   source table: ${source.table}
+               |   source data range: $sourceRange
+               |   source start/end: ${source.query.startPartition}/${source.query.endPartition}
+               |   source data model: ${source.dataModel}
+               |   queryable data range: $queryableDataRange
+               |   intersected range: $intersectedRange
+               |""".stripMargin)
+    intersectedRange
+  }
+
+  def renderDataSourceQuery(source: api.Source,
+                            keys: Seq[String],
+                            queryRange: PartitionRange,
+                            tableUtils: TableUtils,
+                            window: Option[api.Window],
+                            accuracy: api.Accuracy,
+                            mutations: Boolean = false): String = {
+
+    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
+
+    val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
+      Some(getIntersectedRange(source, queryRange, tableUtils, window))
+    } else None
+
     var metaColumns: Map[String, String] = Map(Constants.PartitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(
@@ -498,23 +517,19 @@ object GroupBy {
     }
     metaColumns ++= timeMapping
 
+    val partitionConditions = intersectedRange.map(_.whereClauses).getOrElse(Seq.empty)
+
     println(s"""
          |Rendering source query:
-         |   query range: $queryRange
-         |   query window: $window
-         |   source table: ${source.table}
-         |   source data range: $sourceRange
-         |   source start/end: ${source.query.startPartition}/${source.query.endPartition}
-         |   source data model: ${source.dataModel}
-         |   queryable data range: $queryableDataRange
          |   intersected/effective scan range: $intersectedRange
+         |   partitionConditions: $partitionConditions
          |   metaColumns: $metaColumns
          |""".stripMargin)
 
     val query = api.QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
-      Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
+      Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
     )
     query
