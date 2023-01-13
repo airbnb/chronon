@@ -46,7 +46,7 @@ def outbrain_left_events_sampled(*columns):
         query=Query(
             selects=select(*columns),
             time_column="ts",
-            wheres=["HASH(ad_id) % 100 < 10"]
+            wheres=["HASH({}) % 100 < 10".format(",".join(columns))]
         ),
     ))
 

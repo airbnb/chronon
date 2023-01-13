@@ -29,7 +29,7 @@
           "ts": "ts"
         },
         "wheres": [
-          "HASH(ad_id) % 100 < 10"
+          "HASH(uuid,display_id,ad_id,document_id,clicked,geo_location,platform) % 100 < 10"
         ],
         "timeColumn": "ts",
         "setups": []
