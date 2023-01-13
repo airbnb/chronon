@@ -51,7 +51,7 @@ def outbrain_left_events_sampled(*columns):
     ))
 
 
-def ctr_group_by(*keys, accuracy=Accuracy.TEMPORAL):
+def ctr_group_by(*keys, accuracy):
     """
     This is a helper function to create a GroupBy based on the source defined above, with fixed aggregations
     but variable Primary Keys accuracy.
@@ -80,7 +80,7 @@ def ctr_group_by(*keys, accuracy=Accuracy.TEMPORAL):
 
 
 ad_doc = ctr_group_by("ad_id", "document_id", accuracy=Accuracy.SNAPSHOT)
-ad_uuid = ctr_group_by("ad_id", "uuid")
+ad_uuid = ctr_group_by("ad_id", "uuid", accuracy=Accuracy.TEMPORAL)
 """
 Here we are creating two GroupBys keyed off of ad_id, one with document_id as a secondary key and the
 other with user id as it's secondary key.
