@@ -390,7 +390,9 @@ def Join(left: api.Source,
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
         assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
-    if bootstrap_from_log and sample_percent > 0 and online:
+    if bootstrap_from_log:
+        has_logging = sample_percent > 0 and online
+        assert has_logging, "Join must be online with sample_percent set in order to use bootstrap_from_log option"
         bootstrap_parts = (bootstrap_parts or []) + [
             api.BootstrapPart(
                 # templated values will be replaced when metaData.name is set at the end

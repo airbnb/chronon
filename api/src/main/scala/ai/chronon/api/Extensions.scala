@@ -500,9 +500,12 @@ object Extensions {
       ThriftJsonCodec.md5Digest(newExternalPart)
     }
 
-    def constructExternalPartSchema(schemaField: StructField): StructField = {
-      StructField(fullName + "_" + schemaField.name, schemaField.fieldType)
-    }
+    lazy val keySchemaFull: Array[StructField] = externalPart.source.keyFields.map(field =>
+      StructField(externalPart.rightToLeft.getOrElse(field.name, field.name), field.fieldType))
+
+    lazy val valueSchemaFull: Array[StructField] =
+      externalPart.source.valueFields.map(field => StructField(fullName + "_" + field.name, field.fieldType))
+
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
@@ -572,8 +575,10 @@ object Extensions {
     def keys(join: Join): Seq[String] =
       if (bootstrapPart.isSetKeyColumns) {
         ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(bootstrapPart.keyColumns)
-      } else {
+      } else if (join.isSetRowIds) {
         ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.getRowIds)
+      } else {
+        throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
       }
 
     def isLogTable(join: Join): Boolean = bootstrapPart.table == join.metaData.loggedTable
@@ -767,10 +772,6 @@ object Extensions {
           ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
         )
         .getOrElse(Seq.empty)
-    }
-
-    def selectedColumns: Option[Seq[String]] = {
-      Option(query.selects).map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala).map(_.keys.toSeq)
     }
   }
 

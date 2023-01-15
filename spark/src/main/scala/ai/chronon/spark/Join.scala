@@ -11,7 +11,7 @@ import org.apache.spark.sql.functions._
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
-  extends BaseJoin(joinConf, endPartition, tableUtils) {
+    extends BaseJoin(joinConf, endPartition, tableUtils) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -22,53 +22,66 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       leftDf
     }
 
-    // compute bootstrap table - which handles log & custom hive tables bootstrap
-    val joinMetadata = JoinMetadata.from(joinConf, leftRange, tableUtils)
-    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, joinMetadata)
+    // compute bootstrap table - a left outer join between left source and various bootstrap source table
+    // this becomes the "new" left for the following GB backfills
+    val bootstrapInfo = BootstrapInfo.from(joinConf, leftRange, tableUtils)
+    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
 
-    // compute join parts
-    val rightResults = joinMetadata.joinParts
+    // compute join parts (GB) backfills
+    // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
+    // we do this by utilizing the per-record metadata computed during the bootstrap process.
+    // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
+    // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
+    val rightResults = bootstrapInfo.joinParts
       .map(_.joinPart)
       .par
       .flatMap { part =>
-        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, part, joinMetadata)
-        computeRightTable(unfilledLeftDf, part, leftRange)
-          .map(df => part -> df)
+        val (unfilledLeftDf, validHashes) = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
+        computeRightTable(unfilledLeftDf, part, leftRange, validHashes).map(df => part -> df)
       }
 
-    // join across bootstrap and join parts
+    // combine bootstrap table and join part tables
+    // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
+    // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
     val joinedDf = rightResults
       .foldLeft(bootstrapDf) {
         case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
       }
       // drop all processing metadata columns
-      .drop(Constants.SchemaHash,
-        Constants.SemanticHashKey,
-        Constants.LogHashes,
-        Constants.TableHashes,
-        Constants.TimePartitionColumn)
+      .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
-    val outputColumns = joinedDf.columns.filter((bootstrapDf.columns ++ joinMetadata.fieldNames).contains)
+    val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
     val finalDf = joinedDf.selectExpr(outputColumns: _*)
     finalDf.explain()
     finalDf
   }
 
-  private def computeBootstrapTable(leftDf: DataFrame, range: PartitionRange, joinMetadata: JoinMetadata): DataFrame = {
+  /*
+   * The purpose of Bootstrap is to leverage input tables which contain pre-computed values, such that we can
+   * skip the computation for these record during the join-part computation step.
+   *
+   * The main goal here to join together the various bootstrap source to the left table, and in the process maintain
+   * relevant metadata such that we can easily tell which record needs computation or not in the following step.
+   */
+  private def computeBootstrapTable(leftDf: DataFrame,
+                                    range: PartitionRange,
+                                    bootstrapInfo: BootstrapInfo): DataFrame = {
     if (!joinConf.isSetBootstrapParts) {
       return leftDf
     }
 
-    def checkReservedColumns(df: DataFrame, table: String, column: String): Unit = {
+    def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
+      val reservedColumnsContained = columns.filter(df.schema.fieldNames.contains)
       assert(
-        !df.schema.fieldNames.contains(column),
-        s"Table $table contains column $column which is a reserved column in Chronon."
+        reservedColumnsContained.isEmpty,
+        s"Table $table contains columns ${reservedColumnsContained.prettyInline} which are reserved by Chronon."
       )
     }
 
+    val startMillis = System.currentTimeMillis()
+
     // verify left table does not have reserved columns
-    Seq(Constants.SchemaHash, Constants.SemanticHashKey)
-      .foreach(checkReservedColumns(leftDf, joinConf.left.table, _))
+    validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
 
     tableUtils
       .unfilledRanges(bootstrapTable, range)
@@ -76,19 +89,16 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .foreach(unfilledRange => {
         val parts = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.bootstrapParts)
 
-        // initialize a few metadata columns in leftDf to make processing simpler
-        // log_hashes contains a set of schema_hash from join-matched log rows
-        // table_hashes contains a set of semantic_hash of the bootstrap parts from join-matched table rows
-        // log vs table requires separate handling because log table allows schema evolution therefore an empty
-        // column does not mean that the value has been computed; but we can trust standard tables that an empty
-        // column means that the value is computed as NULL.
         val initDf = leftDf
           .prunePartition(unfilledRange)
-          .withColumn(Constants.LogHashes, typedLit[Array[String]](null))
-          .withColumn(Constants.TableHashes, typedLit[Array[String]](null))
+          // initialize an empty matched_hashes column for the purpose of later processing
+          .withColumn(Constants.MatchedHashes, typedLit[Array[String]](null))
 
         val joinedDf = parts.foldLeft(initDf) {
           case (partialDf, part) => {
+
+            println(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
+
             val bootstrapRange = if (part.isSetQuery) {
               unfilledRange.intersect(PartitionRange(part.query.startPartition, part.query.endPartition))
             } else {
@@ -98,33 +108,36 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
               println(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
-              var rightDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null)))
+              var bootstrapDf = tableUtils.sql(
+                bootstrapRange.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
+              )
 
               // attach semantic_hash for either log or regular table bootstrap
-              checkReservedColumns(rightDf, part.table, Constants.SemanticHashKey)
-              rightDf = rightDf.withColumn(Constants.SemanticHashKey, lit(part.semanticHash))
-
-              // attach schema_hash as NULL for regular table to simplify processing
-              if (!part.isLogTable(joinConf)) {
-                checkReservedColumns(rightDf, part.table, Constants.SchemaHash)
-                rightDf = rightDf.withColumn(Constants.SchemaHash, typedLit[String](null))
+              validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
+              if (part.isLogTable(joinConf)) {
+                bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
+              } else {
+                bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))
               }
 
-              // find all needed columns on right_df
-              val includedColumns = rightDf.columns.filter((joinMetadata.fieldNames ++ part.keys(joinConf) ++
-                Seq(Constants.SchemaHash, Constants.SemanticHashKey, Constants.PartitionColumn)).contains)
+              // include only necessary columns. in particular,
+              // this excludes columns that are NOT part of Join's output (either from GB or external source)
+              val includedColumns = bootstrapDf.columns.filter(
+                bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash,
+                                                                       Constants.PartitionColumn))
 
-              rightDf = rightDf
-                .selectExpr(includedColumns: _*)
+              bootstrapDf = bootstrapDf
+                .select(includedColumns.map(col): _*)
                 // TODO: allow customization of deduplication logic
                 .dropDuplicates(part.keys(joinConf))
 
-              mergeDFs(partialDf, rightDf, part.keys(joinConf) :+ Constants.PartitionColumn)
-              // merge and update log_hashes and table_hashes in order to track join matches
-                .withColumn(Constants.LogHashes, set_add(col(Constants.LogHashes), col(Constants.SchemaHash)))
-                .withColumn(Constants.TableHashes, set_add(col(Constants.TableHashes), col(Constants.SemanticHashKey)))
-                .drop(Constants.SchemaHash, Constants.SemanticHashKey)
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf) :+ Constants.PartitionColumn)
+              // as part of the left outer join process, we update and maintain matched_hashes for each record
+              // that summarizes whether there is a join-match for each bootstrap source.
+              // later on we use this information to decide whether we still need to re-run the backfill logic
+                .withColumn(Constants.MatchedHashes,
+                            set_add(col(Constants.MatchedHashes), col(Constants.BootstrapHash)))
+                .drop(Constants.BootstrapHash)
             }
           }
         }
@@ -133,38 +146,43 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
         joinedDf.save(bootstrapTable, tableProps, autoExpand = true)
       })
 
+    val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
+    println(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
+
     tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
   }
 
-  private def findUnfilledRecords(bootstrapDf: DataFrame, joinPart: JoinPart, joinMetadata: JoinMetadata): DataFrame = {
+  /*
+   * We leverage metadata information created from the bootstrap step to tell which record was already joined to a
+   * bootstrap source, and therefore had certain columns pre-populated. for these records and these columns, we do not
+   * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
+   * full schema information.
+   */
+  private def findUnfilledRecords(bootstrapDf: DataFrame,
+                                  joinPart: JoinPart,
+                                  bootstrapInfo: BootstrapInfo): (DataFrame, Seq[String]) = {
 
-    if (!Seq(Constants.LogHashes, Constants.TableHashes).forall(bootstrapDf.columns.contains)) {
-      return bootstrapDf
+    if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+      // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
+      return (bootstrapDf, Seq())
     }
 
     val requiredFields =
-      joinMetadata.joinParts.find(_.joinPart.groupBy.metaData.name == joinPart.groupBy.metaData.name).get.valueSchema
+      bootstrapInfo.joinParts.find(_.joinPart.groupBy.metaData.name == joinPart.groupBy.metaData.name).get.valueSchema
 
-    def validHashes(hashes: Map[String, Array[StructField]]): Seq[String] = {
-      hashes.filter(entry => requiredFields.forall(f => entry._2.contains(f))).keys.toSeq
-    }
-
-    val validLogHashes = validHashes(joinMetadata.logHashes)
-    val validTableHashes = validHashes(joinMetadata.tableHashes.mapValues(_._1))
+    // We mark some hashes to be valid. A valid hash means that if a record was marked with this hash during bootstrap,
+    // it already had all the required columns populated, and therefore can be skipped in backfill.
+    val validHashes =
+      bootstrapInfo.hashToSchema.filter(entry => requiredFields.forall(f => entry._2.contains(f))).keys.toSeq
 
     println(
-      s"""Splitting left into filled vs unfilled by
-         |validLogHashes: ${validLogHashes.prettyInline}
-         |validTableHashes: ${validTableHashes.prettyInline}
-         |for joinPart: ${joinPart.groupBy.metaData.name}
+      s"""Finding records to backfill for joinPart: ${joinPart.groupBy.metaData.name}
+         |by splitting left into filled vs unfilled based on valid_hashes: ${validHashes.prettyInline}
          |""".stripMargin
     )
 
-    val filterCondition = not(
-      contains_any(col(Constants.LogHashes), typedLit[Seq[String]](validLogHashes))
-        .or(contains_any(col(Constants.TableHashes), typedLit[Seq[String]](validTableHashes)))
-    )
-
-    bootstrapDf.where(filterCondition)
+    // Unfilled records are those that are not marked by any of the valid hashes, and thus require backfill
+    val filterCondition = not(contains_any(col(Constants.MatchedHashes), typedLit[Seq[String]](validHashes)))
+    (bootstrapDf.where(filterCondition), validHashes)
   }
 }

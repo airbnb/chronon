@@ -274,7 +274,7 @@ class SchemaEvolutionTest extends TestCase {
                                   tableUtils: TableUtils): DataFrame = {
     insertLogsToHive(mockApi, logsDelta, offlineDs)
     SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, offlineDs, "2022-10-01")
-    val flattenerJob = new LogFlattenerJob(spark, joinConf, offlineDs, mockApi.logTable, mockApi.schemaTable, None)
+    val flattenerJob = new LogFlattenerJob(spark, joinConf, offlineDs, mockApi.logTable, mockApi.schemaTable)
     flattenerJob.buildLogTable()
     val flattenedDf = spark
       .table(joinConf.metaData.loggedTable)

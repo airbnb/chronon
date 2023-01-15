@@ -8,12 +8,12 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import ai.chronon.spark.{Comparison, LogFlattenerJob, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{coalesce, col, max}
+import org.apache.spark.sql.functions._
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import scala.concurrent.Await
-import scala.concurrent.duration.{Duration, SECONDS}
+import scala.concurrent.duration.Duration
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class LogBootstrapTest {
@@ -28,12 +28,20 @@ class LogBootstrapTest {
   def testBootstrap(): Unit = {
 
     // group by
-    val groupBy = Utils.buildGroupBy(namespace, spark)
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+    val groupBy2 = groupBy
+      .deepCopy()
+      .setAggregations(
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")))
+      )
+      .setMetaData(Builders.MetaData(name = "unit_test.user_transactions_v2", namespace = namespace, team = "chronon"))
 
     // query
-    val queryTable = Utils.buildQuery(namespace, spark)
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
 
-    val baseJoin = Builders.Join(
+    // create Join V1 => V2 to simulate feature evolution and version upgrade
+    val baseJoinV1 = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
         query = Builders.Query()
@@ -51,18 +59,35 @@ class LogBootstrapTest {
                                    team = "chronon",
                                    samplePercent = 100.0)
     )
+    val baseJoinV2 = baseJoinV1
+      .deepCopy()
+      .setJoinParts(
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(
+            Builders.JoinPart(groupBy = groupBy),
+            Builders.JoinPart(groupBy = groupBy2)
+          ))
+      )
 
-    val join = baseJoin.deepCopy()
-    join.getMetaData.setName("test.user_transaction_features.bootstrap")
-    join.setBootstrapParts(
-      ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-        Seq(
-          Builders.BootstrapPart(
-            table = join.metaData.loggedTable
+    def createBootstrapJoin(baseJoin: Join): Join = {
+      val join = baseJoin.deepCopy()
+      join.getMetaData.setName("test.user_transaction_features.bootstrap")
+      join.setBootstrapParts(
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(
+            Builders.BootstrapPart(
+              table = join.metaData.loggedTable
+            )
           )
-        )
-      ))
+        ))
+      join
+    }
 
+    // Create corresponding Log-Bootstrap version for the Joins
+    val joinV1 = createBootstrapJoin(baseJoinV1)
+    val joinV2 = createBootstrapJoin(baseJoinV2)
+
+    // Init artifacts to run online fetching and logging
     val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
     val mockApi = new MockApi(() => kvStore, namespace)
     val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
@@ -71,7 +96,7 @@ class LogBootstrapTest {
 
     val metadataStore = new MetadataStore(kvStore, timeoutMillis = 10000)
     kvStore.create(Constants.ChrononMetadataKey)
-    metadataStore.putJoinConf(join)
+    metadataStore.putJoinConf(joinV1)
 
     val requests = spark
       .table(queryTable)
@@ -81,7 +106,7 @@ class LogBootstrapTest {
       .collect()
       .map { row =>
         val (user, requestId, ts) = (row.getLong(0), row.getString(1), row.getLong(2))
-        Request(join.metaData.nameToFilePath,
+        Request(joinV1.metaData.nameToFilePath,
                 Map(
                   "user" -> user,
                   "request_id" -> requestId,
@@ -92,7 +117,7 @@ class LogBootstrapTest {
     val future = fetcher.fetchJoin(requests)
     val responses = Await.result(future, Duration.Inf).toArray // force through logResponse iterator
 
-    // build flattened log table
+    // Populate log table
     val logs = mockApi.flushLoggedValues
     assertEquals(responses.length, requests.length)
     assertEquals(logs.length, 1 + requests.length)
@@ -100,13 +125,13 @@ class LogBootstrapTest {
       .loggedValuesToDf(logs, spark)
       .save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
     SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, endDs)
-    val flattenerJob = new LogFlattenerJob(spark, join, endDs, mockApi.logTable, mockApi.schemaTable, None)
+    val flattenerJob = new LogFlattenerJob(spark, joinV1, endDs, mockApi.logTable, mockApi.schemaTable)
     flattenerJob.buildLogTable()
 
-    val logDf = spark.table(join.metaData.loggedTable)
+    val logDf = spark.table(joinV1.metaData.loggedTable)
     assertEquals(logDf.count(), responses.length)
 
-    val baseJoinJob = new ai.chronon.spark.Join(baseJoin, endDs, tableUtils)
+    val baseJoinJob = new ai.chronon.spark.Join(baseJoinV2, endDs, tableUtils)
     val baseOutput = baseJoinJob.computeJoin()
 
     val expected = baseOutput
@@ -118,12 +143,22 @@ class LogBootstrapTest {
         coalesce(logDf("unit_test_user_transactions_amount_dollars_sum_30d"),
                  baseOutput("unit_test_user_transactions_amount_dollars_sum_30d"))
           .as("unit_test_user_transactions_amount_dollars_sum_30d"),
+        coalesce(logDf("unit_test_user_transactions_amount_dollars_sum_15d"),
+                 baseOutput("unit_test_user_transactions_amount_dollars_sum_15d"))
+          .as("unit_test_user_transactions_amount_dollars_sum_15d"),
+        baseOutput("unit_test_user_transactions_v2_amount_dollars_sum"), // not covered by logging
         logDf("request_id_2"),
         baseOutput("ds")
       )
 
-    val joinJob = new ai.chronon.spark.Join(join, endDs, tableUtils)
+    val joinJob = new ai.chronon.spark.Join(joinV2, endDs, tableUtils)
     val computed = joinJob.computeJoin()
+
+    val overlapCount = baseOutput.join(logDf, Seq("request_id", "ds")).count()
+    println(s"""Debugging information:
+         |base count: ${baseOutput.count()}
+         |overlap keys between base and log: ${overlapCount}
+         |""".stripMargin)
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {

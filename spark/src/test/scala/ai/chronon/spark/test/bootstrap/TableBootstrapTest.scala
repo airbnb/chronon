@@ -1,13 +1,10 @@
 package ai.chronon.spark.test.bootstrap
 
-import ai.chronon.aggregator.test.Column
-import ai.chronon.api
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.test.DataFrameGen
 import ai.chronon.spark.{Comparison, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -25,38 +22,12 @@ class TableBootstrapTest {
   def testBootstrap(): Unit = {
 
     // group by
-    val groupBy = Utils.buildGroupBy(namespace, spark)
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
 
     // query
-    val queryTable = Utils.buildQuery(namespace, spark)
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
 
-    // bootstrap
-    val bootstrapSchema = List(
-      Column("request_id", api.StringType, 100),
-      Column("unit_test_user_transactions_amount_dollars_sum_30d", api.LongType, 30000)
-    )
-    val bootstrapTable = s"$namespace.user_transactions_bootstrap"
-    val bootstrapDf = DataFrameGen
-      .events(spark, bootstrapSchema, 200, partitions = 5)
-      // when a bootstrap feature is null, the bloomFilter causes non-deterministic behavior, because the backfilled
-      // keys are a superset of required keys.
-      .where(col("unit_test_user_transactions_amount_dollars_sum_30d").isNotNull)
-      // drop duplicates to ensure determinism during testing
-      .dropDuplicates("request_id")
-
-    bootstrapDf.save(bootstrapTable)
-    val partitionRange = bootstrapDf.partitionRange
-
-    val bootstrapPart = Builders.BootstrapPart(
-      query = Builders.Query(
-        selects = Builders.Selects("request_id", "unit_test_user_transactions_amount_dollars_sum_30d"),
-        startPartition = partitionRange.start,
-        endPartition = partitionRange.end
-      ),
-      table = bootstrapTable
-    )
-
-    // join
+    // Define base join which uses standard backfill
     val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
@@ -67,43 +38,86 @@ class TableBootstrapTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
     )
 
+    // Runs through standard backfill
+    val runner1 = new ai.chronon.spark.Join(baseJoin, today, tableUtils)
+    val baseOutput = runner1.computeJoin()
+
+    // Create bootstrap dataset with randomly overwritten data
+    def buildBootstrapPart(tableName: String): (BootstrapPart, DataFrame) = {
+      val bootstrapTable = s"$namespace.$tableName"
+      val bootstrapDf = spark
+        .table(queryTable)
+        .select(
+          col("request_id"),
+          (rand() * 30000)
+            .cast(org.apache.spark.sql.types.LongType)
+            .as("unit_test_user_transactions_amount_dollars_sum_30d"),
+          col("ds")
+        )
+        .sample(0.8)
+
+      bootstrapDf.save(bootstrapTable)
+      val partitionRange = bootstrapDf.partitionRange
+
+      val bootstrapPart = Builders.BootstrapPart(
+        query = Builders.Query(
+          selects = Builders.Selects("request_id", "unit_test_user_transactions_amount_dollars_sum_30d"),
+          startPartition = partitionRange.start,
+          endPartition = partitionRange.end
+        ),
+        table = bootstrapTable
+      )
+
+      (bootstrapPart, bootstrapDf)
+    }
+
+    // Create two bootstrap parts to verify that bootstrap coalesce respects the ordering of the input bootstrap parts
+    val (bootstrapTable1, bootstrapTable2) = ("user_transactions_bootstrap1", "user_transactions_bootstrap2")
+    val (bootstrapPart1, bootstrapDf1) = buildBootstrapPart(bootstrapTable1)
+    val (bootstrapPart2, bootstrapDf2) = buildBootstrapPart(bootstrapTable2)
+
+    // Create bootstrap join using base join as template
     val bootstrapJoin = baseJoin.deepCopy()
     bootstrapJoin.getMetaData.setName("test.user_transaction_features.bootstrap")
     bootstrapJoin
       .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(Seq(bootstrapPart))
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(Seq(bootstrapPart1, bootstrapPart2))
       )
 
-    // computation
-    val runner1 = new ai.chronon.spark.Join(baseJoin, today, tableUtils)
+    // Runs through boostrap backfill which combines backfill and bootstrap
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
+    val computed = runner2.computeJoin()
 
-    val baseOutput = runner1.computeJoin()
+    // Comparison
     val expected = baseOutput
-      .join(bootstrapDf,
-            baseOutput("request_id") <=> bootstrapDf("request_id") and baseOutput("ds") <=> bootstrapDf("ds"),
+      .join(bootstrapDf1,
+            baseOutput("request_id") <=> bootstrapDf1("request_id") and baseOutput("ds") <=> bootstrapDf1("ds"),
+            "left")
+      .join(bootstrapDf2,
+            baseOutput("request_id") <=> bootstrapDf2("request_id") and baseOutput("ds") <=> bootstrapDf2("ds"),
             "left")
       .select(
         baseOutput("user"),
         baseOutput("request_id"),
         baseOutput("ts"),
-        coalesce(bootstrapDf("unit_test_user_transactions_amount_dollars_sum_30d"),
-                 baseOutput("unit_test_user_transactions_amount_dollars_sum_30d"))
-          .as("unit_test_user_transactions_amount_dollars_sum_30d"),
+        coalesce(
+          coalesce(bootstrapDf1("unit_test_user_transactions_amount_dollars_sum_30d"),
+                   bootstrapDf2("unit_test_user_transactions_amount_dollars_sum_30d")),
+          baseOutput("unit_test_user_transactions_amount_dollars_sum_30d")
+        ).as("unit_test_user_transactions_amount_dollars_sum_30d"),
+        baseOutput("unit_test_user_transactions_amount_dollars_sum_15d"), // not covered by bootstrap
         baseOutput("ds")
       )
 
-    val computed = runner2.computeJoin()
-
-    val overwrittenRows = baseOutput
-      .join(bootstrapDf,
-            baseOutput("request_id") <=> bootstrapDf("request_id") and baseOutput("ds") <=> bootstrapDf("ds"),
-            "left")
-      .where(not(bootstrapDf("unit_test_user_transactions_amount_dollars_sum_30d") <=> baseOutput(
-        "unit_test_user_transactions_amount_dollars_sum_30d")))
-      .count()
-
-    println(s"testing bootstrap where ${overwrittenRows} rows are expected to be overwritten")
+    val overlapBaseBootstrap1 = baseOutput.join(bootstrapDf1, Seq("request_id", "ds")).count()
+    val overlapBaseBootstrap2 = baseOutput.join(bootstrapDf2, Seq("request_id", "ds")).count()
+    val overlapBootstrap12 = bootstrapDf1.join(bootstrapDf2, Seq("request_id", "ds")).count()
+    println(s"""Debug information:
+         |base count: ${baseOutput.count()}
+         |overlap keys between base and bootstrap1 count: ${overlapBaseBootstrap1}
+         |overlap keys between base and bootstrap2 count: ${overlapBaseBootstrap2}
+         |overlap keys between bootstrap1 and bootstrap2 count: ${overlapBootstrap12}
+         |""".stripMargin)
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {

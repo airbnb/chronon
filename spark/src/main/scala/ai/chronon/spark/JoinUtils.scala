@@ -56,18 +56,28 @@ object JoinUtils {
   // if query has an item that exists in array, return true; otherwise, return false
   val contains_any: UserDefinedFunction =
     udf((array: Seq[String], query: Seq[String]) => {
-      if (array == null || query == null) {
-        false
+      if (query == null) {
+        None
+      } else if (array == null) {
+        Some(false)
       } else {
-        query.exists(q => array.contains(q))
+        Some(query.exists(q => array.contains(q)))
       }
     })
 
-  def mergeDFs(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String], joinType: String = "left"): DataFrame = {
+  /*
+   * join left and right dataframes, merging any shared columns if exists by the coalesce rule.
+   * fails if there is any data type mismatch between shared columns.
+   *
+   * The order of output joined dataframe is:
+   *   - all keys
+   *   - all columns on left (incl. both shared and non-shared) in the original order of left
+   *   - all columns on right that are NOT shared by left, in the original order of right
+   */
+  def coalescedJoin(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String], joinType: String = "left"): DataFrame = {
     leftDf.validateJoinKeys(rightDf, keys)
     val sharedColumns = rightDf.columns.intersect(leftDf.columns)
-    val nonKeysSharedColumns = sharedColumns.filterNot(keys.contains)
-    nonKeysSharedColumns.foreach { column =>
+    sharedColumns.foreach { column =>
       val leftDataType = leftDf.schema(leftDf.schema.fieldIndex(column)).dataType
       val rightDataType = rightDf.schema(rightDf.schema.fieldIndex(column)).dataType
       assert(leftDataType == rightDataType,
@@ -87,10 +97,8 @@ object JoinUtils {
         }
       } ++
       rightDf.columns.flatMap { colName =>
-        if (keys.contains(colName)) {
-          None
-        } else if (sharedColumns.contains(colName)) {
-          None
+        if (sharedColumns.contains(colName)) {
+          None // already selected previously
         } else {
           Some(rightDf(colName))
         }

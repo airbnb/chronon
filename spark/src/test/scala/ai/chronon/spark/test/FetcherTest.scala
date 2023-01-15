@@ -508,7 +508,7 @@ class FetcherTest extends TestCase {
 
       // build flattened log table
       SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, today)
-      val flattenerJob = new LogFlattenerJob(spark, joinConf, today, mockApi.logTable, mockApi.schemaTable, None)
+      val flattenerJob = new LogFlattenerJob(spark, joinConf, today, mockApi.logTable, mockApi.schemaTable)
       flattenerJob.buildLogTable()
 
       // build consistency metrics

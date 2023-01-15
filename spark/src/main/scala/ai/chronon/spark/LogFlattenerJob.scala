@@ -29,7 +29,7 @@ class LogFlattenerJob(session: SparkSession,
                       endDate: String,
                       logTable: String,
                       schemaTable: String,
-                      stepDays: Option[Int])
+                      stepDays: Option[Int] = None)
     extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)

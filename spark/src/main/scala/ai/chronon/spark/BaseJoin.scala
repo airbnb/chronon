@@ -6,14 +6,13 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{leftDf, mergeDFs}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
 import scala.collection.JavaConverters._
-import scala.util.Try
 
 abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -27,7 +26,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
   private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
-  protected val tableProps = confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
+  protected val tableProps =
+    confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -68,7 +68,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       prefixedRightDf
     }
 
-    val joinedDf = mergeDFs(leftDf, joinableRightDf, keys)
+    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
     println(s"""
                |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                |Left Schema:
@@ -82,12 +82,28 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame, joinPart: JoinPart, leftRange: PartitionRange): Option[DataFrame] = {
+  def computeRightTable(leftDf: DataFrame,
+                        joinPart: JoinPart,
+                        leftRange: PartitionRange,
+                        validHashes: Seq[String]): Option[DataFrame] = {
+
+    // Archive and recompute the part table if valid_hashes has changed as result of a change of the bootstrap_parts
+    val joinPartTableProps = tableProps + (Constants.ValidHashes -> validHashes.mkString(","))
+    val partTable = joinConf.partOutputTable(joinPart)
+    for (
+      tblProps <- tableUtils.getTableProperties(partTable);
+      validHashesFromTable <- tblProps.get(Constants.ValidHashes)
+    ) yield {
+      if (validHashesFromTable != validHashes.mkString(",")) {
+        tableUtils.archiveOrDropTableIfExists(partTable, None)
+      }
+    }
+
     val partMetrics = Metrics.Context(metrics, joinPart)
     if (joinPart.groupBy.aggregations == null) {
+      // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
       computeJoinPart(leftDf, joinPart)
     } else {
-      val partTable = joinConf.partOutputTable(joinPart)
       try {
         val unfilledRanges =
           tableUtils.unfilledRanges(partTable, leftRange, Some(Seq(joinConf.left.table))).getOrElse(Seq())
@@ -97,10 +113,10 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
           unfilledRanges
             .foreach(unfilledRange => {
               val filledDf = computeJoinPart(leftDf.prunePartition(unfilledRange), joinPart)
-              // cache the join-part output into table partitions
+              // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps)
+                filledDf.get.save(partTable, joinPartTableProps)
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -123,6 +139,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       if (tableUtils.tableExists(partTable)) {
         Some(tableUtils.sql(scanRange.genScanQuery(query = null, partTable)))
       } else {
+        // Happens when everything is handled by bootstrap
         None
       }
     }
@@ -142,9 +159,11 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))
     if (rowCount == 0) {
       // happens when all rows are already filled by bootstrap tables
-      println(s"leftDf empty for joinPart ${joinPart.groupBy.metaData.name} and unfilled range ${unfilledRange}")
+      println(s"\nNo backfill is required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
       return None
     }
+
+    println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
 
     val leftBlooms = joinConf.leftKeyCols.par.map { key =>
       key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
@@ -225,7 +244,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
       oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
     ) yield {
-      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash");
+      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
     }).getOrElse(Seq.empty)
   }
@@ -243,17 +262,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     }
 
     // First run command to archive tables that have changed semantically since the last run
-    val jobRunTimestamp = Instant.now()
-    tablesToRecompute().foreach { tableName =>
-      val archiveTry = Try(tableUtils.archiveTableIfExists(tableName, jobRunTimestamp))
-      archiveTry.failed.foreach { e =>
-        println(s"""Fail to archive table ${tableName}
-                   |${e.getMessage}
-                   |Proceed to dropping the table instead.
-                   |""".stripMargin)
-        tableUtils.dropTableIfExists(tableName)
-      }
-    }
+    val archivedAtTs = Instant.now()
+    tablesToRecompute().foreach(tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)

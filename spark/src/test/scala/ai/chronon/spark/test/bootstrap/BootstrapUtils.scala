@@ -8,22 +8,25 @@ import ai.chronon.spark.test.DataFrameGen
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
 
-object Utils {
+object BootstrapUtils {
 
   def buildGroupBy(namespace: String, spark: SparkSession): api.GroupBy = {
     val transactions = List(
       Column("user", LongType, 100),
-      Column("ts", LongType, 200),
       Column("amount_dollars", LongType, 1000)
     )
     val transactionsTable = s"$namespace.transactions"
     spark.sql(s"DROP TABLE IF EXISTS $transactionsTable")
-    DataFrameGen.entities(spark, transactions, 9000, partitions = 360).save(transactionsTable)
-    val groupBySource = Builders.Source.entities(
+    DataFrameGen
+      .events(spark, transactions, 4500, partitions = 45)
+      .where(col("user").isNotNull)
+      .save(transactionsTable)
+    val groupBySource = Builders.Source.events(
       query = Builders.Query(
-        selects = Builders.Selects("ts", "amount_dollars")
+        selects = Builders.Selects("amount_dollars"),
+        timeColumn = "ts"
       ),
-      snapshotTable = transactionsTable
+      table = transactionsTable
     )
     val groupBy = Builders.GroupBy(
       sources = Seq(groupBySource),
@@ -31,7 +34,8 @@ object Utils {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "amount_dollars",
-                             windows = Seq(new Window(30, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(30, TimeUnit.DAYS), new Window(15, TimeUnit.DAYS)))),
+      accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "chronon")
     )
 
@@ -46,7 +50,7 @@ object Utils {
     val queryTable = s"$namespace.queries"
     DataFrameGen
       .events(spark, queriesSchema, 200, partitions = 5)
-      .where(col("request_id").isNotNull)
+      .where(col("request_id").isNotNull and col("user").isNotNull)
       .dropDuplicates("request_id")
       .save(queryTable)
 
