@@ -3,3 +3,5 @@ myst-parser
 pydata-sphinx-theme
 build
 sphinx-design
+sphinx-book-theme
+insegel

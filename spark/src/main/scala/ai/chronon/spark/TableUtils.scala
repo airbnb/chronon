@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api.Constants
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, count, lit, rand, round}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import java.time.format.DateTimeFormatter
@@ -15,21 +15,27 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 
 case class TableUtils(sparkSession: SparkSession) {
 
-  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
+  private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
 
   sparkSession.sparkContext.setLogLevel("ERROR")
-  // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
-  def parsePartition(pstring: String): Map[String, String] = {
-    pstring
-      .split("/")
-      .map { part =>
-        val p = part.split("=", 2)
-        p(0) -> p(1)
+  private val writeRepartitionMode = sys.env.getOrElse("WRITE_REPARTITION", "count")
+  private val rowsPerPartition = sys.env.getOrElse("WRITE_REPARTITION_ROWS", "10000000").toLong
+
+  // Given a table and a query extract the schema of the columns involved as input.
+  def getColumnsFromQuery(query: String): Seq[String] = {
+    val parser = sparkSession.sessionState.sqlParser
+    val logicalPlan = parser.parsePlan(query)
+    logicalPlan
+      .collect {
+        case p: Project =>
+          p.projectList.flatMap(p => parser.parseExpression(p.sql).references.map(attr => attr.name))
+        case f: Filter => f.condition.references.map(attr => attr.name)
       }
-      .toMap
+      .flatten
+      .distinct
   }
 
   def isPartitioned(tableName: String): Boolean = {
@@ -37,6 +43,9 @@ case class TableUtils(sparkSession: SparkSession) {
     val schema = getSchemaFromTable(tableName)
     schema.fieldNames.contains(Constants.PartitionColumn)
   }
+
+  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
+    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
@@ -63,6 +72,17 @@ case class TableUtils(sparkSession: SparkSession) {
           }
         }
       }
+  }
+
+  // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
+  def parsePartition(pstring: String): Map[String, String] = {
+    pstring
+      .split("/")
+      .map { part =>
+        val p = part.split("=", 2)
+        p(0) -> p(1)
+      }
+      .toMap
   }
 
   private def isIcebergTable(tableName: String): Boolean =
@@ -97,27 +117,6 @@ case class TableUtils(sparkSession: SparkSession) {
         .toSeq
     }
   }
-
-  // Given a table and a query extract the schema of the columns involved as input.
-  def getColumnsFromQuery(query: String): Seq[String] = {
-    val parser = sparkSession.sessionState.sqlParser
-    val logicalPlan = parser.parsePlan(query)
-    logicalPlan
-      .collect {
-        case p: Project =>
-          p.projectList.flatMap(p => parser.parseExpression(p.sql).references.map(attr => attr.name))
-        case f: Filter => f.condition.references.map(attr => attr.name)
-      }
-      .flatten
-      .distinct
-  }
-
-  def getSchemaFromTable(tableName: String): StructType = {
-    sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
-  }
-
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
 
   def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
     partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].min)
@@ -175,31 +174,6 @@ case class TableUtils(sparkSession: SparkSession) {
     repartitionAndWrite(finalizedDf, tableName, saveMode)
   }
 
-  def sql(query: String): DataFrame = {
-    val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
-    println(
-      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query).coalesce(partitionCount)
-    df
-  }
-
-  def insertUnPartitioned(df: DataFrame,
-                          tableName: String,
-                          tableProperties: Map[String, String] = null,
-                          saveMode: SaveMode = SaveMode.Overwrite,
-                          fileFormat: String = "PARQUET"): Unit = {
-
-    if (!sparkSession.catalog.tableExists(tableName)) {
-      sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
-    } else {
-      if (tableProperties != null && tableProperties.nonEmpty) {
-        sql(alterTablePropertiesSql(tableName, tableProperties))
-      }
-    }
-
-    repartitionAndWrite(df, tableName, saveMode)
-  }
-
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
@@ -222,6 +196,35 @@ case class TableUtils(sparkSession: SparkSession) {
         .insertInto(tableName)
       println(s"Finished writing to $tableName")
     }
+    finalDf.write
+      .mode(saveMode)
+      .insertInto(tableName)
+    println(s"Finished writing to $tableName")
+  }
+
+  private def repartitionSimple(df: DataFrame): DataFrame = {
+    if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+      df.repartition(df.col(Constants.PartitionColumn))
+    } else {
+      df
+    }
+  }
+
+  private def repartitionByCount(df: DataFrame, tableName: String): DataFrame = {
+    val stats = df.select(count("*"), approx_count_distinct(Constants.PartitionColumn)).collect()(0)
+    val (rowCount, partitionCount) = (stats.getLong(0), stats.getLong(1))
+    println(s"$rowCount rows and $partitionCount partitions requested to be written into table $tableName")
+    if (rowCount == 0) return df
+    // at-least 10 million rows per partition - or there will be too many files.
+    val rddPartitionCount = math.ceil(rowCount / rowsPerPartition).toInt
+    println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+
+    val saltCol = "random_partition_salt"
+    val saltedDf = df.withColumn(saltCol, round(rand() * rddPartitionCount / partitionCount))
+    val repartitionCols = Seq(Constants.PartitionColumn, saltCol)
+    saltedDf
+      .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
+      .drop(saltCol)
   }
 
   private def createTableSql(tableName: String,
@@ -265,6 +268,100 @@ case class TableUtils(sparkSession: SparkSession) {
       }
       .mkString(", ")
     s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
+  }
+
+  /*
+   * This method detects new columns that appear in newSchema but not in current table,
+   * and append those new columns at the end of the existing table. This allows continuous evolution
+   * of a Hive table without dropping or archiving data.
+   *
+   * Warning: ALTER TABLE behavior also depends on underlying storage solution.
+   * To read using Hive, which differentiates Table-level schema and Partition-level schema, it is required to
+   * take an extra step to sync Table-level schema into Partition-level schema in order to read updated data
+   * in Hive. To read from Spark, this is not required since it always uses the Table-level schema.
+   */
+  private def expandTable(tableName: String, newSchema: StructType): Unit = {
+
+    val existingSchema = getSchemaFromTable(tableName)
+    val existingFieldsMap = existingSchema.fields.map(field => (field.name, field)).toMap
+
+    val inconsistentFields = mutable.ListBuffer[(String, DataType, DataType)]()
+    val newFields = mutable.ListBuffer[StructField]()
+
+    newSchema.fields.foreach(field => {
+      val fieldName = field.name
+      if (existingFieldsMap.contains(fieldName)) {
+        val existingDataType = existingFieldsMap(fieldName).dataType
+
+        // compare on catalogString so that we don't check nullability which is not relevant for hive tables
+        if (existingDataType.catalogString != field.dataType.catalogString) {
+          inconsistentFields += ((fieldName, existingDataType, field.dataType))
+        }
+      } else {
+        newFields += field
+      }
+    })
+
+    if (inconsistentFields.nonEmpty) {
+      throw IncompatibleSchemaException(inconsistentFields)
+    }
+
+    val newFieldDefinitions = newFields.map(newField => s"${newField.name} ${newField.dataType.catalogString}")
+    val expandTableQueryOpt = if (newFieldDefinitions.nonEmpty) {
+      val tableLevelAlterSql =
+        s"""ALTER TABLE ${tableName}
+           |ADD COLUMNS (
+           |    ${newFieldDefinitions.mkString(",\n    ")}
+           |)
+           |""".stripMargin
+
+      Some(tableLevelAlterSql)
+    } else {
+      None
+    }
+
+    /* check if any old columns are skipped in new field and send warning */
+    val updatedFieldsMap = newSchema.fields.map(field => (field.name, field)).toMap
+    val excludedFields = existingFieldsMap.filter {
+      case (name, _) => !updatedFieldsMap.contains(name)
+    }.toSeq
+
+    if (excludedFields.nonEmpty) {
+      val excludedFieldsStr =
+        excludedFields.map(tuple => s"columnName: ${tuple._1} dataType: ${tuple._2.dataType.catalogString}")
+      println(
+        s"""Warning. Detected columns that exist in Hive table but not in updated schema. These are ignored in DDL.
+           |${excludedFieldsStr.mkString("\n")}
+           |""".stripMargin)
+    }
+
+    if (expandTableQueryOpt.nonEmpty) {
+      sql(expandTableQueryOpt.get)
+
+      // set a flag in table props to indicate that this is a dynamic table
+      sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
+    }
+  }
+
+  def getSchemaFromTable(tableName: String): StructType = {
+    sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
+  }
+
+  def insertUnPartitioned(df: DataFrame,
+                          tableName: String,
+                          tableProperties: Map[String, String] = null,
+                          saveMode: SaveMode = SaveMode.Overwrite,
+                          fileFormat: String = "PARQUET"): Unit = {
+
+    if (!sparkSession.catalog.tableExists(tableName)) {
+      sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
+    } else {
+      if (tableProperties != null && tableProperties.nonEmpty) {
+        sql(alterTablePropertiesSql(tableName, tableProperties))
+      }
+    }
+
+    repartitionAndWrite(df, tableName, saveMode)
   }
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
@@ -391,6 +488,14 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  def sql(query: String): DataFrame = {
+    val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    println(
+      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
+    val df = sparkSession.sql(query).coalesce(partitionCount)
+    df
+  }
+
   @deprecated
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
@@ -420,6 +525,18 @@ case class TableUtils(sparkSession: SparkSession) {
     earliestHoleOpt
   }
 
+  def dropPartitionRange(tableName: String,
+                         startDate: String,
+                         endDate: String,
+                         subPartitionFilters: Map[String, String] = Map.empty): Unit = {
+    if (sparkSession.catalog.tableExists(tableName)) {
+      val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
+      dropPartitions(tableName, toDrop, Constants.PartitionColumn, subPartitionFilters)
+    } else {
+      println(s"$tableName doesn't exist, please double check before drop partitions")
+    }
+  }
+
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
@@ -438,91 +555,6 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(dropSql)
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
-    }
-  }
-
-  def dropPartitionRange(tableName: String,
-                         startDate: String,
-                         endDate: String,
-                         subPartitionFilters: Map[String, String] = Map.empty): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
-      val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
-      dropPartitions(tableName, toDrop, Constants.PartitionColumn, subPartitionFilters)
-    } else {
-      println(s"$tableName doesn't exist, please double check before drop partitions")
-    }
-  }
-
-  /*
-   * This method detects new columns that appear in newSchema but not in current table,
-   * and append those new columns at the end of the existing table. This allows continuous evolution
-   * of a Hive table without dropping or archiving data.
-   *
-   * Warning: ALTER TABLE behavior also depends on underlying storage solution.
-   * To read using Hive, which differentiates Table-level schema and Partition-level schema, it is required to
-   * take an extra step to sync Table-level schema into Partition-level schema in order to read updated data
-   * in Hive. To read from Spark, this is not required since it always uses the Table-level schema.
-   */
-  private def expandTable(tableName: String, newSchema: StructType): Unit = {
-
-    val existingSchema = getSchemaFromTable(tableName)
-    val existingFieldsMap = existingSchema.fields.map(field => (field.name, field)).toMap
-
-    val inconsistentFields = mutable.ListBuffer[(String, DataType, DataType)]()
-    val newFields = mutable.ListBuffer[StructField]()
-
-    newSchema.fields.foreach(field => {
-      val fieldName = field.name
-      if (existingFieldsMap.contains(fieldName)) {
-        val existingDataType = existingFieldsMap(fieldName).dataType
-
-        // compare on catalogString so that we don't check nullability which is not relevant for hive tables
-        if (existingDataType.catalogString != field.dataType.catalogString) {
-          inconsistentFields += ((fieldName, existingDataType, field.dataType))
-        }
-      } else {
-        newFields += field
-      }
-    })
-
-    if (inconsistentFields.nonEmpty) {
-      throw IncompatibleSchemaException(inconsistentFields)
-    }
-
-    val newFieldDefinitions = newFields.map(newField => s"${newField.name} ${newField.dataType.catalogString}")
-    val expandTableQueryOpt = if (newFieldDefinitions.nonEmpty) {
-      val tableLevelAlterSql =
-        s"""ALTER TABLE ${tableName}
-           |ADD COLUMNS (
-           |    ${newFieldDefinitions.mkString(",\n    ")}
-           |)
-           |""".stripMargin
-
-      Some(tableLevelAlterSql)
-    } else {
-      None
-    }
-
-    /* check if any old columns are skipped in new field and send warning */
-    val updatedFieldsMap = newSchema.fields.map(field => (field.name, field)).toMap
-    val excludedFields = existingFieldsMap.filter {
-      case (name, _) => !updatedFieldsMap.contains(name)
-    }.toSeq
-
-    if (excludedFields.nonEmpty) {
-      val excludedFieldsStr =
-        excludedFields.map(tuple => s"columnName: ${tuple._1} dataType: ${tuple._2.dataType.catalogString}")
-      println(
-        s"""Warning. Detected columns that exist in Hive table but not in updated schema. These are ignored in DDL.
-           |${excludedFieldsStr.mkString("\n")}
-           |""".stripMargin)
-    }
-
-    if (expandTableQueryOpt.nonEmpty) {
-      sql(expandTableQueryOpt.get)
-
-      // set a flag in table props to indicate that this is a dynamic table
-      sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
     }
   }
 }

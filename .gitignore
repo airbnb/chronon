@@ -35,3 +35,6 @@ api/py/*.egg-info/
 **/metastore_db/
 mvn_settings.xml
 /.run/spark Clean.run.xml
+
+# Release folder
+releases
