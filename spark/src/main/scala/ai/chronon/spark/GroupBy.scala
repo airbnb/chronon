@@ -12,8 +12,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
-import java.util
+import org.slf4j.{Logger, LoggerFactory}
 
+import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
@@ -24,6 +25,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
+
+  import GroupBy.logger
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   protected val selectedSchema: Array[(String, api.DataType)] = Conversions.toChrononSchema(inputDf.schema)
@@ -95,8 +98,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       inputDf -> updateFunc
     }
 
-    println("prepped input schema")
-    println(preppedInputDf.schema.pretty)
+    logger.info("prepped input schema")
+    logger.info(preppedInputDf.schema.pretty)
 
     preppedInputDf.rdd
       .keyBy(keyBuilder)
@@ -361,13 +364,15 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 // TODO: truncate queryRange for caching
 object GroupBy {
 
+  @transient private val logger: Logger = LoggerFactory.getLogger(this.getClass)
+
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true): GroupBy = {
-    println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
+    logger.info(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map { source =>
         renderDataSourceQuery(source,
@@ -396,7 +401,7 @@ object GroupBy {
     val keyColumns = groupByConf.getKeyColumns.asScala
     val skewFilteredDf = skewFilter
       .map { sf =>
-        println(s"$logPrefix filtering using skew filter:\n    $sf")
+        logger.info(s"$logPrefix filtering using skew filter:\n    $sf")
         val filtered = inputDf.filter(sf)
         filtered
       }
@@ -497,7 +502,7 @@ object GroupBy {
     }
     metaColumns ++= timeMapping
 
-    println(s"""
+    logger.info(s"""
          |Rendering source query:
          |   query range: $queryRange
          |   query window: $window
@@ -535,32 +540,32 @@ object GroupBy {
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(inputTables))
     if (groupByUnfilledRangesOpt.isEmpty) {
-      println(s"""Nothing to backfill for $outputTable - given
+      logger.info(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
            |backfill start of ${groupByConf.backfillStartDate}
            |Exiting...""".stripMargin)
       return
     }
     val groupByUnfilledRanges = groupByUnfilledRangesOpt.get
-    println(s"group by unfilled ranges: $groupByUnfilledRanges")
+    logger.info(s"group by unfilled ranges: $groupByUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]
     groupByUnfilledRanges.foreach {
       case groupByUnfilledRange =>
         try {
           val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-          println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+          logger.info(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
-              println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
+              logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill = from(groupByConf, range, tableUtils)
               (groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
                 case Events   => groupByBackfill.snapshotEvents(range)
               }).save(outputTable, tableProps)
-              println(s"Wrote to table $outputTable, into partitions: $range")
+              logger.info(s"Wrote to table $outputTable, into partitions: $range")
           }
-          println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+          logger.info(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
         } catch {
           case err: Throwable =>
             exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}"

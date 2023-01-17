@@ -11,6 +11,7 @@ import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.asScalaBufferConverter
@@ -50,6 +51,9 @@ class Analyzer(tableUtils: TableUtils,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
                silenceMode: Boolean = false) {
+
+  @transient private[this] val logger: Logger = LoggerFactory.getLogger(this.getClass)
+
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
@@ -155,27 +159,27 @@ class Analyzer(tableUtils: TableUtils,
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
-    println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
+    logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
     val analysis = if(enableHitter) analyze(groupBy.inputDf,
                            groupByConf.keyColumns.asScala.toArray,
                            groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     if (silenceMode) {
-      println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
+      logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
-      println(
+      logger.info(
         s"""
            |ANALYSIS for $name:
            |$analysis
                """.stripMargin)
       if (includeOutputTableName)
-        println(
+        logger.info(
           s"""
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      println(
+      logger.info(
         s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
@@ -194,7 +198,7 @@ class Analyzer(tableUtils: TableUtils,
 
   def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
-    println(s"""|Running join analysis for $name ...""".stripMargin)
+    logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils).get
     val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
@@ -212,9 +216,9 @@ class Analyzer(tableUtils: TableUtils,
 
     val rightSchema = aggregationsMetadata.map {aggregation => s"  ${aggregation.name} => ${aggregation.columnType}"}
     if (silenceMode) {
-      println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
+      logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
-      println(
+      logger.info(
         s"""
            |ANALYSIS for join/${joinConf.metaData.cleanName}:
            |$analysis

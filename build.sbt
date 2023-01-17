@@ -108,6 +108,8 @@ lazy val api = project
       "org.scala-lang" % "scala-reflect" % "2.11.12",
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+      "org.slf4j" % "slf4j-api" % "1.7.30",
+      "org.slf4j" % "slf4j-log4j12" % "1.7.30",
       "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
   )
