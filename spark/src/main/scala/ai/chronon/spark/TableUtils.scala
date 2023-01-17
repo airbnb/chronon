@@ -5,11 +5,13 @@ import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{col, count, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+
 import scala.collection.mutable
 import scala.util.{Success, Try}
+
+import org.apache.spark.sql.catalyst.TableIdentifier
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -28,6 +30,16 @@ case class TableUtils(sparkSession: SparkSession) {
         p(0) -> p(1)
       }
       .toMap
+  }
+
+  def isPartitioned(tableName: String): Boolean = {
+    val nameSplit = tableName.split("\\.")
+    assert(nameSplit.length <= 2, s"Invalid table name $tableName, format must be `table` or `db.table`")
+    val (db, table) = nameSplit match {
+      case split if split.length == 1 => (None, split(0))
+      case split if split.length == 2 => (Some(split(0)), split(1))
+    }
+    sparkSession.sessionState.catalog.listPartitionNames(TableIdentifier(table, db)).nonEmpty
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {

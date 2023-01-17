@@ -10,14 +10,25 @@ from ai.chronon.group_by import (
     Accuracy
 )
 
-
 from ai.chronon.utils import get_staging_query_output_table_name
 from staging_queries.kaggle.outbrain import base_table
 
+"""
+This file defines a number of GroupBys in a more programatic way, leveraging helper functions that act
+as templates. The result is the same as creating multiple files that look more like individual "configuration" (as
+we did in the clicks_by_ad GroupBy), but this can be more concise and easily managed.
+
+There is no definitive guidance on when to use one approach over the other. In this case we have multiple
+GroupBys that share a source and aggregations, and only vary in a few fields like Primary Key
+and accuracy, so combining the logic in one file makes sense.
+"""
+
 
 def outbrain_left_events(*columns):
+    """
+    Defines a source based off of the output table of the `base_table` StagingQuery
+    """
     return Source(events=EventSource(
-        isCumulative=True,
         table=get_staging_query_output_table_name(base_table),
         query=Query(
             selects=select(*columns),
@@ -26,7 +37,25 @@ def outbrain_left_events(*columns):
     ))
 
 
-def ctr_group_by(*keys):
+def outbrain_left_events_sampled(*columns):
+    """
+    Same as above, but sampled down to 10%
+    """
+    return Source(events=EventSource(
+        table=get_staging_query_output_table_name(base_table),
+        query=Query(
+            selects=select(*columns),
+            time_column="ts",
+            wheres=["HASH({}) % 100 < 10".format(",".join(columns))]
+        ),
+    ))
+
+
+def ctr_group_by(*keys, accuracy):
+    """
+    This is a helper function to create a GroupBy based on the source defined above, with fixed aggregations
+    but variable Primary Keys accuracy.
+    """
     return GroupBy(
         sources=[outbrain_left_events(*(list(keys) + ["clicked"]))],
         keys=list(keys),
@@ -46,11 +75,29 @@ def ctr_group_by(*keys):
                 windows=[Window(length=3, timeUnit=TimeUnit.DAYS)]
             )
         ],
-        accuracy=Accuracy.TEMPORAL
+        accuracy=accuracy,
     )
 
 
-ad_doc = ctr_group_by("ad_id", "document_id")
-ad = ctr_group_by("ad_id")
-ad_uuid = ctr_group_by("ad_id", "uuid")
-ad_platform = ctr_group_by("ad_id", "platform", "geo_location")
+ad_doc = ctr_group_by("ad_id", "document_id", accuracy=Accuracy.SNAPSHOT)
+ad_uuid = ctr_group_by("ad_id", "uuid", accuracy=Accuracy.TEMPORAL)
+"""
+Here we are creating two GroupBys keyed off of ad_id, one with document_id as a secondary key and the
+other with user id as it's secondary key.
+
+The ad_doc group_by is set to SNAPSHOT accuracy, meaning feature values will be accurate as of midnight,
+while the ad_uuid group_by is TEMPORAL accuracy, meaning values will be precisely correct, including intra-day updates.
+
+The tradeoff is primarily that SNAPSHOT is cheaper to compute, while TEMPORAL is more accurate. Also, for
+models that will eventually be online, you would want temporally accurate group_bys to be streaming (if offline
+values are intra-day correct, online should be as well for consistency). In this case, the source is
+the output of a staging query, which is always batch, so the user would need to convert the source to a streaming source,
+as we did in the clicks_by_ad group_by.
+"""
+
+
+ad_platform = ctr_group_by("ad_id", "platform", "geo_location", accuracy=Accuracy.SNAPSHOT)
+"""
+Snapshot accuracy is a reasonable choice here because platform/geo is a very coarse grained aggregations,
+so values are unlikely to meaningfully change intra day (midnight accuracy is sufficient)
+"""

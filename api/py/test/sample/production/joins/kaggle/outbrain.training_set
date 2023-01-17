@@ -28,10 +28,12 @@
           "platform": "platform",
           "ts": "ts"
         },
+        "wheres": [
+          "HASH(uuid,display_id,ad_id,document_id,clicked,geo_location,platform) % 100 < 10"
+        ],
         "timeColumn": "ts",
         "setups": []
-      },
-      "isCumulative": 1
+      }
     }
   },
   "joinParts": [
@@ -57,8 +59,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -101,7 +102,7 @@
             ]
           }
         ],
-        "accuracy": 0
+        "accuracy": 1
       }
     },
     {
@@ -126,8 +127,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -176,7 +176,7 @@
     {
       "groupBy": {
         "metaData": {
-          "name": "kaggle.outbrain.ad",
+          "name": "kaggle.clicks.ad_streaming",
           "customJson": "{\"lag\": 0}",
           "dependencies": [
             "{\"name\": \"wait_for_kaggle_outbrain_base_table_ds\", \"spec\": \"kaggle_outbrain_base_table/ds={{ ds }}\", \"start\": null, \"end\": null}"
@@ -187,6 +187,7 @@
           {
             "events": {
               "table": "kaggle_outbrain_base_table",
+              "topic": "some_topic",
               "query": {
                 "selects": {
                   "ad_id": "ad_id",
@@ -194,8 +195,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -263,8 +263,7 @@
                 },
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "isCumulative": 1
+              }
             }
           }
         ],
@@ -308,7 +307,7 @@
             ]
           }
         ],
-        "accuracy": 0
+        "accuracy": 1
       }
     }
   ]
