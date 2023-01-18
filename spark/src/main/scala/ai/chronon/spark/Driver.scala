@@ -573,7 +573,7 @@ object Driver {
           case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs => LabelJoin.run(args.LabelJoinArgs)
+          case args.LabelJoinArgs      => LabelJoin.run(args.LabelJoinArgs)
           case _                       => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
