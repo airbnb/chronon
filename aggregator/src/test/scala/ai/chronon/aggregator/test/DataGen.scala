@@ -122,15 +122,17 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
   def genImpl(dtype: DataType): CStream[Any] =
     dtype match {
       case StringType =>
+      val partitionColumn = Constants.PartitionColumn
         name match {
-          case Constants.PartitionColumn => new PartitionStream(cardinality)
+          case `partitionColumn` => new PartitionStream(cardinality)
           case _                         => new StringStream(cardinality, name)
         }
       case IntType    => new IntStream(cardinality)
       case DoubleType => new DoubleStream(cardinality)
       case LongType =>
+        val timeColumn = Constants.TimeColumn
         name match {
-          case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
+          case `timeColumn` => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
           case _                    => new LongStream(cardinality)
         }
       case ListType(elementType) => genImpl(elementType).chunk(chunkSize)

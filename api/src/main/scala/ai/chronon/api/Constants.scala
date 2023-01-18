@@ -2,17 +2,38 @@ package ai.chronon.api
 
 import ai.chronon.api.Extensions._
 
+import java.util.concurrent.atomic.AtomicReference
+
+// Temporary provider setup to allow Stripe to override constant names used for Stripe's
+// event sources. As the existing Chronon names are used extensively in the codebase, it's a
+// heavier lift to switch out to providing the right constant names on a per-source basis.
+trait ConstantNameProvider {
+  def TimeColumn: String
+  def PartitionColumn: String
+  def Partition: PartitionSpec
+}
+
+class ChrononDefaultConstantNameProvider extends ConstantNameProvider {
+  override def TimeColumn: String = "ts"
+  override def PartitionColumn: String = "ds"
+  override def Partition: PartitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
+}
+
 object Constants {
-  val TimeColumn: String = "ts"
-  val PartitionColumn: String = "ds"
+  val constantNameProvider: AtomicReference[ConstantNameProvider] = new AtomicReference(new ChrononDefaultConstantNameProvider)
+
+  def initConstantNameProvider(provider: ConstantNameProvider): Unit =
+    constantNameProvider.set(provider)
+
+  def TimeColumn: String = constantNameProvider.get().TimeColumn
+  def PartitionColumn: String = constantNameProvider.get().PartitionColumn
   val LabelPartitionColumn: String = "label_ds"
   val TimePartitionColumn: String = "ts_ds"
   val ReversalColumn: String = "is_before"
   val MutationTimeColumn: String = "mutation_ts"
-  val ReservedColumns: Seq[String] =
+  def ReservedColumns: Seq[String] =
     Seq(TimeColumn, PartitionColumn, TimePartitionColumn, ReversalColumn, MutationTimeColumn)
-  val Partition: PartitionSpec =
-    PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
+  def Partition: PartitionSpec = constantNameProvider.get().Partition
   val StartPartitionMacro = "[START_PARTITION]"
   val EndPartitionMacro = "[END_PARTITION]"
   val GroupByServingInfoKey = "group_by_serving_info"

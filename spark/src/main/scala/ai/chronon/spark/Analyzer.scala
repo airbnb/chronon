@@ -63,7 +63,7 @@ class Analyzer(tableUtils: TableUtils,
     val baseDf = df.withColumn("total_count", lit("rows"))
     val baseKeys = keys :+ "total_count"
     if (df.schema.fieldNames.contains(Constants.TimeColumn)) {
-      heavyHitters(baseDf.withColumn("ts_year", from_unixtime(col("ts") / 1000, "yyyy")),
+      heavyHitters(baseDf.withColumn("ts_year", from_unixtime(col(Constants.TimeColumn) / 1000, "yyyy")),
                    baseKeys :+ "ts_year",
                    frequentItemMapSize,
                    sampleFraction)
@@ -238,10 +238,10 @@ class Analyzer(tableUtils: TableUtils,
   def run(): Unit =
     conf match {
       case confPath: String =>
-        if (confPath.contains("/joins/")) {
+        if (confPath.contains("joins")) {
           val joinConf = parseConf[api.Join](confPath)
           analyzeJoin(joinConf, enableHitter = enableHitter)
-        } else if (confPath.contains("/group_bys/")) {
+        } else if (confPath.contains("group_bys")) {
           val groupByConf = parseConf[api.GroupBy](confPath)
           analyzeGroupBy(groupByConf, enableHitter = enableHitter)
         }
