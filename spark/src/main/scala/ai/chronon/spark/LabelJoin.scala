@@ -7,6 +7,7 @@ import ai.chronon.api.{Constants, JoinPart, Source, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.Metrics
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.lit
 import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
@@ -57,6 +58,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     val today = Constants.Partition.at(System.currentTimeMillis())
+    val sanitizedLabelDs = labelDS.getOrElse(today)
     println(s"Label join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     //TODO: use unfilledRanges instead of dropPartitionsAfterHole
@@ -64,7 +66,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       tableUtils.dropPartitionsAfterHole(left.table,
                                          outputTable,
                                          rangeToFill,
-                                         Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
+                                         Map(Constants.LabelPartitionColumn -> sanitizedLabelDs))
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -79,7 +81,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       tableUtils.dropPartitionsAfterHole(left.table,
                                          partTable,
                                          rangeToFill,
-                                         Map(Constants.LabelPartitionColumn -> labelDS.getOrElse(today)))
+                                         Map(Constants.LabelPartitionColumn -> sanitizedLabelDs))
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -91,9 +93,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          computeRange(leftDfInRange, range)
+          computeRange(leftDfInRange, range, sanitizedLabelDs)
             .save(outputTable, confTableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn), true)
-
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -104,7 +105,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     finalResult
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, labelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
     val leftBlooms = labelJoinConf.leftKeyCols.par.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
@@ -125,8 +126,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
-    joined.explain()
-    joined.drop(Constants.TimePartitionColumn)
+    // assign label ds value to avoid null cases
+    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(labelDS))
+    updatedJoin.explain()
+    updatedJoin.drop(Constants.TimePartitionColumn)
   }
 
   private def computeLabelPart(joinPart: JoinPart,
@@ -136,7 +139,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     println(s"""
-               |JoinPart Info:
+               |Label JoinPart Info:
                |  part name : ${joinPart.groupBy.metaData.name},
                |  left type : ${joinConf.left.dataModel},
                |  right type: ${joinPart.groupBy.dataModel},
