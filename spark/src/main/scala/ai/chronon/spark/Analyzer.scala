@@ -145,7 +145,7 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
-    AggregationMetadata(columnName, columnType.toString, "None", "Unbounded", "None")
+    AggregationMetadata(columnName, columnType.toString, "No operation", "Unbounded", columnName)
   }
 
   def analyzeGroupBy(groupByConf: api.GroupBy,
