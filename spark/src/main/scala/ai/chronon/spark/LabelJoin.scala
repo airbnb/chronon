@@ -23,7 +23,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   )
 
   val metrics = Metrics.Context(Metrics.Environment.LabelJoin, joinConf)
-  private val outputTable = joinConf.metaData.outputTable
+  private val outputTable = joinConf.metaData.outputLabelTable
   private val labelJoinConf = joinConf.labelPart
   private val confTableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
@@ -52,8 +52,15 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    compute(joinConf.left, stepDays, Option(labelDS))
+    val labelDf = compute(joinConf.left, stepDays, Option(labelDS))
+//    val joinOutputDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
+//    val finalDf = createFinalJoinView(labelDf, joinOutputDf)
+    labelDf
   }
+//
+//  def createFinalJoinView(labelDf: DataFrame, joinOutput: DataFrame): DataFrame = {
+//
+//  }
 
   def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
@@ -126,8 +133,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
-    // assign label ds value to avoid null cases
+    // assign label ds value and drop duplicates
     val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(labelDS))
+      .dropDuplicates(labelJoinConf.rowIdentifier)
     updatedJoin.explain()
     updatedJoin.drop(Constants.TimePartitionColumn)
   }

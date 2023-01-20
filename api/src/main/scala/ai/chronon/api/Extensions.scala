@@ -75,6 +75,8 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+    def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
+    def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_final_table"
     def loggedTable = s"${outputTable}_logged"
     def bootstrapTable = s"${outputTable}_bootstrap"
     private def comparisonPrefix = "comparison"
@@ -562,6 +564,11 @@ object Extensions {
         .convertJavaListToScala(labelPart.labels)
         .flatMap(_.groupBy.setups)
         .distinct
+    }
+
+    // a list of columns which can identify a row on left
+    def rowIdentifier: Array[String] = {
+      leftKeyCols ++ Array(Constants.PartitionColumn)
     }
   }
 
