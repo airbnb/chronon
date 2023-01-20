@@ -225,7 +225,6 @@ sbt sphinx
 
 # build artifacts and release to gcloud
 ```shell
-chmod +x build.sh  # one time
 bash build.sh
 bash gcloud_release.sh
 ```
