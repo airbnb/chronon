@@ -76,7 +76,7 @@ object Extensions {
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
-    def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_final_table"
+    def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def loggedTable = s"${outputTable}_logged"
     def bootstrapTable = s"${outputTable}_bootstrap"
     private def comparisonPrefix = "comparison"

@@ -1,7 +1,7 @@
 package ai.chronon.spark.test
 
 import ai.chronon.spark.JoinUtils.{contains_any, set_add}
-import ai.chronon.spark.{JoinUtils, SparkSessionBuilder}
+import ai.chronon.spark.{JoinUtils, SparkSessionBuilder, TableUtils}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -11,9 +11,11 @@ import org.junit.Test
 
 import scala.collection.mutable
 import scala.util.Try
+
 class JoinUtilsTest {
 
-  val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
+  lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
+  private val tableUtils = TableUtils(spark)
 
   @Test
   def testUDFSetAdd(): Unit = {
@@ -209,5 +211,52 @@ class JoinUtilsTest {
       isFailure = false
     )
     assertEquals(3, df.get.columns.length)
+  }
+
+  @Test
+  def testCreateJoinView(): Unit = {
+    val finalViewName = "testCreateView"
+    val leftTableName = "joinUtil.testFeatureTable"
+    val rightTableName = "joinUtil.testLabelTable"
+    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
+    TestUtils.createSampleLabelTableDf(spark).write.saveAsTable(rightTableName)
+    val keys = Array("listing_id", Constants.PartitionColumn)
+
+    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils)
+    val view = tableUtils.sql(s"select * from $finalViewName")
+    view.show()
+    assertEquals(6, view.count())
+    assertEquals(null, view.where(view("ds") === "2022-10-01" && view("listing_id") === "5")
+      .select("label_room_type").first().get(0))
+    assertEquals("SUPER_HOST", view.where(view("ds") === "2022-10-07" && view("listing_id") === "1")
+      .select("label_host_type").first().get(0))
+  }
+
+  @Test
+  def testFilterColumns(): Unit ={
+    val testDf = createSampleTable()
+    val filter = Array("listing", "ds", "feature_review")
+    val filteredDf = JoinUtils.filterColumns(testDf, filter)
+    assertTrue(filteredDf.schema.fieldNames.sorted sameElements filter.sorted)
+  }
+
+  def createSampleTable(tableName:String = "testSampleTable"): DataFrame = {
+    val schema = ai.chronon.api.StructType(
+      tableName,
+      Array(
+        StructField("listing", LongType),
+        StructField("feature_review", LongType),
+        StructField("feature_locale", StringType),
+        StructField("ds", StringType),
+        StructField("ts", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 20L, "US", "2022-10-01", "2022-10-01 10:00:00"),
+      Row(2L, 38L, "US", "2022-10-02", "2022-10-02 11:00:00"),
+      Row(3L, 19L, "CA", "2022-10-01", "2022-10-01 08:00:00")
+    )
+    TestUtils.makeDf(spark, schema, rows)
   }
 }

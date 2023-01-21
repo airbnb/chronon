@@ -29,18 +29,15 @@ class LabelJoinTest {
       labelPart = labelJoinConf
     )
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
-    val computed = runner.computeLabelJoin()
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == Computed == ")
     computed.show()
     val expected = tableUtils.sql(s"""
                                      SELECT v.listing_id as listing,
-                                        ts,
-                                        m_guests,
-                                        m_views,
                                         dim_bedrooms as listing_attributes_dim_bedrooms,
                                         dim_room_type as listing_attributes_dim_room_type,
-                                        v.ds,
-                                        a.ds as label_ds
+                                        a.ds as label_ds,
+                                        v.ds
                                      FROM label_join.listing_views as v
                                      LEFT OUTER JOIN label_join.listing_attributes as a
                                      ON v.listing_id = a.listing_id
@@ -52,18 +49,11 @@ class LabelJoinTest {
 
     val diff = Comparison.sideBySide(computed,
                                      expected,
-                                     List("listing",
-                                          "ds",
-                                          "label_ds",
-                                          "m_guests",
-                                          "m_views",
-                                          "listing_attributes_dim_room_type",
-                                          "listing_attributes_dim_bedrooms"))
+                                     List("listing", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
       println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -79,7 +69,7 @@ class LabelJoinTest {
     )
     // label ds does not exist in label table, labels should be null
     val runner = new LabelJoin(joinConf, tableUtils, "2022-11-01")
-    val computed = runner.computeLabelJoin()
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == Computed == ")
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
@@ -100,7 +90,7 @@ class LabelJoinTest {
     )
 
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
-    val computed = runner.computeLabelJoin()
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == Computed == ")
     computed.show()
     assertEquals(computed.count(), 6)
@@ -111,7 +101,7 @@ class LabelJoinTest {
                               subPartitionFilters = Map(Constants.LabelPartitionColumn -> labelDS))
 
     val runner2 = new LabelJoin(joinConf, tableUtils, labelDS)
-    val refreshed = runner2.computeLabelJoin()
+    val refreshed = runner2.computeLabelJoin(skipFinalJoin = true)
     println(" == Refreshed == ")
     refreshed.show()
     assertEquals(refreshed.count(), 6)
@@ -128,7 +118,7 @@ class LabelJoinTest {
       labelPart = labelJoinConf
     )
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
-    val computed = runner.computeLabelJoin()
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == First Run == ")
     computed.show()
     assertEquals(computed.count(), 6)
@@ -148,7 +138,7 @@ class LabelJoinTest {
       labelPart = updatedLabelJoin
     )
     val runner2 = new LabelJoin(updatedJoinConf, tableUtils, "2022-11-01")
-    val updated = runner2.computeLabelJoin()
+    val updated = runner2.computeLabelJoin(skipFinalJoin = true)
     println(" == Updated Run == ")
     updated.show()
     assertEquals(updated.count(), 12)

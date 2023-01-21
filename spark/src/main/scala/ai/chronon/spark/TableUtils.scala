@@ -12,6 +12,7 @@ import java.time.{Instant, ZoneId}
 import scala.collection.mutable
 import scala.util.{Success, Try}
 
+
 case class TableUtils(sparkSession: SparkSession) {
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"

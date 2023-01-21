@@ -81,7 +81,7 @@ object JoinUtils {
       val leftDataType = leftDf.schema(leftDf.schema.fieldIndex(column)).dataType
       val rightDataType = rightDf.schema(rightDf.schema.fieldIndex(column)).dataType
       assert(leftDataType == rightDataType,
-             s"Column '$column' has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
+        s"Column '$column' has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
     }
 
     val joinedDf = leftDf.join(rightDf, keys, joinType)
@@ -105,5 +105,54 @@ object JoinUtils {
       }
     val finalDf = joinedDf.select(selects: _*)
     finalDf
+  }
+
+  /***
+   * Method to create or replace a view for feature table joining with labels.
+   * Label columns will be prefixed with "label" or custom prefix for easy identification
+   */
+  def createOrReplaceView(viewName: String,
+                          leftTable: String,
+                          rightTable: String,
+                          joinKeys: Array[String],
+                          tableUtils: TableUtils,
+                          viewProperties: Map[String, String] = null,
+                          labelColumnPrefix: String = Constants.LabelColumnPrefix): Unit = {
+    val fieldDefinitions = joinKeys.map(field => s"l.${field}") ++
+      tableUtils.getSchemaFromTable(leftTable)
+        .filterNot(field => joinKeys.contains(field.name))
+        .map(field => s"l.${field.name}") ++
+      tableUtils.getSchemaFromTable(rightTable)
+        .filterNot(field => joinKeys.contains(field.name))
+        .map(field => {
+          if(field.name.startsWith("label")) {
+            s"r.${field.name}"
+          } else {
+            s"r.${field.name} AS ${labelColumnPrefix}_${field.name}"
+          }
+        })
+    val joinKeyDefinitions = joinKeys.map(key => s"l.${key} = r.${key}")
+    val createFragment =
+      s"""CREATE OR REPLACE VIEW $viewName
+         |  AS SELECT
+         |     ${fieldDefinitions.mkString(",\n    ")}
+         |    FROM ${leftTable} AS l LEFT OUTER JOIN ${rightTable} AS r
+         |      ON ${joinKeyDefinitions.mkString(" AND ")}""".stripMargin
+
+    val propertiesFragment = if (viewProperties != null && viewProperties.nonEmpty) {
+      s"""TBLPROPERTIES (
+         |    ${viewProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |)""".stripMargin
+    } else {
+      ""
+    }
+    val sqlStatement = Seq(createFragment, propertiesFragment).mkString("\n")
+    tableUtils.sql(sqlStatement)
+  }
+
+  def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {
+    val columnsToDrop = df.columns
+      .filterNot(col => filter.contains(col))
+    df.drop(columnsToDrop:_*)
   }
 }

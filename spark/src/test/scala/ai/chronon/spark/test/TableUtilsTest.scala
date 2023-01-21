@@ -2,12 +2,13 @@ package ai.chronon.spark.test
 
 import ai.chronon.api._
 import ai.chronon.spark._
+import ai.chronon.spark.test.TestUtils.makeDf
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
-import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
+import scala.util.{Try}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
@@ -87,13 +88,6 @@ class TableUtilsTest {
     })
   }
 
-  private def makeDf(schema: StructType, rows: List[Row]): DataFrame = {
-    spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
-    )
-  }
-
   @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
@@ -104,6 +98,7 @@ class TableUtilsTest {
       StructField("string_field", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1 :+ StructField("ds", StringType)
@@ -114,6 +109,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -138,6 +134,7 @@ class TableUtilsTest {
       StructField("string_field", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -150,6 +147,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1 :+ StructField("ds", StringType)
@@ -170,6 +168,7 @@ class TableUtilsTest {
       StructField("int_field", IntType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -182,6 +181,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -216,6 +216,7 @@ class TableUtilsTest {
       StructField("label_ds", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -254,6 +255,7 @@ class TableUtilsTest {
       StructField("label_ds", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
