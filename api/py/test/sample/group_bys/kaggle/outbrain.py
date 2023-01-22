@@ -10,6 +10,7 @@ from ai.chronon.group_by import (
     Accuracy
 )
 
+from sources.kaggle.outbrain import outbrain_left_events
 from ai.chronon.utils import get_staging_query_output_table_name
 from staging_queries.kaggle.outbrain import base_table
 
@@ -22,33 +23,6 @@ There is no definitive guidance on when to use one approach over the other. In t
 GroupBys that share a source and aggregations, and only vary in a few fields like Primary Key
 and accuracy, so combining the logic in one file makes sense.
 """
-
-
-def outbrain_left_events(*columns):
-    """
-    Defines a source based off of the output table of the `base_table` StagingQuery
-    """
-    return Source(events=EventSource(
-        table=get_staging_query_output_table_name(base_table),
-        query=Query(
-            selects=select(*columns),
-            time_column="ts",
-        ),
-    ))
-
-
-def outbrain_left_events_sampled(*columns):
-    """
-    Same as above, but sampled down to 10%
-    """
-    return Source(events=EventSource(
-        table=get_staging_query_output_table_name(base_table),
-        query=Query(
-            selects=select(*columns),
-            time_column="ts",
-            wheres=["HASH({}) % 100 < 10".format(",".join(columns))]
-        ),
-    ))
 
 
 def ctr_group_by(*keys, accuracy):
@@ -79,8 +53,6 @@ def ctr_group_by(*keys, accuracy):
     )
 
 
-ad_doc = ctr_group_by("ad_id", "document_id", accuracy=Accuracy.SNAPSHOT)
-ad_uuid = ctr_group_by("ad_id", "uuid", accuracy=Accuracy.TEMPORAL)
 """
 Here we are creating two GroupBys keyed off of ad_id, one with document_id as a secondary key and the
 other with user id as it's secondary key.
@@ -94,10 +66,12 @@ values are intra-day correct, online should be as well for consistency). In this
 the output of a staging query, which is always batch, so the user would need to convert the source to a streaming source,
 as we did in the clicks_by_ad group_by.
 """
+ad_doc = ctr_group_by("ad_id", "document_id", accuracy=Accuracy.SNAPSHOT)
+ad_uuid = ctr_group_by("ad_id", "uuid", accuracy=Accuracy.TEMPORAL)
 
 
-ad_platform = ctr_group_by("ad_id", "platform", "geo_location", accuracy=Accuracy.SNAPSHOT)
 """
 Snapshot accuracy is a reasonable choice here because platform/geo is a very coarse grained aggregations,
 so values are unlikely to meaningfully change intra day (midnight accuracy is sufficient)
 """
+ad_platform = ctr_group_by("ad_id", "platform", "geo_location", accuracy=Accuracy.SNAPSHOT)
