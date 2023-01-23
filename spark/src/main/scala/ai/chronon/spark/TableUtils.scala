@@ -33,13 +33,9 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def isPartitioned(tableName: String): Boolean = {
-    val nameSplit = tableName.split("\\.")
-    assert(nameSplit.length <= 2, s"Invalid table name $tableName, format must be `table` or `db.table`")
-    val (db, table) = nameSplit match {
-      case split if split.length == 1 => (None, split(0))
-      case split if split.length == 2 => (Some(split(0)), split(1))
-    }
-    sparkSession.sessionState.catalog.listPartitionNames(TableIdentifier(table, db)).nonEmpty
+    // TODO: use proper way to detect if a table is partitioned or not
+    val schema = getSchemaFromTable(tableName)
+    schema.fieldNames.contains(Constants.PartitionColumn)
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
