@@ -4,10 +4,12 @@ This doc walks you through the steps to create a training dataset with Chronon f
 
 Includes:
 - Example implementation of the main API components for defining features - GroupBy and Join.
-- An overview of the workflow for authoring and testing these objects. 
+- The workflow for authoring these entities.
+- The workflow for backfilling training data.
 
 Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
+- Running streaming jobs and online serving of data (this only covers offline training data).
 
 ## Setup
 One time steps to get up and running with Chronon.
