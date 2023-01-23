@@ -45,7 +45,7 @@ exclude_patterns = []
 html_theme = 'sphinx_book_theme'
 html_theme_options = {
     "github_url": "https://github.com/airbnb/chronon",
-    "collapse_navigation": True,
+    # "collapse_navigation": False,
 }
 
 html_title = "Chronon"
