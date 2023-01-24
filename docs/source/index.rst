@@ -3,10 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-What is Chronon?
+Chronon documentation
 =====================
 
 .. toctree::
+   :maxdepth: 1
    :hidden:
 
    Introduction
@@ -16,16 +17,7 @@ What is Chronon?
    Online_Offline_Consistency
    Code_Guidelines
 
-Chronon is a feature engineering framework that can consume a variety of data sources and convert them into features for both training and serving. Chronon has been successfully used to power numerous business critical use-cases at Airbnb, for the last few years.
-
-In the Chronon API you can declare:
-  * **The type of Data Source to consume from** - Event streams, Fact/Dim tables in warehouse, DB table snapshots, Slowly changing dimension tables and Change Data Streams. You specify one of these types and Chronon figures out how to derive features correctly.
-  * **The context to produce results in** - Online, as low-latency end-points for feature serving. Offline as hive tables, for generating training data.
-  * **The time-accuracy of the computation** - Temporal or Snapshot. Temporal refers to updating feature values in real-time in an online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
-  * **The ** -
-      * **GroupBy** - a powerful aggregation primitive with support for windowed and bucketed aggregations over complex types.
-      * **Join** - a data gathering primitive to put together feature data from various GroupBy-s and external sources, along with labels.
-      * **Staging Query** - supports running arbitrary spark sql queries with added resumability.
+Chronon is a feature engineering framework that allows you to compute and store features for offline model training and online feature serving with unified feature definitions.
 
 .. grid:: 2
 

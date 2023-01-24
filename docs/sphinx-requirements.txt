@@ -3,6 +3,3 @@ myst-parser
 pydata-sphinx-theme
 build
 sphinx-design
-sphinx-book-theme
-thrift<0.14
-insegel

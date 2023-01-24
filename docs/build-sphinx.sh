@@ -5,7 +5,7 @@ BUILD_DIR=docs/build
 VIRTUAL_ENV=${BUILD_DIR}/sphinx
 
 # Cleanup old artifacts
-# rm -rf ${BUILD_DIR}
+rm -rf ${BUILD_DIR}
 
 # Setup Virtualenv for Sphinx with all its dependencies
 virtualenv ${VIRTUAL_ENV}
@@ -13,7 +13,7 @@ source ${VIRTUAL_ENV}/bin/activate
 pip install -r docs/sphinx-requirements.txt
 
 # Install the repo's Chronon python API
-# python -m build api/py
+python -m build api/py
 pip install api/py/dist/chronon-ai*.tar.gz
 
 # Run the Sphinx build
