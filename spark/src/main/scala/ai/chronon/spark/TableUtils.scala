@@ -209,7 +209,7 @@ case class TableUtils(sparkSession: SparkSession) {
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
       val repartitionCols =
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)

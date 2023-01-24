@@ -4,10 +4,12 @@ This doc walks you through the steps to create a training dataset with Chronon f
 
 Includes:
 - Example implementation of the main API components for defining features - GroupBy and Join.
-- An overview of the workflow for authoring and testing these objects. 
+- The workflow for authoring these entities.
+- The workflow for backfilling training data.
 
 Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
+- Running streaming jobs and online serving of data (this only covers offline training data).
 
 ## Setup
 One time steps to get up and running with Chronon.
@@ -19,16 +21,16 @@ git clone git@github.com:airbnb/chronon.git
 export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
 ```
 
-#### 0.1 Download Kaggle data
+#### 1. Download Kaggle data
+
+Download `clicks_train.csv` and `events.csv` from the following location, and put them into a `~/kaggle_outbrain` directory.
 
 https://www.kaggle.com/competitions/outbrain-click-prediction/data
 
-```aidl
-
-```
+To keep this tutorial brief, we'll only use these datasets. However, you could always download more data and experiment with joining it in.
 
 
-#### 1. Download and setup spark (assuming you have a jdk already setup)
+#### 2. Download and setup spark (assuming you have a jdk already setup)
 ```shell
 cd ~
 curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
@@ -36,11 +38,6 @@ tar xf spark-2.4.8-bin-hadoop2.7.tgz
 export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
 ```
 
-#### 2. Build local jar - with the csv loader
-```shell
-# From the root of the project
-sbt spark_uber/assembly
-```
 
 #### 3. Now switch to the config repo (within the project)
 This is where we will do the bulk of development iterations from
@@ -104,14 +101,11 @@ Now that we have our compiled file, we can pass it into the `run.py` runner whic
 ```shell
 mkdir ~/kaggle_outbrain
 
-DRIVER_MEMORY=4G EXECUTOR_CORES=6 EXECUTOR_MEMORY=18G PARALLELISM=10 MAX_EXECUTORS=1 \
+DRIVER_MEMORY=2G EXECUTOR_CORES=6 EXECUTOR_MEMORY=8G PARALLELISM=10 MAX_EXECUTORS=1 \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
---chronon-jar=/Users/$USER/repos/chronon/spark/target/scala-2.11/{your-jar-file-name} \
 --conf=production/staging_queries/kaggle/outbrain.base_table \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
 ```
-
-**Note: you need to replace `{your-jar-file-name}` in the command above.** The sbt build command will suffix the filename with the name of your branch, so it might be something like spark_uber-assembly--dev-branch.jar.
 
 As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully. Some shell settings might have TODO
 
@@ -145,9 +139,8 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/ou
 
 Running the join will backfill a training dataset with each of the features values computed correctly for each row defined on the `left` side of the join.
 ```shell
-DRIVER_MEMORY=16G EXECUTOR_MEMORY=16G EXECUTOR_CORES=6 PARALLELISM=100 MAX_EXECUTORS=1 \
+DRIVER_MEMORY=4G EXECUTOR_MEMORY=8G EXECUTOR_CORES=6 PARALLELISM=100 MAX_EXECUTORS=1 \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
---chronon-jar=/Users/$USER/repos/chronon/spark/target/scala-2.11/spark_uber-assembly-csv_tool-0.0.18-SNAPSHOT.jar \
 --conf=production/joins/kaggle/outbrain.training_set \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet \
 --ds=2016-07-01 --step-days=1

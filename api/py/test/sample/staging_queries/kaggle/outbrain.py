@@ -17,6 +17,8 @@ base_table = StagingQuery(
         JOIN
             kaggle_outbrain.events as events
         ON clicks_train.display_id = events.display_id
+        AND ABS(HASH(clicks_train.display_id)) % 100  < 5
+        AND ABS(HASH(events.display_id)) % 100  < 5
     """,
     metaData=MetaData(
         name='outbrain_left',
