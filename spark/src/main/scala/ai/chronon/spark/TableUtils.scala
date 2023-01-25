@@ -32,17 +32,10 @@ case class TableUtils(sparkSession: SparkSession) {
       .toMap
   }
 
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
-
   def isPartitioned(tableName: String): Boolean = {
-    val nameSplit = tableName.split("\\.")
-    assert(nameSplit.length <= 2, s"Invalid table name $tableName, format must be `table` or `db.table`")
-    val (db, table) = nameSplit match {
-      case split if split.length == 1 => (None, split(0))
-      case split if split.length == 2 => (Some(split(0)), split(1))
-    }
-    sparkSession.sessionState.catalog.listPartitionNames(TableIdentifier(table, db)).nonEmpty
+    // TODO: use proper way to detect if a table is partitioned or not
+    val schema = getSchemaFromTable(tableName)
+    schema.fieldNames.contains(Constants.PartitionColumn)
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
@@ -182,29 +175,6 @@ case class TableUtils(sparkSession: SparkSession) {
     repartitionAndWrite(finalizedDf, tableName, saveMode)
   }
 
-<<<<<<< HEAD
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    val rowCount = df.count()
-    println(s"$rowCount rows requested to be written into table $tableName")
-    if (rowCount > 0) {
-      // at-least a million rows per partition - or there will be too many files.
-      val rddPartitionCount = math.min(800, math.ceil(rowCount / 1000000.0).toInt)
-      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
-
-      val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
-      val repartitionCols =
-        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-          Seq(Constants.PartitionColumn, saltCol)
-        } else { Seq(saltCol) }
-      saltedDf
-        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
-        .drop(saltCol)
-        .write
-        .mode(saveMode)
-        .insertInto(tableName)
-      println(s"Finished writing to $tableName")
-=======
   def sql(query: String): DataFrame = {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
     println(
@@ -225,7 +195,6 @@ case class TableUtils(sparkSession: SparkSession) {
       if (tableProperties != null && tableProperties.nonEmpty) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
->>>>>>> 15fecee (undo table utils changes)
     }
 
     repartitionAndWrite(df, tableName, saveMode)
@@ -240,7 +209,7 @@ case class TableUtils(sparkSession: SparkSession) {
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
       val repartitionCols =
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)
