@@ -108,13 +108,9 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
 ```
 
-
 As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully.
 
 **Important:** If your machine doesn't have enough available RAM, this job may OOM. It might be better to quit other memory-intensive applications before running.
-
-As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully. Some shell settings might have TODO
-
 
 ### Step 2 - Create some GroupBys
 
