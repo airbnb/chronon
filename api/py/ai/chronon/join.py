@@ -147,17 +147,14 @@ def ExternalSource(name: str,
     :type value_fields: List of tuples of string and DataType. This is what
         the ExternalSource handler will respond with.
         Eg.,
-    ```
-    [
-        ('value0', DataType.INT),
-        ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
-        ('value2', DataType.STRUCT(
-            name = 'Context',
-            ('field1', DataType.INT),
-            ('field2', DataType.DOUBLE)
-        ))
-    ]
-    ```
+        ```[('value0', DataType.INT),
+            ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
+            ('value2', DataType.STRUCT(
+                name = 'Context',
+                ('field1', DataType.INT),
+                ('field2', DataType.DOUBLE)
+            ))]
+        ```
     """
     assert name != "contextual", "Please use `ContextualSource`"
     return api.ExternalSource(
@@ -190,7 +187,7 @@ def ExternalPart(source: api.ExternalSource,
     external source's keys. "vendor" and "buyer" on left side (query map)
     could both map to a "user" in an account data external source. You would
     create one ExternalPart for vendor with params:
-    `(key_mapping={vendor: user}, prefix=vendor)`
+        `(key_mapping={vendor: user}, prefix=vendor)`
     another for buyer.
 
     This doesn't have any implications offline besides logging. "right_parts"
