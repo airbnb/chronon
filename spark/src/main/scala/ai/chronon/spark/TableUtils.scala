@@ -201,6 +201,22 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    val finalDf = if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+      val saltCol = "random_partition_salt"
+      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
+      saltedDf.repartition(saltedDf.col(Constants.PartitionColumn), saltedDf.col(saltCol))
+        .drop(saltCol)
+    } else {
+      df
+    }
+
+    finalDf
+      .write
+      .mode(saveMode)
+      .insertInto(tableName)
+    /*
+    println(s"Finished writing to $tableName")
+    df.repartition()
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
@@ -209,7 +225,7 @@ case class TableUtils(sparkSession: SparkSession) {
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
+      val saltedDf = df.withColumn(saltCol, round(rand() * 10))
       val repartitionCols =
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)
@@ -221,7 +237,7 @@ case class TableUtils(sparkSession: SparkSession) {
         .mode(saveMode)
         .insertInto(tableName)
       println(s"Finished writing to $tableName")
-    }
+    } */
   }
 
   private def createTableSql(tableName: String,
