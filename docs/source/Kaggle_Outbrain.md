@@ -97,7 +97,8 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --input_path=staging_q
 
 #### Run the staging query
 
-Now that we have our compiled file, we can pass it into the `run.py` runner which will execute the SQL and produce an output table for us to use next. 
+Now that we have our compiled file, we can pass it into the `run.py` runner which will execute the SQL and produce an output table for us to use next.
+
 ```shell
 mkdir ~/kaggle_outbrain
 
@@ -107,7 +108,9 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
 ```
 
-As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully. Some shell settings might have TODO
+As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully.
+
+**Important:** If your machine doesn't have enough available RAM, this job may OOM. It might be better to quit other memory-intensive applications before running.
 
 ### Step 2 - Create some GroupBys
 
@@ -145,6 +148,9 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet \
 --ds=2016-07-01 --step-days=1
 ```
+
+**Important:** If your machine doesn't have enough available RAM, this job may OOM. It might be better to quit other memory-intensive applications before running.
+
 
 #### Access the data
 You can now see the parquet data here.
