@@ -75,14 +75,17 @@ case class TableUtils(sparkSession: SparkSession) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
-        .select("partition.ds", "partition.hr")
+        .select(s"partition.${Constants.PartitionColumn}", s"partition.${Constants.HourPartitionColumn}")
         .collect()
         .filter(_.get(1) == null)
         .map(_.getString(0))
         .toSeq
     } else {
       partitionsDf
-        .select("partition.ds")
+        // TODO(FCOMP-2242) We should factor out a provider for getting Iceberg partitions
+        //  so we can inject a Stripe-specific one that takes into account locality_zone
+        .select(s"partition.${Constants.PartitionColumn}")
+        .where("partition.locality_zone == 'DEFAULT'")
         .collect()
         .map(_.getString(0))
         .toSeq

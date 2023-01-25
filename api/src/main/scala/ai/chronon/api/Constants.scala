@@ -9,13 +9,16 @@ import java.util.concurrent.atomic.AtomicReference
 // heavier lift to switch out to providing the right constant names on a per-source basis.
 trait ConstantNameProvider {
   def TimeColumn: String
-  def PartitionColumn: String
+  def DatePartitionColumn: String
+  def HourPartitionColumn: String
   def Partition: PartitionSpec
 }
 
 class ChrononDefaultConstantNameProvider extends ConstantNameProvider {
   override def TimeColumn: String = "ts"
-  override def PartitionColumn: String = "ds"
+  override def DatePartitionColumn: String = "ds"
+
+  override def HourPartitionColumn: String = "hr"
   override def Partition: PartitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
 }
 
@@ -26,7 +29,8 @@ object Constants {
     constantNameProvider.set(provider)
 
   def TimeColumn: String = constantNameProvider.get().TimeColumn
-  def PartitionColumn: String = constantNameProvider.get().PartitionColumn
+  def PartitionColumn: String = constantNameProvider.get().DatePartitionColumn
+  def HourPartitionColumn: String = constantNameProvider.get().HourPartitionColumn
   val LabelPartitionColumn: String = "label_ds"
   val TimePartitionColumn: String = "ts_ds"
   val ReversalColumn: String = "is_before"
