@@ -174,7 +174,9 @@ password=<API Key>
 ```
 
 ## Setup for Publishing artifacts to MavenCentral (via sonatype)
-1. Create a sonatype account if you don't have one.
+1. Create a sonatype account if you don't have one. 
+   1. Sign up here https://issues.sonatype.org/ 
+   2. Create an issue to add your username created above to `ai.chronon`. Here is a sample [issue](https://issues.sonatype.org/browse/OSSRH-88230).
 2. `brew install gpg` on your mac
 3. In `~/.sbt/1.0/sonatype.sbt` add
 ```scala
