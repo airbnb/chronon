@@ -70,6 +70,27 @@ class LabelJoinTest {
   }
 
   @Test
+  def testLabelDsDoesNotExist(): Unit = {
+    val labelJoinConf = createTestLabelJoin(30, 20)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = "test_null_label_ds", namespace = namespace, team = "chronon"),
+      left,
+      labelPart = labelJoinConf
+    )
+    // label ds does not exist in label table, labels should be null
+    val runner = new LabelJoin(joinConf, tableUtils, "2022-11-01")
+    val computed = runner.computeLabelJoin()
+    println(" == Computed == ")
+    computed.show()
+    assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
+    assertEquals(computed
+      .select("listing_attributes_dim_room_type")
+      .first()
+      .get(0),
+      null)
+  }
+
+  @Test
   def testLabelRefresh(): Unit = {
     val labelJoinConf = createTestLabelJoin(60, 20)
     val joinConf = Builders.Join(

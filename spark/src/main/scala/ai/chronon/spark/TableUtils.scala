@@ -5,11 +5,13 @@ import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{col, count, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+
 import scala.collection.mutable
 import scala.util.{Success, Try}
+
+import org.apache.spark.sql.catalyst.TableIdentifier
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -28,6 +30,12 @@ case class TableUtils(sparkSession: SparkSession) {
         p(0) -> p(1)
       }
       .toMap
+  }
+
+  def isPartitioned(tableName: String): Boolean = {
+    // TODO: use proper way to detect if a table is partitioned or not
+    val schema = getSchemaFromTable(tableName)
+    schema.fieldNames.contains(Constants.PartitionColumn)
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
@@ -201,7 +209,7 @@ case class TableUtils(sparkSession: SparkSession) {
       println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
 
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 1000000))
+      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
       val repartitionCols =
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)

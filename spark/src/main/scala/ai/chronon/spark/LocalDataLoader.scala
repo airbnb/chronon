@@ -10,6 +10,7 @@ import java.io.File
 
 object LocalDataLoader {
   def writeTableFromFile(file: File, tableName: String, session: SparkSession): Unit = {
+    println(s"Checking table: ${tableName}")
     if (session.catalog.tableExists(tableName)) return
     val extension = file.getName.split("\\.").last
     if (!Seq("csv", "json", "jsonl").contains(extension)) {
@@ -58,6 +59,7 @@ object LocalDataLoader {
       val (ns, table) = if (splits.size == 2) { nsFields -> splits(0) }
       else { (nsFields :+ splits(0)) -> splits(1) }
       val namespace = ns.mkString("_")
+      println(s"File: ${f.getPath}")
       if (!session.catalog.databaseExists(namespace))
         session.sql(s"CREATE DATABASE $namespace")
       writeTableFromFile(f, namespace + "." + table, session)
