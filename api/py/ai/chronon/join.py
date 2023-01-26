@@ -45,7 +45,7 @@ def JoinPart(group_by: api.GroupBy,
             group_by_module_name = ref['__name__']
             break
     logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-    group_by_module = importlib.import_module(group_by_module_name)
+    group_by_module = importlib.import_module(group_by_module_name) # nosemgrep no user-supplied input
     __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
     if key_mapping:
         utils.check_contains(key_mapping.values(),

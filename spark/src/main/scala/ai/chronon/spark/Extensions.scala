@@ -63,7 +63,7 @@ object Extensions {
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
       val minMaxDf: DataFrame = df.sqlContext
-        .sql(s"select min($columnName), max($columnName) from $viewName")
+        .sql(s"select min($columnName), max($columnName) from $viewName") // nosemgrep no user-supplied input
       assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
       val minMaxRow = minMaxDf.collect()(0)
       df.sparkSession.catalog.dropTempView(viewName)

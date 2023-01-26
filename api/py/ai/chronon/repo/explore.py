@@ -171,7 +171,7 @@ def git_info(file_paths, exclude=None, root=CWD):
                 args = (
                     f"echo $(git log -n 2 --pretty='format:{BLUE} %as/%an/%ae' {exclude_args} -- "
                     f"{file_path.replace(root, '')})")
-                procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
+                procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True))) # nosemgrep no user-supplied input
 
         result = {}
         for file_path, proc in procs:

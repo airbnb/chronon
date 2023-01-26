@@ -130,7 +130,7 @@ def get_mod_name_from_gc(obj, mod_prefix):
 
 def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     """generate output table name for staging query job"""
-    staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries"))
+    staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries")) # nosemgrep no user-supplied input
     eo.import_module_set_name(staging_query_module, api.StagingQuery)
     return staging_query.metaData.name.replace('.', '_')
 

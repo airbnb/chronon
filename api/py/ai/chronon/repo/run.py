@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import subprocess
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosemgrep this script already downloads a jar from the same trusted URL
 from datetime import datetime
 
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class} '
@@ -90,12 +90,12 @@ def retry_decorator(retries=3, backoff=20):
 
 def check_call(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_call(cmd.split())
+    return subprocess.check_call(cmd.split()) # nosemgrep no user-supplied input
 
 
 def check_output(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_output(cmd.split()).strip()
+    return subprocess.check_output(cmd.split()).strip() # nosemgrep no user-supplied input
 
 
 def download_only_once(url, path):
