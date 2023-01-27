@@ -272,7 +272,9 @@ struct Join {
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
     6: optional LabelPart labelPart
-
+    7: optional list<BootstrapPart> bootstrapParts
+    // Fields on left that uniquely identifies a single record
+    8: optional list<string> rowIds
     /**
     * List of a derived column names to the expression based on joinPart / externalPart columns
     * The expression can be any valid Spark SQL select clause without aggregation functions.
@@ -288,7 +290,16 @@ struct Join {
     * Including a column with key "*" and value "*", means that every raw column will be included along with the derived
     * columns.
     **/
-    7: optional list<Derivation> derivations
+    9: optional list<Derivation> derivations
+}
+
+struct BootstrapPart {
+    1: optional MetaData metaData
+    // Precomputed table that is joinable to rows on the left
+    2: optional string table
+    3: optional Query query
+    // Join keys to the left. If null, defaults to rowIds on the Join.
+    4: optional list<string> keyColumns
 }
 
 // Label join parts and params

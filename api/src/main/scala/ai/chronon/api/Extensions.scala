@@ -80,7 +80,11 @@ object Extensions {
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
 
     def loggedTable = s"${outputTable}_logged"
+<<<<<<< HEAD
 
+=======
+    def bootstrapTable = s"${outputTable}_bootstrap"
+>>>>>>> 79374ff1fd7791c572573ba2196ef0cd9d61c0cf
     private def comparisonPrefix = "comparison"
 
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
@@ -474,14 +478,18 @@ object Extensions {
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
-    private def schemaNames(schema: TDataType): Array[String] =
+    private def schemaNames(schema: TDataType): Array[String] = schemaFields(schema).map(_.name)
+
+    private def schemaFields(schema: TDataType): Array[StructField] =
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(schema.params)
-        .map(_.name)
+        .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
         .toArray
 
     lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
     lazy val valueNames: Array[String] = schemaNames(externalSource.valueSchema)
+    lazy val keyFields: Array[StructField] = schemaFields(externalSource.keySchema)
+    lazy val valueFields: Array[StructField] = schemaFields(externalSource.valueSchema)
 
     def isContextualSource: Boolean = externalSource.metadata.name == Constants.ContextualSourceName
   }
@@ -534,6 +542,13 @@ object Extensions {
       newExternalPart.source.unsetMetadata()
       ThriftJsonCodec.md5Digest(newExternalPart)
     }
+
+    lazy val keySchemaFull: Array[StructField] = externalPart.source.keyFields.map(field =>
+      StructField(externalPart.rightToLeft.getOrElse(field.name, field.name), field.fieldType))
+
+    lazy val valueSchemaFull: Array[StructField] =
+      externalPart.source.valueFields.map(field => StructField(fullName + "_" + field.name, field.fieldType))
+
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
@@ -575,7 +590,9 @@ object Extensions {
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(labelPart.labels)
-        .flatMap { _.rightToLeft.values }
+        .flatMap {
+          _.rightToLeft.values
+        }
         .toSet
         .toArray
     }
@@ -586,6 +603,30 @@ object Extensions {
         .flatMap(_.groupBy.setups)
         .distinct
     }
+  }
+
+  implicit class BootstrapPartOps(val bootstrapPart: BootstrapPart) extends Serializable {
+
+    /**
+      * Compress the info such that the hash can be stored at record and
+      * used to track which records are populated by which bootstrap tables
+      */
+    def semanticHash: String = {
+      val newPart = bootstrapPart.deepCopy()
+      bootstrapPart.unsetMetaData()
+      ThriftJsonCodec.md5Digest(newPart)
+    }
+
+    def keys(join: Join): Seq[String] =
+      if (bootstrapPart.isSetKeyColumns) {
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(bootstrapPart.keyColumns)
+      } else if (join.isSetRowIds) {
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.getRowIds)
+      } else {
+        throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
+      }
+
+    def isLogTable(join: Join): Boolean = bootstrapPart.table == join.metaData.loggedTable
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
@@ -623,7 +664,8 @@ object Extensions {
           Map(derivedKey -> derivedHash)
         }
         .getOrElse(Map.empty)
-      partHashes ++ Map(leftSourceKey -> leftHash) ++ derivedHashMap
+      val bootstrapHash = ThriftJsonCodec.md5Digest(join.bootstrapParts)
+      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap
     }
 
     /*
@@ -831,6 +873,8 @@ object Extensions {
       else
         ""
     }
+
+    def prettyInline: String = strs.mkString("[", ",", "]")
   }
 
   implicit class QueryOps(query: Query) {

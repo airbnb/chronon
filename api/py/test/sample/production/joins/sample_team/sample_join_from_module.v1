@@ -14,7 +14,7 @@
     "tableProperties": {
       "source": "chronon"
     },
-    "outputNamespace": "# TODO: output namespace of hive tables that chronon produces",
+    "outputNamespace": "chronon_db",
     "team": "sample_team",
     "offlineSchedule": "@daily"
   },
@@ -115,7 +115,7 @@
           "tableProperties": {
             "source": "chronon"
           },
-          "outputNamespace": "# TODO: output namespace of hive tables that chronon produces",
+          "outputNamespace": "chronon_db",
           "team": "sample_team"
         },
         "sources": [
