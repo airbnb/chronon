@@ -298,7 +298,7 @@ struct LabelPart {
     1: optional list<JoinPart> labels
     // The earliest date label should be refreshed
     2: optional i32 leftStartOffset
-    // The most rencet date label should be refreshed.
+    // The most recent date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
     3: optional i32 leftEndOffset
 //    4: optional JoinType joinType
