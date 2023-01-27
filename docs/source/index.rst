@@ -3,95 +3,78 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Chronon documentation
-=====================
-
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :hidden:
 
-   Introduction
+   Getting_Started
+   Concepts
    Aggregations
-   Integration_Guide
    Python_API
+   Kaggle_Outbrain
    Online_Offline_Consistency
    Code_Guidelines
 
-Chronon is a feature engineering framework that allows you to compute and store features for offline model training and online feature serving with unified feature definitions.
+What ?
+=====================
+Chronon is a fast, powerful, production-grade feature engineering framework. Chronon can generate pipelines that produce training data, low-latency end-points for serving features and generate metrics computation pipelines for monitoring data quality. Chronon has been used to power various business-critical use-cases.
 
-.. grid:: 2
+* Consume data from a variety of Sources - Event streams, Fact/Dim tables in warehouse, DB table snapshots, Slowly changing dimension tables, Change Data Streams, etc.
+* Produce results both online and offline - Online, as low-latency end-points for feature serving, or Offline as hive tables, for generating training data.
+* That can be updated in real time: You can configure the accuracy of the result  to be either Temporal or Snapshot. Temporal refers to updating feature values in real-time in an online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
+* With a powerful python API - which adds time and windowing  along with the above mentioned concepts as first class ideas to the familiar SQL primitives like group-by, join, select etc, while retaining the full flexibility and composability offered by Python.
 
-    .. grid-item-card::
-        :img-top: ../source/_static/index-images/getting_started.svg
+Being able to flexibly compose these concepts to describe data processing is what makes feature engineering in Chronon productive.
 
-        Getting Started
-        ^^^^^^^^^^^^^^^
+Example
+=====================
+This is what a simple Chronon Group-By looks like.
 
-        New to Chronon? Check out the Absolute Beginner's Guide. It contains an
-        introduction to Chronon's main concepts and links to additional tutorials.
+.. code-block:: python
 
-        +++
+    # same definition creates offline datasets and online end-points
+    view_features = GroupBy(
+       sources=[
+           EventSource(
+               # apply the transform on offline and streaming data
+               table="user_activity.user_views_table",
+               topic="user_views_stream",
+               query=query.Query(
+                   # specify any spark sql expression fragments
+                   # built-in functions, UDFs, arithmetic operations, inline-lambdas, struct types etc.
+                   selects={
+                       "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
+                   },
+                   wheres=["user != null"]
+               ))
+       ],
+       # composite keys
+       keys=["user", "item"],
+       aggregations=[
+           Aggregation(
+               operation=Operation.COUNT,
+               # automatically explode aggregation list type input columns
+               input_column=view,
+               #multiple windows for the same input
+               windows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
+       ],
+       # toggle between fresh vs daily updated features
+       accuracy=Accuracy.TEMPORAL,
+    )
 
-        .. button-ref:: Introduction
-            :expand:
-            :color: secondary
-            :click-parent:
+Getting Started
+=====================
+If you wish to work in an existing chronon repo, simply run and checkout
 
-            To the introduction
+.. code-block:: bash
 
-    .. grid-item-card::
-        :img-top: ../source/_static/index-images/user_guide.svg
+   pip install chronon-ai
 
-        User Guide
-        ^^^^^^^^^^
+If you wish to setup a chronon repo and install all the necessary packages, simply run
 
-        The user guide provides in-depth information on the
-        key concepts of Chronon with useful background information and explanation.
+.. code-block:: bash
 
-        +++
+   source <(curl -s https://storage.googleapis.com/chronon/releases/init.sh)
 
-        .. button-ref:: Integration_Guide
-            :expand:
-            :color: secondary
-            :click-parent:
-
-            To the user guide
-
-    .. grid-item-card::
-        :img-top: ../source/_static/index-images/api.svg
-
-        API Reference
-        ^^^^^^^^^^^^^
-
-        The reference guide contains a detailed description of the functions,
-        modules, included in Chronon. The reference describes how the
-        methods work and which parameters can be used. It assumes that you have an
-        understanding of the key concepts.
-
-        +++
-
-        .. button-ref:: Python_API
-            :expand:
-            :color: secondary
-            :click-parent:
-
-            To the reference guide
-
-    .. grid-item-card::
-        :img-top: ../source/_static/index-images/contributor.svg
-
-        Contributor's Guide
-        ^^^^^^^^^^^^^^^^^^^
-
-        Want to add to the codebase? Can help add translation or a flowchart to the
-        documentation? The contributing guidelines will guide you through the
-        process of improving Chronon.
-
-        +++
-
-        .. button-ref:: Code_Guidelines
-            :expand:
-            :color: secondary
-            :click-parent:
-
-            To the contributor's guide
+Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
+Find more details in the Getting Started section.

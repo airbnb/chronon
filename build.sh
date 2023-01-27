@@ -49,7 +49,6 @@ mkdir releases
 mv ${DOC_BUILD}/html releases/
 rm -rf ${DOC_BUILD}
 tar -zcf releases/repo.tar.gz -C api/py/test/sample .
-mkdir -p releases/
 mv "spark/target/scala-2.11/${SBT_JAR}" releases/
 cp init.sh releases/init.sh
 
