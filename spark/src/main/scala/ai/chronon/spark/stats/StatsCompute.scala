@@ -32,7 +32,7 @@ object StatsGenerator {
   val nullRatePrefix = "null_rate__"
   val totalColumn = "total"
   val ignoreColumns = Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn)
-  val finalizedPercentiles = Seq(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
+  val finalizedPercentiles = (5 until 1000 by 5).map(_.toDouble / 1000)
 
   /** Stats applied to any column */
   def anyTransforms(column: Column): Seq[MetricTransform] = Seq(

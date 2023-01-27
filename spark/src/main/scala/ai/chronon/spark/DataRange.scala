@@ -23,7 +23,7 @@ case class TimeRange(start: Long, end: Long) extends DataRange {
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
-case class PartitionRange(start: String, end: String) extends DataRange {
+case class PartitionRange(start: String, end: String) extends DataRange with Ordered[PartitionRange] {
 
   def valid: Boolean =
     (Option(start), Option(end)) match {
@@ -92,4 +92,25 @@ case class PartitionRange(start: String, end: String) extends DataRange {
 
   def shift(days: Int): PartitionRange =
     PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+
+  override def compare(that: PartitionRange): Int = {
+    def compareDate(left: String, right: String): Int = {
+      if (left == right) {
+        0
+      } else if (left == null) {
+        -1
+      } else if (right == null) {
+        1
+      } else {
+        left compareTo right
+      }
+    }
+
+    val compareStart = compareDate(this.start, that.start)
+    if (compareStart != 0) {
+      compareStart
+    } else {
+      compareDate(this.end, that.end)
+    }
+  }
 }

@@ -33,7 +33,7 @@
     },
     "sample_team": {
         "description": "Team description",
-        "namespace": "# TODO: output namespace of hive tables that chronon produces",
+        "namespace": "chronon_db",
         "user": "# TODO: ldap user name to run the jobs as, from airflow or your own scheduler",
         "production": {
             "backfill" : {

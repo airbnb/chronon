@@ -273,6 +273,18 @@ struct Join {
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
     6: optional LabelPart labelPart
+    7: optional list<BootstrapPart> bootstrapParts
+    // Fields on left that uniquely identifies a single record
+    8: optional list<string> rowIds
+}
+
+struct BootstrapPart {
+    1: optional MetaData metaData
+    // Precomputed table that is joinable to rows on the left
+    2: optional string table
+    3: optional Query query
+    // Join keys to the left. If null, defaults to rowIds on the Join.
+    4: optional list<string> keyColumns
 }
 
 // Label join parts and params
