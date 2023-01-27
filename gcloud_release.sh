@@ -7,4 +7,4 @@
 # Tell Nikhil to run this for permissions: gsutil iam ch user:<you email>@gmail.com:objectCreator,objectViewer gs://chronon
 
 
-gsutil -m -o GSUtil:parallel_process_count=1 -o GSUtil:parallel_thread_count=24 cp -r releases/ gs://chronon
+gsutil -m -o GSUtil:parallel_process_count=1 -o GSUtil:parallel_thread_count=24 cp -r releases/* gs://chronon

@@ -46,8 +46,7 @@ SBT_JAR=$(ls -rt spark/target/scala-2.11/ | grep ".*uber-assembly.*\.jar$" |tail
 
 rm -rf releases
 mkdir releases
-mv ${DOC_BUILD}/html releases/
-rm -rf ${DOC_BUILD}
+mv ${DOC_BUILD}/html/* releases/
 tar -zcf releases/repo.tar.gz -C api/py/test/sample .
 mv "spark/target/scala-2.11/${SBT_JAR}" releases/
 cp init.sh releases/init.sh
