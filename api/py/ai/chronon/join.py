@@ -211,19 +211,33 @@ def ExternalPart(source: api.ExternalSource,
         prefix=prefix
     )
 
+
 def LabelPart(labels: List[api.JoinPart],
               leftStartOffset: int,
               leftEndOffset: int) -> api.LabelPart:
     """
-    Used to describe label parts in join
+    Used to describe labels in join. Label part can be viewed as regular join part but represent
+    label data instead of regular feature data. Once labels are mature, label join job would join
+    labels with features in the training window user specified using `leftStartOffset` and
+    `leftEndOffset`.
 
-    :param:
+    Labels will be refreshed within this window given a label ds. As a result, there could be multiple
+    label versions based on the label ds. Label definition can be updated along the way but label join
+    job can only accommodate the changes going forward.
+
+    :param labels: List of labels
+    :param leftStartOffset: Integer to define the earliest date label should be refreshed
+                            comparing to label_ds date specified
+    :param leftEndOffset: Integer to define the most recent date label should be refreshed.
+                          e.g. left_end_offset = 3 most recent label available will be 3 days
+                          prior to 'label_ds'
     """
     return api.LabelPart(
         labels=labels,
         leftStartOffset=leftStartOffset,
         leftEndOffset=leftEndOffset
     )
+
 
 def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
     """
@@ -259,11 +273,11 @@ def Join(left: api.Source,
          skew_keys: Dict[str, List[str]] = None,
          sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
-         label_part: api.LabelPart = None,
          offline_schedule: str = '@daily',
          row_ids: List[str] = None,
          bootstrap_parts: List[api.BootstrapPart] = None,
          bootstrap_from_log: bool = False,
+         label_part: api.LabelPart = None,
          **kwargs
          ) -> api.Join:
     """
@@ -338,6 +352,8 @@ def Join(left: api.Source,
         A list of BootstrapPart used for the Join. See BootstrapPart doc for more details
     :param bootstrap_from_log:
         If set to True, will use logging table to generate training data by default and skip continuous backfill
+    :param label_part:
+        Label part which contains a list of labels and label refresh window boundary used for the Join
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
