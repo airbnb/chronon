@@ -2,10 +2,14 @@
 # tool to materialize feature_sources and feature_sets into thrift configurations
 # that chronon jobs can consume
 
-import ai.chronon.repo.extract_objects as eo
-import click
 import logging
 import os
+
+import click
+
+import ai.chronon.api.ttypes as api
+import ai.chronon.repo.extract_objects as eo
+import ai.chronon.utils as utils
 from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
@@ -82,6 +86,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
+        _set_templated_values(obj, obj_class)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
@@ -95,7 +100,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
                 extra_online_group_bys.update(online_group_bys)
-                assert not offline_gbs,\
+                assert not offline_gbs, \
                     "You must make all dependent GroupBys `online` if you want to make your join `online`." \
                     " You can do this by passing the `online=True` argument to the GroupBy constructor." \
                     " Fix the following: {}".format(offline_gbs)
@@ -120,6 +125,13 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
     obj.metaData.team = team_name
+
+
+def _set_templated_values(obj, cls):
+    if cls == api.Join and obj.bootstrapParts:
+        for bootstrap in obj.bootstrapParts:
+            if bootstrap.table == '{{ logged_table }}':
+                bootstrap.table = utils.log_table_name(obj, full_name=True)
 
 
 def _write_obj(full_output_root: str,
