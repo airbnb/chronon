@@ -50,22 +50,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       // drop all processing metadata columns
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-    val finalJoined = joinConf.derivationSelects.map(exprs => joined.selectExpr(exprs: _*)).getOrElse(joined)
-    finalJoined.explain()
-    finalJoined.drop(Constants.TimePartitionColumn)
-=======
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
     val finalDf = joinedDf.selectExpr(outputColumns: _*)
     finalDf.explain()
     finalDf
->>>>>>> 79374ff1fd7791c572573ba2196ef0cd9d61c0cf
-=======
-    val finalJoined = joinConf.derivationSelects.map(exprs => joined.selectExpr(exprs: _*)).getOrElse(joined)
-    finalJoined.explain()
-    finalJoined.drop(Constants.TimePartitionColumn)
->>>>>>> cfe293e769dd72041712182ca97f06c2a815bde9
   }
 
   /*

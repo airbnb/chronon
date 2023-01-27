@@ -80,15 +80,9 @@ object Extensions {
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
 
     def loggedTable = s"${outputTable}_logged"
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
     def bootstrapTable = s"${outputTable}_bootstrap"
->>>>>>> 79374ff1fd7791c572573ba2196ef0cd9d61c0cf
-=======
 
->>>>>>> cfe293e769dd72041712182ca97f06c2a815bde9
     private def comparisonPrefix = "comparison"
 
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
