@@ -272,7 +272,6 @@ struct Join {
     // This is applicable only for online fetching. Offline this will not be produce any values.
     5: optional list<ExternalPart> onlineExternalParts
     6: optional LabelPart labelPart
-<<<<<<< HEAD
     7: optional list<BootstrapPart> bootstrapParts
     // Fields on left that uniquely identifies a single record
     8: optional list<string> rowIds
