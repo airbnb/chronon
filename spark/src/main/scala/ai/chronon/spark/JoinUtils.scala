@@ -81,7 +81,7 @@ object JoinUtils {
       val leftDataType = leftDf.schema(leftDf.schema.fieldIndex(column)).dataType
       val rightDataType = rightDf.schema(rightDf.schema.fieldIndex(column)).dataType
       assert(leftDataType == rightDataType,
-        s"Column '$column' has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
+             s"Column '$column' has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
     }
 
     val joinedDf = leftDf.join(rightDf, keys, joinType)

@@ -1,5 +1,6 @@
 package ai.chronon.spark.test
 
+import ai.chronon.api.Constants
 import ai.chronon.spark.JoinUtils.{contains_any, set_add}
 import ai.chronon.spark.{JoinUtils, SparkSessionBuilder, TableUtils}
 import org.apache.spark.rdd.RDD
@@ -241,8 +242,10 @@ class JoinUtilsTest {
     assertTrue(filteredDf.schema.fieldNames.sorted sameElements filter.sorted)
   }
 
+  import ai.chronon.api.{LongType, StringType, StructField, StructType}
+
   def createSampleTable(tableName:String = "testSampleTable"): DataFrame = {
-    val schema = ai.chronon.api.StructType(
+    val schema = StructType(
       tableName,
       Array(
         StructField("listing", LongType),
