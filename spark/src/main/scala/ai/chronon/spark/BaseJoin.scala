@@ -104,15 +104,26 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
       computeJoinPart(leftDf, joinPart)
     } else {
+      // in Events <> batch GB case, the partition dates are offset by 1
+      val shiftDays =
+        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+          -1
+        } else {
+          0
+        }
+      val rightRange = leftRange.shift(shiftDays)
       try {
         val unfilledRanges =
-          tableUtils.unfilledRanges(partTable, leftRange, Some(Seq(joinConf.left.table))).getOrElse(Seq())
+          tableUtils
+            .unfilledRanges(partTable, rightRange, Some(Seq(joinConf.left.table)), inputToOutputShift = Some(shiftDays))
+            .getOrElse(Seq())
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
         if (partitionCount > 0) {
           val start = System.currentTimeMillis()
           unfilledRanges
             .foreach(unfilledRange => {
-              val filledDf = computeJoinPart(leftDf.prunePartition(unfilledRange), joinPart)
+              val leftUnfilledRange = unfilledRange.shift(-shiftDays)
+              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -129,15 +140,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
           println(s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
           throw e
       }
-      val scanRange =
-        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-          // the events of a ds will join with
-          leftRange.shift(-1)
-        } else {
-          leftRange
-        }
       if (tableUtils.tableExists(partTable)) {
-        Some(tableUtils.sql(scanRange.genScanQuery(query = null, partTable)))
+        Some(tableUtils.sql(rightRange.genScanQuery(query = null, partTable)))
       } else {
         // Happens when everything is handled by bootstrap
         None

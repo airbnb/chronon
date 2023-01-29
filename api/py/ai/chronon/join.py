@@ -357,7 +357,8 @@ def Join(left: api.Source,
     :param bootstrap_parts:
         A list of BootstrapPart used for the Join. See BootstrapPart doc for more details
     :param bootstrap_from_log:
-        If set to True, will use logging table to generate training data by default and skip continuous backfill
+        If set to True, will use logging table to generate training data by default and skip continuous backfill.
+        Logging will be treated as another bootstrap source, but other bootstrap_parts will take precedence.
     :param label_part:
         Label part which contains a list of labels and label refresh window boundary used for the Join
     :return:
