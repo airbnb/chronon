@@ -15,7 +15,7 @@ pip install chronon-ai
 ```
 2. If you wish to setup the chronon repo and install the package, simply run the command below and fill out the spark path in `./chronon/teams.json`
 ```shell
-source <(curl -s https://storage.googleapis.com/chronon/releases/init.sh)
+source <(curl -s https://chronon.ai/init.sh)
 ```
 
 At this point you will have a repo starting point and three tools on your path.

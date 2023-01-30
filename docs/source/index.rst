@@ -17,18 +17,28 @@
 
 What ?
 =====================
-Chronon is a fast, powerful, production-grade feature engineering framework. Chronon can generate pipelines that produce training data, low-latency end-points for serving features and generate metrics computation pipelines for monitoring data quality. Chronon has been used to power various business-critical use-cases.
+Chronon is a feature engineering framework is being used to power Machine Learning in every 
+organization within Airbnb. Chronon makes developing production-grade, 
+features at scale very easy. 
 
-* Consume data from a variety of Sources - Event streams, Fact/Dim tables in warehouse, DB table snapshots, Slowly changing dimension tables, Change Data Streams, etc.
-* Produce results both online and offline - Online, as low-latency end-points for feature serving, or Offline as hive tables, for generating training data.
-* That can be updated in real time: You can configure the accuracy of the result  to be either Temporal or Snapshot. Temporal refers to updating feature values in real-time in an online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
-* With a powerful python API - which adds time and windowing  along with the above mentioned concepts as first class ideas to the familiar SQL primitives like group-by, join, select etc, while retaining the full flexibility and composability offered by Python.
+With Chronon you can generate training data, serve features, monitor feature quality 
+and manage features with a unified feature definition.
+
+.. image:: ../images/chronon_high_level.png
+
+* **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
+* **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.
+* **Real-time or batch accuracy** - You can configure the result to be either *Temporal* or *Snapshot* accurate. Temporal refers to updating feature values in real-time in online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
+* **Backfill training sets from raw data** - without having to wait for months to accumulate feature logs to train your model.
+* **Powerful python API** - data source types, freshness and contexts are API level abstractions that you compose with intuitive SQL primitives like group-by, join, select etc., with powerful enhancements.
+* **Automated feature monitoring** - auto-generate monitoring pipelines to understand training data quality, measure training-serving skew and monitor feature drift.
 
 Being able to flexibly compose these concepts to describe data processing is what makes feature engineering in Chronon productive.
 
 Example
 =====================
-This is what a simple Chronon Group-By looks like.
+This is what a simple Chronon Group-By looks like. This definition is used to automatically 
+create offline datasets, feature serving end-points and data quality monitoring pipelines.
 
 .. code-block:: python
 
@@ -64,17 +74,18 @@ This is what a simple Chronon Group-By looks like.
 
 Getting Started
 =====================
-If you wish to work in an existing chronon repo, simply run and checkout
+If you wish to work in an existing chronon repo, simply run the command below.
 
 .. code-block:: bash
 
    pip install chronon-ai
 
-If you wish to setup a chronon repo and install all the necessary packages, simply run
+If you wish to setup a chronon repo, for ease of orchestration, we recommend that you
+run the command below in an airflow repository.
 
 .. code-block:: bash
 
-   source <(curl -s https://storage.googleapis.com/chronon/releases/init.sh)
+   source <(curl -s https://chronon.ai/init.sh)
 
 Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
 Find more details in the Getting Started section.
