@@ -67,16 +67,19 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
     }
   }
 
+  // For the case of group by batch uploads.
   // the table is assumed to be encoded with two columns - `key` and `value` as Array[Bytes]
   // one of the keys should be "group_by_serving_info" as bytes with value as TSimpleJsonEncoded String
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val tableUtilInst = tableUtils()
     val partitionFilter =
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
-    tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable").show(false)
+    val offlineDf = tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable")
+    offlineDf.show(false)
+    val tsColumn = if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis})"
     val df =
       tableUtilInst.sql(
-        s"""SELECT key_bytes, value_bytes, (unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis}) as ts
+        s"""SELECT key_bytes, value_bytes, $tsColumn as ts
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd
@@ -87,7 +90,6 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
         val timestamp = row.get(2).asInstanceOf[Long]
         KVStore.PutRequest(key, value, destinationOnlineDataSet, Option(timestamp))
       }
-
     create(destinationOnlineDataSet)
     multiPut(requests)
   }

@@ -1,12 +1,14 @@
 package ai.chronon.online
 
-import ai.chronon.aggregator.row.ColumnAggregator
+import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.Fetcher._
+import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.online.Metrics.Name.Exception
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
@@ -30,8 +32,6 @@ object Fetcher {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
 }
-
-
 
 
 
@@ -347,6 +347,59 @@ class Fetcher(val kvStore: KVStore,
       if (debug) {
         println(s"schema data logged successfully with schema_hash ${enc.loggingSchemaHash}")
       }
+    }
+  }
+
+  /**
+    * Stats get stored on a single Dataname stored in constants.
+    */
+  def fetchStats(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Seq[Response]] = {
+    val joinCodecs = getJoinCodecs(joinName) match {
+      case Success(joinCodec) => joinCodec
+      case Failure(exception) => throw exception
+    }
+
+    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = endTs)).map {
+      kvResponse =>
+        kvResponse.values match {
+          case Success(responses) => responses.toArray.filter(0 < _.millis).map {
+            tv =>
+              Response(Request(joinName, null, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
+          }.toSeq
+          case Failure(exception) => throw exception
+        }
+    }
+  }
+  def fetchStatsBetween(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Array[Any]] = {
+    val joinCodecs = getJoinCodecs(joinName) match {
+      case Success(joinCodec) => joinCodec
+      case Failure(exception) => throw exception
+    }
+    val valueSchema = joinCodecs.valueSchema
+    val statsInputSchema = joinCodecs.statsInputSchema
+    val statsIrSchema = joinCodecs.statsIrSchema
+    println(
+      s"""
+        |STATS IR SCHEMA
+        |$statsIrSchema
+        |
+        |STATS INPUT SCHEMA
+        |$statsInputSchema
+        |""".stripMargin)
+    // Metrics are derived from the valueSchema of the join.
+    val metrics = StatsGenerator.buildMetrics(valueSchema.map(sf => (sf.name, sf.fieldType)))
+    // Aggregator needs to aggregate partial IRs of stats. This should include transformations over the metrics.
+    val aggregator = StatsGenerator.buildAggregator(metrics, statsInputSchema)
+    val rawResponses = fetchStats(joinName, startTs, endTs)
+    rawResponses.map {
+      var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
+      responseFuture => responseFuture.foreach {
+        response =>
+          val batchRecord = aggregator.denormalize(statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+          mergedIr = aggregator.merge(mergedIr, batchRecord)
+      }
+        // TODO: Return a Future of Response[Request, Map[String, AnyRef]]
+        aggregator.finalize(mergedIr)
     }
   }
 

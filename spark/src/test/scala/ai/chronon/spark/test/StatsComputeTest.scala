@@ -1,11 +1,13 @@
 package ai.chronon.spark.test
+import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
+import ai.chronon.online.SparkConversions.toChrononSchema
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.SparkSessionBuilder
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
-import ai.chronon.spark.stats.{StatsCompute, StatsGenerator}
+import ai.chronon.spark.stats.StatsCompute
 import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
@@ -22,8 +24,8 @@ class StatsComputeTest {
     val columns = Seq("keyId", "value", "double_value", "string_value")
     val rdd = spark.sparkContext.parallelize(data)
     val df = spark.createDataFrame(rdd).toDF(columns: _*).withColumn(Constants.PartitionColumn, lit("2022-04-09"))
-    val stats = new StatsCompute(df, Seq("keyId"))
-    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val stats = new StatsCompute(df, Seq("keyId"), "test")
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("test", toChrononSchema(stats.selectedDf.schema)))
     val result = stats.dailySummary(aggregator).toFlatDf
     stats.addDerivedMetrics(result, aggregator).show()
   }
@@ -35,8 +37,8 @@ class StatsComputeTest {
       Column("session_length", IntType, 10000)
     )
     val df = DataFrameGen.events(spark, schema, 100000, 10)
-    val stats = new StatsCompute(df, Seq("user"))
-    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val stats = new StatsCompute(df, Seq("user"), "generatedTest")
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("generatedTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
     println("Daily Stats")
@@ -60,8 +62,8 @@ class StatsComputeTest {
     )
     val df = DataFrameGen.events(spark, schema, 100000, 10)
       .drop(Constants.TimeColumn)
-    val stats = new StatsCompute(df, Seq("user"))
-    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val stats = new StatsCompute(df, Seq("user"), "noTsTest")
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("noTsTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
     println("Daily Stats")
@@ -89,8 +91,8 @@ class StatsComputeTest {
     val byteSample = 1.toByte
     val df = DataFrameGen.events(spark, schema, 100000, 10)
       .withColumn("byte_column", lit(byteSample))
-    val stats = new StatsCompute(df, Seq("user"))
-    val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+    val stats = new StatsCompute(df, Seq("user"), "byteTest")
+    val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("byteTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
     println("Daily Stats")
