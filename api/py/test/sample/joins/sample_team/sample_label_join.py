@@ -12,6 +12,7 @@ from ai.chronon.join import Join, JoinPart, LabelPart
 from ai.chronon.group_by import GroupBy
 
 label_part_group_by = GroupBy(
+    name="sample_label_group_by",
     sources=test_sources.entity_source,
     keys=["group_by_subject"],
     aggregations=None,
@@ -35,8 +36,8 @@ v1 = Join(
                 group_by=label_part_group_by
             ),
         ],
-        30,
-        10),
+        leftStartOffset=30,
+        leftEndOffset=10),
     additional_args={
         'custom_arg': 'custom_value'
     },
