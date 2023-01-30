@@ -364,4 +364,12 @@ class BaseFetcher(kvStore: KVStore,
         responses
       }
   }
+
+  /**
+    * Fetch uploaded stats.
+    * Stats are uploaded and keyed by timestamp bucket.
+    * Schemas are stored in the KV Database under ai.chronon.api.Constants.{StatsSchemaKey, StatsSchemaValue}
+    * respectively.
+    */
+  def fetchStats(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = ???
 }

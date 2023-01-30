@@ -1,18 +1,15 @@
 package ai.chronon.spark.stats
 
-import ai.chronon.aggregator.base.ApproxPercentiles
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.spark.Extensions._
 import ai.chronon.api.Extensions._
 import ai.chronon.api
-import ai.chronon.spark.{Conversions, KvRdd, RowWrapper}
+import ai.chronon.spark.{Conversions, KvRdd}
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{col, lit}
-import org.apache.spark.sql.{Column, DataFrame, functions, Row => SparkRow}
+import org.apache.spark.sql.{Column, DataFrame, functions}
 
 import java.util
 import collection.JavaConversions._
