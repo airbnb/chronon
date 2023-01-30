@@ -70,18 +70,26 @@ class BaseFetcher(kvStore: KVStore,
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+        if (debug) println("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Iterator[Row] = streamingResponses.iterator
+        val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+          .toArray
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
                          queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
+        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        if (debug) println(s"""
+             |batch ir: $batchIr
+             |streamingRows: $streamingRows
+             |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+             |queryTime in millis: $queryTimeMs
+             |""".stripMargin)
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
@@ -216,6 +224,10 @@ class BaseFetcher(kvStore: KVStore,
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
+                if (debug)
+                  println(
+                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                      s"for keys: ${request.keys}")
                 constructGroupByResponse(batchResponseTryAll,
                                          streamingResponsesOpt,
                                          groupByServingInfo,

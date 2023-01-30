@@ -1,40 +1,30 @@
-# Integration Guide
+# Getting Started
 
 Chronon essentially can operate in two modes - online and offline.
-In this doc we are going to talk about how to integrate Chronon online.
-Online we maintain real-time refreshed or daily refreshed "views".
+Using Chronon offline for the first time is designed to be really simple.
 
-For example:
-- Number of views of an item in the last 30 days - from an item view stream.
-- Average review length of an item - from a review database table.
+Online however, you would need to teach chronon how to talk to your Key-Value store 
+and how to understand the data that is in your kafka message bus. This is a one time setup.
 
-The computations are expressed in a python API with spark sql expressions.
+This article contains information required to setup and use Chronon.
 
 ### Initial Setup
-1. Install chronon pip package - one time setup per user machine.
+1. If you wish to work in an existing chronon repo, simply run
 ```shell
 pip install chronon-ai
 ```
-2. Pick where you want to host, or are already hosting the Chronon configs. Add this also to `PYTHONPATH`.
-We recommend adding Chronon configs into your Airflow repo - for ease of deployment.
+2. If you wish to setup the chronon repo and install the package, simply run the command below and fill out the spark path in `./chronon/teams.json`
 ```shell
-export CHRONON_REPO_PATH=/to/where/you/want_or_have/chronon/configs
-export PYTHONPATH=$CHRONON_REPO_PATH:$PYTHONPATH
+source <(curl -s https://chronon.ai/init.sh)
 ```
-2. Setup the chronon definition repo - one time setup per company 
-```shell
-mkdir -p $CHRONON_DIR
-cd $CHRONON_DIR
-git init 
-git remote add -f origin git@github.com:airbnb/chronon.git
-git config core.sparseCheckout true
-echo "api/py/test/sample" >> .git/info/sparse-checkout
-git pull origin master
-rm -rf .git
-mv -v api/py/test/sample/* ./
-rm -rf api
-```
-3. You can look at the examples under `group_bys` or `joins` or `staging_queries`
+
+At this point you will have a repo starting point and three tools on your path.
+The repo contains three folders - `group_bys`, `joins` and `staging_queries` where you add your code.
+ 
+1. `compile.py` - which tells you whether your configuration is valid and compiles it into 
+   something the chronon engine can execute. The output of this goes into the `production` folder.
+1. `run.py` - which can take your compiled *conf* and runs it in a *mode* of your choosing.
+1. `explore.py` - which allows you to keyword or lineage search all the existing definitions.
 
 ### Compile 
 
@@ -80,7 +70,7 @@ run.py --mode=<MODE> --conf=<PATH>/<TO>/<YOUR>/<DEFINITION>
 ```
 
 You can directly tune the parameters setup as env-vars set in [spark_submit.sh](../../api/py/test/sample/scripts/spark_submit.sh)
-or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script
+or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script. 
 
 ```shell
 EXECUTOR_MEMORY=16G PARALLELISM=2000 run.py --mode=backfill --conf=production/joins/<your_team>/<your_join>
@@ -99,7 +89,7 @@ explore.py <KEYWORD>
 
 ## Integrations
 
-![Architecture](../images/Overall Architecture.png)
+![Architecture](../images/Overall_Architecture.png)
 
 There are essentially four integration points:
 
@@ -111,16 +101,7 @@ There are essentially four integration points:
   - KVStore - for storing and serving features in low latency. This can be any kv store that can support point write, point lookup, scan and bulk write.
   - StreamDecoder - for reading bytes from kafka and converting them into a Chronon Event or a Chronon Mutation. If you have a convention between how you convert data in kafka into data in warehouse, you would need to follow that same convention to decode as well.
 
-- Airflow - for scheduling spark pipelines that periodically checks and triggers missing tasks, join backfills, group by uploads, meta data uploads, etc. 
-
-### Repository Setup
-
-You can pull in a template for setting up the initial Chronon repository.
-
-```shell
-wget https://github.com/chronon-ai/conf-template/archive/refs/heads/main.zip
-tar -xvzf main.zip
-```
+- Airflow - for scheduling spark pipelines that periodically checks and triggers missing tasks, join backfills, group by uploads, meta data uploads, etc.
 
 
 ### KV Store API
