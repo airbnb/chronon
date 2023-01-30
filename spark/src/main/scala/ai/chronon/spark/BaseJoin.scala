@@ -6,7 +6,7 @@ import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
@@ -237,17 +237,6 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     Some(rightDf)
   }
 
-  def tablesToRecompute(): Seq[String] = {
-    (for (
-      props <- tableUtils.getTableProperties(outputTable);
-      oldSemanticJson <- props.get(Constants.SemanticHashKey);
-      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
-    ) yield {
-      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
-      joinConf.tablesToDrop(oldSemanticHash)
-    }).getOrElse(collection.Seq.empty)
-  }
-
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
@@ -262,7 +251,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
-    tablesToRecompute().foreach(tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
+      tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)

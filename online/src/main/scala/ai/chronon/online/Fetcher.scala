@@ -1,10 +1,11 @@
 package ai.chronon.online
 
-import ai.chronon.aggregator.row.ColumnAggregator
+import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
+import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
@@ -22,12 +23,15 @@ object Fetcher {
                      atMillis: Option[Long] = None,
                      context: Option[Metrics.Context] = None)
 
+  case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
+  case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
+  case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
+  case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
 }
-
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
 
@@ -359,6 +363,82 @@ class Fetcher(val kvStore: KVStore,
       if (debug) {
         println(s"schema data logged successfully with schema_hash ${enc.loggingSchemaHash}")
       }
+    }
+  }
+
+  /**
+    * Fetch all stats IRs available between startTs and endTs.
+    *
+    * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
+    */
+  def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] = {
+    val joinCodecs = getJoinCodecs(joinRequest.name).get
+    val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
+    kvStore.get(
+      GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)), Constants.StatsBatchDataset, afterTsMillis = joinRequest.startTs)
+    ).map(_.values.get.toArray.filter(_.millis <= upperBound).map {
+      tv =>
+        StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
+    }.toSeq)
+  }
+
+  /**
+    * Main endpoint for fetching statistics over time available.
+    */
+  def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
+    val rawResponses = fetchStats(joinRequest)
+    rawResponses.map {
+      responseFuture =>
+        val convertedValue = responseFuture.flatMap {
+          response =>
+            response.values.get.map {
+              case (key, v) =>
+                key ->
+                    Map(
+                      "millis" -> response.millis.asInstanceOf[AnyRef],
+                      "value" -> StatsGenerator.SeriesFinalizer(key, v)
+                    ).asJava
+            }
+        }.groupBy(_._1)
+          .mapValues(_.map(_._2).toList.asJava)
+          .toMap
+        SeriesStatsResponse(joinRequest, Try(convertedValue))
+    }
+  }
+
+  /**
+    * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
+    * determining data distributions between [startTs, endTs]
+    */
+  def fetchMergedStatsBetween(joinRequest: StatsRequest): Future[MergedStatsResponse] = {
+    val joinCodecs = getJoinCodecs(joinRequest.name).get
+    // Metrics are derived from the valueSchema of the join.
+    val metrics = StatsGenerator.buildMetrics(joinCodecs.valueSchema.map(sf => (sf.name, sf.fieldType)))
+    // Aggregator needs to aggregate partial IRs of stats. This should include transformations over the metrics.
+    val aggregator = StatsGenerator.buildAggregator(metrics, joinCodecs.statsInputSchema)
+    val rawResponses = fetchStats(joinRequest)
+    rawResponses.map {
+      var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
+      responseFuture => responseFuture.foreach {
+        response =>
+          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+          mergedIr = aggregator.merge(mergedIr, batchRecord)
+      }
+        // Other things that would require custom processing: HeavyHitters
+        val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
+          case (statName, finalStat) =>
+            if (statName.endsWith("percentile")) {
+              statName ->
+                StatsGenerator.finalizedPercentilesMerged.indices.map(idx =>
+                  Map(
+                    "xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
+                    "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava
+                ).toList.asJava
+            } else {
+              statName -> finalStat.asInstanceOf[AnyRef]
+            }
+        }.toMap
+        MergedStatsResponse(joinRequest, Try(responseMap))
     }
   }
 

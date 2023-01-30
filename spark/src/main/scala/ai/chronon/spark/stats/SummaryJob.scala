@@ -1,14 +1,12 @@
 package ai.chronon.spark.stats
 
+import ai.chronon.online.SparkConversions
+import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{PartitionRange, TableUtils}
-import org.apache.spark.sql.functions.lit
-import org.apache.spark.sql.{Row, SparkSession}
-
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import ai.chronon.spark.{JoinUtils, PartitionRange, TableUtils}
+import org.apache.spark.sql.SparkSession
 
 /**
   * Summary Job for daily upload of stats.
@@ -19,15 +17,13 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tableUtils: TableUtils = TableUtils(session)
-  private val dailyStatsTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily"
-  private val dailyStatsAvroTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily_upload"
-  private val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
-    .orNull
+  private val dailyStatsTable = joinConf.metaData.dailyStatsOutputTable
+  private val dailyStatsAvroTable = joinConf.metaData.dailyStatsUploadTable
+  private val tableProps: Map[String, String] = tableUtils.getTableProperties(joinConf.metaData.outputTable).orNull
 
   def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
+    val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, dailyStatsTable, tableUtils).isEmpty
+    if (backfillRequired) Seq(dailyStatsTable, dailyStatsAvroTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
       .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate), Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
@@ -43,28 +39,25 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       stepRanges.zipWithIndex.foreach {
         case (range, index) =>
           println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
-          val inputDf = tableUtils.sql(s"""
+          val joinOutputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val stats = new StatsCompute(inputDf, joinConf.leftKeyCols)
-          val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ Constants.PartitionColumn
+          val inputDf = if (joinOutputDf.columns.contains(Constants.TimeColumn)) {
+            joinOutputDf.select(Constants.TimeColumn, baseColumns: _*)
+          } else {
+            joinOutputDf.select(baseColumns.head, baseColumns.tail: _*)
+          }
+          val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
+          val aggregator = StatsGenerator.buildAggregator(
+            stats.metrics,
+            StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           if (joinConf.metaData.online) {
-            // Store an Avro encoded KV Table and the schemas.
-            val avroDf = summaryKvRdd.toAvroDf
-            val schemas = Seq(summaryKvRdd.keyZSchema, summaryKvRdd.valueZSchema)
-              .map(AvroConversions.fromChrononSchema(_).toString(true))
-            val schemaKeys = Seq(Constants.StatsKeySchemaKey, Constants.StatsValueSchemaKey)
-            val metaRows = schemaKeys.zip(schemas).map {
-              case (k, schema) => Row(k.getBytes(Constants.UTF8), schema.getBytes(Constants.UTF8), k, schema)
-            }
-            val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
-            val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, avroDf.schema)
-            avroDf
-              .union(metaDf)
-              .withColumn(Constants.PartitionColumn, lit(endDate))
+            summaryKvRdd.toAvroDf
+              .withTimeBasedColumn(Constants.PartitionColumn)
               .save(dailyStatsAvroTable, tableProps)
           }
           stats

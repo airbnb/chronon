@@ -29,7 +29,7 @@ public class JavaFetcher {
     }
     return result;
   }
-
+  
   private CompletableFuture<List<JavaResponse>> convertResponsesWithTs(Future<FetcherResponseWithTs> responses, boolean isGroupBy, long startTs) {
     return FutureConverters.toJava(responses).toCompletableFuture().thenApply(resps -> {
       List<JavaResponse> jResps = toJavaResponses(resps.responses());
@@ -38,6 +38,32 @@ public class JavaFetcher {
       instrument(requestNames, isGroupBy, "java.overall.latency.millis", startTs);
       return jResps;
     });
+  }
+
+  public static List<JavaStatsResponse> toJavaStatsResponses(Seq<Fetcher.StatsResponse> responseSeq) {
+    List<JavaStatsResponse> result = new ArrayList<>(responseSeq.size());
+    Iterator<Fetcher.StatsResponse> it = responseSeq.iterator();
+    while(it.hasNext()) {
+      result.add(new JavaStatsResponse(it.next()));
+    }
+    return result;
+  }
+
+  public static JavaStatsResponse toJavaStatsResponse(Fetcher.StatsResponse response) {
+    return new JavaStatsResponse(response);
+  }
+  public static JavaMergedStatsResponse toJavaMergedStatsResponse(Fetcher.MergedStatsResponse response) {
+    return new JavaMergedStatsResponse(response);
+  }
+  public static JavaSeriesStatsResponse toJavaSeriesStatsResponse(Fetcher.SeriesStatsResponse response) {
+    return new JavaSeriesStatsResponse(response);
+  }
+
+  private CompletableFuture<List<JavaStatsResponse>> convertStatsResponses(Future<Seq<Fetcher.StatsResponse>> responses) {
+    return FutureConverters
+            .toJava(responses)
+            .toCompletableFuture()
+            .thenApply(JavaFetcher::toJavaStatsResponses);
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests, boolean isGroupBy, long startTs) {
@@ -90,6 +116,24 @@ public class JavaFetcher {
 
   private Metrics.Context getGroupByContext(String groupByName) {
     return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
+  }
+
+  public CompletableFuture<List<JavaStatsResponse>> fetchStats(JavaStatsRequest request) {
+    Future<Seq<Fetcher.StatsResponse>> responses = this.fetcher.fetchStats(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return convertStatsResponses(responses);
+  }
+
+  public CompletableFuture<JavaMergedStatsResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
+    Future<Fetcher.MergedStatsResponse> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaMergedStatsResponse);
+  }
+
+  public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {
+    Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchStatsTimeseries(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
   }
 
 }
