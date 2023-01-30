@@ -132,8 +132,8 @@ lazy val online = project
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      // statsd 3.0 has local aggregation - TODO: upgrade
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      // [TODO: stripe] Upstream this change as we're on 4.1.0 internally
+      "com.datadoghq" % "java-dogstatsd-client" % "4.1.0",
       "org.rogach" %% "scallop" % "4.0.1",
       "org.apache.avro" % "avro" % "1.8.0",
       "net.jodah" % "typetools" % "0.4.1"
@@ -188,10 +188,21 @@ val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := 
   case _                                   => MergeStrategy.first
 }
 
+// Hit errors on the lines of:
+// deduplicate: different file contents found in the following:
+// .. gson-2.8.6.jar:module-info.class
+val uberAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := {
+  case x if x.endsWith("module-info.class") => MergeStrategy.discard
+  case x =>
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
+
 lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
+    uberAssemblyStrategy,
     crossScalaVersions := Seq(scala211, scala212),
     libraryDependencies ++= {
       CrossVersion.partialVersion(scalaVersion.value) match {

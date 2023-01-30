@@ -2,7 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.timgroup.statsd.{NonBlockingStatsDClient, NonBlockingStatsDClientBuilder}
 
 object Metrics {
   object Environment extends Enumeration {
@@ -95,10 +95,12 @@ object Metrics {
       { ctx =>
         println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
-        new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
-                                    "localhost",
-                                    statsPort,
-                                    ctx.toTags: _*)
+        new NonBlockingStatsDClientBuilder()
+          .prefix("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""))
+          .hostname("localhost")
+          .port(statsPort)
+          .constantTags(ctx.toTags: _*)
+          .build()
       },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
