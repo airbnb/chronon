@@ -28,11 +28,13 @@ object Constants {
   val StreamingInputTable = "input_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
+  val StatsBatchDataset = "CHRONON_STATS_BATCH"
   val StatsKeySchemaKey = "key_schema"
   val StatsValueSchemaKey = "value_schema"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)
+  val StatsKeySchema: StructType = StructType("keySchema", Array(StructField("JoinPath", StringType)))
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
   val ExternalPrefix: String = "ext"
   val ContextualSourceName: String = "contextual"

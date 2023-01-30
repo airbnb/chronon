@@ -5,8 +5,9 @@ import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
 import ai.chronon.online.{SparkConversions, KVStore}
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
+import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, JoinOps}
 import org.apache.spark.sql.SparkSession
 
 object OnlineUtils {
@@ -50,6 +51,12 @@ object OnlineUtils {
       inMemoryKvStore.create(groupByConf.streamingDataset)
       OnlineUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)
     }
+  }
+
+  def serveStats(tableUtils: TableUtils, inMemoryKvStore: InMemoryKvStore, kvStoreGen: () => InMemoryKvStore, namespace: String, endDs: String, joinConf: api.Join): Unit = {
+    val statsJob = new SummaryJob(tableUtils.sparkSession, joinConf, endDs)
+    statsJob.dailyRun()
+    inMemoryKvStore.bulkPut(joinConf.metaData.dailyStatsUploadTable, Constants.StatsBatchDataset, null)
   }
 
   def buildInMemoryKVStore(sessionName: String): InMemoryKvStore = {

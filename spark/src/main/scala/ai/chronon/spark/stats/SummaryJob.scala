@@ -1,7 +1,9 @@
 package ai.chronon.spark.stats
 
+import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.SparkConversions.toChrononSchema
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{PartitionRange, TableUtils}
@@ -19,10 +21,8 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tableUtils: TableUtils = TableUtils(session)
-  private val dailyStatsTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily"
-  private val dailyStatsAvroTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily_upload"
+  private val dailyStatsTable = joinConf.metaData.dailyStatsOutputTable
+  private val dailyStatsAvroTable = joinConf.metaData.dailyStatsUploadTable
   private val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
     .orNull
@@ -48,8 +48,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
                |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val stats = new StatsCompute(inputDf, joinConf.leftKeyCols)
-          val aggregator = StatsGenerator.buildAggregator(stats.metrics, stats.selectedDf)
+          val stats = new StatsCompute(inputDf, Option(joinConf.leftColumns).getOrElse(joinConf.leftKeyCols).toSeq, joinConf.metaData.nameToFilePath)
+          val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("selected", toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           if (joinConf.metaData.online) {
             // Store an Avro encoded KV Table and the schemas.
@@ -58,7 +58,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
               .map(AvroConversions.fromChrononSchema(_).toString(true))
             val schemaKeys = Seq(Constants.StatsKeySchemaKey, Constants.StatsValueSchemaKey)
             val metaRows = schemaKeys.zip(schemas).map {
-              case (k, schema) => Row(k.getBytes(Constants.UTF8), schema.getBytes(Constants.UTF8), k, schema)
+              case (k, schema) => Row(k.getBytes(Constants.UTF8), schema.getBytes(Constants.UTF8), k, schema, Constants.Partition.epochMillis(endDate))
             }
             val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
             val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, avroDf.schema)
