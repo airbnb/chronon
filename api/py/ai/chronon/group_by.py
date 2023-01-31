@@ -386,27 +386,16 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
-    if name:
-        metadata = ttypes.MetaData(
-            name=name,
-            online=online,
-            production=production,
-            outputNamespace=output_namespace,
-            customJson=json.dumps(kwargs),
-            dependencies=deps,
-            modeToEnvMap=env,
-            tableProperties=table_properties,
-            team=team)
-    else:
-        metadata = ttypes.MetaData(
-            online=online,
-            production=production,
-            outputNamespace=output_namespace,
-            customJson=json.dumps(kwargs),
-            dependencies=deps,
-            modeToEnvMap=env,
-            tableProperties=table_properties,
-            team=team)
+    metadata = ttypes.MetaData(
+        name=name,
+        online=online,
+        production=production,
+        outputNamespace=output_namespace,
+        customJson=json.dumps(kwargs),
+        dependencies=deps,
+        modeToEnvMap=env,
+        tableProperties=table_properties,
+        team=team)
 
     group_by = ttypes.GroupBy(
         sources=sources,

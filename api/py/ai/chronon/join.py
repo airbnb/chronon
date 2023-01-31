@@ -229,7 +229,7 @@ def LabelPart(labels: List[api.JoinPart],
 
     Labels will be refreshed within this window given a label ds. As a result, there could be multiple
     label versions based on the label ds. Label definition can be updated along the way but label join
-    job can only accommodate the changes going forward.
+    job can only accommodate the changes going forward unless a backfill is manually triggered
 
     :param labels: List of labels
     :param leftStartOffset: Integer to define the earliest date label should be refreshed
