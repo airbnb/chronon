@@ -3,12 +3,13 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
-import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.ThrowableOps
+import ai.chronon.api.Extensions.{StringOps, ThrowableOps}
+import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -371,5 +372,52 @@ class BaseFetcher(kvStore: KVStore,
     * Schemas are stored in the KV Database under ai.chronon.api.Constants.{StatsSchemaKey, StatsSchemaValue}
     * respectively.
     */
-  def fetchStats(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = ???
+  def fetchStats(requests: scala.collection.Seq[Request], debug: Boolean = true): Future[scala.collection.Seq[Response]] = {
+    lazy val gson = new Gson()
+    val requestToKvRequest = requests.map{
+      request =>
+        val batchDataset = s"${request.name.sanitize.toUpperCase()}_STATS_BATCH"
+
+        val keySchema = kvStore.getString(Constants.StatsKeySchemaKey, batchDataset, 1000l).recover {
+          case e: NoSuchElementException => throw e
+        }.get
+        if (debug) {
+          println(
+            s""" Request:
+            |key Schema: $keySchema
+            |dataset: $batchDataset
+            |keys: ${request.keys}
+            |""".stripMargin)
+        }
+        val keyCodec = AvroCodec.of(keySchema)
+      request -> GetRequest(keyCodec.encode(request.keys), batchDataset)
+    }
+    val kvResponsesFuture = kvStore.multiGet(requestToKvRequest.map(_._2))
+    kvResponsesFuture.map {
+      kvResponse =>
+        val responseMap = kvResponse.map {
+          r =>
+            val batchDataset = s"${r.request.dataset}"
+            val valueSchema = kvStore.getString(Constants.StatsValueSchemaKey, batchDataset, timeoutMillis = 1000l).recover {
+              case e: NoSuchElementException => throw e
+            }.get
+            val valueCodec = AvroCodec.of(valueSchema)
+            val responseBytes = r.values.map(_.maxBy(_.millis)).map(_.bytes).get
+            val result = valueCodec.decodeMap(responseBytes)
+            if (debug) {
+              println(
+                s""" Response:
+                   |keys: ${r.request.keyBytes}
+                   |dataset: ${r.request.dataset}
+                   |value schema: $valueSchema
+                   |result: $result
+                   |""".stripMargin)
+            }
+            r.request -> result
+        }.toMap
+        requestToKvRequest.map {
+          r => Response(r._1, Try(responseMap.getOrElse(r._2, Map.empty[String, AnyRef])))
+        }
+    }
+  }
 }

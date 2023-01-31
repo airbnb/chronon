@@ -19,15 +19,14 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tableUtils: TableUtils = TableUtils(session)
-  private val dailyStatsTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily"
-  private val dailyStatsAvroTable: String =
-    s"${joinConf.metaData.outputNamespace}.${joinConf.metaData.cleanName}_stats_daily_upload"
+  private val dailyStatsTable = joinConf.metaData.dailyStatsOutputTable
+  private val dailyStatsAvroTable = joinConf.metaData.dailyStatsUploadTable
   private val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
     .orNull
 
   def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
+
     val unfilledRanges = tableUtils
       .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate), Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
