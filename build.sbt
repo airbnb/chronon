@@ -6,7 +6,6 @@ lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
 
-
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala211
@@ -60,7 +59,7 @@ lazy val releaseSettings = Seq(
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
     releaseStepCommandAndRemaining("+ publishSigned"),
     setNextVersion,
-    commitNextVersion,
+    commitNextVersion
     //pushChanges                                     // : Pushes the local Git changes to GitHub
   )
 )
@@ -109,7 +108,7 @@ lazy val api = project
       "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
       "com.novocode" % "junit-interface" % "0.11" % "test"
-    ),
+    )
   )
 
 lazy val aggregator = project
@@ -153,13 +152,14 @@ def cleanSparkMeta(): Unit = {
                file(".") / "metastore_db")
 }
 
-def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] = Seq(
-  "org.apache.spark" %% "spark-sql" % version,
-  "org.apache.spark" %% "spark-hive" % version,
-  "org.apache.spark" %% "spark-core" % version,
-  "org.apache.spark" %% "spark-streaming" % version,
-  "org.apache.spark" %% "spark-sql-kafka-0-10" % version
-)
+def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
+  Seq(
+    "org.apache.spark" %% "spark-sql" % version,
+    "org.apache.spark" %% "spark-hive" % version,
+    "org.apache.spark" %% "spark-core" % version,
+    "org.apache.spark" %% "spark-streaming" % version,
+    "org.apache.spark" %% "spark-sql-kafka-0-10" % version
+  )
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
   assembly / test := {},
