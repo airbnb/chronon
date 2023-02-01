@@ -10,7 +10,6 @@ import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
-import com.google.gson.Gson
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
@@ -107,7 +106,6 @@ class FetchStatsTest extends TestCase {
           Request(joinConf.metaData.cleanName, keyMap)
         }
         .collect()
-    val gson = new Gson()
     val requests = buildRequests()
     val mockApi = new MockApi(buildInMemoryKvStore, namespace)
     val fetcher = mockApi.buildFetcher(debug = true)

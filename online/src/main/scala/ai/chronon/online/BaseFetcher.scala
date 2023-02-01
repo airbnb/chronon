@@ -3,13 +3,12 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
-import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
+import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{StringOps, ThrowableOps}
-import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -372,8 +371,7 @@ class BaseFetcher(kvStore: KVStore,
     * Schemas are stored in the KV Database under ai.chronon.api.Constants.{StatsSchemaKey, StatsSchemaValue}
     * respectively.
     */
-  def fetchStats(requests: scala.collection.Seq[Request], debug: Boolean = true): Future[scala.collection.Seq[Response]] = {
-    lazy val gson = new Gson()
+  def fetchStats(requests: scala.collection.Seq[Request], debug: Boolean = false): Future[scala.collection.Seq[Response]] = {
     val requestToKvRequest = requests.map{
       request =>
         val batchDataset = s"${request.name.sanitize.toUpperCase()}_STATS_BATCH"

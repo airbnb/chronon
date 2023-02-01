@@ -26,7 +26,6 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     .orNull
 
   def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
-
     val unfilledRanges = tableUtils
       .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate), Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
