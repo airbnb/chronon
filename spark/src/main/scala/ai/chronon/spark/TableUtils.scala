@@ -39,7 +39,30 @@ case class TableUtils(sparkSession: SparkSession) {
     schema.fieldNames.contains(Constants.PartitionColumn)
   }
 
-  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
+  // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
+  def allPartitions(tableName: String,
+                    partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
+    if (!tableExists(tableName)) return Seq.empty[Map[String, String]]
+    if (isIcebergTable(tableName)) {
+      throw new NotImplementedError("Multi-partitions retrieval is not supported on Iceberg tables yet." +
+        "For single partition retrieval, please use 'partition' method.")
+    }
+    sparkSession.sqlContext
+      .sql(s"SHOW PARTITIONS $tableName")
+      .collect()
+      .map { row => {
+        val partitionMap = parsePartition(row.getString(0))
+        if(partitionColumnsFilter.isEmpty) {
+          partitionMap
+        } else {
+          partitionMap.filterKeys(key => partitionColumnsFilter.contains(key))
+        }
+      }
+    }
+  }
+
+  def partitions(tableName: String,
+                 subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {

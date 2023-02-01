@@ -150,6 +150,47 @@ object JoinUtils {
     tableUtils.sql(sqlStatement)
   }
 
+  /***
+   * Method to create a view with latest available label_ds for a given ds. This view is built
+   * on top of final label label which has all label versions available.
+   */
+  def createLatestLabelView(viewName: String, tableUtils: TableUtils): Unit = {
+    val labelMapping = getLatestLabelMapping(viewName, tableUtils)
+    // make list to partition chunks
+    // construct string based on the chunks
+
+
+
+  }
+
+  /**
+   * compute the mapping label_ds -> list of ds which has this label_ds as latest version
+   * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
+   */
+  def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {
+    val partitions = tableUtils.allPartitions(tableName)
+    assert(
+      partitions(0).keys.equals(Set(Constants.PartitionColumn, Constants.LabelPartitionColumn)),
+      s""" Table must have label partition columns for latest label computation: `${Constants.PartitionColumn}`
+         | & `${Constants.LabelPartitionColumn}`
+         |inputView: ${tableName}
+         |""".stripMargin
+    )
+
+    val labelMap = collection.mutable.Map[String, String]()
+    partitions.foreach(par => {
+      val ds_value = par.get(Constants.PartitionColumn).get
+      val label_value: String = par.get(Constants.LabelPartitionColumn).get
+      if(!labelMap.contains(ds_value)) {
+        labelMap.put(ds_value, label_value)
+      } else {
+        labelMap.put(ds_value, Seq(labelMap.get(ds_value).get, label_value).max)
+      }
+    })
+
+    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.map(_._1).toSet)) }
+  }
+
   def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {
     val columnsToDrop = df.columns
       .filterNot(col => filter.contains(col))

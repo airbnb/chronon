@@ -59,10 +59,12 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     } else {
       // creating final join view with feature join output table
       println(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
+      val joinKeys: Array[String] = if (joinConf.rowIds != null && !joinConf.rowIds.isEmpty)
+        joinConf.rowIds.asScala.toArray else labelJoinConf.rowIdentifier
       JoinUtils.createOrReplaceView(joinConf.metaData.outputFinalView,
         joinConf.metaData.outputTable,
         outputLabelTable,
-        labelJoinConf.rowIdentifier,
+        joinKeys,
         tableUtils)
       labelTable
     }
