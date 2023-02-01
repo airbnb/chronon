@@ -370,51 +370,36 @@ class BaseFetcher(kvStore: KVStore,
     * Stats are uploaded and keyed by timestamp bucket.
     * Schemas are stored in the KV Database under ai.chronon.api.Constants.{StatsSchemaKey, StatsSchemaValue}
     * respectively.
+    * Note: Consider getting join conf for request.name and leveraging joinOps to determine the batchDataset.
+    * However this limits the usability of online stats to online joins which could affect dashboard consumption.
     */
-  def fetchStats(requests: scala.collection.Seq[Request], debug: Boolean = false): Future[scala.collection.Seq[Response]] = {
+  def fetchStats(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val requestToKvRequest = requests.map{
       request =>
         val batchDataset = s"${request.name.sanitize.toUpperCase()}_STATS_BATCH"
-
-        val keySchema = kvStore.getString(Constants.StatsKeySchemaKey, batchDataset, 1000l).recover {
-          case e: NoSuchElementException => throw e
-        }.get
-        if (debug) {
-          println(
-            s""" Request:
-            |key Schema: $keySchema
-            |dataset: $batchDataset
-            |keys: ${request.keys}
-            |""".stripMargin)
+        getStatsKeyCodec(batchDataset) match {
+          case Success(keyCodec) => request -> GetRequest(keyCodec.encode(request.keys), batchDataset)
+          case Failure(exception) =>
+            println(s"Failed to fetch key codec for $batchDataset")
+            throw exception
         }
-        val keyCodec = AvroCodec.of(keySchema)
-      request -> GetRequest(keyCodec.encode(request.keys), batchDataset)
     }
     val kvResponsesFuture = kvStore.multiGet(requestToKvRequest.map(_._2))
     kvResponsesFuture.map {
       kvResponse =>
         val responseMap = kvResponse.map {
           r =>
-            val batchDataset = s"${r.request.dataset}"
-            val valueSchema = kvStore.getString(Constants.StatsValueSchemaKey, batchDataset, timeoutMillis = 1000l).recover {
-              case e: NoSuchElementException => throw e
-            }.get
-            val valueCodec = AvroCodec.of(valueSchema)
             val responseBytes = r.values.map(_.maxBy(_.millis)).map(_.bytes).get
-            val result = valueCodec.decodeMap(responseBytes)
-            if (debug) {
-              println(
-                s""" Response:
-                   |keys: ${r.request.keyBytes}
-                   |dataset: ${r.request.dataset}
-                   |value schema: $valueSchema
-                   |result: $result
-                   |""".stripMargin)
+            getStatsValueCodec(r.request.dataset) match {
+              case Success(valueCodec) => r.request -> valueCodec.decodeMap(responseBytes)
+              case Failure(exception) =>
+                println(s"Failed to fetch value codec for ${r.request.dataset}")
+                throw exception
             }
-            r.request -> result
         }.toMap
         requestToKvRequest.map {
-          r => Response(r._1, Try(responseMap.getOrElse(r._2, Map.empty[String, AnyRef])))
+          case (request, getRequest) =>
+            Response(request, Try(responseMap.getOrElse(getRequest, Map.empty[String, AnyRef])))
         }
     }
   }

@@ -38,6 +38,16 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
+  lazy val getStatsKeyCodec: TTLCache[String, Try[AvroCodec]] = new TTLCache[String, Try[AvroCodec]]({
+    name =>
+      kvStore.getString(Constants.StatsKeySchemaKey, name, timeoutMillis).map(AvroCodec.of(_))
+  })
+
+  lazy val getStatsValueCodec: TTLCache[String, Try[AvroCodec]] = new TTLCache[String, Try[AvroCodec]]({
+    name =>
+      kvStore.getString(Constants.StatsValueSchemaKey, name, timeoutMillis).map(AvroCodec.of(_))
+  })
+
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]]({ name =>
     val startTimeMs = System.currentTimeMillis()
     val result = getConf[Join](s"joins/$name")

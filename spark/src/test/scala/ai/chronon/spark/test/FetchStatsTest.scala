@@ -109,7 +109,7 @@ class FetchStatsTest extends TestCase {
     val requests = buildRequests()
     val mockApi = new MockApi(buildInMemoryKvStore, namespace)
     val fetcher = mockApi.buildFetcher(debug = true)
-    val futures = fetcher.fetchStats(requests, true)
+    val futures = fetcher.fetchStats(requests)
     val result = Await.result(futures, Duration(10000, SECONDS)) // todo: change back to millis
     println(s"Test fetch: $result")
     println("Done!")
