@@ -188,9 +188,9 @@ object TestUtils {
     )
     val rows = List(
       Row(1L, "PRIVATE_ROOM", "SUPER_HOST", "2022-10-01", "2022-11-01"),
-      Row(2L, "PRIVATE_ROOM", "NEW_HOST", "2022-10-01", "2022-11-01"),
-      Row(3L, "ENTIRE_HOME", "SUPER_HOST", "2022-10-01", "2022-11-01"),
-      Row(4L, "PRIVATE_ROOM", "SUPER_HOST", "2022-10-01", "2022-11-01"),
+      Row(2L, "PRIVATE_ROOM", "NEW_HOST", "2022-10-02", "2022-11-01"),
+      Row(3L, "ENTIRE_HOME", "SUPER_HOST", "2022-10-03", "2022-11-01"),
+      Row(4L, "PRIVATE_ROOM", "SUPER_HOST", "2022-10-04", "2022-11-01"),
       Row(5L, "ENTIRE_HOME", "NEW_HOST", "2022-10-07", "2022-11-01"),
       Row(1L, "PRIVATE ROOM", "SUPER_HOST", "2022-10-07", "2022-11-22")
     )

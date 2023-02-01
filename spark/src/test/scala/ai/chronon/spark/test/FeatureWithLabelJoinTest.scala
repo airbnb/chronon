@@ -4,6 +4,7 @@ import ai.chronon.api.Extensions.{LabelPartOps, MetadataOps}
 import ai.chronon.api.{Builders, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.functions.{max, min}
 import org.junit.Assert.{assertEquals}
 import org.junit.Test
 
@@ -20,7 +21,7 @@ class FeatureWithLabelJoinTest {
   private val left = viewsGroupBy.groupByConf.sources.get(0)
 
   @Test
-  def testFinalView(): Unit = {
+  def testFinalViews(): Unit = {
     // create test feature join table
     val featureTable = s"${namespace}.${tableName}"
     createTestFeatureTable().write.saveAsTable(featureTable)
@@ -80,6 +81,14 @@ class FeatureWithLabelJoinTest {
     // listing 5 should not not have any label
     assertEquals(null, view.where(view("listing") === "5")
       .select("label_ds").first().get(0))
+
+    //validate the latest label view
+    val latest = tableUtils.sql(s"select * from ${joinConf.metaData.outputLatestLabelView} order by label_ds")
+    latest.show()
+    // latest label should be all same "2022-11-11"
+    assertEquals(latest.agg(max("label_ds")).first().getString(0),
+                 latest.agg(min("label_ds")).first().getString(0))
+    assertEquals("2022-11-11", latest.agg(max("label_ds")).first().getString(0))
   }
 
   private def prefixColumnName(df: DataFrame,

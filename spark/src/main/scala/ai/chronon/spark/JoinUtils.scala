@@ -152,19 +152,51 @@ object JoinUtils {
 
   /***
    * Method to create a view with latest available label_ds for a given ds. This view is built
-   * on top of final label label which has all label versions available.
+   * on top of final label view which has all label versions available.
+   *
+   * TODO: set view properties with underlying table
    */
-  def createLatestLabelView(viewName: String, tableUtils: TableUtils): Unit = {
-    val labelMapping = getLatestLabelMapping(viewName, tableUtils)
-    // make list to partition chunks
-    // construct string based on the chunks
+  def createLatestLabelView(viewName: String,
+                            baseView: String,
+                            basePartitionedTable: String,
+                            tableUtils: TableUtils,
+                            viewProperties: Map[String, String] = null): Unit = {
+    val labelMapping = getLatestLabelMapping(basePartitionedTable, tableUtils)
+    val caseDefinitions = labelMapping.map( entry => {
+      entry._2.map(v =>
+        s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'"
+      ).toList
+    }).flatten
 
+    val createFragment =
+      s"""CREATE OR REPLACE VIEW $viewName
+         |  AS SELECT *
+         |     FROM ${baseView}
+         |     WHERE (
+         |       CASE
+         |         ${caseDefinitions.mkString("\n         ")}
+         |         ELSE true
+         |       END
+         |     )
+         | """.stripMargin
 
-
+    val propertiesFragment = if (viewProperties != null && viewProperties.nonEmpty) {
+      s"""TBLPROPERTIES (
+         |    ${viewProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |)""".stripMargin
+    } else {
+      ""
+    }
+    val sqlStatement = Seq(createFragment, propertiesFragment).mkString("\n")
+    tableUtils.sql(sqlStatement)
   }
 
   /**
-   * compute the mapping label_ds -> list of ds which has this label_ds as latest version
+   * compute the mapping label_ds -> PartitionRange of ds which has this label_ds as latest version
+   *  - Get all partitions from table and
+   *  - For each ds, find the latest available label_ds
+   *  - Reverse the mapping and get the ds partition range for each label version(label_ds)
+   *
    * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
    */
   def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {

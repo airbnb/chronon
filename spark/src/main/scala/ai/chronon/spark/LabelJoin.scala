@@ -62,10 +62,16 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       val joinKeys: Array[String] = if (joinConf.rowIds != null && !joinConf.rowIds.isEmpty)
         joinConf.rowIds.asScala.toArray else labelJoinConf.rowIdentifier
       JoinUtils.createOrReplaceView(joinConf.metaData.outputFinalView,
-        joinConf.metaData.outputTable,
-        outputLabelTable,
-        joinKeys,
-        tableUtils)
+                                    joinConf.metaData.outputTable,
+                                    outputLabelTable,
+                                    joinKeys,
+                                    tableUtils)
+      println(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
+      JoinUtils.createLatestLabelView(joinConf.metaData.outputLatestLabelView,
+                                      baseView = joinConf.metaData.outputFinalView,
+                                      basePartitionedTable = joinConf.metaData.outputLabelTable,
+                                      tableUtils)
+      println(s"Final view with latest label created: ${joinConf.metaData.outputLatestLabelView}")
       labelTable
     }
   }

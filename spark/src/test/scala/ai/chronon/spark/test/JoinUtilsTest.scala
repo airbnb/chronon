@@ -235,6 +235,33 @@ class JoinUtilsTest {
   }
 
   @Test
+  def testCreateLatestLabelView(): Unit = {
+    val finalViewName = "joinUtil.testFinalView"
+    val leftTableName = "joinUtil.testFeatureTable2"
+    val rightTableName = "joinUtil.testLabelTable2"
+    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
+    tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark),
+      rightTableName,
+      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    val keys = Array("listing_id", Constants.PartitionColumn)
+
+    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils)
+    val view = tableUtils.sql(s"select * from $finalViewName")
+    view.show()
+    assertEquals(6, view.count())
+
+    val latestLabelView = "testLatestLabel"
+    JoinUtils.createLatestLabelView(latestLabelView, finalViewName, rightTableName, tableUtils)
+    val latest = tableUtils.sql(s"select * from $latestLabelView")
+    latest.show()
+    assertEquals(2, latest.count())
+    assertEquals(0, latest.filter(latest("listing_id") === "3").count())
+    assertEquals("2022-11-22", latest.where(latest("ds") === "2022-10-07").
+      select("label_ds").first().get(0))
+  }
+
+  @Test
   def testFilterColumns(): Unit ={
     val testDf = createSampleTable()
     val filter = Array("listing", "ds", "feature_review")
