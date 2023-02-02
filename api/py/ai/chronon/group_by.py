@@ -252,6 +252,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             output_namespace: str = None,
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
+            name: str = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -386,6 +387,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     team = inspect.stack()[1].filename.split("/")[-2]
 
     metadata = ttypes.MetaData(
+        name=name,
         online=online,
         production=production,
         outputNamespace=output_namespace,

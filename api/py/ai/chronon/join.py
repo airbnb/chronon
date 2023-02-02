@@ -44,9 +44,16 @@ def JoinPart(group_by: api.GroupBy,
         if '__name__' in ref and ref['__name__'].startswith("group_bys"):
             group_by_module_name = ref['__name__']
             break
-    logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-    group_by_module = importlib.import_module(group_by_module_name)
-    __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
+    if group_by_module_name:
+        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+        group_by_module = importlib.import_module(group_by_module_name)
+        __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
+    else:
+        if not group_by.metaData.name:
+            logging.error("No group_by file or custom group_by name found")
+            raise ValueError(
+                "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
+                "You may pass it in via GroupBy.name. \n")
     if key_mapping:
         utils.check_contains(key_mapping.values(),
                              group_by.keyColumns,
@@ -211,6 +218,33 @@ def ExternalPart(source: api.ExternalSource,
     )
 
 
+def LabelPart(labels: List[api.JoinPart],
+              leftStartOffset: int,
+              leftEndOffset: int) -> api.LabelPart:
+    """
+    Used to describe labels in join. Label part can be viewed as regular join part but represent
+    label data instead of regular feature data. Once labels are mature, label join job would join
+    labels with features in the training window user specified using `leftStartOffset` and
+    `leftEndOffset`.
+
+    Labels will be refreshed within this window given a label ds. As a result, there could be multiple
+    label versions based on the label ds. Label definition can be updated along the way but label join
+    job can only accommodate the changes going forward unless a backfill is manually triggered
+
+    :param labels: List of labels
+    :param leftStartOffset: Integer to define the earliest date label should be refreshed
+                            comparing to label_ds date specified
+    :param leftEndOffset: Integer to define the most recent date label should be refreshed.
+                          e.g. left_end_offset = 3 most recent label available will be 3 days
+                          prior to 'label_ds'
+    """
+    return api.LabelPart(
+        labels=labels,
+        leftStartOffset=leftStartOffset,
+        leftEndOffset=leftEndOffset
+    )
+
+
 def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
     """
     Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
@@ -249,6 +283,7 @@ def Join(left: api.Source,
          row_ids: List[str] = None,
          bootstrap_parts: List[api.BootstrapPart] = None,
          bootstrap_from_log: bool = False,
+         label_part: api.LabelPart = None,
          **kwargs
          ) -> api.Join:
     """
@@ -323,6 +358,8 @@ def Join(left: api.Source,
         A list of BootstrapPart used for the Join. See BootstrapPart doc for more details
     :param bootstrap_from_log:
         If set to True, will use logging table to generate training data by default and skip continuous backfill
+    :param label_part:
+        Label part which contains a list of labels and label refresh window boundary used for the Join
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -407,5 +444,6 @@ def Join(left: api.Source,
         skewKeys=skew_keys,
         onlineExternalParts=online_external_parts,
         bootstrapParts=bootstrap_parts,
-        rowIds=row_ids
+        rowIds=row_ids,
+        labelPart=label_part
     )
