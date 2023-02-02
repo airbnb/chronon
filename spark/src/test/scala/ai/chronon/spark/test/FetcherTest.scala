@@ -81,6 +81,121 @@ class FetcherTest extends TestCase {
     assertFalse(emptyRes.latest.isSuccess)
   }
 
+  def generateMutationData2(namespace: String): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
+
+    val eventData = Seq(
+      // {reservation, ts, ds}
+      Row(595125622443733822L, toTs("2023-01-10 00:45:00"), "2023-01-10"), // expected => null
+      Row(595125622443733822L, toTs("2023-01-10 02:00:00"), "2023-01-10"), // expected => 0
+      Row(595125622443733822L, toTs("2023-01-10 04:00:00"), "2023-01-10"), // expected => 0
+      Row(595125622443733822L, toTs("2023-01-10 06:00:00"), "2023-01-10"), // expected => 1
+      Row(595125622443733822L, toTs("2023-01-10 08:00:00"), "2023-01-10") // expected => 1
+    )
+
+    // {reservation, ts, status, ds}
+    val snapshotData = Seq(
+      Row(1L, toTs("2023-01-09 12:00:00"), 1, "2023-01-09") // irrelevant snapshot data
+    )
+    val mutationData = Seq(
+      // {reservation, ts, status, ds, mutation_ts, is_before}
+      Row(595125622443733822L, toTs("2023-01-10 01:00:00"), 0, "2023-01-10", toTs("2023-01-10 01:00:00"), false),
+      Row(595125622443733822L, toTs("2023-01-10 01:00:00"), 0, "2023-01-10", toTs("2023-01-10 03:00:00"), true),
+      Row(595125622443733822L, toTs("2023-01-10 03:00:00"), 3, "2023-01-10", toTs("2023-01-10 03:00:00"), false),
+      Row(595125622443733822L, toTs("2023-01-10 03:00:00"), 3, "2023-01-10", toTs("2023-01-10 05:00:00"), true),
+      Row(595125622443733822L, toTs("2023-01-10 05:00:00"), 1, "2023-01-10", toTs("2023-01-10 05:00:00"), false),
+      Row(595125622443733822L, toTs("2023-01-10 05:00:00"), 1, "2023-01-10", toTs("2023-01-10 07:00:00"), true),
+      Row(595125622443733822L, toTs("2023-01-10 07:00:00"), 1, "2023-01-10", toTs("2023-01-10 07:00:00"), false)
+    )
+    // Schemas
+    val snapshotSchema = StructType(
+      "reservations_count_snapshot_fetcher",
+      Array(StructField("reservation", LongType),
+            StructField("ts", LongType),
+            StructField("status", IntType),
+            StructField("ds", StringType))
+    )
+
+    // {..., mutation_ts (timestamp of mutation), is_before (previous value or the updated value),...}
+    // Change the names to make sure mappings work properly
+    val mutationSchema = StructType("reservations_count_mutation_fetcher",
+                                    snapshotSchema.fields ++ Seq(
+                                      StructField("mutation_time", LongType),
+                                      StructField("is_before_reversal", BooleanType)
+                                    ))
+
+    // {..., event (generic event column), ...}
+    val eventSchema = StructType("reservations_events_fetcher",
+                                 Array(
+                                   StructField("reservation", LongType),
+                                   StructField("ts", LongType),
+                                   StructField("ds", StringType)
+                                 ))
+
+    val sourceData: Map[StructType, Seq[Row]] = Map(
+      eventSchema -> eventData,
+      mutationSchema -> mutationData,
+      snapshotSchema -> snapshotData
+    )
+
+    sourceData.foreach {
+      case (schema, rows) =>
+        spark.createDataFrame(rows.asJava, Conversions.fromChrononSchema(schema)).save(s"$namespace.${schema.name}")
+
+    }
+    println("saved all data hand written for fetcher test")
+
+    val startPartition = "2023-01-09"
+    val endPartition = "2023-01-10"
+    val rightSource = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Map(
+          "reservation" -> "reservation",
+          "ts" -> "ts",
+          "is_accepted" -> "case when status = 1 then 1 else 0 end"
+        ),
+        startPartition = startPartition,
+        endPartition = endPartition,
+        mutationTimeColumn = "mutation_time",
+        reversalColumn = "is_before_reversal"
+      ),
+      snapshotTable = s"$namespace.${snapshotSchema.name}",
+      mutationTable = s"$namespace.${mutationSchema.name}",
+      mutationTopic = "blank"
+    )
+
+    val leftSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("reservation", "ts"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${eventSchema.name}"
+      )
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(rightSource),
+      keyColumns = Seq("reservation"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "is_accepted",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
+        )
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb_2", namespace = namespace, team = "chronon")
+    )
+
+    val joinConf = Builders.Join(
+      left = leftSource,
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_join_2", namespace = namespace, team = "chronon")
+    )
+    joinConf
+  }
+
   /**
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
@@ -567,6 +682,12 @@ class FetcherTest extends TestCase {
     val namespace = "deterministic_fetch"
     val joinConf = generateMutationData(namespace)
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
+  }
+
+  def testTemporalFetchJoinDeterministic2(): Unit = {
+    val namespace = "deterministic_fetch2"
+    val joinConf = generateMutationData2(namespace)
+    compareTemporalFetch(joinConf, "2023-01-10", namespace, consistencyCheck = false)
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
