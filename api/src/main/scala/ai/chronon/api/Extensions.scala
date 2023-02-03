@@ -105,6 +105,11 @@ object Extensions {
       val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
       ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jMap).get(key).orNull
     }
+
+    def owningTeam: String = {
+      val teamOverride = Try(customJsonLookUp(Constants.TeamOverride).asInstanceOf[String]).toOption
+      teamOverride.getOrElse(metaData.team)
+    }
   }
 
   // one per output column - so single window

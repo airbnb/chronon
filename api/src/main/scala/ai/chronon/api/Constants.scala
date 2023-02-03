@@ -37,4 +37,5 @@ object Constants {
   val ContextualSourceName: String = "contextual"
   val ContextualSourceKeys: String = "contextual_keys"
   val ContextualSourceValues: String = "contextual_values"
+  val TeamOverride: String = "team_override"
 }

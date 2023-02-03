@@ -61,7 +61,7 @@ object Metrics {
         environment = environment,
         join = join.metaData.cleanName,
         production = join.metaData.isProduction,
-        team = join.metaData.team
+        team = join.metaData.owningTeam
       )
     }
 
@@ -71,7 +71,7 @@ object Metrics {
         groupBy = groupBy.metaData.cleanName,
         production = groupBy.metaData.isProduction,
         accuracy = groupBy.inferredAccuracy,
-        team = groupBy.metaData.team
+        team = groupBy.metaData.owningTeam
       )
     }
 
@@ -86,7 +86,7 @@ object Metrics {
         environment = environment,
         groupBy = stagingQuery.metaData.cleanName,
         production = stagingQuery.metaData.isProduction,
-        team = stagingQuery.metaData.team
+        team = stagingQuery.metaData.owningTeam
       )
     }
 
