@@ -66,7 +66,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.sql.files.maxPartitionBytes=1073741824 \
 --conf spark.debug.maxToStringFields=1000 \
 --conf spark.driver.maxResultSize=4G \
---conf spark.sql.hive.metastore.version=0.13.1 \
+--conf spark.sql.hive.metastore.version=1.2.0 \
 --conf spark.sql.hive.metastore.jars=maven \
 --deploy-mode client \
 --master "${JOB_MODE:-yarn}" \
