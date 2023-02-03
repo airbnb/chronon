@@ -133,10 +133,12 @@ def __set_name(obj, cls, mod_prefix):
     eo.import_module_set_name(module, cls)
 
 
-def output_table_name(obj, full_name: bool = False):
+def output_table_name(obj, full_name: bool):
     table_name = obj.metaData.name.replace('.', '_')
+    db = obj.metaData.outputNamespace
+    db = db or "{{ db }}"
     if full_name:
-        return obj.metaData.outputNamespace + "." + table_name
+        return db + "." + table_name
     else:
         return table_name
 
@@ -145,16 +147,16 @@ def log_table_name(obj, full_name: bool = False):
     return output_table_name(obj, full_name=full_name) + "_logged"
 
 
-def get_staging_query_output_table_name(staging_query: api.StagingQuery):
+def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_name: bool = False):
     """generate output table name for staging query job"""
     __set_name(staging_query, api.StagingQuery, "staging_queries")
-    return output_table_name(staging_query, full_name=False)
+    return output_table_name(staging_query, full_name=full_name)
 
 
-def get_join_output_table_name(join: api.Join):
+def get_join_output_table_name(join: api.Join, full_name: bool):
     """generate output table name for staging query job"""
     __set_name(join, api.Join, "joins")
-    return output_table_name(join, full_name=False)
+    return output_table_name(join, full_name=full_name)
 
 
 def get_dependencies(

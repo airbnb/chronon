@@ -86,7 +86,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
-        _set_templated_values(obj, obj_class)
+        _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
@@ -127,11 +127,15 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.team = team_name
 
 
-def _set_templated_values(obj, cls):
+def _set_templated_values(obj, cls, teams_path, team_name):
+    namespace = teams.get_team_conf(teams_path, team_name, "namespace")
     if cls == api.Join and obj.bootstrapParts:
         for bootstrap in obj.bootstrapParts:
-            if bootstrap.table == '{{ logged_table }}':
-                bootstrap.table = utils.log_table_name(obj, full_name=True)
+            table = bootstrap.table
+            if table:
+                table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
+                table = table.replace('{{ db }}', namespace)
+            bootstrap.table = table
 
 
 def _write_obj(full_output_root: str,

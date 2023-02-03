@@ -10,23 +10,29 @@ from group_bys.sample_team import (
 
 from ai.chronon.join import Join, JoinPart, BootstrapPart
 from ai.chronon.query import Query, select
+from ai.chronon.utils import get_join_output_table_name, get_staging_query_output_table_name
+
+v1_join_parts = [
+    JoinPart(
+        group_by=event_sample_group_by.v1,
+        key_mapping={'subject': 'group_by_subject'},
+    ),
+    JoinPart(
+        group_by=entity_sample_group_by_from_module.v1,
+        key_mapping={'subject': 'group_by_subject'},
+    ),
+]
+
+v2_join_parts = [
+    JoinPart(
+        group_by=group_by_with_kwargs.v1,
+        key_mapping={'subject': 'group_by_subject'},
+    ),
+]
 
 v1 = Join(
     left=test_sources.event_source,
-    right_parts=[
-        JoinPart(
-            group_by=event_sample_group_by.v1,
-            key_mapping={'subject': 'group_by_subject'},
-        ),
-        JoinPart(
-            group_by=entity_sample_group_by_from_module.v1,
-            key_mapping={'subject': 'group_by_subject'},
-        ),
-        JoinPart(
-            group_by=group_by_with_kwargs.v1,
-            key_mapping={'subject': 'group_by_subject'},
-        ),
-    ],
+    right_parts=v1_join_parts,
     online=True,
     sample_percent=100.0,
     row_ids=["request_id"],
@@ -40,6 +46,20 @@ v1 = Join(
                 end_partition='2022-02-01',
                 selects=select(field_a="field_a", field_b="field_b"),
             )
+        )
+    ]
+)
+
+v2 = Join(
+    left=test_sources.event_source,
+    right_parts=v1_join_parts + v2_join_parts,
+    online=True,
+    sample_percent=100.0,
+    row_ids=["request_id"],
+    bootstrap_from_log=True,
+    bootstrap_parts=[
+        BootstrapPart(
+            table=get_join_output_table_name(v1, full_name=True)
         )
     ]
 )
