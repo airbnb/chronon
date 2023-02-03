@@ -15,4 +15,23 @@ class ExtensionsTest {
       source.subPartitionFilters
     )
   }
+
+  @Test
+  def testOwningTeam(): Unit = {
+    val metadata =
+      Builders.MetaData(
+        customJson = "{\"check_consistency\": true, \"lag\": 0, \"team_override\": \"ml_infra\"}",
+        team = "chronon"
+      )
+
+    assertEquals(
+      "ml_infra",
+      metadata.owningTeam
+    )
+
+    assertEquals(
+      "chronon",
+      metadata.team
+    )
+  }
 }
