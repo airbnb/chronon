@@ -132,44 +132,48 @@ object JoinUtils {
           }
         })
     val joinKeyDefinitions = joinKeys.map(key => s"l.${key} = r.${key}")
-    val createFragment =
-      s"""CREATE OR REPLACE VIEW $viewName
+    val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
+    val queryFragment =
+      s"""
          |  AS SELECT
          |     ${fieldDefinitions.mkString(",\n    ")}
          |    FROM ${leftTable} AS l LEFT OUTER JOIN ${rightTable} AS r
          |      ON ${joinKeyDefinitions.mkString(" AND ")}""".stripMargin
 
     val propertiesFragment = if (viewProperties != null && viewProperties.nonEmpty) {
-      s"""TBLPROPERTIES (
+      s"""    TBLPROPERTIES (
          |    ${viewProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
-         |)""".stripMargin
+         |    )""".stripMargin
     } else {
       ""
     }
-    val sqlStatement = Seq(createFragment, propertiesFragment).mkString("\n")
+    val sqlStatement = Seq(createFragment, propertiesFragment, queryFragment).mkString("\n")
     tableUtils.sql(sqlStatement)
   }
 
   /***
    * Method to create a view with latest available label_ds for a given ds. This view is built
    * on top of final label view which has all label versions available.
-   *
-   * TODO: set view properties with underlying table
+   * This view will inherit the final label view properties as well.
    */
   def createLatestLabelView(viewName: String,
                             baseView: String,
-                            basePartitionedTable: String,
                             tableUtils: TableUtils,
-                            viewProperties: Map[String, String] = null): Unit = {
-    val labelMapping = getLatestLabelMapping(basePartitionedTable, tableUtils)
+                            propertiesOverride: Map[String, String] = null): Unit = {
+    val baseViewProperties = tableUtils.getTableProperties(baseView).getOrElse(Map.empty)
+    val labelTableName = baseViewProperties.get(Constants.LabelViewPropertyKeyLabelTable).getOrElse("")
+    assert(!labelTableName.isEmpty, s"Not able to locate underlying label table for partitions")
+
+    val labelMapping = getLatestLabelMapping(labelTableName, tableUtils)
     val caseDefinitions = labelMapping.map( entry => {
       entry._2.map(v =>
         s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'"
       ).toList
     }).flatten
 
-    val createFragment =
-      s"""CREATE OR REPLACE VIEW $viewName
+    val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
+    val queryFragment =
+      s"""
          |  AS SELECT *
          |     FROM ${baseView}
          |     WHERE (
@@ -180,14 +184,16 @@ object JoinUtils {
          |     )
          | """.stripMargin
 
-    val propertiesFragment = if (viewProperties != null && viewProperties.nonEmpty) {
+    val mergedProperties = if (propertiesOverride != null) baseViewProperties ++ propertiesOverride
+                           else baseViewProperties
+    val propertiesFragment = if (mergedProperties.nonEmpty) {
       s"""TBLPROPERTIES (
-         |    ${viewProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |    ${mergedProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
          |)""".stripMargin
     } else {
       ""
     }
-    val sqlStatement = Seq(createFragment, propertiesFragment).mkString("\n")
+    val sqlStatement = Seq(createFragment, propertiesFragment, queryFragment).mkString("\n")
     tableUtils.sql(sqlStatement)
   }
 

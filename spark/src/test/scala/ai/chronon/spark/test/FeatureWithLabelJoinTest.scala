@@ -5,7 +5,7 @@ import ai.chronon.api.{Builders, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions.{max, min}
-import org.junit.Assert.{assertEquals}
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FeatureWithLabelJoinTest {

@@ -224,7 +224,9 @@ class JoinUtilsTest {
     TestUtils.createSampleLabelTableDf(spark).write.saveAsTable(rightTableName)
     val keys = Array("listing_id", Constants.PartitionColumn)
 
-    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils)
+    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,
+      viewProperties = Map("featureTable" -> leftTableName, "labelTable" -> rightTableName))
+
     val view = tableUtils.sql(s"select * from $finalViewName")
     view.show()
     assertEquals(6, view.count())
@@ -232,6 +234,11 @@ class JoinUtilsTest {
       .select("label_room_type").first().get(0))
     assertEquals("SUPER_HOST", view.where(view("ds") === "2022-10-07" && view("listing_id") === "1")
       .select("label_host_type").first().get(0))
+
+    val properties = tableUtils.getTableProperties(finalViewName)
+    assertTrue(properties.isDefined)
+    assertEquals(properties.get.get("featureTable"), Some(leftTableName))
+    assertEquals(properties.get.get("labelTable"), Some(rightTableName))
   }
 
   @Test
@@ -246,19 +253,27 @@ class JoinUtilsTest {
       partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
     val keys = Array("listing_id", Constants.PartitionColumn)
 
-    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils)
+    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,
+      viewProperties = Map("featureTable" -> leftTableName, "labelTable" -> rightTableName))
     val view = tableUtils.sql(s"select * from $finalViewName")
     view.show()
     assertEquals(6, view.count())
 
+    //verity latest label view
     val latestLabelView = "testLatestLabel"
-    JoinUtils.createLatestLabelView(latestLabelView, finalViewName, rightTableName, tableUtils)
+    JoinUtils.createLatestLabelView(latestLabelView, finalViewName, tableUtils,
+      propertiesOverride = Map("newProperties" -> "value"))
     val latest = tableUtils.sql(s"select * from $latestLabelView")
     latest.show()
     assertEquals(2, latest.count())
     assertEquals(0, latest.filter(latest("listing_id") === "3").count())
     assertEquals("2022-11-22", latest.where(latest("ds") === "2022-10-07").
       select("label_ds").first().get(0))
+
+    val properties = tableUtils.getTableProperties(latestLabelView)
+    assertTrue(properties.isDefined)
+    assertEquals(properties.get.get("featureTable"), Some(leftTableName))
+    assertEquals(properties.get.get("newProperties"), Some("value"))
   }
 
   @Test
