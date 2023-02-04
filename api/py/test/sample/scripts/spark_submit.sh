@@ -58,7 +58,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.task.maxFailures=20 \
 --conf spark.stage.maxConsecutiveAttempts=12 \
 --conf spark.maxRemoteBlockSizeFetchToMem=2G \
---conf spark.network.timeout=230s \
+--conf spark.network.timeout=300s \
 --conf spark.executor.heartbeatInterval=200s \
 --conf spark.local.dir=${CHRONON_WORKING_DIR} \
 --conf spark.jars.ivy=${CHRONON_WORKING_DIR} \

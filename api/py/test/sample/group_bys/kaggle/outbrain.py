@@ -1,4 +1,3 @@
-
 from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 from ai.chronon.group_by import (
