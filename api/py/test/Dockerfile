@@ -11,6 +11,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        tree \
         python3.7 \
         python3-pip \
         python3.7-dev \

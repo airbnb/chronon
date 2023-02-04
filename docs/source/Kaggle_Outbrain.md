@@ -18,7 +18,6 @@ One time steps to get up and running with Chronon.
 ```shell
 cd ~/repos
 git clone git@github.com:airbnb/chronon.git
-export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
 ```
 
 #### 1. Download Kaggle data
@@ -30,20 +29,19 @@ https://www.kaggle.com/competitions/outbrain-click-prediction/data
 To keep this tutorial brief, we'll only use these datasets. However, you could always download more data and experiment with joining it in.
 
 
-#### 2. Download and setup spark (assuming you have a jdk already setup)
+#### 2. Pull the [chronon_kaggle](https://hub.docker.com/layers/houpy0829/chronon/chronon_kaggle/images/sha256-c9eed67b2e67da748bfb284c4608f2e18de91e81dd9d31228f071eae1fbff84b?context=repo) Docker image
+We built a Docker image  to reduce the burden for users to set up their machines.  
 ```shell
 cd ~
-curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
-tar xf spark-2.4.8-bin-hadoop2.7.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
+# todo: replace with a team docker hub
+docker pull houpy0829/chronon:chronon_kaggle
+# run the docker container and enter it
+# please note the volume mounting params 
+docker run -it -v ~/repos/chronon/:/repos/chronon -v ~/kaggle_outbrain:/kaggle_outbrain -v ~/kaggle_outbrain_parquet:/kaggle_outbrain_parquet houpy0829/chronon:chronon_kaggle
+# generate thrift 
+pushd /repos/chronon && thrift --gen py -out api/py/ai/chronon api/thrift/api.thrift && popd
 ```
 
-
-#### 3. Now switch to the config repo (within the project)
-This is where we will do the bulk of development iterations from
-```shell
-cd api/py/test/sample/
-```
 
 ## Chronon Development
 
@@ -92,7 +90,7 @@ See more detailed documentation on Staging Query [here](https://chronon-ai.pages
 Compiling takes the python that we wrote and turns it into a thrift serialized object that is runnable.
 
 ```shell
-python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --input_path=staging_queries/kaggle/outbrain.py
+python3 /repos/chronon/api/py/ai/chronon/repo/compile.py --input_path=staging_queries/kaggle/outbrain.py
 ```
 
 #### Run the staging query
@@ -103,9 +101,9 @@ Now that we have our compiled file, we can pass it into the `run.py` runner whic
 mkdir ~/kaggle_outbrain
 
 DRIVER_MEMORY=2G EXECUTOR_CORES=6 EXECUTOR_MEMORY=8G PARALLELISM=10 MAX_EXECUTORS=1 \
-python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
+python3 /repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --conf=production/staging_queries/kaggle/outbrain.base_table \
---local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet
+--local-data-path /kaggle_outbrain --local-warehouse-location /kaggle_outbrain_parquet
 ```
 
 As long as you see a log line like `Finished writing to default.kaggle_outbrain_base_table`, then the job ran successfully.
@@ -134,8 +132,7 @@ See detailed documentation on Join [here](https://chronon-ai.pages.dev/Introduct
 
 Again, compiling creates a runnable serialized file out of your python definition.
 ```shell
-PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ \
-python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/outbrain.py
+python3 /repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/outbrain.py
 ```
 
 #### Run the join
@@ -143,9 +140,9 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/kaggle/ou
 Running the join will backfill a training dataset with each of the features values computed correctly for each row defined on the `left` side of the join.
 ```shell
 DRIVER_MEMORY=4G EXECUTOR_MEMORY=8G EXECUTOR_CORES=6 PARALLELISM=100 MAX_EXECUTORS=1 \
-python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
+python3 /repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --conf=production/joins/kaggle/outbrain.training_set \
---local-data-path ~/kaggle_outbrain --local-warehouse-location ~/kaggle_outbrain_parquet \
+--local-data-path /kaggle_outbrain --local-warehouse-location /kaggle_outbrain_parquet \
 --ds=2016-07-01 --step-days=1
 ```
 
@@ -155,14 +152,14 @@ python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 #### Access the data
 You can now see the parquet data here.
 ```shell
-tree -h ~/kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
+tree -h /kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
 ``` 
 
 You can also query it using the spark sql shell:
 
 ```aidl
-cd ~/kaggle_outbrain_parquet 
-~/spark-2.4.8-bin-hadoop2.7/bin/spark-sql
+cd /kaggle_outbrain_parquet 
+/spark-2.4.8-bin-hadoop2.7/bin/spark-sql
 ```
 
 And then: 
