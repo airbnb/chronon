@@ -112,6 +112,7 @@ class FetchStatsTest extends TestCase {
     val futures = fetcher.fetchStats(requests)
     val result = Await.result(futures, Duration(10000, SECONDS)) // todo: change back to millis
     println(s"Test fetch: $result")
+    fetcher.fetchStatsBetween(1, System.currentTimeMillis(), joinConf.metaData.cleanName)
     println("Done!")
   }
 }

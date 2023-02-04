@@ -2,13 +2,14 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{StringOps, ThrowableOps}
+import ai.chronon.aggregator.row.StatsGenerator
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -369,7 +370,7 @@ class BaseFetcher(kvStore: KVStore,
     * Fetch uploaded stats.
     * Stats are uploaded and keyed by timestamp bucket.
     * Schemas are stored in the KV Database under ai.chronon.api.Constants.{StatsSchemaKey, StatsSchemaValue}
-    * respectively.
+    * respectively. Cached in the MetadataStore.
     * Note: Consider getting join conf for request.name and leveraging joinOps to determine the batchDataset.
     * However this limits the usability of online stats to online joins which could affect dashboard consumption.
     */
@@ -389,7 +390,7 @@ class BaseFetcher(kvStore: KVStore,
       kvResponse =>
         val responseMap = kvResponse.map {
           r =>
-            val responseBytes = r.values.map(_.maxBy(_.millis)).map(_.bytes).get
+            val responseBytes = r.latest.map(_.bytes).get
             getStatsValueCodec(r.request.dataset) match {
               case Success(valueCodec) => r.request -> valueCodec.decodeMap(responseBytes)
               case Failure(exception) =>
@@ -402,5 +403,28 @@ class BaseFetcher(kvStore: KVStore,
             Response(request, Try(responseMap.getOrElse(getRequest, Map.empty[String, AnyRef])))
         }
     }
+  }
+
+  def fetchStatsBetween(startTs: Long, endTs: Long, dataset: String): Array[Any] = {
+    // Round start and end and get the stats per each hour.
+    val rStart = TsUtils.round(startTs, 60000*60)
+    val rEnd = TsUtils.round(endTs, 60000* 60)
+    val requests = (rStart until rEnd by 60* 60000).map(
+      timeKey => Request(dataset, keys = Seq(Constants.TimeColumn -> timeKey.asInstanceOf[AnyRef]).toMap)
+    )
+    val responses = fetchStats(requests)
+    // Build aggregator for the array[Any] responses to collapse into a single stats and finalize.
+    val valueSchema = getStatsValueCodec(dataset) match {
+      case Success(codec) => codec.chrononSchema
+      case Failure(exception) => throw exception
+    }
+    val rowAggregator = StatsGenerator.buildAggregator(valueSchema)
+    val baseIr: Array[Any] = Array.fill(rowAggregator.length)(null)
+    responses.foreach {
+      case response: Response =>
+        val batchRecord: Row = AvroConversions.toChrononRow(response.values, valueSchema).asInstanceOf[Row]
+        rowAggregator.update(baseIr, batchRecord)
+    }
+    rowAggregator.finalize(baseIr)
   }
 }
