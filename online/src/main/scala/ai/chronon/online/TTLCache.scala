@@ -14,23 +14,37 @@ class TTLCache[I, O](f: I => O,
 ) {
   case class Entry(value: O, updatedAtMillis: Long)
 
-  private def funcForInterval(intervalMillis: Long) =
+  private def updateFuncWrapper(intervalMillis: Long) =
     new function.BiFunction[I, Entry, Entry] {
-      override def apply(t: I, u: Entry): Entry = {
-        val now = nowFunc()
-        if (u == null || now - u.updatedAtMillis > intervalMillis) {
-          Entry(f(t), now)
-        } else {
-          u
-        }
-      }
+      override def apply(t: I, u: Entry): Entry =
+        updateFunc(
+          u,
+          intervalMillis,
+          (now: Long) => Entry(f(t), now)
+        )
     }
-  private val refreshFunc = funcForInterval(refreshIntervalMillis)
-  private val applyFunc = funcForInterval(ttlMillis)
+
+  def updateFunc(u: Entry, intervalMillis: Long, computeFunc: Long => Entry): Entry = {
+    val now = nowFunc()
+    if (u == null || now - u.updatedAtMillis > intervalMillis) {
+      computeFunc(now)
+    } else {
+      u
+    }
+  }
+
+  def get(i: I, intervalMillis: Long): O = {
+    val u = cMap.getOrDefault(i, null)
+    updateFunc(
+      u,
+      ttlMillis,
+      _ => cMap.compute(i, updateFuncWrapper(intervalMillis))
+    ).value
+  }
 
   val cMap = new ConcurrentHashMap[I, Entry]()
-  def apply(i: I): O = cMap.compute(i, applyFunc).value
+  def apply(i: I): O = get(i, intervalMillis = ttlMillis)
   // manually refresh entry with a lower interval
-  def refresh(i: I): O = cMap.compute(i, refreshFunc).value
+  def refresh(i: I): O = get(i, intervalMillis = refreshIntervalMillis)
   def force(i: I): O = cMap.put(i, Entry(f(i), nowFunc())).value
 }
