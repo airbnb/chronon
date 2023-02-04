@@ -29,7 +29,7 @@ https://www.kaggle.com/competitions/outbrain-click-prediction/data
 To keep this tutorial brief, we'll only use these datasets. However, you could always download more data and experiment with joining it in.
 
 
-#### 2. Pull the [chronon_kaggle](https://hub.docker.com/layers/houpy0829/chronon/chronon_kaggle/images/sha256-c9eed67b2e67da748bfb284c4608f2e18de91e81dd9d31228f071eae1fbff84b?context=repo) Docker image
+#### 2. Pull the [chronon_kaggle](https://hub.docker.com/repository/docker/houpy0829/chronon) Docker image
 We built a Docker image  to reduce the burden for users to set up their machines.  
 ```shell
 cd ~
