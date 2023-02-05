@@ -284,13 +284,7 @@ case class TableUtils(sparkSession: SparkSession) {
                      outputPartitionRange: PartitionRange,
                      inputTables: Option[Seq[String]] = None,
                      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
-                     inputToOutputShift: Option[Int] = None): Option[Seq[PartitionRange]] = {
-    def shiftPartition(date: String): String =
-      if (inputToOutputShift.isDefined) {
-        Constants.Partition.shift(date, inputToOutputShift.get)
-      } else {
-        date
-      }
+                     inputToOutputShift: Int = 0): Option[Seq[PartitionRange]] = {
 
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(_.map(table =>
@@ -302,7 +296,7 @@ case class TableUtils(sparkSession: SparkSession) {
            |inputTables: ${inputTables}, partitionRange: ${outputPartitionRange}
            |""".stripMargin
       )
-      outputPartitionRange.copy(start = shiftPartition(inputStart.get))
+      outputPartitionRange.copy(start = Constants.Partition.shift(inputStart.get, inputToOutputShift))
     } else {
       outputPartitionRange
     }
@@ -323,7 +317,7 @@ case class TableUtils(sparkSession: SparkSession) {
           .flatMap { table =>
             partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
           }
-          .map(shiftPartition)
+          .map(Constants.Partition.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
 
