@@ -78,8 +78,11 @@ object Extensions {
              tableProperties: Map[String, String] = null,
              partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
              autoExpand: Boolean = false): Unit = {
-      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties, partitionColumns,
-        autoExpand = autoExpand)
+      TableUtils(df.sparkSession).insertPartitions(df,
+                                                   tableName,
+                                                   tableProperties,
+                                                   partitionColumns,
+                                                   autoExpand = autoExpand)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
@@ -129,6 +132,10 @@ object Extensions {
                             fpp: Double = 0.03): BloomFilter = {
       val approxCount =
         df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
+      if (approxCount == 0) {
+        println(
+          s"Warning: approxCount for col ${col} from table ${tableName} is 0. Please double check your input data.")
+      }
       println(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
@@ -136,7 +143,7 @@ object Extensions {
       val bloomFilter = df
         .filter(df.col(col).isNotNull)
         .stat
-        .bloomFilter(col, approxCount, fpp)
+        .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
       println(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount

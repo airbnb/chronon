@@ -90,8 +90,13 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
       .takeWhile(_ <= end)
   }
 
-  def shift(days: Int): PartitionRange =
-    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+  def shift(days: Int): PartitionRange = {
+    if (days == 0) {
+      this
+    } else {
+      PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+    }
+  }
 
   override def compare(that: PartitionRange): Int = {
     def compareDate(left: String, right: String): Int = {
