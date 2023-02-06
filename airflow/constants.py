@@ -1,0 +1,5 @@
+import os
+
+CHRONON_PATH = "TODO"  # Set to the root of your Chronon config repo - there should be a `production` subdirectory within the directory
+TEST_TEAM_NAME = "chronon_test"  # Setting this to a team in your `teams.json` will configure jobs to run with a staging JAR
+BATCH_CONCURRENCY = 300  # Increase as required if many group_bys per team causing DAGs to fall behind
