@@ -9,16 +9,13 @@ from datetime import datetime, timedelta
 def dag_constructor(conf, mode, conf_type, team_conf):
     return DAG(
         helpers.dag_names(conf, mode, conf_type),
-        default_args=helpers.dag_default_args(
+        **helpers.dag_default_args(),
+        default_args=helpers.task_default_args(
             team_conf,
             conf["metaData"]["team"],
             retries=1,
             retry_delay=timedelta(minutes=1),
         ),
-        start_date=datetime.strptime("2022-02-01", "%Y-%m-%d"),
-        dagrun_timeout=timedelta(days=4),
-        schedule_interval='@daily',
-        catchup=False
     )
 
 

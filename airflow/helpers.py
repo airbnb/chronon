@@ -11,8 +11,9 @@ import logging
 import json
 import os
 import re
+from datetime import datetime, timedelta
 
-def dag_default_args(team_conf, team_name, **kwargs):
+def task_default_args(team_conf, team_name, **kwargs):
     """
     Default args for all dags. Extendable with custom kwargs.
     """
@@ -32,11 +33,20 @@ def dag_default_args(team_conf, team_name, **kwargs):
         'email_on_failure': True,
         'email_on_retry': False,
         'task_concurrency': 1,
-        'retries': 1,
+        'retries': 1
     }
     airflow_base.update(kwargs)
     return airflow_base
 
+
+def dag_default_args(**kwargs):
+    return {
+        'start_date': datetime.strptime("2023-02-01", "%Y-%m-%d"),
+        'dagrun_timeout': timedelta(days=4),
+        'schedule_interval': '@daily',
+        'concurrency': BATCH_CONCURRENCY,
+        'catchup': False,
+    }.update(kwargs)
 
 def get_kv_store_upload_operator(dag, conf, team_conf):
     """TODO: Your internal implementation"""
