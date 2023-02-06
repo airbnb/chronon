@@ -406,6 +406,13 @@ class BaseFetcher(kvStore: KVStore,
     }
   }
 
+  /**
+    * Fetch stats between two time ranges.
+    *
+    * Build requests and leverage fetchStats to obtain aggregated feature stats for a specific dataset between two
+    * time epochs (in milliseconds). Stats are aggregated based on the name and merged to provide a value for an
+    * interval.
+    */
   def fetchStatsBetween(startTs: Long, endTs: Long, dataset: String): Future[Array[Any]] = {
     // Round start and end and get the stats per each hour.
     val batchDataset = s"${dataset.sanitize.toUpperCase()}_STATS_BATCH"
