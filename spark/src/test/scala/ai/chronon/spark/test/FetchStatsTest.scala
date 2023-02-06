@@ -10,6 +10,7 @@ import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import com.google.gson.Gson
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
@@ -112,7 +113,9 @@ class FetchStatsTest extends TestCase {
     val futures = fetcher.fetchStats(requests)
     val result = Await.result(futures, Duration(10000, SECONDS)) // todo: change back to millis
     println(s"Test fetch: $result")
-    fetcher.fetchStatsBetween(1, System.currentTimeMillis(), joinConf.metaData.cleanName)
+    val statsMerged = fetcher.fetchStatsBetween(Constants.Partition.epochMillis(start), Constants.Partition.epochMillis(yesterday), joinConf.metaData.cleanName)
+    val gson = new Gson()
+    println(s"Stats Merged: ${gson.toJson(Await.result(statsMerged, Duration(10000, SECONDS)))}")
     println("Done!")
   }
 }

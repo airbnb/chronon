@@ -267,6 +267,8 @@ object ColumnAggregator {
           case DoubleType => simple(agg, toFloat[Double])
           case FloatType  => simple(agg)
           case ShortType  => simple(agg, toFloat[Short])
+          // TODO: Do not commit. For binary case we can't update, but we can merge IRs and finalize.
+          case BinaryType => simple(agg)
           case _          => mismatchException
         }
 

@@ -10,6 +10,7 @@ import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{StringOps, ThrowableOps}
 import ai.chronon.aggregator.row.StatsGenerator
+import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -405,8 +406,9 @@ class BaseFetcher(kvStore: KVStore,
     }
   }
 
-  def fetchStatsBetween(startTs: Long, endTs: Long, dataset: String): Array[Any] = {
+  def fetchStatsBetween(startTs: Long, endTs: Long, dataset: String): Future[Array[Any]] = {
     // Round start and end and get the stats per each hour.
+    val batchDataset = s"${dataset.sanitize.toUpperCase()}_STATS_BATCH"
     val rStart = TsUtils.round(startTs, 60000*60)
     val rEnd = TsUtils.round(endTs, 60000* 60)
     val requests = (rStart until rEnd by 60* 60000).map(
@@ -414,17 +416,22 @@ class BaseFetcher(kvStore: KVStore,
     )
     val responses = fetchStats(requests)
     // Build aggregator for the array[Any] responses to collapse into a single stats and finalize.
-    val valueSchema = getStatsValueCodec(dataset) match {
-      case Success(codec) => codec.chrononSchema
+    val valueSchema: StructType = getStatsValueCodec(batchDataset) match {
+      case Success(codec) => codec.chrononSchema.asInstanceOf[StructType]
       case Failure(exception) => throw exception
     }
     val rowAggregator = StatsGenerator.buildAggregator(valueSchema)
-    val baseIr: Array[Any] = Array.fill(rowAggregator.length)(null)
-    responses.foreach {
-      case response: Response =>
-        val batchRecord: Row = AvroConversions.toChrononRow(response.values, valueSchema).asInstanceOf[Row]
-        rowAggregator.update(baseIr, batchRecord)
+    responses.map {
+      r =>
+        var mergedIr: Array[Any] = Array.fill(rowAggregator.length)(null)
+        r.foreach {
+          response =>
+            val batchRecord: Array[Any] = rowAggregator.denormalize(valueSchema.map {
+              field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+            mergedIr = rowAggregator.merge(mergedIr, batchRecord)
+        }
+        // If more data is to be added like upper bounds and errors in percentiles should be at the finalize.
+        rowAggregator.finalize(mergedIr)
     }
-    rowAggregator.finalize(baseIr)
   }
 }
