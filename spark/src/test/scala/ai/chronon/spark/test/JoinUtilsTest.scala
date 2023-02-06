@@ -254,7 +254,8 @@ class JoinUtilsTest {
     val keys = Array("listing_id", Constants.PartitionColumn)
 
     JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,
-      viewProperties = Map("featureTable" -> leftTableName, "labelTable" -> rightTableName))
+      viewProperties = Map(Constants.LabelViewPropertyFeatureTable -> leftTableName,
+                       Constants.LabelViewPropertyKeyLabelTable -> rightTableName))
     val view = tableUtils.sql(s"select * from $finalViewName")
     view.show()
     assertEquals(6, view.count())
@@ -269,10 +270,13 @@ class JoinUtilsTest {
     assertEquals(0, latest.filter(latest("listing_id") === "3").count())
     assertEquals("2022-11-22", latest.where(latest("ds") === "2022-10-07").
       select("label_ds").first().get(0))
+    // label_ds should be unique per ds + listing
+    val removeDup = latest.dropDuplicates(Seq("label_ds", "ds"))
+    assertEquals(removeDup.count(), latest.count())
 
     val properties = tableUtils.getTableProperties(latestLabelView)
     assertTrue(properties.isDefined)
-    assertEquals(properties.get.get("featureTable"), Some(leftTableName))
+    assertEquals(properties.get.get(Constants.LabelViewPropertyFeatureTable), Some(leftTableName))
     assertEquals(properties.get.get("newProperties"), Some("value"))
   }
 

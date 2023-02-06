@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
@@ -567,9 +568,12 @@ object Extensions {
         .distinct
     }
 
-    // a list of columns which can identify a row on left
-    def rowIdentifier: Array[String] = {
-      leftKeyCols ++ Array(Constants.PartitionColumn)
+    // a list of columns which can identify a row on left, use user specified columns by default
+    def rowIdentifier(userRowId: util.List[String] = null): Array[String] = {
+      if (userRowId != null && !userRowId.isEmpty)
+        userRowId.asScala.toArray
+      else
+        leftKeyCols ++ Array(Constants.PartitionColumn)
     }
   }
 

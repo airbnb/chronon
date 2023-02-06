@@ -36,14 +36,14 @@ class FeatureWithLabelJoinTest {
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val labelDf = runner.computeLabelJoin()
     println(" == First Run Label version 2022-10-30 == ")
-    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier).show()
+    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()).show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
     println(" == Features == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
     computed.show()
-    val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier),
-      labelJoinConf.rowIdentifier,
+    val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()),
+      labelJoinConf.rowIdentifier(),
       "left_outer")
     println(" == Expected == ")
     expectedFinal.show()
@@ -51,11 +51,7 @@ class FeatureWithLabelJoinTest {
       expectedFinal,
       List("listing",
         "ds",
-        "label_ds",
-        "feature_review",
-        "feature_locale",
-        "label_listing_labels_dim_bedrooms",
-        "label_listing_labels_dim_room_type"))
+        "label_ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expectedFinal.count()}")
@@ -98,7 +94,7 @@ class FeatureWithLabelJoinTest {
     println(exceptions.mkString(", "))
     val renamedColumns = df.columns
       .map(col => {
-        if(exceptions.contains(col) || col.startsWith("label")) {
+        if(exceptions.contains(col) || col.startsWith(prefix)) {
           df(col)
         } else {
           df(col).as(s"$prefix$col")

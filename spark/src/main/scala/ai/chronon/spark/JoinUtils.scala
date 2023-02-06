@@ -125,7 +125,7 @@ object JoinUtils {
       tableUtils.getSchemaFromTable(rightTable)
         .filterNot(field => joinKeys.contains(field.name))
         .map(field => {
-          if(field.name.startsWith("label")) {
+          if(field.name.startsWith(labelColumnPrefix)) {
             s"r.${field.name}"
           } else {
             s"r.${field.name} AS ${labelColumnPrefix}_${field.name}"
@@ -199,7 +199,7 @@ object JoinUtils {
 
   /**
    * compute the mapping label_ds -> PartitionRange of ds which has this label_ds as latest version
-   *  - Get all partitions from table and
+   *  - Get all partitions from table
    *  - For each ds, find the latest available label_ds
    *  - Reverse the mapping and get the ds partition range for each label version(label_ds)
    *

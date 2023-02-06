@@ -59,12 +59,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     } else {
       // creating final join view with feature join output table
       println(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
-      val joinKeys: Array[String] = if (joinConf.rowIds != null && !joinConf.rowIds.isEmpty)
-        joinConf.rowIds.asScala.toArray else labelJoinConf.rowIdentifier
       JoinUtils.createOrReplaceView(joinConf.metaData.outputFinalView,
                                     leftTable = joinConf.metaData.outputTable,
                                     rightTable = outputLabelTable,
-                                    joinKeys = joinKeys,
+                                    joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds),
                                     tableUtils = tableUtils,
                                     viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
                                       Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable))
@@ -128,7 +126,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     finalResult
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, labelDs: String): DataFrame = {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
     val leftBlooms = labelJoinConf.leftKeyCols.par.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
@@ -145,7 +143,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       }
     }
 
-    val rowIdentifier = labelJoinConf.rowIdentifier
+    val rowIdentifier = labelJoinConf.rowIdentifier(joinConf.rowIds)
     println("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
     val leftFiltered = JoinUtils.filterColumns(leftDf, rowIdentifier)
 
@@ -154,7 +152,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     // assign label ds value and drop duplicates
-    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(labelDS))
+    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(sanitizedLabelDs))
       .dropDuplicates(rowIdentifier)
     updatedJoin.explain()
     updatedJoin.drop(Constants.TimePartitionColumn)
