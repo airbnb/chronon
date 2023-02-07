@@ -35,14 +35,18 @@ class TTLCache[I, O](f: I => O,
   val cMap = new ConcurrentHashMap[I, Entry]()
 
   // use the fact that cache update is not immediately necessary during regular reads
+  // sync update would block the calling threads on every update
   private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
     val entry = cMap.get(i)
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
       cMap.compute(i, applyFunc).value
     } else {
-      // CAS so that update is issued only once
-      if ((nowFunc() - entry.updatedAtMillis > intervalMillis) && entry.markedForUpdate.compareAndSet(false, true)) {
+      if (
+        (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
+        // CAS so that update is enqueued only once per expired entry
+        entry.markedForUpdate.compareAndSet(false, true)
+      ) {
         // enqueue async update and return old value
         ExecutionContext.global.execute(new Runnable {
           override def run(): Unit = {
