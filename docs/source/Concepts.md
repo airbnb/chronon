@@ -1,35 +1,17 @@
-# Introduction
+# Concepts
 
-Chronon is a feature engineering framework that allows you to compute and store features for offline model training and online feature serving with unified feature definitions.
+Chronon has concepts to capture a variety of sources and computation semantics
+that simultaneously apply to generating training-data and serving features.
 
-Chronon integrates with airflow and spark to automatically generate feature computation pipelines. We can utilize kafka and hive as data sources that power these spark pipelines.
+Our philosophy behind coming up with these concepts is to align as closely as possible with
+your mental model of data processing so that your express your ideas easily.
+To achieve this, we use familiar sql concepts with powerful, well-integrated enhancements. 
 
-Chronon supports:
+You will be describing your computation as a combination of python and spark sql expressions. Python because it 
+makes composing concepts together and managing complexity easy. Spark sql, because you will have access to 
+a vast library of built-in functions, UDFs to manipulate parquet data without sacrificing performance. 
 
-- Defining features over data sources that
-  - Require real-time aggregations over raw data
-  - Midnight accurate aggregation over raw data
-  - Or contain pre-aggregated data.
-- Powerful [Aggregation](./Aggregations.md) primitive with windowing, bucketing and auto-unpacking support over 
-  arbitrary complex/nested data types.
-- Spark Sql Expressions with udfs & built-in function [library](https://spark.apache.org/docs/latest/api/sql/index.html) 
-  for projections (select clauses) or filtering (where clauses).
-- Computing features in realtime based on traditional event streams or change-capture streams of databases.
-- Backfilling features without waiting to accumulate logs.
-- Data source types as first-class citizens. Data source type refers to patterns in which new data is ingested into the 
-  warehouse's partitions.
-  - Entites - new partitions contain snapshot of the state of an entity - like user bank balances. Snapshots of db 
-    tables and dimension tables are examples.
-  - Events - new partitions contain all the events that occureed in the time duration of the partition value 
-    (`date`, `hour` etc.,)
-  - Cumulative Events - new partitions contains all events that have occured from the beginning of time. So newer 
-    partition are simply a superset of older partitions and hence it is sufficient to always read just the latest 
-    partition.
-- Arbitrary spark queries to implement complex logic to prepare data for non-realtime accurate features.
-- Idempotent computation - new runs automatically fill all partitions starting from last filled partition. This is 
-  counter to the airflow convention of each run filling only the partition of that day.
-
-Chronon comes packaged with tools to manage a repository of feature definitions. `explore.py`, `compile.py` and `run.py` are the primary tools provided via the `chronon-ai` pip package for discovering, validating and running feature definitions respectively. The repository has a notion of a `team` that can own feature definitions and configure the execution parameters of feature computation pipelines.
+In this section, we are going to use an example to explain the concepts. 
 
 ## Example
 

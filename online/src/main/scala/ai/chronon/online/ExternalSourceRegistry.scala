@@ -45,13 +45,13 @@ class ExternalSourceRegistry extends Serializable {
           if (handlerMap.contains(name)) {
             val ctx = context.copy(groupBy = s"${Constants.ExternalPrefix}_$name")
             val responses = handlerMap(name).fetch(requests)
-            responses.foreach { responses =>
+            responses.map { responses =>
               val failures = responses.count(_.values.isFailure)
               ctx.histogram("response.latency", System.currentTimeMillis() - startTime)
               ctx.histogram("response.failures", failures)
               ctx.histogram("response.successes", responses.size - failures)
-            } // issue batch request to endpoint
-            responses
+              responses
+            }
           } else {
             val failure = Failure(
               new IllegalArgumentException(

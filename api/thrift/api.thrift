@@ -20,45 +20,51 @@ struct Query {
     "fill-what's-missing" pattern. Basically instead of explicitly specifying dates you specify two macros.
     `{{ start_date }}` and `{{end_date}}`. Chronon will pass in earliest-missing-partition for `start_date` and
     execution-date / today for `end_date`. So the query will compute multiple partitions at once.
-
-    :param metaData: Contains name, team, output_namespace, execution parameters etc. Things that don't change the
-                     semantics of the computation itself.
-    :param query: The spark sql query with date templates.
-    :param startPartition: This is where start_date will be applied from. We expect the query to also produce output
-                           hive tables partitioned data starting from startPartition.
-    :param setups: Spark SQL setup statements. Used typically to register UDFs.
  */
 struct StagingQuery {
+    /**
+    * Contains name, team, output_namespace, execution parameters etc. Things that don't change the semantics of the computation itself.
+    **/
     1: optional MetaData metaData
-    // query should be written with `{{ start_date }}`, `{{ end_date }}` and `{{ latest_date }}` templates
+
+    /**
+    * Arbitrary spark query that should be written with `{{ start_date }}`, `{{ end_date }}` and `{{ latest_date }}` templates
+    *      - `{{ start_date }}` will be set to this user provided start date, future incremental runs will set it to the latest existing partition + 1 day.
+    *      - `{{ end_date }}` is the end partition of the computing range.
+    *      - `{{ latest_date }}` is the end partition independent of the computing range (meant for cumulative sources).
+    **/
     2: optional string query
-    // on the first run, `{{ start_date }}` will be set to this user provided start date, future incremental runs will
-    // set it to the latest existing partition + 1 day.
-    // `{{ end_date }}` is the end partition of the computing range.
-    // `{{ latest_date }}` is the end partition independent of the computing range (meant for cumulative sources).
+
+    /**
+    * on the first run, `{{ start_date }}` will be set to this user provided start date, future incremental runs will set it to the latest existing partition + 1 day.
+    **/
     3: optional string startPartition
+
+    /**
+    * Spark SQL setup statements. Used typically to register UDFs.
+    **/
     4: optional list<string> setups
 }
 
-/**
-    Event source captures data that is essentially immutable - like user clicks, impressions etc.
-    It has two parts, an offline table and an online topic. The term `fact` table from star-schema also maps to this
-    concepts. But lacks a notion of topic.
-
-    :param table: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
-                  Table names can contain subpartition specs, example db.table/system=mobile/currency=USD
-    :param topic: Topic is a kafka table. The table contains all the events historically came through this topic.
-    :param query: The logic used to scan both the table and the topic. Contains row level transformations and filtering
-                  expressed as Spark SQL statements.
-    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
-                         events since the begininng. The key property is that the events are not mutated across partitions.
- */
 struct EventSource {
+    /**
+    * Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table. Table names can contain subpartition specs, example db.table/system=mobile/currency=USD
+    **/
     1: optional string table
+
+    /**
+    * Topic is a kafka table. The table contains all the events historically came through this topic.
+    **/
     2: optional string topic
+
+    /**
+    * The logic used to scan both the table and the topic. Contains row level transformations and filtering expressed as Spark SQL statements.
+    **/
     3: optional Query query
-    // Means that every partition contains full history of all events uptill the ds of that partition
-    // Every partition should contain the entirety of the previous partition, plus new events.
+
+    /**
+    * If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
+    **/
     4: optional bool isCumulative
 }
 
@@ -69,18 +75,26 @@ struct EventSource {
     to create realtime or point-in-time aggregations over these sources. Entity sources usually map 1:1 with a database
     tables in your OLTP store that typically serves live application traffic. When mutation data is absent they map 1:1
     to `dim` tables in star schema.
-
-    :param snapshotTable: Table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
-    :param mutationTable: Topic is a kafka table. The table contains all the events historically came through this topic.
-    :param mutationTopic: The logic used to scan both the table and the topic. Contains row level transformations and filtering
-                  expressed as Spark SQL statements.
-    :param isCumulative: If each new hive partition contains not just the current day's events but the entire set of
-                         events since the begininng. The key property is that the events are not mutated across partitions.
  */
 struct EntitySource {
+    /**
+    Snapshot table currently needs to be a 'ds' (date string - yyyy-MM-dd) partitioned hive table.
+    */
     1: optional string snapshotTable
+
+    /**
+    Topic is a kafka table. The table contains all the events that historically came through this topic.
+    */
     2: optional string mutationTable
+
+    /**
+    The logic used to scan both the table and the topic. Contains row level transformations and filtering expressed as Spark SQL statements.
+    */
     3: optional string mutationTopic
+
+    /**
+    If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
+    */
     4: optional Query query
 }
 
@@ -139,40 +153,32 @@ struct Window {
 /**
     Chronon provides a powerful aggregations primitive - that takes the familiar aggregation operation, via groupBy in
     SQL and extends it with three things - windowing, bucketing and auto-explode.
-
-    :param inputColumn:
-        The column as specified in source.query.selects - on which we need to aggregate with.
-
-    :param operation:
-        The type of aggregation that needs to be performed on the inputColumn.
-
-    :param argMap:
-        Extra arguments that needs to be passed to some of the operations like LAST_K, APPROX_PERCENTILE.
-
-    :param windows:
-        For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas,
-        the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically.
-        The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
-
-            Window > 12 days  -> Hop Size = 1 day
-
-            Window > 12 hours -> Hop Size = 1 hr
-
-            Window > 1hr      -> Hop Size = 5 minutes
-
-    :param buckets:
-        This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view"
-        count by "item_category". This will produce one row per user, with column containing map of "item_category"
-        to "view_count". You can specify multiple such buckets at once.
  */
 struct Aggregation {
-    1: optional string inputColumn
-    2: optional Operation operation
-    3: optional map<string, string> argMap
-    4: optional list<Window> windows
     /**
-    * This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    *  The column as specified in source.query.selects - on which we need to aggregate with.
     **/
+    1: optional string inputColumn
+    /**
+    * The type of aggregation that needs to be performed on the inputColumn.
+    **/
+    2: optional Operation operation
+    /**
+    * Extra arguments that needs to be passed to some of the operations like LAST_K, APPROX_PERCENTILE.
+    **/
+    3: optional map<string, string> argMap
+
+    /**
+    For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas, the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically. The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
+      - Window > 12 days  -> Hop Size = 1 day
+      - Window > 12 hours -> Hop Size = 1 hr
+      - Window > 1hr      -> Hop Size = 5 minutes
+    */
+    4: optional list<Window> windows
+
+    /**
+    This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    */
     5: optional list<string> buckets
 }
 
@@ -307,7 +313,7 @@ struct LabelPart {
     1: optional list<JoinPart> labels
     // The earliest date label should be refreshed
     2: optional i32 leftStartOffset
-    // The most rencet date label should be refreshed.
+    // The most recent date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
     3: optional i32 leftEndOffset
 }

@@ -2,7 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.Metrics.Environment
@@ -343,7 +343,7 @@ class Fetcher(val kvStore: KVStore,
 
     val context =
       Metrics.Context(environment = Environment.JoinFetching,
-                      join = validRequests.iterator.map(_.name).toSeq.distinct.mkString(","))
+                      join = validRequests.iterator.map(_.name.sanitize).toSeq.distinct.mkString(","))
     context.histogram("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.histogram("response.external_invalid_joins.count", invalidCount)
     val responseFutures = externalSourceRegistry.fetchRequests(validExternalRequestToJoinRequestMap.keys.toSeq, context)

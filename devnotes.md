@@ -224,3 +224,9 @@ Run the sbt sphinx command to generate the sphinx docs locally and open it.
 ```
 sbt sphinx
 ```
+
+# build artifacts and release to gcloud
+```shell
+bash build.sh
+bash gcloud_release.sh
+```

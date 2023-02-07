@@ -1,4 +1,4 @@
-# Kaggle Outbrain Example
+# Kaggle Example
 
 This doc walks you through the steps to create a training dataset with Chronon for the [Outbrain Click Prediction](https://www.kaggle.com/c/outbrain-click-prediction) project on Kaggle.
 
@@ -23,7 +23,7 @@ export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/
 
 #### 1. Download Kaggle data
 
-Download `clicks_train.csv` and `events.csv` from the following location, and put them into a `~/kaggle_outbrain` directory.
+Download `clicks_train.csv` and `events.csv` from the following location, and put them into `~/kaggle_outbrain` directory.
 
 https://www.kaggle.com/competitions/outbrain-click-prediction/data
 

@@ -9,7 +9,7 @@ import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
@@ -49,8 +49,8 @@ class JoinTest {
     val rupeeTable = s"$namespace.rupee_transactions"
     spark.sql(s"DROP TABLE IF EXISTS $dollarTable")
     spark.sql(s"DROP TABLE IF EXISTS $rupeeTable")
-    DataFrameGen.entities(spark, dollarTransactions, 10000, partitions = 400).save(dollarTable, Map("tblProp1" -> "1"))
-    DataFrameGen.entities(spark, rupeeTransactions, 1000, partitions = 30).save(rupeeTable)
+    DataFrameGen.entities(spark, dollarTransactions, 30000, partitions = 200).save(dollarTable, Map("tblProp1" -> "1"))
+    DataFrameGen.entities(spark, rupeeTransactions, 4500, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
       query = Builders.Query(
@@ -93,7 +93,7 @@ class JoinTest {
 
     val queryTable = s"$namespace.queries"
     DataFrameGen
-      .events(spark, queriesSchema, 1000, partitions = 180)
+      .events(spark, queriesSchema, 3000, partitions = 180)
       .withColumnRenamed("user", "user_name") // to test chronon renaming logic
       .save(queryTable)
 
@@ -129,14 +129,17 @@ class JoinTest {
       .map(jp => joinConf.partOutputTable(jp))
       .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
 
-    Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
-      .foreach(function => tableUtils.sql(s"DROP TEMPORARY FUNCTION IF EXISTS $function"))
+    def resetUDFs(): Unit = {
+      Seq("temp_replace_left", "temp_replace_right_a", "temp_replace_right_b", "temp_replace_right_c")
+        .foreach(function => tableUtils.sql(s"DROP TEMPORARY FUNCTION IF EXISTS $function"))
+    }
 
+    resetUDFs()
     val runner2 = new Join(joinConf, end, tableUtils)
     val computed = runner2.computeJoin(Some(3))
     println(s"join start = $start")
 
-    val expected = spark.sql(s"""
+    val expectedQuery = s"""
         |WITH
         |   queries AS (
         |     SELECT user_name,
@@ -171,7 +174,8 @@ class JoinTest {
         | ON queries.user_name = grouped_transactions.user
         | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = date_add(grouped_transactions.ds, 1)
         | WHERE queries.user_name IS NOT NULL
-        |""".stripMargin)
+        |""".stripMargin
+    val expected = spark.sql(expectedQuery)
     val queries = tableUtils.sql(
       s"SELECT user_name, ts, ds from $queryTable where user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start'")
     val diff = Comparison.sideBySide(computed, expected, List("user_name", "ts", "ds"))
@@ -185,6 +189,38 @@ class JoinTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+
+    // test join part table hole detection:
+    // in events<>entities<>snapshot case, join part table partitions and left partitions are offset by 1
+    //
+    // drop only end-1 from join output table, and only end-2 from join part table. trying to trick the job into
+    // thinking that end-1 is already computed for the join part, since end-1 already exists in join part table
+    val endMinus1 = Constants.Partition.minus(end, new Window(1, TimeUnit.DAYS))
+    val endMinus2 = Constants.Partition.minus(end, new Window(2, TimeUnit.DAYS))
+
+    tableUtils.dropPartitionRange(s"$namespace.test_user_transaction_features", endMinus1, endMinus1)
+    println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
+
+    joinConf.joinParts.asScala
+      .map(jp => joinConf.partOutputTable(jp))
+      .foreach(tableUtils.dropPartitionRange(_, endMinus2, endMinus2))
+
+    resetUDFs()
+    val runner3 = new Join(joinConf, end, tableUtils)
+
+    val expected2 = spark.sql(expectedQuery)
+    val computed2 = runner3.computeJoin(Some(3))
+    val diff2 = Comparison.sideBySide(computed2, expected2, List("user_name", "ts", "ds"))
+
+    if (diff2.count() > 0) {
+      println(s"Actual count: ${computed2.count()}")
+      println(s"Expected count: ${expected2.count()}")
+      println(s"Diff count: ${diff2.count()}")
+      println(s"Queries count: ${queries.count()}")
+      println(s"diff result rows")
+      diff2.show()
+    }
+    assertEquals(0, diff2.count())
   }
 
   @Test

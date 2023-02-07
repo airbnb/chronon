@@ -5,9 +5,12 @@ import scala.sys.process._
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
+<<<<<<< HEAD
 lazy val spark2_4_0 = "2.4.0"
 lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
+=======
+>>>>>>> cf8bf7d9026ff35d4f66b6ab0940d879daec04f4
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -163,13 +166,14 @@ def cleanSparkMeta(): Unit = {
                file(".") / "metastore_db")
 }
 
-def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] = {
-  sparkSqlLibs(version) ++ Seq(
+def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
+  Seq(
+    "org.apache.spark" %% "spark-sql" % version,
     "org.apache.spark" %% "spark-hive" % version,
+    "org.apache.spark" %% "spark-core" % version,
     "org.apache.spark" %% "spark-streaming" % version,
     "org.apache.spark" %% "spark-sql-kafka-0-10" % version
   )
-}
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
   assembly / test := {},
