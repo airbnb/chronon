@@ -1,7 +1,5 @@
 package ai.chronon.online
 
-import jnr.ffi.annotations.Synchronized
-
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
