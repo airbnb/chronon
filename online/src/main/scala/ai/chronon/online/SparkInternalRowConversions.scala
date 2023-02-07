@@ -10,8 +10,6 @@ import java.util
 import scala.collection.mutable
 import scala.util.ScalaToJavaConversions.IteratorOps
 
-// TODO: move these classes to online module. We would need to figure out how to relocate spark deps so that they don't
-// pollute apps that depend on Chronon fetcher.
 object SparkInternalRowConversions {
   // the identity function
   private def id(x: Any): Any = x

@@ -840,7 +840,7 @@ object Extensions {
 
     // derivations are just renaming or simple selects
     lazy val derivationsAreSimple: Boolean =
-      !join.derivations.iterator().toScala.map(_.expression).exists(matches(_, identifierRegex))
+      join.derivations.iterator().toScala.map(_.expression).forall(matches(_, identifierRegex))
 
     /** Select clauses to finally apply on the dataframe to select all necessary columns, while applying derivations
       * If derivations are not specified - we return None
