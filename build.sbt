@@ -1,16 +1,14 @@
 import sbt.Keys._
 import sbt.Test
+
 import scala.sys.process._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
-<<<<<<< HEAD
 lazy val spark2_4_0 = "2.4.0"
 lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
-=======
->>>>>>> cf8bf7d9026ff35d4f66b6ab0940d879daec04f4
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -48,7 +46,7 @@ lazy val publishSettings = Seq(
 )
 
 // Release related configs
-import ReleaseTransformations._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Next,
