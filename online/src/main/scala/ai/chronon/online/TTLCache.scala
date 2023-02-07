@@ -34,6 +34,7 @@ class TTLCache[I, O](f: I => O,
 
   val cMap = new ConcurrentHashMap[I, Entry]()
 
+  // use the fact that cache update is not immediately necessary during regular reads
   private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
     val entry = cMap.get(i)
     if (entry == null) {
