@@ -1,7 +1,11 @@
 package ai.chronon.online
 
+import jnr.ffi.annotations.Synchronized
+
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
+import scala.concurrent.ExecutionContext
 
 // can continuously grow, only used for schemas
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh
@@ -12,7 +16,7 @@ class TTLCache[I, O](f: I => O,
                      nowFunc: () => Long = { () => System.currentTimeMillis() },
                      refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
 ) {
-  case class Entry(value: O, updatedAtMillis: Long)
+  case class Entry(value: O, updatedAtMillis: Long, var markedForUpdate: AtomicBoolean = new AtomicBoolean(false))
 
   private def funcForInterval(intervalMillis: Long) =
     new function.BiFunction[I, Entry, Entry] {
@@ -29,7 +33,27 @@ class TTLCache[I, O](f: I => O,
   private val applyFunc = funcForInterval(ttlMillis)
 
   val cMap = new ConcurrentHashMap[I, Entry]()
-  def apply(i: I): O = cMap.compute(i, applyFunc).value
+
+  private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
+    val entry = cMap.get(i)
+    if (entry == null) {
+      // block all concurrent callers of this key only on the very first read
+      cMap.compute(i, applyFunc).value
+    } else {
+      // CAS so that update is issued only once
+      if ((nowFunc() - entry.updatedAtMillis > intervalMillis) && entry.markedForUpdate.compareAndSet(false, true)) {
+        // enqueue async update and return old value
+        ExecutionContext.global.execute(new Runnable {
+          override def run(): Unit = {
+            cMap.put(i, Entry(f(i), nowFunc()))
+          }
+        })
+      }
+      entry.value
+    }
+  }
+
+  def apply(i: I): O = asyncUpdateOnExpiry(i, ttlMillis)
   // manually refresh entry with a lower interval
   def refresh(i: I): O = cMap.compute(i, refreshFunc).value
   def force(i: I): O = cMap.put(i, Entry(f(i), nowFunc())).value
