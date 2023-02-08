@@ -34,7 +34,7 @@ class TTLCache[I, O](f: I => O,
 
   // use the fact that cache update is not immediately necessary during regular reads
   // sync update would block the calling threads on every update
-  private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
+  private def asyncUpdateOnExpiry(i: I, intervalMillis: Long)(implicit ctx: Metrics.Context): O = {
     val entry = cMap.get(i)
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
@@ -48,7 +48,14 @@ class TTLCache[I, O](f: I => O,
         // enqueue async update and return old value
         ExecutionContext.global.execute(new Runnable {
           override def run(): Unit = {
-            cMap.put(i, Entry(f(i), nowFunc()))
+            try {
+              cMap.put(i, Entry(f(i), nowFunc()))
+            } catch {
+              case ex: Exception =>
+                // reset the mark so that another thread can retry
+                cMap.get(i).markedForUpdate.compareAndSet(true, false);
+                ctx.incrementException(ex);
+            }
           }
         })
       }
@@ -56,8 +63,8 @@ class TTLCache[I, O](f: I => O,
     }
   }
 
-  def apply(i: I): O = asyncUpdateOnExpiry(i, ttlMillis)
+  def apply(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, ttlMillis)
   // manually refresh entry with a lower interval
-  def refresh(i: I): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
-  def force(i: I): O = asyncUpdateOnExpiry(i, 0)
+  def refresh(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
+  def force(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, 0)
 }
