@@ -3,7 +3,7 @@
 Chronon essentially can operate in two modes - online and offline.
 Using Chronon offline for the first time is designed to be really simple.
 
-Online however, you would need to teach chronon how to talk to your Key-Value store 
+Online however, you would need to teach chronon how to talk to your Key-Value store
 and how to understand the data that is in your kafka message bus. This is a one time setup.
 
 This article contains information required to setup and use Chronon.
@@ -20,13 +20,13 @@ source <(curl -s https://chronon.ai/init.sh)
 
 At this point you will have a repo starting point and three tools on your path.
 The repo contains three folders - `group_bys`, `joins` and `staging_queries` where you add your code.
- 
-1. `compile.py` - which tells you whether your configuration is valid and compiles it into 
+
+1. `compile.py` - which tells you whether your configuration is valid and compiles it into
    something the chronon engine can execute. The output of this goes into the `production` folder.
 1. `run.py` - which can take your compiled *conf* and runs it in a *mode* of your choosing.
 1. `explore.py` - which allows you to keyword or lineage search all the existing definitions.
 
-### Compile 
+### Compile
 
 Compilation to JSON is done via `compile.py`. Chronon can interpret the compiled artifacts
 for managing metadata, creating data processing pipelines, online serving etc.
@@ -52,8 +52,8 @@ There are a few modes in which these primitives can be executed using `run.py`.
 Each of these modes take the compiled json of the python API and do a specific action.
 
 ## Offline modes
-- **analyze** - does full validation of the sql expressions used in the python API, 
-  prints the result schema and optionally does heavy hitter/hot key detection. 
+- **analyze** - does full validation of the sql expressions used in the python API,
+  prints the result schema and optionally does heavy hitter/hot key detection.
 - **backfill** - mode reads data from hive and produces data into hive according to compute definition.
 
 ## Online modes
@@ -62,7 +62,7 @@ Each of these modes take the compiled json of the python API and do a specific a
 - **fetch** - reads values from kv store, does some compute if necessary and return a result.
 - **consistency** - runs the job to compare online served values against backfilled values.
   See [Online-Offline Consistency doc](./Online%20Offline%20Consistency.md)
-      
+
 You can run the configs in their modes using run command
 
 ```shell
@@ -70,7 +70,7 @@ run.py --mode=<MODE> --conf=<PATH>/<TO>/<YOUR>/<DEFINITION>
 ```
 
 You can directly tune the parameters setup as env-vars set in [spark_submit.sh](../../api/py/test/sample/scripts/spark_submit.sh)
-or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script. 
+or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script.
 
 ```shell
 EXECUTOR_MEMORY=16G PARALLELISM=2000 run.py --mode=backfill --conf=production/joins/<your_team>/<your_join>
@@ -81,7 +81,7 @@ EXECUTOR_MEMORY=2G PARALLELISM=8 run.py --mode=streaming --conf=production/group
 ### Explore
 
 Finally, if you want to explore *existing* feature definitions in Chronon, use `explore.py` with any key word like `user`, `views` etc.,
-This will list out instances where, source table, group_by name, aggregate column name or join name *contains* the keyword. 
+This will list out instances where, source table, group_by name, aggregate column name or join name *contains* the keyword.
 
 ```shell
 explore.py <KEYWORD>
@@ -93,13 +93,13 @@ explore.py <KEYWORD>
 
 There are essentially four integration points:
 
-- Chronon Repository - This is where your users will define Chronon configurations. 
-  We recommend that this live within an airflow pipeline(or your own data pipeline scheduler's) repository to make deployment easy. 
+- Chronon Repository - This is where your users will define Chronon configurations.
+  We recommend that this live within an airflow pipeline(or your own data pipeline scheduler's) repository to make deployment easy.
   Once you have the repository setup you can begin using Chronon for offline batch pipelines.
 
 - For online Serving
-  - KVStore - for storing and serving features in low latency. This can be any kv store that can support point write, point lookup, scan and bulk write.
-  - StreamDecoder - for reading bytes from kafka and converting them into a Chronon Event or a Chronon Mutation. If you have a convention between how you convert data in kafka into data in warehouse, you would need to follow that same convention to decode as well.
+    - KVStore - for storing and serving features in low latency. This can be any kv store that can support point write, point lookup, scan and bulk write.
+    - StreamDecoder - for reading bytes from kafka and converting them into a Chronon Event or a Chronon Mutation. If you have a convention between how you convert data in kafka into data in warehouse, you would need to follow that same convention to decode as well.
 
 - Airflow - for scheduling spark pipelines that periodically checks and triggers missing tasks, join backfills, group by uploads, meta data uploads, etc.
 
@@ -108,7 +108,7 @@ There are essentially four integration points:
 KVStore API has three methods for you to implement (once per company).
 - `multiPut` of a series of triples `keys, value, time` called `TimedValue`.
 - `multiGet` of a series of tuples `keys, Option[time]` - which return `TimedValue`.
-You can map time as a **secondary key** that comes standard in no-sql stores.
+  You can map time as a **secondary key** that comes standard in no-sql stores.
 - `bulkPut` - to upload a hive table into your kv store. If you have another mechanism
   (like an airflow upload operator) to upload data from hive into your kv stores you don't need
   to implement this method.
@@ -146,11 +146,11 @@ Simple deserializer API to decode bytes in a kafka stream into java values.
 Java values are expected to be a `Mutation` - which capture two kinds of data.
 1. Events - Eg., Bank transactions - `source_account`, `target_account`, `amount`, `timestamp`
 2. Mutations - Eg., Bank Balance table with row: `account`, `balance`, `update_at`
-   - A mutation event would contain a `before` row and an `after` row
-   - Both `before` and `after` have `account`, `balance`, `updated_at`.
-   - If mutation is a db table insert - before is null, after should contain values.
-   - If mutation is a table delete - after is null, before should contain value.
-   - If mutation is an update - both before and after should be present.
+    - A mutation event would contain a `before` row and an `after` row
+    - Both `before` and `after` have `account`, `balance`, `updated_at`.
+    - If mutation is a db table insert - before is null, after should contain values.
+    - If mutation is a table delete - after is null, before should contain value.
+    - If mutation is an update - both before and after should be present.
 3. Events are special of Mutations / inserts. Before is always null, only `after` is specified.
 
 You can use [Apache Debezium](https://debezium.io/) if you don't have a Mutation capture system in place. Until
@@ -194,11 +194,10 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 }
 ```
 
-`userConf` is captured from commandline arguments to the `run.py` script or to the 
-`chronon-uber-jar` with `ai.chronon.spark.Driver` as the main class `-Zkey1=value1 -Zkey2=value2` 
-becomes `{key1: value1, key2: value2}` initializer argument to the Api class. You can use 
+`userConf` is captured from commandline arguments to the `run.py` script or to the
+`chronon-uber-jar` with `ai.chronon.spark.Driver` as the main class `-Zkey1=value1 -Zkey2=value2`
+becomes `{key1: value1, key2: value2}` initializer argument to the Api class. You can use
 that to set KVStore params, or kafka params for streaming jobs or bulk upload jobs.
-
 
 
 
