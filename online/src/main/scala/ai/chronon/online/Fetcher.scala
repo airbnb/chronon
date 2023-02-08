@@ -155,7 +155,9 @@ class Fetcher(val kvStore: KVStore,
       logControlEvent(joinCodec)
       joinCodec
     }
-  })
+  },
+    {join: String => Metrics.Context(environment = "join.codec.fetch", join = join)}
+  )
 
   override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()

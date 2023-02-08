@@ -1,44 +1,48 @@
 package ai.chronon.online
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
-import scala.concurrent.ExecutionContext
 
+object TTLCache {
+  private[TTLCache] val executor = new ThreadPoolExecutor(2, // corePoolSize
+                                                          1000, // maxPoolSize
+                                                          60, // keepAliveTime
+                                                          TimeUnit.SECONDS, // keep alive time units
+                                                          new ArrayBlockingQueue[Runnable](1000))
+}
 // can continuously grow, only used for schemas
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh
 // Four 9's of availability is 8.64 secs of downtime per day. Batch uploads happen once per day
 // we choose 8 secs as the refresh interval. Refresh is to be used when an exception happens and we want to re-fetch.
 class TTLCache[I, O](f: I => O,
+                     contextBuilder: I => Metrics.Context,
                      ttlMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
                      nowFunc: () => Long = { () => System.currentTimeMillis() },
                      refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
 ) {
   case class Entry(value: O, updatedAtMillis: Long, var markedForUpdate: AtomicBoolean = new AtomicBoolean(false))
 
-  private def funcForInterval(intervalMillis: Long) =
+  private val updateWhenNull =
     new function.BiFunction[I, Entry, Entry] {
       override def apply(t: I, u: Entry): Entry = {
         val now = nowFunc()
-        if (u == null || now - u.updatedAtMillis > intervalMillis) {
+        if (u == null) {
           Entry(f(t), now)
         } else {
           u
         }
       }
     }
-  private val refreshFunc = funcForInterval(refreshIntervalMillis)
-  private val applyFunc = funcForInterval(ttlMillis)
 
   val cMap = new ConcurrentHashMap[I, Entry]()
-
   // use the fact that cache update is not immediately necessary during regular reads
   // sync update would block the calling threads on every update
-  private def asyncUpdateOnExpiry(i: I, intervalMillis: Long)(implicit ctx: Metrics.Context): O = {
+  private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
     val entry = cMap.get(i)
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
-      cMap.compute(i, applyFunc).value
+      cMap.compute(i, updateWhenNull).value
     } else {
       if (
         (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
@@ -46,7 +50,7 @@ class TTLCache[I, O](f: I => O,
         entry.markedForUpdate.compareAndSet(false, true)
       ) {
         // enqueue async update and return old value
-        ExecutionContext.global.execute(new Runnable {
+        TTLCache.executor.execute(new Runnable {
           override def run(): Unit = {
             try {
               cMap.put(i, Entry(f(i), nowFunc()))
@@ -54,7 +58,7 @@ class TTLCache[I, O](f: I => O,
               case ex: Exception =>
                 // reset the mark so that another thread can retry
                 cMap.get(i).markedForUpdate.compareAndSet(true, false);
-                ctx.incrementException(ex);
+                contextBuilder(i).incrementException(ex);
             }
           }
         })
@@ -63,8 +67,8 @@ class TTLCache[I, O](f: I => O,
     }
   }
 
-  def apply(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, ttlMillis)
+  def apply(i: I): O = asyncUpdateOnExpiry(i, ttlMillis)
   // manually refresh entry with a lower interval
-  def refresh(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
-  def force(i: I)(implicit ctx: Metrics.Context): O = asyncUpdateOnExpiry(i, 0)
+  def refresh(i: I): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
+  def force(i: I): O = asyncUpdateOnExpiry(i, 0)
 }

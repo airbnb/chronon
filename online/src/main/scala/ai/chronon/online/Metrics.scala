@@ -100,6 +100,7 @@ object Metrics {
                                     statsPort,
                                     ctx.toTags: _*)
       },
+      { ctx => ctx },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
   }
@@ -112,7 +113,6 @@ object Metrics {
                      accuracy: Accuracy = null,
                      team: String = null,
                      joinPartPrefix: String = null,
-                     mode: String = null,
                      suffix: String = null)
       extends Serializable {
 
