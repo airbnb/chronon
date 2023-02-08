@@ -239,7 +239,7 @@ class BaseFetcher(kvStore: KVStore,
               } catch {
                 case ex: Exception =>
                   // not all exceptions are due to stale schema, so we want to control how often we hit kv store
-                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
+                  getGroupByServingInfo.refreshAsync(groupByServingInfo.groupByOps.metaData.name)
                   context.incrementException(ex)
                   ex.printStackTrace()
                   throw ex

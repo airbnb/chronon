@@ -235,8 +235,8 @@ class Fetcher(val kvStore: KVStore,
     // there is a very small chance that the joinConf is updated after the fetch but before the log,
     // so we need to refresh the joinConf too to ensure consistency
     if (joinConfTry.map(_.onlineSemanticHash) != joinCodecTry.map(_.conf.onlineSemanticHash)) {
-      joinConfTry = getJoinConf.refresh(resp.request.name)
-      joinCodecTry = getJoinCodecs.refresh(resp.request.name)
+      joinConfTry = getJoinConf.refreshSync(resp.request.name)
+      joinCodecTry = getJoinCodecs.refreshSync(resp.request.name)
     }
 
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
@@ -286,7 +286,7 @@ class Fetcher(val kvStore: KVStore,
     })
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
-      getJoinCodecs.refresh(resp.request.name)
+      getJoinCodecs.refreshAsync(resp.request.name)
       joinContext.foreach(_.incrementException(exception))
       println(s"logging failed due to ${exception.traceString}")
     }
