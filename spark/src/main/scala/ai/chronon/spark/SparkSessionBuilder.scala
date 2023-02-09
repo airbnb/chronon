@@ -4,6 +4,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.SPARK_VERSION
 
 import java.io.File
+import java.nio.file.Files
 import java.util.logging.Logger
 import scala.reflect.io.Path
 import scala.util.Properties
@@ -43,9 +44,11 @@ object SparkSessionBuilder {
     }
 
     val builder = if (local) {
-      println(s"Building local spark session with warehouse at $warehouseDir")
+      val tmpPath = Files.createTempDirectory(warehouseDir).toFile
+      tmpPath.deleteOnExit()
+      println(s"Building local spark session with warehouse at $tmpPath")
       val metastoreDb = if (localWarehouseLocation.isDefined) {
-        s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
+        s"jdbc:derby:;databaseName=${tmpPath.getAbsolutePath}/metastore_db;create=true"
       } else {
         "jdbc:derby:memory:myInMemDB;create=true"
       }
@@ -54,7 +57,7 @@ object SparkSessionBuilder {
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isDefined}")
         .config("spark.local.dir", s"/tmp/$userName/$name")
-        .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
+        .config("spark.sql.warehouse.dir", tmpPath.getAbsolutePath)
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
     } else {
       // hive jars need to be available on classpath - no needed for local testing

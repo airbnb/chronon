@@ -12,7 +12,7 @@ lazy val spark3_2_1 = "3.2.1"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala211
+ThisBuild / scalaVersion := scala212
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -218,7 +218,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
-    libraryDependencies ++= sparkLibs("2.4.0"),
+    libraryDependencies ++= sparkLibs(spark3_1_1),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     embeddedAssemblyStrategy,
     Test / test := {}
