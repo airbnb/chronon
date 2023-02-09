@@ -3,21 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  ThriftJsonCodec,
-  TimeUnit,
-  Window
-}
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -227,7 +213,7 @@ class GroupByTest {
     val eventsByKey: RDD[(KeyWithHash, Iterator[RowWrapper])] = eventDf.rdd
       .groupBy(keyBuilder)
       .mapValues { rowIter =>
-        rowIter.map(SparkConversions.toChrononRow(_, groupBy.tsIndex)).toIterator
+        rowIter.map(Conversions.toChrononRow(_, groupBy.tsIndex)).toIterator
       }
 
     val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
@@ -281,17 +267,11 @@ class GroupByTest {
     val namespace = "test_analyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = Constants.Partition.at(System.currentTimeMillis())
-    val aggregationsMetadata =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
-    val outputTable = backfill(name = "unit_analyze_test_item_views",
-                               source = source,
-                               endPartition = endPartition,
-                               namespace = namespace,
-                               tableUtils = tableUtils)
+    val aggregationsMetadata = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val outputTable = backfill(name = "unit_analyze_test_item_views", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
-    aggregationsMetadata
-      .map(agg => s"${agg.name} => ${agg.columnType}")
+    aggregationsMetadata.map(agg => s"${agg.name} => ${agg.columnType}")
       .foreach(s => assertTrue(expectedSchema.contains(s)))
 
     // feature name is constructed by input_column_operation_window
@@ -309,7 +289,7 @@ class GroupByTest {
 
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer"
-    val groupByConf = Builders.GroupBy(
+    val groupByConf =  Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("item"),
       aggregations = null,
@@ -318,14 +298,15 @@ class GroupByTest {
         Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
     )
     val today = Constants.Partition.at(System.currentTimeMillis())
-    val aggregationsMetadata =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata = new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
 
     print(aggregationsMetadata)
     assertTrue(aggregationsMetadata.length == 1)
     assertEquals(aggregationsMetadata(0).name, "time_spent_ms")
     assertEquals(aggregationsMetadata(0).columnType, "LongType")
   }
+
+
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
   @Test
@@ -429,12 +410,12 @@ class GroupByTest {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
         Builders.Aggregation(operation = Operation.MIN,
-                             inputColumn = "ts",
-                             windows = Seq(
-                               new Window(15, TimeUnit.DAYS),
-                               new Window(60, TimeUnit.DAYS),
-                               WindowUtils.Unbounded
-                             )),
+          inputColumn = "ts",
+          windows = Seq(
+            new Window(15, TimeUnit.DAYS),
+            new Window(60, TimeUnit.DAYS),
+            WindowUtils.Unbounded
+          )),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ) ++ additionalAgg,
       metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
@@ -450,8 +431,7 @@ class GroupByTest {
     val tableUtils = TableUtils(spark)
     val namespace = "test_percentiles"
     val aggs = Seq(
-      Builders.Aggregation(
-        operation = Operation.APPROX_PERCENTILE,
+      Builders.Aggregation(operation = Operation.APPROX_PERCENTILE,
         inputColumn = "ts",
         windows = Seq(
           new Window(15, TimeUnit.DAYS),
@@ -461,10 +441,10 @@ class GroupByTest {
       )
     )
     backfill(name = "unit_test_group_by_percentiles",
-             source = source,
-             endPartition = endPartition,
-             namespace = namespace,
-             tableUtils = tableUtils,
-             additionalAgg = aggs)
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

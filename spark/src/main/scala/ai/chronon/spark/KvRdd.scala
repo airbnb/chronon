@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
+import ai.chronon.online.{AvroCodec, AvroConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.avro.generic.GenericData
 import org.apache.spark.rdd.RDD
@@ -9,13 +9,12 @@ import org.apache.spark.sql.catalyst.expressions.{GenericRow, GenericRowWithSche
 import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
+
 object GenericRowHandler {
-  val func: Any => Array[Any] = { input: Any =>
-    input match {
-      // TODO: optimize this later - to iterator
-      case x: GenericRowWithSchema => x.toSeq.toArray
-    }
-  }
+  val func: Any => Array[Any] = {input: Any => input match {
+    // TODO: optimize this later - to iterator
+    case x: GenericRowWithSchema => x.toSeq.toArray
+  }}
 }
 
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
@@ -68,7 +67,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
         val result = new Array[Any](keys.length + values.length)
         System.arraycopy(keys, 0, result, 0, keys.length)
         System.arraycopy(values, 0, result, keys.length, values.length)
-        SparkConversions.toSparkRow(result, flatZSchema, GenericRowHandler.func).asInstanceOf[GenericRow]
+        Conversions.toSparkRow(result, flatZSchema, GenericRowHandler.func).asInstanceOf[GenericRow]
     }
     sparkSession.createDataFrame(rowRdd, flatSchema)
   }

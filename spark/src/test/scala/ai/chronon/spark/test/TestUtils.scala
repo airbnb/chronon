@@ -1,7 +1,7 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
-import ai.chronon.online.SparkConversions
+import ai.chronon.api.{Accuracy, Builders, IntType, LongType, Operation, StringType, StructField, StructType}
+import ai.chronon.spark.Conversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.{Row, SparkSession}
 
@@ -62,7 +62,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
+      Conversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -111,7 +111,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
+      Conversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -163,7 +163,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
+      Conversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}", autoExpand = true)
     GroupByTestSuite(
