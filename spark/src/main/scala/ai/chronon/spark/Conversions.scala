@@ -1,4 +1,4 @@
-package ai.chronon.online
+package ai.chronon.spark
 
 import ai.chronon.api
 import org.apache.spark.sql.Row
@@ -37,7 +37,7 @@ class RowWrapper(val row: Row, val tsIndex: Int, val reversalIndex: Int = -1, va
   }
 }
 
-object SparkConversions {
+object Conversions {
 
   def toChrononRow(row: Row, tsIndex: Int, reversalIndex: Int = -1, mutationTsIndex: Int = -1): RowWrapper =
     new RowWrapper(row, tsIndex, reversalIndex, mutationTsIndex)

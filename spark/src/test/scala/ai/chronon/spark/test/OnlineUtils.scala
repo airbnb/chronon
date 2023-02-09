@@ -2,20 +2,15 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
-import ai.chronon.online.{SparkConversions, KVStore}
-import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
+import ai.chronon.online.KVStore
+import ai.chronon.spark.{Conversions, GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
 import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import org.apache.spark.sql.SparkSession
 
 object OnlineUtils {
-  def putStreaming(session: SparkSession,
-                   groupByConf: api.GroupBy,
-                   kvStore: () => KVStore,
-                   tableUtils: TableUtils,
-                   ds: String,
-                   namespace: String): Unit = {
+  def putStreaming(session: SparkSession, groupByConf: api.GroupBy, kvStore: () => KVStore, tableUtils: TableUtils, ds: String, namespace: String): Unit = {
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
         val entity = groupByConf.streamingSource.get
@@ -28,7 +23,7 @@ object OnlineUtils {
     }
     val inputStream = new InMemoryStream
     val mockApi = new MockApi(kvStore, namespace)
-    mockApi.streamSchema = StructType.from("Stream", SparkConversions.toChrononSchema(inputStreamDf.schema))
+    mockApi.streamSchema = StructType.from("Stream", Conversions.toChrononSchema(inputStreamDf.schema))
     val groupByStreaming =
       new GroupBy(inputStream.getInMemoryStreamDF(session, inputStreamDf), session, groupByConf, mockApi)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
@@ -37,12 +32,7 @@ object OnlineUtils {
     query.awaitTermination()
   }
 
-  def serve(tableUtils: TableUtils,
-            inMemoryKvStore: InMemoryKvStore,
-            kvStoreGen: () => InMemoryKvStore,
-            namespace: String,
-            endDs: String,
-            groupByConf: api.GroupBy): Unit = {
+  def serve(tableUtils: TableUtils, inMemoryKvStore: InMemoryKvStore, kvStoreGen: () => InMemoryKvStore, namespace: String, endDs: String, groupByConf: api.GroupBy): Unit = {
     val prevDs = Constants.Partition.before(endDs)
     GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)

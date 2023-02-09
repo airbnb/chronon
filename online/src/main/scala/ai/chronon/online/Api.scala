@@ -116,8 +116,8 @@ abstract class StreamDecoder extends Serializable {
 // Chronon issues the request in parallel to groupBy fetches.
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
-abstract class ExternalSourceHandler extends Serializable {
-  implicit lazy val executionContext: ExecutionContext = ExecutionContext.global
+abstract class ExternalSourceHandler {
+  implicit val executionContext: ExecutionContext = ExecutionContext.global
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
 }
 
