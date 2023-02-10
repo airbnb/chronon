@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
@@ -75,6 +76,9 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+    def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
+    def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
+    def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
     def bootstrapTable = s"${outputTable}_bootstrap"
     private def comparisonPrefix = "comparison"
@@ -562,6 +566,14 @@ object Extensions {
         .convertJavaListToScala(labelPart.labels)
         .flatMap(_.groupBy.setups)
         .distinct
+    }
+
+    // a list of columns which can identify a row on left, use user specified columns by default
+    def rowIdentifier(userRowId: util.List[String] = null): Array[String] = {
+      if (userRowId != null && !userRowId.isEmpty)
+        userRowId.asScala.toArray
+      else
+        leftKeyCols ++ Array(Constants.PartitionColumn)
     }
   }
 

@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.{Accuracy, Builders, IntType, LongType, Operation, StringType, StructField, StructType}
 import ai.chronon.spark.Conversions
 import ai.chronon.spark.Extensions._
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -90,7 +90,9 @@ object TestUtils {
       Row(3L, 1, "PRIVATE_ROOM", "2022-10-30"),
       Row(4L, 1, "PRIVATE_ROOM", "2022-10-30"),
       Row(5L, 1, "PRIVATE_ROOM", "2022-10-30"),
-      Row(1L, 4, "ENTIRE_HOME_2", "2022-11-11")
+      Row(1L, 4, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(2L, 3, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(3L, 1, "PRIVATE_ROOM_2", "2022-11-11")
     )
     val source = Builders.Source.entities(
       query = Builders.Query(
@@ -170,6 +172,56 @@ object TestUtils {
       tableName,
       conf,
       df
+    )
+  }
+
+  def createSampleLabelTableDf(spark: SparkSession, tableName: String = "listing_labels"): DataFrame = {
+    val schema = StructType(
+      tableName,
+      Array(
+        StructField("listing_id", LongType),
+        StructField("room_type", StringType),
+        StructField("host_type", StringType),
+        StructField("ds", StringType),
+        StructField("label_ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, "PRIVATE_ROOM", "SUPER_HOST", "2022-10-01", "2022-11-01"),
+      Row(2L, "PRIVATE_ROOM", "NEW_HOST", "2022-10-02", "2022-11-01"),
+      Row(3L, "ENTIRE_HOME", "SUPER_HOST", "2022-10-03", "2022-11-01"),
+      Row(4L, "PRIVATE_ROOM", "SUPER_HOST", "2022-10-04", "2022-11-01"),
+      Row(5L, "ENTIRE_HOME", "NEW_HOST", "2022-10-07", "2022-11-01"),
+      Row(1L, "PRIVATE ROOM", "SUPER_HOST", "2022-10-07", "2022-11-22")
+    )
+    makeDf(spark, schema, rows)
+  }
+
+  def createSampleFeatureTableDf(spark: SparkSession, tableName: String = "listing_features"): DataFrame = {
+    val schema = StructType(
+      tableName,
+      Array(
+        StructField("listing_id", LongType),
+        StructField("m_guests", LongType),
+        StructField("m_views", LongType),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 2L, 20L, "2022-10-01"),
+      Row(2L, 3L, 30L, "2022-10-01"),
+      Row(3L, 1L, 10L, "2022-10-01"),
+      Row(4L, 2L, 20L, "2022-10-01"),
+      Row(5L, 3L, 35L, "2022-10-01"),
+      Row(1L, 5L, 15L, "2022-10-07")
+    )
+    makeDf(spark, schema, rows)
+  }
+
+  def makeDf(spark: SparkSession, schema: StructType, rows: List[Row]): DataFrame = {
+    spark.createDataFrame(
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      Conversions.fromChrononSchema(schema)
     )
   }
 }

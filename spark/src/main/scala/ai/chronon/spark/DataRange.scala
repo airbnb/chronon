@@ -58,6 +58,10 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
     (startClause ++ endClause).toSeq
   }
 
+  def betweenClauses: String = {
+    s"${Constants.PartitionColumn} BETWEEN '" + start + "' AND '" + end + "'"
+  }
+
   def substituteMacros(template: String): String = {
     val substitutions = Seq(Constants.StartPartitionMacro -> Option(start), Constants.EndPartitionMacro -> Option(end))
     substitutions.foldLeft(template) {

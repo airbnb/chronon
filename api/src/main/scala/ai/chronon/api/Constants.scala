@@ -38,4 +38,7 @@ object Constants {
   val ContextualSourceKeys: String = "contextual_keys"
   val ContextualSourceValues: String = "contextual_values"
   val TeamOverride: String = "team_override"
+  val LabelColumnPrefix: String = "label"
+  val LabelViewPropertyFeatureTable: String = "feature_table"
+  val LabelViewPropertyKeyLabelTable: String = "label_table"
 }

@@ -23,7 +23,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   )
 
   val metrics = Metrics.Context(Metrics.Environment.LabelJoin, joinConf)
-  private val outputTable = joinConf.metaData.outputTable
+  private val outputLabelTable = joinConf.metaData.outputLabelTable
   private val labelJoinConf = joinConf.labelPart
   private val confTableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
@@ -32,7 +32,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   val leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
   val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
 
-  def computeLabelJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeLabelJoin(stepDays: Option[Int] = None, skipFinalJoin: Boolean = false): DataFrame = {
     // validations
     assert(Option(joinConf.left.dataModel).equals(Option(Events)),
            s"join.left.dataMode needs to be Events for label join ${joinConf.metaData.name}")
@@ -52,19 +52,40 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    compute(joinConf.left, stepDays, Option(labelDS))
+    val labelTable = compute(joinConf.left, stepDays, Option(labelDS))
+
+    if (skipFinalJoin) {
+      labelTable
+    } else {
+      // creating final join view with feature join output table
+      println(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
+      JoinUtils.createOrReplaceView(joinConf.metaData.outputFinalView,
+                                    leftTable = joinConf.metaData.outputTable,
+                                    rightTable = outputLabelTable,
+                                    joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds),
+                                    tableUtils = tableUtils,
+                                    viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
+                                      Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable))
+      println(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
+      JoinUtils.createLatestLabelView(joinConf.metaData.outputLatestLabelView,
+                                      baseView = joinConf.metaData.outputFinalView,
+                                      tableUtils)
+      println(s"Final view with latest label created: ${joinConf.metaData.outputLatestLabelView}")
+      labelTable
+    }
   }
+
 
   def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     val today = Constants.Partition.at(System.currentTimeMillis())
     val sanitizedLabelDs = labelDS.getOrElse(today)
     println(s"Label join range to fill $rangeToFill")
-    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputLabelTable))
     //TODO: use unfilledRanges instead of dropPartitionsAfterHole
     val earliestHoleOpt =
       tableUtils.dropPartitionsAfterHole(left.table,
-                                         outputTable,
+                                         outputLabelTable,
                                          rangeToFill,
                                          Map(Constants.LabelPartitionColumn -> sanitizedLabelDs))
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
@@ -94,18 +115,18 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         println(s"Computing join for range: $range  ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs)
-            .save(outputTable, confTableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn), true)
+            .save(outputLabelTable, confTableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn), true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          println(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
+          println(s"Wrote to table $outputLabelTable, into partitions: $range $progress in $elapsedMins mins")
         }
     }
-    println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
+    println(s"Wrote to table $outputLabelTable, into partitions: $leftUnfilledRange")
     finalResult
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, labelDs: String): DataFrame = {
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
     val leftBlooms = labelJoinConf.leftKeyCols.par.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
@@ -122,12 +143,17 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       }
     }
 
-    val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftDf) {
+    val rowIdentifier = labelJoinConf.rowIdentifier(joinConf.rowIds)
+    println("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
+    val leftFiltered = JoinUtils.filterColumns(leftDf, rowIdentifier)
+
+    val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftFiltered) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 
-    // assign label ds value to avoid null cases
-    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(labelDS))
+    // assign label ds value and drop duplicates
+    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(sanitizedLabelDs))
+      .dropDuplicates(rowIdentifier)
     updatedJoin.explain()
     updatedJoin.drop(Constants.TimePartitionColumn)
   }

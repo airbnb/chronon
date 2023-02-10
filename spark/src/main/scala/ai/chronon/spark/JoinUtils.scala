@@ -106,4 +106,132 @@ object JoinUtils {
     val finalDf = joinedDf.select(selects: _*)
     finalDf
   }
+
+  /***
+   * Method to create or replace a view for feature table joining with labels.
+   * Label columns will be prefixed with "label" or custom prefix for easy identification
+   */
+  def createOrReplaceView(viewName: String,
+                          leftTable: String,
+                          rightTable: String,
+                          joinKeys: Array[String],
+                          tableUtils: TableUtils,
+                          viewProperties: Map[String, String] = null,
+                          labelColumnPrefix: String = Constants.LabelColumnPrefix): Unit = {
+    val fieldDefinitions = joinKeys.map(field => s"l.${field}") ++
+      tableUtils.getSchemaFromTable(leftTable)
+        .filterNot(field => joinKeys.contains(field.name))
+        .map(field => s"l.${field.name}") ++
+      tableUtils.getSchemaFromTable(rightTable)
+        .filterNot(field => joinKeys.contains(field.name))
+        .map(field => {
+          if(field.name.startsWith(labelColumnPrefix)) {
+            s"r.${field.name}"
+          } else {
+            s"r.${field.name} AS ${labelColumnPrefix}_${field.name}"
+          }
+        })
+    val joinKeyDefinitions = joinKeys.map(key => s"l.${key} = r.${key}")
+    val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
+    val queryFragment =
+      s"""
+         |  AS SELECT
+         |     ${fieldDefinitions.mkString(",\n    ")}
+         |    FROM ${leftTable} AS l LEFT OUTER JOIN ${rightTable} AS r
+         |      ON ${joinKeyDefinitions.mkString(" AND ")}""".stripMargin
+
+    val propertiesFragment = if (viewProperties != null && viewProperties.nonEmpty) {
+      s"""    TBLPROPERTIES (
+         |    ${viewProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |    )""".stripMargin
+    } else {
+      ""
+    }
+    val sqlStatement = Seq(createFragment, propertiesFragment, queryFragment).mkString("\n")
+    tableUtils.sql(sqlStatement)
+  }
+
+  /***
+   * Method to create a view with latest available label_ds for a given ds. This view is built
+   * on top of final label view which has all label versions available.
+   * This view will inherit the final label view properties as well.
+   */
+  def createLatestLabelView(viewName: String,
+                            baseView: String,
+                            tableUtils: TableUtils,
+                            propertiesOverride: Map[String, String] = null): Unit = {
+    val baseViewProperties = tableUtils.getTableProperties(baseView).getOrElse(Map.empty)
+    val labelTableName = baseViewProperties.get(Constants.LabelViewPropertyKeyLabelTable).getOrElse("")
+    assert(!labelTableName.isEmpty, s"Not able to locate underlying label table for partitions")
+
+    val labelMapping = getLatestLabelMapping(labelTableName, tableUtils)
+    val caseDefinitions = labelMapping.map( entry => {
+      entry._2.map(v =>
+        s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'"
+      ).toList
+    }).flatten
+
+    val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
+    val queryFragment =
+      s"""
+         |  AS SELECT *
+         |     FROM ${baseView}
+         |     WHERE (
+         |       CASE
+         |         ${caseDefinitions.mkString("\n         ")}
+         |         ELSE true
+         |       END
+         |     )
+         | """.stripMargin
+
+    val mergedProperties = if (propertiesOverride != null) baseViewProperties ++ propertiesOverride
+                           else baseViewProperties
+    val propertiesFragment = if (mergedProperties.nonEmpty) {
+      s"""TBLPROPERTIES (
+         |    ${mergedProperties.transform((k, v) => s"'$k'='$v'").values.mkString(",\n   ")}
+         |)""".stripMargin
+    } else {
+      ""
+    }
+    val sqlStatement = Seq(createFragment, propertiesFragment, queryFragment).mkString("\n")
+    tableUtils.sql(sqlStatement)
+  }
+
+  /**
+   * compute the mapping label_ds -> PartitionRange of ds which has this label_ds as latest version
+   *  - Get all partitions from table
+   *  - For each ds, find the latest available label_ds
+   *  - Reverse the mapping and get the ds partition range for each label version(label_ds)
+   *
+   * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
+   */
+  def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {
+    val partitions = tableUtils.allPartitions(tableName)
+    assert(
+      partitions(0).keys.equals(Set(Constants.PartitionColumn, Constants.LabelPartitionColumn)),
+      s""" Table must have label partition columns for latest label computation: `${Constants.PartitionColumn}`
+         | & `${Constants.LabelPartitionColumn}`
+         |inputView: ${tableName}
+         |""".stripMargin
+    )
+
+    val labelMap = collection.mutable.Map[String, String]()
+    partitions.foreach(par => {
+      val ds_value = par.get(Constants.PartitionColumn).get
+      val label_value: String = par.get(Constants.LabelPartitionColumn).get
+      if(!labelMap.contains(ds_value)) {
+        labelMap.put(ds_value, label_value)
+      } else {
+        labelMap.put(ds_value, Seq(labelMap.get(ds_value).get, label_value).max)
+      }
+    })
+
+    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.map(_._1).toSet)) }
+  }
+
+  def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {
+    val columnsToDrop = df.columns
+      .filterNot(col => filter.contains(col))
+    df.drop(columnsToDrop:_*)
+  }
 }
