@@ -55,12 +55,11 @@ def get_kv_store_upload_operator(dag, conf, team_conf):
 
 def normalize_name(object_name):
     """Eliminate characters that would be problematic on task names"""
-    time_parts = ["ds", "ts", "hr"]
 
     def safe_part(p):
         return not any([
             p.startswith("{}=".format(time_part))
-            for time_part in time_parts
+            for time_part in constants.time_parts
         ])
 
     safe_name = "__".join(filter(safe_part, object_name.split("/")))

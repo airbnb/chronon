@@ -12,7 +12,7 @@ The files in this directory can be used to create the following Chronon Airflow 
 3. Staging Query DAGs, created by [staging_query_dag_constructor.py](staging_query_dag_constructor.py):
    1. `chronon_staging_query_{team_name}`: One DAG per team that creates daily jobs for each Staging Query for the team.  
 4. Online/Offline Consistency Check DAGs, created by [online_offline_consistency_dag_constructor.py](online_offline_consistency_dag_constructor.py):
-   1. `chronon_online_offline_comparison_{join_name}`: One DAG per join that computes the consistency of online serving data vs offline data for that join, and outputs the measurements to a stats table for each join that is configured.
+   1. `chronon_online_offline_comparison_{join_name}`: One DAG per join that computes the consistency of online serving data vs offline data for that join, and outputs the measurements to a stats table for each join that is configured. Note that logging must be enabled for this pipeline to work.
 
 ## Integration
 
