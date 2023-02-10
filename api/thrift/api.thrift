@@ -222,10 +222,14 @@ struct MetaData {
     // (These just aren't implemented yet)
     // The inner map should contain environment variables
     9: optional map<string, map<string, string>> modeToEnvMap
+    // enable job to compute consistency metrics
     10: optional bool consistencyCheck
+    // percentage of online serving requests to log to warehouse
     11: optional double samplePercent
     // cron expression for airflow DAG schedule
     12: optional string offlineSchedule
+    // percentage of online serving requests used to compute consistency metrics
+    13: optional double consistencySamplePercent
 }
 
 // Equivalent to a FeatureSet in chronon terms

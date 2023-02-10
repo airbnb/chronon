@@ -12,6 +12,7 @@
     },
     "outputNamespace": "sample_namespace",
     "team": "sample_team",
+    "samplePercent": 100.0,
     "offlineSchedule": "@daily"
   },
   "left": {
