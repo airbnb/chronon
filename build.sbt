@@ -9,7 +9,7 @@ lazy val scala213 = "2.13.6"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala211
+ThisBuild / scalaVersion := scala212
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -92,13 +92,10 @@ git.gitTagToVersionNumber := { tag: String =>
 lazy val api = project
   .settings(
     publishSettings,
-    // TODO(andrewlee) the Thrift.gen() call below autogenerates Thrift java classes as part of the sbt build.
-    //  It works in CI but appears to silently fail when running locally. Right now we can get around that
-    //  by manually running thrift from the cli (see README) but I plan to look into this more later.
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
-      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
+      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java", insideCI.value)
     }.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
@@ -219,7 +216,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
-    libraryDependencies ++= sparkLibs("2.4.0"),
+    libraryDependencies ++= sparkLibs("3.1.1"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     embeddedAssemblyStrategy,
     Test / test := {}

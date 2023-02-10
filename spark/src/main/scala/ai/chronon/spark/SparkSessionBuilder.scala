@@ -2,14 +2,15 @@ package ai.chronon.spark
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SPARK_VERSION
-import java.io.File
-import java.util.logging.Logger
 
+import java.io.File
+import java.nio.file.Files
+import java.util.logging.Logger
 import scala.util.Properties
 
 object SparkSessionBuilder {
 
-  val warehouseDir = new File("spark-warehouse")
+  val wareHousePathPrefix = "spark-warehouse"
 
   def build(name: String, local: Boolean = false): SparkSession = {
     if (local) {
@@ -31,7 +32,6 @@ object SparkSessionBuilder {
       .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
-      .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
 
@@ -41,15 +41,20 @@ object SparkSessionBuilder {
     }
 
     val builder = if (local) {
+      val tmpPath = Files.createTempDirectory(wareHousePathPrefix)
+      tmpPath.toFile.deleteOnExit()
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", "true")
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:myInMemDB;create=true")
+        .config("spark.sql.warehouse.dir", tmpPath.toAbsolutePath.toString)
     } else {
       // hive jars need to be available on classpath - no needed for local testing
+      val warehouseDir = new File(wareHousePathPrefix)
       baseBuilder
+        .config("spark.sql.warehouse.dir", warehouseDir.getAbsolutePath)
     }
     val spark = builder.getOrCreate()
     // disable log spam

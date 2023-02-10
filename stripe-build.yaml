@@ -5,7 +5,7 @@ jenkins_jobs:
   - name: "stripe-private-oss-forks-chronon"
     henson_tarball:
       docker:
-        dockerfile: Dockerfile
+        dockerfile: docker/ci/Dockerfile
     network:
       http_proxy_verbose: true
       http_proxy_report_only: true
