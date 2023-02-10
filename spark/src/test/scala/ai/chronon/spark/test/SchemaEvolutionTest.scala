@@ -162,8 +162,7 @@ class SchemaEvolutionTest extends TestCase {
     val joinConf = Builders.Join(
       left = viewsGroupBy.groupByConf.sources.get(0),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)),
-      metaData =
-        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
+      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
     )
 
     JoinTestSuite(
@@ -188,8 +187,7 @@ class SchemaEvolutionTest extends TestCase {
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
         Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
       ),
-      metaData =
-        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
+      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
     )
     JoinTestSuite(
       joinConf,
