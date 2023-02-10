@@ -24,11 +24,3 @@ object ScalaVersionSpecificCollectionsConverter {
     map.asScala.toList
   }
 }
-
-object ScalaToJavaConversions {
-  implicit class IteratorOps[T](iterator: java.util.Iterator[T]) {
-    def toScala: Iterator[T] = {
-      iterator.asScala
-    }
-  }
-}

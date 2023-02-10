@@ -3,7 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
-import ai.chronon.online.{JoinCodec, SparkConversions}
+import ai.chronon.online.JoinCodec
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -56,7 +56,7 @@ object BootstrapInfo {
         .convertJavaListToScala(joinConf.joinParts)
         .map(part => {
           val gb = GroupBy.from(part.groupBy, range, tableUtils)
-          val keySchema = SparkConversions
+          val keySchema = Conversions
             .toChrononSchema(gb.keySchema)
             .map(field => StructField(part.rightToLeft(field._1), field._2))
           val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
@@ -130,7 +130,7 @@ object BootstrapInfo {
             s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
           )
 
-          val valueFields = SparkConversions
+          val valueFields = Conversions
             .toChrononSchema(schema)
             .filterNot {
               case (name, _) => (part.keys(joinConf) :+ Constants.PartitionColumn).contains(name)

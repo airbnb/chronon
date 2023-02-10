@@ -135,13 +135,13 @@ class LogFlattenerJob(session: SparkSession,
 
             val metadataColumns = Array(row.get(schemaHashIdx), row.get(tsIdx), row.get(dsIdx))
             val outputRow = metadataColumns ++ dataColumns
-            val unpackedRow = SparkConversions.toSparkRow(outputRow, outputSchema).asInstanceOf[GenericRow]
+            val unpackedRow = Conversions.toSparkRow(outputRow, outputSchema).asInstanceOf[GenericRow]
             Some(unpackedRow)
           }
         }
       }
 
-    val outputSparkSchema = SparkConversions.fromChrononSchema(outputSchema)
+    val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
     session.createDataFrame(outputRdd, outputSparkSchema)
   }
 

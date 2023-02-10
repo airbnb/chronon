@@ -9,7 +9,7 @@ import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
 // keys and values need to match schema in ExternalSource - chronon will validate automatically
-class ExternalSourceRegistry extends Serializable {
+class ExternalSourceRegistry {
   class ContextualHandler extends ExternalSourceHandler {
     override def fetch(requests: Seq[Request]): Future[Seq[Response]] = {
       Future(requests.map { request =>

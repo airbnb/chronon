@@ -4,9 +4,9 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{SparkConversions, Fetcher, JoinCodec, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.{Fetcher, JoinCodec, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{LogFlattenerJob, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Conversions, LogFlattenerJob, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -103,7 +103,7 @@ class SchemaEvolutionTest extends TestCase {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
+      Conversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
       name,
@@ -148,7 +148,7 @@ class SchemaEvolutionTest extends TestCase {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
+      Conversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
       name,
