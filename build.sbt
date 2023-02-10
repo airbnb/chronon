@@ -36,7 +36,7 @@ ThisBuild / developers := List(
 lazy val publishSettings = Seq(
   publishTo := {
     if (isSnapshot.value) {
-      Some("snapshots" at sys.env.get("CHRONON_SNAPSHOT_REPO").getOrElse("unknown-repo") + "/")
+      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + "/")
     } else {
       val nexus = "https://s01.oss.sonatype.org/"
       Some("releases" at nexus + "service/local/staging/deploy/maven2")
@@ -104,12 +104,16 @@ lazy val api = project
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= Seq(
+    libraryDependencies ++= {
+      CrossVersion.partialVersion(scalaVersion.value) match {
+        case Some((2, major)) if (major == 13) || (major == 12) =>
+          jacksonLibs("2.12.7")
+        case _ =>
+          jacksonLibs("2.9.10")
+      }
+    } ++ Seq(
       "org.apache.thrift" % "libthrift" % "0.13.0",
-      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
       "org.scala-lang" % "scala-reflect" % "2.11.12",
-      "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
       "com.novocode" % "junit-interface" % "0.11" % "test"
     )
@@ -130,6 +134,14 @@ def sparkSqlLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
   Seq(
     "org.apache.spark" %% "spark-sql" % version,
     "org.apache.spark" %% "spark-core" % version
+  )
+
+// TODO: Unused - we let the scala version figure out the spark version which w
+def jacksonLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
+  Seq(
+    "com.fasterxml.jackson.module" %% "jackson-module-scala" % version,
+    "com.fasterxml.jackson.core" % "jackson-databind" % version,
+    "com.fasterxml.jackson.core" % "jackson-core" % version
   )
 
 lazy val online = project
