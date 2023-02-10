@@ -7,8 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.util.ScalaToJavaConversions.IteratorOps
+import scala.util.matching.Regex
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
@@ -33,6 +35,7 @@ object Extensions {
         case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
         case _                                                                       => true
       }
+
     def stringified: String = operation.toString.toLowerCase
 
   }
@@ -80,11 +83,17 @@ object Extensions {
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
+
     def bootstrapTable = s"${outputTable}_bootstrap"
+
     private def comparisonPrefix = "comparison"
+
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
+
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
+
     def consistencyTable = s"${outputTable}_consistency"
+
     def uploadTable = s"${outputTable}_upload"
 
     def copyForVersioningComparison: MetaData = {
@@ -197,6 +206,7 @@ object Extensions {
   }
 
   case class WindowMapping(aggregationPart: AggregationPart, baseIrIndex: Int)
+
   case class UnpackedAggregations(perBucket: Array[AggregationPart], perWindow: Array[WindowMapping])
 
   object UnpackedAggregations {
@@ -252,7 +262,9 @@ object Extensions {
       })
 
     def hasWindows: Boolean = aggregations.exists(_.windows != null)
+
     def needsTimestamp: Boolean = hasWindows || hasTimedAggregations
+
     def allWindowsOpt: Option[Seq[Window]] =
       Option(aggregations).map { aggs =>
         aggs.flatMap { agg =>
@@ -306,7 +318,7 @@ object Extensions {
     /**
       * If the streaming topic has additional args. Parse them to be used by streamingImpl.
       * Example: kafkatopic/schema=deserializationClass/version=2.0/host=host_url/port=9999
-      *  -> Map(schema -> deserializationClass, version -> 2.0, host -> host_url, port -> 9999)
+      * -> Map(schema -> deserializationClass, version -> 2.0, host -> host_url, port -> 9999)
       */
     def topicTokens: Map[String, String] = {
       source.topic
@@ -374,8 +386,13 @@ object Extensions {
     }
 
     def setups: Seq[String] = {
-      val sources = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.sources)
-      sources.flatMap(_.query.setupsSeq).toSeq.distinct
+      groupBy.sources
+        .iterator()
+        .toScala
+        .map(_.query.setups)
+        .flatMap(setupList => Option(setupList).map(_.iterator().toScala).getOrElse(Iterator.empty))
+        .toSeq
+        .distinct
     }
 
     def copyForVersioningComparison: GroupBy = {
@@ -386,6 +403,7 @@ object Extensions {
 
     lazy val batchDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_BATCH"
     lazy val streamingDataset: String = s"${groupBy.metaData.cleanName.toUpperCase()}_STREAMING"
+
     def kvTable: String = s"${groupBy.metaData.outputTable}_upload"
 
     def streamingSource: Option[Source] =
@@ -428,18 +446,40 @@ object Extensions {
     }
 
     def aggregationInputs: Array[String] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.aggregations)
+      groupBy.aggregations
+        .iterator()
+        .toScala
         .flatMap(agg =>
           Option(agg.buckets)
-            .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+            .map(_.iterator().toScala.toSeq)
             .getOrElse(Seq.empty) :+ agg.inputColumn)
-        .distinct
+        .toSet
         .toArray
+
+    def valueColumns: Array[String] =
+      Option(groupBy.aggregations)
+        .map(
+          _.iterator().toScala
+            .flatMap(agg => agg.unpack.map(_.outputColumnName))
+            .toArray
+        )
+        .getOrElse(
+          // no-agg case
+          groupBy.sources
+            .get(0)
+            .query
+            .selects
+            .keySet()
+            .iterator()
+            .toScala
+            .filterNot(groupBy.keyColumns.contains)
+            .toArray
+        )
   }
 
   implicit class StringOps(string: String) {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
+
     def cleanSpec: String = string.split("/").head
   }
 
@@ -520,6 +560,8 @@ object Extensions {
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
+
+    def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
     def rightToLeft: Map[String, String] = {
       val rightToRight = ScalaVersionSpecificCollectionsConverter
@@ -606,7 +648,9 @@ object Extensions {
     def leftKeyCols: Array[String] = {
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(join.joinParts)
-        .flatMap { _.rightToLeft.values }
+        .flatMap {
+          _.rightToLeft.values
+        }
         .toSet
         .toArray
     }
@@ -615,6 +659,7 @@ object Extensions {
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
 
     private val leftSourceKey: String = "left_source"
+    private val derivedKey: String = "derived"
 
     /*
      * semanticHash contains hashes of left side and each join part, and is used to detect join definition
@@ -626,8 +671,15 @@ object Extensions {
         .convertJavaListToScala(join.joinParts)
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
+      val derivedHashMap = Option(join.derivations)
+        .map { derivations =>
+          val derivedHash =
+            derivations.iterator().toScala.map(d => s"${d.expression} as ${d.name}").mkString(", ").hashCode.toHexString
+          Map(derivedKey -> derivedHash)
+        }
+        .getOrElse(Map.empty)
       val bootstrapHash = ThriftJsonCodec.md5Digest(join.bootstrapParts)
-      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash)
+      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap
     }
 
     /*
@@ -674,15 +726,21 @@ object Extensions {
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
+
+      // only right join part hashes for convenience
+      def partHashes(semanticHashMap: Map[String, String]): Map[String, String] = {
+        semanticHashMap.filterNot { case (name, _) => Seq(leftSourceKey, derivedKey).contains(name) }
+      }
+
       // drop everything if left source changes
       val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
-        oldSemanticHash.keys.filter(_ != leftSourceKey).toSeq
+        partHashes(oldSemanticHash).keys.toSeq
       } else {
-        val changed = newSemanticHash.flatMap {
+        val changed = partHashes(newSemanticHash).flatMap {
           case (key, newVal) =>
             oldSemanticHash.get(key).filter(_ != newVal).map(_ => key)
         }
-        val deleted = oldSemanticHash.keys.filter(!newSemanticHash.contains(_))
+        val deleted = partHashes(oldSemanticHash).keys.filterNot(newSemanticHash.contains)
         (changed ++ deleted).toSeq
       }
       val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_)).filter {
@@ -690,8 +748,11 @@ object Extensions {
         case key if key == join.metaData.bootstrapTable => join.isSetBootstrapParts && !join.bootstrapParts.isEmpty
         case _                                          => true
       }
-      val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty) { Some(join.metaData.outputTable) }
-      else None
+      val derivedChanges = oldSemanticHash.get(derivedKey) != newSemanticHash.get(derivedKey)
+      // TODO: make this incremental, retain the main table and continue joining, dropping etc
+      val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty || derivedChanges) {
+        Some(join.metaData.outputTable)
+      } else None
       partsToDrop ++ mainTable
     }
 
@@ -711,7 +772,10 @@ object Extensions {
       Option(join.skewKeys).map { jmap =>
         val result = ScalaVersionSpecificCollectionsConverter
           .convertJavaMapToScala(jmap)
-          .filterKeys(key => keys.forall { _.contains(key) })
+          .filterKeys(key =>
+            keys.forall {
+              _.contains(key)
+            })
           .map {
             case (leftKey, values) =>
               assert(
@@ -736,7 +800,9 @@ object Extensions {
           .flatMap {
             case (leftKey, values) =>
               val replacedKey = Option(joinPart.keyMapping)
-                .map { ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).getOrElse(leftKey, leftKey) }
+                .map {
+                  ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).getOrElse(leftKey, leftKey)
+                }
                 .getOrElse(leftKey)
               if (joinPart.groupBy.keyColumns.contains(replacedKey))
                 Some(
@@ -773,6 +839,49 @@ object Extensions {
         .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
         .toSeq
         .map(new JoinPartOps(_))
+
+    lazy val partValueColumns: Array[String] = join.joinParts.iterator().toScala.flatMap(_.valueColumns).toArray
+    lazy val leftColumns: Array[String] = join.left.query.selects.keySet().iterator().toScala.toArray
+
+    @transient private lazy val identifierRegex: Regex = raw"[0-9a-zA-Z_]+".r
+
+    private def matches(candidate: String, regex: Regex): Boolean =
+      if (candidate == null || candidate == "") {
+        true
+      } else {
+        val matchOpt = regex.findFirstIn(candidate)
+        matchOpt.isDefined && matchOpt.get == candidate
+      }
+
+    // derivations are just renaming or simple selects
+    lazy val derivationsAreSimple: Boolean =
+      join.derivations.iterator().toScala.map(_.expression).forall(matches(_, identifierRegex))
+
+    /** Select clauses to finally apply on the dataframe to select all necessary columns, while applying derivations
+      * If derivations are not specified - we return None
+      * Having a "*" in derivations means - all value columns are selected, except the ones that are renamed
+      * Not specifying an `expression` in Derivation means that we are just selecting a column by `name`
+      */
+    lazy val derivationSelects: Option[Array[String]] = if (join.isSetDerivations) {
+      // iterators have to be a re-created - hence the def instead of val
+      def derivationsIterator = join.derivations.iterator().toScala
+      val partColumns = if (derivationsIterator.exists(_.name == "*")) {
+        val exprs = derivationsIterator.map(_.expression).toSet
+        // detect renames - and exclude from double selecting
+        partValueColumns.filterNot(exprs.contains)
+      } else {
+        Array.empty
+      }
+      val derivationTuples = derivationsIterator
+        .filterNot(_.name == "*")
+        .map(d => d.name -> Option(d.expression).getOrElse(d.name))
+        .toArray
+      val selects =
+        ((leftColumns ++ partColumns).map(c => c -> c) ++ derivationTuples).map(tup => s"${tup._1} AS `${tup._2}`")
+      Some(selects)
+    } else {
+      None
+    }
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

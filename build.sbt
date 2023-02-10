@@ -1,10 +1,14 @@
 import sbt.Keys._
 import sbt.Test
+
 import scala.sys.process._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
 lazy val scala213 = "2.13.6"
+lazy val spark2_4_0 = "2.4.0"
+lazy val spark3_1_1 = "3.1.1"
+lazy val spark3_2_1 = "3.2.1"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -42,7 +46,7 @@ lazy val publishSettings = Seq(
 )
 
 // Release related configs
-import ReleaseTransformations._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Next,
@@ -122,6 +126,12 @@ lazy val aggregator = project
     )
   )
 
+def sparkSqlLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
+  Seq(
+    "org.apache.spark" %% "spark-sql" % version,
+    "org.apache.spark" %% "spark-core" % version
+  )
+
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
@@ -137,10 +147,12 @@ lazy val online = project
     ),
     libraryDependencies ++= {
       CrossVersion.partialVersion(scalaVersion.value) match {
-        case Some((2, major)) if major <= 12 =>
-          Seq()
+        case Some((2, major)) if major <= 11 =>
+          sparkSqlLibs(spark2_4_0)
+        case Some((2, major)) if major == 12 =>
+          sparkSqlLibs(spark3_1_1)
         case _ =>
-          Seq("org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4")
+          sparkSqlLibs(spark3_2_1) ++ Seq("org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4")
       }
     }
   )

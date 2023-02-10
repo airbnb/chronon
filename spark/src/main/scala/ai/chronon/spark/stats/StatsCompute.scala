@@ -5,7 +5,8 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.spark.Extensions._
 import ai.chronon.api.Extensions._
 import ai.chronon.api
-import ai.chronon.spark.{Conversions, KvRdd, RowWrapper}
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.KvRdd
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.spark.rdd.RDD
@@ -26,7 +27,10 @@ import scala.util.Try
 object StatsGenerator {
 
   // TODO: unify with OOC since has the same metric transform.
-  case class MetricTransform(name: String, expression: Column, operation: api.Operation, argMap: util.Map[String, String] = null)
+  case class MetricTransform(name: String,
+                             expression: Column,
+                             operation: api.Operation,
+                             argMap: util.Map[String, String] = null)
 
   val nullPrefix = "null__"
   val nullRatePrefix = "null_rate__"
@@ -35,14 +39,19 @@ object StatsGenerator {
   val finalizedPercentiles = (5 until 1000 by 5).map(_.toDouble / 1000)
 
   /** Stats applied to any column */
-  def anyTransforms(column: Column): Seq[MetricTransform] = Seq(
-    MetricTransform(s"$nullPrefix$column", column.isNull, operation = api.Operation.SUM)
-    //, MetricTransform(s"$column", column, operation = api.Operation.APPROX_UNIQUE_COUNT)
-  )
+  def anyTransforms(column: Column): Seq[MetricTransform] =
+    Seq(
+      MetricTransform(s"$nullPrefix$column", column.isNull, operation = api.Operation.SUM)
+      //, MetricTransform(s"$column", column, operation = api.Operation.APPROX_UNIQUE_COUNT)
+    )
 
   /** Stats applied to numeric columns */
-  def numericTransforms(column: Column): Seq[MetricTransform] = anyTransforms(column) ++ Seq(
-    MetricTransform(column.toString(), column, operation = api.Operation.APPROX_PERCENTILE, argMap = Map("percentiles" -> s"[${finalizedPercentiles.mkString(", ")}]")))
+  def numericTransforms(column: Column): Seq[MetricTransform] =
+    anyTransforms(column) ++ Seq(
+      MetricTransform(column.toString(),
+                      column,
+                      operation = api.Operation.APPROX_PERCENTILE,
+                      argMap = Map("percentiles" -> s"[${finalizedPercentiles.mkString(", ")}]")))
 
   /** For the schema of the data define metrics to be aggregated */
   def buildMetrics(fields: Array[(String, api.DataType)]): Seq[MetricTransform] = {
@@ -63,7 +72,7 @@ object StatsGenerator {
 
   /** Build RowAggregator to use for computing stats on a dataframe based on metrics */
   def buildAggregator(metrics: Seq[MetricTransform], inputDf: DataFrame): RowAggregator = {
-    val schema = Conversions.toChrononSchema(inputDf.schema)
+    val schema = SparkConversions.toChrononSchema(inputDf.schema)
     val aggParts = metrics.flatMap { m =>
       def buildAggPart(name: String): api.AggregationPart = {
         val aggPart = new api.AggregationPart()
@@ -84,35 +93,42 @@ object StatsGenerator {
 
 class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
 
-  private val noKeysDf: DataFrame = inputDf.select(inputDf.columns.filter(colName => !keys.contains(colName))
-    .map(colName => new Column(colName)): _*)
+  private val noKeysDf: DataFrame = inputDf.select(
+    inputDf.columns
+      .filter(colName => !keys.contains(colName))
+      .map(colName => new Column(colName)): _*)
 
-  val keyColumns = if (inputDf.columns.contains(api.Constants.TimeColumn)) Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn) else Seq(api.Constants.PartitionColumn)
-  val metrics = StatsGenerator.buildMetrics(Conversions.toChrononSchema(noKeysDf.schema))
-  val selectedDf: DataFrame = noKeysDf.select(keyColumns.map(col) ++ metrics.map(m => m.expression): _*).toDF(keyColumns ++ metrics.map(m => m.name): _*)
+  val keyColumns =
+    if (inputDf.columns.contains(api.Constants.TimeColumn)) Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn)
+    else Seq(api.Constants.PartitionColumn)
+  val metrics = StatsGenerator.buildMetrics(SparkConversions.toChrononSchema(noKeysDf.schema))
+  val selectedDf: DataFrame = noKeysDf
+    .select(keyColumns.map(col) ++ metrics.map(m => m.expression): _*)
+    .toDF(keyColumns ++ metrics.map(m => m.name): _*)
 
   /** Given a summary Dataframe that computed the stats. Add derived data (example: null rate, median, etc) */
   def addDerivedMetrics(df: DataFrame, aggregator: RowAggregator): DataFrame = {
     val nullColumns = df.columns.filter(p => p.startsWith(StatsGenerator.nullPrefix))
-    val withNullRatesDF = nullColumns.foldLeft(df) {
-      (tmpDf, column) =>
-        tmpDf.withColumn(s"${StatsGenerator.nullRatePrefix}${column.stripPrefix(StatsGenerator.nullPrefix)}",
-          tmpDf.col(column) / tmpDf.col(Seq(StatsGenerator.totalColumn, api.Operation.COUNT).mkString("_")))
+    val withNullRatesDF = nullColumns.foldLeft(df) { (tmpDf, column) =>
+      tmpDf.withColumn(
+        s"${StatsGenerator.nullRatePrefix}${column.stripPrefix(StatsGenerator.nullPrefix)}",
+        tmpDf.col(column) / tmpDf.col(Seq(StatsGenerator.totalColumn, api.Operation.COUNT).mkString("_"))
+      )
     }
-    
-    val percentiles = aggregator
-      .aggregationParts.filter(_.operation == api.Operation.APPROX_PERCENTILE)
+
+    val percentiles = aggregator.aggregationParts.filter(_.operation == api.Operation.APPROX_PERCENTILE)
     val percentileColumns = percentiles.map(_.outputColumnName)
     import org.apache.spark.sql.functions.udf
-    val percentileFinalizerUdf = udf(
-      (s: Array[Byte]) =>
-        Try(KllFloatsSketch.heapify(Memory.wrap(s))
+    val percentileFinalizerUdf = udf((s: Array[Byte]) =>
+      Try(
+        KllFloatsSketch
+          .heapify(Memory.wrap(s))
           .getQuantiles(StatsGenerator.finalizedPercentiles.toArray)
-          .zip(StatsGenerator.finalizedPercentiles).map(f => f._2.toString -> f._1.toString).toMap).toOption
-    )
-    val addedPercentilesDf = percentileColumns.foldLeft(withNullRatesDF) {
-      (tmpDf, column) =>
-        tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
+          .zip(StatsGenerator.finalizedPercentiles)
+          .map(f => f._2.toString -> f._1.toString)
+          .toMap).toOption)
+    val addedPercentilesDf = percentileColumns.foldLeft(withNullRatesDF) { (tmpDf, column) =>
+      tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
     }
     if (selectedDf.columns.contains(api.Constants.TimeColumn)) {
       addedPercentilesDf.withTimeBasedColumn(api.Constants.PartitionColumn)
@@ -133,23 +149,27 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String]) extends Serializable {
   def dailySummary(aggregator: RowAggregator, sample: Double = 1.0, timeBucketMinutes: Long = 60): KvRdd = {
     val partitionIdx = selectedDf.schema.fieldIndex(api.Constants.PartitionColumn)
     val bucketMs = timeBucketMinutes * 1000 * 60
-    val tsIdx = if(selectedDf.columns.contains(api.Constants.TimeColumn)) selectedDf.schema.fieldIndex(api.Constants.TimeColumn) else -1
+    val tsIdx =
+      if (selectedDf.columns.contains(api.Constants.TimeColumn)) selectedDf.schema.fieldIndex(api.Constants.TimeColumn)
+      else -1
     val hourlyCompute = tsIdx >= 0 && timeBucketMinutes > 0
-    val keyField = if (hourlyCompute) StructField(api.Constants.TimeColumn, LongType) else StructField(api.Constants.PartitionColumn, StringType)
+    val keyField =
+      if (hourlyCompute) StructField(api.Constants.TimeColumn, LongType)
+      else StructField(api.Constants.PartitionColumn, StringType)
     val result = selectedDf
       .sample(sample)
       .rdd
-      .map(Conversions.toChrononRow(_, tsIdx))
-      .keyBy(row => if(hourlyCompute) ((row.ts / bucketMs) * bucketMs).asInstanceOf[Any] else row.get(partitionIdx))
+      .map(SparkConversions.toChrononRow(_, tsIdx))
+      .keyBy(row => if (hourlyCompute) ((row.ts / bucketMs) * bucketMs).asInstanceOf[Any] else row.get(partitionIdx))
       .aggregateByKey(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
       .mapValues(aggregator.normalize(_))
-      .map{ case (k, v) => (Array(k), v) }  // To use KvRdd
+      .map { case (k, v) => (Array(k), v) } // To use KvRdd
 
     implicit val sparkSession = inputDf.sparkSession
     KvRdd(
       result,
       StructType(Array(keyField)),
-      Conversions.fromChrononSchema(aggregator.irSchema)
+      SparkConversions.fromChrononSchema(aggregator.irSchema)
     )
   }
 }

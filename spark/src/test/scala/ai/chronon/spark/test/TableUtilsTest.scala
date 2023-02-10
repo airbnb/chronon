@@ -3,12 +3,15 @@ package ai.chronon.spark.test
 import ai.chronon.api._
 import ai.chronon.spark._
 import ai.chronon.spark.test.TestUtils.makeDf
+import ai.chronon.api.{StructField, _}
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
-import scala.util.{Try}
+import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
@@ -233,6 +236,7 @@ class TableUtilsTest {
     tableUtils.dropPartitions(tableName,
                               Seq("2022-10-01", "2022-10-02"),
                               subPartitionFilters = Map(Constants.LabelPartitionColumn -> "2022-11-02"))
+
     val updated = tableUtils.sql(s"""
          |SELECT * from ${tableName}
          |""".stripMargin)
@@ -274,8 +278,8 @@ class TableUtilsTest {
       )
     )
     tableUtils.insertPartitions(df1,
-      tableName,
-      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
     val par = tableUtils.allPartitions(tableName)
     assertTrue(par.size == 6)
     assertEquals(par(0).keys, Set(Constants.PartitionColumn, Constants.LabelPartitionColumn))
@@ -287,8 +291,8 @@ class TableUtilsTest {
 
     // verify the latest label version
     val labels = JoinUtils.getLatestLabelMapping(tableName, tableUtils)
-    assertEquals(labels.get("2022-11-09").get, List(PartitionRange("2022-10-01","2022-10-02"),
-      PartitionRange("2022-10-05","2022-10-05")))
+    assertEquals(labels.get("2022-11-09").get,
+                 List(PartitionRange("2022-10-01", "2022-10-02"), PartitionRange("2022-10-05", "2022-10-05")))
   }
 
   private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
@@ -314,8 +318,8 @@ class TableUtilsTest {
       )
     )
     tableUtils.insertPartitions(df1,
-      tableName,
-      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
 
   }
 
