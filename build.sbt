@@ -95,6 +95,71 @@ git.gitTagToVersionNumber := { tag: String =>
   }
 }
 
+/**
+  * Versions are look up from mvn central - so we are fitting for three configurations
+  * scala 11 + spark 2.4: https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.11/2.4.0
+  * scala 12 + spark 3.1.1: https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.12/3.1.1
+  * scala 13 + spark 3.2.1: https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.13/3.2.1
+  */
+val VersionMatrix: Map[String, VersionDependency] = Map(
+  "spark-sql" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-sql",
+      "org.apache.spark" %% "spark-core"
+    ),
+    Some(spark2_4_0),
+    Some(spark3_1_1),
+    Some(spark3_2_1)
+  ),
+  "spark-all" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-sql",
+      "org.apache.spark" %% "spark-hive",
+      "org.apache.spark" %% "spark-core",
+      "org.apache.spark" %% "spark-streaming",
+      "org.apache.spark" %% "spark-sql-kafka-0-10"
+    ),
+    Some(spark2_4_0),
+    Some(spark3_1_1),
+    Some(spark3_2_1)
+  ),
+  "jackson" -> VersionDependency(
+    Seq(
+      "com.fasterxml.jackson.module" %% "jackson-module-scala",
+      "com.fasterxml.jackson.core" % "jackson-databind",
+      "com.fasterxml.jackson.core" % "jackson-core"
+    ),
+    Some("2.6.7"),
+    Some("2.10.0"),
+    Some("2.12.3")
+  ),
+  "avro" -> VersionDependency(
+    Seq("org.apache.avro" % "avro"),
+    Some("1.8.2"),
+    Some("1.8.2"),
+    Some("1.10.2")
+  ),
+  "scala-reflect" -> VersionDependency(
+    Seq("org.scala-lang" % "scala-reflect"),
+    Some(scala211),
+    Some(scala212),
+    Some(scala213)
+  ),
+  "scala-parallel-collections" -> VersionDependency(
+    Seq("org.scala-lang.modules" %% "scala-parallel-collections"),
+    None,
+    None,
+    Some("1.0.4")
+  )
+)
+
+def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
+  modules.flatMap { module =>
+    assert(VersionMatrix.contains(module),
+           s"Version matrix doesn't contain module: $module, pick one of ${VersionMatrix.keys.toSeq}")
+    VersionMatrix(module).of(scalaVersion)
+  }
+
 lazy val api = project
   .settings(
     publishSettings,
@@ -104,15 +169,14 @@ lazy val api = project
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= Seq(
-      "org.apache.thrift" % "libthrift" % "0.13.0",
-      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.9.10",
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.10",
-      "org.scala-lang" % "scala-reflect" % "2.11.12",
-      "com.fasterxml.jackson.core" % "jackson-core" % "2.9.10",
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
-      "com.novocode" % "junit-interface" % "0.11" % "test"
-    )
+    libraryDependencies ++=
+      fromMatrix(scalaVersion.value, "jackson") ++
+        Seq(
+          "org.apache.thrift" % "libthrift" % "0.13.0",
+          "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+          "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+          "com.novocode" % "junit-interface" % "0.11" % "test"
+        )
   )
 
 lazy val aggregator = project
@@ -126,12 +190,6 @@ lazy val aggregator = project
     )
   )
 
-def sparkSqlLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
-  Seq(
-    "org.apache.spark" %% "spark-sql" % version,
-    "org.apache.spark" %% "spark-core" % version
-  )
-
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
@@ -142,19 +200,9 @@ lazy val online = project
       // statsd 3.0 has local aggregation - TODO: upgrade
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
-      "org.apache.avro" % "avro" % "1.8.0",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= {
-      CrossVersion.partialVersion(scalaVersion.value) match {
-        case Some((2, major)) if major <= 11 =>
-          sparkSqlLibs(spark2_4_0)
-        case Some((2, major)) if major == 12 =>
-          sparkSqlLibs(spark3_1_1)
-        case _ =>
-          sparkSqlLibs(spark3_2_1) ++ Seq("org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4")
-      }
-    }
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro")
   )
 
 def cleanSparkMeta(): Unit = {
@@ -163,15 +211,6 @@ def cleanSparkMeta(): Unit = {
                file(".") / "spark" / "metastore_db",
                file(".") / "metastore_db")
 }
-
-def sparkLibs(version: String): Seq[sbt.librarymanagement.ModuleID] =
-  Seq(
-    "org.apache.spark" %% "spark-sql" % version,
-    "org.apache.spark" %% "spark-hive" % version,
-    "org.apache.spark" %% "spark-core" % version,
-    "org.apache.spark" %% "spark-streaming" % version,
-    "org.apache.spark" %% "spark-sql-kafka-0-10" % version
-  )
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
   assembly / test := {},
@@ -203,14 +242,7 @@ lazy val spark_uber = (project in file("spark"))
   .settings(
     sparkBaseSettings,
     crossScalaVersions := Seq(scala211, scala212),
-    libraryDependencies ++= {
-      CrossVersion.partialVersion(scalaVersion.value) match {
-        case Some((2, major)) if major == 12 =>
-          sparkLibs("3.1.1").map(_ % "provided")
-        case _ =>
-          sparkLibs("2.4.0").map(_ % "provided")
-      }
-    }
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all").map(_ % "provided")
   )
 
 // Project for running with embedded spark for local testing
@@ -218,7 +250,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
-    libraryDependencies ++= sparkLibs("2.4.0"),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     embeddedAssemblyStrategy,
     Test / test := {}
