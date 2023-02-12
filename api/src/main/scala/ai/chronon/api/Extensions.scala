@@ -685,7 +685,11 @@ object Extensions {
         val deleted = oldSemanticHash.keys.filter(!newSemanticHash.contains(_))
         (changed ++ deleted).toSeq
       }
-      val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_))
+      val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_)).filter {
+        // introduce boostrapTable as a semantic_hash but skip dropping to avoid recompute if it is empty
+        case key if key == join.metaData.bootstrapTable => join.isSetBootstrapParts && !join.bootstrapParts.isEmpty
+        case _                                          => true
+      }
       val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty) { Some(join.metaData.outputTable) }
       else None
       partsToDrop ++ mainTable
