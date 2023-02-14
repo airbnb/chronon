@@ -12,7 +12,7 @@ lazy val spark3_2_1 = "3.2.1"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala211
+ThisBuild / scalaVersion := scala213
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -32,11 +32,12 @@ ThisBuild / developers := List(
     url = url("http://nikhilsimha.com")
   )
 )
+ThisBuild / assembly / test := {}
 
 lazy val publishSettings = Seq(
   publishTo := {
     if (isSnapshot.value) {
-      Some("snapshots" at sys.env.get("CHRONON_SNAPSHOT_REPO").getOrElse("unknown-repo") + "/")
+      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + "/")
     } else {
       val nexus = "https://s01.oss.sonatype.org/"
       Some("releases" at nexus + "service/local/staging/deploy/maven2")
@@ -71,7 +72,7 @@ lazy val releaseSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -130,7 +131,7 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
       "com.fasterxml.jackson.core" % "jackson-core"
     ),
     Some("2.6.7"),
-    Some("2.10.0"),
+    Some("2.11.2"),
     Some("2.12.3")
   ),
   "avro" -> VersionDependency(
@@ -155,22 +156,28 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
 
 def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
   modules.flatMap { module =>
-    assert(VersionMatrix.contains(module),
-           s"Version matrix doesn't contain module: $module, pick one of ${VersionMatrix.keys.toSeq}")
-    VersionMatrix(module).of(scalaVersion)
+    var mod = module
+    val provided = module.endsWith("/provided")
+    if (provided) {
+      mod = module.replace("/provided", "")
+    }
+    assert(VersionMatrix.contains(mod),
+           s"Version matrix doesn't contain module: $mod, pick one of ${VersionMatrix.keys.toSeq}")
+    val result = VersionMatrix(mod).of(scalaVersion)
+    if (provided) result.map(_ % "provided") else result
   }
 
 lazy val api = project
   .settings(
     publishSettings,
-    sourceGenerators in Compile += Def.task {
+    Compile / sourceGenerators += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
-      fromMatrix(scalaVersion.value, "jackson") ++
+      fromMatrix(scalaVersion.value, "spark-sql/provided") ++
         Seq(
           "org.apache.thrift" % "libthrift" % "0.13.0",
           "org.scala-lang" % "scala-reflect" % scalaVersion.value,
@@ -184,10 +191,48 @@ lazy val aggregator = project
   .settings(
     publishSettings,
     crossScalaVersions := supportedVersions,
+    libraryDependencies ++=
+      fromMatrix(scalaVersion.value, "spark-sql/provided") ++ Seq(
+        "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
+        "com.google.code.gson" % "gson" % "2.8.6"
+      )
+  )
+
+lazy val online_shaded = (project in file("online"))
+  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .enablePlugins(AssemblyPlugin)
+  .settings(
+    publish / skip := true,
+    target := target.value.toPath.resolveSibling("target-shaded").toFile,
+    crossScalaVersions := supportedVersions,
+    assembly / assemblyShadeRules := Seq(
+      ShadeRule.rename(s"com.fasterxml.jackson.**" -> s"ai.chronon.shade.jackson.@1").inAll,
+      ShadeRule.rename(s"com.google.guava.**" -> s"ai.chronon.shade.guava.@1").inAll
+    ),
+    assembly / artifact := {
+      val art = (assembly / artifact).value
+      art.withClassifier(Some("shaded"))
+    },
+    assembly / assemblyExcludedJars := {
+      (assembly / fullClasspath).value filter { c =>
+        val packagesToInclude = Seq(
+          "jackson-module",
+          "jackson-databind",
+          "jackson-core",
+          "jackson-annotations",
+          "guava"
+        )
+        !packagesToInclude.exists(c.data.getName.contains)
+      }
+    },
     libraryDependencies ++= Seq(
-      "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
-      "com.google.code.gson" % "gson" % "2.8.6"
-    )
+      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+      // statsd 3.0 has local aggregation - TODO: upgrade
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      "org.rogach" %% "scallop" % "4.0.1",
+      "net.jodah" % "typetools" % "0.4.1"
+    ),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro")
   )
 
 lazy val online = project
@@ -202,7 +247,23 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro"),
+    Compile / packageBin := (online_shaded / assembly).value
+  )
+
+lazy val online_unshaded = (project in file("online"))
+  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .settings(
+    target := target.value.toPath.resolveSibling("target-no-assembly").toFile,
+    crossScalaVersions := supportedVersions,
+    libraryDependencies ++= Seq(
+      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+      // statsd 3.0 has local aggregation - TODO: upgrade
+      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      "org.rogach" %% "scallop" % "4.0.1",
+      "net.jodah" % "typetools" % "0.4.1"
+    ),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections", "avro")
   )
 
 def cleanSparkMeta(): Unit = {
@@ -223,36 +284,26 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     baseDirectory.value / "spark-warehouse",
     baseDirectory.value / "metastore_db"
   ),
-  testOptions in Test += Tests.Setup(() => cleanSparkMeta()),
-  testOptions in Test += Tests.Cleanup(() => cleanSparkMeta()),
+  Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
+  Test / testOptions += Tests.Cleanup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
 
-// TODO: use github releases to publish the spark driver
-val embeddedAssemblyStrategy: Setting[_] = assemblyMergeStrategy in assembly := {
-  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-  case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
-  case "plugin.xml"                        => MergeStrategy.last
-  case _                                   => MergeStrategy.first
-}
-
 lazy val spark_uber = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
     crossScalaVersions := Seq(scala211, scala212),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all").map(_ % "provided")
   )
 
-// Project for running with embedded spark for local testing
 lazy val spark_embedded = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    embeddedAssemblyStrategy,
     Test / test := {}
   )
 
@@ -269,4 +320,12 @@ sphinx := {
   }
 }
 
+ThisBuild / assemblyMergeStrategy := {
+  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+  case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
+  case "plugin.xml"                        => MergeStrategy.last
+  case PathList("com", "fasterxml", _ @_*) => MergeStrategy.last
+  case PathList("com", "google", _ @_*)    => MergeStrategy.last
+  case _                                   => MergeStrategy.first
+}
 exportJars := true
