@@ -34,10 +34,11 @@ ThisBuild / developers := List(
 )
 ThisBuild / assembly / test := {}
 
+def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
   publishTo := {
     if (isSnapshot.value) {
-      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + "/")
+      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + buildTimestampSuffix)
     } else {
       val nexus = "https://s01.oss.sonatype.org/"
       Some("releases" at nexus + "service/local/staging/deploy/maven2")
@@ -124,22 +125,6 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some(spark3_1_1),
     Some(spark3_2_1)
   ),
-  "jackson" -> VersionDependency(
-    Seq(
-      "com.fasterxml.jackson.module" %% "jackson-module-scala",
-      "com.fasterxml.jackson.core" % "jackson-databind",
-      "com.fasterxml.jackson.core" % "jackson-core"
-    ),
-    Some("2.6.7"),
-    Some("2.11.2"),
-    Some("2.12.3")
-  ),
-  "avro" -> VersionDependency(
-    Seq("org.apache.avro" % "avro"),
-    Some("1.8.2"),
-    Some("1.8.2"),
-    Some("1.10.2")
-  ),
   "scala-reflect" -> VersionDependency(
     Seq("org.scala-lang" % "scala-reflect"),
     Some(scala211),
@@ -198,43 +183,6 @@ lazy val aggregator = project
       )
   )
 
-lazy val online_shaded = (project in file("online"))
-  .dependsOn(aggregator.%("compile->compile;test->test"))
-  .enablePlugins(AssemblyPlugin)
-  .settings(
-    publish / skip := true,
-    target := target.value.toPath.resolveSibling("target-shaded").toFile,
-    crossScalaVersions := supportedVersions,
-    assembly / assemblyShadeRules := Seq(
-      ShadeRule.rename(s"com.fasterxml.jackson.**" -> s"ai.chronon.shade.jackson.@1").inAll,
-      ShadeRule.rename(s"com.google.guava.**" -> s"ai.chronon.shade.guava.@1").inAll
-    ),
-    assembly / artifact := {
-      val art = (assembly / artifact).value
-      art.withClassifier(Some("shaded"))
-    },
-    assembly / assemblyExcludedJars := {
-      (assembly / fullClasspath).value filter { c =>
-        val packagesToInclude = Seq(
-          "jackson-module",
-          "jackson-databind",
-          "jackson-core",
-          "jackson-annotations",
-          "guava"
-        )
-        !packagesToInclude.exists(c.data.getName.contains)
-      }
-    },
-    libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      // statsd 3.0 has local aggregation - TODO: upgrade
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
-      "org.rogach" %% "scallop" % "4.0.1",
-      "net.jodah" % "typetools" % "0.4.1"
-    ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro")
-  )
-
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
@@ -247,8 +195,7 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "avro"),
-    Compile / packageBin := (online_shaded / assembly).value
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections")
   )
 
 lazy val online_unshaded = (project in file("online"))
@@ -263,7 +210,7 @@ lazy val online_unshaded = (project in file("online"))
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections", "avro")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections")
   )
 
 def cleanSparkMeta(): Unit = {
@@ -295,7 +242,7 @@ lazy val spark_uber = (project in file("spark"))
   .settings(
     sparkBaseSettings,
     crossScalaVersions := Seq(scala211, scala212),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all").map(_ % "provided")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided")
   )
 
 lazy val spark_embedded = (project in file("spark"))
