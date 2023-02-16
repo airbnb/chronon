@@ -1033,8 +1033,8 @@ class JoinTest {
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
-      "left_source" -> "FF4eqikZnR",
-      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "J1IZNKLzUo"
+      "left_source" -> "WXW7JytdeG",
+      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "zpwS2Ttyj0"
     )
     assertEquals(0, join.tablesToDrop(productionHashV1).length)
 
