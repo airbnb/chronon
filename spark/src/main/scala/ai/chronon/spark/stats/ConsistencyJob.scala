@@ -34,7 +34,11 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     query.setStartPartition(joinConf.left.query.startPartition)
     // apply sampling logic to reduce OOC offline compute overhead
     val wheres = ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-      Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
+      if (joinConf.metaData.consistencySamplePercent < 100) {
+        Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
+      } else {
+        Seq()
+      }
     )
     query.setWheres(wheres)
     loggedEvents.setQuery(query)
@@ -66,6 +70,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   def buildConsistencyMetrics(): DataMetrics = {
     // migrate legacy configs without consistencySamplePercent param
     if (!joinConf.metaData.isSetConsistencySamplePercent) {
+      println("consistencySamplePercent is unset and will default to 100")
       joinConf.metaData.consistencySamplePercent = 100
     }
 
