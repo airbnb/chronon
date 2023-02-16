@@ -351,6 +351,8 @@ def Join(left: api.Source,
     :param consistency_sample_percent:
         Online only parameter. What percent of online serving requests to this join should be sampled to compute
         online offline consistency metrics.
+        if sample_percent=50.0 and consistency_sample_percent=10.0, then basically the consistency job runs on
+        5% of total traffic.
     :param online_external_parts:
         users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
         This is applicable only for online fetching. Offline this will not be produce any values.

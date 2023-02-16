@@ -43,6 +43,11 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     copiedJoin.setLeft(loggedSource)
     val newName = joinConf.metaData.comparisonConfName
     copiedJoin.metaData.setName(newName)
+    // mark OOC tables as chronon_ooc_table
+    if (!copiedJoin.metaData.isSetTableProperties) {
+      copiedJoin.metaData.setTableProperties(new util.HashMap[String, String]())
+    }
+    copiedJoin.metaData.tableProperties.put(Constants.ChrononOOCTable, true.toString)
     copiedJoin
   }
 
@@ -59,12 +64,13 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   }
 
   def buildConsistencyMetrics(): DataMetrics = {
-    if (!joinConf.metaData.consistencyCheck) {
-      println(s"consistencyCheck is false for join conf ${joinConf.metaData.name}")
-      return DataMetrics(Seq())
+    // migrate legacy configs without consistencySamplePercent param
+    if (!joinConf.metaData.isSetConsistencySamplePercent) {
+      joinConf.metaData.consistencySamplePercent = 100
     }
+
     if (joinConf.metaData.consistencySamplePercent == 0) {
-      println(s"consistencyCheckPercent = 0 for join conf ${joinConf.metaData.name}")
+      println(s"Exit ConsistencyJob because consistencySamplePercent = 0 for join conf ${joinConf.metaData.name}")
       return DataMetrics(Seq())
     }
 
