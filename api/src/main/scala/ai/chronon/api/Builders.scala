@@ -234,7 +234,8 @@ object Builders {
         dependencies: Seq[String] = null,
         namespace: String = null,
         team: String = null,
-        samplePercent: Double = 0,
+        samplePercent: Double = 100,
+        consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
@@ -248,6 +249,8 @@ object Builders {
         result.setDependencies(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(dependencies))
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
+      if (consistencySamplePercent > 0)
+        result.setConsistencySamplePercent(consistencySamplePercent)
       if (tableProperties.nonEmpty)
         result.setTableProperties(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(tableProperties))
       result

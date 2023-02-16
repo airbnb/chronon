@@ -277,7 +277,8 @@ def Join(left: api.Source,
          env: Dict[str, Dict[str, str]] = None,
          lag: int = 0,
          skew_keys: Dict[str, List[str]] = None,
-         sample_percent: float = None,  # will sample all the requests based on sample percent
+         sample_percent: float = 100.0,
+         consistency_sample_percent: float = 5.0,
          online_external_parts: List[api.ExternalPart] = None,
          offline_schedule: str = '@daily',
          row_ids: List[str] = None,
@@ -347,6 +348,11 @@ def Join(left: api.Source,
         This is used to blacklist crawlers etc
     :param sample_percent:
         Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
+    :param consistency_sample_percent:
+        Online only parameter. What percent of online serving requests to this join should be sampled to compute
+        online offline consistency metrics.
+        if sample_percent=50.0 and consistency_sample_percent=10.0, then basically the consistency job runs on
+        5% of total traffic.
     :param online_external_parts:
         users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
         This is applicable only for online fetching. Offline this will not be produce any values.
@@ -406,6 +412,8 @@ def Join(left: api.Source,
         custom_json["additional_env"] = additional_env
     custom_json.update(kwargs)
 
+    consistency_sample_percent = consistency_sample_percent if check_consistency else None
+
     metadata = api.MetaData(
         online=online,
         production=production,
@@ -415,7 +423,8 @@ def Join(left: api.Source,
         tableProperties=table_properties,
         modeToEnvMap=env,
         samplePercent=sample_percent,
-        offlineSchedule=offline_schedule
+        offlineSchedule=offline_schedule,
+        consistencySamplePercent=consistency_sample_percent
     )
 
     # external parts need to be unique on (prefix, part.source.metaData.name)

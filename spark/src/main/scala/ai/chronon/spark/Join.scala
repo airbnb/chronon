@@ -66,7 +66,13 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
   private def computeBootstrapTable(leftDf: DataFrame,
                                     range: PartitionRange,
                                     bootstrapInfo: BootstrapInfo): DataFrame = {
-    if (!joinConf.isSetBootstrapParts) {
+
+    // For consistency comparison join, we also need to materialize the left table as bootstrap table in order to
+    // make random OOC sampling deterministic.
+    val isConsistencyJoin =
+      joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
+
+    if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
       return leftDf
     }
 
@@ -87,7 +93,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .unfilledRanges(bootstrapTable, range)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
-        val parts = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.bootstrapParts)
+        val parts = Option(joinConf.bootstrapParts)
+          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala)
+          .getOrElse(Seq())
 
         val initDf = leftDf
           .prunePartition(unfilledRange)

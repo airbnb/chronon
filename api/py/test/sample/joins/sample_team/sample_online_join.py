@@ -33,5 +33,6 @@ v1 = Join(
     additional_env={
         'custom_env': 'custom_env_value'
     },
-    online=True
+    online=True,
+    check_consistency=True
 )

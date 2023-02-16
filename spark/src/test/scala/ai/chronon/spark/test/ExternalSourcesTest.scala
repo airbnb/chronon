@@ -70,8 +70,7 @@ class ExternalSourcesTest {
           contextualSource
         )
       ),
-      metaData =
-        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
+      metaData = Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon")
     )
 
     // put this join into kv store

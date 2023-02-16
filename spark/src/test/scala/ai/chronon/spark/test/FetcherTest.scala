@@ -362,8 +362,10 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
-      metaData =
-        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
+      metaData = Builders.MetaData(name = "test/payments_join",
+                                   namespace = namespace,
+                                   team = "chronon",
+                                   consistencySamplePercent = 30)
     )
     joinConf
   }
