@@ -1002,14 +1002,16 @@ class JoinTest {
 
     // Left
     val itemQueriesTable = s"$namespace.item_queries"
-    val leftStart = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val ds = "2023-01-01"
+    val leftStart = Constants.Partition.minus(ds, new Window(100, TimeUnit.DAYS))
     val leftSource = Builders.Source.events(Builders.Query(startPartition = leftStart), table = itemQueriesTable)
 
     // Right
     val viewsTable = s"$namespace.view_events"
     val viewsSource = Builders.Source.events(
       table = viewsTable,
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo)
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"),
+                             startPartition = Constants.Partition.minus(ds, new Window(200, TimeUnit.DAYS)))
     )
     val groupBy = Builders.GroupBy(
       sources = Seq(viewsSource),
@@ -1033,8 +1035,8 @@ class JoinTest {
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
-      "left_source" -> "WXW7JytdeG",
-      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "zpwS2Ttyj0"
+      "left_source" -> "vbQc07vaqm",
+      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
     )
     assertEquals(0, join.tablesToDrop(productionHashV1).length)
 
