@@ -131,10 +131,11 @@ class Analyzer(tableUtils: TableUtils,
 
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
-                                 columnType: String,
-                                 operation: String = null,
-                                 window: String = null,
-                                 inputColumn: String = null)
+                           columnType: String,
+                           operation: String = null,
+                           window: String = null,
+                           inputColumn: String = null,
+                           groupByName: String = null)
 
   def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(aggPart.outputColumnName,
@@ -197,7 +198,7 @@ class Analyzer(tableUtils: TableUtils,
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
-    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils).get
+    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
     val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
@@ -209,8 +210,8 @@ class Analyzer(tableUtils: TableUtils,
                             aggMeta.columnType,
                             aggMeta.operation,
                             aggMeta.window,
-                            aggMeta.inputColumn)
-      }
+                            aggMeta.inputColumn,
+                            part.getGroupBy.getMetaData.getName)}
     }
 
     val rightSchema = aggregationsMetadata.map { aggregation => s"  ${aggregation.name} => ${aggregation.columnType}" }
