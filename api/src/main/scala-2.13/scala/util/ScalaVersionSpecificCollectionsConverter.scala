@@ -1,5 +1,6 @@
 package scala.util
 
+import scala.collection.parallel.CollectionConverters.IterableIsParallelizable
 import scala.collection.parallel.ParSeq
 import scala.jdk.CollectionConverters._
 
@@ -55,7 +56,7 @@ object ScalaJavaConversions {
       if (it == null) {
         null
       } else {
-        it.toSeq.par
+        it.toSeq.par.toSeq
       }
     }
   }
