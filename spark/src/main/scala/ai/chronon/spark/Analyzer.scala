@@ -12,7 +12,7 @@ import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -202,7 +202,7 @@ class Analyzer(tableUtils: TableUtils,
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
-    joinConf.joinParts.toScala.par.foreach { part =>
+    joinConf.joinParts.toScala.parallel.foreach { part =>
       val aggMetadata = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
       aggregationsMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
