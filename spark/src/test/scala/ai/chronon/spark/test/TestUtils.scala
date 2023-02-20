@@ -73,8 +73,8 @@ object TestUtils {
   }
 
   def createAttributesGroupBy(namespace: String,
-                                spark: SparkSession,
-                                tableName: String = "listing_attributes"): GroupByTestSuite = {
+                              spark: SparkSession,
+                              tableName: String = "listing_attributes"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -124,8 +124,8 @@ object TestUtils {
   }
 
   def createAttributesGroupByV2(namespace: String,
-                              spark: SparkSession,
-                              tableName: String = "listing_attributes"): GroupByTestSuite = {
+                                spark: SparkSession,
+                                tableName: String = "listing_attributes"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -137,8 +137,8 @@ object TestUtils {
       )
     )
     val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST","2022-11-01"),
-      Row(2L, 4, "ENTIRE_HOME","SUPER_HOST", "2022-11-01"),
+      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST", "2022-11-01"),
+      Row(2L, 4, "ENTIRE_HOME", "SUPER_HOST", "2022-11-01"),
       Row(3L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
       Row(4L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
       Row(5L, 1, "PRIVATE_ROOM", "SUPER_HOST", "2022-11-01"),
@@ -221,7 +221,7 @@ object TestUtils {
   def makeDf(spark: SparkSession, schema: StructType, rows: List[Row]): DataFrame = {
     spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
   }
 }
