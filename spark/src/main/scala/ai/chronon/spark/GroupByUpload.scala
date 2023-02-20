@@ -2,9 +2,9 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
 import ai.chronon.api
+import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.api._
-import ai.chronon.online.{SparkConversions, Metrics}
+import ai.chronon.online.{Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.lit

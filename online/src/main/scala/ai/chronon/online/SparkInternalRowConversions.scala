@@ -8,7 +8,7 @@ import org.apache.spark.unsafe.types.UTF8String
 
 import java.util
 import scala.collection.mutable
-import scala.util.ScalaToJavaConversions.IteratorOps
+import scala.util.ScalaJavaConversions.IteratorOps
 
 object SparkInternalRowConversions {
   // the identity function

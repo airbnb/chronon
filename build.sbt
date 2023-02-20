@@ -12,7 +12,7 @@ lazy val spark3_2_1 = "3.2.1"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala213
+ThisBuild / scalaVersion := scala212
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -73,7 +73,7 @@ lazy val releaseSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,

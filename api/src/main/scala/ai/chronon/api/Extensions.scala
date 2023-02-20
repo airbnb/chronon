@@ -7,9 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.util.ScalaToJavaConversions.IteratorOps
+import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.matching.Regex
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
@@ -160,11 +159,11 @@ object Extensions {
     // unspecified windows are translated to one unbounded window
     def unpack: Seq[AggregationPart] = {
       val windows = Option(aggregation.windows)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+        .map(_.toScala)
         .getOrElse(Seq(WindowUtils.Unbounded))
         .toSeq
       val buckets = Option(aggregation.buckets)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+        .map(_.toScala)
         .getOrElse(Seq(null))
         .toSeq
       for (bucket <- buckets; window <- windows) yield {
@@ -174,7 +173,7 @@ object Extensions {
           window,
           Option(aggregation.argMap)
             .map(
-              ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+              _.toScala
             )
             .orNull,
           bucket
@@ -426,7 +425,7 @@ object Extensions {
       val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.getKeyColumns)
 
       val baseWheres = Option(query.wheres)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+        .map(_.toScala)
         .getOrElse(Seq.empty[String])
       val keyWhereOption =
         Option(selects)
@@ -613,7 +612,7 @@ object Extensions {
     // a list of columns which can identify a row on left, use user specified columns by default
     def rowIdentifier(userRowId: util.List[String] = null): Array[String] = {
       if (userRowId != null && !userRowId.isEmpty)
-        userRowId.asScala.toArray
+        userRowId.toScala.toArray
       else
         leftKeyCols ++ Array(Constants.PartitionColumn)
     }

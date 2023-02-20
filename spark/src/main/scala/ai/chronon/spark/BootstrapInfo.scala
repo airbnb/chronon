@@ -104,6 +104,7 @@ object BootstrapInfo {
       LogFlattenerJob
         .readSchemaTableProperties(tableUtils, joinConf)
         .mapValues(JoinCodec.fromLoggingSchema(_, joinConf).valueFields)
+        .toMap
     }
 
     /*
@@ -142,7 +143,7 @@ object BootstrapInfo {
         .toMap
     }
 
-    val hashToSchema = logHashes ++ tableHashes.mapValues(_._1)
+    val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
     val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with

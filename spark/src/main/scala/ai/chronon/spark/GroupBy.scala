@@ -7,7 +7,7 @@ import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
@@ -17,6 +17,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.util.ScalaJavaConversions.ListOps
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -375,7 +376,7 @@ object GroupBy {
     val inputDf = groupByConf.sources.asScala
       .map { source =>
         renderDataSourceQuery(source,
-                              groupByConf.getKeyColumns.asScala,
+                              groupByConf.getKeyColumns.toScala,
                               queryRange,
                               tableUtils,
                               groupByConf.maxWindow,
@@ -388,7 +389,7 @@ object GroupBy {
         df1.union(df2.selectExpr(columns1: _*))
       }
 
-    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp)
+    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
     def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
     assert(
       doesNotNeedTime || hasValidTimeColumn,
@@ -397,7 +398,7 @@ object GroupBy {
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
-    val keyColumns = groupByConf.getKeyColumns.asScala
+    val keyColumns = groupByConf.getKeyColumns.toScala
     val skewFilteredDf = skewFilter
       .map { sf =>
         println(s"$logPrefix filtering using skew filter:\n    $sf")
@@ -420,7 +421,7 @@ object GroupBy {
         val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(_,
-                                  groupByConf.getKeyColumns.asScala,
+                                  groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
@@ -438,14 +439,17 @@ object GroupBy {
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
 
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
+    new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
                 Option(mutationDf).orNull,
                 finalize = finalize)
   }
 
-  def getIntersectedRange(source: api.Source, queryRange: PartitionRange, tableUtils: TableUtils, window: Option[api.Window]): PartitionRange = {
+  def getIntersectedRange(source: api.Source,
+                          queryRange: PartitionRange,
+                          tableUtils: TableUtils,
+                          window: Option[api.Window]): PartitionRange = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
       .reduceLeftOption(Ordering[String].min)
@@ -530,7 +534,7 @@ object GroupBy {
     val query = api.QueryUtils.build(
       Option(source.query.selects).map(_.asScala.toMap).orNull,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
-      Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
+      Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
     )
     query
@@ -548,7 +552,7 @@ object GroupBy {
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.asScala.toMap)
       .orNull
-    val inputTables = groupByConf.getSources.asScala.map(_.table)
+    val inputTables = groupByConf.getSources.toScala.map(_.table)
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(groupByConf.backfillStartDate, endPartition),

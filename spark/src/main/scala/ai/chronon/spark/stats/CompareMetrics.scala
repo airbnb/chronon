@@ -3,29 +3,28 @@ package ai.chronon.spark.stats
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
-import ai.chronon.online.{SparkConversions, DataMetrics}
+import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.Comparison
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.{Column, DataFrame, functions, types, Row => SparkRow}
 
-import java.util
 import scala.collection.immutable.SortedMap
-import collection.JavaConversions._
+import scala.util.ScalaJavaConversions.JMapOps
 
 object CompareMetrics {
   val leftSuffix = "_left"
   val rightSuffix = "_right"
   val comparisonViewNameSuffix = "_comparison"
   val bins = 41
-  val percentilesArgMap: util.Map[String, String] =
+  val percentilesArgMap: Map[String, String] =
     Map("k" -> "128", "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
 
   case class MetricTransform(name: String,
                              expr: Column,
                              operation: Operation,
-                             argMap: util.Map[String, String] = null,
+                             argMap: Map[String, String] = null,
                              additionalExprs: Seq[(String, String)] = null)
 
   private def edit_distance: UserDefinedFunction =
@@ -118,7 +117,7 @@ object CompareMetrics {
         aggPart.setInputColumn(name)
         aggPart.setOperation(m.operation)
         if (m.argMap != null)
-          aggPart.setArgMap(m.argMap)
+          aggPart.setArgMap(m.argMap.toJava)
         aggPart.setWindow(WindowUtils.Unbounded)
         aggPart
       }

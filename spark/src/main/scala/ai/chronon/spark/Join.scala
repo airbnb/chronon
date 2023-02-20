@@ -8,7 +8,7 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     extends BaseJoin(joinConf, endPartition, tableUtils) {
@@ -94,7 +94,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
         val parts = Option(joinConf.bootstrapParts)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala)
+          .map(_.toScala)
           .getOrElse(Seq())
 
         val initDf = leftDf

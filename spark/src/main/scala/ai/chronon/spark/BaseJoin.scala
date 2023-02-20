@@ -1,9 +1,9 @@
 package ai.chronon.spark
 
 import ai.chronon.api
+import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api._
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
@@ -13,6 +13,7 @@ import org.apache.spark.sql.functions._
 
 import java.time.Instant
 import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.IterableOps
 
 abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -169,12 +170,12 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
 
-    val leftBlooms = joinConf.leftKeyCols.par.map { key =>
+    val leftBlooms = joinConf.leftKeyCols.toSeq.parallel.map { key =>
       key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
     }.toMap
 
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     println(s"""
          |JoinPart Info:
