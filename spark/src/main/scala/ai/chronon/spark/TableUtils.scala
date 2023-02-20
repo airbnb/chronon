@@ -141,10 +141,10 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
+    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
 
   def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].min)
+    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,

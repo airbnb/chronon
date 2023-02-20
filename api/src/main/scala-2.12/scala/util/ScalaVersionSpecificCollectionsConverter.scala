@@ -41,6 +41,15 @@ object ScalaJavaConversions {
       }
     }
   }
+  implicit class JListOps[T](list: Seq[T]) {
+    def toJava: java.util.List[T] = {
+      if (list == null) {
+        null
+      } else {
+        list.asJava
+      }
+    }
+  }
   implicit class IterableOps[T](it: Iterable[T]) {
     def parallel: ParSeq[T] = {
       if (it == null) {

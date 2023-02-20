@@ -14,9 +14,8 @@ import java.io.{ByteArrayInputStream, InputStream}
 import java.util
 import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
-import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.Future
-import scala.jdk.CollectionConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
+import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Success}
 
 class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
@@ -48,9 +47,11 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
 
 class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   class PlusOneExternalHandler extends ExternalSourceHandler {
-    override def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]] = {
-      Future(requests.map(req =>
-        Response(req, Success(req.keys.mapValues(_.asInstanceOf[Integer] + 1).mapValues(_.asInstanceOf[AnyRef])))))
+    override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
+      Future(
+        requests.map(req =>
+          Response(req,
+                   Success(req.keys.mapValues(_.asInstanceOf[Integer] + 1).mapValues(_.asInstanceOf[AnyRef]).toMap))))
     }
   }
 
@@ -60,7 +61,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
         ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(
           requests
             .iterator()
-            .asScala
+            .toScala
             .map(req =>
               new JavaResponse(
                 req,
@@ -78,21 +79,21 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
       CompletableFuture.completedFuture(
         requests
           .iterator()
-          .asScala
+          .toScala
           .map { req =>
             new JavaResponse(req,
                              JTry.success(
                                req.keys
                                  .entrySet()
                                  .iterator()
-                                 .asScala
+                                 .toScala
                                  .map(e => e.getKey -> (e.getValue.asInstanceOf[Integer] + 1).asInstanceOf[AnyRef])
                                  .toMap
-                                 .asJava
+                                 .toJava
                              ))
           }
           .toSeq
-          .asJava)
+          .toJava)
     }
   }
 
@@ -124,7 +125,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   val schemaTable: String = s"$namespace.mock_schema_table"
 
   def flushLoggedValues: Seq[LoggableResponseBase64] = {
-    val loggedValues = loggedResponseList.iterator().asScala.toArray
+    val loggedValues = loggedResponseList.iterator().toScala.toArray
     loggedResponseList.clear()
     loggedValues
   }
