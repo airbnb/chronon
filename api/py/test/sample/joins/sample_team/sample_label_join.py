@@ -36,8 +36,10 @@ v1 = Join(
                 group_by=label_part_group_by
             ),
         ],
-        leftStartOffset=30,
-        leftEndOffset=10),
+        left_start_offset=30,
+        left_end_offset=10,
+        label_offline_schedule="@weekly"
+        ),
     additional_args={
         'custom_arg': 'custom_value'
     },

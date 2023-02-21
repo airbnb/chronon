@@ -219,8 +219,8 @@ def ExternalPart(source: api.ExternalSource,
 
 
 def LabelPart(labels: List[api.JoinPart],
-              leftStartOffset: int,
-              leftEndOffset: int,
+              left_start_offset: int,
+              left_end_offset: int,
               label_offline_schedule: str = '@daily') -> api.LabelPart:
     """
     Used to describe labels in join. Label part can be viewed as regular join part but represent
@@ -233,9 +233,9 @@ def LabelPart(labels: List[api.JoinPart],
     job can only accommodate the changes going forward unless a backfill is manually triggered
 
     :param labels: List of labels
-    :param leftStartOffset: Integer to define the earliest date label should be refreshed
+    :param left_start_offset: Integer to define the earliest date label should be refreshed
                             comparing to label_ds date specified
-    :param leftEndOffset: Integer to define the most recent date label should be refreshed.
+    :param left_end_offset: Integer to define the most recent date label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
                           prior to 'label_ds'
     :param label_offline_schedule: Cron expression for Airflow to schedule a DAG for offline
@@ -248,8 +248,8 @@ def LabelPart(labels: List[api.JoinPart],
 
     return api.LabelPart(
         labels=labels,
-        leftStartOffset=leftStartOffset,
-        leftEndOffset=leftEndOffset,
+        leftStartOffset=left_start_offset,
+        leftEndOffset=left_end_offset,
         metaData=label_metadata
     )
 
@@ -413,10 +413,10 @@ def Join(left: api.Source,
         label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
         label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
         label_dependencies = [dep for (source, meta_data) in label_info for dep in
-                              utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
+                              utils.get_dependencies(src=source, meta_data=meta_data, lag=lag)]
         label_metadata = api.MetaData(
             dependencies=utils.dedupe_in_order(left_dependencies + label_dependencies),
-            offlineSchedule=label_part.metadata.offlineSchedule
+            offlineSchedule=label_part.metaData.offlineSchedule
         )
         label_part = api.LabelPart(
             labels=label_part.labels,
