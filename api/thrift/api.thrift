@@ -305,7 +305,8 @@ struct LabelPart {
     // The most recent date label should be refreshed.
     // e.g. left_end_offset = 3 most recent label available will be 3 days prior to 'label_ds'
     3: optional i32 leftEndOffset
-//    4: optional JoinType joinType
+    4: optional MetaData metaData
+//    5: optional JoinType joinType
 }
 
 // This is written by the bulk upload process into the metaDataset
