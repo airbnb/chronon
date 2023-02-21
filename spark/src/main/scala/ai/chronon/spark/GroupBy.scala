@@ -15,9 +15,8 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -39,7 +38,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       aggregations
         .flatMap(agg =>
           Option(agg.buckets)
-            .map(_.asScala)
+            .map(_.toScala)
             .getOrElse(Seq.empty[String]) :+
             agg.inputColumn)
         .distinct
@@ -312,7 +311,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
                eventsOpt: Option[Iterable[Row]])) =>
           val inputsIt: Iterator[RowWrapper] = {
-            eventsOpt.map(_.map(SparkConversions.toChrononRow(_, tsIndex)).toIterator).orNull
+            eventsOpt.map(_.map(SparkConversions.toChrononRow(_, tsIndex)).iterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
@@ -373,7 +372,7 @@ object GroupBy {
            skewFilter: Option[String] = None,
            finalize: Boolean = true): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
-    val inputDf = groupByConf.sources.asScala
+    val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(source,
                               groupByConf.getKeyColumns.toScala,
@@ -410,11 +409,11 @@ object GroupBy {
     val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
-    val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
+    val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
-    val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
+    val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
       if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
@@ -532,7 +531,7 @@ object GroupBy {
          |""".stripMargin)
 
     val query = api.QueryUtils.build(
-      Option(source.query.selects).map(_.asScala.toMap).orNull,
+      Option(source.query.selects).map(_.toScala).orNull,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
@@ -550,7 +549,7 @@ object GroupBy {
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
-      .map(_.asScala.toMap)
+      .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
     val groupByUnfilledRangesOpt =
