@@ -93,9 +93,10 @@ explore.py <KEYWORD>
 
 There are essentially four integration points:
 
-- Chronon Repository - This is where your users will define Chronon configurations.
-  We recommend that this live within an airflow pipeline(or your own data pipeline scheduler's) repository to make deployment easy.
-  Once you have the repository setup you can begin using Chronon for offline batch pipelines.
+- Chronon Repository - This is where your users will define Chronon configurations. 
+  We recommend that this live within an airflow pipeline(or your own data pipeline scheduler's) repository to make deployment easy. 
+  Once you have the repository setup you can begin using Chronon for offline batch pipelines. Please fill out your spark submit path
+  and your date partitioning conventions in `teams.json`.
 
 - For online Serving
     - KVStore - for storing and serving features in low latency. This can be any kv store that can support point write, point lookup, scan and bulk write.
@@ -194,8 +195,22 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 }
 ```
 
-`userConf` is captured from commandline arguments to the `run.py` script or to the
-`chronon-uber-jar` with `ai.chronon.spark.Driver` as the main class `-Zkey1=value1 -Zkey2=value2`
+Once you have the api object you can build a fetcher class using the api object like so
+```scala
+val api = new MyApiImplementation(myParams)
+val fetcher = api.buildFetcher()
+//or
+val javaFetcher = api.buildJavaFetcher()
+
+// you can use fetcher to begin fetching values (there is a java version too)
+fetcher.fetchJoins(Seq(Request(name="my.join.name", keys=Map("user" -> "bob", "item" -> "pizza"))))
+
+// if your date partition column convention in your warehouse differs from "yyyy-MM-dd" you should set a partitionSpec
+fetcher.setPartitionSpec("yyyyMMdd")
+```
+
+`userConf` is captured from commandline arguments to the `run.py` script or to the 
+`chronon-uber-jar` with `ai.chronon.spark.Driver` as the main class `-Zkey1=value1 -Zkey2=value2` 
 becomes `{key1: value1, key2: value2}` initializer argument to the Api class. You can use
 that to set KVStore params, or kafka params for streaming jobs or bulk upload jobs.
 

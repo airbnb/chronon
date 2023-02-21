@@ -23,7 +23,7 @@ class MutationsTest {
   private val groupByName = s"group_by_test.v0"
   private val joinName = s"join_test.v0"
 
-  private val tableUtils = TableUtils(spark)
+  private implicit val tableUtils: TableUtils = TableUtils(spark)
 
   // {listing_id (key), ts (timestamp of property), rating (property: rated value), ds (partition ds)}
   private val snapshotSchema = StructType(
@@ -185,7 +185,7 @@ class MutationsTest {
       metaData = Builders.MetaData(name = joinName, namespace = namespace(suffix), team = "chronon")
     )
 
-    val runner = new Join(joinConf, endPartition, tableUtils)
+    val runner = new Join(joinConf, endPartition)
     runner.computeJoin()
   }
 
@@ -956,12 +956,12 @@ class MutationsTest {
       Column("event", api.IntType, 6)
     )
     val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1, "listing_id")
-    val (_, maxDs) = mutationsDf.range[String](Constants.PartitionColumn)
-    val (minDs, _) = snapshotDf.range[String](Constants.PartitionColumn)
+    val (_, maxDs) = mutationsDf.range[String](tableUtils.partitionColumn)
+    val (minDs, _) = snapshotDf.range[String](tableUtils.partitionColumn)
     val leftDf = DataFrameGen
       .events(spark, events, 100, 15)
       .drop()
-      .withShiftedPartition(Constants.PartitionColumn, -1)
+      .withShiftedPartition(tableUtils.partitionColumn, -1)
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
     snapshotDf.save(s"$testNamespace.$snapshotTable")

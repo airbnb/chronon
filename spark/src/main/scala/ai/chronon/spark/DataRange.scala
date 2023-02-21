@@ -8,22 +8,24 @@ import scala.collection.JavaConverters._
 sealed trait DataRange {
   def toTimePoints: Array[Long]
 }
-case class TimeRange(start: Long, end: Long) extends DataRange {
+case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) extends DataRange {
   def toTimePoints: Array[Long] = {
     Stream
-      .iterate(TsUtils.round(start, Constants.Partition.spanMillis))(_ + Constants.Partition.spanMillis)
+      .iterate(TsUtils.round(start, tableUtils.partitionSpec.spanMillis))(_ + tableUtils.partitionSpec.spanMillis)
       .takeWhile(_ <= end)
       .toArray
   }
 
   def toPartitionRange: PartitionRange = {
-    PartitionRange(Constants.Partition.at(start), Constants.Partition.at(end))
+    PartitionRange(tableUtils.partitionSpec.at(start), tableUtils.partitionSpec.at(end))
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
-case class PartitionRange(start: String, end: String) extends DataRange with Ordered[PartitionRange] {
+case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
+    extends DataRange
+    with Ordered[PartitionRange] {
 
   def valid: Boolean =
     (Option(start), Option(end)) match {
@@ -46,20 +48,20 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
   override def toTimePoints: Array[Long] = {
     assert(start != null && end != null, "Can't request timePoint conversion when PartitionRange is unbounded")
     Stream
-      .iterate(start)(Constants.Partition.after)
+      .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)
-      .map(Constants.Partition.epochMillis)
+      .map(tableUtils.partitionSpec.epochMillis)
       .toArray
   }
 
-  def whereClauses(partitionColumn: String = Constants.PartitionColumn): Seq[String] = {
+  def whereClauses(partitionColumn: String = tableUtils.partitionColumn): Seq[String] = {
     val startClause = Option(start).map(s"${partitionColumn} >= '" + _ + "'")
     val endClause = Option(end).map(s"${partitionColumn} <= '" + _ + "'")
     (startClause ++ endClause).toSeq
   }
 
   def betweenClauses: String = {
-    s"${Constants.PartitionColumn} BETWEEN '" + start + "' AND '" + end + "'"
+    s"${tableUtils.partitionColumn} BETWEEN '" + start + "' AND '" + end + "'"
   }
 
   def substituteMacros(template: String): String = {
@@ -72,7 +74,7 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
 
   def genScanQuery(query: Query, table: String,
                    fillIfAbsent: Map[String, String] = Map.empty,
-                   partitionColumn: String = Constants.PartitionColumn): String = {
+                   partitionColumn: String = tableUtils.partitionColumn): String = {
     val queryOpt = Option(query)
     val wheres =
       whereClauses(partitionColumn) ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
@@ -92,7 +94,7 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
   def partitions: Seq[String] = {
     assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
     Stream
-      .iterate(start)(Constants.Partition.after)
+      .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)
   }
 
@@ -100,7 +102,7 @@ case class PartitionRange(start: String, end: String) extends DataRange with Ord
     if (days == 0) {
       this
     } else {
-      PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+      PartitionRange(tableUtils.partitionSpec.shift(start, days), tableUtils.partitionSpec.shift(end, days))
     }
   }
 

@@ -147,8 +147,8 @@ object BootstrapInfo {
     // Verify that join keys are valid columns on the bootstrap source table
     val tableHashes = tableBootstrapParts
       .map(part => {
-        val range = PartitionRange(part.startPartition, part.endPartition)
-        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
+        val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
+        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
         val bootstrapDf = tableUtils.sql(bootstrapQuery)
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)

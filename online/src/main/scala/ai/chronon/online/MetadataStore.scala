@@ -1,7 +1,7 @@
 package ai.chronon.online
 
-import ai.chronon.api.Constants.{UTF8, ChrononMetadataKey}
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps}
+import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
 import com.google.gson.{Gson, GsonBuilder}
@@ -20,6 +20,18 @@ import scala.util.{Failure, Success, Try}
 case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
+  private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
+
+  // Note this should match with the format used in the warehouse
+  def setPartitionMeta(format: String, spanMillis: Long): Unit = {
+    partitionSpec = PartitionSpec(format = format, spanMillis = spanMillis)
+  }
+
+  // Note this should match with the format used in the warehouse
+  def setPartitionMeta(format: String): Unit = {
+    partitionSpec = PartitionSpec(format = format, spanMillis = partitionSpec.spanMillis)
+  }
+
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
@@ -91,7 +103,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       .get(
         GetRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
                    dataset,
-                   Some(Constants.Partition.epochMillis(fromDate))))
+                   Some(partitionSpec.epochMillis(fromDate))))
     responseFuture.map { response =>
       val valuesTry = response.values
       valuesTry.map { values =>
@@ -132,7 +144,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
             .Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy)
             .withSuffix("group_by")
             .histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
-          Success(new GroupByServingInfoParsed(groupByServingInfo))
+          Success(new GroupByServingInfoParsed(groupByServingInfo, partitionSpec))
         }
       },
       { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })

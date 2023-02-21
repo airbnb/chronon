@@ -222,18 +222,30 @@ class JoinUtilsTest {
     spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     TestUtils.createSampleLabelTableDf(spark).write.saveAsTable(rightTableName)
-    val keys = Array("listing_id", Constants.PartitionColumn)
+    val keys = Array("listing_id", tableUtils.partitionColumn)
 
-    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,
-      viewProperties = Map("featureTable" -> leftTableName, "labelTable" -> rightTableName))
+    JoinUtils.createOrReplaceView(finalViewName,
+                                  leftTableName,
+                                  rightTableName,
+                                  keys,
+                                  tableUtils,
+                                  viewProperties = Map("featureTable" -> leftTableName, "labelTable" -> rightTableName))
 
     val view = tableUtils.sql(s"select * from $finalViewName")
     view.show()
     assertEquals(6, view.count())
-    assertEquals(null, view.where(view("ds") === "2022-10-01" && view("listing_id") === "5")
-      .select("label_room_type").first().get(0))
-    assertEquals("SUPER_HOST", view.where(view("ds") === "2022-10-07" && view("listing_id") === "1")
-      .select("label_host_type").first().get(0))
+    assertEquals(null,
+                 view
+                   .where(view("ds") === "2022-10-01" && view("listing_id") === "5")
+                   .select("label_room_type")
+                   .first()
+                   .get(0))
+    assertEquals("SUPER_HOST",
+                 view
+                   .where(view("ds") === "2022-10-07" && view("listing_id") === "1")
+                   .select("label_host_type")
+                   .first()
+                   .get(0))
 
     val properties = tableUtils.getTableProperties(finalViewName)
     assertTrue(properties.isDefined)
@@ -249,27 +261,34 @@ class JoinUtilsTest {
     spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark),
-      rightTableName,
-      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
-    val keys = Array("listing_id", Constants.PartitionColumn)
+                                rightTableName,
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+    val keys = Array("listing_id", tableUtils.partitionColumn)
 
-    JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,
+    JoinUtils.createOrReplaceView(
+      finalViewName,
+      leftTableName,
+      rightTableName,
+      keys,
+      tableUtils,
       viewProperties = Map(Constants.LabelViewPropertyFeatureTable -> leftTableName,
-                       Constants.LabelViewPropertyKeyLabelTable -> rightTableName))
+                           Constants.LabelViewPropertyKeyLabelTable -> rightTableName)
+    )
     val view = tableUtils.sql(s"select * from $finalViewName")
     view.show()
     assertEquals(6, view.count())
 
     //verity latest label view
     val latestLabelView = "testLatestLabel"
-    JoinUtils.createLatestLabelView(latestLabelView, finalViewName, tableUtils,
-      propertiesOverride = Map("newProperties" -> "value"))
+    JoinUtils.createLatestLabelView(latestLabelView,
+                                    finalViewName,
+                                    tableUtils,
+                                    propertiesOverride = Map("newProperties" -> "value"))
     val latest = tableUtils.sql(s"select * from $latestLabelView")
     latest.show()
     assertEquals(2, latest.count())
     assertEquals(0, latest.filter(latest("listing_id") === "3").count())
-    assertEquals("2022-11-22", latest.where(latest("ds") === "2022-10-07").
-      select("label_ds").first().get(0))
+    assertEquals("2022-11-22", latest.where(latest("ds") === "2022-10-07").select("label_ds").first().get(0))
     // label_ds should be unique per ds + listing
     val removeDup = latest.dropDuplicates(Seq("label_ds", "ds"))
     assertEquals(removeDup.count(), latest.count())
@@ -281,7 +300,7 @@ class JoinUtilsTest {
   }
 
   @Test
-  def testFilterColumns(): Unit ={
+  def testFilterColumns(): Unit = {
     val testDf = createSampleTable()
     val filter = Array("listing", "ds", "feature_review")
     val filteredDf = JoinUtils.filterColumns(testDf, filter)
@@ -290,7 +309,7 @@ class JoinUtilsTest {
 
   import ai.chronon.api.{LongType, StringType, StructField, StructType}
 
-  def createSampleTable(tableName:String = "testSampleTable"): DataFrame = {
+  def createSampleTable(tableName: String = "testSampleTable"): DataFrame = {
     val schema = StructType(
       tableName,
       Array(

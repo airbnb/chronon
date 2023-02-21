@@ -5,6 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.SparkConversions
+import ai.chronon.spark.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.spark.sql.functions.col
@@ -19,10 +20,11 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     inputDf.columns
       .filter(colName => !keys.contains(colName))
       .map(colName => new Column(colName)): _*)
+  implicit val tableUtils = TableUtils(inputDf.sparkSession)
 
   val timeColumns =
-    if (inputDf.columns.contains(api.Constants.TimeColumn)) Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn)
-    else Seq(api.Constants.PartitionColumn)
+    if (inputDf.columns.contains(api.Constants.TimeColumn)) Seq(api.Constants.TimeColumn, tableUtils.partitionColumn)
+    else Seq(tableUtils.partitionColumn)
   val metrics = StatsGenerator.buildMetrics(SparkConversions.toChrononSchema(noKeysDf.schema))
   lazy val selectedDf: DataFrame = noKeysDf
     .select(timeColumns.map(col) ++ metrics.map(m =>
@@ -57,7 +59,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     val addedPercentilesDf = percentileColumns.foldLeft(withNullRatesDF) { (tmpDf, column) =>
       tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
     }
-    addedPercentilesDf.withTimeBasedColumn(api.Constants.PartitionColumn)
+    addedPercentilesDf.withTimeBasedColumn(tableUtils.partitionColumn)
   }
 
   /** Navigate the dataframe and compute statistics partitioned by date stamp
@@ -70,7 +72,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     * Since the stats are mergeable coarser granularities can be obtained through fetcher merging.
     */
   def dailySummary(aggregator: RowAggregator, sample: Double = 1.0, timeBucketMinutes: Long = 60): TimedKvRdd = {
-    val partitionIdx = selectedDf.schema.fieldIndex(api.Constants.PartitionColumn)
+    val partitionIdx = selectedDf.schema.fieldIndex(tableUtils.partitionColumn)
     val bucketMs = timeBucketMinutes * 1000 * 60
     val tsIdx =
       if (selectedDf.columns.contains(api.Constants.TimeColumn)) selectedDf.schema.fieldIndex(api.Constants.TimeColumn)
@@ -83,7 +85,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
       .map(SparkConversions.toChrononRow(_, tsIdx))
       .keyBy(row =>
         if (isTimeBucketed) (row.ts / bucketMs) * bucketMs
-        else api.Constants.Partition.epochMillis(row.getAs[String](partitionIdx)))
+        else tableUtils.partitionSpec.epochMillis(row.getAs[String](partitionIdx)))
       .aggregateByKey(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
       .mapValues(aggregator.normalize(_))
       .map { case (k, v) => (Array(keyName), v, k) } // To use KvRdd

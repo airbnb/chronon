@@ -20,7 +20,6 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
-
   // Get table properties from config
   protected val confTableProps = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
@@ -37,9 +36,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     val additionalKeys: Seq[String] = {
       if (joinConf.left.dataModel == Entities) {
-        Seq(Constants.PartitionColumn)
+        Seq(tableUtils.partitionColumn)
       } else if (joinPart.groupBy.inferredAccuracy == Accuracy.TEMPORAL) {
-        Seq(Constants.TimeColumn, Constants.PartitionColumn)
+        Seq(Constants.TimeColumn, tableUtils.partitionColumn)
       } else { // left-events + snapshot => join-key = ds_of_left_ts
         Seq(Constants.TimePartitionColumn)
       }
@@ -58,7 +57,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     // apply prefix to value columns
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     Constants.PartitionColumn,
+                                                                     tableUtils.partitionColumn,
                                                                      Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     val prefixedRightDf = keyRenamedRightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
@@ -69,8 +68,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       // because one day was decremented from the partition range for snapshot accuracy
       prefixedRightDf
         .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
-        .drop(Constants.PartitionColumn)
+                    date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1), tableUtils.partitionSpec.format))
+        .drop(tableUtils.partitionColumn)
     } else {
       prefixedRightDf
     }
@@ -81,7 +80,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
                |Left Schema:
                |${leftDf.schema.pretty}
                |Right Schema:
-               |${prefixedRightDf.schema.pretty}
+               |${joinableRightDf.schema.pretty}
                |Final Schema:
                |${joinedDf.schema.pretty}
                |""".stripMargin)
@@ -154,8 +153,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val stats = leftDf
       .select(
         count(lit(1)),
-        min(Constants.PartitionColumn),
-        max(Constants.PartitionColumn)
+        min(tableUtils.partitionColumn),
+        max(tableUtils.partitionColumn)
       )
       .head()
     val rowCount = stats.getLong(0)

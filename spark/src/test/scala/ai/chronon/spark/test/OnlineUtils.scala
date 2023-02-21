@@ -44,7 +44,7 @@ object OnlineUtils {
             namespace: String,
             endDs: String,
             groupByConf: api.GroupBy): Unit = {
-    val prevDs = Constants.Partition.before(endDs)
+    val prevDs = tableUtils.partitionSpec.before(endDs)
     GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
     if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {

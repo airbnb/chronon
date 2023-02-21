@@ -1,10 +1,10 @@
 package ai.chronon.spark.stats
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
-import ai.chronon.online.{DataMetrics, JoinCodec, SparkConversions}
+import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
@@ -18,8 +18,8 @@ class CompareJob(
     tableUtils: TableUtils,
     joinConf: api.Join,
     stagingQueryConf: api.StagingQuery,
-    startDate: String = Constants.Partition.at(System.currentTimeMillis()),
-    endDate: String = Constants.Partition.at(System.currentTimeMillis())
+    startDate: String,
+    endDate: String,
 ) extends Serializable {
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
@@ -35,7 +35,7 @@ class CompareJob(
     // Check for schema consistency issues
     validate()
 
-    val partitionRange = PartitionRange(startDate, endDate)
+    val partitionRange = PartitionRange(startDate, endDate)(tableUtils)
     val leftDf = tableUtils.sql(s"""
         |SELECT *
         |FROM ${joinConf.metaData.outputTable}
@@ -69,7 +69,7 @@ class CompareJob(
 
     println("Printing basic comparison results..")
     println("(Note: This is just an estimation and not a detailed analysis of results)")
-    CompareJob.printAndGetBasicMetrics(metrics)
+    CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
 
     println("Finished compare stats.")
     (compareDf, metricsDf, metrics)
@@ -79,7 +79,7 @@ class CompareJob(
     if (joinConf.isSetRowIds) {
       ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
     } else {
-      var keyCols = joinConf.leftKeyCols ++ Seq(Constants.PartitionColumn)
+      var keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
       if (joinConf.left.dataModel == Events) {
         keyCols = keyCols ++ Seq(Constants.TimeColumn)
       }
@@ -111,8 +111,8 @@ object CompareJob {
     and the data mismatches. We then aggregate the individual counts by day and create a map of
     the partition date and the actual missing counts.
    */
-  def printAndGetBasicMetrics(metrics: DataMetrics): List[(String, Long)] = {
-    val consolidatedData = metrics.series.groupBy(t => Constants.Partition.at(t._1))
+  def printAndGetBasicMetrics(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] = {
+    val consolidatedData = metrics.series.groupBy(t => partitionSpec.at(t._1))
       .mapValues(_.map(_._2))
       .map { case (day, values) =>
         val aggValue = values.map { aggMetrics =>

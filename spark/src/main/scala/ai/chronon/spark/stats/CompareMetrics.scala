@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.Comparison
+import ai.chronon.spark.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -135,6 +136,7 @@ object CompareMetrics {
               keys: Seq[String],
               mapping: Map[String, String] = Map.empty,
               timeBucketMinutes: Long = 60): (DataFrame, DataMetrics) = {
+    val tableUtils = TableUtils(inputDf.sparkSession)
     // spark maps cannot be directly compared, for now we compare the string representation
     // TODO 1: For Maps, we should find missing keys, extra keys and mismatched keys
     // TODO 2: Values should have type specific comparison
@@ -146,8 +148,8 @@ object CompareMetrics {
     val metrics = buildMetrics(valueSchema, mapping)
     val timeColumn: String = if (keys.contains(Constants.TimeColumn)) {
       Constants.TimeColumn
-    } else if (keys.contains(Constants.PartitionColumn)) {
-      Constants.PartitionColumn
+    } else if (keys.contains(tableUtils.partitionColumn)) {
+      tableUtils.partitionColumn
     } else {
       throw new IllegalArgumentException("Keys doesn't contain the time column")
     }
@@ -171,8 +173,8 @@ object CompareMetrics {
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
       .keyBy(row => {
-        val timeValue = if (timeColumn == Constants.PartitionColumn) {
-          Constants.Partition.epochMillis(row.getString(timeIndex))
+        val timeValue = if (timeColumn == tableUtils.partitionColumn) {
+          tableUtils.partitionSpec.epochMillis(row.getString(timeIndex))
         } else {
           row.getLong(timeIndex)
         }

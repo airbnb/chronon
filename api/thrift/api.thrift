@@ -350,6 +350,7 @@ struct GroupByServingInfo {
     //       1. batch_data_lag = current_time - batch_data_time
     //       2. batch_upload_lag = batch_upload_time - batch_data_time
     5: optional string batchEndDate
+    6: optional string dateFormat
 }
 
 // DataKind + TypeParams = DataType

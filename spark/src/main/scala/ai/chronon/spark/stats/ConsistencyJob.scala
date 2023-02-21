@@ -17,7 +17,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
-  val tableUtils: TableUtils = TableUtils(session)
+  implicit val tableUtils: TableUtils = TableUtils(session)
 
   // Replace join's left side with the logged table events to determine offline values of the aggregations.
   private def buildComparisonJoin(): Join = {
@@ -62,7 +62,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
                       Some(Seq(joinConf.metaData.loggedTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return
-    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end, TableUtils(session))
+    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end)
     println("Starting compute Join for comparison table")
     val compareDf = join.computeJoin(Some(30))
     println("======= side-by-side comparison schema =======")

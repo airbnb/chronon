@@ -32,10 +32,11 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
+  private val tableUtils = TableUtils(spark)
   private val topic = "test_topic"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val yesterday = Constants.Partition.before(today)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val yesterday = tableUtils.partitionSpec.before(today)
 
   def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
@@ -330,7 +331,7 @@ class FetcherTest extends TestCase {
         Builders.Source
           .entities(
             query = Builders.Query(
-              startPartition = Constants.Partition.before(yesterday)
+              startPartition = tableUtils.partitionSpec.before(yesterday)
             ),
             snapshotTable = snapshotTable,
             mutationTable = mutationTable,
@@ -481,7 +482,8 @@ class FetcherTest extends TestCase {
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
-      tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
+      tableUtils.sql(
+        s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${tableUtils.partitionSpec.format}')")
     }
     val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("unit_test")): _*)
     val keys = joinConf.leftKeyCols
@@ -514,7 +516,7 @@ class FetcherTest extends TestCase {
         .drop("ts_lagged")
       println("corrected lagged response")
       correctedLaggedResponse.show()
-      correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
+      correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(tableUtils.partitionColumn, "name"))
 
       // build flattened log table
       SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, today)
@@ -537,7 +539,7 @@ class FetcherTest extends TestCase {
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++
-            Map(Constants.PartitionColumn -> today) ++
+            Map(tableUtils.partitionColumn -> today) ++
             Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
         val values: Array[Any] = columns.map(all.get(_).orNull)
         SparkConversions
@@ -546,7 +548,8 @@ class FetcherTest extends TestCase {
       }
 
     println(endDsExpected.schema.pretty)
-    val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
+
+    val keyishColumns = keys.toList ++ List(tableUtils.partitionColumn, Constants.TimeColumn)
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows.toSeq)
     var responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
     if (endDs != today) {
@@ -583,7 +586,7 @@ class FetcherTest extends TestCase {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
     compareTemporalFetch(joinConf,
-                         Constants.Partition.at(System.currentTimeMillis()),
+                         tableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true)
   }

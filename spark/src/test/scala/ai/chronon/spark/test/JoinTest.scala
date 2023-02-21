@@ -22,10 +22,10 @@ class JoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
 
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
-  private val dayAndMonthBefore = Constants.Partition.before(monthAgo)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+  private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
+  private val dayAndMonthBefore = tableUtils.partitionSpec.before(monthAgo)
 
   private val namespace = "test_namespace_jointest"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
@@ -86,8 +86,8 @@ class JoinTest {
       keyColumns = Seq("user", "user_name"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
-                             inputColumn = "amount_dollars",
-                             windows = Seq(new Window(30, TimeUnit.DAYS)))),
+          inputColumn = "amount_dollars",
+          windows = Seq(new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "chronon")
     )
     val queriesSchema = List(
@@ -100,8 +100,8 @@ class JoinTest {
       .events(spark, queriesSchema, 3000, partitions = 180)
       .save(queryTable)
 
-    val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
-    val end = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
     val joinConf = Builders.Join(
       left = Builders.Source.events(
         query = Builders.Query(
@@ -117,10 +117,10 @@ class JoinTest {
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
     )
 
-    val runner1 = new Join(joinConf, Constants.Partition.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
+    val runner1 = new Join(joinConf, tableUtils.partitionSpec.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
     runner1.computeJoin()
-    val dropStart = Constants.Partition.minus(today, new Window(55, TimeUnit.DAYS))
-    val dropEnd = Constants.Partition.minus(today, new Window(45, TimeUnit.DAYS))
+    val dropStart = tableUtils.partitionSpec.minus(today, new Window(55, TimeUnit.DAYS))
+    val dropEnd = tableUtils.partitionSpec.minus(today, new Window(45, TimeUnit.DAYS))
     tableUtils.dropPartitionRange(
       s"$namespace.test_user_transaction_features",
       dropStart,
@@ -143,47 +143,47 @@ class JoinTest {
     println(s"join start = $start")
 
     val expectedQuery = s"""
-        |WITH
-        |   queries AS (
-        |     SELECT user_name,
-        |         user,
-        |         ts,
-        |         ds
-        |     from $queryTable
-        |     where user_name IS NOT null
-        |         AND user IS NOT NULL
-        |         AND ts IS NOT NULL
-        |         AND ds IS NOT NULL
-        |         AND ds >= '$start'
-        |         AND ds <= '$end'),
-        |   grouped_transactions AS (
-        |      SELECT user,
-        |             user_name,
-        |             ds,
-        |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*(30-1))) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
-        |             SUM(amount_dollars) AS amount_dollars_sum
-        |      FROM
-        |         (SELECT user, user_name, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
-        |          WHERE ds >= '$monthAgo'
-        |          UNION
-        |          SELECT user, user_name, ts, ds, amount_dollars from $dollarTable
-        |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
-        |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 + 86400*1000> ts
-        |        AND user IS NOT NULL
-        |        AND user_name IS NOT NULL
-        |        AND ds IS NOT NULL
-        |      GROUP BY user, user_name, ds)
-        | SELECT queries.user_name,
-        |        queries.user,
-        |        queries.ts,
-        |        queries.ds,
-        |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
-        | FROM queries left outer join grouped_transactions
-        | ON queries.user_name = grouped_transactions.user
-        | AND queries.user = grouped_transactions.user_name
-        | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = date_add(grouped_transactions.ds, 1)
-        | WHERE queries.user_name IS NOT NULL AND queries.user IS NOT NULL
-        |""".stripMargin
+                           |WITH
+                           |   queries AS (
+                           |     SELECT user_name,
+                           |         user,
+                           |         ts,
+                           |         ds
+                           |     from $queryTable
+                           |     where user_name IS NOT null
+                           |         AND user IS NOT NULL
+                           |         AND ts IS NOT NULL
+                           |         AND ds IS NOT NULL
+                           |         AND ds >= '$start'
+                           |         AND ds <= '$end'),
+                           |   grouped_transactions AS (
+                           |      SELECT user,
+                           |             user_name,
+                           |             ds,
+                           |             SUM(IF(transactions.ts  >= (unix_timestamp(transactions.ds, 'yyyy-MM-dd') - (86400*(30-1))) * 1000, amount_dollars, null)) AS unit_test_user_transactions_amount_dollars_sum_30d,
+                           |             SUM(amount_dollars) AS amount_dollars_sum
+                           |      FROM
+                           |         (SELECT user, user_name, ts, ds, CAST(amount_rupees/70 as long) as amount_dollars from $rupeeTable
+                           |          WHERE ds >= '$monthAgo'
+                           |          UNION
+                           |          SELECT user, user_name, ts, ds, amount_dollars from $dollarTable
+                           |          WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore') as transactions
+                           |      WHERE unix_timestamp(ds, 'yyyy-MM-dd')*1000 + 86400*1000> ts
+                           |        AND user IS NOT NULL
+                           |        AND user_name IS NOT NULL
+                           |        AND ds IS NOT NULL
+                           |      GROUP BY user, user_name, ds)
+                           | SELECT queries.user_name,
+                           |        queries.user,
+                           |        queries.ts,
+                           |        queries.ds,
+                           |        grouped_transactions.unit_test_user_transactions_amount_dollars_sum_30d
+                           | FROM queries left outer join grouped_transactions
+                           | ON queries.user_name = grouped_transactions.user
+                           | AND queries.user = grouped_transactions.user_name
+                           | AND from_unixtime(queries.ts/1000, 'yyyy-MM-dd') = date_add(grouped_transactions.ds, 1)
+                           | WHERE queries.user_name IS NOT NULL AND queries.user IS NOT NULL
+                           |""".stripMargin
     val expected = spark.sql(expectedQuery)
     val queries = tableUtils.sql(
       s"SELECT user_name, user, ts, ds from $queryTable where user IS NOT NULL AND user_name IS NOT null AND ts IS NOT NULL AND ds IS NOT NULL AND ds >= '$start' AND ds <= '$end'")
@@ -204,8 +204,8 @@ class JoinTest {
     //
     // drop only end-1 from join output table, and only end-2 from join part table. trying to trick the job into
     // thinking that end-1 is already computed for the join part, since end-1 already exists in join part table
-    val endMinus1 = Constants.Partition.minus(end, new Window(1, TimeUnit.DAYS))
-    val endMinus2 = Constants.Partition.minus(end, new Window(2, TimeUnit.DAYS))
+    val endMinus1 = tableUtils.partitionSpec.minus(end, new Window(1, TimeUnit.DAYS))
+    val endMinus2 = tableUtils.partitionSpec.minus(end, new Window(2, TimeUnit.DAYS))
 
     tableUtils.dropPartitionRange(s"$namespace.test_user_transaction_features", endMinus1, endMinus1)
     println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
@@ -246,8 +246,8 @@ class JoinTest {
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
-                             startPartition = yearAgo,
-                             endPartition = dayAndMonthBefore),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore),
       snapshotTable = weightTable
     )
 
@@ -282,8 +282,8 @@ class JoinTest {
     val countryTable = s"$namespace.countries"
     DataFrameGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
 
-    val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
-    val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
       joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
@@ -293,32 +293,32 @@ class JoinTest {
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     val expected = tableUtils.sql(s"""
-    |WITH
-    |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
-    |   grouped_weights AS (
-    |      SELECT country,
-    |             ds,
-    |             avg(weight) as unit_test_country_weights_weight_average
-    |      FROM $weightTable
-    |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
-    |      GROUP BY country, ds),
-    |   grouped_heights AS (
-    |      SELECT country,
-    |             ds,
-    |             avg(height) as unit_test_country_heights_height_average
-    |      FROM $heightTable
-    |      WHERE ds >= '$monthAgo'
-    |      GROUP BY country, ds)
-    |   SELECT countries.country,
-    |        countries.ds,
-    |        grouped_weights.unit_test_country_weights_weight_average,
-    |        grouped_heights.unit_test_country_heights_height_average
-    | FROM countries left outer join grouped_weights
-    | ON countries.country = grouped_weights.country
-    | AND countries.ds = grouped_weights.ds
-    | left outer join grouped_heights
-    | ON countries.ds = grouped_heights.ds
-    | AND countries.country = grouped_heights.country
+                                     |WITH
+                                     |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
+                                     |   grouped_weights AS (
+                                     |      SELECT country,
+                                     |             ds,
+                                     |             avg(weight) as unit_test_country_weights_weight_average
+                                     |      FROM $weightTable
+                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
+                                     |      GROUP BY country, ds),
+                                     |   grouped_heights AS (
+                                     |      SELECT country,
+                                     |             ds,
+                                     |             avg(height) as unit_test_country_heights_height_average
+                                     |      FROM $heightTable
+                                     |      WHERE ds >= '$monthAgo'
+                                     |      GROUP BY country, ds)
+                                     |   SELECT countries.country,
+                                     |        countries.ds,
+                                     |        grouped_weights.unit_test_country_weights_weight_average,
+                                     |        grouped_heights.unit_test_country_heights_height_average
+                                     | FROM countries left outer join grouped_weights
+                                     | ON countries.country = grouped_weights.country
+                                     | AND countries.ds = grouped_weights.ds
+                                     | left outer join grouped_heights
+                                     | ON countries.ds = grouped_heights.ds
+                                     | AND countries.country = grouped_heights.country
     """.stripMargin)
 
     println("showing join result")
@@ -386,7 +386,7 @@ class JoinTest {
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
 
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
@@ -400,17 +400,17 @@ class JoinTest {
     computed.show()
 
     val expected = tableUtils.sql(s"""
-                                |WITH
-                                |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo')
-                                | SELECT queries.item,
-                                |        queries.ts,
-                                |        queries.ds,
-                                |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
-                                | FROM queries left outer join $viewsTable
-                                |  ON queries.item = $viewsTable.item
-                                | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
-                                | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
-                                |""".stripMargin)
+                                     |WITH
+                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo')
+                                     | SELECT queries.item,
+                                     |        queries.ts,
+                                     |        queries.ds,
+                                     |        AVG(IF(queries.ds > $viewsTable.ds, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+                                     | FROM queries left outer join $viewsTable
+                                     |  ON queries.item = $viewsTable.item
+                                     | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+                                     |""".stripMargin)
     expected.show()
 
     val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
@@ -452,7 +452,7 @@ class JoinTest {
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
 
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
@@ -513,7 +513,7 @@ class JoinTest {
     // duplicate the events
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
     (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -547,7 +547,7 @@ class JoinTest {
       println(s"diff result rows")
       diff
         .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
-                                 dropOriginal = true)
+          dropOriginal = true)
         .show()
     }
     assertEquals(diff.count(), 0)
@@ -567,16 +567,16 @@ class JoinTest {
     println("Item Queries DF: ")
     val q =
       s"""
-        |SELECT
-        |  `ts`,
-        |  `ds`,
-        |  `item`,
-        |  time_spent_ms as `time_spent_ms`
-        |FROM $viewsTable
-        |WHERE
-        |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
+         |SELECT
+         |  `ts`,
+         |  `ds`,
+         |  `item`,
+         |  time_spent_ms as `time_spent_ms`
+         |FROM $viewsTable
+         |WHERE
+         |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
     spark.sql(q).show()
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
     computed.show()
@@ -718,11 +718,11 @@ class JoinTest {
     val usersTable = s"$namespace.users"
     DataFrameGen.entities(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
-    val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
-    val end = Constants.Partition.minus(today, new Window(15, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
-                                      snapshotTable = usersTable),
+        snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
     )
@@ -786,7 +786,7 @@ class JoinTest {
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,
-                 Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
+      Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -908,7 +908,7 @@ class JoinTest {
     // duplicate the events
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
     val suffix = if (nameSuffix.isEmpty) "" else s"_$nameSuffix"
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
@@ -923,7 +923,7 @@ class JoinTest {
   def testEndPartitionJoin(): Unit = {
     val join = getEventsEventsTemporal("end_partition_test")
     val start = join.getLeft.query.startPartition
-    val end = Constants.Partition.after(start)
+    val end = tableUtils.partitionSpec.after(start)
     val limitedJoin = Builders.Join(
       left =
         Builders.Source.events(Builders.Query(startPartition = start, endPartition = end), table = join.getLeft.table),
@@ -949,7 +949,7 @@ class JoinTest {
     val structLeftDf = tableUtils.sql(
       s"SELECT item, NAMED_STRUCT('item_repeat', item) as item_struct, ts, ds FROM ${itemQueriesTable}_tmp")
     structLeftDf.save(itemQueriesTable)
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
 
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -1018,7 +1018,7 @@ class JoinTest {
     // Left
     val itemQueriesTable = s"$namespace.item_queries"
     val ds = "2023-01-01"
-    val leftStart = Constants.Partition.minus(ds, new Window(100, TimeUnit.DAYS))
+    val leftStart = tableUtils.partitionSpec.minus(ds, new Window(100, TimeUnit.DAYS))
     val leftSource = Builders.Source.events(Builders.Query(startPartition = leftStart), table = itemQueriesTable)
 
     // Right
@@ -1026,7 +1026,7 @@ class JoinTest {
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"),
-                             startPartition = Constants.Partition.minus(ds, new Window(200, TimeUnit.DAYS)))
+        startPartition = tableUtils.partitionSpec.minus(ds, new Window(200, TimeUnit.DAYS)))
     )
     val groupBy = Builders.GroupBy(
       sources = Seq(viewsSource),

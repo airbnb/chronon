@@ -2,24 +2,20 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.api.{Constants, ThriftJsonCodec}
+import ai.chronon.api.{ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import com.google.gson.GsonBuilder
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
-import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{
   QueryProgressEvent,
   QueryStartedEvent,
   QueryTerminatedEvent
 }
-import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -52,7 +48,7 @@ object Driver {
     val endDate: ScallopOption[String] =
       opt[String](required = false,
                   descr = "End date to compute as of, start date is taken from conf.",
-                  default = Some(Constants.Partition.now))
+                  default = Some(buildTableUtils("test").partitionSpec.now))
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
@@ -160,11 +156,11 @@ object Driver {
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
+      implicit lazy val tableUtils = TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}"))
       val labelJoin = new LabelJoin(
         joinConf,
-        TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}")),
         args.endDate()
-      )
+      )(tableUtils)
       labelJoin.computeLabelJoin(args.stepDays.toOption)
     }
   }
@@ -174,7 +170,7 @@ object Driver {
       val startDate: ScallopOption[String] =
         opt[String](required = false,
                     descr = "Finds heavy hitters & time-distributions until a specified start date",
-                    default = Some(Constants.Partition.shiftBackFromNow(3)))
+                    default = None)
       val count: ScallopOption[Int] =
         opt[Int](
           required = false,
@@ -199,7 +195,7 @@ object Driver {
       val tableUtils = args.buildTableUtils("analyzer_util")
       new Analyzer(tableUtils,
                    args.confPath(),
-                   args.startDate(),
+                   args.startDate.getOrElse(tableUtils.partitionSpec.shiftBackFromNow(3)),
                    args.endDate(),
                    args.count(),
                    args.sample(),
@@ -229,10 +225,11 @@ object Driver {
     }
     def run(args: Args): Unit = {
       val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
+      implicit val tableUtils: TableUtils =
+        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
       val stagingQueryJob = new StagingQuery(
         stagingQueryConf,
-        args.endDate(),
-        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
+        args.endDate()
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
     }
@@ -293,14 +290,15 @@ object Driver {
       assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
       val joinConf = parseConf[api.Join](args.confPath())
       val stagingQueryConf = parseConf[api.StagingQuery](args.queryConf())
+      val tableUtils = args.buildTableUtils(
+        s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
+      )
       new CompareJob(
-        args.buildTableUtils(
-          s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
-        ),
+        tableUtils,
         joinConf,
         stagingQueryConf,
-        args.startDate(),
-        args.endDate()
+        args.startDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis())),
+        args.endDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis()))
       ).run()
     }
   }

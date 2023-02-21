@@ -37,13 +37,16 @@ class FeatureWithLabelJoinTest {
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val labelDf = runner.computeLabelJoin()
     println(" == First Run Label version 2022-10-30 == ")
-    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()).show()
+    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
+                                                        .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
     println(" == Features == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
-    val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()),
-                                       labelJoinConf.rowIdentifier(),
+    val expectedFinal = featureDf.join(prefixColumnName(labelDf,
+                                                        exceptions = labelJoinConf.rowIdentifier(null,
+                                                                                                  tableUtils.partitionColumn)),
+                                       labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
                                        "left_outer")
     assertResult(computed, expectedFinal)
 
@@ -119,13 +122,15 @@ class FeatureWithLabelJoinTest {
     val runner = new LabelJoin(joinConf, tableUtils, "2022-10-06")
     val labelDf = runner.computeLabelJoin()
     println(" == Label DF == ")
-    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()).show()
+    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
+                                                        .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
     println(" == Features DF == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
-    val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()),
-                                       labelJoinConf.rowIdentifier(),
+    val expectedFinal = featureDf.join(prefixColumnName(labelDf,
+                                                        exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn)),
+                                       labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
                                        "left_outer")
     assertResult(computed, expectedFinal)
 

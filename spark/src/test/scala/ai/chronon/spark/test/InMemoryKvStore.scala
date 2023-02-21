@@ -73,11 +73,11 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val tableUtilInst = tableUtils()
     val partitionFilter =
-      Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
+      Option(partition).map { part => s"WHERE ${tableUtilInst.partitionColumn} = '$part'" }.getOrElse("")
     val offlineDf = tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable")
     val tsColumn =
       if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn
-      else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis})"
+      else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${tableUtilInst.partitionSpec.spanMillis})"
     val df =
       tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, $tsColumn as ts
          |FROM $sourceOfflineTable

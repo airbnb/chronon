@@ -32,8 +32,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     .getOrElse(Map.empty[String, String])
 
   // offsets are inclusive, e.g label_ds = 04-03, left_start_offset = left_end_offset = 3, left_ds will be 04-01
-  val leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset - 1, TimeUnit.DAYS))
-  val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset - 1, TimeUnit.DAYS))
+  val leftStart = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
+  val leftEnd = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
 
   def computeLabelJoin(stepDays: Option[Int] = None, skipFinalJoin: Boolean = false): DataFrame = {
     // validations
@@ -71,7 +71,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    val labelTable = compute(PartitionRange(leftStart, leftEnd), stepDays, Option(labelDS))
+    val labelTable = compute(PartitionRange(leftStart, leftEnd)(tableUtils), stepDays, Option(labelDS))
 
     if (skipFinalJoin) {
       labelTable
@@ -82,7 +82,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         joinConf.metaData.outputFinalView,
         leftTable = joinConf.metaData.outputTable,
         rightTable = outputLabelTable,
-        joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds),
+        joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds, tableUtils.partitionColumn),
         tableUtils = tableUtils,
         viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
                              Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable)
@@ -97,7 +97,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   }
 
   def compute(leftRange: PartitionRange, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
-    val today = Constants.Partition.at(System.currentTimeMillis())
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val sanitizedLabelDs = labelDS.getOrElse(today)
     println(s"Label join range to fill $leftRange")
     def finalResult = tableUtils.sql(leftRange.genScanQuery(null, outputLabelTable))
@@ -112,11 +112,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable,
-                                                                    confTableProps,
-                                                                    Seq(Constants.LabelPartitionColumn,
-                                                                        Constants.PartitionColumn),
-                                                                    true)
+          computeRange(leftDfInRange, range, sanitizedLabelDs)
+            .save(outputLabelTable,
+                  confTableProps,
+                  Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
+                  true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -140,7 +140,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         // no need to generate join part cache if there are no aggregations
         computeLabelPart(labelJoinPart, leftRange, leftBlooms)
       } else {
-        val labelOutputRange = PartitionRange(sanitizedLabelDs, sanitizedLabelDs)
+        val labelOutputRange = PartitionRange(sanitizedLabelDs, sanitizedLabelDs)(tableUtils)
         val partTable = joinConf.partOutputTable(labelJoinPart)
         try {
           val leftRanges = tableUtils
@@ -175,7 +175,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       }
     }
 
-    val rowIdentifier = labelJoinConf.rowIdentifier(joinConf.rowIds)
+    val rowIdentifier = labelJoinConf.rowIdentifier(joinConf.rowIds, tableUtils.partitionColumn)
     println("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
     val leftFiltered = JoinUtils.filterColumns(leftDf, rowIdentifier)
 
@@ -209,7 +209,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                |""".stripMargin)
 
     val groupBy = GroupBy.from(joinPart.groupBy,
-                               PartitionRange(labelDS, labelDS),
+                               PartitionRange(labelDS, labelDS)(tableUtils),
                                tableUtils,
                                Option(rightBloomMap),
                                rightSkewFilter)
@@ -224,7 +224,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
           s"Data model type ${joinConf.left.dataModel}:${joinPart.groupBy.dataModel} " +
             s"not supported for label join. Valid type [Events : Entities] or [Events : Events]")
     }
-    df.withColumnRenamed(Constants.PartitionColumn, Constants.LabelPartitionColumn)
+    df.withColumnRenamed(tableUtils.partitionColumn, Constants.LabelPartitionColumn)
   }
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -242,7 +242,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     Constants.PartitionColumn,
+                                                                     tableUtils.partitionColumn,
                                                                      Constants.TimePartitionColumn,
                                                                      Constants.LabelPartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)

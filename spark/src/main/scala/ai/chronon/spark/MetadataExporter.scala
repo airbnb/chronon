@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.{Constants, DataType, ThriftJsonCodec}
+import ai.chronon.api.{DataType, ThriftJsonCodec}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
@@ -21,8 +21,7 @@ object MetadataExporter {
 
   def getFilePaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
-    rootDir
-      .listFiles
+    rootDir.listFiles
       .filter(!_.isFile)
       .flatMap(_.listFiles())
       .map(_.getPath)
@@ -30,7 +29,7 @@ object MetadataExporter {
 
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
-    val analyzer = new Analyzer(tableUtils, path, silenceMode = true)
+    val analyzer = new Analyzer(tableUtils, path, null, null, silenceMode = true)
     val analyzerOutput: Seq[analyzer.AggregationMetadata] = try {
       if (path.contains(GROUPBY_PATH_SUFFIX)) {
         val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
@@ -55,7 +54,7 @@ object MetadataExporter {
         "groupBy" -> featureCol.groupByName
       )
     }
-    val enrichedData = configData + {"features" -> featureMetadata}
+    val enrichedData = configData + { "features" -> featureMetadata }
     mapper.writeValueAsString(enrichedData)
   }
   
@@ -70,7 +69,7 @@ object MetadataExporter {
   }
 
   def processEntities(inputPath: String, outputPath: String, suffix: String): Unit = {
-    val processSuccess = getFilePaths(inputPath + suffix).map{ path =>
+    val processSuccess = getFilePaths(inputPath + suffix).map { path =>
       try {
         val data = enrichMetadata(path)
         writeOutput(data, path, outputPath + suffix)

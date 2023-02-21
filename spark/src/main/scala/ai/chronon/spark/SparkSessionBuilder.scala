@@ -14,14 +14,14 @@ object SparkSessionBuilder {
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
-  def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None): SparkSession = {
+  def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None, additionalConfig: Option[Map[String, String]] = None): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
     val userName = Properties.userName
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
-    val baseBuilder = SparkSession
+    var baseBuilder = SparkSession
       .builder()
       .appName(name)
       .enableHiveSupport()
@@ -36,6 +36,12 @@ object SparkSessionBuilder {
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+
+    additionalConfig.foreach{configMap =>
+      configMap.foreach{config => baseBuilder = baseBuilder.config(config._1, config._2)}
+    }
+
+
 
     if (SPARK_VERSION.startsWith("2")) {
       // Otherwise files left from deleting the table with the same name result in test failures

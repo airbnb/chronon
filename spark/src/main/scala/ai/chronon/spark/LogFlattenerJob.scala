@@ -34,7 +34,7 @@ class LogFlattenerJob(session: SparkSession,
                       schemaTable: String,
                       stepDays: Option[Int] = None)
     extends Serializable {
-  val tableUtils: TableUtils = TableUtils(session)
+  implicit val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
     .getOrElse(Map.empty[String, String])
@@ -155,7 +155,7 @@ class LogFlattenerJob(session: SparkSession,
 
     session
       .table(schemaTable)
-      .where(col(Constants.PartitionColumn) === schemaTableDs.get)
+      .where(col(tableUtils.partitionColumn) === schemaTableDs.get)
       .where(col(Constants.SchemaHash).isin(hashes.toSeq: _*))
       .select(
         col(Constants.SchemaHash),

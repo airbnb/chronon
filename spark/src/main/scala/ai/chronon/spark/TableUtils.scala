@@ -1,6 +1,6 @@
 package ai.chronon.spark
 
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
@@ -18,7 +18,11 @@ case class TableUtils(sparkSession: SparkSession) {
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
-
+  val partitionColumn: String =
+    sparkSession.conf.get("spark.chronon.partition.column", "ds")
+  private val partitionFormat: String =
+    sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
+  val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -36,7 +40,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def isPartitioned(tableName: String): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
-    schema.fieldNames.contains(Constants.PartitionColumn)
+    schema.fieldNames.contains(partitionColumn)
   }
 
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
@@ -81,7 +85,7 @@ case class TableUtils(sparkSession: SparkSession) {
               case (k, v) => partitionMap.get(k).contains(v)
             }
           ) {
-            partitionMap.get(Constants.PartitionColumn)
+            partitionMap.get(partitionColumn)
           } else {
             None
           }
@@ -151,7 +155,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,
-                       partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                       partitionColumns: Seq[String] = Seq(partitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
                        autoExpand: Boolean = false): Unit = {
@@ -240,8 +244,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
-      if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-        val result = df.select(count(lit(1)), approx_count_distinct(col(Constants.PartitionColumn))).head()
+      if (df.schema.fieldNames.contains(partitionColumn)) {
+        val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
         (result.getAs[Long](0), result.getAs[Long](1).toInt)
       } else {
         (df.count(), 1)
@@ -286,8 +290,8 @@ case class TableUtils(sparkSession: SparkSession) {
       println(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
       val repartitionCols =
-        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-          Seq(Constants.PartitionColumn, saltCol)
+        if (df.schema.fieldNames.contains(partitionColumn)) {
+          Seq(partitionColumn, saltCol)
         } else { Seq(saltCol) }
       saltedDf
         .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
@@ -345,10 +349,10 @@ case class TableUtils(sparkSession: SparkSession) {
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
     sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
-      if (ranges.isEmpty || Constants.Partition.after(ranges.last.end) != nextDate) {
-        ranges :+ PartitionRange(nextDate, nextDate)
+      if (ranges.isEmpty || partitionSpec.after(ranges.last.end) != nextDate) {
+        ranges :+ PartitionRange(nextDate, nextDate)(this)
       } else {
-        val newRange = PartitionRange(ranges.last.start, nextDate)
+        val newRange = PartitionRange(ranges.last.start, nextDate)(this)
         ranges.dropRight(1) :+ newRange
       }
     }
@@ -371,7 +375,7 @@ case class TableUtils(sparkSession: SparkSession) {
            |inputTables: ${inputTables}, partitionRange: ${outputPartitionRange}
            |""".stripMargin
       )
-      outputPartitionRange.copy(start = Constants.Partition.shift(inputStart.get, inputToOutputShift))
+      outputPartitionRange.copy(start = partitionSpec.shift(inputStart.get, inputToOutputShift))(this)
     } else {
       outputPartitionRange
     }
@@ -397,7 +401,7 @@ case class TableUtils(sparkSession: SparkSession) {
           .flatMap { table =>
             partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
           }
-          .map(Constants.Partition.shift(_, inputToOutputShift))
+          .map(partitionSpec.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
 
@@ -477,14 +481,14 @@ case class TableUtils(sparkSession: SparkSession) {
                  |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
                  |Sub Partitions: ${subPartitionFilters.map(kv => s"${kv._1}=${kv._2}").mkString("Array(", ", ", ")")}
           """.stripMargin)
-      dropPartitions(outputTable, toDrop.toArray.sorted, Constants.PartitionColumn, subPartitionFilters)
+      dropPartitions(outputTable, toDrop.toArray.sorted, partitionColumn, subPartitionFilters)
     }
     earliestHoleOpt
   }
 
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
-                     partitionColumn: String = Constants.PartitionColumn,
+                     partitionColumn: String = partitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = partitions
@@ -508,8 +512,8 @@ case class TableUtils(sparkSession: SparkSession) {
                          endDate: String,
                          subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (tableExists(tableName)) {
-      val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
-      dropPartitions(tableName, toDrop, Constants.PartitionColumn, subPartitionFilters)
+      val toDrop = Stream.iterate(startDate)(partitionSpec.after).takeWhile(_ <= endDate)
+      dropPartitions(tableName, toDrop, partitionColumn, subPartitionFilters)
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
     }

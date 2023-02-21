@@ -16,7 +16,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     .map(_.asScala.toMap)
     .orNull
 
-  private val partitionCols: Seq[String] = Seq(Constants.PartitionColumn) ++
+  private val partitionCols: Seq[String] = Seq(tableUtils.partitionColumn) ++
     ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(
       Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
         .getOrElse(new java.util.ArrayList[String]())
@@ -30,7 +30,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       return
     }
     val unfilledRanges =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition))
+      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition)(tableUtils))
 
     if (unfilledRanges.isEmpty) {
       println(s"""No unfilled range for $outputTable given
