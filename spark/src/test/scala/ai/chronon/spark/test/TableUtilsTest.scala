@@ -32,7 +32,6 @@ class TableUtilsTest {
         |""".stripMargin
 
     val columns = tableUtils.getColumnsFromQuery(sampleSql)
-    println(columns)
     val expected = Seq("column_a",
                        "column_b",
                        "column_c",

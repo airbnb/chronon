@@ -133,6 +133,7 @@ case class TableUtils(sparkSession: SparkSession) {
         case f: Filter => f.condition.references.map(attr => attr.name)
       }
       .flatten
+      .map(_.replace("`", ""))
       .distinct
       .sorted
   }
