@@ -11,6 +11,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util.Base64
 import scala.collection.mutable
+import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 /**
@@ -121,7 +122,7 @@ class LogFlattenerJob(session: SparkSession,
             metrics.increment(Metrics.Name.Exception)
             None
           } else {
-            val dataColumns = dataFields.par.map { field =>
+            val dataColumns = dataFields.parallel.map { field =>
               val keyIdxOpt = joinCodec.keyIndices.get(field)
               val valIdxOpt = joinCodec.valueIndices.get(field)
               if (keyIdxOpt.isDefined) {
@@ -135,13 +136,13 @@ class LogFlattenerJob(session: SparkSession,
 
             val metadataColumns = Array(row.get(schemaHashIdx), row.get(tsIdx), row.get(dsIdx))
             val outputRow = metadataColumns ++ dataColumns
-            val unpackedRow = Conversions.toSparkRow(outputRow, outputSchema).asInstanceOf[GenericRow]
+            val unpackedRow = SparkConversions.toSparkRow(outputRow, outputSchema).asInstanceOf[GenericRow]
             Some(unpackedRow)
           }
         }
       }
 
-    val outputSparkSchema = Conversions.fromChrononSchema(outputSchema)
+    val outputSparkSchema = SparkConversions.fromChrononSchema(outputSchema)
     session.createDataFrame(outputRdd, outputSparkSchema)
   }
 
@@ -194,7 +195,7 @@ class LogFlattenerJob(session: SparkSession,
       val schemaMap = fetchSchemas(schemaHashes)
 
       // we do not have exact joinConf at time of logging, and since it is not used during flattening, we pass in null
-      val codecMap = schemaMap.mapValues(JoinCodec.fromLoggingSchema(_, joinConf = null)).map(identity)
+      val codecMap = schemaMap.mapValues(JoinCodec.fromLoggingSchema(_, joinConf = null)).map(identity).toMap
       val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
 
       val schemaTblProps = buildTableProperties(schemaMap)
@@ -234,5 +235,6 @@ object LogFlattenerJob {
       .map {
         case (key, value) => (key.substring(Constants.SchemaHash.length + 1), value)
       }
+      .toMap
   }
 }

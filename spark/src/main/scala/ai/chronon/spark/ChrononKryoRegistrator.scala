@@ -100,8 +100,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements",
-      "scala.reflect.ManifestFactory$$anon$1"
+      "scala.collection.IndexedSeqLike$Elements"
     )
     val spark3 = Seq(
       "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
@@ -109,7 +108,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation",
       "org.apache.spark.util.HadoopFSUtils$SerializableBlockLocation",
       "scala.reflect.ManifestFactory$LongManifest",
-      "org.apache.spark.sql.execution.joins.EmptyHashedRelation$"
+      "org.apache.spark.sql.execution.joins.EmptyHashedRelation$",
+      "scala.reflect.ManifestFactory$$anon$1"
     )
     val spark2 = Seq(
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
@@ -124,7 +124,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
         kryo.register(Class.forName(name))
         kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
       } catch {
-        case _: ClassNotFoundException => println(s"Unrecognized class $name")
+        case _: ClassNotFoundException => println(s"Unrecognized class $name passed to kryo registrator")
       }
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])

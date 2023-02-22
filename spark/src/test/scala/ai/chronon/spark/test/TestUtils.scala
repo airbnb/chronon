@@ -1,7 +1,7 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api.{Accuracy, Builders, IntType, LongType, Operation, StringType, StructField, StructType}
-import ai.chronon.spark.Conversions
+import ai.chronon.api._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
@@ -62,7 +62,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -73,8 +73,8 @@ object TestUtils {
   }
 
   def createAttributesGroupBy(namespace: String,
-                                spark: SparkSession,
-                                tableName: String = "listing_attributes"): GroupByTestSuite = {
+                              spark: SparkSession,
+                              tableName: String = "listing_attributes"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -113,7 +113,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -124,8 +124,8 @@ object TestUtils {
   }
 
   def createAttributesGroupByV2(namespace: String,
-                              spark: SparkSession,
-                              tableName: String = "listing_attributes"): GroupByTestSuite = {
+                                spark: SparkSession,
+                                tableName: String = "listing_attributes"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -137,8 +137,8 @@ object TestUtils {
       )
     )
     val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST","2022-11-01"),
-      Row(2L, 4, "ENTIRE_HOME","SUPER_HOST", "2022-11-01"),
+      Row(1L, 4, "ENTIRE_HOME", "SUPER_HOST", "2022-11-01"),
+      Row(2L, 4, "ENTIRE_HOME", "SUPER_HOST", "2022-11-01"),
       Row(3L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
       Row(4L, 1, "PRIVATE_ROOM", "NEW_HOST", "2022-11-01"),
       Row(5L, 1, "PRIVATE_ROOM", "SUPER_HOST", "2022-11-01"),
@@ -165,7 +165,7 @@ object TestUtils {
     )
     val df = spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}", autoExpand = true)
     GroupByTestSuite(
@@ -221,7 +221,7 @@ object TestUtils {
   def makeDf(spark: SparkSession, schema: StructType, rows: List[Row]): DataFrame = {
     spark.createDataFrame(
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      SparkConversions.fromChrononSchema(schema)
     )
   }
 }

@@ -8,7 +8,7 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     extends BaseJoin(joinConf, endPartition, tableUtils) {
@@ -34,7 +34,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
     val rightResults = bootstrapInfo.joinParts
       .map(_.joinPart)
-      .par
+      .parallel
       .flatMap { part =>
         val (unfilledLeftDf, validHashes) = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
         computeRightTable(unfilledLeftDf, part, leftRange, validHashes).map(df => part -> df)
@@ -94,7 +94,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
         val parts = Option(joinConf.bootstrapParts)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala)
+          .map(_.toScala)
           .getOrElse(Seq())
 
         val initDf = leftDf

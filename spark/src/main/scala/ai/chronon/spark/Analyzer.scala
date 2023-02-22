@@ -1,7 +1,6 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.DataType.toString
 import ai.chronon.api.{AggregationPart, Constants, DataType}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Driver.parseConf
@@ -13,7 +12,7 @@ import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 
 import scala.collection.mutable.ListBuffer
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -132,19 +131,20 @@ class Analyzer(tableUtils: TableUtils,
 
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
-                           columnType: String,
-                           operation: String = null,
-                           window: String = null,
-                           inputColumn: String = null)
+                                 columnType: String,
+                                 operation: String = null,
+                                 window: String = null,
+                                 inputColumn: String = null)
 
-  def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType) : AggregationMetadata = {
-    AggregationMetadata(aggPart.outputColumnName, columnType.toString,
-      aggPart.operation.toString.toLowerCase,
-      aggPart.window.str.toLowerCase,
-      aggPart.inputColumn.toLowerCase)
+  def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
+    AggregationMetadata(aggPart.outputColumnName,
+                        columnType.toString,
+                        aggPart.operation.toString.toLowerCase,
+                        aggPart.window.str.toLowerCase,
+                        aggPart.inputColumn.toLowerCase)
   }
 
-  def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
+  def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(columnName, columnType.toString, "No operation", "Unbounded", columnName)
   }
 
@@ -156,27 +156,27 @@ class Analyzer(tableUtils: TableUtils,
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
-    val analysis = if(enableHitter) analyze(groupBy.inputDf,
-                           groupByConf.keyColumns.asScala.toArray,
-                           groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
+    val analysis =
+      if (enableHitter)
+        analyze(groupBy.inputDf,
+                groupByConf.keyColumns.toScala.toArray,
+                groupByConf.sources.toScala.map(_.table).mkString(","))
+      else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     if (silenceMode) {
       println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
-      println(
-        s"""
+      println(s"""
            |ANALYSIS for $name:
            |$analysis
                """.stripMargin)
       if (includeOutputTableName)
-        println(
-          s"""
+        println(s"""
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      println(
-        s"""
+      println(s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
            |----- OUTPUT SCHEMA -----
@@ -192,30 +192,32 @@ class Analyzer(tableUtils: TableUtils,
     }
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils).get
-    val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
+    val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
-    joinConf.joinParts.asScala.par.foreach { part =>
+    joinConf.joinParts.toScala.parallel.foreach { part =>
       val aggMetadata = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
-      aggregationsMetadata ++= aggMetadata.map { aggMeta => AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
-        aggMeta.columnType,
-        aggMeta.operation,
-        aggMeta.window,
-        aggMeta.inputColumn)}
+      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+        AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
+                            aggMeta.columnType,
+                            aggMeta.operation,
+                            aggMeta.window,
+                            aggMeta.inputColumn)
+      }
     }
 
-    val rightSchema = aggregationsMetadata.map {aggregation => s"  ${aggregation.name} => ${aggregation.columnType}"}
+    val rightSchema = aggregationsMetadata.map { aggregation => s"  ${aggregation.name} => ${aggregation.columnType}" }
     if (silenceMode) {
       println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
-      println(
-        s"""
+      println(s"""
            |ANALYSIS for join/${joinConf.metaData.cleanName}:
            |$analysis
            |----- OUTPUT TABLE NAME -----

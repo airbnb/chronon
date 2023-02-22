@@ -10,8 +10,6 @@ import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongTyp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
 
-import scala.collection.JavaConversions._
-
 /** Tests for the temporal join of entities.
   * Left is an event source with definite ts.
   * Right is an entity with snapshots and mutation values through the day.
@@ -78,7 +76,7 @@ class MutationsTest {
     * @return If the expected rows are in the dataframe.
     */
   def compareResult(computed: DataFrame, expectedRows: Seq[Row]): Boolean = {
-    val df = spark.createDataFrame(expectedRows, expectedSchema)
+    val df = spark.createDataFrame(spark.sparkContext.parallelize(expectedRows), expectedSchema)
     val totalExpectedRows = df.count()
     if (computed.count() != totalExpectedRows) return false
     // Join on keys that should be the same.
@@ -130,9 +128,13 @@ class MutationsTest {
                               operation: Operation = Operation.AVERAGE): DataFrame = {
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
-    spark.createDataFrame(eventData, leftSchema).save(s"$testNamespace.$eventTable")
-    spark.createDataFrame(snapshotData, snapshotSchema).save(s"$testNamespace.$snapshotTable")
-    spark.createDataFrame(mutationData, mutationSchema).save(s"$testNamespace.$mutationTable")
+    spark.createDataFrame(spark.sparkContext.parallelize(eventData), leftSchema).save(s"$testNamespace.$eventTable")
+    spark
+      .createDataFrame(spark.sparkContext.parallelize(snapshotData), snapshotSchema)
+      .save(s"$testNamespace.$snapshotTable")
+    spark
+      .createDataFrame(spark.sparkContext.parallelize(mutationData), mutationSchema)
+      .save(s"$testNamespace.$mutationTable")
     computeJoinFromTables(suffix, startPartition, endPartition, windows, operation)
   }
 

@@ -3,7 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
-import ai.chronon.online.JoinCodec
+import ai.chronon.online.{JoinCodec, SparkConversions}
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -56,7 +56,7 @@ object BootstrapInfo {
         .convertJavaListToScala(joinConf.joinParts)
         .map(part => {
           val gb = GroupBy.from(part.groupBy, range, tableUtils)
-          val keySchema = Conversions
+          val keySchema = SparkConversions
             .toChrononSchema(gb.keySchema)
             .map(field => StructField(part.rightToLeft(field._1), field._2))
           val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
@@ -104,6 +104,7 @@ object BootstrapInfo {
       LogFlattenerJob
         .readSchemaTableProperties(tableUtils, joinConf)
         .mapValues(JoinCodec.fromLoggingSchema(_, joinConf).valueFields)
+        .toMap
     }
 
     /*
@@ -130,7 +131,7 @@ object BootstrapInfo {
             s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
           )
 
-          val valueFields = Conversions
+          val valueFields = SparkConversions
             .toChrononSchema(schema)
             .filterNot {
               case (name, _) => (part.keys(joinConf) :+ Constants.PartitionColumn).contains(name)
@@ -142,7 +143,7 @@ object BootstrapInfo {
         .toMap
     }
 
-    val hashToSchema = logHashes ++ tableHashes.mapValues(_._1)
+    val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
     val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with

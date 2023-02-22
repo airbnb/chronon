@@ -16,6 +16,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 class JoinTest {
 
@@ -125,7 +126,7 @@ class JoinTest {
     )
     println(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
 
-    joinConf.joinParts.asScala
+    joinConf.joinParts.toScala
       .map(jp => joinConf.partOutputTable(jp))
       .foreach(tableUtils.dropPartitionRange(_, dropStart, dropEnd))
 
@@ -770,6 +771,7 @@ class JoinTest {
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.tablesToRecompute()
+    println(leftChangeRecompute)
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,
@@ -912,7 +914,7 @@ class JoinTest {
     val limitedJoin = Builders.Join(
       left =
         Builders.Source.events(Builders.Query(startPartition = start, endPartition = end), table = join.getLeft.table),
-      joinParts = join.getJoinParts.asScala,
+      joinParts = join.getJoinParts.toScala,
       metaData = join.metaData
     )
     assertTrue(end < today)

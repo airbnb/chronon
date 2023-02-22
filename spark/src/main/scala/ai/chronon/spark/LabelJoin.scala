@@ -12,6 +12,7 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
+import scala.util.ScalaJavaConversions.IterableOps
 
 class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
@@ -59,13 +60,15 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     } else {
       // creating final join view with feature join output table
       println(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
-      JoinUtils.createOrReplaceView(joinConf.metaData.outputFinalView,
-                                    leftTable = joinConf.metaData.outputTable,
-                                    rightTable = outputLabelTable,
-                                    joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds),
-                                    tableUtils = tableUtils,
-                                    viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
-                                      Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable))
+      JoinUtils.createOrReplaceView(
+        joinConf.metaData.outputFinalView,
+        leftTable = joinConf.metaData.outputTable,
+        rightTable = outputLabelTable,
+        joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds),
+        tableUtils = tableUtils,
+        viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
+                             Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable)
+      )
       println(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
       JoinUtils.createLatestLabelView(joinConf.metaData.outputLatestLabelView,
                                       baseView = joinConf.metaData.outputFinalView,
@@ -74,7 +77,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       labelTable
     }
   }
-
 
   def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val rangeToFill = PartitionRange(leftStart, leftEnd)
@@ -115,7 +117,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         println(s"Computing join for range: $range  ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs)
-            .save(outputLabelTable, confTableProps, Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn), true)
+            .save(outputLabelTable,
+                  confTableProps,
+                  Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn),
+                  true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -128,12 +133,12 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
-    val leftBlooms = labelJoinConf.leftKeyCols.par.map { key =>
+    val leftBlooms = labelJoinConf.leftKeyCols.toSeq.parallel.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
     }.toMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labels.asScala.par.map { joinPart =>
+    val rightDfs = labelJoinConf.labels.asScala.parallel.map { joinPart =>
       if (joinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
         computeLabelPart(joinPart, leftRange, leftBlooms)
@@ -152,7 +157,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     // assign label ds value and drop duplicates
-    val updatedJoin = joined.withColumn(Constants.LabelPartitionColumn, lit(sanitizedLabelDs))
+    val updatedJoin = joined
+      .withColumn(Constants.LabelPartitionColumn, lit(sanitizedLabelDs))
       .dropDuplicates(rowIdentifier)
     updatedJoin.explain()
     updatedJoin.drop(Constants.TimePartitionColumn)
@@ -162,7 +168,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                                unfilledRange: PartitionRange,
                                leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     println(s"""
                |Label JoinPart Info:

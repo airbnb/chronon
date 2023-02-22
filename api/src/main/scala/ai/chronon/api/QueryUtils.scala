@@ -6,7 +6,7 @@ object QueryUtils {
   // to be present in the table that the generated query runs on.
   def build(selects: Map[String, String],
             from: String,
-            wheres: Seq[String],
+            wheres: scala.collection.Seq[String],
             fillIfAbsent: Map[String, String] = null): String = {
 
     def toProjections(m: Map[String, String]) =

@@ -249,15 +249,9 @@ struct GroupBy {
     6: optional string backfillStartDate
 }
 
-struct AggregationSelector {
-  1: optional string name
-  2: optional list<Window> windows
-}
-
 struct JoinPart {
     1: optional GroupBy groupBy
     2: optional map<string, string> keyMapping
-    3: optional list<AggregationSelector> selectors # deprecated
     4: optional string prefix
 }
 
@@ -267,6 +261,11 @@ struct ExternalPart {
     // currently this only supports renaming, in the future this will run catalyst expressions
     2: optional map<string, string> keyMapping
     3: optional string prefix
+}
+
+struct Derivation {
+    1: optional string name
+    2: optional string expression
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -286,6 +285,22 @@ struct Join {
     7: optional list<BootstrapPart> bootstrapParts
     // Fields on left that uniquely identifies a single record
     8: optional list<string> rowIds
+    /**
+    * List of a derived column names to the expression based on joinPart / externalPart columns
+    * The expression can be any valid Spark SQL select clause without aggregation functions.
+    *
+    * joinPart column names are automatically constructed according to the below convention
+    *  `{join_part_prefix}_{group_by_name}_{input_column_name}_{aggregation_operation}_{window}_{by_bucket}`
+    *  prefix, window and bucket are optional. You can find the type information of columns using the analyzer tool.
+    *
+    * externalPart column names are automatically constructed according to the below convention
+    *  `ext_{external_source_name}_{value_column}`
+    * Types are defined along with the schema by users for external sources.
+    *
+    * Including a column with key "*" and value "*", means that every raw column will be included along with the derived
+    * columns.
+    **/
+    9: optional list<Derivation> derivations
 }
 
 struct BootstrapPart {

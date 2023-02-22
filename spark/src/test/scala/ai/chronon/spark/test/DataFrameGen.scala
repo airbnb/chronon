@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.chronon.api.{Constants, LongType, StringType}
-import ai.chronon.spark.Conversions
+import ai.chronon.online.SparkConversions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
@@ -17,7 +17,7 @@ object DataFrameGen {
     val RowsWithSchema(rows, schema) = CStream.gen(columns, count)
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
-    val sparkSchema = Conversions.fromChrononSchema(schema)
+    val sparkSchema = SparkConversions.fromChrononSchema(schema)
     spark.createDataFrame(data, sparkSchema)
   }
 
