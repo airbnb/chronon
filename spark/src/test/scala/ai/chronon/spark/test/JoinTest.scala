@@ -771,6 +771,7 @@ class JoinTest {
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute = leftChangeJoin.tablesToRecompute()
+    println(leftChangeRecompute)
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,

@@ -134,6 +134,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
       .flatten
       .distinct
+      .sorted
   }
 
   def getSchemaFromTable(tableName: String): StructType = {

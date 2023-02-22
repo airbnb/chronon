@@ -40,7 +40,7 @@ class TableUtilsTest {
                        "column_e",
                        "column_f",
                        "column_g",
-                       "`column_nested.first.second`").sorted
+                       "column_nested.first.second").sorted
     assertEquals(expected, columns.sorted)
   }
 

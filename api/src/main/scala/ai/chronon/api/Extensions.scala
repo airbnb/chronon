@@ -726,16 +726,13 @@ object Extensions {
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
-      println(s"old: $oldSemanticHash \nnew: $newSemanticHash")
-
       // only right join part hashes for convenience
       def partHashes(semanticHashMap: Map[String, String]): Map[String, String] = {
-        semanticHashMap.filter { case (name, _) => name != leftSourceKey || name != derivedKey }
+        semanticHashMap.filter { case (name, _) => name != leftSourceKey && name != derivedKey }
       }
 
       // drop everything if left source changes
       val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
-        println(s"old left hash: ${oldSemanticHash(leftSourceKey)}, new left hash: ${newSemanticHash(leftSourceKey)}")
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {
@@ -743,7 +740,6 @@ object Extensions {
             oldSemanticHash.get(key).filter(_ != newVal).map(_ => key)
         }
         val deleted = partHashes(oldSemanticHash).keys.filterNot(newSemanticHash.contains)
-        println(s"changed: $changed, deleted: $deleted")
         (changed ++ deleted).toSeq
       }
       val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_)).filter {
@@ -751,13 +747,7 @@ object Extensions {
         case key if key == join.metaData.bootstrapTable => join.isSetBootstrapParts && !join.bootstrapParts.isEmpty
         case _                                          => true
       }
-      if (added.nonEmpty) {
-        println(s"added: $added")
-      }
       val derivedChanges = oldSemanticHash.get(derivedKey) != newSemanticHash.get(derivedKey)
-      if (derivedChanges) {
-        println(s"old derived: ${oldSemanticHash.get(derivedKey)}, new derived: ${newSemanticHash.get(derivedKey)}")
-      }
       // TODO: make this incremental, retain the main table and continue joining, dropping etc
       val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty || derivedChanges) {
         Some(join.metaData.outputTable)
