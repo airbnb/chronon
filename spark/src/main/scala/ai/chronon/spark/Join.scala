@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
@@ -14,6 +15,30 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     extends BaseJoin(joinConf, endPartition, tableUtils) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
+
+  /*
+   * For all external fields that are not already populated during the bootstrap step, fill in NULL.
+   * This is so that if any derivations depend on the these external fields, they will still pass and not complain
+   * about missing columns.
+   */
+  private def enrichExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+
+    val keySchema = bootstrapInfo.externalParts.flatMap(_.keySchema)
+    // exclude the value fields of contextual source since they are identical to keys except naming
+    // these are added on-the-fly during derivation phase
+    val valueSchema = bootstrapInfo.externalParts.filterNot(_.externalPart.isContextual).flatMap(_.valueSchema)
+    val externalFields = SparkConversions.fromChrononSchema(StructType("", (keySchema ++ valueSchema).toArray))
+
+    externalFields.foldLeft(bootstrapDf) {
+      case (df, field) => {
+        if (df.columns.contains(field.name)) {
+          df
+        } else {
+          df.withColumn(field.name, lit(null).cast(field.dataType))
+        }
+      }
+    }
+  }
 
   override def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
@@ -51,9 +76,56 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalDf = joinedDf.selectExpr(outputColumns: _*)
+    val finalBaseDf = joinedDf.selectExpr(outputColumns: _*)
+    val finalDf = applyDerivation(finalBaseDf, bootstrapInfo)
     finalDf.explain()
     finalDf
+  }
+
+  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
+      return baseDf
+    }
+
+    // ensure that ext_contextual_xxx fields can also be used as base even though these columns are not materialized
+    val contextualFields = bootstrapInfo.externalParts.find(_.externalPart.isContextual).toSeq.flatMap(_.keySchema)
+    val contextualPrefix = s"${Constants.ExternalPrefix}_${Constants.ContextualSourceName}"
+    val enrichedBaseDf = contextualFields.foldLeft(baseDf) {
+      case (df, field) => {
+        val valueName = s"${contextualPrefix}_${field.name}"
+        df.withColumn(valueName, col(field.name))
+      }
+    }
+
+    // for each columns in the base join output
+    // 1. if it is a base column, discard it unless it is in the projection output
+    // 2. if it is not a base column, if it is in the projection output, do coalesce
+    // 3. if it is not a base column, and it is not in the projection output, simply include it in the output
+    val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
+    val projectionOutputs = projections.map(_._1).toSet
+    val baseJoinColumns = enrichedBaseDf.columns.toSet
+
+    val finalOutputColumns = enrichedBaseDf.columns.flatMap { c =>
+      if (bootstrapInfo.baseValueNames.contains(c)) {
+        None
+      } else if (projectionOutputs.contains(c)) {
+        None // handled below
+      } else {
+        Some(col(c))
+      }
+    } ++ projections
+      .flatMap {
+        case (name, expression) =>
+          if (name == expression && name.startsWith(contextualPrefix)) {
+            None
+          } else if (baseJoinColumns.contains(name)) {
+            Some(coalesce(col(name), expr(expression)).as(name))
+          } else {
+            Some(expr(expression).as(name))
+          }
+      }
+
+    enrichedBaseDf.select(finalOutputColumns: _*)
   }
 
   /*
@@ -73,7 +145,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
 
     if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
-      return leftDf
+      return enrichExternalFields(leftDf, bootstrapInfo)
     }
 
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
@@ -122,7 +194,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
-              if (part.isLogTable(joinConf)) {
+              if (part.isLogBootstrap(joinConf)) {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
               } else {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))
@@ -150,8 +222,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
           }
         }
 
+        // include all external fields if not already bootstrapped
+        val enrichedDf = enrichExternalFields(joinedDf, bootstrapInfo)
+
         // set autoExpand = true since log table could be a bootstrap part
-        joinedDf.save(bootstrapTable, tableProps, autoExpand = true)
+        enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)
       })
 
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

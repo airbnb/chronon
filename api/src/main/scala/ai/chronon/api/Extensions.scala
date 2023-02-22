@@ -554,6 +554,7 @@ object Extensions {
     lazy val valueSchemaFull: Array[StructField] =
       externalPart.source.valueFields.map(field => StructField(fullName + "_" + field.name, field.fieldType))
 
+    def isContextual: Boolean = externalPart.source.isContextualSource
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
@@ -639,7 +640,9 @@ object Extensions {
         throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
       }
 
-    def isLogTable(join: Join): Boolean = bootstrapPart.table == join.metaData.loggedTable
+    def isLogBootstrap(join: Join): Boolean = {
+      (bootstrapPart.table == join.metaData.loggedTable) && !(bootstrapPart.isSetQuery && bootstrapPart.getQuery.isSetSelects)
+    }
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
@@ -839,47 +842,17 @@ object Extensions {
         .toSeq
         .map(new JoinPartOps(_))
 
-    lazy val partValueColumns: Array[String] = join.joinParts.iterator().toScala.flatMap(_.valueColumns).toArray
-    lazy val leftColumns: Array[String] = join.left.query.selects.keySet().iterator().toScala.toArray
-
-    @transient private lazy val identifierRegex: Regex = raw"[0-9a-zA-Z_]+".r
-
-    private def matches(candidate: String, regex: Regex): Boolean =
-      if (candidate == null || candidate == "") {
-        true
+    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
+      val derivations = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.derivations)
+      val wildCardSelects = if (derivations.exists(_.name == "*")) {
+        val expressions = derivations.iterator.map(_.expression).toSet
+        baseColumns.filterNot(expressions)
       } else {
-        val matchOpt = regex.findFirstIn(candidate)
-        matchOpt.isDefined && matchOpt.get == candidate
+        Seq()
       }
-
-    // derivations are just renaming or simple selects
-    lazy val derivationsAreSimple: Boolean =
-      join.derivations.iterator().toScala.map(_.expression).forall(matches(_, identifierRegex))
-
-    /** Select clauses to finally apply on the dataframe to select all necessary columns, while applying derivations
-      * If derivations are not specified - we return None
-      * Having a "*" in derivations means - all value columns are selected, except the ones that are renamed
-      * Not specifying an `expression` in Derivation means that we are just selecting a column by `name`
-      */
-    lazy val derivationSelects: Option[Array[String]] = if (join.isSetDerivations) {
-      // iterators have to be a re-created - hence the def instead of val
-      def derivationsIterator = join.derivations.iterator().toScala
-      val partColumns = if (derivationsIterator.exists(_.name == "*")) {
-        val exprs = derivationsIterator.map(_.expression).toSet
-        // detect renames - and exclude from double selecting
-        partValueColumns.filterNot(exprs.contains)
-      } else {
-        Array.empty
-      }
-      val derivationTuples = derivationsIterator
-        .filterNot(_.name == "*")
-        .map(d => d.name -> Option(d.expression).getOrElse(d.name))
-        .toArray
-      val selects =
-        ((leftColumns ++ partColumns).map(c => c -> c) ++ derivationTuples).map(tup => s"${tup._1} AS `${tup._2}`")
-      Some(selects)
-    } else {
-      None
+      val derivationSelects = derivations.iterator.filterNot(_.name == "*").map(d => (d.name, d.expression))
+      val projections = wildCardSelects.map(c => (c, c)) ++ derivationSelects
+      projections
     }
   }
 

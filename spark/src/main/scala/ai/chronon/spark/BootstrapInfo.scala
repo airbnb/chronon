@@ -4,6 +4,9 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
 import ai.chronon.online.{JoinCodec, SparkConversions}
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.functions.expr
+import org.apache.spark.sql.types.StructType
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
@@ -25,6 +28,8 @@ case class BootstrapInfo(
     joinParts: Seq[JoinPartMetadata],
     // external parts enriched with expected schema
     externalParts: Seq[ExternalPartMetadata],
+    // derivations schema
+    derivations: Array[StructField],
     // hashToSchema is a mapping from a hash string to an associated list of structField, such that if a record was
     // marked by this hash, it means that all the associated structFields have been pre-populated.
     // to generate the hash:
@@ -37,9 +42,14 @@ case class BootstrapInfo(
 
   private lazy val fields: Seq[StructField] = {
     joinParts.flatMap(_.keySchema) ++ joinParts.flatMap(_.valueSchema) ++
-      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema)
+      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema) ++ derivations
   }
   private lazy val fieldsMap: Map[String, StructField] = fields.map(f => f.name -> f).toMap
+
+  lazy val baseValueNames: Seq[String] = baseValueFields.map(_.name)
+  private lazy val baseValueFields: Seq[StructField] = {
+    joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+  }
 }
 
 object BootstrapInfo {
@@ -74,6 +84,22 @@ object BootstrapInfo {
         .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
     }
 
+    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+    val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
+    val baseDf = tableUtils.sparkSession.createDataFrame(
+      tableUtils.sparkSession.sparkContext.parallelize(Seq[Row]()),
+      sparkSchema
+    )
+    val projections = joinConf.derivationProjection(baseFields.map(_.name))
+    val derivedDf = baseDf.select(
+      projections.map {
+        case (name, expression) => expr(expression).as(name)
+      }: _*
+    )
+    val derivedSchema = SparkConversions.toChrononSchema(derivedDf.schema).map {
+      case (name, dataType) => StructField(name, dataType)
+    }
+
     /*
      * Log table requires special handling because unlike regular Hive table, since log table is affected by schema
      * evolution. A NULL column does not simply mean that the correct value was NULL, it could be that for this record,
@@ -88,7 +114,7 @@ object BootstrapInfo {
       // Verify that join keys are valid columns on the log table
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(joinConf.bootstrapParts)
-        .withFilter(_.isLogTable(joinConf))
+        .withFilter(_.isLogBootstrap(joinConf))
         .foreach(part => {
           // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
           val logTable = joinConf.metaData.loggedTable
@@ -119,7 +145,7 @@ object BootstrapInfo {
       // Verify that join keys are valid columns on the bootstrap source table
       ScalaVersionSpecificCollectionsConverter
         .convertJavaListToScala(joinConf.bootstrapParts)
-        .withFilter(!_.isLogTable(joinConf))
+        .withFilter(!_.isLogBootstrap(joinConf))
         .map(part => {
           val range = PartitionRange(part.query.startPartition, part.query.endPartition)
           val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
@@ -144,7 +170,7 @@ object BootstrapInfo {
     }
 
     val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
-    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, hashToSchema)
+    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema, hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
