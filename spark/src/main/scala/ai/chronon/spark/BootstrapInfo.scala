@@ -8,7 +8,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 case class JoinPartMetadata(
     joinPart: JoinPart,
@@ -59,30 +59,22 @@ object BootstrapInfo {
 
     // Enrich each join part with the expected output schema
     println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
-    val joinParts: Seq[JoinPartMetadata] = if (!joinConf.isSetJoinParts) {
-      Seq.empty
-    } else {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinConf.joinParts)
-        .map(part => {
-          val gb = GroupBy.from(part.groupBy, range, tableUtils)
-          val keySchema = SparkConversions
-            .toChrononSchema(gb.keySchema)
-            .map(field => StructField(part.rightToLeft(field._1), field._2))
-          val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
-          JoinPartMetadata(part, keySchema, valueSchema)
-        })
-    }
+    val joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
+      .getOrElse(Seq.empty)
+      .map(part => {
+        val gb = GroupBy.from(part.groupBy, range, tableUtils)
+        val keySchema = SparkConversions
+          .toChrononSchema(gb.keySchema)
+          .map(field => StructField(part.rightToLeft(field._1), field._2))
+        val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
+        JoinPartMetadata(part, keySchema, valueSchema)
+      })
 
     // Enrich each external part with the expected output schema
     println(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
-    val externalParts: Seq[ExternalPartMetadata] = if (!joinConf.isSetOnlineExternalParts) {
-      Seq.empty
-    } else {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinConf.onlineExternalParts)
-        .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
-    }
+    val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
+      .getOrElse(Seq.empty)
+      .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
     val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
@@ -90,14 +82,18 @@ object BootstrapInfo {
       tableUtils.sparkSession.sparkContext.parallelize(Seq[Row]()),
       sparkSchema
     )
-    val projections = joinConf.derivationProjection(baseFields.map(_.name))
-    val derivedDf = baseDf.select(
-      projections.map {
-        case (name, expression) => expr(expression).as(name)
-      }: _*
-    )
-    val derivedSchema = SparkConversions.toChrononSchema(derivedDf.schema).map {
-      case (name, dataType) => StructField(name, dataType)
+    val derivedSchema = if (joinConf.isSetDerivations) {
+      val projections = joinConf.derivationProjection(baseFields.map(_.name))
+      val derivedDf = baseDf.select(
+        projections.map {
+          case (name, expression) => expr(expression).as(name)
+        }: _*
+      )
+      SparkConversions.toChrononSchema(derivedDf.schema).map {
+        case (name, dataType) => StructField(name, dataType)
+      }
+    } else {
+      Array.empty[StructField]
     }
 
     /*
@@ -107,25 +103,24 @@ object BootstrapInfo {
      * in the schema_hash at time of logging to tell whether a column truly was populated or not.
      */
     println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
+    // Verify that join keys are valid columns on the log table
+    Option(joinConf.bootstrapParts.toScala)
+      .getOrElse(Seq.empty)
+      .withFilter(_.isLogBootstrap(joinConf))
+      .foreach(part => {
+        // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
+        val logTable = joinConf.metaData.loggedTable
+        val schema = tableUtils.getSchemaFromTable(logTable)
+        val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
+        assert(
+          missingKeys.isEmpty,
+          s"Log table $logTable for join ${joinConf.metaData.name} does not contain some specified keys: ${missingKeys.prettyInline}"
+        )
+      })
+
     val logHashes = if (!joinConf.isSetBootstrapParts) {
       Map.empty[String, Array[StructField]]
     } else {
-
-      // Verify that join keys are valid columns on the log table
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinConf.bootstrapParts)
-        .withFilter(_.isLogBootstrap(joinConf))
-        .foreach(part => {
-          // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
-          val logTable = joinConf.metaData.loggedTable
-          val schema = tableUtils.getSchemaFromTable(logTable)
-          val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
-          assert(
-            missingKeys.isEmpty,
-            s"Log table $logTable for join ${joinConf.metaData.name} does not contain some specified keys: ${missingKeys.prettyInline}"
-          )
-        })
-
       // Retrieve schema_hash mapping info from Hive table properties
       LogFlattenerJob
         .readSchemaTableProperties(tableUtils, joinConf)
@@ -138,36 +133,31 @@ object BootstrapInfo {
      * that is, we trust all the data that is given to Chronon by its user and it takes precedence over backfill.
      */
     println(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
-    val tableHashes = if (!joinConf.isSetBootstrapParts) {
-      Map.empty[String, (Array[StructField], String, String)]
-    } else {
+    // Verify that join keys are valid columns on the bootstrap source table
+    val tableHashes = Option(joinConf.bootstrapParts.toScala)
+      .getOrElse(Seq.empty)
+      .withFilter(!_.isLogBootstrap(joinConf))
+      .map(part => {
+        val range = PartitionRange(part.query.startPartition, part.query.endPartition)
+        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
+        val bootstrapDf = tableUtils.sql(bootstrapQuery)
+        val schema = bootstrapDf.schema
+        val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
+        assert(
+          missingKeys.isEmpty,
+          s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
+        )
 
-      // Verify that join keys are valid columns on the bootstrap source table
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinConf.bootstrapParts)
-        .withFilter(!_.isLogBootstrap(joinConf))
-        .map(part => {
-          val range = PartitionRange(part.query.startPartition, part.query.endPartition)
-          val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
-          val bootstrapDf = tableUtils.sql(bootstrapQuery)
-          val schema = bootstrapDf.schema
-          val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
-          assert(
-            missingKeys.isEmpty,
-            s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
-          )
+        val valueFields = SparkConversions
+          .toChrononSchema(schema)
+          .filterNot {
+            case (name, _) => (part.keys(joinConf) :+ Constants.PartitionColumn).contains(name)
+          }
+          .map(field => StructField(field._1, field._2))
 
-          val valueFields = SparkConversions
-            .toChrononSchema(schema)
-            .filterNot {
-              case (name, _) => (part.keys(joinConf) :+ Constants.PartitionColumn).contains(name)
-            }
-            .map(field => StructField(field._1, field._2))
-
-          part.semanticHash -> (valueFields, part.table, bootstrapQuery)
-        })
-        .toMap
-    }
+        part.semanticHash -> (valueFields, part.table, bootstrapQuery)
+      })
+      .toMap
 
     val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
     val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema, hashToSchema)
@@ -175,7 +165,7 @@ object BootstrapInfo {
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
     for (
-      (fields, table, query) <- tableHashes.valuesIterator;
+      (fields, table, query) <- tableHashes.values;
       field <- fields
     ) yield {
 

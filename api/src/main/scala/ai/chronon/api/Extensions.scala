@@ -9,7 +9,6 @@ import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.mutable
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
-import scala.util.matching.Regex
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
@@ -681,8 +680,7 @@ object Extensions {
         }
         .getOrElse(Map.empty)
       val bootstrapHash = ThriftJsonCodec.md5Digest(join.bootstrapParts)
-      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash)
-      // TODO ++ derivedHashMap
+      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap
     }
 
     /*
@@ -843,8 +841,8 @@ object Extensions {
         .map(new JoinPartOps(_))
 
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      val derivations = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.derivations)
-      val wildCardSelects = if (derivations.exists(_.name == "*")) {
+      val derivations = join.derivations.toScala
+      val wildCardSelects = if (derivations.iterator.exists(_.name == "*")) {
         val expressions = derivations.iterator.map(_.expression).toSet
         baseColumns.filterNot(expressions)
       } else {

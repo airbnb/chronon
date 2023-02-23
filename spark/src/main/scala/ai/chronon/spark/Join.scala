@@ -202,9 +202,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
               // include only necessary columns. in particular,
               // this excludes columns that are NOT part of Join's output (either from GB or external source)
-              val includedColumns = bootstrapDf.columns.filter(
-                bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash,
-                                                                       Constants.PartitionColumn))
+              val includedColumns = bootstrapDf.columns
+                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash,
+                                                                               Constants.PartitionColumn))
+                .sorted
 
               bootstrapDf = bootstrapDf
                 .select(includedColumns.map(col): _*)
