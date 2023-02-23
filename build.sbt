@@ -146,6 +146,14 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("2.6.7"),
     Some("2.10.0"),
     Some("2.12.3")
+  ),
+  "avro" -> VersionDependency(
+    Seq(
+      "org.apache.avro" % "avro"
+    ),
+    Some("1.8.2"),
+    Some("1.8.2"),
+    Some("1.10.2")
   )
 )
 
@@ -222,6 +230,7 @@ lazy val online_unshaded = (project in file("online"))
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "jackson",
+                                       "avro",
                                        "spark-all/provided",
                                        "scala-parallel-collections")
   )
