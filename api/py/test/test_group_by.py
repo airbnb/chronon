@@ -1,9 +1,9 @@
-import pytest
+import pytest, json
 
 from ai.chronon import group_by, query
-from ai.chronon.group_by import GroupBy, TimeUnit, Window
+from ai.chronon.group_by import GroupBy, TimeUnit, Window, Aggregation
 from ai.chronon.api import ttypes
-from ai.chronon.api.ttypes import EventSource, EntitySource, Aggregation, Operation
+from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
 
 
 @pytest.fixture
@@ -187,6 +187,27 @@ def test_snapshot_with_hour_aggregation():
         )
 
 
+def test_additional_metadata():
+    gb = group_by.GroupBy(
+        sources=[
+            ttypes.EventSource(
+                table="event_table1",
+                query=query.Query(
+                    selects=None,
+                    time_column="ts"
+                )
+            )
+        ],
+        keys=["key1", "key2"],
+        aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
+        additional_metadata={"to_deprecate": True}
+    )
+    print("++++++++++++++++++++++++++")
+    print(gb.metaData.customJson)
+    print("++++++++++++++++++++++++++")
+    assert json.loads(gb.metaData.customJson)['additional_groupby_metadata']['to_deprecate']
+
+
 ratings_features = GroupBy(
     sources=[
         EntitySource(
@@ -203,7 +224,7 @@ ratings_features = GroupBy(
     keys=["item"],
     aggregations=[
         Aggregation(
-            inputColumn="rating",
+            input_column="rating",
             operation=Operation.AVERAGE,
             windows=[Window(length=90, timeUnit=TimeUnit.DAYS)],
         ),
@@ -228,7 +249,7 @@ view_features = GroupBy(
     keys=["user", "item"],
     aggregations=[
         Aggregation(
-            inputColumn="view",
+            input_column="view",
             operation=Operation.COUNT,
             windows=[Window(length=5, timeUnit=TimeUnit.HOURS)],
         ),

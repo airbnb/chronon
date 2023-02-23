@@ -69,7 +69,7 @@ def Aggregations(**agg_dict):
     return agg_dict.values()
 
 
-def DefaultAggregation(keys, sources, operation=Operation.LAST):
+def DefaultAggregation(keys, sources, operation=Operation.LAST, additional_metadata=None):
     aggregate_columns = []
     for source in sources:
         query = utils.get_query(source)
@@ -89,7 +89,8 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST):
     return [
         Aggregation(
             operation=operation,
-            input_column=column) for column in aggregate_columns
+            input_column=column,
+            additional_metadata=additional_metadata) for column in aggregate_columns
     ]
 
 
@@ -111,7 +112,8 @@ def op_to_str(operation: OperationType):
 def Aggregation(input_column: str = None,
                 operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
                 windows: List[ttypes.Window] = None,
-                buckets: List[str] = None) -> ttypes.Aggregation:
+                buckets: List[str] = None,
+                additional_metadata: Dict[str, str] = None) -> ttypes.Aggregation:
     """
     :param input_column:
         Column on which the aggregation needs to be performed.
@@ -137,7 +139,9 @@ def Aggregation(input_column: str = None,
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    return ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
+    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
+    agg.additional_metadata = additional_metadata
+    return agg
 
 
 def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
@@ -240,6 +244,38 @@ Keys {unselected_keys}, are unselected in source
 _ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
 
 
+def _get_op_suffix(operation, argmap):
+    op_str = op_to_str(operation)
+    if (operation in [ttypes.Operation.LAST_K, ttypes.Operation.TOP_K, ttypes.Operation.FIRST_K,
+                      ttypes.Operation.BOTTOM_K]):
+        op_name_suffix = op_str[:-2]
+        arg_suffix = argmap.get("k")
+        return "{}{}".format(op_name_suffix, arg_suffix)
+    else:
+        return op_str
+
+
+def get_output_col_names(aggregation):
+    base_name = f"{aggregation.inputColumn}_{_get_op_suffix(aggregation.operation, aggregation.argMap)}"
+    windowed_names = []
+    if aggregation.windows:
+        for window in aggregation.windows:
+            unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()[0]
+            window_suffix = f"{window.length}{unit}"
+            windowed_names.append(f"{base_name}_{window_suffix}")
+    else:
+        windowed_names = [base_name]
+
+    bucketed_names = []
+    if aggregation.buckets:
+        for bucket in aggregation.buckets:
+            bucketed_names.extend([f"{name}_by_{bucket}" for name in windowed_names])
+    else:
+        bucketed_names = windowed_names
+
+    return bucketed_names
+
+
 def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
@@ -253,6 +289,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
             name: str = None,
+            additional_metadata: Dict[str, str] = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -337,6 +374,10 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
     :type kwargs: Dict[str, str]
+    :param additional_metadata:
+        Additional metadata that does not directly affect feature computation, but is useful to
+        track for management purposes.
+    :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
     """
@@ -385,6 +426,14 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     })
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
+
+    agg_metadata = {}
+    for agg in aggregations:
+        if hasattr(agg, "additional_metadata"):
+            for output_col in get_output_col_names(agg):
+                agg_metadata[output_col] = agg.additional_metadata
+    metadata = {"additional_groupby_metadata": additional_metadata, "additional_agg_metadata": agg_metadata}
+    kwargs.update(metadata)
 
     metadata = ttypes.MetaData(
         name=name,

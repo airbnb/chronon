@@ -2,7 +2,7 @@
   "metaData": {
     "name": "sample_team.event_sample_group_by.v1",
     "online": 1,
-    "customJson": "{\"lag\": 0}",
+    "customJson": "{\"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {\"event_sum_7d\": null, \"event_sum\": null, \"event_approx_percentile\": null}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
     ],
