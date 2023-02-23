@@ -136,6 +136,16 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     None,
     None,
     Some("1.0.4")
+  ),
+  "jackson" -> VersionDependency(
+    Seq(
+      "com.fasterxml.jackson.core" % "jackson-core",
+      "com.fasterxml.jackson.core" % "jackson-databind",
+      "com.fasterxml.jackson.module" %% "jackson-module-scala"
+    ),
+    Some("2.6.7"),
+    Some("2.10.0"),
+    Some("2.12.3")
   )
 )
 
@@ -210,7 +220,10 @@ lazy val online_unshaded = (project in file("online"))
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections")
+    libraryDependencies ++= fromMatrix(scalaVersion.value,
+                                       "jackson",
+                                       "spark-all/provided",
+                                       "scala-parallel-collections")
   )
 
 def cleanSparkMeta(): Unit = {
@@ -242,7 +255,7 @@ lazy val spark_uber = (project in file("spark"))
   .settings(
     sparkBaseSettings,
     crossScalaVersions := Seq(scala211, scala212),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
   )
 
 lazy val spark_embedded = (project in file("spark"))
