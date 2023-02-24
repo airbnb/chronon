@@ -21,6 +21,7 @@ label_part_group_by = GroupBy(
 
 v1 = Join(
     left=test_sources.event_source,
+    output_namespace="sample_namespace",
     right_parts=[
         JoinPart(
             group_by=event_sample_group_by.v1,

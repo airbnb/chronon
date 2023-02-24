@@ -191,6 +191,13 @@ def get_dependencies(
     return [json.dumps(res) for res in result]
 
 
+def get_label_table_dependency() -> str:
+    return json.dumps({
+        "name": "wait_for_{{ join_backfill_table }}",
+        "spec": "{{ join_backfill_table }}"
+    })
+
+
 def wait_for_simple_schema(table, lag, start, end):
     if not table:
         return None

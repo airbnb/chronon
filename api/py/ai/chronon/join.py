@@ -414,6 +414,7 @@ def Join(left: api.Source,
         label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
         label_dependencies = [dep for (source, meta_data) in label_info for dep in
                               utils.get_dependencies(src=source, meta_data=meta_data, lag=lag)]
+        label_dependencies.append(utils.get_label_table_dependency())
         label_metadata = api.MetaData(
             dependencies=utils.dedupe_in_order(left_dependencies + label_dependencies),
             offlineSchedule=label_part.metaData.offlineSchedule

@@ -3,7 +3,9 @@ package ai.chronon.api.test
 import ai.chronon.api.Builders
 import org.junit.Test
 import ai.chronon.api.Extensions._
-import org.junit.Assert.assertEquals
+import org.junit.Assert.{assertEquals, assertTrue}
+
+import java.util.Arrays
 
 class ExtensionsTest {
 
@@ -33,5 +35,12 @@ class ExtensionsTest {
       "chronon",
       metadata.team
     )
+  }
+
+  @Test
+  def testRowIdentifier(): Unit = {
+    val labelPart = Builders.LabelPart();
+    val res = labelPart.rowIdentifier(Arrays.asList("yoyo", "yujia"))
+    assertTrue(res.contains("ds"))
   }
 }
