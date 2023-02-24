@@ -191,11 +191,18 @@ def get_dependencies(
     return [json.dumps(res) for res in result]
 
 
-def get_label_table_dependency() -> str:
-    return json.dumps({
-        "name": "wait_for_{{ join_backfill_table }}",
-        "spec": "{{ join_backfill_table }}"
-    })
+def get_label_table_dependencies(label_part) -> List[str]:
+    label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
+    label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
+    label_dependencies = [dep for (source, meta_data) in label_info for dep in
+                          get_dependencies(src=source, meta_data=meta_data)]
+    label_dependencies.append(
+        json.dumps({
+            "name": "wait_for_{{ join_backfill_table }}",
+            "spec": "{{ join_backfill_table }}/ds={{ ds }}"
+        })
+    )
+    return label_dependencies
 
 
 def wait_for_simple_schema(table, lag, start, end):

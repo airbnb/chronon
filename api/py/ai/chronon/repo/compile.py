@@ -142,7 +142,6 @@ def _set_templated_values(obj, cls, teams_path, team_name):
             label_deps[i] = label_deps[i].replace('{{ join_backfill_table }}',
                                                   utils.output_table_name(obj, full_name=True))
         obj.labelPart.metaData.dependencies = label_deps
-        print(obj.labelPart.metaData.dependencies)
 
 
 def _write_obj(full_output_root: str,

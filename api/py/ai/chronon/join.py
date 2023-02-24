@@ -410,11 +410,7 @@ def Join(left: api.Source,
                           utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
 
     if label_part:
-        label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
-        label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
-        label_dependencies = [dep for (source, meta_data) in label_info for dep in
-                              utils.get_dependencies(src=source, meta_data=meta_data, lag=lag)]
-        label_dependencies.append(utils.get_label_table_dependency())
+        label_dependencies = utils.get_label_table_dependencies(label_part)
         label_metadata = api.MetaData(
             dependencies=utils.dedupe_in_order(left_dependencies + label_dependencies),
             offlineSchedule=label_part.metaData.offlineSchedule
