@@ -2,7 +2,8 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
+import ai.chronon.spark.Extensions._
+import ai.chronon.api._
 import ai.chronon.online.{JoinCodec, SparkConversions}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
@@ -186,6 +187,45 @@ object BootstrapInfo {
            |""".stripMargin
       )
     }
+    def stringify(schema: Array[StructField]): String =
+      SparkConversions.fromChrononSchema(api.StructType("", schema)).pretty
+
+    println("\n[ Finalized Bootstrap Info ]\n")
+    joinParts.foreach { metadata =>
+      println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
+           |Key Schema:
+           |${stringify(metadata.keySchema)}
+           |Value Schema:
+           |${stringify(metadata.valueSchema)}
+           |""".stripMargin)
+    }
+    externalParts.foreach { metadata =>
+      println(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
+           |Key Schema:
+           |${stringify(metadata.keySchema)}
+           |Value Schema:
+           |${stringify(metadata.valueSchema)}
+           |""".stripMargin)
+    }
+    if (derivedSchema.nonEmpty) {
+      println(s"""Bootstrap Info for Derivations
+                 |${stringify(derivedSchema)}
+                 |""".stripMargin)
+    }
+    println(s"""Bootstrap Info for Log Bootstraps
+         |Log Hashes: ${logHashes.keys.prettyInline}
+         |""".stripMargin)
+    tableHashes.foreach {
+      case (_, (schema, _, query)) =>
+        println(s"""Bootstrap Info for Table Bootstraps
+           |Bootstrap Query:
+           |\n${query}\n
+           |Bootstrap Schema:
+           |${stringify(schema)}
+           |""".stripMargin)
+    }
+
+    println("\n[ Finalized Bootstrap Info END ]\n")
 
     bootstrapInfo
   }

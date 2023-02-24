@@ -21,6 +21,10 @@ object Extensions {
         field.dataType.simpleString -> field.name
       }
 
+      if (schemaTuples.isEmpty) {
+        return ""
+      }
+
       // pad the first column so that the second column is aligned vertically
       val padding = schemaTuples.map(_._1.length).max
       schemaTuples
