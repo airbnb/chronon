@@ -203,8 +203,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
               // include only necessary columns. in particular,
               // this excludes columns that are NOT part of Join's output (either from GB or external source)
               val includedColumns = bootstrapDf.columns
-                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash,
-                                                                               Constants.PartitionColumn))
+                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash))
                 .sorted
 
               bootstrapDf = bootstrapDf
@@ -212,7 +211,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
                 // TODO: allow customization of deduplication logic
                 .dropDuplicates(part.keys(joinConf))
 
-              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf) :+ Constants.PartitionColumn)
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf))
               // as part of the left outer join process, we update and maintain matched_hashes for each record
               // that summarizes whether there is a join-match for each bootstrap source.
               // later on we use this information to decide whether we still need to re-run the backfill logic

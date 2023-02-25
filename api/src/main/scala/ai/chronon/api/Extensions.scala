@@ -630,14 +630,20 @@ object Extensions {
       ThriftJsonCodec.md5Digest(newPart)
     }
 
-    def keys(join: Join): Seq[String] =
-      if (bootstrapPart.isSetKeyColumns) {
+    def keys(join: Join): Seq[String] = {
+      val definedKeys = if (bootstrapPart.isSetKeyColumns) {
         ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(bootstrapPart.keyColumns)
       } else if (join.isSetRowIds) {
         ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.getRowIds)
       } else {
         throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
       }
+      if (definedKeys.contains(Constants.PartitionColumn)) {
+        definedKeys
+      } else {
+        definedKeys :+ Constants.PartitionColumn
+      }
+    }
 
     def isLogBootstrap(join: Join): Boolean = {
       (bootstrapPart.table == join.metaData.loggedTable) && !(bootstrapPart.isSetQuery && bootstrapPart.getQuery.isSetSelects)
