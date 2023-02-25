@@ -309,7 +309,8 @@ case class TableUtils(sparkSession: SparkSession) {
                      outputPartitionRange: PartitionRange,
                      inputTables: Option[Seq[String]] = None,
                      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
-                     inputToOutputShift: Int = 0): Option[Seq[PartitionRange]] = {
+                     inputToOutputShift: Int = 0,
+                     skipBeginningHoles: Boolean = true): Option[Seq[PartitionRange]] = {
 
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(_.map(table =>
@@ -334,7 +335,12 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       validPartitionRange.start
     }
-    val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
+    val fillablePartitions =
+      if (skipBeginningHoles) {
+        validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
+      } else {
+        validPartitionRange.partitions.toSet
+      }
     val outputMissing = fillablePartitions -- outputExisting
     val allInputExisting = inputTables
       .map { tables =>

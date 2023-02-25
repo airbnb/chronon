@@ -114,10 +114,13 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         }
       val rightRange = leftRange.shift(shiftDays)
       try {
-        val unfilledRanges =
-          tableUtils
-            .unfilledRanges(partTable, rightRange, Some(Seq(joinConf.left.table)), inputToOutputShift = shiftDays)
-            .getOrElse(Seq())
+        val unfilledRanges = tableUtils
+          .unfilledRanges(partTable,
+                          rightRange,
+                          Some(Seq(joinConf.left.table)),
+                          inputToOutputShift = shiftDays,
+                          skipBeginningHoles = false)
+          .getOrElse(Seq())
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
         if (partitionCount > 0) {
           val start = System.currentTimeMillis()
