@@ -61,8 +61,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .map(_.joinPart)
       .parallel
       .flatMap { part =>
-        val (unfilledLeftDf, validHashes) = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
-        computeRightTable(unfilledLeftDf, part, leftRange, validHashes).map(df => part -> df)
+        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
+        computeRightTable(unfilledLeftDf, part, leftRange).map(df => part -> df)
       }
 
     // combine bootstrap table and join part tables
@@ -243,11 +243,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
    */
   private def findUnfilledRecords(bootstrapDf: DataFrame,
                                   joinPart: JoinPart,
-                                  bootstrapInfo: BootstrapInfo): (DataFrame, Seq[String]) = {
+                                  bootstrapInfo: BootstrapInfo): DataFrame = {
 
     if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
-      return (bootstrapDf, Seq())
+      return bootstrapDf
     }
 
     val requiredFields =
@@ -266,6 +266,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
     // Unfilled records are those that are not marked by any of the valid hashes, and thus require backfill
     val filterCondition = not(contains_any(col(Constants.MatchedHashes), typedLit[Seq[String]](validHashes)))
-    (bootstrapDf.where(filterCondition), validHashes)
+    bootstrapDf.where(filterCondition)
   }
 }

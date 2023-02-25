@@ -83,23 +83,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame,
-                        joinPart: JoinPart,
-                        leftRange: PartitionRange,
-                        validHashes: Seq[String]): Option[DataFrame] = {
+  def computeRightTable(leftDf: DataFrame, joinPart: JoinPart, leftRange: PartitionRange): Option[DataFrame] = {
 
-    // Archive and recompute the part table if valid_hashes has changed as result of a change of the bootstrap_parts
-    val joinPartTableProps = tableProps + (Constants.ValidHashes -> validHashes.mkString(","))
     val partTable = joinConf.partOutputTable(joinPart)
-    for (
-      tblProps <- tableUtils.getTableProperties(partTable);
-      validHashesFromTable <- tblProps.get(Constants.ValidHashes)
-    ) yield {
-      if (validHashesFromTable != validHashes.mkString(",")) {
-        tableUtils.archiveOrDropTableIfExists(partTable, None)
-      }
-    }
-
     val partMetrics = Metrics.Context(metrics, joinPart)
     if (joinPart.groupBy.aggregations == null) {
       // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
@@ -131,7 +117,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, joinPartTableProps)
+                filledDf.get.save(partTable, tableProps)
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
