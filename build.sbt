@@ -1,5 +1,6 @@
 import sbt.Keys._
 import sbt.Test
+import sbtassembly.AssemblyPlugin.autoImport.ShadeRule
 
 import scala.sys.process._
 
@@ -73,7 +74,7 @@ lazy val releaseSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber)
+  .aggregate(shaded_spark_sql, api, aggregator, online, spark_uber)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -170,7 +171,50 @@ def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
     if (provided) result.map(_ % "provided") else result
   }
 
+val shaded_spark_sql_publish = Project(
+  id = "shaded_spark_sql",
+  base = file("shaded_spark_sql")
+).aggregate(shaded_spark_sql)
+  .settings(
+    publishSettings,
+    crossScalaVersions := supportedVersions,
+    Compile / packageBin := (shaded_spark_sql / assembly).value
+  )
+
+lazy val shaded_spark_sql = Project(
+  id = "shaded_spark_sql_assembly",
+  base = file("shaded_spark_sql_assembly")
+).enablePlugins(AssemblyPlugin)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    assembly / test := {},
+    assemblyPackageScala / assembleArtifact := false,
+    assembly / assemblyShadeRules := Seq(
+      ShadeRule.rename("com.fasterxml.jackson.**" -> "ai.chronon.@0").inAll,
+      ShadeRule.rename("org.apache.avro.**" -> "ai.chronon.@0").inAll,
+      ShadeRule.rename("com.google.common.**" -> "ai.chronon.@0").inAll,
+      ShadeRule.zap("org.glassfish.**").inAll,
+      ShadeRule.zap("org.json4s.**").inAll,
+      ShadeRule.zap("io.netty.**").inAll,
+      ShadeRule.zap("io.airlift.**").inAll,
+      ShadeRule.zap("org.apache.arrow.**").inAll,
+      ShadeRule.zap("org.apache.curator.**").inAll,
+      ShadeRule.zap("org.apache.htrace.**").inAll,
+      ShadeRule.zap("org.apache.http.**").inAll,
+      ShadeRule.zap("org.apache.ivy.**").inAll,
+      ShadeRule.zap("org.apache.jute.**").inAll,
+      ShadeRule.zap("org.apache.kerby.**").inAll,
+      ShadeRule.zap("org.apache.orc.**").inAll,
+      ShadeRule.zap("org.apache.parquet.**").inAll,
+      ShadeRule.zap("org.apache.xbean.**").inAll,
+      ShadeRule.zap("org.apache.yetus.**").inAll,
+      ShadeRule.zap("org.apache.zookeeper.**").inAll
+    ),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-sql")
+  )
+
 lazy val api = project
+  .dependsOn(shaded_spark_sql_publish)
   .settings(
     publishSettings,
     Compile / sourceGenerators += Def.task {
@@ -180,13 +224,12 @@ lazy val api = project
     }.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
-      fromMatrix(scalaVersion.value, "spark-sql/provided") ++
-        Seq(
-          "org.apache.thrift" % "libthrift" % "0.13.0",
-          "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-          "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
-          "com.novocode" % "junit-interface" % "0.11" % "test"
-        )
+      Seq(
+        "org.apache.thrift" % "libthrift" % "0.13.0",
+        "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+        "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+        "com.novocode" % "junit-interface" % "0.11" % "test"
+      )
   )
 
 lazy val aggregator = project

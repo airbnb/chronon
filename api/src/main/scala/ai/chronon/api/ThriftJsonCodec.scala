@@ -1,7 +1,7 @@
 package ai.chronon.api
 
 import ai.chronon.api.Extensions.StringsOps
-import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
+import ai.chronon.com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
 import org.apache.thrift.protocol.{TCompactProtocol, TSimpleJSONProtocol}
 import org.apache.thrift.{TBase, TDeserializer, TSerializer}
 
