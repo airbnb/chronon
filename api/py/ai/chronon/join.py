@@ -257,7 +257,7 @@ def LabelPart(labels: List[api.JoinPart],
 def Derivation(name: str, expression: str) -> api.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from joinPart and externalParts,
-    and saves the result as derived columns. The results will available both in online fetching response map,
+    and saves the result as derived columns. The results will be available both in online fetching response map,
     and in offline Hive table.
 
     joinPart column names are automatically constructed according to the below convention
@@ -265,11 +265,13 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     prefix, window and bucket are optional. You can find the type information of columns using the analyzer tool.
 
     externalPart column names are automatically constructed according to the below convention
-    `ext_{external_source_name}_{value_column}`
+    `ext_{external_source_name}_{value_column}`.
     Types are defined along with the schema by users for external sources.
 
-    If both name and expression are set to "*", then every raw column will be included along with the derived
-    * columns.
+    Furthermore, since contextualSource is a special type of externalSource, any contextual columns can be referenced
+    in the SQL either in their "key" format (without prefix), or in their value format (with prefix `ext_contextual_`).
+
+    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
 
     :param name: output column name of the SQL expression
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns

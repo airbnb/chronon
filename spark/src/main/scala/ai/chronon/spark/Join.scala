@@ -97,33 +97,48 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       }
     }
 
-    // for each columns in the base join output
-    // 1. if it is a base column, discard it unless it is in the projection output
-    // 2. if it is not a base column, if it is in the projection output, do coalesce
-    // 3. if it is not a base column, and it is not in the projection output, simply include it in the output
     val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
-    val projectionOutputs = projections.map(_._1).toSet
-    val baseJoinColumns = enrichedBaseDf.columns.toSet
+    val derivationOutputColumns = projections.map(_._1).toSet
+    val baseOutputColumns = enrichedBaseDf.columns.toSet
 
-    val finalOutputColumns = enrichedBaseDf.columns.flatMap { c =>
-      if (bootstrapInfo.baseValueNames.contains(c)) {
-        None
-      } else if (projectionOutputs.contains(c)) {
-        None // handled below
-      } else {
-        Some(col(c))
-      }
-    } ++ projections
-      .flatMap {
-        case (name, expression) =>
-          if (name == expression && name.startsWith(contextualPrefix)) {
-            None
-          } else if (baseJoinColumns.contains(name)) {
-            Some(coalesce(col(name), expr(expression)).as(name))
-          } else {
-            Some(expr(expression).as(name))
+    val finalOutputColumns =
+      /*
+       * Loop through all columns in the base join output:
+       * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
+       *    derived columns again - derivation is a projection from all value columns to desired derived columns
+       * 2. If it is matching one of the projected output columns, then this is a boostrapped derivation case, we also
+       *    skip it here and it will be handled later as loop through derivations to perform coalescing
+       * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
+       *    arbitrary columns selected from left.
+       */
+      enrichedBaseDf.columns.flatMap { c =>
+        if (bootstrapInfo.baseValueNames.contains(c)) {
+          None
+        } else if (derivationOutputColumns.contains(c)) {
+          None // handled below
+        } else {
+          Some(col(c))
+        }
+      } ++
+        /*
+         * Loop through all clauses in derivation projections:
+         * 1. if it has the distinct contextualPrefix and is simply a reselection (where name & expr match), we skip it
+         *    as we don't want contextual fields to be doubly selected, both as a key and as a value
+         * 2. if the base output already has a column with a matching derivation column name, this is a bootstrapped
+         *    derivation case (see case 2 above), then we do the coalescing to achieve the bootstrap behavior.
+         * 3. Else, we do the standard projection.
+         */
+        projections
+          .flatMap {
+            case (name, expression) =>
+              if (name == expression && name.startsWith(contextualPrefix)) {
+                None
+              } else if (baseOutputColumns.contains(name)) {
+                Some(coalesce(col(name), expr(expression)).as(name))
+              } else {
+                Some(expr(expression).as(name))
+              }
           }
-      }
 
     enrichedBaseDf.select(finalOutputColumns: _*)
   }
