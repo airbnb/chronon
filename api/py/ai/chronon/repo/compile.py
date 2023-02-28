@@ -136,6 +136,10 @@ def _set_templated_values(obj, cls, teams_path, team_name):
                 table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
                 table = table.replace('{{ db }}', namespace)
             bootstrap.table = table
+    if cls == api.Join and obj.labelPart:
+        obj.labelPart.metaData.dependencies = [label_dep.replace('{{ join_backfill_table }}',
+                                                                 utils.output_table_name(obj, full_name=True))
+                                               for label_dep in obj.labelPart.metaData.dependencies]
 
 
 def _write_obj(full_output_root: str,

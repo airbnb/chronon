@@ -611,9 +611,12 @@ object Extensions {
 
     // a list of columns which can identify a row on left, use user specified columns by default
     def rowIdentifier(userRowId: util.List[String] = null): Array[String] = {
-      if (userRowId != null && !userRowId.isEmpty)
-        userRowId.toScala.toArray
-      else
+      if (userRowId != null && !userRowId.isEmpty) {
+        if (!userRowId.contains(Constants.PartitionColumn))
+          userRowId.toScala.toArray ++ Array(Constants.PartitionColumn)
+        else
+          userRowId.toScala.toArray
+      } else
         leftKeyCols ++ Array(Constants.PartitionColumn)
     }
   }
