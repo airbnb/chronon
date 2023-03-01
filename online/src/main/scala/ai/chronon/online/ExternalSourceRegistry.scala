@@ -40,6 +40,7 @@ class ExternalSourceRegistry extends Serializable {
     // we make issue one batch request per external source and flatten out it later
     val responsesByNameF: Iterable[Future[Seq[Response]]] = requests
       .groupBy(_.name)
+      .par
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
