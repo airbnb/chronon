@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.{DoubleType, FloatType, MapType}
+import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
 
 import java.util
 
@@ -63,7 +63,8 @@ object Comparison {
         }
     // double columns need to be compared approximately
     val doubleCols = a.schema.fields
-      .filter(field => field.dataType == DoubleType || field.dataType == FloatType)
+      .filter(field =>
+        field.dataType == DoubleType || field.dataType == FloatType || field.dataType.isInstanceOf[DecimalType])
       .map(_.name)
       .toSet
     finalDf = finalDf.select(colOrder: _*)

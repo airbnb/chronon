@@ -143,7 +143,8 @@ object Builders {
               externalParts: Seq[ExternalPart] = null,
               labelPart: LabelPart = null,
               bootstrapParts: Seq[BootstrapPart] = null,
-              rowIds: Seq[String] = null): Join = {
+              rowIds: Seq[String] = null,
+              derivations: Seq[Derivation] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
@@ -157,6 +158,8 @@ object Builders {
         result.setBootstrapParts(bootstrapParts.asJava)
       if (rowIds != null)
         result.setRowIds(rowIds.asJava)
+      if (derivations != null)
+        result.setDerivations(derivations.asJava)
       result
     }
   }
@@ -286,4 +289,21 @@ object Builders {
       bootstrapPart
     }
   }
+
+  object Derivation {
+    def apply(
+        name: String = null,
+        expression: String = null
+    ): Derivation = {
+      val derivation = new Derivation()
+      if (name != null) {
+        derivation.setName(name)
+      }
+      if (derivation != null) {
+        derivation.setExpression(expression)
+      }
+      derivation
+    }
+  }
+
 }

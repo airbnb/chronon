@@ -254,6 +254,34 @@ def LabelPart(labels: List[api.JoinPart],
     )
 
 
+def Derivation(name: str, expression: str) -> api.Derivation:
+    """
+    Derivation allows arbitrary SQL select clauses to be computed using columns from joinPart and externalParts,
+    and saves the result as derived columns. The results will be available both in online fetching response map,
+    and in offline Hive table.
+
+    joinPart column names are automatically constructed according to the below convention
+    `{join_part_prefix}_{group_by_name}_{input_column_name}_{aggregation_operation}_{window}_{by_bucket}`
+    prefix, window and bucket are optional. You can find the type information of columns using the analyzer tool.
+
+    externalPart column names are automatically constructed according to the below convention
+    `ext_{external_source_name}_{value_column}`.
+    Types are defined along with the schema by users for external sources.
+
+    Furthermore, since contextualSource is a special type of externalSource, any contextual columns can be referenced
+    in the SQL either in their "key" format (without prefix), or in their value format (with prefix `ext_contextual_`).
+
+    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
+
+    :param name: output column name of the SQL expression
+    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
+    """
+    return api.Derivation(
+        name=name, expression=expression
+    )
+
+
 def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
     """
     Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
@@ -294,6 +322,7 @@ def Join(left: api.Source,
          bootstrap_parts: List[api.BootstrapPart] = None,
          bootstrap_from_log: bool = False,
          label_part: api.LabelPart = None,
+         derivations: List[api.Derivation] = None,
          **kwargs
          ) -> api.Join:
     """
@@ -476,5 +505,6 @@ def Join(left: api.Source,
         onlineExternalParts=online_external_parts,
         bootstrapParts=bootstrap_parts,
         rowIds=row_ids,
-        labelPart=label_part
+        labelPart=label_part,
+        derivations=derivations
     )

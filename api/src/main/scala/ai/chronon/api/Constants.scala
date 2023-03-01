@@ -22,7 +22,6 @@ object Constants {
   val SchemaHash = "schema_hash"
   val BootstrapHash = "bootstrap_hash"
   val MatchedHashes = "matched_hashes"
-  val ValidHashes = "valid_hashes"
   val ChrononDynamicTable = "chronon_dynamic_table"
   val ChrononOOCTable: String = "chronon_ooc_table"
   val StreamingInputTable = "input_table"

@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
@@ -14,6 +15,30 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     extends BaseJoin(joinConf, endPartition, tableUtils) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
+
+  /*
+   * For all external fields that are not already populated during the bootstrap step, fill in NULL.
+   * This is so that if any derivations depend on the these external fields, they will still pass and not complain
+   * about missing columns.
+   */
+  private def enrichExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+
+    val keySchema = bootstrapInfo.externalParts.flatMap(_.keySchema)
+    // exclude the value fields of contextual source since they are identical to keys except naming
+    // these are added on-the-fly during derivation phase
+    val valueSchema = bootstrapInfo.externalParts.filterNot(_.externalPart.isContextual).flatMap(_.valueSchema)
+    val externalFields = SparkConversions.fromChrononSchema(StructType("", (keySchema ++ valueSchema).toArray))
+
+    externalFields.foldLeft(bootstrapDf) {
+      case (df, field) => {
+        if (df.columns.contains(field.name)) {
+          df
+        } else {
+          df.withColumn(field.name, lit(null).cast(field.dataType))
+        }
+      }
+    }
+  }
 
   override def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
@@ -36,8 +61,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .map(_.joinPart)
       .parallel
       .flatMap { part =>
-        val (unfilledLeftDf, validHashes) = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
-        computeRightTable(unfilledLeftDf, part, leftRange, validHashes).map(df => part -> df)
+        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
+        computeRightTable(unfilledLeftDf, part, leftRange).map(df => part -> df)
       }
 
     // combine bootstrap table and join part tables
@@ -51,9 +76,71 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalDf = joinedDf.selectExpr(outputColumns: _*)
+    val finalBaseDf = joinedDf.selectExpr(outputColumns: _*)
+    val finalDf = applyDerivation(finalBaseDf, bootstrapInfo)
     finalDf.explain()
     finalDf
+  }
+
+  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
+      return baseDf
+    }
+
+    // ensure that ext_contextual_xxx fields can also be used as base even though these columns are not materialized
+    val contextualFields = bootstrapInfo.externalParts.find(_.externalPart.isContextual).toSeq.flatMap(_.keySchema)
+    val contextualPrefix = s"${Constants.ExternalPrefix}_${Constants.ContextualSourceName}"
+    val enrichedBaseDf = contextualFields.foldLeft(baseDf) {
+      case (df, field) => {
+        val valueName = s"${contextualPrefix}_${field.name}"
+        df.withColumn(valueName, col(field.name))
+      }
+    }
+
+    val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
+    val derivationOutputColumns = projections.map(_._1).toSet
+    val baseOutputColumns = enrichedBaseDf.columns.toSet
+
+    val finalOutputColumns =
+      /*
+       * Loop through all columns in the base join output:
+       * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
+       *    derived columns again - derivation is a projection from all value columns to desired derived columns
+       * 2. If it is matching one of the projected output columns, then this is a boostrapped derivation case, we also
+       *    skip it here and it will be handled later as loop through derivations to perform coalescing
+       * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
+       *    arbitrary columns selected from left.
+       */
+      enrichedBaseDf.columns.flatMap { c =>
+        if (bootstrapInfo.baseValueNames.contains(c)) {
+          None
+        } else if (derivationOutputColumns.contains(c)) {
+          None // handled below
+        } else {
+          Some(col(c))
+        }
+      } ++
+        /*
+         * Loop through all clauses in derivation projections:
+         * 1. if it has the distinct contextualPrefix and is simply a reselection (where name & expr match), we skip it
+         *    as we don't want contextual fields to be doubly selected, both as a key and as a value
+         * 2. if the base output already has a column with a matching derivation column name, this is a bootstrapped
+         *    derivation case (see case 2 above), then we do the coalescing to achieve the bootstrap behavior.
+         * 3. Else, we do the standard projection.
+         */
+        projections
+          .flatMap {
+            case (name, expression) =>
+              if (name == expression && name.startsWith(contextualPrefix)) {
+                None
+              } else if (baseOutputColumns.contains(name)) {
+                Some(coalesce(col(name), expr(expression)).as(name))
+              } else {
+                Some(expr(expression).as(name))
+              }
+          }
+
+    enrichedBaseDf.select(finalOutputColumns: _*)
   }
 
   /*
@@ -73,7 +160,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
       joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
 
     if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
-      return leftDf
+      return enrichExternalFields(leftDf, bootstrapInfo)
     }
 
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
@@ -122,7 +209,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
-              if (part.isLogTable(joinConf)) {
+              if (part.isLogBootstrap(joinConf)) {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
               } else {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))
@@ -130,16 +217,16 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
               // include only necessary columns. in particular,
               // this excludes columns that are NOT part of Join's output (either from GB or external source)
-              val includedColumns = bootstrapDf.columns.filter(
-                bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash,
-                                                                       Constants.PartitionColumn))
+              val includedColumns = bootstrapDf.columns
+                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash))
+                .sorted
 
               bootstrapDf = bootstrapDf
                 .select(includedColumns.map(col): _*)
                 // TODO: allow customization of deduplication logic
                 .dropDuplicates(part.keys(joinConf))
 
-              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf) :+ Constants.PartitionColumn)
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf))
               // as part of the left outer join process, we update and maintain matched_hashes for each record
               // that summarizes whether there is a join-match for each bootstrap source.
               // later on we use this information to decide whether we still need to re-run the backfill logic
@@ -150,8 +237,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
           }
         }
 
+        // include all external fields if not already bootstrapped
+        val enrichedDf = enrichExternalFields(joinedDf, bootstrapInfo)
+
         // set autoExpand = true since log table could be a bootstrap part
-        joinedDf.save(bootstrapTable, tableProps, autoExpand = true)
+        enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)
       })
 
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
@@ -168,11 +258,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
    */
   private def findUnfilledRecords(bootstrapDf: DataFrame,
                                   joinPart: JoinPart,
-                                  bootstrapInfo: BootstrapInfo): (DataFrame, Seq[String]) = {
+                                  bootstrapInfo: BootstrapInfo): DataFrame = {
 
     if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
-      return (bootstrapDf, Seq())
+      return bootstrapDf
     }
 
     val requiredFields =
@@ -191,6 +281,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
     // Unfilled records are those that are not marked by any of the valid hashes, and thus require backfill
     val filterCondition = not(contains_any(col(Constants.MatchedHashes), typedLit[Seq[String]](validHashes)))
-    (bootstrapDf.where(filterCondition), validHashes)
+    bootstrapDf.where(filterCondition)
   }
 }
