@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{ArrayBlockingQueue, Executors, ThreadPoolExecutor, TimeUnit}
 import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
@@ -24,8 +24,13 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  implicit val executionContext: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(Runtime.getRuntime.availableProcessors()))
+   val kvStoreExecutor = new ThreadPoolExecutor(2, // corePoolSize
+    1000, // maxPoolSize
+    60, // keepAliveTime
+    TimeUnit.SECONDS, // keep alive time units
+    new ArrayBlockingQueue[Runnable](1000))
+
+  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(kvStoreExecutor)
 
   def create(dataset: String): Unit
 
