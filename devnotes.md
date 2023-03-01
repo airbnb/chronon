@@ -213,8 +213,17 @@ This command will take into the account of `version.sbt` and handles a series of
 4. Push the local release commits (DO NOT SQUASH), and the new tag created from step 1 to Github.
      1. chronon repo disallow push to master directly, so instead push commits to a branch `git push origin master:your-name--release-xxx`
      2. your PR should contain exactly two commits, 1 setting the release version, 1 setting the new snapshot version. 
-     3. make sure to use **Rebase pull request** instead of the regular Merge or Squash options when merging the PR. 
-
+     3. make sure to use **Rebase pull request** instead of the regular Merge or Squash options when merging the PR.
+5. Push release tag to master branch
+     1. tag new version to release commit `Setting version to 0.0.xx`. If not already tagged, can be added by 
+     ```
+       git tag -fa v0.0.xx 0293050a
+     ```
+     2. push tag to master 
+      ```
+        git push --tags
+      ```
+     3. New tag should be available here  - https://github.com/airbnb/chronon/tags
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
 Currently the repo is not public and the run.py script can't reach it.
