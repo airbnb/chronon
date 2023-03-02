@@ -15,7 +15,8 @@ v1 = GroupBy(
         Aggregation(
             input_column="event",
             operation=Operation.SUM,
-            windows=[Window(length=7, timeUnit=TimeUnit.DAYS)]
+            windows=[Window(length=7, timeUnit=TimeUnit.DAYS)],
+            additional_metadata={"DETAILED_TYPE": "CONTINUOUS"}
         ),
         Aggregation(
             input_column="event",
@@ -28,4 +29,5 @@ v1 = GroupBy(
     ],
     online=True,
     output_namespace="sample_namespace",
+    additional_metadata={"TO_DEPRECATE": True}
 )

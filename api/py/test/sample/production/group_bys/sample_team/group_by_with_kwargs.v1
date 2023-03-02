@@ -2,7 +2,7 @@
   "metaData": {
     "name": "sample_team.group_by_with_kwargs.v1",
     "online": 1,
-    "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {\"event_sum\": null, \"event_approx_percentile\": null, \"event_sum_7d\": null}}",
+    "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
       "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"

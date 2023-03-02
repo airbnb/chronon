@@ -429,7 +429,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
 
     agg_metadata = {}
     for agg in aggregations:
-        if hasattr(agg, "additional_metadata"):
+        if hasattr(agg, "additional_metadata") and agg.additional_metadata:
             for output_col in get_output_col_names(agg):
                 agg_metadata[output_col] = agg.additional_metadata
     metadata = {"additional_groupby_metadata": additional_metadata, "additional_agg_metadata": agg_metadata}
