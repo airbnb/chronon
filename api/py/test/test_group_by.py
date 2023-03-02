@@ -202,9 +202,6 @@ def test_additional_metadata():
         aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
         additional_metadata={"to_deprecate": True}
     )
-    print("++++++++++++++++++++++++++")
-    print(gb.metaData.customJson)
-    print("++++++++++++++++++++++++++")
     assert json.loads(gb.metaData.customJson)['additional_groupby_metadata']['to_deprecate']
 
 
