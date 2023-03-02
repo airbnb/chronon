@@ -24,13 +24,7 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  private def kvStoreExecutor: ThreadPoolExecutor = new ThreadPoolExecutor(2, // corePoolSize
-    1000, // maxPoolSize
-    60, // keepAliveTime
-    TimeUnit.SECONDS, // keep alive time units
-    new ArrayBlockingQueue[Runnable](1000))
-
-  implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(kvStoreExecutor)
+  implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext
 
   def create(dataset: String): Unit
 
@@ -117,12 +111,16 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
+object ExternalSourceHandler {
+  private[ExternalSourceHandler] val executor = FlexibleExecutionContext.buildExecutionContext
+}
+
 // user facing class that needs to be implemented for external sources defined in a join
 // Chronon issues the request in parallel to groupBy fetches.
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
 abstract class ExternalSourceHandler extends Serializable {
-  implicit lazy val executionContext: ExecutionContext = ExecutionContext.global
+  implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
 }
 

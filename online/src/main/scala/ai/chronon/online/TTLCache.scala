@@ -5,11 +5,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
 
 object TTLCache {
-  private[TTLCache] val executor = new ThreadPoolExecutor(2, // corePoolSize
-                                                          1000, // maxPoolSize
-                                                          60, // keepAliveTime
-                                                          TimeUnit.SECONDS, // keep alive time units
-                                                          new ArrayBlockingQueue[Runnable](1000))
+  private[TTLCache] val executor = FlexibleExecutionContext.buildExecutor
 }
 // can continuously grow, only used for schemas
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh

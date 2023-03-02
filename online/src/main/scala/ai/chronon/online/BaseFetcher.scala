@@ -357,8 +357,8 @@ class BaseFetcher(kvStore: KVStore,
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("overall.latency.millis", System.currentTimeMillis() - startTimeMs)
-              ctx.increment("overall.request.count")
+              ctx.histogram("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq
