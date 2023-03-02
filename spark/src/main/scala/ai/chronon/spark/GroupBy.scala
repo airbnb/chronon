@@ -522,16 +522,17 @@ object GroupBy {
     metaColumns ++= timeMapping
 
     val partitionConditions = intersectedRange.map(_.whereClauses).getOrElse(Seq.empty)
-
+    val selectsColumns = if (Option(source.query.selects).isEmpty || source.query.selects.isEmpty) null else source.query.selects.toScala
     println(s"""
          |Rendering source query:
          |   intersected/effective scan range: $intersectedRange
          |   partitionConditions: $partitionConditions
          |   metaColumns: $metaColumns
+         |   selectsColumns: $selectsColumns
          |""".stripMargin)
 
     val query = api.QueryUtils.build(
-      Option(source.query.selects).map(_.toScala).orNull,
+      selectsColumns,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)

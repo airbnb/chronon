@@ -187,7 +187,7 @@ Mismatched columns among sources [1, {i+2}], Difference: {column_diff}
 
     # all keys should be present in the selected columns
     unselected_keys = set(keys) - first_source_columns
-    assert not unselected_keys, f"""
+    assert (not unselected_keys) or (not first_source_columns), f"""
 Keys {unselected_keys}, are unselected in source
 """
 
@@ -353,9 +353,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         if query.selects is None:
             query.selects = {}
         for col in required_columns:
-            if col not in query.selects:
+            if query.selects and col not in query.selects:
                 query.selects[col] = col
-        if 'ts' in query.selects:  # ts cannot be in selects.
+        if query.selects and 'ts' in query.selects:  # ts cannot be in selects.
             ts = query.selects['ts']
             del query.selects['ts']
             if query.timeColumn is None:
