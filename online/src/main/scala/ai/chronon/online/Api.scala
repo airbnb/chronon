@@ -24,7 +24,7 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-   val kvStoreExecutor = new ThreadPoolExecutor(2, // corePoolSize
+  private def kvStoreExecutor: ThreadPoolExecutor = new ThreadPoolExecutor(2, // corePoolSize
     1000, // maxPoolSize
     60, // keepAliveTime
     TimeUnit.SECONDS, // keep alive time units
