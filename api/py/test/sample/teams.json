@@ -4,6 +4,7 @@
             "source": "chronon"
         },
         "common_env": {
+            "VERSION": "latest",
             "SPARK_SUBMIT_PATH": "[TODO]/path/to/spark-submit",
             "JOB_MODE": "local[*]",
             "HADOOP_DIR": "[STREAMING-TODO]/path/to/folder/containing",

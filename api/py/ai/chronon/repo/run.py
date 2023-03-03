@@ -137,6 +137,8 @@ def download_jar(version, jar_type='uber', release_tag=None, spark_version="2.4.
     print("Downloading jar from url: " + base_url)
     jar_path = os.environ.get('CHRONON_JAR_PATH', None)
     if jar_path is None:
+        if version == 'latest':
+            version = None
         if version is None:
             metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
             meta_tree = ET.fromstring(metadata_content)
@@ -301,7 +303,7 @@ if __name__ == "__main__":
     parser.add_argument('--online-class',
                         help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
                         default=os.environ.get('CHRONON_ONLINE_CLASS', None))
-    parser.add_argument('--version', help='Chronon version to use.', default=None)
+    parser.add_argument('--version', help='Chronon version to use.', default=os.environ.get('VERSION', None)),
     parser.add_argument('--spark-version', help='Spark version to use for downloading jar.',
                         default=os.environ.get('SPARK_VERSION', '2.4.0')),
     parser.add_argument('--spark-submit-path',
