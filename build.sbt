@@ -271,6 +271,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
+    crossScalaVersions := Seq(scala211, scala212),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
