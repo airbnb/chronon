@@ -14,15 +14,15 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
     extends Serializable {
-  type DerivationFunc = (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef]
+  type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
   case class SchemaAndDeriveFunc(valueSchema: StructType,
-                                 derivationFunc: (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef])
+                                 derivationFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any])
 
   // We want the same branch logic to construct both schema and derivation
   // Conveniently, this also removes branching logic from hot path of derivation
   @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc =
     if (conf.join == null || conf.join.derivations == null) {
-      SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, AnyRef], values: Map[String, AnyRef]) => values })
+      SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, Any], values: Map[String, Any]) => values })
     } else {
       def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
         SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
@@ -34,7 +34,7 @@ case class JoinCodec(conf: JoinOps,
           } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d =>
             StructField(d.name, baseValueSchema.typeOf(d.expression).get)
           },
-          { case (_: Map[String, AnyRef], values: Map[String, AnyRef]) => conf.applyRenameOnlyDerivation(values) }
+          { case (_: Map[String, Any], values: Map[String, Any]) => conf.applyRenameOnlyDerivation(values) }
         )
       } else {
         val expressions = if (conf.derivationsContainStar) {
@@ -44,14 +44,14 @@ case class JoinCodec(conf: JoinOps,
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
-            case (keys: Map[String, AnyRef], values: Map[String, AnyRef]) =>
+            case (keys: Map[String, Any], values: Map[String, Any]) =>
               catalystUtil.performSql(keys ++ values)
           }
         )
       }
     }
   @transient lazy val valueSchema: StructType = valueSchemaAndDeriveFunc.valueSchema
-  @transient lazy val deriveFunc: (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef] =
+  @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     valueSchemaAndDeriveFunc.derivationFunc
   @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
 

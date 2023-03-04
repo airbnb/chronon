@@ -30,7 +30,7 @@ object CatalystUtil {
 
 }
 
-class CatalystUtil(expressions: Seq[(String, String)], inputSchema: StructType) {
+class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
   private val sessionTable = s"q${math.abs(selectClauses.hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
   private val query = s"SELECT $selectClauses FROM $sessionTable"
@@ -43,13 +43,13 @@ class CatalystUtil(expressions: Seq[(String, String)], inputSchema: StructType) 
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
   private val inputEncoder = SparkInternalRowConversions.to(SparkConversions.fromChrononSchema(inputSchema))
 
-  def performSql(values: Map[String, AnyRef]): Map[String, AnyRef] = {
+  def performSql(values: Map[String, Any]): Map[String, Any] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
     iteratorWrapper.put(internalRow)
     while (sparkSQLTransformerBuffer.hasNext) {
       val resultInternalRow = sparkSQLTransformerBuffer.next()
       val outputVal = outputDecoder(resultInternalRow)
-      return Option(outputVal).map(_.asInstanceOf[Map[String, AnyRef]]).orNull
+      return Option(outputVal).map(_.asInstanceOf[Map[String, Any]]).orNull
     }
     null
   }
