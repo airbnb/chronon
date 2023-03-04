@@ -21,7 +21,7 @@ case class JoinCodec(conf: JoinOps,
   // We want the same branch logic to construct both schema and derivation
   // Conveniently, this also removes branching logic from hot path of derivation
   @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc =
-    if (conf.join.derivations == null) {
+    if (conf.join == null || conf.join.derivations == null) {
       SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, AnyRef], values: Map[String, AnyRef]) => values })
     } else {
       def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
@@ -45,7 +45,7 @@ case class JoinCodec(conf: JoinOps,
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, AnyRef], values: Map[String, AnyRef]) =>
-              conf.applyRenameOnlyDerivation(keys ++ values)
+              catalystUtil.performSql(keys ++ values)
           }
         )
       }

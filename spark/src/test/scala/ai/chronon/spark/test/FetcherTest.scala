@@ -368,7 +368,10 @@ class FetcherTest extends TestCase {
                                    namespace = namespace,
                                    team = "chronon",
                                    consistencySamplePercent = 30),
-      derivations = Seq(Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"))
+      derivations = Seq(
+        Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
+        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
+      )
     )
     joinConf
   }

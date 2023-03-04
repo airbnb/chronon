@@ -79,7 +79,12 @@ object Comparison {
         Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
       }
     println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
-    finalDf.filter(comparisonFilters.mkString(" or "))
+    if (comparisonFilters.nonEmpty) {
+      finalDf.filter(comparisonFilters.mkString(" or "))
+    } else {
+      // all rows are good
+      finalDf.filter("false")
+    }
   }
 
   private def prefixColumnName(df: DataFrame, prefix: String): DataFrame = {
