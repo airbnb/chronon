@@ -873,7 +873,7 @@ object Extensions {
        }).map(c => c -> c) ++ derivationsWithoutStar.map(d => (d.name, d.expression))
     }
 
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+    def applyRenameOnlyDerivation(baseColumns: Map[String, AnyRef]): Map[String, AnyRef] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")

@@ -425,7 +425,7 @@ object Driver {
   }
 
   object GroupByStreaming {
-    def dataStream(session: SparkSession, host: String, topic: String, group_by_name: String): DataFrame = {
+    def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
         override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {

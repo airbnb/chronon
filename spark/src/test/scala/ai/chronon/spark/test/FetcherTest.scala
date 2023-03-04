@@ -367,7 +367,8 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "test/payments_join",
                                    namespace = namespace,
                                    team = "chronon",
-                                   consistencySamplePercent = 30)
+                                   consistencySamplePercent = 30),
+      derivations = Seq(Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"))
     )
     joinConf
   }

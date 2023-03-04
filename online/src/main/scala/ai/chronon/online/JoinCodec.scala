@@ -14,33 +14,41 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
     extends Serializable {
+  type DerivationFunc = (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef]
   case class SchemaAndDeriveFunc(valueSchema: StructType,
                                  derivationFunc: (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef])
 
   // We want the same branch logic to construct both schema and derivation
+  // Conveniently, this also removes branching logic from hot path of derivation
   @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc =
     if (conf.join.derivations == null) {
-      SchemaAndDeriveFunc(baseValueSchema, { case (_, values) => values })
+      SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, AnyRef], values: Map[String, AnyRef]) => values })
     } else {
+      def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
+        SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
       // if spark catalyst is not necessary, and all the derivations are just renames, we don't invoke catalyst
-      val (fields, func) = if (conf.areDerivationsRenameOnly) {
-        if (conf.derivationsContainStar) {
-          baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
-        } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d =>
-          StructField(d.name, baseValueSchema.typeOf(d.expression).get)
-        } -> { case (_, values) => conf.applyRenameOnlyDerivation(values) }
+      if (conf.areDerivationsRenameOnly) {
+        build(
+          if (conf.derivationsContainStar) {
+            baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
+          } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d =>
+            StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+          },
+          { case (_: Map[String, AnyRef], values: Map[String, AnyRef]) => conf.applyRenameOnlyDerivation(values) }
+        )
       } else {
         val expressions = if (conf.derivationsContainStar) {
           baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }.map(sf => sf.name -> sf.name)
         } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil = new CatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
-        val schema = catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2))
-        schema -> {
-          case (keys: Map[String, AnyRef], values: Map[String, AnyRef]) =>
-            conf.applyRenameOnlyDerivation(keys ++ values)
-        }
+        build(
+          catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
+          {
+            case (keys: Map[String, AnyRef], values: Map[String, AnyRef]) =>
+              conf.applyRenameOnlyDerivation(keys ++ values)
+          }
+        )
       }
-      SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields), func)
     }
   @transient lazy val valueSchema: StructType = valueSchemaAndDeriveFunc.valueSchema
   @transient lazy val deriveFunc: (Map[String, AnyRef], Map[String, AnyRef]) => Map[String, AnyRef] =
