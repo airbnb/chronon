@@ -30,13 +30,15 @@ object CatalystUtil {
 
 }
 
-class CatalystUtil(expressions: Map[String, String], inputSchema: StructType) {
+class CatalystUtil(expressions: Seq[(String, String)], inputSchema: StructType) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
   private val sessionTable = s"q${math.abs(selectClauses.hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
   private val query = s"SELECT $selectClauses FROM $sessionTable"
   private val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
-  private val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) =
+  val (sparkSQLTransformerBuffer: BufferedRowIterator, outputSparkSchema: types.StructType) = {
     initializeIterator(iteratorWrapper)
+  }
+  @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
   private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
   private val inputEncoder = SparkInternalRowConversions.to(SparkConversions.fromChrononSchema(inputSchema))
@@ -62,8 +64,7 @@ class CatalystUtil(expressions: Map[String, String], inputSchema: StructType) {
     val outputSchema = session.sql(query).schema
     val logicalPlan = session.sessionState.sqlParser.parsePlan(query)
     val plan = session.sessionState.executePlan(logicalPlan)
-    val executedPlan = plan.executedPlan
-    val codeGenerator = executedPlan.asInstanceOf[WholeStageCodegenExec]
+    val codeGenerator = plan.executedPlan.asInstanceOf[WholeStageCodegenExec]
     val (ctx, cleanedSource) = codeGenerator.doCodeGen()
     val (clazz, _) = CodeGenerator.compile(cleanedSource)
     val references = ctx.references.toArray

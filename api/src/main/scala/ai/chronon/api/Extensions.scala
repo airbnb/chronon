@@ -7,8 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.mutable
+import java.util.regex.Pattern
+import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
+import scala.util.matching.Regex
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Extensions {
@@ -653,6 +655,11 @@ object Extensions {
     }
   }
 
+  object JoinOps {
+    private val identifierRegex: Pattern = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*")
+    def isIdentifier(s: String): Boolean = identifierRegex.matcher(s).matches()
+  }
+
   implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
@@ -849,17 +856,32 @@ object Extensions {
         .toSeq
         .map(new JoinPartOps(_))
 
+    private lazy val derivationsScala = join.derivations.toScala
+    lazy val derivationsContainStar: Boolean = derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = derivationsScala.filterNot(_.name == "*")
+    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
+    lazy val derivationExpressionSet: Set[String] = derivationsScala.iterator.map(_.expression).toSet
+    lazy val derivationExpressionFlippedMap: Map[String, String] =
+      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      val derivations = join.derivations.toScala
-      val wildCardSelects = if (derivations.iterator.exists(_.name == "*")) {
-        val expressions = derivations.iterator.map(_.expression).toSet
-        baseColumns.filterNot(expressions)
+      (if (derivationsContainStar) { // select all baseColumns except renamed ones
+         val expressions = derivationsScala.iterator.map(_.expression).toSet
+         baseColumns.filterNot(expressions)
+       } else {
+         Seq.empty
+       }).map(c => c -> c) ++ derivationsWithoutStar.map(d => (d.name, d.expression))
+    }
+
+    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+      assert(
+        areDerivationsRenameOnly,
+        s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")
+      if (derivationsContainStar) {
+        baseColumns.filterNot(derivationExpressionSet contains _._1)
       } else {
-        Seq()
-      }
-      val derivationSelects = derivations.iterator.filterNot(_.name == "*").map(d => (d.name, d.expression))
-      val projections = wildCardSelects.map(c => (c, c)) ++ derivationSelects
-      projections
+        Map.empty
+      } ++ derivationsScala.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
   }
 

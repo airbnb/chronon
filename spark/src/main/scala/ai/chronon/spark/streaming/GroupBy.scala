@@ -162,7 +162,9 @@ class GroupBy(inputStream: DataFrame,
       }
       .writeStream
       .outputMode("append")
-      .trigger(Trigger.Continuous("60 second"))
+      // 50ms trigger - continuous trigger forces users
+      // to specify and keep up with partition counts.
+      .trigger(Trigger.ProcessingTime(50))
       .foreach(dataWriter)
   }
 }
