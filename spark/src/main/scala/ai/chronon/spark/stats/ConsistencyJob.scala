@@ -14,7 +14,7 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
-  val tblProperties = Option(joinConf.metaData.tableProperties)
+  val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
   val tableUtils: TableUtils = TableUtils(session)
