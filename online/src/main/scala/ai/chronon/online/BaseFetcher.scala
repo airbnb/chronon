@@ -291,7 +291,7 @@ class BaseFetcher(kvStore: KVStore,
             val joinContextInner = Metrics.Context(joinContext.get, part)
             val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
             if (missingKeys.nonEmpty) {
-              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq))
+              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys, part.rightToLeft))
             } else {
               val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
               Left(

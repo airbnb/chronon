@@ -21,7 +21,7 @@ case class JoinCodec(conf: JoinOps,
   // We want the same branch logic to construct both schema and derivation
   // Conveniently, this also removes branching logic from hot path of derivation
   @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc =
-    if (conf.join == null || conf.join.derivations == null) {
+    if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
       SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, Any], values: Map[String, Any]) => values })
     } else {
       def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =

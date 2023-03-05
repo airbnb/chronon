@@ -46,6 +46,7 @@ class Fetcher(val kvStore: KVStore,
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     joinConfTry.map { joinConf =>
+      // collect schema from
       joinConf.joinPartOps.foreach {
         joinPart =>
           val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
@@ -134,7 +135,7 @@ class Fetcher(val kvStore: KVStore,
             val joinName = internalResponse.request.name
             Metrics.Context(Environment.JoinFetching, join = joinName).histogram("overall.latency.millis", System.currentTimeMillis() - ts)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, (internalMap ++ externalMap)).mapValues(_.asInstanceOf[AnyRef])
+            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, (internalMap ++ externalMap)).mapValues(_.asInstanceOf[AnyRef]).toMap
             Response(internalResponse.request, Success(derivedMap))
         }
     }
