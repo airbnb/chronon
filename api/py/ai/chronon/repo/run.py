@@ -12,6 +12,7 @@ from datetime import datetime
 
 ONLINE_ARGS = '--online-jar={online_jar} --online-class={online_class} '
 OFFLINE_ARGS = '--conf-path={conf_path} --end-date={ds} '
+SQL_ARGS = OFFLINE_ARGS + '--sampling={sampling}'
 ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
@@ -38,6 +39,7 @@ MODE_ARGS = {
     'log-flattener': OFFLINE_ARGS,
     'metadata-export': OFFLINE_ARGS,
     'label-join': OFFLINE_ARGS,
+    'sql': SQL_ARGS
 }
 
 ROUTES = {
@@ -49,6 +51,7 @@ ROUTES = {
         'fetch': 'fetch',
         'analyze': 'analyze',
         'metadata-export': 'metadata-export',
+        'sql': 'sql',
     },
     'joins': {
         'backfill': 'join',
@@ -60,6 +63,7 @@ ROUTES = {
         'log-flattener': 'log-flattener',
         'metadata-export': 'metadata-export',
         'label-join': 'label-join',
+        'sql': 'sql',
     },
     'staging_queries': {
         'backfill': 'staging-query-backfill',
@@ -185,7 +189,16 @@ def set_common_env(repo):
 
 
 class Runner:
-    def __init__(self, args, jar_path):
+    def __init__(self, args, unknown_args):
+        jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
+        extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
+        args.args = ' '.join(unknown_args) + extra_args
+        print(args.chronon_jar)
+
+        self.jar_path = args.chronon_jar if args.chronon_jar else download_jar(
+            args.version, jar_type=jar_type,
+            release_tag=args.release_tag,
+            spark_version=args.spark_version)
         self.repo = args.repo
         self.conf = args.conf
         self.sub_help = args.sub_help
@@ -212,7 +225,6 @@ class Runner:
         else:
             self.conf_type = args.conf_type
         self.ds = args.ds
-        self.jar_path = jar_path
         self.args = args.args if args.args else ''
         self.online_class = args.online_class
         self.app_name = args.app_name
@@ -221,6 +233,10 @@ class Runner:
         else:
             self.spark_submit = args.spark_submit_path
         self.list_apps_cmd = args.list_apps
+        try:
+            self.sampling = args.sampling
+        except e:
+            self.sampling = None
 
     def set_env(self):
         conf_path = os.path.join(self.repo, self.conf)
@@ -256,7 +272,7 @@ class Runner:
 
     def run(self):
         base_args = MODE_ARGS[self.mode].format(
-            conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
+            conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class, sampling=self.sampling)
         final_args = base_args + ' ' + str(self.args)
         subcommand = ROUTES[self.conf_type][self.mode]
         if self.sub_help or (self.mode not in SPARK_MODES):
@@ -326,11 +342,4 @@ if __name__ == "__main__":
     parser.add_argument('--list-apps', default="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
                         help='command/script to list running jobs on the scheduler')
     args, unknown_args = parser.parse_known_args()
-    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
-    extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
-    args.args = ' '.join(unknown_args) + extra_args
-    jar_path = args.chronon_jar if args.chronon_jar else download_jar(
-        args.version, jar_type=jar_type,
-        release_tag=args.release_tag,
-        spark_version=args.spark_version)
-    Runner(args, jar_path).run()
+    Runner(args, unknown_args).run()

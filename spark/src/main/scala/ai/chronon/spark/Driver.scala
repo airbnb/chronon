@@ -12,18 +12,15 @@ import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.io.File
 import java.nio.file.{Files, Paths}
+import scala.collection.JavaConverters._
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -33,6 +30,8 @@ import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success, Try}
 
+import com.google.gson.Gson
+
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions
 class DummyExtensions extends (SparkSessionExtensions => Unit) {
@@ -41,6 +40,9 @@ class DummyExtensions extends (SparkSessionExtensions => Unit) {
 
 // The mega chronon cli
 object Driver {
+
+  val gson = new Gson()
+  val objectMapper = new ObjectMapper()
 
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
@@ -194,6 +196,33 @@ object Driver {
     }
   }
 
+  object SqlGenerate {
+    class Args extends Subcommand("sql") with OfflineSubcommand {
+      val sampling: ScallopOption[String] = opt[String](required = true, descr = "Sampling strategy.")
+    }
+
+    def run(args: Args): Unit = {
+      val samplingMap = Try(objectMapper
+        .readValue(args.sampling(), classOf[java.util.Map[String, String]])
+        .asScala.toMap).toOption
+      val samplingRate = Try(objectMapper
+        .readValue(args.sampling(), classOf[Float])).toOption
+
+      val join: Option[api.Join] = Try(parseConf[api.Join](args.confPath())).toOption
+      val groupBy: Option[api.GroupBy] = Try(parseConf[api.GroupBy](args.confPath())).toOption
+
+      assert(groupBy.isDefined || join.isDefined, "Failed to parse either a GroupBy or a join from config.")
+      assert(samplingRate.isDefined || samplingMap.isDefined,
+        "Sampling must be either a number, or a map of key to list of values for that key to include.")
+
+      if (groupBy.isDefined) {
+        SqlGenerator.runGroupBy(groupBy.get, args.endDate(), samplingRate, samplingMap)
+      } else {
+        SqlGenerator.runJoin(join.get, args.endDate(), samplingRate, samplingMap)
+      }
+    }
+  }
+
   object StagingQueryBackfill {
     class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
@@ -312,7 +341,6 @@ object Driver {
       if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
         throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
-      val objectMapper = new ObjectMapper()
       def readMap: String => Map[String, AnyRef] = { json =>
         objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
       }
@@ -536,6 +564,9 @@ object Driver {
     addSubcommand(DailyStatsArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object SqlGenerateArgs extends SqlGenerate.Args
+    addSubcommand(SqlGenerateArgs)
+
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
     requireSubcommand()
@@ -573,6 +604,7 @@ object Driver {
           case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
+          case args.SqlGenerateArgs    => SqlGenerate.run(args.SqlGenerateArgs)
           case args.LabelJoinArgs      => LabelJoin.run(args.LabelJoinArgs)
           case _                       => println(s"Unknown subcommand: $x")
         }

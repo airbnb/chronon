@@ -20,6 +20,7 @@ from ai.chronon.repo.validator import ChrononRepoValidator
 from sql_gen import run_sql_gen
 from datetime import datetime, timedelta
 from run import APP_NAME_TEMPLATE, set_common_env
+import run
 
 
 # TODO: Allow format to be configurable!
@@ -76,6 +77,7 @@ def extract_and_convert():
     parser.add_argument('--sampling', default=0.01, help='Sampling rate to use in rendering SQL query')
 
     args, unknown_args = parser.parse_known_args()
+
     if args.debug:
         log_level = logging.DEBUG
     else:
@@ -103,11 +105,14 @@ def extract_and_convert():
     num_written_objs = 0
     full_output_root = os.path.join(chronon_root_path, output_root)
     teams_path = os.path.join(chronon_root_path, TEAMS_FILE_PATH)
+    output_files = []
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
-        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
+        output_file = _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite)
+        if output_file:
+            output_files.append(os.path.join(output_root, output_file))
             num_written_objs += 1
 
             # In case of online join, we need to materialize the underlying online group_bys.
@@ -139,7 +144,15 @@ def extract_and_convert():
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
 
     if args.sql:
-        run_sql_gen(results, args.ds, args.sampling, args.chronon_jar, args.version, args.release_tag)
+        args.mode = "sql"
+        args.spark_version = '2.4.0'  # Unused but required to be set for run.py
+        args.online_jar = None  # Unused but required to be set for run.py
+        args.online_class = None
+        args.spark_submit_path = None
+        args.list_apps = None
+        for conf in output_files:
+            args.conf = conf
+            run.Runner(args, unknown_args).run()
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
@@ -184,25 +197,26 @@ def _write_obj(full_output_root: str,
     obj_folder_name = get_folder_name_from_class_name(class_name)
     output_path = os.path.join(full_output_root, obj_folder_name, team_name)
     output_file = os.path.join(output_path, name)
+    relative_path = os.path.join(obj_folder_name, team_name, name)
     skip_reasons = validator.can_skip_materialize(obj)
     if not force_compile and skip_reasons:
         reasons = ', '.join(skip_reasons)
         _print_warning(f"Skipping {class_name} {name}: {reasons}")
         if os.path.exists(output_file):
             _print_warning(f"old file exists for skipped config: {output_file}")
-        return False
+        return
     validation_errors = validator.validate_obj(obj)
     if validation_errors:
         _print_error(f"Could not write {class_name} {name}",
                      ', '.join(validation_errors))
-        return False
+        return
     if force_overwrite:
         _print_warning(f"Force overwrite {class_name} {name}")
     elif not validator.safe_to_overwrite(obj):
         _print_warning(f"Cannot overwrite {class_name} {name} with existing online conf")
-        return False
+        return
     _write_obj_as_json(name, obj, output_file, obj_class)
-    return True
+    return relative_path
 
 
 def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type):
