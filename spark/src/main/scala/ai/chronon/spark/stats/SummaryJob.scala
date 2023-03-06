@@ -1,10 +1,10 @@
 package ai.chronon.spark.stats
 
+import ai.chronon.online.SparkConversions
+import ai.chronon.online.AvroConversions
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online.SparkConversions.toChrononSchema
-import ai.chronon.online._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.functions.lit
@@ -48,8 +48,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
                |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val stats = new StatsCompute(inputDf, Option(joinConf.leftColumns).getOrElse(joinConf.leftKeyCols).toSeq, joinConf.metaData.nameToFilePath)
-          val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("selected", toChrononSchema(stats.selectedDf.schema)))
+          val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
+          val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           if (joinConf.metaData.online) {
             // Store an Avro encoded KV Table and the schemas.

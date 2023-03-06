@@ -106,7 +106,7 @@ class FetchStatsTest extends TestCase {
     val futures = fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(Constants.Partition.epochMillis(start)), Some(System.currentTimeMillis()))
     val result = Await.result(futures, Duration(10000, SECONDS)) // todo: change back to millis
     println(s"Test fetch: $result")
-    val statsMergedFutures = fetcher.fetchStatsBetween(joinConf.metaData.nameToFilePath, Some(Constants.Partition.epochMillis(start)), Some(Constants.Partition.epochMillis(yesterday)))
+    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath, Some(Constants.Partition.epochMillis(start)), Some(Constants.Partition.epochMillis(yesterday)))
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     println(s"Stats Merged: ${gson.toJson(statsMerged)}")
