@@ -4,9 +4,9 @@ import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.{Analyzer, JoinUtils, TableUtils}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
   * Compare Job for migration to AFP.
@@ -16,7 +16,7 @@ import org.apache.spark.sql.SparkSession
   */
 class MigrationCompareJob(session: SparkSession, joinConf: api.Join, stagingConf: api.StagingQuery) extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
-  def run(): Unit = {
+  def run(): (DataFrame, DataMetrics) = {
     val leftDf = tableUtils.sql(s"""
         |SELECT *
         |FROM ${joinConf.metaData.outputTable}
@@ -25,8 +25,9 @@ class MigrationCompareJob(session: SparkSession, joinConf: api.Join, stagingConf
         |SELECT *
         |FROM ${stagingConf.metaData.outputTable}
         |""".stripMargin)
-    CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf))
+    val result = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf))
     println("Finished compare stats.")
+    result
   }
 
   def getJoinKeys(joinConf: api.Join): Seq[String] = {
