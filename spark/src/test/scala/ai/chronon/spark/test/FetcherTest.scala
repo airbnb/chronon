@@ -607,7 +607,8 @@ class FetcherTest extends TestCase {
 
     println("====== Empty request response map ======")
     println(responseMap)
-    assertEquals(joinConf.joinParts.size(), responseMap.size)
+    // 2 for derived features
+    assertEquals(joinConf.joinParts.size() + 2, responseMap.size)
     assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }
