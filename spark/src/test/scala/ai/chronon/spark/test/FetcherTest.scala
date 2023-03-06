@@ -605,6 +605,7 @@ class FetcherTest extends TestCase {
     val (responses, _) = joinResponses(Array(request), mockApi)
     val responseMap = responses.head.values.get
 
+    print(responseMap)
     assertEquals(joinConf.joinParts.size(), responseMap.size)
     assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
