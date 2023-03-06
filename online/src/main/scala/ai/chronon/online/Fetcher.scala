@@ -352,6 +352,7 @@ class Fetcher(val kvStore: KVStore,
 
   /**
     * Stats get stored on a single Dataname stored in constants.
+    * Filter by start Ts and end Ts and obtain all datapoints at a certain granularity.
     */
   def fetchStats(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Seq[Response]] = {
     val joinCodecs = getJoinCodecs(joinName) match {
@@ -362,7 +363,7 @@ class Fetcher(val kvStore: KVStore,
     kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = endTs)).map {
       kvResponse =>
         kvResponse.values match {
-          case Success(responses) => responses.toArray.filter(0 < _.millis).map {
+          case Success(responses) => responses.toArray.filter(startTs.getOrElse(0l) < _.millis).map {
             tv =>
               Response(Request(joinName, null, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
           }.toSeq
@@ -370,7 +371,12 @@ class Fetcher(val kvStore: KVStore,
         }
     }
   }
-  def fetchStatsBetween(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Array[Any]] = {
+
+  /**
+    * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
+    * determining distributions.
+    */
+  def fetchMergedStatsBetween(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Response] = {
     val joinCodecs = getJoinCodecs(joinName) match {
       case Success(joinCodec) => joinCodec
       case Failure(exception) => throw exception
@@ -395,11 +401,15 @@ class Fetcher(val kvStore: KVStore,
       var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
       responseFuture => responseFuture.foreach {
         response =>
-          val batchRecord = aggregator.denormalize(statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
-          mergedIr = aggregator.merge(mergedIr, batchRecord)
+          response.values match {
+            case Success(values) =>
+              val batchRecord = aggregator.denormalize(statsIrSchema.map { field => values.get(field.name).asInstanceOf[Any]}.toArray)
+              mergedIr = aggregator.merge(mergedIr, batchRecord)
+            case Failure(exception) => throw exception
+          }
       }
-        // TODO: Return a Future of Response[Request, Map[String, AnyRef]]
-        aggregator.finalize(mergedIr)
+      val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr).map(_.asInstanceOf[AnyRef])).toMap
+      Response(Request(joinName, null), Try(responseMap))
     }
   }
 
