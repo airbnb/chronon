@@ -529,7 +529,7 @@ object Extensions {
       // for contextual features, we automatically populate null if any of the keys are missing
       // otherwise, an exception is thrown which will be converted to soft-fail in Fetcher code
       if (missingKeys.nonEmpty && !externalPart.source.isContextualSource) {
-        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq, query, rightToLeft.toMap)
+        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq, query)
       }
       rightToLeft.map {
         case (rightKey, leftKey) => rightKey -> query.getOrElse(leftKey, null).asInstanceOf[AnyRef]
