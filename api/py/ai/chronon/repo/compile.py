@@ -2,6 +2,7 @@
 # tool to materialize feature_sources and feature_sets into thrift configurations
 # that chronon jobs can consume
 
+import argparse
 import logging
 import os
 
@@ -16,6 +17,13 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
 from ai.chronon.repo import teams
 from ai.chronon.repo.serializer import thrift_simple_json_protected
 from ai.chronon.repo.validator import ChrononRepoValidator
+from sql_gen import run_sql_gen
+from datetime import datetime, timedelta
+from run import APP_NAME_TEMPLATE, set_common_env
+
+
+# TODO: Allow format to be configurable!
+YESTERDAY = (datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d')
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -32,39 +40,51 @@ def get_folder_name_from_class_name(class_name):
     return {v.__name__: k for k, v in FOLDER_NAME_TO_CLASS.items()}[class_name]
 
 
-@click.command()
-@click.option(
-    '--chronon_root',
-    envvar='CHRONON_ROOT',
-    help='Path to the root chronon folder',
-    default=os.getcwd())
-@click.option(
-    '--input_path', '--conf', 'input_path',
-    help='Relative Path to the root chronon folder, which contains the objects to be serialized',
-    required=True)
-@click.option(
-    '--output_root',
-    help='Relative Path to the root chronon folder, to where the serialized output should be written',
-    default="production")
-@click.option(
-    '--debug',
-    help='debug mode',
-    is_flag=True)
-@click.option(
-    '--force-overwrite',
-    help='Force overwriting existing materialized conf.',
-    is_flag=True)
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite):
+def extract_and_convert():
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
     """
-    if debug:
+    parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
+    chronon_repo_path = os.getenv('CHRONON_REPO_PATH', os.getcwd())
+    set_common_env(chronon_repo_path)
+    parser.add_argument('--conf', required=False,
+                        help='Conf param - required for every mode except fetch')
+    parser.add_argument('--ds', default=YESTERDAY)
+    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE),
+                        default=None)
+    parser.add_argument('--repo', help='Path to chronon repo', default=chronon_repo_path)
+    parser.add_argument('--version', help='Chronon version to use.',
+                        default=os.environ.get('VERSION', None)),
+    parser.add_argument('--sub-help', action='store_true',
+                        help='print help command of the underlying jar and exit')
+    parser.add_argument('--conf-type', default='group_bys',
+                        help='related to sub-help - no need to set unless you are not working with a conf')
+    parser.add_argument('--output_root', default='production',
+                        help='Relative Path to the root chronon folder, to where the serialized output should be written')
+    parser.add_argument('--online-args', default=os.getenv('CHRONON_ONLINE_ARGS', ''),
+                        help='Basic arguments that need to be supplied to all online modes')
+    parser.add_argument('--chronon-jar', default=None, help='Path to chronon OS jar')
+    parser.add_argument('--release-tag', default=None,
+                        help='Use the latest jar for a particular tag.')
+    parser.add_argument('--sql', action='store_true',
+                        help='Generates a SQL Query for testing/debugging.')
+    parser.add_argument('--debug', action='store_true',
+                        help='Debug mode.')
+    parser.add_argument('--force_overwrite', action='store_true',
+                        help='Force overwrite the config file.')
+    parser.add_argument('--sampling', default=0.01, help='Sampling rate to use in rendering SQL query')
+
+    args, unknown_args = parser.parse_known_args()
+    if args.debug:
         log_level = logging.DEBUG
     else:
         log_level = logging.INFO
-    _print_highlighted("Using chronon root path", chronon_root)
-    chronon_root_path = os.path.expanduser(chronon_root)
+    _print_highlighted("Using chronon root path", args.repo)
+    chronon_root_path = os.path.expanduser(args.repo)
+    input_path = args.conf
+    output_root = args.output_root
+    force_overwrite = args.force_overwrite
     path_split = input_path.split('/')
     obj_folder_name = path_split[0]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
@@ -117,6 +137,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
+
+    if args.sql:
+        run_sql_gen(results, args.ds, args.sampling, args.chronon_jar, args.version, args.release_tag)
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
