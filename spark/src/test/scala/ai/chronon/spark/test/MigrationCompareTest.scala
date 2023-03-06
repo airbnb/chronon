@@ -6,7 +6,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.MigrationCompareJob
-import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Join, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
@@ -19,8 +19,8 @@ class MigrationCompareTest {
   private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val tableUtils = TableUtils(spark)
-  @Test
-  def testCompareAnalyze(): Unit = {
+
+  def setupTestData(): (api.Join, api.StagingQuery) = {
     // ------------------------------------------JOIN------------------------------------------
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -68,12 +68,29 @@ class MigrationCompareTest {
       query = s"select * from ${joinConf.metaData.outputTable}",
       startPartition = ninetyDaysAgo,
       setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
-      metaData = Builders.MetaData(name = "test.user_session_features",
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
         namespace = namespace,
-        tableProperties = Map("key" -> "val"),
-        customJson = "{\"additional_partition_cols\": [\"user\"]}")
+        tableProperties = Map("key" -> "val"))
     )
 
+    (joinConf, stagingQueryConf)
+  }
+
+  @Test
+  def testMigrateCompareAnalyze(): Unit = {
+    val (joinConf, stagingQueryConf) = setupTestData()
     new MigrationCompareJob(spark, joinConf, stagingQueryConf).analyze()
+  }
+
+  @Test
+  def testMigrateCompare(): Unit = {
+    val (joinConf, stagingQueryConf) = setupTestData()
+
+    // Run the staging query to generate the corresponding table for comparison
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+
+    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf).run()
+    println(metrics)
   }
 }
