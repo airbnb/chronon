@@ -9,13 +9,11 @@ import org.apache.spark.sql.types.DataType
 object CompareJob {
 
   def checkConsistency(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
+      leftFields: Map[String, DataType],
+      rightFields: Map[String, DataType],
       keys: Seq[String],
       mapping: Map[String, String] = Map.empty
   ): Unit = {
-    val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
-    val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     // Make sure the number of fields are the same on either side
     assert(
       leftFields.size == rightFields.size,
@@ -66,7 +64,9 @@ object CompareJob {
       mapping: Map[String, String] = Map.empty
   ): (DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
-    checkConsistency(leftDf, rightDf, keys, mapping)
+    val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    checkConsistency(leftFields, rightFields, keys, mapping)
 
     // 2. Build comparison dataframe
     println(s"""Join keys: ${keys.mkString(", ")}

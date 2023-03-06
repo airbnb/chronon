@@ -458,7 +458,7 @@ class JoinTest {
 
     //run analyzer and validate output schema
     val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
-    val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map(_.trim).sorted
+    val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map{ case(k,v) => s"${k} => ${v}" }.toList.sorted
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
