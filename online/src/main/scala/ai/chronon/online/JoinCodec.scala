@@ -34,7 +34,10 @@ case class JoinCodec(conf: JoinOps,
           } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d =>
             StructField(d.name, baseValueSchema.typeOf(d.expression).get)
           },
-          { case (_: Map[String, Any], values: Map[String, Any]) => conf.applyRenameOnlyDerivation(values) }
+          {
+            case (_: Map[String, Any], values: Map[String, Any]) =>
+              adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
+          }
         )
       } else {
         val baseExpressions = if (conf.derivationsContainStar) {
@@ -43,16 +46,29 @@ case class JoinCodec(conf: JoinOps,
             .map(sf => sf.name -> sf.name)
         } else { Seq.empty }
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
-        val catalystUtil = new CatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
+        val catalystUtil =
+          new ThreadLocalCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, Any], values: Map[String, Any]) =>
-              catalystUtil.performSql(keys ++ values)
+              adjustExceptions(catalystUtil.performSql(keys ++ values), values)
           }
         )
       }
     }
+
+  // upon derivations, we loose the exception fields, so we need to re-introduce them and
+  // remove value fields of groupBys that have failed with exceptions
+  def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
+    if (exceptions.isEmpty) {
+      return derived
+    }
+    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
+    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
+  }
+
   @transient lazy val valueSchema: StructType = valueSchemaAndDeriveFunc.valueSchema
   @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     valueSchemaAndDeriveFunc.derivationFunc

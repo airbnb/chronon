@@ -1,6 +1,6 @@
 package ai.chronon.online
 
-import ai.chronon.api.StructType
+import ai.chronon.api.{DataType, StructType}
 import ai.chronon.online.CatalystUtil.IteratorWrapper
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
@@ -8,6 +8,8 @@ import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
 import org.apache.spark.sql.execution.{BufferedRowIterator, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
 
+import java.lang.ThreadLocal
+import java.util.function.Supplier
 import scala.collection.mutable
 
 object CatalystUtil {
@@ -30,7 +32,17 @@ object CatalystUtil {
 
 }
 
-class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
+class ThreadLocalCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
+  private val cu = ThreadLocal.withInitial[CatalystUtil](new Supplier[CatalystUtil] {
+    override def get(): CatalystUtil = new CatalystUtil(expressions, inputSchema)
+  })
+
+  def performSql(values: Map[String, Any]): Map[String, Any] = cu.get().performSql(values)
+  def outputChrononSchema: Array[(String, DataType)] = cu.get().outputChrononSchema
+}
+
+// This class by itself it not thread safe because of the transformBuffer
+private class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }.mkString(", ")
   private val sessionTable = s"q${math.abs(selectClauses.hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
   private val query = s"SELECT $selectClauses FROM $sessionTable"
