@@ -4,6 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
+import ai.chronon.spark.Extensions.StructTypeOps
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
@@ -199,7 +200,8 @@ class LogFlattenerJob(session: SparkSession,
       val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
 
       val schemaTblProps = buildTableProperties(schemaMap)
-
+      println("======= Log table schema =======")
+      println(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
                                   tableProperties = joinTblProps ++ schemaTblProps,

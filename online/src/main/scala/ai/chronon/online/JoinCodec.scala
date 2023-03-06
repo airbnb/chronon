@@ -37,9 +37,12 @@ case class JoinCodec(conf: JoinOps,
           { case (_: Map[String, Any], values: Map[String, Any]) => conf.applyRenameOnlyDerivation(values) }
         )
       } else {
-        val expressions = if (conf.derivationsContainStar) {
-          baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }.map(sf => sf.name -> sf.name)
-        } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
+        val baseExpressions = if (conf.derivationsContainStar) {
+          baseValueSchema
+            .filterNot { conf.derivationExpressionSet contains _.name }
+            .map(sf => sf.name -> sf.name)
+        } else { Seq.empty }
+        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil = new CatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),

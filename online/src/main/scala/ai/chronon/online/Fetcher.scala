@@ -4,6 +4,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
+import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson

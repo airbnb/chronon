@@ -1,5 +1,6 @@
 package ai.chronon.spark
 
+import ai.chronon.online.Extensions.StructTypeOps
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
@@ -40,6 +41,9 @@ object Comparison {
                  keys: List[String],
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
+
+    println("====== side-by-side comparison ======")
+    println(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
 
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
