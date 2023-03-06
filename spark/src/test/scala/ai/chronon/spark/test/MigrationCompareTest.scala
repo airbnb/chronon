@@ -93,4 +93,25 @@ class MigrationCompareTest {
     val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf).run()
     println(metrics)
   }
+
+  @Test
+  def testMigrateCompareWithLessColumns(): Unit = {
+    val (joinConf, _) = setupTestData()
+
+    // Run the staging query to generate the corresponding table for comparison
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"select item, ts, ds from ${joinConf.metaData.outputTable}",
+      startPartition = ninetyDaysAgo,
+      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
+        namespace = namespace,
+        tableProperties = Map("key" -> "val"))
+    )
+
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+
+    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf).run()
+    println(metrics)
+  }
 }

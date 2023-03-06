@@ -25,7 +25,7 @@ class MigrationCompareJob(session: SparkSession, joinConf: api.Join, stagingConf
         |SELECT *
         |FROM ${stagingConf.metaData.outputTable}
         |""".stripMargin)
-    val result = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf))
+    val result = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
     println("Finished compare stats.")
     result
   }
@@ -45,6 +45,10 @@ class MigrationCompareJob(session: SparkSession, joinConf: api.Join, stagingConf
     val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
     val stagingQuerySchema = tableUtils.sql(stagingConf.query).schema.fields.map(sb => (sb.name, sb.dataType)).toMap
 
-    CompareJob.checkConsistency(joinSchema, stagingQuerySchema, getJoinKeys(joinConf))
+    CompareJob.checkConsistency(
+      joinSchema,
+      stagingQuerySchema,
+      getJoinKeys(joinConf),
+      migrationCheck = true)
   }
 }
