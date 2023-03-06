@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.Extensions.StructTypeOps
-import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
+import ai.chronon.spark.stats.{ConsistencyJob, MigrationCompareJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
@@ -252,6 +252,48 @@ object Driver {
         joinConf,
         args.endDate()
       ).buildConsistencyMetrics()
+    }
+  }
+
+  object MigrationCompare {
+    class Args extends Subcommand("migration-compare") with OfflineSubcommand {
+      val from: ScallopOption[String] =
+        opt[String](required = true, descr = "Conf to the Staging Query to compare with")
+    }
+
+    def run(args: Args): Unit = {
+      assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
+      assert(args.from().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+      val joinConf = parseConf[api.Join](args.confPath())
+      val stagingQueryConf = parseConf[api.StagingQuery](args.from())
+      val migrationCompareJob = new MigrationCompareJob(
+        args.buildTableUtils(
+          s"migration_compare_join_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
+        ).sparkSession,
+        joinConf,
+        stagingQueryConf
+      ).run()
+    }
+  }
+
+  object MigrationCompareAnalyzer {
+    class Args extends Subcommand("migration-compare-analyze") with OfflineSubcommand {
+      val from: ScallopOption[String] =
+        opt[String](required = true, descr = "Conf to the Staging Query to compare with")
+    }
+
+    def run(args: Args): Unit = {
+      assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
+      assert(args.from().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+      val joinConf = parseConf[api.Join](args.confPath())
+      val stagingQueryConf = parseConf[api.StagingQuery](args.from())
+      val migrationCompareJob = new MigrationCompareJob(
+        args.buildTableUtils(
+          s"migration_compare_analyzer"
+        ).sparkSession,
+        joinConf,
+        stagingQueryConf
+      ).analyze()
     }
   }
 
@@ -535,6 +577,10 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object MigrationCompareArgs extends MigrationCompare.Args
+    addSubcommand(MigrationCompareArgs)
+    object MigrationCompareAnalyzerArgs extends MigrationCompareAnalyzer.Args
+    addSubcommand(MigrationCompareAnalyzerArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
     object LabelJoinArgs extends LabelJoin.Args
@@ -569,8 +615,9 @@ object Driver {
           case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsArgs =>
-            ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.MigrationCompareArgs => MigrationCompare.run(args.MigrationCompareArgs)
+          case args.MigrationCompareAnalyzerArgs => MigrationCompareAnalyzer.run(args.MigrationCompareAnalyzerArgs)
           case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)

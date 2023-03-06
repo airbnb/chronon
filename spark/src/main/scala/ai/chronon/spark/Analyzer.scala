@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.{AggregationPart, Constants, DataType}
 import ai.chronon.api.Extensions._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
@@ -131,7 +132,7 @@ class Analyzer(tableUtils: TableUtils,
 
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
-                                 columnType: String,
+                                 columnType: DataType,
                                  operation: String = null,
                                  window: String = null,
                                  inputColumn: String = null,
@@ -139,14 +140,14 @@ class Analyzer(tableUtils: TableUtils,
 
   def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(aggPart.outputColumnName,
-                        columnType.toString,
+                        columnType,
                         aggPart.operation.toString.toLowerCase,
                         aggPart.window.str.toLowerCase,
                         aggPart.inputColumn.toLowerCase)
   }
 
   def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
-    AggregationMetadata(columnName, columnType.toString, "No operation", "Unbounded", columnName)
+    AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
   }
 
   def analyzeGroupBy(groupByConf: api.GroupBy,
@@ -194,13 +195,14 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {
+                  enableHitter: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
     val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
+    val leftSchema: Map[String, DataType] = leftDf.schema.fields.map(
+      field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     joinConf.joinParts.toScala.parallel.foreach { part =>
@@ -214,7 +216,8 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)}
     }
 
-    val rightSchema = aggregationsMetadata.map { aggregation => s"  ${aggregation.name} => ${aggregation.columnType}" }
+    val rightSchema: Map[String, DataType] = aggregationsMetadata.map(
+      aggregation => (aggregation.name, aggregation.columnType)).toMap
     if (silenceMode) {
       println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -230,7 +233,7 @@ class Analyzer(tableUtils: TableUtils,
            |------ END ------------------
            |""".stripMargin)
     }
-    // (cli print output, right side feature aggregations metadata for metadata upload)
+    // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata)
   }
 
