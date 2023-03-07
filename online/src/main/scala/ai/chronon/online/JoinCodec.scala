@@ -36,7 +36,7 @@ case class JoinCodec(conf: JoinOps,
           },
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
-              adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
+              JoinCodec.adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
           }
         )
       } else {
@@ -52,22 +52,11 @@ case class JoinCodec(conf: JoinOps,
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, Any], values: Map[String, Any]) =>
-              adjustExceptions(catalystUtil.performSql(keys ++ values), values)
+              JoinCodec.adjustExceptions(catalystUtil.performSql(keys ++ values), values)
           }
         )
       }
     }
-
-  // upon derivations, we loose the exception fields, so we need to re-introduce them and
-  // remove value fields of groupBys that have failed with exceptions
-  def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
-    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
-    if (exceptions.isEmpty) {
-      return derived
-    }
-    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
-    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
-  }
 
   @transient lazy val valueSchema: StructType = valueSchemaAndDeriveFunc.valueSchema
   @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
@@ -126,5 +115,15 @@ object JoinCodec {
       keyCodec,
       valueCodec
     )
+  }
+
+  // remove value fields of groupBys that have failed with exceptions
+  private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
+    if (exceptions.isEmpty) {
+      return derived
+    }
+    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
+    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
   }
 }
