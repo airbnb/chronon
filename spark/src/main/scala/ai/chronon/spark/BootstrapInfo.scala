@@ -2,13 +2,15 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
 import ai.chronon.spark.Extensions._
-import ai.chronon.api._
 import ai.chronon.online.{JoinCodec, SparkConversions}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
 
+import scala.collection.Seq
+import scala.collection.immutable
 import scala.util.ScalaJavaConversions.ListOps
 
 case class JoinPartMetadata(
@@ -80,7 +82,7 @@ object BootstrapInfo {
     val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
     val baseDf = tableUtils.sparkSession.createDataFrame(
-      tableUtils.sparkSession.sparkContext.parallelize(Seq[Row]()),
+      tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
     val derivedSchema = if (joinConf.isSetDerivations) {
@@ -88,7 +90,7 @@ object BootstrapInfo {
       val derivedDf = baseDf.select(
         projections.map {
           case (name, expression) => expr(expression).as(name)
-        }: _*
+        }.toSeq: _*
       )
       SparkConversions.toChrononSchema(derivedDf.schema).map {
         case (name, dataType) => StructField(name, dataType)

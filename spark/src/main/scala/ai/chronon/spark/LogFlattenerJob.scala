@@ -12,6 +12,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util.Base64
 import scala.collection.mutable
+import scala.collection.Seq
 import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
@@ -156,7 +157,7 @@ class LogFlattenerJob(session: SparkSession,
     session
       .table(schemaTable)
       .where(col(Constants.PartitionColumn) === schemaTableDs.get)
-      .where(col(Constants.SchemaHash).isin(hashes: _*))
+      .where(col(Constants.SchemaHash).isin(hashes.toSeq: _*))
       .select(
         col(Constants.SchemaHash),
         col("schema_value_last").as("schema_value")

@@ -22,6 +22,7 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters._
+import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
@@ -546,7 +547,7 @@ class FetcherTest extends TestCase {
 
     println(endDsExpected.schema.pretty)
     val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
-    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
+    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows.toSeq)
     var responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))

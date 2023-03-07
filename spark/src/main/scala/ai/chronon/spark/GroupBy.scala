@@ -16,6 +16,7 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
 import scala.collection.mutable
+import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
@@ -42,7 +43,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             .getOrElse(Seq.empty[String]) :+
             agg.inputColumn)
         .distinct
-        .map(inputDf.schema.apply))
+        .map(inputDf.schema.apply)
+        .toSeq)
   } else {
     val values = inputDf.schema.map(_.name).filterNot((keyColumns ++ Constants.ReservedColumns).contains)
     val valuesIndices = values.map(inputDf.schema.fieldIndex).toArray

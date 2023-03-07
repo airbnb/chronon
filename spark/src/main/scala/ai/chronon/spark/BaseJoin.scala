@@ -12,6 +12,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
+import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
@@ -240,7 +241,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     ) yield {
       println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
-    }).getOrElse(Seq.empty)
+    }).getOrElse(collection.Seq.empty)
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame

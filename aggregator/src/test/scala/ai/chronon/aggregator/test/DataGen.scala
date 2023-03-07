@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import scala.reflect.ClassTag
+import scala.collection.Seq
 import scala.util.Random
 
 // utility classes to generate random data
@@ -113,7 +114,7 @@ object CStream {
   def gen(columns: Seq[Column], count: Int): RowsWithSchema = {
     val schema = columns.map(_.schema)
     val generators = columns.map(_.gen)
-    val zippedStream = new ZippedStream(generators: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
+    val zippedStream = new ZippedStream(generators.toSeq: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
     RowsWithSchema(Seq.fill(count) { zippedStream.next() }.toArray, schema)
   }
 }

@@ -7,6 +7,7 @@ import org.apache.spark.sql.types._
 
 import java.util
 import scala.collection.mutable
+import scala.collection.Seq
 
 // wrapper class of spark ai.chronon.aggregator.row that the RowAggregator can work with
 // no copies are happening here, but we wrap the ai.chronon.aggregator.row with an additional class
@@ -102,7 +103,7 @@ object SparkConversions {
     StructType(schema.map {
       case (name, zType) =>
         StructField(name, fromChrononType(zType))
-    })
+    }.toSeq)
 
   def fromChrononSchema(schema: api.StructType): StructType =
     StructType(schema.fields.map {

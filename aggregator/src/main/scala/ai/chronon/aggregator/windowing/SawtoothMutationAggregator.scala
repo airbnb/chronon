@@ -4,6 +4,7 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import java.util
+import scala.collection.Seq
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)

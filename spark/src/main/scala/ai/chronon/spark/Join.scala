@@ -8,6 +8,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
+import scala.collection.Seq
 
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
@@ -224,7 +225,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
               bootstrapDf = bootstrapDf
                 .select(includedColumns.map(col): _*)
                 // TODO: allow customization of deduplication logic
-                .dropDuplicates(part.keys(joinConf))
+                .dropDuplicates(part.keys(joinConf).toArray)
 
               coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf))
               // as part of the left outer join process, we update and maintain matched_hashes for each record

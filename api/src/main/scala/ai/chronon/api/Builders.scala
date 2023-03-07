@@ -4,6 +4,8 @@ import ai.chronon.api.DataType.toTDataType
 import ai.chronon.api.Extensions.WindowUtils
 
 import scala.collection.JavaConverters._
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions._
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 // mostly used by tests to define confs easily
@@ -245,7 +247,7 @@ object Builders {
       result.setOutputNamespace(namespace)
       result.setTeam(Option(team).getOrElse("chronon"))
       if (dependencies != null)
-        result.setDependencies(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(dependencies))
+        result.setDependencies(dependencies.toSeq.toJava)
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
       if (consistencySamplePercent > 0)
@@ -283,7 +285,7 @@ object Builders {
       bootstrapPart.setQuery(query)
       bootstrapPart.setTable(table)
       Option(keyColumns)
-        .map(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava)
+        .map(_.toSeq.toJava)
         .foreach(bootstrapPart.setKeyColumns)
       bootstrapPart.setMetaData(metaData)
       bootstrapPart
