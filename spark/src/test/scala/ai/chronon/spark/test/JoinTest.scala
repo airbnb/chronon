@@ -649,6 +649,7 @@ class JoinTest {
     // Test cumulative
     val viewsGroupByCumulative = getViewsGroupBy(suffix = "render", makeCumulative = true)
     val renderedCumulative = renderDataSourceQuery(
+      viewsGroupByCumulative,
       viewsGroupByCumulative.sources.asScala.head,
       Seq("item"),
       PartitionRange("2021-02-23", "2021-05-03"),
@@ -662,6 +663,7 @@ class JoinTest {
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
     val renderedIncremental = renderDataSourceQuery(
+      viewsGroupByCumulative,
       viewsGroupByIncremental.sources.asScala.head,
       Seq("item"),
       PartitionRange("2021-01-01", "2021-01-03"),
