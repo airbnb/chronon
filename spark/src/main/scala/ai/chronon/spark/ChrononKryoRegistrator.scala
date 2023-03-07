@@ -115,7 +115,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableBlockLocation",
       "scala.reflect.ManifestFactory$$anon$10",
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
-      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
+      "scala.collection.immutable.ArraySeq$ofRef"
     )
     names.foreach { name =>
       try {
