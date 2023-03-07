@@ -1,21 +1,47 @@
 package ai.chronon.spark
+import java.time.{LocalDateTime, ZoneOffset}
+import java.time.format.DateTimeFormatter
+
+import scala.Seq
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 import ai.chronon.api
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Either, ScalaJavaConversions}
+import scala.collection.JavaConversions._
 import ai.chronon.api.Extensions._
-
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.Operation
 
 
 object SqlGenerator {
 
-  def generateGroupBySourceQuery(groupBy: api.GroupBy, ds: String): String = {
+  val DS_FORMAT = "yyyy-MM-dd HH:mm:ss"
+
+
+  def getKeyInputs(source: api.Source, keys: Seq[String]): Seq[String] = {
+    val selectMap = source.query.getSelects
+    keys.map(selectMap.get(_))
+  }
+  def generateGroupBySourceQuery(groupBy: api.GroupBy, ds: String, keys: Seq[String], samplingRate: Option[Float], samplingMap: Option[Map[String, String]]): String = {
     val sourceQueries = groupBy.sources.toScala
       .map { source =>
-        val query = GroupBy.renderDataSourceQuery(source,
+        val wheres = source.query.getWheres.asScala
+
+        if (samplingRate.isDefined) {
+          val keyInputs = getKeyInputs(source, keys).map( k => s"CAST($k AS VARCHAR)")
+          val keyClause = if (keyInputs.length > 1) {
+            s"CONCAT(${keyInputs.mkString(",")}"
+          } else {
+            keyInputs.head
+          }
+          wheres.append(s"((abs(from_ieee754_64(xxhash64(cast($keyClause as varbinary)))) % 100) / 100. < ${samplingRate.get})")
+        }
+
+        source.query.setWheres(wheres)
+
+
+        GroupBy.renderDataSourceQuery(source,
           groupBy.getKeyColumns.toScala,
           PartitionRange(ds, ds),
           None,
@@ -25,15 +51,15 @@ object SqlGenerator {
     sourceQueries.mkString(" \n\n UNION ALL \n\n")
   }
 
-  def windowToMillis(window: api.Window): Int = {
-    window.timeUnit match {
-      case api.TimeUnit.HOURS => window.length * 60 * 60 * 1000
-      case api.TimeUnit.DAYS => window.length * 24 * 60 * 60 * 1000
-    }
+
+  def dsMidnightMillis(ds: String): Long = {
+    LocalDateTime.parse(s"$ds 23:59:59", DateTimeFormatter.ofPattern(DS_FORMAT))
+      .toEpochSecond(ZoneOffset.UTC) * 1000
   }
 
-  def getAggregationSelectors(groupBy: api.GroupBy, temporalAccuracy: Boolean, subQueryName: String, timeColumn: String): Seq[String] = {
-    groupBy.aggregations.asScala.map { agg =>
+  def getAggregationSelectors(groupBy: api.GroupBy, temporalAccuracy: Boolean, subQueryName: String, ds: String): Seq[String] = {
+    val dsMidnight = dsMidnightMillis(ds)
+    groupBy.aggregations.asScala.flatMap { agg =>
       val fullSourceColumn = if (temporalAccuracy) {
         agg.inputColumn // TODO: Render IF ts logic here
       } else {
@@ -47,11 +73,10 @@ object SqlGenerator {
         }
       } else {
         agg.windows.asScala.map { window =>
-          val windowMillis = windowToMillis(window)
           if (temporalAccuracy) {
-            (s"IF(left.ts - $windowMillis <= ${subQueryName}.ts < left.ts, ${agg.inputColumn}, null)", window.suffix)
+            (s"IF(left.ts - ${window.millis} <= ${subQueryName}.ts < left.ts, ${agg.inputColumn}, null)", window.suffix)
           } else {
-            (s"IF(${subQueryName}.ts > DATE_SUB(ds, window), input_col, null)", window.suffix)
+            (s"IF(${subQueryName}.ts > $dsMidnight - ${window.millis}, ${agg.inputColumn}, null)", window.suffix)
           }
           //s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window
         }
@@ -68,7 +93,7 @@ object SqlGenerator {
           case Operation.APPROX_UNIQUE_COUNT => s"APPROX_DISTINCT($innerExpression)"
           case Operation.COUNT => s"SUM(1)"
           case Operation.SUM => s"SUM($innerExpression)"
-          case Operation.AVERAGE => s"AVERAGE($innerExpression)"
+          case Operation.AVERAGE => s"AVG($innerExpression)"
           case Operation.VARIANCE =>
           case Operation.SKEW =>
           case Operation.KURTOSIS =>
@@ -82,7 +107,6 @@ object SqlGenerator {
         val outputName = s"${agg.inputColumn}_$operationSuffix$windowSuffix"
         s"$aggExpression AS $outputName"
       }
-
     }
   }
 
@@ -90,29 +114,40 @@ object SqlGenerator {
     println("Generating Join SQL")
   }
 
-  def runGroupBy(groupBy: api.GroupBy, ds: String, samplingRate: Option[Float], samplingMap: Option[Map[String, String]]): Unit = {
-    println("Generating GroupBy SQL")
-    println(ds)
-    println(samplingRate)
-    println(samplingMap)
-    //GroupBy.from(groupBy, PartitionRange(ds, ds), dummyUtils)
-    groupBy.sources
-    //GroupBy.renderDataSourceQuery()
 
-    val sourceQuery = generateGroupBySourceQuery(groupBy, ds)
+  def prestoConvert(query: String): String = {
+    query.replace("`", "")
+      .replace("UNIX_TIMESTAMP(ts)", "TO_UNIXTIME(CAST(ts as timestamp))")
+  }
+
+  def runGroupBy(groupBy: api.GroupBy, ds: String, samplingRate: Option[Float], samplingMap: Option[Map[String, String]]): Unit = {
+    //GroupBy.from(groupBy, PartitionRange(ds, ds), dummyUtils)
+    groupBy.sources.asScala.head.query.getWheres
+    //GroupBy.renderDataSourceQuery()
+    val sourceQuery = generateGroupBySourceQuery(groupBy, ds, groupBy.keyColumns.asScala, samplingRate, samplingMap)
+    val compositeKeyStr = groupBy.getKeyColumns.asScala.mkString(", ")
+    val aggSelectorsString =
+      getAggregationSelectors(groupBy, false, "source", ds)
+        .mkString(",\n")
+    val selectorsString = s"$compositeKeyStr, \n $aggSelectorsString"
 
 
     val finalSql = s"""
       | SELECT
-      |   {},
+      |   $selectorsString, '$ds' AS ds
       |   FROM
       |     (
       |       $sourceQuery
       |     ) source
-      |   {}
-      |   {}
+      |   GROUP BY $compositeKeyStr, '$ds'
       |""".stripMargin
 
+    print("SPARK SQL ===============================\n\n\n")
+    print(finalSql)
+
+    print("\n\n\n PRESTO SQL ===============================\n\n\n")
+    print(prestoConvert(finalSql))
+    print("\n\n")
   }
 
   def runJoin(join: api.Join, ds: String, samplingRate: Option[Float], samplingMap: Option[Map[String, String]]): Unit = {

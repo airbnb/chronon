@@ -72,7 +72,7 @@ def extract_and_convert():
                         help='Generates a SQL Query for testing/debugging.')
     parser.add_argument('--debug', action='store_true',
                         help='Debug mode.')
-    parser.add_argument('--force_overwrite', action='store_true',
+    parser.add_argument('--force-overwrite', action='store_true',
                         help='Force overwrite the config file.')
     parser.add_argument('--sampling', default=0.01, help='Sampling rate to use in rendering SQL query')
 

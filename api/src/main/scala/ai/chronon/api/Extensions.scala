@@ -36,14 +36,6 @@ object Extensions {
 
     def stringified: String = operation.toString.toLowerCase
 
-    def suffix: String = operation match {
-      case LAST_K => s"last${getInt("k")}"
-      case FIRST_K => s"first${getInt("k")}"
-      case TOP_K => s"top${getInt("k")}"
-      case BOTTOM_K => s"bottom${getInt("k")}"
-      case other => other.stringified
-    }
-
   }
 
   implicit class WindowOps(window: Window) {
