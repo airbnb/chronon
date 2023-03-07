@@ -652,7 +652,7 @@ class JoinTest {
       viewsGroupByCumulative.sources.asScala.head,
       Seq("item"),
       PartitionRange("2021-02-23", "2021-05-03"),
-      tableUtils,
+      Option(tableUtils),
       None,
       viewsGroupByCumulative.inferredAccuracy
     )
@@ -665,7 +665,7 @@ class JoinTest {
       viewsGroupByIncremental.sources.asScala.head,
       Seq("item"),
       PartitionRange("2021-01-01", "2021-01-03"),
-      tableUtils,
+      Option(tableUtils),
       None,
       viewsGroupByCumulative.inferredAccuracy
     )

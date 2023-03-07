@@ -377,7 +377,7 @@ object GroupBy {
         renderDataSourceQuery(source,
                               groupByConf.getKeyColumns.toScala,
                               queryRange,
-                              tableUtils,
+                              Option(tableUtils),
                               groupByConf.maxWindow,
                               groupByConf.inferredAccuracy)
       }
@@ -422,7 +422,7 @@ object GroupBy {
             renderDataSourceQuery(_,
                                   groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
-                                  tableUtils,
+                                  Option(tableUtils),
                                   groupByConf.maxWindow,
                                   groupByConf.inferredAccuracy,
                                   mutations = true)
@@ -447,7 +447,7 @@ object GroupBy {
 
   def getIntersectedRange(source: api.Source,
                           queryRange: PartitionRange,
-                          tableUtils: TableUtils,
+                          tableUtils: Option[TableUtils],
                           window: Option[api.Window]): PartitionRange = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
@@ -458,13 +458,13 @@ object GroupBy {
       case Events =>
         if (Option(source.getEvents.isCumulative).getOrElse(false)) {
           lazy val latestAvailable: Option[String] =
-            tableUtils.lastAvailablePartition(source.table, source.subPartitionFilters)
+            tableUtils.flatMap(_.lastAvailablePartition(source.table, source.subPartitionFilters))
           val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
           SourceDataProfile(latestValid, latestValid, latestValid)
         } else {
           val minQuery = Constants.Partition.before(queryStart)
           val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
-          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters)
+          lazy val firstAvailable = tableUtils.flatMap(_.firstAvailablePartition(source.table, source.subPartitionFilters))
           val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
           SourceDataProfile(windowStart, sourceStart, effectiveEnd)
         }
@@ -487,19 +487,23 @@ object GroupBy {
     intersectedRange
   }
 
-  def renderDataSourceQuery(source: api.Source,
-                            keys: Seq[String],
-                            queryRange: PartitionRange,
-                            tableUtils: TableUtils,
-                            window: Option[api.Window],
-                            accuracy: api.Accuracy,
-                            mutations: Boolean = false): String = {
+  def renderDataSourceQuery(
+      source: api.Source,
+      keys: Seq[String],
+      queryRange: PartitionRange,
+      tableUtils: Option[TableUtils],
+      window: Option[api.Window],
+      accuracy: api.Accuracy,
+      mutations: Boolean = false
+  ): String = {
 
-    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
-
-    val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
-      Some(getIntersectedRange(source, queryRange, tableUtils, window))
-    } else None
+    val intersectedRange = tableUtils match {
+      case Some(tu) =>
+        if (tu.isPartitioned(source.table)) {
+          Some(getIntersectedRange(source, queryRange, tableUtils, window))
+        } else None
+      case None => Some(getIntersectedRange(source, queryRange, tableUtils, window))
+    }
 
     var metaColumns: Map[String, String] = Map(Constants.PartitionColumn -> null)
     if (mutations) {
