@@ -217,11 +217,11 @@ This command will take into the account of `version.sbt` and handles a series of
 5. Push release tag to master branch
      1. tag new version to release commit `Setting version to 0.0.xx`. If not already tagged, can be added by 
      ```
-       git tag -fa v0.0.xx 0293050a
+       git tag -fa v0.0.xx <commit-sha>
      ```
      2. push tag to master 
       ```
-        git push --tags
+        git push origin <tag-name>
       ```
      3. New tag should be available here  - https://github.com/airbnb/chronon/tags
 ## [TODO] Publishing a driver to github releases
