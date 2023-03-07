@@ -9,6 +9,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.ThrowableOps
+import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -84,12 +85,15 @@ class BaseFetcher(kvStore: KVStore,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
-        if (debug) println(s"""
-             |batch ir: $batchIr
-             |streamingRows: $streamingRows
-             |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-             |queryTime in millis: $queryTimeMs
-             |""".stripMargin)
+        if (debug) {
+          val gson = new Gson()
+          println(s"""
+                     |batch ir: ${gson.toJson(batchIr)}
+                     |streamingRows: ${gson.toJson(streamingRows)}
+                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                     |queryTime in millis: $queryTimeMs
+                     |""".stripMargin)
+        }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }

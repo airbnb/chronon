@@ -3,7 +3,6 @@ package ai.chronon.online
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.concurrent.{ArrayBlockingQueue, Executors, ThreadPoolExecutor, TimeUnit}
 import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}

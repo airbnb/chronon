@@ -444,6 +444,8 @@ object Extensions {
       )
     }
 
+    // de-duplicate all columns necessary for aggregation in a deterministic order
+    // so we use distinct instead of toSet here
     def aggregationInputs: Array[String] =
       groupBy.aggregations
         .iterator()
@@ -452,8 +454,8 @@ object Extensions {
           Option(agg.buckets)
             .map(_.iterator().toScala.toSeq)
             .getOrElse(Seq.empty) :+ agg.inputColumn)
-        .toSet
         .toArray
+        .distinct
 
     def valueColumns: Array[String] =
       Option(groupBy.aggregations)
