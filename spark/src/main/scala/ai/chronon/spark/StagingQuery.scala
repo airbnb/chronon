@@ -67,12 +67,17 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         println(s"Finished writing Staging Query data to $outputTable")
       } catch {
         case err: Throwable =>
-          exceptions.append(
-            s"Error handling range $stagingQueryUnfilledRange : ${err.getStackTrace.mkString("Array(", ", ", ")")}")
+          exceptions.append(s"Error handling range $stagingQueryUnfilledRange : ${err.getMessage}\n${err.traceString}")
       }
     }
     if (exceptions.nonEmpty) {
-      throw new RuntimeException(exceptions.mkString("\n"))
+      val length = exceptions.length
+      val fullMessage = exceptions.zipWithIndex
+        .map {
+          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+        }
+        .mkString("\n")
+      throw new Exception(fullMessage)
     }
   }
 }

@@ -109,7 +109,9 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.util.HadoopFSUtils$SerializableBlockLocation",
       "scala.reflect.ManifestFactory$LongManifest",
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation$",
-      "scala.reflect.ManifestFactory$$anon$1"
+      "scala.reflect.ManifestFactory$$anon$1",
+      "scala.reflect.ClassTag$GenericClassTag",
+      "org.apache.spark.unsafe.types.UTF8String"
     )
     val spark2 = Seq(
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
