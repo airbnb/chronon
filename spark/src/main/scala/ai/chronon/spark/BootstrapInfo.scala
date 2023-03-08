@@ -4,7 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
 import ai.chronon.spark.Extensions._
-import ai.chronon.online.{JoinCodec, SparkConversions}
+import ai.chronon.online.{JoinCodec, LoggingSchema, SparkConversions}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
@@ -127,7 +127,7 @@ object BootstrapInfo {
       // Retrieve schema_hash mapping info from Hive table properties
       LogFlattenerJob
         .readSchemaTableProperties(tableUtils, joinConf)
-        .mapValues(JoinCodec.fromLoggingSchema(_, joinConf).valueFields)
+        .mapValues(LoggingSchema.parseLoggingSchema(_).valueFields.fields)
         .toMap
     }
 
