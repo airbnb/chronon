@@ -89,7 +89,8 @@ class MigrationCompareTest {
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
 
-    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
+    val (compareDf, metricsDf, metrics) =
+      new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
   }
 
@@ -109,7 +110,8 @@ class MigrationCompareTest {
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
 
-    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
+    val (compareDf, metricsDf, metrics) =
+      new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
   }
 
@@ -120,7 +122,8 @@ class MigrationCompareTest {
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
 
-    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
+    val (compareDf, metricsDf, metrics) =
+      new MigrationCompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
     println(metrics)
   }
 }

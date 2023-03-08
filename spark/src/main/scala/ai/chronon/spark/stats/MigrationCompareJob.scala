@@ -22,7 +22,7 @@ class MigrationCompareJob(
     endDate: String = null
 ) extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
-  def run(): (DataFrame, DataMetrics) = {
+  def run(): (DataFrame, DataFrame, DataMetrics) = {
     assert(endDate != null, "End date for the comparison should not be null")
     val partitionRange = if (startDate != null) {
       PartitionRange(startDate, endDate).betweenClauses
@@ -39,9 +39,9 @@ class MigrationCompareJob(
         |FROM ${stagingConf.metaData.outputTable}
         |WHERE ${partitionRange}
         |""".stripMargin)
-    val (df, metrics) = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
+    val (compareDf, metricsDf, metrics) = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
     println("Finished compare stats.")
-    (df, metrics)
+    (compareDf, metricsDf, metrics)
   }
 
   def getJoinKeys(joinConf: api.Join): Seq[String] = {
