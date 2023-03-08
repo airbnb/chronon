@@ -69,7 +69,7 @@ def Aggregations(**agg_dict):
     return agg_dict.values()
 
 
-def DefaultAggregation(keys, sources, operation=Operation.LAST, additional_metadata=None):
+def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
     aggregate_columns = []
     for source in sources:
         query = utils.get_query(source)
@@ -90,7 +90,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, additional_metad
         Aggregation(
             operation=operation,
             input_column=column,
-            additional_metadata=additional_metadata) for column in aggregate_columns
+            tags=tags) for column in aggregate_columns
     ]
 
 
@@ -113,7 +113,7 @@ def Aggregation(input_column: str = None,
                 operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
                 windows: List[ttypes.Window] = None,
                 buckets: List[str] = None,
-                additional_metadata: Dict[str, str] = None) -> ttypes.Aggregation:
+                tags: Dict[str, str] = None) -> ttypes.Aggregation:
     """
     :param input_column:
         Column on which the aggregation needs to be performed.
@@ -140,7 +140,7 @@ def Aggregation(input_column: str = None,
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
-    agg.additional_metadata = additional_metadata
+    agg.tags = tags
     return agg
 
 
@@ -289,7 +289,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
             name: str = None,
-            additional_metadata: Dict[str, str] = None,
+            tags: Dict[str, str] = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -374,7 +374,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
     :type kwargs: Dict[str, str]
-    :param additional_metadata:
+    :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
     :type kwargs: Dict[str, str]
@@ -427,12 +427,12 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
-    agg_metadata = {}
+    column_tags = {}
     for agg in aggregations:
-        if hasattr(agg, "additional_metadata") and agg.additional_metadata:
+        if hasattr(agg, "tags") and agg.tags:
             for output_col in get_output_col_names(agg):
-                agg_metadata[output_col] = agg.additional_metadata
-    metadata = {"additional_groupby_metadata": additional_metadata, "additional_agg_metadata": agg_metadata}
+                column_tags[output_col] = agg.tags
+    metadata = {"groupby_tags": tags, "column_tags": column_tags}
     kwargs.update(metadata)
 
     metadata = ttypes.MetaData(

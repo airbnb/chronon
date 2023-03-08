@@ -36,7 +36,7 @@
         "metaData": {
           "name": "sample_team.sample_group_by.v1",
           "production": 0,
-          "customJson": "{\"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {}}",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_team_sample_staging_query_v1_ds\", \"spec\": \"sample_namespace.sample_team_sample_staging_query_v1/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],

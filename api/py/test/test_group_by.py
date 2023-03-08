@@ -200,9 +200,9 @@ def test_additional_metadata():
         ],
         keys=["key1", "key2"],
         aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
-        additional_metadata={"to_deprecate": True}
+        tags={"to_deprecate": True}
     )
-    assert json.loads(gb.metaData.customJson)['additional_groupby_metadata']['to_deprecate']
+    assert json.loads(gb.metaData.customJson)['groupby_tags']['to_deprecate']
 
 
 ratings_features = GroupBy(

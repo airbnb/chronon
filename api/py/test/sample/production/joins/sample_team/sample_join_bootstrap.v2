@@ -40,7 +40,7 @@
         "metaData": {
           "name": "sample_team.event_sample_group_by.v1",
           "online": 1,
-          "customJson": "{\"lag\": 0, \"additional_groupby_metadata\": {\"TO_DEPRECATE\": true}, \"additional_agg_metadata\": {\"event_sum_7d\": {\"DETAILED_TYPE\": \"CONTINUOUS\"}}}",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": {\"TO_DEPRECATE\": true}, \"column_tags\": {\"event_sum_7d\": {\"DETAILED_TYPE\": \"CONTINUOUS\"}}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
@@ -105,7 +105,7 @@
         "metaData": {
           "name": "sample_team.entity_sample_group_by_from_module.v1",
           "online": 1,
-          "customJson": "{\"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {}}",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
             "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
@@ -165,7 +165,7 @@
         "metaData": {
           "name": "sample_team.group_by_with_kwargs.v1",
           "online": 1,
-          "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0, \"additional_groupby_metadata\": null, \"additional_agg_metadata\": {}}",
+          "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
             "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
