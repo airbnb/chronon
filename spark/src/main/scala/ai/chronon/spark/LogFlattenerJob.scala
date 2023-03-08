@@ -96,9 +96,9 @@ class LogFlattenerJob(session: SparkSession,
     fieldsBuilder.map(f => StructField(f._1, f._2))
   }
 
-  private def flattenKeyValueBytes(rawDf: Dataset[Row], codecMap: Map[String, JoinCodec]): DataFrame = {
+  private def flattenKeyValueBytes(rawDf: Dataset[Row], schemaMap: Map[String, LoggingSchema]): DataFrame = {
 
-    val allDataFields = dedupeFields(codecMap.values.flatMap(_.keyFields) ++ codecMap.values.flatMap(_.valueFields))
+    val allDataFields = dedupeFields(schemaMap.values.flatMap(_.keyFields) ++ schemaMap.values.flatMap(_.valueFields))
     // contextual features are logged twice in keys and values, where values are prefixed with ext_contextual
     // here we exclude the duplicated fields as the two are always identical
     val dataFields = allDataFields.filterNot(field =>
@@ -114,7 +114,7 @@ class LogFlattenerJob(session: SparkSession,
           // ignore older logs that do not have schema_hash info
           None
         } else {
-          val joinCodec = codecMap(row.getString(schemaHashIdx))
+          val joinCodec = schemaMap(row.getString(schemaHashIdx))
           val keyBytes = Base64.getDecoder.decode(row.getString(keyBase64Idx))
           val valueBytes = Base64.getDecoder.decode(row.getString(valueBase64Idx))
           val keyRow = Try(joinCodec.keyCodec.decodeRow(keyBytes))
@@ -194,13 +194,13 @@ class LogFlattenerJob(session: SparkSession,
       val rawTableScan = unfilled.genScanQuery(null, logTable)
       val rawDf = tableUtils.sql(rawTableScan).where(col("name") === joinName)
       val schemaHashes = rawDf.select(col(Constants.SchemaHash)).distinct().collect().map(_.getString(0)).toSeq
-      val schemaMap = fetchSchemas(schemaHashes)
+      val schemaStringsMap = fetchSchemas(schemaHashes)
 
       // we do not have exact joinConf at time of logging, and since it is not used during flattening, we pass in null
-      val codecMap = schemaMap.mapValues(JoinCodec.fromLoggingSchema(_, joinConf = null)).map(identity).toMap
-      val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
+      val schemaMap = schemaStringsMap.mapValues(LoggingSchema.parseLoggingSchema).map(identity).toMap
+      val flattenedDf = flattenKeyValueBytes(rawDf, schemaMap)
 
-      val schemaTblProps = buildTableProperties(schemaMap)
+      val schemaTblProps = buildTableProperties(schemaStringsMap)
       println("======= Log table schema =======")
       println(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,

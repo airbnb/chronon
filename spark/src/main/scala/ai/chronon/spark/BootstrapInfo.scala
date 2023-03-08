@@ -3,14 +3,13 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
-import ai.chronon.online.{JoinCodec, SparkConversions}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
 
-import scala.collection.Seq
-import scala.collection.immutable
+import scala.collection.{Seq, immutable}
 import scala.util.ScalaJavaConversions.ListOps
 
 case class JoinPartMetadata(
@@ -127,7 +126,7 @@ object BootstrapInfo {
       // Retrieve schema_hash mapping info from Hive table properties
       LogFlattenerJob
         .readSchemaTableProperties(tableUtils, joinConf)
-        .mapValues(JoinCodec.fromLoggingSchema(_, joinConf).valueFields)
+        .mapValues(LoggingSchema.parseLoggingSchema(_).valueFields.fields)
         .toMap
     }
 

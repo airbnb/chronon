@@ -1,12 +1,11 @@
 package ai.chronon.online
 
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
-import ai.chronon.api.{HashUtils, Join, LongType, StringType, StructField, StructType}
+import ai.chronon.api.{HashUtils, LongType, StringType, StructField, StructType}
 import com.google.gson.Gson
 
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.MapOps
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.JMapOps
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -70,14 +69,7 @@ case class JoinCodec(conf: JoinOps,
    * Example:
    * {"join_name":"unit_test/test_join","key_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_key\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"listing\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}","value_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_value\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"unit_test_listing_views_v1_m_guests_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"},{\"name\":\"unit_test_listing_views_v1_m_views_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}"}
    */
-  lazy val loggingSchema: String = {
-    val schemaMap = Map(
-      "join_name" -> conf.join.metaData.name,
-      "key_schema" -> keyCodec.schemaStr,
-      "value_schema" -> valueCodec.schemaStr
-    )
-    new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
-  }
+  lazy val loggingSchema: String = JoinCodec.buildLoggingSchema(conf.join.metaData.name, keyCodec, valueCodec)
   lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
 
   val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
@@ -97,26 +89,6 @@ object JoinCodec {
     StructField("ds", StringType)
   )
 
-  def fromLoggingSchema(loggingSchema: String, joinConf: Join): JoinCodec = {
-    val schemaMap = new Gson()
-      .fromJson(
-        loggingSchema,
-        classOf[java.util.Map[java.lang.String, java.lang.String]]
-      )
-      .toScala
-
-    val keyCodec = new AvroCodec(schemaMap("key_schema"))
-    val valueCodec = new AvroCodec(schemaMap("value_schema"))
-
-    JoinCodec(
-      joinConf,
-      keyCodec.chrononSchema.asInstanceOf[StructType],
-      valueCodec.chrononSchema.asInstanceOf[StructType],
-      keyCodec,
-      valueCodec
-    )
-  }
-
   // remove value fields of groupBys that have failed with exceptions
   private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
     val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
@@ -125,5 +97,14 @@ object JoinCodec {
     }
     val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
     derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
+  }
+
+  def buildLoggingSchema(joinName: String, keyCodec: AvroCodec, valueCodec: AvroCodec): String = {
+    val schemaMap = Map(
+      "join_name" -> joinName,
+      "key_schema" -> keyCodec.schemaStr,
+      "value_schema" -> valueCodec.schemaStr
+    )
+    new Gson().toJson(schemaMap.toJava)
   }
 }
