@@ -18,56 +18,49 @@ object CompareJob {
     // Make sure the number of fields are comparable on either side.
     // For migration checks, the left side can have more fields.
     val sizeCheck = if (migrationCheck) leftFields.size >= rightFields.size else leftFields.size == rightFields.size
-    assert(
-      sizeCheck,
-      s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
-         |Left side fields:
-         | - ${leftFields.mkString("\n - ")}
-         |
-         |Right side fields:
-         | - ${rightFields.mkString("\n - ")}
-         |""".stripMargin
+    assert(sizeCheck,
+           s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
+           |Left side fields:
+           | - ${leftFields.mkString("\n - ")}
+           |
+           |Right side fields:
+           | - ${rightFields.mkString("\n - ")}
+           |""".stripMargin
     )
 
     // Verify that the mapping and the datatypes match
-    leftFields.foreach { leftField =>
-      val rightFieldName = if (mapping.contains(leftField._1)) mapping.get(leftField._1).get else leftField._1
-      if (rightFields.contains(rightFieldName)) {
-        // Make sure the data types match for proper comparison
-        val rightFieldType = rightFields.get(rightFieldName).get
-        assert(leftField._2 == rightFieldType,
-               s"Comparison data types do not match; left side: ${leftField._2}, right side: ${rightFieldType}")
-      } else if (!migrationCheck) {
-        // For all comparisons outside of migration checks all of the right side columns needs to be present
-        assert(rightFields.contains(rightFieldName),
-               s"Mapping column on the right table is not present; column name: ${rightFieldName}")
-      }
+    val revMapping = mapping.map(_.swap)
+    rightFields.foreach { rightField =>
+      val leftFieldName = if (revMapping.contains(rightField._1)) revMapping.get(rightField._1).get else rightField._1
+      assert(leftFields.contains(leftFieldName),
+             s"Mapping column on the left table is not present; column name: ${leftFieldName}")
+
+      val leftFieldType = leftFields.get(leftFieldName).get
+      assert(rightField._2 == leftFieldType,
+             s"Comparison data types do not match for column '${leftFieldName}';" +
+             s" left side: ${leftFieldType}, right side: ${rightField._2}")
     }
 
+    // Make sure the values of the mapping dict doesn't contain any duplicates
+    assert(mapping.size == revMapping.size,
+           s"Mapping values contain duplicate values. Keys: ${mapping.keys}, Values: ${mapping.values}")
+
     // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
-    assert(
-      mapping.keySet.subsetOf(leftFields.keySet),
-      s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
-        s" expected to be subset of: ${leftFields.keySet}"
+    assert(mapping.keySet.subsetOf(leftFields.keySet),
+           s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
+           s" expected to be subset of: ${leftFields.keySet}"
     )
-    assert(
-      mapping.values.toSet.subsetOf(rightFields.keySet),
-      s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
-        s" expected to be subset of: ${rightFields.keySet}"
+    assert(mapping.values.toSet.subsetOf(rightFields.keySet),
+           s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
+           s" expected to be subset of: ${rightFields.keySet}"
     )
 
     // Make sure the key columns are present in both the frames.
-    assert(
-      keys.toSet.subsetOf(leftFields.keySet),
-      s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
-        s" expected to be subset of: ${leftFields.keySet}"
-    )
-
-    assert(
-      keys.toSet.subsetOf(rightFields.keySet),
-      s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
-        s" expected to be subset of: ${rightFields.keySet}"
-    )
+    Seq(leftFields, rightFields).foreach { kset =>
+      assert(keys.toSet.subsetOf(kset.keySet),
+             s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
+             s" expected to be subset of: ${kset.keySet}")
+    }
 
     // Make sure the passed keys has one of the time elements in it
     assert(keys.intersect(Constants.ReservedColumns).length != 0, "Ensure that one of the key columns is a time column")

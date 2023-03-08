@@ -6,7 +6,7 @@ import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.{Analyzer, PartitionRange, TableUtils}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 /**
   * Compare Job for migration to AFP.
@@ -17,7 +17,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 class MigrationCompareJob(
     session: SparkSession,
     joinConf: api.Join,
-    stagingConf: api.StagingQuery,
+    stagingQueryConf: api.StagingQuery,
     startDate: String = null,
     endDate: String = null
 ) extends Serializable {
@@ -36,12 +36,27 @@ class MigrationCompareJob(
         |""".stripMargin)
     val rightDf = tableUtils.sql(s"""
         |SELECT *
-        |FROM ${stagingConf.metaData.outputTable}
+        |FROM ${stagingQueryConf.metaData.outputTable}
         |WHERE ${partitionRange}
         |""".stripMargin)
-    val (compareDf, metricsDf, metrics) = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
+    val (compareDf, metricsDf, metrics) =
+      CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
+
+    // Save the comparison table
+    println("Saving output..")
+    println(s"Output schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    tableUtils.insertUnPartitioned(compareDf,
+                                   getCompareOutputTableName(joinConf, stagingQueryConf),
+                                   saveMode = SaveMode.Overwrite)
     println("Finished compare stats.")
     (compareDf, metricsDf, metrics)
+  }
+
+  def getCompareOutputTableName(joinConf: api.Join, stagingQueryConf: api.StagingQuery): String = {
+    val namespace = joinConf.metaData.outputNamespace
+    val joinName = joinConf.metaData.cleanName
+    val stagingQueryName = stagingQueryConf.metaData.cleanName
+    s"${namespace}.migration_compare_join_${joinName}_${stagingQueryName}"
   }
 
   def getJoinKeys(joinConf: api.Join): Seq[String] = {
@@ -57,7 +72,7 @@ class MigrationCompareJob(
     val analyzer = new Analyzer(tableUtils, joinConf, enableHitter = false)
     val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
     val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
-    val stagingQuerySchema = tableUtils.sql(stagingConf.query).schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    val stagingQuerySchema = tableUtils.sql(stagingQueryConf.query).schema.fields.map(sb => (sb.name, sb.dataType)).toMap
 
     CompareJob.checkConsistency(
       joinSchema,

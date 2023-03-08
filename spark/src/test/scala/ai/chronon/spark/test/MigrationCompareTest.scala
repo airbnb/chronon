@@ -102,7 +102,7 @@ class MigrationCompareTest {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select item, ts, ds from ${joinConf.metaData.outputTable}",
       startPartition = ninetyDaysAgo,
-      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_4",
         namespace = namespace,
         tableProperties = Map("key" -> "val"))
     )
