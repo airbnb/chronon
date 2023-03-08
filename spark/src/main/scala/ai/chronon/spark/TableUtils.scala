@@ -10,6 +10,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import scala.collection.mutable
+import scala.collection.Seq
 import scala.util.{Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
@@ -241,7 +242,7 @@ case class TableUtils(sparkSession: SparkSession) {
           Seq(Constants.PartitionColumn, saltCol)
         } else { Seq(saltCol) }
       saltedDf
-        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
+        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col).toSeq: _*)
         .drop(saltCol)
         .write
         .mode(saveMode)

@@ -263,7 +263,7 @@ lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
-    crossScalaVersions := Seq(scala211, scala212),
+    crossScalaVersions := Seq(scala211, scala212, scala213),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
   )
 

@@ -2,8 +2,9 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
+import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
@@ -14,6 +15,8 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.util.matching.Regex
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
 object Fetcher {
@@ -25,65 +28,9 @@ object Fetcher {
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
 }
 
-case class JoinCodec(conf: JoinOps,
-                     keySchema: StructType,
-                     valueSchema: StructType,
-                     keyCodec: AvroCodec,
-                     valueCodec: AvroCodec)
-    extends Serializable {
-  /*
-   * Get the serialized string repr. of the logging schema.
-   * key_schema and value_schema are first converted to strings and then serialized as part of Map[String, String] => String conversion.
-   *
-   * Example:
-   * {"join_name":"unit_test/test_join","key_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_key\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"listing\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}","value_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_value\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"unit_test_listing_views_v1_m_guests_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"},{\"name\":\"unit_test_listing_views_v1_m_views_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}"}
-   */
-  lazy val loggingSchema: String = {
-    val schemaMap = Map(
-      "join_name" -> conf.join.metaData.name,
-      "key_schema" -> keyCodec.schemaStr,
-      "value_schema" -> valueCodec.schemaStr
-    )
-    new Gson().toJson(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(schemaMap))
-  }
-  lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
 
-  val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
-  val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
 
-  val keyFields: Array[StructField] = keySchema.fields
-  val valueFields: Array[StructField] = valueSchema.fields
-  lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
-  lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap
-}
 
-object JoinCodec {
-
-  val timeFields: Array[StructField] = Array(
-    StructField("ts", LongType),
-    StructField("ds", StringType)
-  )
-
-  def fromLoggingSchema(loggingSchema: String, joinConf: Join): JoinCodec = {
-    val schemaMap = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala[String, String](
-      new Gson()
-        .fromJson(
-          loggingSchema,
-          classOf[java.util.Map[java.lang.String, java.lang.String]]
-        ))
-
-    val keyCodec = new AvroCodec(schemaMap("key_schema"))
-    val valueCodec = new AvroCodec(schemaMap("value_schema"))
-
-    JoinCodec(
-      joinConf,
-      keyCodec.chrononSchema.asInstanceOf[StructType],
-      valueCodec.chrononSchema.asInstanceOf[StructType],
-      keyCodec,
-      valueCodec
-    )
-  }
-}
 
 // BaseFetcher + Logging + External service calls
 class Fetcher(val kvStore: KVStore,
@@ -100,6 +47,7 @@ class Fetcher(val kvStore: KVStore,
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     joinConfTry.map { joinConf =>
+      // collect schema from
       joinConf.joinPartOps.foreach {
         joinPart =>
           val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
@@ -149,9 +97,9 @@ class Fetcher(val kvStore: KVStore,
 
       val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
       val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
-      val valueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-      val valueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
-      val joinCodec = JoinCodec(joinConf, keySchema, valueSchema, keyCodec, valueCodec)
+      val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
+      val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
+      val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
       logControlEvent(joinCodec)
       joinCodec
     }
@@ -185,7 +133,11 @@ class Fetcher(val kvStore: KVStore,
               Map("join_part_fetch_exception" -> internalResponse.values.failed.get.traceString))
             val externalMap = externalResponse.values.getOrElse(
               Map("external_part_fetch_exception" -> externalResponse.values.failed.get.traceString))
-            Response(internalResponse.request, Success(internalMap ++ externalMap))
+            val joinName = internalResponse.request.name
+            Metrics.Context(Environment.JoinFetching, join = joinName).histogram("overall.latency.millis", System.currentTimeMillis() - ts)
+            val joinCodec = getJoinCodecs(internalResponse.request.name).get
+            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, (internalMap ++ externalMap)).mapValues(_.asInstanceOf[AnyRef]).toMap
+            Response(internalResponse.request, Success(derivedMap))
         }
     }
 
@@ -370,6 +322,7 @@ class Fetcher(val kvStore: KVStore,
 
       // step-4 convert the resultMap into Responses
       joinRequests.map { req =>
+        Metrics.Context(Environment.JoinFetching, join = req.name).histogram("external.latency.millis", System.currentTimeMillis() - startTime)
         Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }

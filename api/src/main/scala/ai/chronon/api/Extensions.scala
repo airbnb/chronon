@@ -7,7 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.mutable
+import java.util.regex.Pattern
+import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
@@ -443,6 +444,8 @@ object Extensions {
       )
     }
 
+    // de-duplicate all columns necessary for aggregation in a deterministic order
+    // so we use distinct instead of toSet here
     def aggregationInputs: Array[String] =
       groupBy.aggregations
         .iterator()
@@ -451,8 +454,8 @@ object Extensions {
           Option(agg.buckets)
             .map(_.iterator().toScala.toSeq)
             .getOrElse(Seq.empty) :+ agg.inputColumn)
-        .toSet
         .toArray
+        .distinct
 
     def valueColumns: Array[String] =
       Option(groupBy.aggregations)
@@ -521,14 +524,13 @@ object Extensions {
         externalPart.source.metadata.name.sanitize
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
-      // TODO: Long-term we could bring in derivations here.
       val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
       val missingKeys = rightToLeft.iterator.map(_._2).filterNot(query.contains).toSet
 
       // for contextual features, we automatically populate null if any of the keys are missing
       // otherwise, an exception is thrown which will be converted to soft-fail in Fetcher code
       if (missingKeys.nonEmpty && !externalPart.source.isContextualSource) {
-        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq)
+        throw KeyMissingException(externalPart.source.metadata.name, missingKeys.toSeq, query)
       }
       rightToLeft.map {
         case (rightKey, leftKey) => rightKey -> query.getOrElse(leftKey, null).asInstanceOf[AnyRef]
@@ -651,6 +653,11 @@ object Extensions {
     def isLogBootstrap(join: Join): Boolean = {
       (bootstrapPart.table == join.metaData.loggedTable) && !(bootstrapPart.isSetQuery && bootstrapPart.getQuery.isSetSelects)
     }
+  }
+
+  object JoinOps {
+    private val identifierRegex: Pattern = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*")
+    def isIdentifier(s: String): Boolean = identifierRegex.matcher(s).matches()
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
@@ -849,17 +856,32 @@ object Extensions {
         .toSeq
         .map(new JoinPartOps(_))
 
+    private lazy val derivationsScala = join.derivations.toScala
+    lazy val derivationsContainStar: Boolean = derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = derivationsScala.filterNot(_.name == "*")
+    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
+    lazy val derivationExpressionSet: Set[String] = derivationsScala.iterator.map(_.expression).toSet
+    lazy val derivationExpressionFlippedMap: Map[String, String] =
+      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      val derivations = join.derivations.toScala
-      val wildCardSelects = if (derivations.iterator.exists(_.name == "*")) {
-        val expressions = derivations.iterator.map(_.expression).toSet
-        baseColumns.filterNot(expressions)
+      (if (derivationsContainStar) { // select all baseColumns except renamed ones
+         val expressions = derivationsScala.iterator.map(_.expression).toSet
+         baseColumns.filterNot(expressions)
+       } else {
+         Seq.empty
+       }).map(c => c -> c) ++ derivationsWithoutStar.map(d => (d.name, d.expression))
+    }
+
+    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+      assert(
+        areDerivationsRenameOnly,
+        s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")
+      if (derivationsContainStar) {
+        baseColumns.filterNot(derivationExpressionSet contains _._1)
       } else {
-        Seq()
-      }
-      val derivationSelects = derivations.iterator.filterNot(_.name == "*").map(d => (d.name, d.expression))
-      val projections = wildCardSelects.map(c => (c, c)) ++ derivationSelects
-      projections
+        Map.empty
+      } ++ derivationsScala.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
   }
 

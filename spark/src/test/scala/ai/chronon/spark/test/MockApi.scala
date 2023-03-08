@@ -14,6 +14,8 @@ import java.io.{ByteArrayInputStream, InputStream}
 import java.util
 import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
+
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Success}
@@ -131,7 +133,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   }
 
   def loggedValuesToDf(loggedValues: Seq[LoggableResponseBase64], session: SparkSession): DataFrame = {
-    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues))
+    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues.toSeq))
     df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
   }
 

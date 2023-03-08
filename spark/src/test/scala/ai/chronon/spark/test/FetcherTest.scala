@@ -4,11 +4,11 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.MetadataOps
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{SparkConversions, JavaRequest, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -22,6 +22,7 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters._
+import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
@@ -367,7 +368,12 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "test/payments_join",
                                    namespace = namespace,
                                    team = "chronon",
-                                   consistencySamplePercent = 30)
+                                   consistencySamplePercent = 30),
+      derivations = Seq(
+        Builders.Derivation("*", "*"),
+        Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
+        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
+      )
     )
     joinConf
   }
@@ -478,7 +484,7 @@ class FetcherTest extends TestCase {
       tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
     }
     val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("unit_test")): _*)
-    val keys = endDsQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
+    val keys = joinConf.leftKeyCols
     val keyIndices = keys.map(endDsQueries.schema.fieldIndex)
     val tsIndex = endDsQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
@@ -541,7 +547,7 @@ class FetcherTest extends TestCase {
 
     println(endDsExpected.schema.pretty)
     val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
-    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
+    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows.toSeq)
     var responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
@@ -600,7 +606,9 @@ class FetcherTest extends TestCase {
     val (responses, _) = joinResponses(Array(request), mockApi)
     val responseMap = responses.head.values.get
 
-    assertEquals(joinConf.joinParts.size(), responseMap.size)
-    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
+    println("====== Empty request response map ======")
+    println(responseMap)
+    assertEquals(joinConf.joinParts.size() + joinConf.derivationsWithoutStar.size, responseMap.size)
+    assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
   }
 }

@@ -46,7 +46,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
   // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {
     //kryo.setWarnUnregisteredClasses(true)
-    val common = Seq(
+    val names = Seq(
       "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
       "org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage",
       "org.apache.spark.sql.execution.datasources.ExecutedWriteSummary",
@@ -100,9 +100,9 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
-      "scala.collection.IndexedSeqLike$Elements"
-    )
-    val spark3 = Seq(
+      "scala.collection.IndexedSeqLike$Elements",
+      "org.apache.spark.unsafe.types.UTF8String",
+      "scala.reflect.ClassTag$GenericClassTag",
       "org.apache.spark.util.HadoopFSUtils$SerializableFileStatus",
       "org.apache.spark.sql.execution.datasources.v2.DataWritingSparkTaskResult",
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation",
@@ -111,22 +111,19 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.joins.EmptyHashedRelation$",
       "scala.reflect.ManifestFactory$$anon$1",
       "scala.reflect.ClassTag$GenericClassTag",
-      "org.apache.spark.unsafe.types.UTF8String"
-    )
-    val spark2 = Seq(
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableFileStatus",
       "org.apache.spark.sql.execution.datasources.InMemoryFileIndex$SerializableBlockLocation",
       "scala.reflect.ManifestFactory$$anon$10",
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
-      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5"
+      "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
+      "scala.collection.immutable.ArraySeq$ofRef"
     )
-    val names = if (SPARK_VERSION.startsWith("2")) common ++ spark2 else common ++ spark3
     names.foreach { name =>
       try {
         kryo.register(Class.forName(name))
         kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
       } catch {
-        case _: ClassNotFoundException => println(s"Unrecognized class $name passed to kryo registrator")
+        case _: ClassNotFoundException => // do nothing
       }
     }
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])

@@ -14,7 +14,7 @@ class CatalystUtilTest extends TestCase {
   def testCatalystUtil(): Unit = {
     val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
     val ctUtil = new CatalystUtil(
-      Map("a_plus" -> "a + 1",
+      Seq("a_plus" -> "a + 1",
           "b_str" -> "CAST(b as string)",
           "c_e" -> "c.e",
           "c" -> "c",

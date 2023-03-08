@@ -19,10 +19,11 @@ SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-compute',
                'analyze', 'stats-summary', 'log-flattener', 'metadata-export', 'label-join']
 
 # Constants for supporting multiple spark versions.
-SUPPORTED_SPARK = ['2.4.0', '3.1.1']
+SUPPORTED_SPARK = ['2.4.0', '3.1.1', '3.2.1']
 SCALA_VERSION_FOR_SPARK = {
     '2.4.0': "2.11",
     '3.1.1': "2.12",
+    '3.2.1': "2.13"
 }
 
 MODE_ARGS = {

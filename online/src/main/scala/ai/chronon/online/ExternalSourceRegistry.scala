@@ -5,6 +5,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
@@ -38,8 +39,9 @@ class ExternalSourceRegistry extends Serializable {
       ec: ExecutionContext): Future[Seq[Response]] = {
     val startTime = System.currentTimeMillis()
     // we make issue one batch request per external source and flatten out it later
-    val responsesByNameF: Iterable[Future[Seq[Response]]] = requests
+    val responsesByNameF: List[Future[Seq[Response]]] = requests
       .groupBy(_.name)
+      .parallel
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
@@ -59,6 +61,7 @@ class ExternalSourceRegistry extends Serializable {
             Future(requests.map(request => Response(request, failure)))
           }
       }
+      .toList
 
     Future.sequence(responsesByNameF).map { responsesByName =>
       val allResponses = responsesByName.flatten

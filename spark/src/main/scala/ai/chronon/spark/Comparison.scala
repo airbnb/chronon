@@ -1,5 +1,6 @@
 package ai.chronon.spark
 
+import ai.chronon.online.Extensions.StructTypeOps
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
@@ -41,6 +42,9 @@ object Comparison {
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
 
+    println("====== side-by-side comparison ======")
+    println(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
+
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
 
@@ -79,7 +83,12 @@ object Comparison {
         Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
       }
     println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
-    finalDf.filter(comparisonFilters.mkString(" or "))
+    if (comparisonFilters.nonEmpty) {
+      finalDf.filter(comparisonFilters.mkString(" or "))
+    } else {
+      // all rows are good
+      finalDf.filter("false")
+    }
   }
 
   private def prefixColumnName(df: DataFrame, prefix: String): DataFrame = {

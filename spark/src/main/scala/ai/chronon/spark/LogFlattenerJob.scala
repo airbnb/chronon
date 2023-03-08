@@ -4,6 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
+import ai.chronon.spark.Extensions.StructTypeOps
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
@@ -11,6 +12,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 
 import java.util.Base64
 import scala.collection.mutable
+import scala.collection.Seq
 import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
 
@@ -155,7 +157,7 @@ class LogFlattenerJob(session: SparkSession,
     session
       .table(schemaTable)
       .where(col(Constants.PartitionColumn) === schemaTableDs.get)
-      .where(col(Constants.SchemaHash).isin(hashes: _*))
+      .where(col(Constants.SchemaHash).isin(hashes.toSeq: _*))
       .select(
         col(Constants.SchemaHash),
         col("schema_value_last").as("schema_value")
@@ -199,7 +201,8 @@ class LogFlattenerJob(session: SparkSession,
       val flattenedDf = flattenKeyValueBytes(rawDf, codecMap)
 
       val schemaTblProps = buildTableProperties(schemaMap)
-
+      println("======= Log table schema =======")
+      println(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
                                   tableProperties = joinTblProps ++ schemaTblProps,

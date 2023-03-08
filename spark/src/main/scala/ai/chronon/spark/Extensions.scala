@@ -11,6 +11,7 @@ import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
+import scala.collection.Seq
 import scala.reflect.ClassTag
 
 object Extensions {
@@ -208,7 +209,7 @@ object Extensions {
     def order(keys: Seq[String]): DataFrame = {
       val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
       val filtered = df.where(filterClause)
-      filtered.orderBy(keys.map(desc): _*)
+      filtered.orderBy(keys.map(desc).toSeq: _*)
     }
   }
 

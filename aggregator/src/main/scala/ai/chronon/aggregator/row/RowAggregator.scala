@@ -2,6 +2,7 @@ package ai.chronon.aggregator.row
 
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
+import scala.collection.Seq
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons

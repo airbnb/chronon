@@ -13,7 +13,7 @@ object Extensions {
       }
 
       // pad the first column so that the second column is aligned vertically
-      val padding = schemaTuples.map(_._1.length).max
+      val padding = if (schemaTuples.isEmpty) 0 else schemaTuples.map(_._1.length).max
       schemaTuples
         .map {
           case (typ, name) => s"  ${typ.padTo(padding, ' ')} : $name"

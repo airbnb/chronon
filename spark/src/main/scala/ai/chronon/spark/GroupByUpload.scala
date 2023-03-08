@@ -11,6 +11,8 @@ import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
+import scala.collection.Seq
+
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
 
@@ -130,7 +132,7 @@ object GroupByUpload {
         Constants.GroupByServingInfoKey,
         ThriftJsonCodec.toJsonStr(groupByServingInfo)
       ))
-    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
+    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows.toSeq)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     kvDf
       .union(metaDf)

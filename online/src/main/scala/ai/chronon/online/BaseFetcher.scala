@@ -9,6 +9,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.ThrowableOps
+import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -84,12 +85,15 @@ class BaseFetcher(kvStore: KVStore,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
-        if (debug) println(s"""
-             |batch ir: $batchIr
-             |streamingRows: $streamingRows
-             |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-             |queryTime in millis: $queryTimeMs
-             |""".stripMargin)
+        if (debug) {
+          val gson = new Gson()
+          println(s"""
+                     |batch ir: ${gson.toJson(batchIr)}
+                     |streamingRows: ${gson.toJson(streamingRows)}
+                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                     |queryTime in millis: $queryTimeMs
+                     |""".stripMargin)
+        }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
@@ -142,6 +146,7 @@ class BaseFetcher(kvStore: KVStore,
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+    val requestTimeMillis = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
@@ -290,7 +295,7 @@ class BaseFetcher(kvStore: KVStore,
             val joinContextInner = Metrics.Context(joinContext.get, part)
             val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
             if (missingKeys.nonEmpty) {
-              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq))
+              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
             } else {
               val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
               Left(
@@ -356,8 +361,8 @@ class BaseFetcher(kvStore: KVStore,
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("overall.latency.millis", System.currentTimeMillis() - startTimeMs)
-              ctx.increment("overall.request.count")
+              ctx.histogram("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq

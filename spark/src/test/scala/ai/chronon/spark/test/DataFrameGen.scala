@@ -8,6 +8,8 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
+import scala.collection.Seq
+
 // This class generates dataframes given certain dataTypes, cardinalities and rowCounts of data
 // Nulls are injected for all types
 // String types are nulled at row level and also at the set level (some strings are always absent)
