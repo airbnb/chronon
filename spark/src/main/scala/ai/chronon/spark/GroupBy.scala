@@ -376,7 +376,8 @@ object GroupBy {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.toScala
       .map { source =>
-        renderDataSourceQuery(source,
+        renderDataSourceQuery(groupByConf,
+                              source,
                               groupByConf.getKeyColumns.toScala,
                               queryRange,
                               tableUtils,
@@ -421,7 +422,8 @@ object GroupBy {
       if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
           .map {
-            renderDataSourceQuery(_,
+            renderDataSourceQuery(groupByConf,
+                                  _,
                                   groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
                                   tableUtils,
@@ -489,7 +491,8 @@ object GroupBy {
     intersectedRange
   }
 
-  def renderDataSourceQuery(source: api.Source,
+  def renderDataSourceQuery(groupByConf: api.GroupBy,
+                            source: api.Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
                             tableUtils: TableUtils,
@@ -531,6 +534,10 @@ object GroupBy {
          |   partitionConditions: $partitionConditions
          |   metaColumns: $metaColumns
          |""".stripMargin)
+
+    if (mutations && !source.getEntities.isSetMutationTable) {
+      throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
+    }
 
     val query = api.QueryUtils.build(
       Option(source.query.selects).map(_.toScala).orNull,
@@ -587,11 +594,17 @@ object GroupBy {
           println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
         } catch {
           case err: Throwable =>
-            exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}"
+            exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"
         }
     }
     if (exceptions.nonEmpty) {
-      throw new RuntimeException(exceptions.mkString("\n"))
+      val length = exceptions.length
+      val fullMessage = exceptions.zipWithIndex
+        .map {
+          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+        }
+        .mkString("\n")
+      throw new Exception(fullMessage)
     }
   }
 
