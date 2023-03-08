@@ -67,7 +67,6 @@ class MigrationCompareTest {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from ${joinConf.metaData.outputTable}",
       startPartition = ninetyDaysAgo,
-      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
         namespace = namespace,
         tableProperties = Map("key" -> "val"))
@@ -90,7 +89,7 @@ class MigrationCompareTest {
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
 
-    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf).run()
+    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
   }
 
@@ -102,7 +101,6 @@ class MigrationCompareTest {
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select item, ts, ds from ${joinConf.metaData.outputTable}",
       startPartition = ninetyDaysAgo,
-      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
         namespace = namespace,
         tableProperties = Map("key" -> "val"))
@@ -111,7 +109,18 @@ class MigrationCompareTest {
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
 
-    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf).run()
+    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
+    println(metrics)
+  }
+
+  @Test
+  def testMigrateCompareWithWindows(): Unit = {
+    val (joinConf, stagingQueryConf) = setupTestData()
+
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+
+    val (df, metrics) = new MigrationCompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
     println(metrics)
   }
 }

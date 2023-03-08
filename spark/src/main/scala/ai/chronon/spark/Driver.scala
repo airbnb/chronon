@@ -259,6 +259,8 @@ object Driver {
     class Args extends Subcommand("migration-compare") with OfflineSubcommand {
       val from: ScallopOption[String] =
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
+      val startDate: ScallopOption[String] =
+        opt[String](required = false, descr = "Partition start date to compare the data from")
     }
 
     def run(args: Args): Unit = {
@@ -271,7 +273,9 @@ object Driver {
           s"migration_compare_join_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
         ).sparkSession,
         joinConf,
-        stagingQueryConf
+        stagingQueryConf,
+        args.startDate(),
+        args.endDate()
       ).run()
     }
   }
