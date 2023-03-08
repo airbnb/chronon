@@ -324,7 +324,7 @@ class GroupByTest {
     print(aggregationsMetadata)
     assertTrue(aggregationsMetadata.length == 1)
     assertEquals(aggregationsMetadata(0).name, "time_spent_ms")
-    assertEquals(aggregationsMetadata(0).columnType, "String")
+    assertEquals(aggregationsMetadata(0).columnType, LongType)
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type

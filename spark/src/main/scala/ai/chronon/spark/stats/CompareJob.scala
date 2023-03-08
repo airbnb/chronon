@@ -82,7 +82,7 @@ object CompareJob {
       keys: Seq[String],
       mapping: Map[String, String] = Map.empty,
       migrationCheck: Boolean = false
-  ): (DataFrame, DataMetrics) = {
+  ): (DataFrame, DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
@@ -142,6 +142,9 @@ object CompareJob {
                                          .map(tup => StructField(tup._1, tup._2)))
 
     // 5. Run the consistency check
-    CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
+    val (metricsDf, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
+
+    // Return the data frame of the actual comparison table, metrics table and the metrics itself
+    (compareDf, metricsDf, metrics)
   }
 }
