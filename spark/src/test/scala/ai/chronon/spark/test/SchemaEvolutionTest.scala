@@ -6,7 +6,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online._
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{LogFlattenerJob, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}

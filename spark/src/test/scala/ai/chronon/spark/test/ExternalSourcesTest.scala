@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{JoinCodec, LoggingSchema}
+import ai.chronon.spark.LoggingSchema
 import org.junit.Assert._
 import org.junit.Test
 
