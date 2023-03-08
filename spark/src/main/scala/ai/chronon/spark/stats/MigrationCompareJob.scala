@@ -5,7 +5,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, SparkConversions}
-import ai.chronon.spark.{Analyzer, JoinUtils, TableUtils}
+import ai.chronon.spark.{Analyzer, PartitionRange, TableUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
@@ -14,20 +14,34 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
   * Follow pattern of staging query for dividing long ranges into reasonable chunks.
   * Follow pattern of OOC for computing offline and uploading online as well.
   */
-class MigrationCompareJob(session: SparkSession, joinConf: api.Join, stagingConf: api.StagingQuery) extends Serializable {
+class MigrationCompareJob(
+    session: SparkSession,
+    joinConf: api.Join,
+    stagingConf: api.StagingQuery,
+    startDate: String = null,
+    endDate: String = null
+) extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
   def run(): (DataFrame, DataMetrics) = {
+    assert(endDate != null, "End date for the comparison should not be null")
+    val partitionRange = if (startDate != null) {
+      PartitionRange(startDate, endDate).betweenClauses
+    } else {
+      s"ds <= '${endDate}'"
+    }
     val leftDf = tableUtils.sql(s"""
         |SELECT *
         |FROM ${joinConf.metaData.outputTable}
+        |WHERE ${partitionRange}
         |""".stripMargin)
     val rightDf = tableUtils.sql(s"""
         |SELECT *
         |FROM ${stagingConf.metaData.outputTable}
+        |WHERE ${partitionRange}
         |""".stripMargin)
-    val result = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
+    val (df, metrics) = CompareJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
     println("Finished compare stats.")
-    result
+    (df, metrics)
   }
 
   def getJoinKeys(joinConf: api.Join): Seq[String] = {
