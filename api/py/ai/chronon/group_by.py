@@ -428,10 +428,11 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     team = inspect.stack()[1].filename.split("/")[-2]
 
     column_tags = {}
-    for agg in aggregations:
-        if hasattr(agg, "tags") and agg.tags:
-            for output_col in get_output_col_names(agg):
-                column_tags[output_col] = agg.tags
+    if aggregations:
+        for agg in aggregations:
+            if hasattr(agg, "tags") and agg.tags:
+                for output_col in get_output_col_names(agg):
+                    column_tags[output_col] = agg.tags
     metadata = {"groupby_tags": tags, "column_tags": column_tags}
     kwargs.update(metadata)
 
