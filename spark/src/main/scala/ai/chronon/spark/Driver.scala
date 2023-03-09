@@ -89,10 +89,10 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
-      val skipEqualCheck: ScallopOption[Boolean] =
+      val runFirstHole: ScallopOption[Boolean] =
         opt[Boolean](required = false,
                      default = Some(false),
-                     descr = "Check if this join has already run with a different conf, if so it will fail the job")
+                     descr = "Skip the first unfilled partition range if some future partitions have been populated.")
     }
 
     def run(args: Args): Unit = {
@@ -100,7 +100,8 @@ object Driver {
       val join = new Join(
         joinConf,
         args.endDate(),
-        args.buildTableUtils(s"join_${joinConf.metaData.name}")
+        args.buildTableUtils(s"join_${joinConf.metaData.name}"),
+        !args.runFirstHole()
       )
       join.computeJoin(args.stepDays.toOption)
     }

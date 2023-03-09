@@ -12,8 +12,8 @@ import scala.collection.Seq
 
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
-    extends BaseJoin(joinConf, endPartition, tableUtils) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
+    extends BaseJoin(joinConf, endPartition, tableUtils, skipFirstHole) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -178,7 +178,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
 
     tableUtils
-      .unfilledRanges(bootstrapTable, range)
+      .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
         val parts = Option(joinConf.bootstrapParts)

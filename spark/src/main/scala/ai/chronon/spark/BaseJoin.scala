@@ -16,7 +16,7 @@ import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
-abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
+abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -102,11 +102,15 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       val rightRange = leftRange.shift(shiftDays)
       try {
         val unfilledRanges = tableUtils
-          .unfilledRanges(partTable,
-                          rightRange,
-                          Some(Seq(joinConf.left.table)),
-                          inputToOutputShift = shiftDays,
-                          skipBeginningHoles = false)
+          .unfilledRanges(
+            partTable,
+            rightRange,
+            Some(Seq(joinConf.left.table)),
+            inputToOutputShift = shiftDays,
+            // never skip hole during partTable's range determination logic because we don't want partTable
+            // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
+            skipFirstHole = false
+          )
           .getOrElse(Seq())
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
         if (partitionCount > 0) {
@@ -269,8 +273,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     println(s"Join range to fill $rangeToFill")
-    val unfilledRanges =
-      tableUtils.unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table))).getOrElse(Seq.empty)
+    val unfilledRanges = tableUtils
+      .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
+      .getOrElse(Seq.empty)
 
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = unfilledRanges.flatMap { unfilledRange =>
