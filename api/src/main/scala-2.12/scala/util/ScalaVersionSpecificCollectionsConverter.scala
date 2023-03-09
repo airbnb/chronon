@@ -1,8 +1,5 @@
 package scala.util
 
-import java.util
-import scala.collection.immutable.ListMap
-import scala.collection.mutable
 import scala.collection.parallel.ParSeq
 import scala.jdk.CollectionConverters._
 
@@ -58,7 +55,7 @@ object ScalaJavaConversions {
       if (it == null) {
         null
       } else {
-        it.toSeq.par
+        it.toArray.par
       }
     }
   }

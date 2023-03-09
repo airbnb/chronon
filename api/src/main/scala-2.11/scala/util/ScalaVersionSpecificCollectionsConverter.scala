@@ -46,7 +46,7 @@ object ScalaJavaConversions {
       if (it == null) {
         null
       } else {
-        it.toSeq.par
+        it.toArray.par
       }
     }
   }
