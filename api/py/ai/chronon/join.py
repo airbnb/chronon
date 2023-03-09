@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO)
 
 def JoinPart(group_by: api.GroupBy,
              key_mapping: Dict[str, str] = None,
-             prefix: str = None) -> api.JoinPart:
+             prefix: str = None,
+             tags: Dict[str, str] = None) -> api.JoinPart:
     """
     Specifies HOW to join the `left` of a Join with GroupBy's.
 
@@ -31,6 +32,9 @@ def JoinPart(group_by: api.GroupBy,
         the same groupBy more than once with `left`. Say on the left you have seller and buyer, on the group you have
         a user's avg_price, and you want to join the left (seller, buyer) with (seller_avg_price, buyer_avg_price) you
         would use key_mapping and prefix parameters.
+    :param tags:
+        Additional metadata about the JoinPart that you wish to track. Does not effect computation.
+    :type tags: Dict[str, str]
     :return:
         JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
         components like GroupBys.
@@ -65,6 +69,7 @@ def JoinPart(group_by: api.GroupBy,
         keyMapping=key_mapping,
         prefix=prefix
     )
+    join_part.tags = tags
     # reset before next run
     __builtins__['__import__'] = import_copy
     return join_part
@@ -323,6 +328,7 @@ def Join(left: api.Source,
          bootstrap_from_log: bool = False,
          label_part: api.LabelPart = None,
          derivations: List[api.Derivation] = None,
+         tags: Dict[str, str] = None,
          **kwargs
          ) -> api.Join:
     """
@@ -405,6 +411,9 @@ def Join(left: api.Source,
         Logging will be treated as another bootstrap source, but other bootstrap_parts will take precedence.
     :param label_part:
         Label part which contains a list of labels and label refresh window boundary used for the Join
+    :param tags:
+        Additional metadata about the Join that you wish to track. Does not effect computation.
+    :type tags: Dict[str, str]
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -461,6 +470,15 @@ def Join(left: api.Source,
     if additional_env:
         custom_json["additional_env"] = additional_env
     custom_json.update(kwargs)
+
+    custom_json["join_tags"] = tags
+    join_part_tags = {}
+    for join_part in right_parts:
+        if hasattr(join_part, "tags") and join_part.tags:
+            join_part_name = "{}{}".format(
+                join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
+            join_part_tags[join_part_name] = join_part.tags
+    custom_json["join_part_tags"] = join_part_tags
 
     consistency_sample_percent = consistency_sample_percent if check_consistency else None
 
