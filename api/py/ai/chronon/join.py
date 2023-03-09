@@ -475,7 +475,8 @@ def Join(left: api.Source,
     join_part_tags = {}
     for join_part in right_parts:
         if hasattr(join_part, "tags") and join_part.tags:
-            join_part_name = "{}{}".format(join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
+            join_part_name = "{}{}".format(
+                join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
             join_part_tags[join_part_name] = join_part.tags
     custom_json["join_part_tags"] = join_part_tags
 
