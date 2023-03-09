@@ -11,9 +11,10 @@ from ai.chronon.join import (
 
 v1 = Join(
     left=test_sources.staging_entities,
-    right_parts=[JoinPart(group_by=sample_group_by.v1)],
+    right_parts=[JoinPart(group_by=sample_group_by.v1, tags={"experimental": True})],
     table_properties={
         "config_json": """{"sample_key": "sample_value"}"""
     },
-    output_namespace="sample_namespace"
+    output_namespace="sample_namespace",
+    tags={"business_relevance": "personalization"}
 )

@@ -3,7 +3,7 @@
     "name": "sample_team.sample_join.v1",
     "online": 0,
     "production": 0,
-    "customJson": "{\"check_consistency\": false, \"lag\": 0}",
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": {\"business_relevance\": \"personalization\"}, \"join_part_tags\": {\"sample_team.sample_group_by.v1\": {\"experimental\": true}}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_team_sample_staging_query_v1_ds\", \"spec\": \"sample_namespace.sample_team_sample_staging_query_v1/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
