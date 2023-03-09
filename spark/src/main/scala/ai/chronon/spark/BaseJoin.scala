@@ -248,7 +248,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     }).getOrElse(collection.Seq.empty)
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
   def computeJoin(stepDays: Option[Int] = None): DataFrame = {
 
@@ -282,6 +282,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
+    // build bootstrap info once for the entire job
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils)
+
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (stepRanges.isEmpty) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
@@ -296,7 +299,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         println(s"Computing join for range: $range  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range).save(outputTable, tableProps, autoExpand = true)
+          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

@@ -191,7 +191,7 @@ object BootstrapInfo {
     def stringify(schema: Array[StructField]): String =
       SparkConversions.fromChrononSchema(api.StructType("", schema)).pretty
 
-    println("\n[ Finalized Bootstrap Info ]\n")
+    println("\n======= Finalized Bootstrap Info =======\n")
     joinParts.foreach { metadata =>
       println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
            |Key Schema:
@@ -226,7 +226,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
 
-    println("\n[ Finalized Bootstrap Info END ]\n")
+    println("\n======= Finalized Bootstrap Info END =======\n")
 
     bootstrapInfo
   }

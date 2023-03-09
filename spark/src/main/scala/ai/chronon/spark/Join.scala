@@ -41,7 +41,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     }
   }
 
-  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
@@ -50,7 +50,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
-    val bootstrapInfo = BootstrapInfo.from(joinConf, leftRange, tableUtils)
     val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
 
     // compute join parts (GB) backfills
