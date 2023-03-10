@@ -43,7 +43,7 @@ class ItemSketchSerializable extends Serializable {
   }
 }
 
-class Analyzer(tableUtils: TableUtils,
+class Analyzer(tableUtils: BaseTableUtils,
                conf: Any,
                startDate: String = Constants.Partition.at(System.currentTimeMillis()),
                endDate: String = Constants.Partition.at(System.currentTimeMillis()),

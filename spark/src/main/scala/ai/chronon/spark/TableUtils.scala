@@ -10,7 +10,8 @@ import java.time.{Instant, ZoneId}
 import scala.collection.mutable
 import scala.util.{Success, Try}
 
-case class TableUtils(sparkSession: SparkSession) {
+trait BaseTableUtils {
+  def sparkSession: SparkSession
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   private lazy val archiveTimestampFormatter = DateTimeFormatter
@@ -208,15 +209,15 @@ case class TableUtils(sparkSession: SparkSession) {
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)
         } else { Seq(saltCol) }
-      saltedDf
+      val partitionedDf = saltedDf
         .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
-        .write
-        .mode(saveMode)
-        .insertInto(tableName)
+      writeDf(partitionedDf, tableName, saveMode) // side-effecting- this actually writes the table
       println(s"Finished writing to $tableName")
     }
   }
+
+  def writeDf(frame: DataFrame, str: String, mode: SaveMode): Unit
 
   private def createTableSql(tableName: String,
                              schema: StructType,
@@ -517,6 +518,14 @@ case class TableUtils(sparkSession: SparkSession) {
       // set a flag in table props to indicate that this is a dynamic table
       sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
     }
+  }
+}
+
+case class TableUtils(sparkSession: SparkSession) extends BaseTableUtils {
+  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    df.write
+      .mode(saveMode)
+      .insertInto(tableName)
   }
 }
 

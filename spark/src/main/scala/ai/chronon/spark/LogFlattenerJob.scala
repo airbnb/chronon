@@ -216,7 +216,7 @@ class LogFlattenerJob(session: SparkSession, joinConf: api.Join, endDate: String
 
 object LogFlattenerJob {
 
-  def readSchemaTableProperties(tableUtils: TableUtils, joinConf: api.Join): Map[String, String] = {
+  def readSchemaTableProperties(tableUtils: BaseTableUtils, joinConf: api.Join): Map[String, String] = {
     val curTblProps = tableUtils.getTableProperties(joinConf.metaData.loggedTable).getOrElse(Map.empty)
     curTblProps
       .filterKeys(_.startsWith(Constants.SchemaHash))

@@ -368,7 +368,7 @@ object GroupBy {
 
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
-           tableUtils: TableUtils,
+           tableUtils: BaseTableUtils,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true): GroupBy = {
@@ -449,7 +449,7 @@ object GroupBy {
   def renderDataSourceQuery(source: api.Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
-                            tableUtils: TableUtils,
+                            tableUtils: BaseTableUtils,
                             window: Option[api.Window],
                             accuracy: api.Accuracy,
                             mutations: Boolean = false): String = {
@@ -526,7 +526,7 @@ object GroupBy {
 
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
-                      tableUtils: TableUtils,
+                      tableUtils: BaseTableUtils,
                       stepDays: Option[Int] = None): Unit = {
     assert(
       groupByConf.backfillStartDate != null,

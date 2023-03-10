@@ -82,6 +82,13 @@ object Extensions {
         autoExpand = autoExpand)
     }
 
+    def saveWithTableUtils(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null,
+                           partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                           autoExpand: Boolean = false): Unit = {
+      tableUtils.insertPartitions(df, tableName, tableProperties, partitionColumns,
+        autoExpand = autoExpand)
+    }
+
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
       TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
     }

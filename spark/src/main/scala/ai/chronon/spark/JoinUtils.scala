@@ -12,7 +12,7 @@ object JoinUtils {
     * Util methods for join computation
     */
 
-  def leftDf(joinConf: ai.chronon.api.Join, range: PartitionRange, tableUtils: TableUtils): Option[DataFrame] = {
+  def leftDf(joinConf: ai.chronon.api.Join, range: PartitionRange, tableUtils: BaseTableUtils): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {

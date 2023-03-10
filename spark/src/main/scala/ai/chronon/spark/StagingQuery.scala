@@ -7,7 +7,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
-class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
+class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: BaseTableUtils) {
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)

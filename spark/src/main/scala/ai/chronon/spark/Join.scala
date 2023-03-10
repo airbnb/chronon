@@ -15,7 +15,7 @@ import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 import scala.util.Try
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -186,7 +186,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
             println(s"Writing to join part table: $joinPartTableName")
             val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get, leftBlooms)
             // cache the join-part output into table partitions
-            rightDf.save(joinPartTableName, tableProps)
+            rightDf.saveWithTableUtils(tableUtils, joinPartTableName, tableProps)
             val elapsedMins = (System.currentTimeMillis() - start) / 60000
             partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
             partMetrics.gauge(Metrics.Name.PartitionCount, rightUnfilledRange.get.partitions.length)
@@ -283,7 +283,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          computeRange(leftDfInRange, range).save(outputTable, tableProps)
+          computeRange(leftDfInRange, range).saveWithTableUtils(tableUtils, outputTable, tableProps)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

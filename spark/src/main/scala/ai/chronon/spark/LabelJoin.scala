@@ -13,7 +13,7 @@ import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 
 class LabelJoin(joinConf: api.Join,
-                tableUtils: TableUtils,
+                tableUtils: BaseTableUtils,
                 labelDS: String) {
 
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")

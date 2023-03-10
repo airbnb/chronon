@@ -69,7 +69,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
-  def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[TableUtils] = None): Unit = {
+  def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[BaseTableUtils] = None): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
     val tableUtils =
