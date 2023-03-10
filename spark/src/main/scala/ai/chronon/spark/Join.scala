@@ -209,7 +209,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
-              if (part.isLogBootstrap(joinConf)) {
+              if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
               } else {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))

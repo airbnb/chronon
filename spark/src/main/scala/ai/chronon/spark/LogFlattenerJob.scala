@@ -169,7 +169,7 @@ class LogFlattenerJob(session: SparkSession,
 
   def buildTableProperties(schemaMap: Map[String, String]): Map[String, String] = {
     def escape(str: String): String = str.replace("""\""", """\\""")
-    (LogFlattenerJob.readSchemaTableProperties(tableUtils, joinConf) ++ schemaMap)
+    (LogFlattenerJob.readSchemaTableProperties(tableUtils, joinConf.metaData.loggedTable) ++ schemaMap)
       .map {
         case (key, value) => (escape(s"${Constants.SchemaHash}_$key"), escape(value))
       }
@@ -205,7 +205,8 @@ class LogFlattenerJob(session: SparkSession,
       println(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
-                                  tableProperties = joinTblProps ++ schemaTblProps,
+                                  tableProperties =
+                                    joinTblProps ++ schemaTblProps ++ Map(Constants.ChrononLogTable -> true.toString),
                                   autoExpand = true)
 
       val inputRowCount = rawDf.count()
@@ -231,8 +232,8 @@ class LogFlattenerJob(session: SparkSession,
 
 object LogFlattenerJob {
 
-  def readSchemaTableProperties(tableUtils: TableUtils, joinConf: api.Join): Map[String, String] = {
-    val curTblProps = tableUtils.getTableProperties(joinConf.metaData.loggedTable).getOrElse(Map.empty)
+  def readSchemaTableProperties(tableUtils: TableUtils, logTable: String): Map[String, String] = {
+    val curTblProps = tableUtils.getTableProperties(logTable).getOrElse(Map.empty)
     curTblProps
       .filterKeys(_.startsWith(Constants.SchemaHash))
       .map {

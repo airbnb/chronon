@@ -99,16 +99,25 @@ object BootstrapInfo {
     }
 
     /*
+     * Partition bootstrap into log-based versus regular table-based.
+     *
      * Log table requires special handling because unlike regular Hive table, since log table is affected by schema
      * evolution. A NULL column does not simply mean that the correct value was NULL, it could be that for this record,
      * the value was never logged as the column was added more recently. Instead, we must use the schema info encoded
      * in the schema_hash at time of logging to tell whether a column truly was populated or not.
+     *
+     * For standard Hive tables however, we can simply trust that a NULL column means that its CORRECT value is NULL,
+     * that is, we trust all the data that is given to Chronon by its user and it takes precedence over backfill.
      */
+    val (logBootstrapParts, tableBootstrapParts) =
+      Option(joinConf.bootstrapParts.toScala).getOrElse(Seq.empty).partition { part =>
+        val tblProps = tableUtils.getTableProperties(part.table)
+        tblProps.isDefined && tblProps.get.contains(Constants.ChrononLogTable)
+      }
+
     println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the log table
-    Option(joinConf.bootstrapParts.toScala)
-      .getOrElse(Seq.empty)
-      .withFilter(_.isLogBootstrap(joinConf))
+    logBootstrapParts
       .foreach(part => {
         // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
         val logTable = joinConf.metaData.loggedTable
@@ -120,25 +129,17 @@ object BootstrapInfo {
         )
       })
 
-    val logHashes = if (!joinConf.isSetBootstrapParts) {
-      Map.empty[String, Array[StructField]]
-    } else {
-      // Retrieve schema_hash mapping info from Hive table properties
+    // Retrieve schema_hash mapping info from Hive table properties
+    val logHashes = logBootstrapParts.flatMap { part =>
       LogFlattenerJob
-        .readSchemaTableProperties(tableUtils, joinConf)
+        .readSchemaTableProperties(tableUtils, part.table)
         .mapValues(LoggingSchema.parseLoggingSchema(_).valueFields.fields)
-        .toMap
-    }
+        .toSeq
+    }.toMap
 
-    /*
-     * For standard Hive tables however, we can simply trust that a NULL column means that its CORRECT value is NULL,
-     * that is, we trust all the data that is given to Chronon by its user and it takes precedence over backfill.
-     */
     println(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the bootstrap source table
-    val tableHashes = Option(joinConf.bootstrapParts.toScala)
-      .getOrElse(Seq.empty)
-      .withFilter(!_.isLogBootstrap(joinConf))
+    val tableHashes = tableBootstrapParts
       .map(part => {
         val range = PartitionRange(part.query.startPartition, part.query.endPartition)
         val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
@@ -148,6 +149,11 @@ object BootstrapInfo {
         assert(
           missingKeys.isEmpty,
           s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
+        )
+
+        assert(
+          !bootstrapDf.columns.contains(Constants.SchemaHash),
+          s"${Constants.SchemaHash} is a reserved column that should only be used for chronon log tables"
         )
 
         val valueFields = SparkConversions

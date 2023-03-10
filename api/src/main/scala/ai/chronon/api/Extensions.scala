@@ -649,10 +649,6 @@ object Extensions {
         definedKeys :+ Constants.PartitionColumn
       }
     }
-
-    def isLogBootstrap(join: Join): Boolean = {
-      (bootstrapPart.table == join.metaData.loggedTable) && !(bootstrapPart.isSetQuery && bootstrapPart.getQuery.isSetSelects)
-    }
   }
 
   object JoinOps {
@@ -880,7 +876,7 @@ object Extensions {
       if (derivationsContainStar) {
         baseColumns.filterNot(derivationExpressionSet contains _._1)
       } else {
-        Map.empty
+        Map.empty[String, Any]
       } ++ derivationsScala.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
   }
