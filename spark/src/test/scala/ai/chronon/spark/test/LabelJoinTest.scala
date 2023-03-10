@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.api.{Builders, Constants}
 import ai.chronon.spark._
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
@@ -101,9 +101,7 @@ class LabelJoinTest {
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), labelDS)
 
-    val diff = Comparison.sideBySide(computed,
-                                     expected,
-                                     List("listing", "ds"))
+    val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
@@ -129,7 +127,7 @@ class LabelJoinTest {
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
     assertEquals(computed
-      .select("listing_label_not_exist_dim_room_type")
+      .select("listing_attributes_dim_room_type")
       .first()
       .get(0),
       null)
@@ -229,22 +227,51 @@ class LabelJoinTest {
     new LabelJoin(invalidJoinConf, tableUtils, labelDS).computeLabelJoin()
   }
 
-  @Test(expected = classOf[AssertionError])
-  def testLabelJoinInvalidGroupBy(): Unit = {
-    // Invalid label data model
-    val labelJoin = Builders.LabelPart(
-      labels = Seq(
-        Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)
-      ),
-      leftStartOffset = 10,
-      leftEndOffset = 3
-    )
+  @Test
+  def testLabelAggregations(): Unit = {
+    val rows = List(
+      Row(1L, 2L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
+      Row(2L, 3L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(3L, 1L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+      Row(1L, 2L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(2L, 3L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+      Row(3L, 5L, 15L, "2022-10-04 10:00:00", "2022-10-03"))
+    val leftSource = TestUtils.createViewsGroupBy(namespace, spark, customRows = rows)
+      .groupByConf.sources.get(0)
+
+    val labelJoinConf = createTestLabelJoinWithAgg(30, 20)
     val joinConf = Builders.Join(
-      Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon"),
-      left,
-      labelPart = labelJoin
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      leftSource,
+      labelPart = labelJoinConf
     )
-    new LabelJoin(joinConf, tableUtils, labelDS).computeLabelJoin()
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
+    println(" == Computed == ")
+    computed.show()
+    val expected = tableUtils.sql(s"""
+                                     SELECT v.listing_id as listing,
+                                        dim_bedrooms as listing_attributes_dim_bedrooms,
+                                        dim_room_type as listing_attributes_dim_room_type,
+                                        a.ds as label_ds,
+                                        v.ds
+                                     FROM label_join.listing_views as v
+                                     LEFT OUTER JOIN label_join.listing_attributes as a
+                                     ON v.listing_id = a.listing_id
+                                     WHERE a.ds = '2022-10-30'""".stripMargin)
+    println(" == Expected == ")
+    expected.show()
+    assertEquals(computed.count(), expected.count())
+    assertEquals(computed.select("label_ds").first().get(0), labelDS)
+
+    val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 
   def createTestLabelJoin(startOffset: Int,
@@ -253,6 +280,19 @@ class LabelJoinTest {
     val labelJoinParts = groupBys.map(gb => Builders.JoinPart(groupBy = gb)).toList
     Builders.LabelPart(
       labels = labelJoinParts,
+      leftStartOffset = startOffset,
+      leftEndOffset = endOffset
+    )
+  }
+
+  def createTestLabelJoinWithAgg(startOffset: Int,
+                                 endOffset: Int,
+                                 groupByTableName: String = "listing_labels"): ai.chronon.api.LabelPart = {
+    val labelGroupBy = TestUtils.createLabelGroupByWithAgg(namespace, spark, groupByTableName)
+    Builders.LabelPart(
+      labels = Seq(
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
+      ),
       leftStartOffset = startOffset,
       leftEndOffset = endOffset
     )

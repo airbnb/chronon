@@ -10,7 +10,8 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 object TestUtils {
   def createViewsGroupBy(namespace: String,
                          spark: SparkSession,
-                         tableName: String = "listing_views"): GroupByTestSuite = {
+                         tableName: String = "listing_views",
+                         customRows: List[Row] = List.empty): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -20,14 +21,15 @@ object TestUtils {
         StructField("ds", StringType)
       )
     )
-    val rows = List(
-      Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
-      Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
-    )
+    val rows = if (customRows.isEmpty)
+      List(
+        Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
+        Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+        Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+        Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+        Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+        Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
+      ) else customRows
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
@@ -208,6 +210,55 @@ object TestUtils {
       SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}", autoExpand = true)
+    GroupByTestSuite(
+      tableName,
+      conf,
+      df
+    )
+  }
+
+  def createLabelGroupByWithAgg(namespace: String,
+                              spark: SparkSession,
+                              tableName: String = "listing_labels"): GroupByTestSuite = {
+    val schema = StructType(
+      tableName,
+      Array(
+        StructField("listing_id", LongType),
+        StructField("is_active", IntType), //  binary int 0/1
+        StructField("dim_room_type", StringType),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 0, "ENTIRE_HOME", "2022-10-30"),
+      Row(2L, 1, "ENTIRE_HOME", "2022-10-30"),
+      Row(3L, 0, "PRIVATE_ROOM", "2022-10-30"),
+      Row(1L, 1, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(2L, 0, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(3L, 0, "PRIVATE_ROOM_2", "2022-11-11")
+    )
+    val source = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Map(
+          "listing" -> "listing_id",
+          "is_active" -> "is_active",
+          "dim_room_type" -> "dim_room_type"
+        )
+      ),
+      snapshotTable = s"${namespace}.${tableName}"
+    )
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("listing"),
+      aggregations = null,
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
+    )
+    val df = spark.createDataFrame(
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      SparkConversions.fromChrononSchema(schema)
+    )
+    df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
       tableName,
       conf,
