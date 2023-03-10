@@ -15,7 +15,7 @@ object JoinUtils {
     * Util methods for join computation
     */
 
-  def leftDf(joinConf: ai.chronon.api.Join, range: PartitionRange, tableUtils: TableUtils): Option[DataFrame] = {
+  def leftDf(joinConf: ai.chronon.api.Join, range: PartitionRange, tableUtils: TableUtils, allowEmpty: Boolean = false): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -35,7 +35,9 @@ object JoinUtils {
       .getOrElse(df)
     if (result.isEmpty) {
       println(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
-      return None
+      if (!allowEmpty) {
+        return None
+      }
     }
     Some(result)
   }
