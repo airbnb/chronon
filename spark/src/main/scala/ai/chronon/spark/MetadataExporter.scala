@@ -36,7 +36,7 @@ object MetadataExporter {
         analyzer.analyzeGroupBy(groupBy)
       } else {
         val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-        analyzer.analyzeJoin(join)._2
+        analyzer.analyzeJoin(join)._2.toSeq
       }
     } catch {
       case exception: Throwable =>
