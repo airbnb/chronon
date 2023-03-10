@@ -131,11 +131,11 @@ class Analyzer(tableUtils: TableUtils,
 
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
-                           columnType: String,
-                           operation: String = null,
-                           window: String = null,
-                           inputColumn: String = null,
-                           groupByName: String = null)
+                                 columnType: String,
+                                 operation: String = null,
+                                 window: String = null,
+                                 inputColumn: String = null,
+                                 groupByName: String = null)
 
   def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(aggPart.outputColumnName,
