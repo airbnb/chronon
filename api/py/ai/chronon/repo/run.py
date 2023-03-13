@@ -271,7 +271,7 @@ class Runner:
             if self.mode in ('streaming'):
                 print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
                 running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8")
-                filtered_apps = [app for app in running_apps.split('\n') if self.app_name in app]
+                filtered_apps = [app for app in running_apps.split('\n') if self.app_name == app]
                 if len(filtered_apps) > 0:
                     print("Found running apps by the name {} in \n{}\n".format(
                         self.app_name, '\n'.join(filtered_apps)))
