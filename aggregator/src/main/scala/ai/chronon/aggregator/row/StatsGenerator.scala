@@ -13,6 +13,9 @@ import java.util
   *
   * StatsGenerator takes care of computation of metadata for dataframes
   * This applies to drifts as well between two dataframes.
+  *
+  * Metrics define the order for the IR schema. This way there's consistency between the aggregator generated from
+  * the joinConf valueSchema in fetcher and the SummaryJob uploaded value Schema.
   */
 object StatsGenerator {
 
@@ -34,7 +37,6 @@ object StatsGenerator {
     val schemaMap = valueSchema.unpack.map {
       v => v._1 -> v._2
     }.toMap
-    println(valueSchema)
     api.StructType.from("IrSchema", metrics.map {
       m =>
         m.expression match {
@@ -56,7 +58,6 @@ object StatsGenerator {
     val schemaMap = valueSchema.unpack.map {
       v => v._1 -> v._2
     }.toMap
-    println(valueSchema)
     api.StructType.from("IrSchema", metrics.map {
       m =>
         m.expression match {
@@ -84,8 +85,6 @@ object StatsGenerator {
   /** Build RowAggregator to use for computing stats on a dataframe based on metrics */
   def buildAggregator(metrics: Seq[MetricTransform], selectedSchema: api.StructType): RowAggregator = {
     val aggParts = metrics.flatMap { m => Seq(buildAggPart(m)) }
-    println(s"AGGPARTS: $aggParts")
-    println(s"SELECTED: $selectedSchema")
     new RowAggregator(selectedSchema.unpack, aggParts)
   }
 
@@ -114,7 +113,7 @@ object StatsGenerator {
         } else {
           anyTransforms(name)
         }
-    }
+    }.sortBy(_.name)
     metrics :+ MetricTransform(totalColumn, InputTransform.One, api.Operation.COUNT)
   }
 }

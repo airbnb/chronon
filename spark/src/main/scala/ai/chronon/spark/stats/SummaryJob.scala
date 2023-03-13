@@ -43,27 +43,22 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       stepRanges.zipWithIndex.foreach {
         case (range, index) =>
           println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
-          val inputDf = tableUtils.sql(s"""
+          val joinOutputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
+          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ Constants.PartitionColumn
+          val inputDf = if (joinOutputDf.columns.contains(Constants.TimeColumn)) {
+            joinOutputDf.select(Constants.TimeColumn, baseColumns: _*)
+          } else {
+            joinOutputDf.select(baseColumns.head, baseColumns.tail: _*)
+          }
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           if (joinConf.metaData.online) {
-            // Store an Avro encoded KV Table and the schemas.
-            val avroDf = summaryKvRdd.toAvroDf
-            val schemas = Seq(summaryKvRdd.keyZSchema, summaryKvRdd.valueZSchema)
-              .map(AvroConversions.fromChrononSchema(_).toString(true))
-            val schemaKeys = Seq(Constants.StatsKeySchemaKey, Constants.StatsValueSchemaKey)
-            val metaRows = schemaKeys.zip(schemas).map {
-              case (k, schema) => Row(k.getBytes(Constants.UTF8), schema.getBytes(Constants.UTF8), k, schema, Constants.Partition.epochMillis(endDate))
-            }
-            val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
-            val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, avroDf.schema)
-            avroDf
-              .union(metaDf)
+            summaryKvRdd.toAvroDf
               .withColumn(Constants.PartitionColumn, lit(endDate))
               .save(dailyStatsAvroTable, tableProps)
           }

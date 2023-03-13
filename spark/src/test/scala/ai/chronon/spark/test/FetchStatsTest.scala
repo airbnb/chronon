@@ -81,9 +81,8 @@ class FetchStatsTest extends TestCase {
       accuracy = Accuracy.SNAPSHOT
     )
 
-    // TODO: StatsCompute fails with non specific selects since stats on the left columns don't make sense for the streaming case.
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(selects = Map("item" -> "item"), startPartition = start), table = itemQueriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
       metaData =
         Builders.MetaData(name = s"test.item_temporal_features.$nameSuffix", namespace = namespace, team = "item_team", online=true)
@@ -103,10 +102,12 @@ class FetchStatsTest extends TestCase {
     /* Part 2: Fetch. Build requests, and fetch. Compare with output table. */
     val mockApi = new MockApi(buildInMemoryKvStore, namespace)
     val fetcher = mockApi.buildFetcher(debug = true)
-    val futures = fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(Constants.Partition.epochMillis(start)), Some(System.currentTimeMillis()))
-    val result = Await.result(futures, Duration(10000, SECONDS)) // todo: change back to millis
+    val fetchStartTs =  Constants.Partition.epochMillis(start)
+    println(s"Fetch Start ts: $fetchStartTs")
+  val futures = fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis()))
+    val result = Await.result(futures, Duration(10000, SECONDS))
     println(s"Test fetch: $result")
-    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath, Some(Constants.Partition.epochMillis(start)), Some(Constants.Partition.epochMillis(yesterday)))
+    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(Constants.Partition.epochMillis(yesterday)))
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     println(s"Stats Merged: ${gson.toJson(statsMerged)}")

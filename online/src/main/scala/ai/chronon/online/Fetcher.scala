@@ -359,14 +359,21 @@ class Fetcher(val kvStore: KVStore,
       case Success(joinCodec) => joinCodec
       case Failure(exception) => throw exception
     }
-
-    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = endTs)).map {
+    val upperBound: Long = endTs match {
+      case Some(value) => value
+      case _ => System.currentTimeMillis()
+    }
+    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)).map {
       kvResponse =>
         kvResponse.values match {
-          case Success(responses) => responses.toArray.filter(startTs.getOrElse(0l) < _.millis).map {
-            tv =>
-              Response(Request(joinName, null, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
-          }.toSeq
+          case Success(responses) =>
+            println(s"Pre-RESPONSE: ${responses.length}")
+            responses.foreach(println)
+            responses.toArray.filter(_.millis <= upperBound).map {
+              tv =>
+                println(s"Filtered: ${tv.millis}")
+                Response(Request(joinName, null, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
+            }.toSeq
           case Failure(exception) => throw exception
         }
     }
@@ -386,11 +393,10 @@ class Fetcher(val kvStore: KVStore,
     val statsIrSchema = joinCodecs.statsIrSchema
     println(
       s"""
-        |STATS IR SCHEMA
-        |$statsIrSchema
+        |Stats Input Schema: ${statsInputSchema}
         |
-        |STATS INPUT SCHEMA
-        |$statsInputSchema
+        |Stats Ir Schema: $statsIrSchema
+        |
         |""".stripMargin)
     // Metrics are derived from the valueSchema of the join.
     val metrics = StatsGenerator.buildMetrics(valueSchema.map(sf => (sf.name, sf.fieldType)))
@@ -402,8 +408,8 @@ class Fetcher(val kvStore: KVStore,
       responseFuture => responseFuture.foreach {
         response =>
           response.values match {
-            case Success(values) =>
-              val batchRecord = aggregator.denormalize(statsIrSchema.map { field => values.get(field.name).asInstanceOf[Any]}.toArray)
+            case Success(valueMap) =>
+              val batchRecord = aggregator.denormalize(statsIrSchema.map { field => valueMap(field.name).asInstanceOf[Any]}.toArray)
               mergedIr = aggregator.merge(mergedIr, batchRecord)
             case Failure(exception) => throw exception
           }
