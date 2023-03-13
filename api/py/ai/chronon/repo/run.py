@@ -270,8 +270,20 @@ class Runner:
             self.set_env()
             if self.mode in ('streaming'):
                 print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
-                running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8")
-                filtered_apps = [app for app in running_apps.split('\n') if self.app_name in app]
+                running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8").split('\n')
+                running_app_map = {}
+                for app in running_apps:
+                    try:
+                        app_json = json.loads(app.strip())
+                        app_name = app_json['app_name'].strip()
+                        if app_name not in running_app_map:
+                            running_app_map[app_name] = []
+                        running_app_map[app_name].append(app_json)
+                    except Exception as ex:
+                        print("failed to process line into app: " + app)
+                        print(ex)
+
+                filtered_apps = running_app_map.get(self.app_name, [])
                 if len(filtered_apps) > 0:
                     print("Found running apps by the name {} in \n{}\n".format(
                         self.app_name, '\n'.join(filtered_apps)))
