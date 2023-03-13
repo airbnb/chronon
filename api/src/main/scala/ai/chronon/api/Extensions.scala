@@ -670,6 +670,8 @@ object Extensions {
         .toArray
     }
 
+    def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
+
     def partOutputTable(jp: JoinPart): String =
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
 
