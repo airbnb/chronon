@@ -286,7 +286,7 @@ class Runner:
                 filtered_apps = running_app_map.get(self.app_name, [])
                 if len(filtered_apps) > 0:
                     print("Found running apps by the name {} in \n{}\n".format(
-                        self.app_name, '\n'.join(filtered_apps)))
+                        self.app_name, '\n'.join([str(app) for app in filtered_apps])))
                     assert len(filtered_apps) == 1, "More than one found, please kill them all"
                     print("All good. No need to start a new app.")
                     return
