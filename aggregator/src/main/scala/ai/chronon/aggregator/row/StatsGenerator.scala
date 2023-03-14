@@ -3,7 +3,7 @@ package ai.chronon.aggregator.row
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import com.google.gson.Gson
-
+import scala.collection.Seq
 import scala.util.ScalaVersionSpecificCollectionsConverter
 import java.util
 
