@@ -73,7 +73,7 @@ lazy val releaseSettings = Seq(
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
