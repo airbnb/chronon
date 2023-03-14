@@ -85,10 +85,6 @@ class MigrationCompareTest {
   def testMigrateCompare(): Unit = {
     val (joinConf, stagingQueryConf) = setupTestData()
 
-    // Run the staging query to generate the corresponding table for comparison
-    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
-    stagingQuery.computeStagingQuery(stepDays = Option(30))
-
     val (compareDf, metricsDf, metrics) =
       new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
@@ -107,9 +103,6 @@ class MigrationCompareTest {
         tableProperties = Map("key" -> "val"))
     )
 
-    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
-    stagingQuery.computeStagingQuery(stepDays = Option(30))
-
     val (compareDf, metricsDf, metrics) =
       new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
@@ -118,9 +111,6 @@ class MigrationCompareTest {
   @Test
   def testMigrateCompareWithWindows(): Unit = {
     val (joinConf, stagingQueryConf) = setupTestData()
-
-    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
-    stagingQuery.computeStagingQuery(stepDays = Option(30))
 
     val (compareDf, metricsDf, metrics) =
       new MigrationCompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()

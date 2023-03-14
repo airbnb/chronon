@@ -5,7 +5,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, SparkConversions}
-import ai.chronon.spark.{Analyzer, PartitionRange, TableUtils}
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 /**
@@ -34,9 +34,11 @@ class MigrationCompareJob(
         |FROM ${joinConf.metaData.outputTable}
         |WHERE ${partitionRange}
         |""".stripMargin)
+
+    // Run the staging query sql directly
     val rightDf = tableUtils.sql(s"""
         |SELECT *
-        |FROM ${stagingQueryConf.metaData.outputTable}
+        |FROM (${stagingQueryConf.query})
         |WHERE ${partitionRange}
         |""".stripMargin)
     val (compareDf, metricsDf, metrics) =
