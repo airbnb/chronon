@@ -17,7 +17,7 @@ import org.apache.spark.sql.SparkSession
 import java.util.TimeZone
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.collection.JavaConverters._
 
 
 /**
@@ -25,7 +25,6 @@ import scala.jdk.CollectionConverters.asScalaBufferConverter
   *
   * Start by creating a join. Building the output table
   * Compute and serve stats. (OnlineUtils)
-  * TODO[H1/2023]: Compute and serve streaming.
   * Fetch stats.
   */
 class FetchStatsTest extends TestCase {
