@@ -8,7 +8,6 @@ import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
-import ai.chronon.online.Metrics.Name.Exception
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
@@ -351,8 +350,9 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-    * Stats get stored on a single Dataname stored in constants.
-    * Filter by start Ts and end Ts and obtain all datapoints at a certain granularity.
+    * Fetch all stats IRs available between startTs and endTs.
+    *
+    * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
     */
   def fetchStats(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Seq[Response]] = {
     val joinCodecs = getJoinCodecs(joinName) match {
@@ -363,15 +363,12 @@ class Fetcher(val kvStore: KVStore,
       case Some(value) => value
       case _ => System.currentTimeMillis()
     }
-    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)).map {
+    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encode(Map("joinPath" -> joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)).map {
       kvResponse =>
         kvResponse.values match {
           case Success(responses) =>
-            println(s"Pre-RESPONSE: ${responses.length}")
-            responses.foreach(println)
             responses.toArray.filter(_.millis <= upperBound).map {
               tv =>
-                println(s"Filtered: ${tv.millis}")
                 Response(Request(joinName, null, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
             }.toSeq
           case Failure(exception) => throw exception
@@ -381,7 +378,7 @@ class Fetcher(val kvStore: KVStore,
 
   /**
     * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
-    * determining distributions.
+    * determining data distributions between [startTs, endTs]
     */
   def fetchMergedStatsBetween(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Response] = {
     val joinCodecs = getJoinCodecs(joinName) match {
@@ -391,13 +388,6 @@ class Fetcher(val kvStore: KVStore,
     val valueSchema = joinCodecs.valueSchema
     val statsInputSchema = joinCodecs.statsInputSchema
     val statsIrSchema = joinCodecs.statsIrSchema
-    println(
-      s"""
-        |Stats Input Schema: ${statsInputSchema}
-        |
-        |Stats Ir Schema: $statsIrSchema
-        |
-        |""".stripMargin)
     // Metrics are derived from the valueSchema of the join.
     val metrics = StatsGenerator.buildMetrics(valueSchema.map(sf => (sf.name, sf.fieldType)))
     // Aggregator needs to aggregate partial IRs of stats. This should include transformations over the metrics.
