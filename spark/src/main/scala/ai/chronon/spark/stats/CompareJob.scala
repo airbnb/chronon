@@ -8,6 +8,8 @@ import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.{Analyzer, PartitionRange, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
+import scala.util.ScalaVersionSpecificCollectionsConverter
+
 /**
   * Compare Job for migrations to AFP.
   * Leverage the compare module for computation between sources.
@@ -20,6 +22,15 @@ class CompareJob(
     endDate: String = null
 ) extends Serializable {
   val tableUtils: TableUtils = TableUtils(session)
+  val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
+    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
+    .orNull
+  val namespace = joinConf.metaData.outputNamespace
+  val joinName = joinConf.metaData.cleanName
+  val stagingQueryName = stagingQueryConf.metaData.cleanName
+  val comparisonTableName = s"${namespace}.compare_join_${joinName}_${stagingQueryName}"
+  val metricsTableName = s"${namespace}.compare_stats_join_${joinName}_${stagingQueryName}"
+
   def run(): (DataFrame, DataFrame, DataMetrics) = {
     assert(endDate != null, "End date for the comparison should not be null")
     // Check for schema consistency issues
@@ -46,20 +57,23 @@ class CompareJob(
       CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
 
     // Save the comparison table
-    println("Saving output..")
-    println(s"Output schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    println("Saving comparison output..")
+    println(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
     tableUtils.insertUnPartitioned(compareDf,
-                                   getCompareOutputTableName(joinConf, stagingQueryConf),
+                                   comparisonTableName,
+                                   tableProps,
                                    saveMode = SaveMode.Overwrite)
+
+    // Save the metrics table
+    println("Saving metrics output..")
+    println(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    tableUtils.insertUnPartitioned(metricsDf,
+                                   metricsTableName,
+                                   tableProps,
+                                   saveMode = SaveMode.Overwrite)
+
     println("Finished compare stats.")
     (compareDf, metricsDf, metrics)
-  }
-
-  def getCompareOutputTableName(joinConf: api.Join, stagingQueryConf: api.StagingQuery): String = {
-    val namespace = joinConf.metaData.outputNamespace
-    val joinName = joinConf.metaData.cleanName
-    val stagingQueryName = stagingQueryConf.metaData.cleanName
-    s"${namespace}.migration_compare_join_${joinName}_${stagingQueryName}"
   }
 
   def getJoinKeys(joinConf: api.Join): Seq[String] = {
