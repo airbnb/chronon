@@ -5,7 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.stats.MigrationCompareJob
+import ai.chronon.spark.stats.CompareJob
 import ai.chronon.spark.{Join, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
@@ -76,17 +76,11 @@ class MigrationCompareTest {
   }
 
   @Test
-  def testMigrateCompareAnalyze(): Unit = {
-    val (joinConf, stagingQueryConf) = setupTestData()
-    new MigrationCompareJob(spark, joinConf, stagingQueryConf).analyze()
-  }
-
-  @Test
   def testMigrateCompare(): Unit = {
     val (joinConf, stagingQueryConf) = setupTestData()
 
     val (compareDf, metricsDf, metrics) =
-      new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
+      new CompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
   }
 
@@ -104,7 +98,7 @@ class MigrationCompareTest {
     )
 
     val (compareDf, metricsDf, metrics) =
-      new MigrationCompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
+      new CompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
     println(metrics)
   }
 
@@ -113,7 +107,7 @@ class MigrationCompareTest {
     val (joinConf, stagingQueryConf) = setupTestData()
 
     val (compareDf, metricsDf, metrics) =
-      new MigrationCompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
+      new CompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
     println(metrics)
   }
 }

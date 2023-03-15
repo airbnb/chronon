@@ -102,7 +102,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
       println(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
-      val (compareDf, metricsDf, metrics) = CompareJob.compare(comparisonDf, loggedDfNoExternalCols, keys = joinKeys)
+      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDf, loggedDfNoExternalCols, keys = joinKeys)
       println("Saving output.")
       val outputDf = metricsDf.withTimeBasedColumn("ds")
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
