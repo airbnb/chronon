@@ -48,7 +48,7 @@ object Extensions {
     }
 
     def prunePartition(partitionRange: PartitionRange): DataFrame = {
-      val pruneFilter = partitionRange.whereClauses.mkString(" AND ")
+      val pruneFilter = partitionRange.whereClauses().mkString(" AND ")
       println(s"Pruning using $pruneFilter")
       df.filter(pruneFilter)
     }

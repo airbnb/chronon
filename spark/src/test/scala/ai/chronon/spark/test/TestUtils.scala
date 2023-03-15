@@ -225,32 +225,39 @@ object TestUtils {
       Array(
         StructField("listing_id", LongType),
         StructField("is_active", IntType), //  binary int 0/1
-        StructField("dim_room_type", StringType),
-        StructField("ds", StringType)
+        StructField("ds", StringType),
+        StructField("ts", StringType)
       )
     )
     val rows = List(
-      Row(1L, 0, "ENTIRE_HOME", "2022-10-30"),
-      Row(2L, 1, "ENTIRE_HOME", "2022-10-30"),
-      Row(3L, 0, "PRIVATE_ROOM", "2022-10-30"),
-      Row(1L, 1, "ENTIRE_HOME_2", "2022-11-11"),
-      Row(2L, 0, "ENTIRE_HOME_2", "2022-11-11"),
-      Row(3L, 0, "PRIVATE_ROOM_2", "2022-11-11")
+      Row(1L, 0, "2022-10-01", "2022-10-01 10:00:00"),
+      Row(2L, 0, "2022-10-01", "2022-10-01 10:00:00"),
+      Row(3L, 1, "2022-10-01", "2022-10-01 10:00:00"),
+      Row(1L, 1, "2022-10-02", "2022-10-02 10:00:00"),
+      Row(2L, 0, "2022-10-02", "2022-10-02 10:00:00"),
+      Row(3L, 0, "2022-10-02", "2022-10-02 10:00:00"),
+      Row(1L, 0, "2022-10-06", "2022-10-06 11:00:00"),
+      Row(2L, 1, "2022-10-06", "2022-10-06 11:00:00"),
+      Row(3L, 0, "2022-10-06", "2022-10-06 11:00:00")
     )
-    val source = Builders.Source.entities(
+    val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
           "is_active" -> "is_active",
-          "dim_room_type" -> "dim_room_type"
-        )
+        ),
+        timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
       ),
-      snapshotTable = s"${namespace}.${tableName}"
+      table = s"${namespace}.${tableName}"
     )
     val conf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("listing"),
-      aggregations = null,
+      aggregations = Seq(Builders.Aggregation(
+        inputColumn = "is_active",
+        operation = Operation.MAX,
+        windows = Seq(new Window(5, TimeUnit.DAYS))
+      )),
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )

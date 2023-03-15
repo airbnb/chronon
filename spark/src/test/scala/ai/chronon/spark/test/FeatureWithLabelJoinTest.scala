@@ -30,6 +30,7 @@ class FeatureWithLabelJoinTest {
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
+      joinParts = Seq.empty,
       labelPart = labelJoinConf
     )
 
