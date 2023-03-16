@@ -28,7 +28,7 @@ sealed trait BaseKvRdd {
   val valueZSchema: api.StructType = valueSchema.toChrononSchema("Value")
   val baseFlatSchema: StructType = StructType(keySchema ++ valueSchema)
   def flatSchema: StructType = if (withTime) StructType(baseFlatSchema :+ timeField) else baseFlatSchema
-  val flatZSchema: api.StructType = flatSchema.toChrononSchema("Flat")
+  def flatZSchema: api.StructType = flatSchema.toChrononSchema("Flat")
   val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
   val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
   val keyToJson = AvroConversions.encodeJson(keyZSchema, GenericRowHandler.func)
@@ -65,13 +65,13 @@ extends BaseKvRdd {
         val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson)
         new GenericRow(result)
     }
-      println(
-        s"""
-           |key schema:
-           |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
-           |value schema:
-           |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
-           |""".stripMargin)
+    println(
+      s"""
+          |key schema:
+          |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
+          |value schema:
+          |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
+          |""".stripMargin)
       sparkSession.createDataFrame(avroRdd, rowSchema)
     }
 

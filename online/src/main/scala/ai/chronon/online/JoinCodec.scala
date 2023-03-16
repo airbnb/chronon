@@ -100,10 +100,11 @@ case class JoinCodec(conf: JoinOps,
   val valueFields: Array[StructField] = valueSchema.fields
   lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap
-  lazy val statsKeyCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(Constants.StatsKeySchema).toString(false))
-  lazy val statsInputSchema: StructType = StatsGenerator.statsInputSchema(valueSchema)
-  lazy val statsIrSchema: StructType = StatsGenerator.statsIrSchema(valueSchema)
-  lazy val statsIrCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(statsIrSchema).toString)
+  @transient lazy val statsKeyCodec: AvroCodec =
+    AvroCodec.of(AvroConversions.fromChrononSchema(Constants.StatsKeySchema).toString)
+  val statsInputSchema: StructType = StatsGenerator.statsInputSchema(valueSchema)
+  val statsIrSchema: StructType = StatsGenerator.statsIrSchema(valueSchema)
+  val statsIrCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(statsIrSchema).toString)
 
 }
 

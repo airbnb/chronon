@@ -79,7 +79,7 @@ object StatsGenerator {
     val schemaMap = valueSchema.unpack.map {
       v => v._1 -> v._2
     }.toMap
-    api.StructType.from("InputSchema", metrics.map {
+    api.StructType.from("IrSchema", metrics.map {
       m =>
         m.expression match {
           case InputTransform.IsNull =>
