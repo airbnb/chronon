@@ -19,7 +19,6 @@ import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.collection.JavaConverters._
 
-
 /**
   * For testing of the consumption side of Stats end to end.
   *
@@ -67,24 +66,29 @@ class FetchStatsTest extends TestCase {
 
     // Build Group By
     val gb = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(
-        table = viewsTable,
-        query = Builders.Query(startPartition = start)
-      )),
+      sources = Seq(
+        Builders.Source.events(
+          table = viewsTable,
+          query = Builders.Query(startPartition = start)
+        )),
       keyColumns = Seq("item"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "10"), inputColumn = "user"),
         Builders.Aggregation(operation = Operation.MAX, argMap = Map("k" -> "2"), inputColumn = "value")
       ),
-      metaData = Builders.MetaData(name = s"unit_test_fetcher_stats.item_views_$nameSuffix", namespace = namespace, team = "item_team"),
+      metaData = Builders.MetaData(name = s"unit_test_fetcher_stats.item_views_$nameSuffix",
+                                   namespace = namespace,
+                                   team = "item_team"),
       accuracy = Accuracy.SNAPSHOT
     )
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
-      metaData =
-        Builders.MetaData(name = s"test.item_temporal_features.$nameSuffix", namespace = namespace, team = "item_team", online=true)
+      metaData = Builders.MetaData(name = s"test.item_temporal_features.$nameSuffix",
+                                   namespace = namespace,
+                                   team = "item_team",
+                                   online = true)
     )
 
     // Compute daily join.
@@ -101,12 +105,16 @@ class FetchStatsTest extends TestCase {
     /* Part 2: Fetch. Build requests, and fetch. Compare with output table. */
     val mockApi = new MockApi(buildInMemoryKvStore, namespace)
     val fetcher = mockApi.buildFetcher(debug = true)
-    val fetchStartTs =  Constants.Partition.epochMillis(start)
+    val fetchStartTs = Constants.Partition.epochMillis(start)
     println(s"Fetch Start ts: $fetchStartTs")
-  val futures = fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis()))
+    val futures =
+      fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis()))
     val result = Await.result(futures, Duration(10000, SECONDS))
-    println(s"Test fetch: $result")
-    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(Constants.Partition.epochMillis(yesterday)))
+    println(s"Test fetch: ")
+    println(result)
+    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath,
+                                                             Some(fetchStartTs),
+                                                             Some(Constants.Partition.epochMillis(yesterday)))
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     println(s"Stats Merged: ${gson.toJson(statsMerged)}")

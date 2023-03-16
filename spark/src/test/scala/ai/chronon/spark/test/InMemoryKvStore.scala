@@ -30,6 +30,10 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
+        println("""
+            | REQUEST
+            |""".stripMargin)
+        println(toStr(req.keyBytes))
         val values = Try {
           database
             .get(req.dataset) // table
@@ -76,10 +80,11 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
       Option(partition).map { part => s"WHERE ${Constants.PartitionColumn} = '$part'" }.getOrElse("")
     val offlineDf = tableUtilInst.sql(s"SELECT * FROM $sourceOfflineTable")
     offlineDf.show(false)
-    val tsColumn = if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis})"
+    val tsColumn =
+      if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn
+      else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis})"
     val df =
-      tableUtilInst.sql(
-        s"""SELECT key_bytes, value_bytes, $tsColumn as ts
+      tableUtilInst.sql(s"""SELECT key_bytes, value_bytes, $tsColumn as ts
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
     val requests = df.rdd

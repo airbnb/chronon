@@ -363,7 +363,9 @@ class Fetcher(val kvStore: KVStore,
       case Some(value) => value
       case _ => System.currentTimeMillis()
     }
-    kvStore.get(GetRequest(joinCodecs.statsKeyCodec.encode(Map("joinPath" -> joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)).map {
+    kvStore.get(
+      GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)
+    ).map {
       kvResponse =>
         kvResponse.values match {
           case Success(responses) =>
