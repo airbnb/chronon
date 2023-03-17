@@ -255,8 +255,8 @@ object Driver {
     }
   }
 
-  object Compare {
-    class Args extends Subcommand("compare") with OfflineSubcommand {
+  object CompareJoinQuery {
+    class Args extends Subcommand("compare-join-query") with OfflineSubcommand {
       val from: ScallopOption[String] =
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
@@ -270,7 +270,7 @@ object Driver {
       val stagingQueryConf = parseConf[api.StagingQuery](args.from())
       new CompareJob(
         args.buildTableUtils(
-          s"compare_join_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
+          s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
         ).sparkSession,
         joinConf,
         stagingQueryConf,
@@ -560,8 +560,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
-    object CompareArgs extends Compare.Args
-    addSubcommand(CompareArgs)
+    object CompareJoinQueryArgs extends CompareJoinQuery.Args
+    addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
     object LabelJoinArgs extends LabelJoin.Args
@@ -597,7 +597,7 @@ object Driver {
           case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
           case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareArgs => Compare.run(args.CompareArgs)
+          case args.CompareJoinQueryArgs => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
           case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
