@@ -58,7 +58,7 @@ ROUTES = {
         'metadata-upload': 'metadata-upload',
         'fetch': 'fetch',
         'consistency-metrics-compute': 'consistency-metrics-compute',
-        'compare': 'compare',
+        'compare': 'compare-join-query',
         'stats-summary': 'stats-summary',
         'analyze': 'analyze',
         'log-flattener': 'log-flattener',

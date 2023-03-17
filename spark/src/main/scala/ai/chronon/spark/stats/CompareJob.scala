@@ -28,8 +28,8 @@ class CompareJob(
   val namespace = joinConf.metaData.outputNamespace
   val joinName = joinConf.metaData.cleanName
   val stagingQueryName = stagingQueryConf.metaData.cleanName
-  val comparisonTableName = s"${namespace}.compare_join_${joinName}_${stagingQueryName}"
-  val metricsTableName = s"${namespace}.compare_stats_join_${joinName}_${stagingQueryName}"
+  val comparisonTableName = s"${namespace}.compare_join_query_${joinName}_${stagingQueryName}"
+  val metricsTableName = s"${namespace}.compare_stats_join_query_${joinName}_${stagingQueryName}"
 
   def run(): (DataFrame, DataFrame, DataMetrics) = {
     assert(endDate != null, "End date for the comparison should not be null")
