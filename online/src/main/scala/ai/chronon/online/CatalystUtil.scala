@@ -5,23 +5,10 @@ import ai.chronon.online.CatalystUtil.IteratorWrapper
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
-import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeGenerator, CodegenContext}
-import org.apache.spark.sql.execution.debug.DebugQuery
-import org.apache.spark.sql.execution.streaming.MemoryStream
-import org.apache.spark.sql.execution.streaming.sources.ContinuousMemoryStream
-import org.apache.spark.sql.execution.{
-  BufferedRowIterator,
-  CodegenSupport,
-  CollapseCodegenStages,
-  InputAdapter,
-  LocalTableScanExec,
-  ProjectExec,
-  WholeStageCodegenExec
-}
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
+import org.apache.spark.sql.execution.{BufferedRowIterator, ProjectExec, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
 
-import java.lang.ThreadLocal
 import java.util.function.Supplier
 import scala.collection.mutable
 
@@ -94,7 +81,7 @@ private class CatalystUtil(expressions: collection.Seq[(String, String)], inputS
     val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
     val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
     emptyDf.createOrReplaceTempView(sessionTable)
-    val df = session.sqlContext.table(sessionTable).selectExpr(selectClauses: _*)
+    val df = session.sqlContext.table(sessionTable).selectExpr(selectClauses.toSeq: _*)
 
     // extract transform function from the df spark plan
     val func: InternalRow => InternalRow = df.queryExecution.executedPlan match {
