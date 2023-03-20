@@ -16,5 +16,10 @@ v1 = Join(
         "config_json": """{"sample_key": "sample_value"}"""
     },
     output_namespace="sample_namespace",
-    tags={"business_relevance": "personalization"}
+    tags={"business_relevance": "personalization"},
+    env={
+        "backfill": {
+            "EXECUTOR_MEMORY": "9G"
+        },
+    },
 )

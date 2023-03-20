@@ -136,7 +136,7 @@ def download_jar(version, jar_type='uber', release_tag=None, spark_version="2.4.
         jar_type,
         scala_version)
     print("Downloading jar from url: " + base_url)
-    jar_path = os.environ.get('CHRONON_JAR_PATH', None)
+    jar_path = os.environ.get('CHRONON_DRIVER_JAR', None)
     if jar_path is None:
         if version == 'latest':
             version = None
@@ -163,26 +163,74 @@ def download_jar(version, jar_type='uber', release_tag=None, spark_version="2.4.
     return jar_path
 
 
-def set_env_dict(env_map):
-    for key, value in env_map.items():
-        if key in os.environ:
-            print("Found " + key + "=" + os.environ.get(key))
-        else:
-            print("Setting " + key + "=" + value)
-            os.environ[key] = value
+def set_runtime_env(args):
+    """
+    Setting the runtime environment variables.
+    These are extracted from the common env, the team env and the common env.
+    In order to use the environment variables defined in the configs as overrides for the args in the cli this method
+    needs to be run before the runner and jar downloads.
 
-
-def set_common_env(repo):
-    try:
-        with open(os.path.join(repo, 'teams.json'), 'r') as teams_file:
-            teams_json = json.load(teams_file)
-            env = teams_json.get('default', {}).get("common_env", {})
-            set_env_dict(env)
-    except FileNotFoundError as e:
-        logging.error(
-            "Invalid working directory: {}, please ensure to run the command inside the zipline/ folder"
-            .format(os.path.abspath(repo)))
-        raise e
+    The order of priority is:
+        - Environment variables existing already.
+        - Environment variables derived from args (like app_name)
+        - conf.metaData.modeToEnvMap for the mode (set on config)
+        - team environment per context and mode set on teams.json
+        - default team environment per context and mode set on teams.json
+        - Common Environment set in teams.json
+    """
+    environment = {
+        "common_env": {},
+        "conf_env": {},
+        "default_env": {},
+        "team_env": {},
+        "derived_runtime_env": {},
+    }
+    if args.repo:
+        teams_file = os.path.join(args.repo, 'teams.json')
+        if os.path.exists(teams_file):
+            with open(teams_file, 'r') as infile:
+                teams_json = json.load(infile)
+            environment['common_env'] = teams_json.get('default', {}).get("common_env", {})
+            if args.conf and args.mode:
+                try:
+                    context, conf_type, team, _ = args.conf.split('/')[-4:]
+                except Exception as e:
+                    logging.error(
+                        "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
+                        .format(args.conf))
+                    raise e
+                logging.info(f"Context: {context} -- conf_type: {conf_type} -- team: {team}")
+                conf_path = os.path.join(args.repo, args.conf)
+                with open(conf_path, 'r') as conf_file:
+                    conf_json = json.load(conf_file)
+                environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
+                environment['team_env'] = teams_json[team].get(context, {}).get(args.mode, {})
+                environment['default_env'] = teams_json.get('default', {}).get(context, {}).get(args.mode, {})
+                environment['derived_runtime_env']['APP_NAME'] = APP_NAME_TEMPLATE.format(
+                    mode=args.mode,
+                    conf_type=conf_type,
+                    context=context,
+                    name=conf_json['metaData']['name'])
+                environment['derived_runtime_env']["CHRONON_CONF_PATH"] = conf_path
+    if args.app_name:
+        environment['derived_runtime_env']['APP_NAME'] = args.app_name
+    else:
+        if args.mode == 'metadata-export':
+            environment['derived_runtime_env']['APP_NAME'] = 'chronon_metadata_export'
+    # Adding these to make sure they are printed if provided by the environment.
+    environment['derived_runtime_env']['CHRONON_DRIVER_JAR'] = args.chronon_jar
+    environment['derived_runtime_env']['CHRONON_ONLINE_JAR'] = args.online_jar
+    environment['derived_runtime_env']['CHRONON_ONLINE_CLASS'] = args.online_class
+    order = ['conf_env', 'team_env', 'default_env', 'common_env', 'derived_runtime_env']
+    print("Setting env variables:")
+    for key in os.environ:
+        if any([key in environment[set_key] for set_key in order]):
+            print(f"From <environment> found {key}={os.environ[key]}")
+    for set_key in order:
+        for key, value in environment[set_key].items():
+            if key not in os.environ and value is not None:
+                print(f"From <{set_key}> setting {key}={value}")
+                os.environ[key] = value
 
 
 class Runner:
@@ -197,6 +245,7 @@ class Runner:
         if (self.mode in ONLINE_MODES) and (not args.sub_help) and not valid_jar:
             print("Downloading online_jar")
             self.online_jar = check_output("{}".format(args.online_jar_fetch)).decode("utf-8")
+            os.environ['CHRONON_ONLINE_JAR'] = self.online_jar
             print("Downloaded jar to {}".format(self.online_jar))
 
         if self.conf:
@@ -223,38 +272,6 @@ class Runner:
             self.spark_submit = args.spark_submit_path
         self.list_apps_cmd = args.list_apps
 
-    def set_env(self):
-        conf_path = os.path.join(self.repo, self.conf)
-        with open(conf_path, 'r') as conf_file:
-            conf_json = json.load(conf_file)
-        with open(os.path.join(self.repo, 'teams.json'), 'r') as teams_file:
-            teams_json = json.load(teams_file)
-
-        if not self.app_name:
-            if self.mode == 'metadata-export':
-                self.app_name = "chronon_metadata_export"
-            else:
-                self.app_name = APP_NAME_TEMPLATE.format(
-                    mode=self.mode,
-                    conf_type=self.conf_type,
-                    context=self.context,
-                    name=conf_json['metaData']['name'])
-
-        # env priority already set >> conf.metaData.modeToEnvMap >> team.env >> default_team.env
-        # default env & conf env are optional, team env is not.
-        env = teams_json.get('default', {}).get(self.context, {}).get(self.mode, {})
-        team_env = teams_json[self.team].get(self.context, {}).get(self.mode, {})
-        conf_env = conf_json.get('metaData').get('modeToEnvMap', {}).get(self.mode, {})
-        env.update(team_env)
-        env.update(conf_env)
-        env["APP_NAME"] = self.app_name
-        env["CHRONON_CONF_PATH"] = conf_path
-        env["CHRONON_DRIVER_JAR"] = self.jar_path
-        if self.mode in ONLINE_MODES:
-            env["CHRONON_ONLINE_JAR"] = self.online_jar
-        print("Setting env variables:")
-        set_env_dict(env)
-
     def run(self):
         base_args = MODE_ARGS[self.mode].format(
             conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
@@ -267,7 +284,6 @@ class Runner:
                 subcommand=subcommand
             )
         else:
-            self.set_env()
             if self.mode in ('streaming'):
                 print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
                 running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8").split('\n')
@@ -302,12 +318,12 @@ class Runner:
 if __name__ == "__main__":
     today = datetime.today().strftime('%Y-%m-%d')
     parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
-    chronon_repo_path = os.getenv('CHRONON_REPO_PATH', '.')
-    set_common_env(chronon_repo_path)
+    chronon_repo_path = os.environ.get('CHRONON_REPO_PATH', '.')
     parser.add_argument('--conf', required=False, help='Conf param - required for every mode except fetch')
     parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
     parser.add_argument('--ds', default=today)
-    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE), default=None)
+    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE),
+                        default=os.environ.get('APP_NAME', None))
     parser.add_argument('--repo', help='Path to chronon repo', default=chronon_repo_path)
     parser.add_argument('--online-jar',
                         help='Jar containing Online KvStore & Deserializer Impl. ' +
@@ -332,12 +348,15 @@ if __name__ == "__main__":
     parser.add_argument('--sub-help', action='store_true', help='print help command of the underlying jar and exit')
     parser.add_argument('--conf-type', default='group_bys',
                         help='related to sub-help - no need to set unless you are not working with a conf')
-    parser.add_argument('--online-args', default=os.getenv('CHRONON_ONLINE_ARGS', ''),
+    parser.add_argument('--online-args', default=os.environ.get('CHRONON_ONLINE_ARGS', ''),
                         help='Basic arguments that need to be supplied to all online modes')
-    parser.add_argument('--chronon-jar', default=None, help='Path to chronon OS jar')
+    parser.add_argument('--chronon-jar', default=os.environ.get('CHRONON_DRIVER_JAR'), help='Path to chronon OS jar')
     parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
     parser.add_argument('--list-apps', default="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
                         help='command/script to list running jobs on the scheduler')
+    pre_parse_args, _ = parser.parse_known_args()
+    # We do a pre-parse to extract conf, mode, etc and set environment variables that may override default values.
+    set_runtime_env(pre_parse_args)
     args, unknown_args = parser.parse_known_args()
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
