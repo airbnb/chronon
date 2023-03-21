@@ -21,12 +21,6 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         .getOrElse(new java.util.ArrayList[String]())
         .asInstanceOf[java.util.ArrayList[String]])
 
-  private final val StartDateRegex = replacementRegexFor("start_date")
-  private final val EndDateRegex = replacementRegexFor("end_date")
-  // Useful for cumulative tables. So the split on step days always get the latest partition.
-  private final val LatestDateRegex = replacementRegexFor("latest_date")
-  private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
-
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
@@ -56,9 +50,9 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
             val progress = s"| [${index + 1}/${stepRanges.size}]"
             println(s"Computing staging query for range: $range  $progress")
             val renderedQuery = stagingQueryConf.query
-              .replaceAll(StartDateRegex, range.start)
-              .replaceAll(EndDateRegex, range.end)
-              .replaceAll(LatestDateRegex, endPartition)
+              .replaceAll(StagingQuery.StartDateRegex, range.start)
+              .replaceAll(StagingQuery.EndDateRegex, range.end)
+              .replaceAll(StagingQuery.LatestDateRegex, endPartition)
             println(s"Rendered Staging Query to run is:\n$renderedQuery")
             val df = tableUtils.sql(renderedQuery)
             tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
@@ -83,6 +77,13 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 }
 
 object StagingQuery {
+
+  final val StartDateRegex = replacementRegexFor("start_date")
+  final val EndDateRegex = replacementRegexFor("end_date")
+  // Useful for cumulative tables. So the split on step days always get the latest partition.
+  final val LatestDateRegex = replacementRegexFor("latest_date")
+  private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
+
   def main(args: Array[String]): Unit = {
     val parsedArgs = new Args(args)
     parsedArgs.verify()

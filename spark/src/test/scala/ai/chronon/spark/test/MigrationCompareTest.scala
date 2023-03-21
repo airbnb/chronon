@@ -54,20 +54,18 @@ class MigrationCompareTest {
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
 
-    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
-
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = ninetyDaysAgo), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
     )
 
-    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = today, tableUtils)
     join.computeJoin()
 
     //--------------------------------Staging Query-----------------------------
     val stagingQueryConf = Builders.StagingQuery(
-      query = s"select * from ${joinConf.metaData.outputTable}",
+      query = s"select * from ${joinConf.metaData.outputTable} WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = ninetyDaysAgo,
       metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_3",
         namespace = namespace,
@@ -82,7 +80,7 @@ class MigrationCompareTest {
     val (joinConf, stagingQueryConf) = setupTestData()
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
-      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
     val result = CompareJob.printAndGetBasicMetrics(metrics)
     assert(result.size == 0)
   }
@@ -101,7 +99,7 @@ class MigrationCompareTest {
     )
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
-      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
     val result = CompareJob.printAndGetBasicMetrics(metrics)
     assert(result.size == 0)
   }
@@ -121,15 +119,15 @@ class MigrationCompareTest {
     val (joinConf, _) = setupTestData()
 
     val stagingQueryConf = Builders.StagingQuery(
-      query = s"select * from ${joinConf.metaData.outputTable} where ds = ${today}",
+      query = s"select * from ${joinConf.metaData.outputTable} where ds BETWEEN '${monthAgo}' AND '${today}'",
       startPartition = ninetyDaysAgo,
-      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_4",
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_5",
         namespace = namespace,
         tableProperties = Map("key" -> "val"))
     )
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
-      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
 
     val result = CompareJob.printAndGetBasicMetrics(metrics)
     assert(result.size != 0)
