@@ -260,7 +260,7 @@ object Driver {
       val from: ScallopOption[String] =
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
-        opt[String](required = false, descr = "Partition start date to compare the data from")
+        opt[String](required = true, descr = "Partition start date to compare the data from")
     }
 
     def run(args: Args): Unit = {

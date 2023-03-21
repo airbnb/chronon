@@ -5,7 +5,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, JoinCodec, SparkConversions}
-import ai.chronon.spark.{Analyzer, PartitionRange, TableUtils}
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -35,23 +35,20 @@ class CompareJob(
     // Check for schema consistency issues
     validate()
 
-    val partitionRange = if (startDate != null) {
-      PartitionRange(startDate, endDate).betweenClauses
-    } else {
-      s"ds <= '${endDate}'"
-    }
+    val partitionRange = PartitionRange(startDate, endDate)
     val leftDf = tableUtils.sql(s"""
         |SELECT *
         |FROM ${joinConf.metaData.outputTable}
-        |WHERE ${partitionRange}
+        |WHERE ${partitionRange.betweenClauses}
         |""".stripMargin)
 
     // Run the staging query sql directly
-    val rightDf = tableUtils.sql(s"""
-        |SELECT *
-        |FROM (${stagingQueryConf.query})
-        |WHERE ${partitionRange}
-        |""".stripMargin)
+    val rightDf = tableUtils.sql(
+      stagingQueryConf.query
+        .replaceAll(StagingQuery.StartDateRegex, startDate)
+        .replaceAll(StagingQuery.EndDateRegex, endDate)
+        .replaceAll(StagingQuery.LatestDateRegex, endDate)
+    )
     val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
       CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
 
@@ -97,8 +94,12 @@ class CompareJob(
     val analyzer = new Analyzer(tableUtils, joinConf, enableHitter = false)
     val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
     val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
+    val finalStagingQuery = stagingQueryConf.query
+      .replaceAll(StagingQuery.StartDateRegex, startDate)
+      .replaceAll(StagingQuery.EndDateRegex, endDate)
+      .replaceAll(StagingQuery.LatestDateRegex, endDate)
     val stagingQuerySchema = tableUtils.sql(
-      s"${stagingQueryConf.query} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+      s"${finalStagingQuery} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
 
     CompareBaseJob.checkConsistency(
       joinSchema,
