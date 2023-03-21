@@ -3,7 +3,8 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.Extensions._
-import ai.chronon.api._
+import ai.chronon.api.{Builders, _}
+import ai.chronon.online.DataMetrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.CompareJob
 import ai.chronon.spark.{Join, SparkSessionBuilder, StagingQuery, TableUtils}
@@ -40,7 +41,8 @@ class MigrationCompareTest {
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms")
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
@@ -79,9 +81,10 @@ class MigrationCompareTest {
   def testMigrateCompare(): Unit = {
     val (joinConf, stagingQueryConf) = setupTestData()
 
-    val (compareDf, metricsDf, metrics) =
-      new CompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
-    println(metrics)
+    val (compareDf, metricsDf, metrics: DataMetrics) =
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    assert(result.size == 0)
   }
 
   @Test
@@ -97,17 +100,38 @@ class MigrationCompareTest {
         tableProperties = Map("key" -> "val"))
     )
 
-    val (compareDf, metricsDf, metrics) =
-      new CompareJob(spark, joinConf, stagingQueryConf, endDate = today).run()
-    println(metrics)
+    val (compareDf, metricsDf, metrics: DataMetrics) =
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    assert(result.size == 0)
   }
 
   @Test
   def testMigrateCompareWithWindows(): Unit = {
     val (joinConf, stagingQueryConf) = setupTestData()
 
-    val (compareDf, metricsDf, metrics) =
-      new CompareJob(spark, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
-    println(metrics)
+    val (compareDf, metricsDf, metrics: DataMetrics) =
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
+    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    assert(result.size == 0)
+  }
+
+  @Test
+  def testMigrateCompareWithLessData(): Unit = {
+    val (joinConf, _) = setupTestData()
+
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"select * from ${joinConf.metaData.outputTable} where ds = ${today}",
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_sq_4",
+        namespace = namespace,
+        tableProperties = Map("key" -> "val"))
+    )
+
+    val (compareDf, metricsDf, metrics: DataMetrics) =
+      new CompareJob(tableUtils, joinConf, stagingQueryConf, endDate = today).run()
+
+    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    assert(result.size != 0)
   }
 }
