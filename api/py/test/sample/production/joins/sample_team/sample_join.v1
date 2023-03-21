@@ -12,6 +12,11 @@
     },
     "outputNamespace": "sample_namespace",
     "team": "sample_team",
+    "modeToEnvMap": {
+      "backfill": {
+        "EXECUTOR_MEMORY": "9G"
+      }
+    },
     "samplePercent": 100.0,
     "offlineSchedule": "@daily"
   },
