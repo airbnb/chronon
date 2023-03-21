@@ -271,7 +271,7 @@ object Driver {
       new CompareJob(
         args.buildTableUtils(
           s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
-        ).sparkSession,
+        ),
         joinConf,
         stagingQueryConf,
         args.startDate(),
