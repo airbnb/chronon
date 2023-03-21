@@ -27,10 +27,10 @@ object QueryUtils {
 
     val whereClause = Option(wheres)
       .filter(_.nonEmpty)
-      .map { w =>
+      .map { ws =>
         s"""
            |WHERE
-           |  ${w.mkString(" AND ")}""".stripMargin
+           |  ${ws.map(w => s"(${w})").mkString(" AND ")}""".stripMargin
       }
       .getOrElse("")
 
