@@ -183,7 +183,7 @@ def set_runtime_env(args):
         "conf_env": {},
         "default_env": {},
         "team_env": {},
-        "derived_runtime_env": {},
+        "cli_args": {},
     }
     if args.repo:
         teams_file = os.path.join(args.repo, 'teams.json')
@@ -206,22 +206,22 @@ def set_runtime_env(args):
                 environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
                 environment['team_env'] = teams_json[team].get(context, {}).get(args.mode, {})
                 environment['default_env'] = teams_json.get('default', {}).get(context, {}).get(args.mode, {})
-                environment['derived_runtime_env']['APP_NAME'] = APP_NAME_TEMPLATE.format(
+                environment['cli_args']['APP_NAME'] = APP_NAME_TEMPLATE.format(
                     mode=args.mode,
                     conf_type=conf_type,
                     context=context,
                     name=conf_json['metaData']['name'])
-                environment['derived_runtime_env']["CHRONON_CONF_PATH"] = conf_path
+                environment['cli_args']["CHRONON_CONF_PATH"] = conf_path
     if args.app_name:
-        environment['derived_runtime_env']['APP_NAME'] = args.app_name
+        environment['cli_args']['APP_NAME'] = args.app_name
     else:
         if args.mode == 'metadata-export':
-            environment['derived_runtime_env']['APP_NAME'] = 'chronon_metadata_export'
+            environment['cli_args']['APP_NAME'] = 'chronon_metadata_export'
     # Adding these to make sure they are printed if provided by the environment.
-    environment['derived_runtime_env']['CHRONON_DRIVER_JAR'] = args.chronon_jar
-    environment['derived_runtime_env']['CHRONON_ONLINE_JAR'] = args.online_jar
-    environment['derived_runtime_env']['CHRONON_ONLINE_CLASS'] = args.online_class
-    order = ['conf_env', 'team_env', 'default_env', 'common_env', 'derived_runtime_env']
+    environment['cli_args']['CHRONON_DRIVER_JAR'] = args.chronon_jar
+    environment['cli_args']['CHRONON_ONLINE_JAR'] = args.online_jar
+    environment['cli_args']['CHRONON_ONLINE_CLASS'] = args.online_class
+    order = ['conf_env', 'team_env', 'default_env', 'common_env', 'cli_args']
     print("Setting env variables:")
     for key in os.environ:
         if any([key in environment[set_key] for set_key in order]):
