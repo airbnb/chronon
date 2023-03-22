@@ -371,6 +371,14 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
         This is used by airflow integration to pick an older hive partition to wait on.
     :type lag: int
+    :param offline_schedule:
+         the offline schedule interval for batch jobs. Below is the equivalent of the cron tab commands
+        '@hourly': '0 * * * *',
+        '@daily': '0 0 * * *',
+        '@weekly': '0 0 * * 0',
+        '@monthly': '0 0 1 * *',
+        '@yearly': '0 0 1 1 *',
+    :type offline_schedule: str
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
