@@ -26,6 +26,9 @@ object Fetcher {
                      context: Option[Metrics.Context] = None)
 
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
+  case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
+    def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
+  }
 }
 
 
@@ -136,8 +139,9 @@ class Fetcher(val kvStore: KVStore,
             val joinName = internalResponse.request.name
             Metrics.Context(Environment.JoinFetching, join = joinName).histogram("overall.latency.millis", System.currentTimeMillis() - ts)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, (internalMap ++ externalMap)).mapValues(_.asInstanceOf[AnyRef]).toMap
-            Response(internalResponse.request, Success(derivedMap))
+            val baseMap = internalMap ++ externalMap
+            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, baseMap).mapValues(_.asInstanceOf[AnyRef]).toMap
+            ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
     }
 
@@ -178,7 +182,7 @@ class Fetcher(val kvStore: KVStore,
     tryOnce(null, tries).get
   }
 
-  private def logResponse(resp: Response, ts: Long): Response = {
+  private def logResponse(resp: ResponseWithContext, ts: Long): Response = {
     val joinContext = resp.request.context
     val loggingTs = resp.request.atMillis.getOrElse(ts)
     val joinCodecTry = getJoinCodecs(resp.request.name)
@@ -195,22 +199,23 @@ class Fetcher(val kvStore: KVStore,
       }
       val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
       if (shouldPublishLog || debug) {
+        val values = if (codec.conf.join.logFullValues) {
+          resp.combinedValues
+        } else {
+          resp.derivedValues
+        }
+
         if (debug) {
           println(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
           val gson = new Gson()
-          val valuesFormatted = resp.values.map {
-            _.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
-          }
+          val valuesFormatted = values.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
           println(s"""Sampled join fetch
                |Key Map: ${resp.request.keys}
                |Value Map: [${valuesFormatted}]
                |""".stripMargin)
         }
 
-        val valueBytes =
-          resp.values.toOption
-            .map(encode(codec.valueSchema, codec.valueCodec, _, cast = false))
-            .orNull
+        val valueBytes = encode(codec.valueSchema, codec.valueCodec, values)
 
         val loggableResponse = LoggableResponse(
           keyBytes,
@@ -234,7 +239,7 @@ class Fetcher(val kvStore: KVStore,
       joinContext.foreach(_.incrementException(exception))
       println(s"logging failed due to ${exception.traceString}")
     }
-    resp
+    Response(resp.request, Success(resp.derivedValues))
   }
 
   // Pulling external features in a batched fashion across services in-parallel

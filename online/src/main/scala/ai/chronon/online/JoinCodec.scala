@@ -1,7 +1,7 @@
 package ai.chronon.online
 
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
-import ai.chronon.api.{HashUtils, LongType, StringType, StructField, StructType}
+import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType}
 import com.google.gson.Gson
 
 import scala.collection.Seq
@@ -27,12 +27,16 @@ case class JoinCodec(conf: JoinOps,
         SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
       // if spark catalyst is not necessary, and all the derivations are just renames, we don't invoke catalyst
       if (conf.areDerivationsRenameOnly) {
+        val baseExpressions = if (conf.derivationsContainStar) {
+          baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
+        } else {
+          Seq.empty
+        }
+        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d =>
+          StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+        }
         build(
-          if (conf.derivationsContainStar) {
-            baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
-          } else { Seq.empty } ++ conf.derivationsWithoutStar.map { d =>
-            StructField(d.name, baseValueSchema.typeOf(d.expression).get)
-          },
+          expressions,
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
               JoinCodec.adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
@@ -57,9 +61,25 @@ case class JoinCodec(conf: JoinOps,
       }
     }
 
-  @transient lazy val valueSchema: StructType = valueSchemaAndDeriveFunc.valueSchema
   @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     valueSchemaAndDeriveFunc.derivationFunc
+
+  @transient lazy val valueSchema: StructType = {
+    val derivedSchema = valueSchemaAndDeriveFunc.valueSchema
+    if (conf.logFullValues) {
+      def toMap(schema: StructType): Map[String, DataType] = schema.map(field => (field.name, field.fieldType)).toMap
+      val (baseMap, derivedMap) = (toMap(baseValueSchema), toMap(derivedSchema))
+      StructType(
+        s"join_combined_${conf.join.metaData.cleanName}",
+        // derived values take precedence in case of collision
+        (baseMap ++ derivedMap).map {
+          case (name, dataTye) => StructField(name, dataTye)
+        }.toArray
+      )
+    } else {
+      derivedSchema
+    }
+  }
   @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
 
   /*

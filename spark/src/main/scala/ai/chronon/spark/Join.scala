@@ -22,7 +22,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * This is so that if any derivations depend on the these external fields, they will still pass and not complain
    * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
    */
-  private def enrichExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+  private def padExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
 
     val keySchema = bootstrapInfo.externalParts.flatMap(_.keySchema)
     // exclude the value fields of contextual source since they are identical to keys except naming
@@ -46,7 +46,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * This is so that if any derivations depend on the these group by fields, they will still pass and not complain
    * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
    */
-  private def enrichGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+  private def padGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
     val groupByFields =
       SparkConversions.fromChrononSchema(StructType("", bootstrapInfo.joinParts.flatMap(_.valueSchema).toArray))
 
@@ -95,7 +95,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalBaseDf = enrichGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
+    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
     val finalDf = applyDerivation(finalBaseDf, bootstrapInfo)
     finalDf.explain()
     finalDf
@@ -179,7 +179,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
 
     if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
-      return enrichExternalFields(leftDf, bootstrapInfo)
+      return padExternalFields(leftDf, bootstrapInfo)
     }
 
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
@@ -257,7 +257,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
         }
 
         // include all external fields if not already bootstrapped
-        val enrichedDf = enrichExternalFields(joinedDf, bootstrapInfo)
+        val enrichedDf = padExternalFields(joinedDf, bootstrapInfo)
 
         // set autoExpand = true since log table could be a bootstrap part
         enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)

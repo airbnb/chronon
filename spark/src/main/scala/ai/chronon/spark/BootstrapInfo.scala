@@ -105,38 +105,26 @@ object BootstrapInfo {
     }
 
     // For each joinPart and externalPart find out the list of derived fields that depend on it
-    val joinPartsEnriched = joinParts.map { joinPartMetadata =>
-      val inputFields = joinPartMetadata.valueSchema
-      val outputFields = if (joinConf.isSetDerivations) {
+    def findRequiringFields(inputFields: Array[StructField]): Array[StructField] = {
+      if (joinConf.isSetDerivations) {
         derivedSchema
           .filter {
-            // check if any expressions contain any field for this join part
+            // Check if the expression contains any fields from the join part by string matching.
+            // Note: this will fail if there are two fields from two join parts where one is a prefix of another.
+            // it should be fine if they are from the same join parts since the logic here applies at join part level.
             case (_, expression) => inputFields.map(_.name).exists(expression.contains)
           }
           .map(_._1)
       } else {
         inputFields
       }
-      joinPartMetadata.copy(
-        requiringFields = outputFields
-      )
+    }
+    val joinPartsEnriched = joinParts.map { m =>
+      m.copy(requiringFields = findRequiringFields(m.valueSchema))
     }
 
-    val externalPartsEnriched = externalParts.map { externalPartMetadata =>
-      val inputFields = externalPartMetadata.valueSchema
-      val outputFields = if (joinConf.isSetDerivations) {
-        derivedSchema
-          .filter {
-            // check if any expressions contain any field for this external part
-            case (_, expression) => inputFields.map(_.name).exists(expression.contains)
-          }
-          .map(_._1)
-      } else {
-        inputFields
-      }
-      externalPartMetadata.copy(
-        requiringFields = outputFields
-      )
+    val externalPartsEnriched = externalParts.map { m =>
+      m.copy(requiringFields = findRequiringFields(m.valueSchema))
     }
 
     /*

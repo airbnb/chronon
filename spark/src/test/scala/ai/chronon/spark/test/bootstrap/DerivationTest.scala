@@ -398,8 +398,8 @@ class DerivationTest {
 
     // Populate log table
     val logs = mockApi.flushLoggedValues
-    assertEquals(responses.length, requests.length)
-    assertEquals(logs.length, 1 + requests.length)
+    assertEquals(requests.length, responses.length)
+    assertEquals(1 + requests.length, logs.length)
     mockApi
       .loggedValuesToDf(logs, spark)
       .save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
@@ -408,8 +408,18 @@ class DerivationTest {
     flattenerJob.buildLogTable()
     val logDf = spark.table(bootstrapJoin.metaData.loggedTable)
 
+    // Verifies that logging is full regardless of select star
+    val baseColumns = Seq(
+      "unit_test_user_transactions_amount_dollars_sum_15d",
+      "unit_test_user_transactions_amount_dollars_sum_30d"
+    )
+    assertTrue(baseColumns.forall(logDf.columns.contains))
+
     val bootstrapJoinJob = new ai.chronon.spark.Join(bootstrapJoin, endDs, tableUtils)
     val computedDf = bootstrapJoinJob.computeJoin()
+    if (!wildcardSelection) {
+      assertTrue(baseColumns.forall(c => !computedDf.columns.contains(c)))
+    }
 
     // assert that no computation happened for join part since all derivations have been bootstrapped
     assertFalse(tableUtils.tableExists(bootstrapJoin.partOutputTable(joinPart)))
