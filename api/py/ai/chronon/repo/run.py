@@ -315,48 +315,60 @@ class Runner:
         check_call(command)
 
 
-if __name__ == "__main__":
-    today = datetime.today().strftime('%Y-%m-%d')
-    parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
+def set_defaults(parser):
+    """ Set default values based on environment """
     chronon_repo_path = os.environ.get('CHRONON_REPO_PATH', '.')
+    today = datetime.today().strftime('%Y-%m-%d')
+    parser.set_defaults(
+        mode='backfill',
+        ds=today,
+        app_name=os.environ.get('APP_NAME'),
+        online_jar=os.environ.get('CHRONON_ONLINE_JAR'),
+        repo=chronon_repo_path,
+        online_class=os.environ.get('CHRONON_ONLINE_CLASS'),
+        version=os.environ.get('VERSION'),
+        spark_version=os.environ.get('SPARK_VERSION', '2.4.0'),
+        spark_submit_path=os.path.join(chronon_repo_path, 'scripts/spark_submit.sh'),
+        spark_streaming_submit_path=os.path.join(chronon_repo_path, 'scripts/spark_streaming.sh'),
+        online_jar_fetch=os.path.join(chronon_repo_path, 'scripts/fetch_online_jar.py'),
+        conf_type='group_bys',
+        online_args=os.environ.get('CHRONON_ONLINE_ARGS', ''),
+        chronon_jar=os.environ.get('CHRONON_DRIVER_JAR'),
+        list_apps="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Submit various kinds of chronon jobs')
     parser.add_argument('--conf', required=False, help='Conf param - required for every mode except fetch')
-    parser.add_argument('--mode', choices=MODE_ARGS.keys(), default='backfill')
-    parser.add_argument('--ds', default=today)
-    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE),
-                        default=os.environ.get('APP_NAME', None))
-    parser.add_argument('--repo', help='Path to chronon repo', default=chronon_repo_path)
+    parser.add_argument('--mode', choices=MODE_ARGS.keys())
+    parser.add_argument('--ds')
+    parser.add_argument('--app-name', help='app name. Default to {}'.format(APP_NAME_TEMPLATE))
+    parser.add_argument('--repo', help='Path to chronon repo')
     parser.add_argument('--online-jar',
                         help='Jar containing Online KvStore & Deserializer Impl. ' +
-                             'Used for streaming and metadata-upload mode.',
-                        default=os.environ.get('CHRONON_ONLINE_JAR', None))
+                             'Used for streaming and metadata-upload mode.')
     parser.add_argument('--online-class',
-                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.',
-                        default=os.environ.get('CHRONON_ONLINE_CLASS', None))
-    parser.add_argument('--version', help='Chronon version to use.', default=os.environ.get('VERSION', None)),
-    parser.add_argument('--spark-version', help='Spark version to use for downloading jar.',
-                        default=os.environ.get('SPARK_VERSION', '2.4.0')),
-    parser.add_argument('--spark-submit-path',
-                        help='Path to spark-submit',
-                        default=os.path.join(chronon_repo_path, 'scripts/spark_submit.sh'))
-    parser.add_argument('--spark-streaming-submit-path',
-                        help='Path to spark-submit for streaming',
-                        default=os.path.join(chronon_repo_path, 'scripts/spark_streaming.sh'))
+                        help='Class name of Online Impl. Used for streaming and metadata-upload mode.')
+    parser.add_argument('--version', help='Chronon version to use.')
+    parser.add_argument('--spark-version', help='Spark version to use for downloading jar.')
+    parser.add_argument('--spark-submit-path', help='Path to spark-submit')
+    parser.add_argument('--spark-streaming-submit-path', help='Path to spark-submit for streaming')
     parser.add_argument('--online-jar-fetch',
                         help='Path to script that can pull online jar. ' +
-                             "This will run only when a file doesn't exist at location specified by online_jar",
-                        default=os.path.join(chronon_repo_path, 'scripts/fetch_online_jar.py'))
+                             "This will run only when a file doesn't exist at location specified by online_jar")
     parser.add_argument('--sub-help', action='store_true', help='print help command of the underlying jar and exit')
-    parser.add_argument('--conf-type', default='group_bys',
+    parser.add_argument('--conf-type',
                         help='related to sub-help - no need to set unless you are not working with a conf')
-    parser.add_argument('--online-args', default=os.environ.get('CHRONON_ONLINE_ARGS', ''),
-                        help='Basic arguments that need to be supplied to all online modes')
-    parser.add_argument('--chronon-jar', default=os.environ.get('CHRONON_DRIVER_JAR'), help='Path to chronon OS jar')
-    parser.add_argument('--release-tag', default=None, help='Use the latest jar for a particular tag.')
-    parser.add_argument('--list-apps', default="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
-                        help='command/script to list running jobs on the scheduler')
+    parser.add_argument('--online-args', help='Basic arguments that need to be supplied to all online modes')
+    parser.add_argument('--chronon-jar', help='Path to chronon OS jar')
+    parser.add_argument('--release-tag', help='Use the latest jar for a particular tag.')
+    parser.add_argument('--list-apps', help='command/script to list running jobs on the scheduler')
+    set_defaults(parser)
     pre_parse_args, _ = parser.parse_known_args()
-    # We do a pre-parse to extract conf, mode, etc and set environment variables that may override default values.
+    # We do a pre-parse to extract conf, mode, etc and set environment variables and re parse default values.
     set_runtime_env(pre_parse_args)
+    set_defaults(parser)
     args, unknown_args = parser.parse_known_args()
     jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
