@@ -288,6 +288,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             output_namespace: str = None,
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
+            offline_schedule: str = '@daily',
             name: str = None,
             tags: Dict[str, str] = None,
             **kwargs) -> ttypes.GroupBy:
@@ -445,7 +446,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         dependencies=deps,
         modeToEnvMap=env,
         tableProperties=table_properties,
-        team=team)
+        team=team,
+        offlineSchedule=offline_schedule)
 
     group_by = ttypes.GroupBy(
         sources=sources,
