@@ -18,8 +18,8 @@ class CompareJob(
     tableUtils: TableUtils,
     joinConf: api.Join,
     stagingQueryConf: api.StagingQuery,
-    startDate: String = null,
-    endDate: String = null
+    startDate: String = Constants.Partition.at(System.currentTimeMillis()),
+    endDate: String = Constants.Partition.at(System.currentTimeMillis())
 ) extends Serializable {
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
@@ -91,7 +91,7 @@ class CompareJob(
 
   def validate(): Unit = {
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
-    val analyzer = new Analyzer(tableUtils, joinConf, enableHitter = false)
+    val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
     val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
     val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
     val finalStagingQuery = stagingQueryConf.query

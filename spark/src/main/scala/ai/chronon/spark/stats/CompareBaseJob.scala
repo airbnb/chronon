@@ -6,6 +6,8 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 
+import scala.collection.mutable.ListBuffer
+
 object CompareBaseJob {
 
   def checkConsistency(
@@ -15,55 +17,68 @@ object CompareBaseJob {
       mapping: Map[String, String] = Map.empty,
       migrationCheck: Boolean = false
   ): Unit = {
+    val errors = ListBuffer[String]()
     // Make sure the number of fields are comparable on either side.
-    // For migration checks, the left side can have more fields.
+    // For migration checks or general comparisons, the left side can have more fields.
     val sizeCheck = if (migrationCheck) leftFields.size >= rightFields.size else leftFields.size == rightFields.size
-    assert(sizeCheck,
-           s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
-           |Left side fields:
-           | - ${leftFields.mkString("\n - ")}
-           |
-           |Right side fields:
-           | - ${rightFields.mkString("\n - ")}
-           |""".stripMargin
-    )
+    if (!sizeCheck) {
+      errors += s"""Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}
+                |Left side fields:
+                | - ${leftFields.toSeq.sortBy(_._1).mkString("\n - ")}
+                |
+                |Right side fields:
+                | - ${rightFields.toSeq.sortBy(_._1).mkString("\n - ")}
+                |""".stripMargin
+    }
 
     // Verify that the mapping and the datatypes match
-    val revMapping = mapping.map(_.swap)
+    val reverseMapping = mapping.map(_.swap)
     rightFields.foreach { rightField =>
-      val leftFieldName = if (revMapping.contains(rightField._1)) revMapping.get(rightField._1).get else rightField._1
-      assert(leftFields.contains(leftFieldName),
-             s"Mapping column on the left table is not present; column name: ${leftFieldName}")
-
-      val leftFieldType = leftFields.get(leftFieldName).get
-      assert(rightField._2 == leftFieldType,
-             s"Comparison data types do not match for column '${leftFieldName}';" +
-             s" left side: ${leftFieldType}, right side: ${rightField._2}")
+      val leftFieldName = if (reverseMapping.contains(rightField._1)) {
+        reverseMapping.get(rightField._1).get
+      } else {
+        rightField._1
+      }
+      if (leftFields.contains(leftFieldName)) {
+        val leftFieldType = leftFields.get(leftFieldName).get
+        if (rightField._2 != leftFieldType) {
+          errors += s"Comparison data types do not match for column '${leftFieldName}';" +
+                    s" left side: ${leftFieldType}, right side: ${rightField._2}"
+        }
+      } else {
+        errors += s"Mapping column on the left table is not present; column name: ${leftFieldName}"
+      }
     }
 
     // Make sure the values of the mapping dict doesn't contain any duplicates
-    assert(mapping.size == revMapping.size,
-           s"Mapping values contain duplicate values. Keys: ${mapping.keys}, Values: ${mapping.values}")
+    if (mapping.size != reverseMapping.size) {
+      errors += s"Mapping values contain duplicate values. Keys: ${mapping.keys}, Values: ${mapping.values}"
+    }
 
     // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
-    assert(mapping.keySet.subsetOf(leftFields.keySet),
-           s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
-           s" expected to be subset of: ${leftFields.keySet}"
-    )
-    assert(mapping.values.toSet.subsetOf(rightFields.keySet),
-           s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
-           s" expected to be subset of: ${rightFields.keySet}"
-    )
+    if (!mapping.keySet.subsetOf(leftFields.keySet)) {
+      errors += s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
+                s" expected to be subset of: ${leftFields.keySet}"
+    }
+    if (!mapping.values.toSet.subsetOf(rightFields.keySet)) {
+      errors += s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
+                s" expected to be subset of: ${rightFields.keySet}"
+    }
 
     // Make sure the key columns are present in both the frames.
     Seq(leftFields, rightFields).foreach { kset =>
-      assert(keys.toSet.subsetOf(kset.keySet),
-             s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
-             s" expected to be subset of: ${kset.keySet}")
+      if (!keys.toSet.subsetOf(kset.keySet)) {
+        errors += s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
+                  s" expected to be subset of: ${kset.keySet}"
+      }
     }
 
     // Make sure the passed keys has one of the time elements in it
-    assert(keys.intersect(Constants.ReservedColumns).length != 0, "Ensure that one of the key columns is a time column")
+    if (keys.intersect(Constants.ReservedColumns).length == 0) {
+      errors += "Ensure that one of the key columns is a time column"
+    }
+
+    assert(errors.size == 0, errors.mkString("\n-----------------------------------------------------------------\n"))
   }
 
   /*
@@ -83,10 +98,12 @@ object CompareBaseJob {
 
     // 2. Prune the extra columns that we may have on the left side for migration use cases
     // so that the comparison becomes consistent across both sides.
+    val prunedColumns = ListBuffer[String]()
     val prunedLeftDf = if (migrationCheck) {
       leftDf.schema.fieldNames.foldLeft(leftDf)((df, field) => {
         val rightFieldName = if (mapping.contains(field)) mapping.get(field).get else field
         if (!rightFields.contains(rightFieldName)) {
+          prunedColumns += field
           df.drop(field)
         } else {
           df
@@ -95,6 +112,7 @@ object CompareBaseJob {
     } else {
       leftDf
     }
+    println(s"Pruning fields from the left source for equivalent comparison - ${prunedColumns.mkString(",")}")
 
     // 3. Build comparison dataframe
     println(s"""Join keys: ${keys.mkString(", ")}
