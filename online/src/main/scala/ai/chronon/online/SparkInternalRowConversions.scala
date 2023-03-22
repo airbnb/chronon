@@ -18,11 +18,11 @@ object SparkInternalRowConversions {
   // The purpose of this class is to be used on fetcher output in a fetching context
   // we take a data type and build a function that operates on actual value
   // we want to build functions where we only branch at construction time, but not at function execution time.
-  def from(dataType: types.DataType): Any => Any = {
+  def from(dataType: types.DataType, structToMap: Boolean = true): Any => Any = {
     val unguardedFunc: Any => Any = dataType match {
       case types.MapType(keyType, valueType, _) =>
-        val keyConverter = from(keyType)
-        val valueConverter = from(valueType)
+        val keyConverter = from(keyType, structToMap)
+        val valueConverter = from(valueType, structToMap)
 
         def mapConverter(x: Any): Any = {
           val mapData = x.asInstanceOf[MapData]
@@ -40,7 +40,7 @@ object SparkInternalRowConversions {
 
         mapConverter
       case types.ArrayType(elementType, _) =>
-        val elementConverter = from(elementType)
+        val elementConverter = from(elementType, structToMap)
 
         def arrayConverter(x: Any): Any = {
           val arrayData = x.asInstanceOf[ArrayData]
@@ -56,12 +56,12 @@ object SparkInternalRowConversions {
 
         arrayConverter
       case types.StructType(fields) =>
-        val funcs = fields.map { _.dataType }.map { from }
+        val funcs = fields.map { _.dataType }.map { from(_, structToMap) }
         val types = fields.map { _.dataType }
         val names = fields.map { _.name }
         val size = funcs.length
 
-        def structConverter(x: Any): Any = {
+        def structToMapConverter(x: Any): Any = {
           val internalRow = x.asInstanceOf[InternalRow]
           val result = new mutable.HashMap[Any, Any]()
           var idx = 0
@@ -73,7 +73,19 @@ object SparkInternalRowConversions {
           result.toMap
         }
 
-        structConverter
+        def structToArrayConverter(x: Any): Any = {
+          val internalRow = x.asInstanceOf[InternalRow]
+          val result = new Array[Any](size)
+          var idx = 0
+          while (idx < size) {
+            val value = internalRow.get(idx, types(idx))
+            result.update(idx, funcs(idx)(value))
+            idx += 1
+          }
+          result
+        }
+
+        if (structToMap) structToMapConverter else structToArrayConverter
       case types.StringType =>
         def stringConvertor(x: Any): Any = x.asInstanceOf[UTF8String].toString
 
@@ -88,11 +100,11 @@ object SparkInternalRowConversions {
   // The purpose of this class is to be used on fetcher output in a fetching context
   // we take a data type and build a function that operates on actual value
   // we want to build functions where we only branch at construction time, but not at function execution time.
-  def to(dataType: types.DataType): Any => Any = {
+  def to(dataType: types.DataType, structToMap: Boolean = true): Any => Any = {
     val unguardedFunc: Any => Any = dataType match {
       case types.MapType(keyType, valueType, _) =>
-        val keyConverter = to(keyType)
-        val valueConverter = to(valueType)
+        val keyConverter = to(keyType, structToMap)
+        val valueConverter = to(valueType, structToMap)
 
         def mapConverter(x: Any): Any = {
           val mapData = x.asInstanceOf[util.HashMap[Any, Any]]
@@ -105,7 +117,7 @@ object SparkInternalRowConversions {
 
         mapConverter
       case types.ArrayType(elementType, _) =>
-        val elementConverter = to(elementType)
+        val elementConverter = to(elementType, structToMap)
 
         def arrayConverter(x: Any): Any = {
           val arrayData = x.asInstanceOf[util.ArrayList[Any]]
@@ -114,17 +126,30 @@ object SparkInternalRowConversions {
 
         arrayConverter
       case types.StructType(fields) =>
-        val funcs = fields.map { _.dataType }.map { to }
+        val funcs = fields.map { _.dataType }.map { to(_, structToMap) }
         val names = fields.map { _.name }
 
-        def structConverter(x: Any): Any = {
-          val structMap = x.asInstanceOf[Map[Any, Any]]
+        def mapConverter(structMap: Any): Any = {
+          val map = structMap.asInstanceOf[Map[Any, Any]]
           val valueArr =
-            names.iterator.zip(funcs.iterator).map { case (name, func) => structMap.get(name).map(func).orNull }.toArray
+            names.iterator
+              .zip(funcs.iterator)
+              .map { case (name, func) => map.get(name).map(func).orNull }
+              .toArray
           new GenericInternalRow(valueArr)
         }
 
-        structConverter
+        def arrayConverter(structArr: Any): Any = {
+          val valueArr = structArr
+            .asInstanceOf[Array[Any]]
+            .iterator
+            .zip(funcs.iterator)
+            .map { case (value, func) => if (value != null) func(value) else null }
+            .toArray
+          new GenericInternalRow(valueArr)
+        }
+
+        if (structToMap) mapConverter else arrayConverter
       case types.StringType =>
         def stringConvertor(x: Any): Any = { UTF8String.fromString(x.asInstanceOf[String]) }
 
