@@ -15,13 +15,17 @@ import scala.util.ScalaJavaConversions.ListOps
 case class JoinPartMetadata(
     joinPart: JoinPart,
     keySchema: Array[StructField],
-    valueSchema: Array[StructField]
+    valueSchema: Array[StructField],
+    // list of derived fields that depend on any of the value fields in this join part
+    requiringFields: Array[StructField]
 )
 
 case class ExternalPartMetadata(
     externalPart: ExternalPart,
     keySchema: Array[StructField],
-    valueSchema: Array[StructField]
+    valueSchema: Array[StructField],
+    // list of derived fields that depend on any of the value fields in this join part
+    requiringFields: Array[StructField]
 )
 
 case class BootstrapInfo(
@@ -69,14 +73,15 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
         val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
-        JoinPartMetadata(part, keySchema, valueSchema)
+        JoinPartMetadata(part, keySchema, valueSchema, Array.empty) // will be populated below
       })
 
     // Enrich each external part with the expected output schema
     println(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
-      .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
+      .map(part =>
+        ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull, Array.empty)) // will be populated below
 
     val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
@@ -86,16 +91,52 @@ object BootstrapInfo {
     )
     val derivedSchema = if (joinConf.isSetDerivations) {
       val projections = joinConf.derivationProjection(baseFields.map(_.name))
+      val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {
           case (name, expression) => expr(expression).as(name)
         }.toSeq: _*
       )
       SparkConversions.toChrononSchema(derivedDf.schema).map {
-        case (name, dataType) => StructField(name, dataType)
+        case (name, dataType) => (StructField(name, dataType), projectionMap(name))
       }
     } else {
-      Array.empty[StructField]
+      Array.empty[(StructField, String)]
+    }
+
+    // For each joinPart and externalPart find out the list of derived fields that depend on it
+    val joinPartsEnriched = joinParts.map { joinPartMetadata =>
+      val inputFields = joinPartMetadata.valueSchema
+      val outputFields = if (joinConf.isSetDerivations) {
+        derivedSchema
+          .filter {
+            // check if any expressions contain any field for this join part
+            case (_, expression) => inputFields.map(_.name).exists(expression.contains)
+          }
+          .map(_._1)
+      } else {
+        inputFields
+      }
+      joinPartMetadata.copy(
+        requiringFields = outputFields
+      )
+    }
+
+    val externalPartsEnriched = externalParts.map { externalPartMetadata =>
+      val inputFields = externalPartMetadata.valueSchema
+      val outputFields = if (joinConf.isSetDerivations) {
+        derivedSchema
+          .filter {
+            // check if any expressions contain any field for this external part
+            case (_, expression) => inputFields.map(_.name).exists(expression.contains)
+          }
+          .map(_._1)
+      } else {
+        inputFields
+      }
+      externalPartMetadata.copy(
+        requiringFields = outputFields
+      )
     }
 
     /*
@@ -111,8 +152,10 @@ object BootstrapInfo {
      */
     val (logBootstrapParts, tableBootstrapParts) =
       Option(joinConf.bootstrapParts.toScala).getOrElse(Seq.empty).partition { part =>
+        // treat log table with additional selects as standard table bootstrap
+        val hasSelect = part.isSetQuery && part.query.isSetSelects
         val tblProps = tableUtils.getTableProperties(part.table)
-        tblProps.isDefined && tblProps.get.contains(Constants.ChrononLogTable)
+        tblProps.isDefined && tblProps.get.contains(Constants.ChrononLogTable) && !hasSelect
       }
 
     println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
@@ -120,12 +163,11 @@ object BootstrapInfo {
     logBootstrapParts
       .foreach(part => {
         // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
-        val logTable = joinConf.metaData.loggedTable
-        val schema = tableUtils.getSchemaFromTable(logTable)
+        val schema = tableUtils.getSchemaFromTable(part.table)
         val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
         assert(
           missingKeys.isEmpty,
-          s"Log table $logTable for join ${joinConf.metaData.name} does not contain some specified keys: ${missingKeys.prettyInline}"
+          s"Log table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
         )
       })
 
@@ -168,7 +210,8 @@ object BootstrapInfo {
       .toMap
 
     val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
-    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema, hashToSchema)
+    val bootstrapInfo =
+      BootstrapInfo(joinConf, joinPartsEnriched, externalPartsEnriched, derivedSchema.map(_._1), hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
@@ -194,29 +237,38 @@ object BootstrapInfo {
            |""".stripMargin
       )
     }
-    def stringify(schema: Array[StructField]): String =
-      SparkConversions.fromChrononSchema(api.StructType("", schema)).pretty
+    def stringify(schema: Array[StructField]): String = {
+      if (schema.isEmpty) {
+        "<empty>"
+      } else {
+        SparkConversions.fromChrononSchema(api.StructType("", schema)).pretty
+      }
+    }
 
-    println("\n======= Finalized Bootstrap Info =======\n")
-    joinParts.foreach { metadata =>
+    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
+    joinPartsEnriched.foreach { metadata =>
       println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
            |${stringify(metadata.valueSchema)}
+           |Downstream Derived Schema:
+           |${stringify(metadata.requiringFields)}
            |""".stripMargin)
     }
-    externalParts.foreach { metadata =>
+    externalPartsEnriched.foreach { metadata =>
       println(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
            |${stringify(metadata.valueSchema)}
+           |Downstream Derived Schema:
+           |${stringify(metadata.requiringFields)}
            |""".stripMargin)
     }
     if (derivedSchema.nonEmpty) {
       println(s"""Bootstrap Info for Derivations
-                 |${stringify(derivedSchema)}
+                 |${stringify(derivedSchema.map(_._1))}
                  |""".stripMargin)
     }
     println(s"""Bootstrap Info for Log Bootstraps
@@ -232,7 +284,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
 
-    println("\n======= Finalized Bootstrap Info END =======\n")
+    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
 
     bootstrapInfo
   }

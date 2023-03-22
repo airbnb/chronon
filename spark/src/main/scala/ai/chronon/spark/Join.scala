@@ -20,7 +20,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
   /*
    * For all external fields that are not already populated during the bootstrap step, fill in NULL.
    * This is so that if any derivations depend on the these external fields, they will still pass and not complain
-   * about missing columns.
+   * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
    */
   private def enrichExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
 
@@ -31,6 +31,26 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     val externalFields = SparkConversions.fromChrononSchema(StructType("", (keySchema ++ valueSchema).toArray))
 
     externalFields.foldLeft(bootstrapDf) {
+      case (df, field) => {
+        if (df.columns.contains(field.name)) {
+          df
+        } else {
+          df.withColumn(field.name, lit(null).cast(field.dataType))
+        }
+      }
+    }
+  }
+
+  /*
+   * For all external fields that are not already populated during the group by backfill step, fill in NULL.
+   * This is so that if any derivations depend on the these group by fields, they will still pass and not complain
+   * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
+   */
+  private def enrichGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    val groupByFields =
+      SparkConversions.fromChrononSchema(StructType("", bootstrapInfo.joinParts.flatMap(_.valueSchema).toArray))
+
+    groupByFields.foldLeft(baseJoinDf) {
       case (df, field) => {
         if (df.columns.contains(field.name)) {
           df
@@ -57,12 +77,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     // we do this by utilizing the per-record metadata computed during the bootstrap process.
     // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
     // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
-    val rightResults = bootstrapInfo.joinParts
-      .map(_.joinPart)
-      .parallel
-      .flatMap { part =>
-        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, part, bootstrapInfo)
-        computeRightTable(unfilledLeftDf, part, leftRange).map(df => part -> df)
+    val rightResults = bootstrapInfo.joinParts.parallel
+      .flatMap { partMetadata =>
+        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, partMetadata, bootstrapInfo)
+        val joinPart = partMetadata.joinPart
+        computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
       }
 
     // combine bootstrap table and join part tables
@@ -76,7 +95,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalBaseDf = joinedDf.selectExpr(outputColumns: _*)
+    val finalBaseDf = enrichGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
     val finalDf = applyDerivation(finalBaseDf, bootstrapInfo)
     finalDf.explain()
     finalDf
@@ -257,24 +276,22 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * full schema information.
    */
   private def findUnfilledRecords(bootstrapDf: DataFrame,
-                                  joinPart: JoinPart,
+                                  joinPartMetadata: JoinPartMetadata,
                                   bootstrapInfo: BootstrapInfo): DataFrame = {
 
     if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return bootstrapDf
     }
+    val requiredFields = joinPartMetadata.requiringFields
 
-    val requiredFields =
-      bootstrapInfo.joinParts.find(_.joinPart.groupBy.metaData.name == joinPart.groupBy.metaData.name).get.valueSchema
-
-    // We mark some hashes to be valid. A valid hash means that if a record was marked with this hash during bootstrap,
-    // it already had all the required columns populated, and therefore can be skipped in backfill.
+    // We mark some hashes to be valid. A valid hash means that records with this hash has all required columns
+    // pre-populated and backfill for those records can be skipped
     val validHashes =
       bootstrapInfo.hashToSchema.filter(entry => requiredFields.forall(f => entry._2.contains(f))).keys.toSeq
 
     println(
-      s"""Finding records to backfill for joinPart: ${joinPart.groupBy.metaData.name}
+      s"""Finding records to backfill for joinPart: ${joinPartMetadata.joinPart.groupBy.metaData.name}
          |by splitting left into filled vs unfilled based on valid_hashes: ${validHashes.prettyInline}
          |""".stripMargin
     )
