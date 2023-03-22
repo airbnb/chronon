@@ -10,6 +10,7 @@ import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.gson.Gson
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
@@ -18,6 +19,7 @@ import java.util.TimeZone
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.collection.JavaConverters._
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 
 /**
   * For testing of the consumption side of Stats end to end.
@@ -117,7 +119,10 @@ class FetchStatsTest extends TestCase {
                                                              Some(Constants.Partition.epochMillis(yesterday)))
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
-    println(s"Stats Merged: ${gson.toJson(statsMerged)}")
+    val mapper = new ObjectMapper()
+    mapper.registerModule(DefaultScalaModule)
+    val writer = mapper.writerWithDefaultPrettyPrinter
+    println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
     println("Done!")
   }
 }

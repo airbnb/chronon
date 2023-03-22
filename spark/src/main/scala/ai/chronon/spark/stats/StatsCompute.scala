@@ -31,14 +31,14 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
       case StatsGenerator.InputTransform.Raw => functions.col(m.name)
       case StatsGenerator.InputTransform.One => functions.lit(true)
     }): _*)
-    .toDF(timeColumns ++ metrics.map(m => s"${m.prefix}${m.name}"): _*)
+    .toDF(timeColumns ++ metrics.map(m => s"${m.name}${m.suffix}"): _*)
 
   /** Given a summary Dataframe that computed the stats. Add derived data (example: null rate, median, etc) */
   def addDerivedMetrics(df: DataFrame, aggregator: RowAggregator): DataFrame = {
-    val nullColumns = df.columns.filter(p => p.startsWith(StatsGenerator.nullPrefix))
+    val nullColumns = df.columns.filter(p => p.startsWith(StatsGenerator.nullSuffix))
     val withNullRatesDF = nullColumns.foldLeft(df) { (tmpDf, column) =>
       tmpDf.withColumn(
-        s"${StatsGenerator.nullRatePrefix}${column.stripPrefix(StatsGenerator.nullPrefix)}",
+        s"${StatsGenerator.nullRateSuffix}${column.stripPrefix(StatsGenerator.nullSuffix)}",
         tmpDf.col(column) / tmpDf.col(Seq(StatsGenerator.totalColumn, api.Operation.COUNT).mkString("_"))
       )
     }
