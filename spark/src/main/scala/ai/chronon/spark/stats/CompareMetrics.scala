@@ -170,7 +170,14 @@ object CompareMetrics {
     val outputColumns = rowAggregator.aggregationParts.map(_.outputColumnName).toArray
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
-      .keyBy(row => (row.getLong(timeIndex) / bucketMs) * bucketMs) // bin
+      .keyBy(row => {
+        val timeValue = if (timeColumn == Constants.PartitionColumn) {
+          Constants.Partition.epochMillis(row.getString(timeIndex))
+        } else {
+          row.getLong(timeIndex)
+        }
+        (timeValue / bucketMs) * bucketMs
+      }) // bin
       .mapValues(SparkConversions.toChrononRow(_, -1))
       .aggregateByKey(rowAggregator.init)(rowAggregator.updateWithReturn, rowAggregator.merge) // aggregate
       .mapValues(rowAggregator.finalize)

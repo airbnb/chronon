@@ -257,17 +257,17 @@ object Driver {
 
   object CompareJoinQuery {
     class Args extends Subcommand("compare-join-query") with OfflineSubcommand {
-      val from: ScallopOption[String] =
+      val queryConf: ScallopOption[String] =
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
-        opt[String](required = true, descr = "Partition start date to compare the data from")
+        opt[String](required = false, descr = "Partition start date to compare the data from")
     }
 
     def run(args: Args): Unit = {
       assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
-      assert(args.from().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+      assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
       val joinConf = parseConf[api.Join](args.confPath())
-      val stagingQueryConf = parseConf[api.StagingQuery](args.from())
+      val stagingQueryConf = parseConf[api.StagingQuery](args.queryConf())
       new CompareJob(
         args.buildTableUtils(
           s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
