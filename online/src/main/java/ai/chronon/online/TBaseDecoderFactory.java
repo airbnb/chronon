@@ -15,7 +15,7 @@ import java.util.Set;
 // Traverse the class structure of .thrift file generated java class (TBase), recursively to produce
 // 1. the ChrononSchema for only the relevant fields - based on tokens
 // 2. the converter function that takes the class object and normalizes into
-//    a valid zipline object.
+//    a valid chronon object.
 public class TBaseDecoderFactory implements Serializable {
 
   private final String rootClass;
