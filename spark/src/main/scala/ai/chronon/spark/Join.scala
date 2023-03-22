@@ -12,8 +12,8 @@ import scala.collection.Seq
 
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
-    extends BaseJoin(joinConf, endPartition, tableUtils) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
+    extends BaseJoin(joinConf, endPartition, tableUtils, skipFirstHole) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -41,7 +41,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     }
   }
 
-  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
@@ -50,7 +50,6 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
-    val bootstrapInfo = BootstrapInfo.from(joinConf, leftRange, tableUtils)
     val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
 
     // compute join parts (GB) backfills
@@ -178,7 +177,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
     validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
 
     tableUtils
-      .unfilledRanges(bootstrapTable, range)
+      .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
         val parts = Option(joinConf.bootstrapParts)
@@ -210,7 +209,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils)
 
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
-              if (part.isLogBootstrap(joinConf)) {
+              if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
               } else {
                 bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))

@@ -658,7 +658,7 @@ class JoinTest {
       viewsGroupByCumulative.inferredAccuracy
     )
     // Only checking that the date logic is correct in the query
-    assert(renderedCumulative.contains(s"ds >= '${today}' AND ds <= '${today}'"))
+    assert(renderedCumulative.contains(s"(ds >= '${today}') AND (ds <= '${today}')"))
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
@@ -672,7 +672,7 @@ class JoinTest {
       viewsGroupByCumulative.inferredAccuracy
     )
     println(renderedIncremental)
-    assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
+    assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-03')"))
   }
 
   @Test

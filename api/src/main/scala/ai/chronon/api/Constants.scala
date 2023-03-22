@@ -24,6 +24,7 @@ object Constants {
   val MatchedHashes = "matched_hashes"
   val ChrononDynamicTable = "chronon_dynamic_table"
   val ChrononOOCTable: String = "chronon_ooc_table"
+  val ChrononLogTable: String = "chronon_log_table"
   val StreamingInputTable = "input_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
