@@ -11,7 +11,9 @@ object Thrift {
       s"thrift --gen $language -out $outputPath $inputPath" !
     };
     else {
-      s"docker run -v ~/stripe/chronon/:/chronon -it chronon_thriftgen:latest" !
+      val currWorkDir: String = "pwd" !!
+      val mountPath: String = s"$currWorkDir/:/chronon".filterNot(_.isWhitespace)
+      s"docker run -v $mountPath --rm chronon_thriftgen:latest" !
     };
     val files = (PathFinder(new File(outputPath)) ** s"*.${Option(extension).getOrElse(language)}").get()
     println("Generated files list")
