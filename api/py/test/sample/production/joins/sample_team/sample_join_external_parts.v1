@@ -45,7 +45,8 @@
             "description": "sample description"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {

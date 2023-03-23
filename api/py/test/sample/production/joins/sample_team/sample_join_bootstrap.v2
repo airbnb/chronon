@@ -48,7 +48,8 @@
             "source": "chronon"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
@@ -114,7 +115,8 @@
             "source": "chronon"
           },
           "outputNamespace": "chronon_db",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
@@ -174,7 +176,8 @@
             "source": "chronon"
           },
           "outputNamespace": "chronon_db",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {

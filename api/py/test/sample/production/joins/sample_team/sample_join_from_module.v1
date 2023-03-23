@@ -44,7 +44,8 @@
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
             "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
@@ -117,7 +118,8 @@
             "source": "chronon"
           },
           "outputNamespace": "chronon_db",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
