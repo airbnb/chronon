@@ -334,7 +334,7 @@ class LabelJoinTest {
   def createTestLabelJoinWithAgg(startOffset: Int,
                                  endOffset: Int,
                                  groupByTableName: String = "listing_label_group_by"): ai.chronon.api.LabelPart = {
-    val labelGroupBy = TestUtils.createLabelGroupByWithAgg(namespace, spark, groupByTableName)
+    val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)

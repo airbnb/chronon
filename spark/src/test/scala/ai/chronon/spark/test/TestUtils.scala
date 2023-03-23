@@ -55,10 +55,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
-    )
+    val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
       tableName,
@@ -104,10 +101,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
-    )
+    val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
       tableName,
@@ -205,10 +199,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
-    )
+    val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}", autoExpand = true)
     GroupByTestSuite(
       tableName,
@@ -217,29 +208,32 @@ object TestUtils {
     )
   }
 
-  def createLabelGroupByWithAgg(namespace: String,
+  def createOrUpdateLabelGroupByWithAgg(namespace: String,
                               spark: SparkSession,
-                              tableName: String = "listing_labels"): GroupByTestSuite = {
+                              tableName: String = "listing_labels",
+                              customRows: List[Row] = List.empty): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
         StructField("listing_id", LongType),
-        StructField("is_active", IntType), //  binary int 0/1
+        StructField("is_active", IntType),
         StructField("ds", StringType),
         StructField("ts", StringType)
       )
     )
-    val rows = List(
-      Row(1L, 0, "2022-10-01", "2022-10-01 10:00:00"),
-      Row(2L, 0, "2022-10-01", "2022-10-01 10:00:00"),
-      Row(3L, 1, "2022-10-01", "2022-10-01 10:00:00"),
-      Row(1L, 1, "2022-10-02", "2022-10-02 10:00:00"),
-      Row(2L, 0, "2022-10-02", "2022-10-02 10:00:00"),
-      Row(3L, 0, "2022-10-02", "2022-10-02 10:00:00"),
-      Row(1L, 0, "2022-10-06", "2022-10-06 11:00:00"),
-      Row(2L, 1, "2022-10-06", "2022-10-06 11:00:00"),
-      Row(3L, 0, "2022-10-06", "2022-10-06 11:00:00")
-    )
+    val rows = if (customRows.isEmpty) {
+      List(
+        Row(1L, 0, "2022-10-01", "2022-10-01 10:00:00"),
+        Row(2L, 0, "2022-10-01", "2022-10-01 10:00:00"),
+        Row(3L, 1, "2022-10-01", "2022-10-01 10:00:00"), // not included in agg window
+        Row(1L, 1, "2022-10-02", "2022-10-02 10:00:00"),
+        Row(2L, 0, "2022-10-02", "2022-10-02 10:00:00"),
+        Row(3L, 0, "2022-10-02", "2022-10-02 10:00:00"),
+        Row(1L, 0, "2022-10-06", "2022-10-06 11:00:00"),
+        Row(2L, 1, "2022-10-06", "2022-10-06 11:00:00"),
+        Row(3L, 0, "2022-10-06", "2022-10-06 11:00:00")
+      )
+    } else customRows
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
@@ -261,10 +255,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
-    val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      SparkConversions.fromChrononSchema(schema)
-    )
+    val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
       tableName,
