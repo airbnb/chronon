@@ -11,7 +11,8 @@
       "source": "chronon"
     },
     "outputNamespace": "chronon_db",
-    "team": "sample_team"
+    "team": "sample_team",
+    "offlineSchedule": "@daily"
   },
   "sources": [
     {
