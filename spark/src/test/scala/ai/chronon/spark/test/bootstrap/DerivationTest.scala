@@ -1,119 +1,37 @@
 package ai.chronon.spark.test.bootstrap
 
+import ai.chronon.api.Builders.Derivation
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.Fetcher.Request
+import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{Comparison, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.functions.{coalesce, col, lit, rand}
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
+import ai.chronon.spark._
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+import scala.util.ScalaJavaConversions.JListOps
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class DerivationTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
-  val namespace = "test_derivations"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val tableUtils = TableUtils(spark)
   private val today = Constants.Partition.at(System.currentTimeMillis())
 
-  private def buildBootstrapConf(baseJoin: Join): (Join, DataFrame, DataFrame, DataFrame) = {
-    val leftTable = baseJoin.left.getEvents.table
-
-    /* directly bootstrap a derived feature field */
-    val diffBootstrapDf = spark
-      .table(leftTable)
-      .select(
-        col("request_id"),
-        (rand() * 30000)
-          .cast(org.apache.spark.sql.types.LongType)
-          .as("user_amount_30d_minus_15d"),
-        col("ds")
-      )
-      .sample(0.8)
-    val diffBootstrapTable = s"$namespace.bootstrap_diff"
-    diffBootstrapDf.save(diffBootstrapTable)
-    val diffBootstrapRange = diffBootstrapDf.partitionRange
-    val diffBootstrapPart = Builders.BootstrapPart(
-      query = Builders.Query(
-        selects = Builders.Selects("request_id", "user_amount_30d_minus_15d"),
-        startPartition = diffBootstrapRange.start,
-        endPartition = diffBootstrapRange.end
-      ),
-      table = diffBootstrapTable
-    )
-
-    /* bootstrap an external feature field such that it can be used in a downstream derivation */
-    val externalBootstrapDf = spark
-      .table(leftTable)
-      .select(
-        col("request_id"),
-        (rand() * 30000)
-          .cast(org.apache.spark.sql.types.LongType)
-          .as("ext_payments_service_user_txn_count_15d"),
-        col("ds")
-      )
-      .sample(0.8)
-    val externalBootstrapTable = s"$namespace.bootstrap_external"
-    externalBootstrapDf.save(externalBootstrapTable)
-    val externalBootstrapRange = externalBootstrapDf.partitionRange
-    val externalBootstrapPart = Builders.BootstrapPart(
-      query = Builders.Query(
-        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d"),
-        startPartition = externalBootstrapRange.start,
-        endPartition = externalBootstrapRange.end
-      ),
-      table = externalBootstrapTable
-    )
-
-    /* bootstrap an contextual feature field such that it can be used in a downstream derivation */
-    val contextualBoostrapDf = spark
-      .table(leftTable)
-      .select(
-        col("request_id"),
-        (rand() * 30000)
-          .cast(org.apache.spark.sql.types.LongType)
-          .as("user_txn_count_30d"),
-        col("ds")
-      )
-      .sample(0.8)
-    val contextualBootstrapTable = s"$namespace.bootstrap_contextual"
-    contextualBoostrapDf.save(contextualBootstrapTable)
-    val contextualBootstrapRange = contextualBoostrapDf.partitionRange
-    val contextualBootstrapPart = Builders.BootstrapPart(
-      query = Builders.Query(
-        // bootstrap of contextual fields will against the keys but it should be propagated to the values as well
-        selects = Builders.Selects("request_id", "user_txn_count_30d"),
-        startPartition = contextualBootstrapRange.start,
-        endPartition = contextualBootstrapRange.end
-      ),
-      table = contextualBootstrapTable
-    )
-
-    /* construct final boostrap join with 3 bootstrap parts */
-    val bootstrapJoin = baseJoin.deepCopy()
-    bootstrapJoin.getMetaData.setName("test.derivations_join_w_bootstrap")
-    bootstrapJoin
-      .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(
-            diffBootstrapPart,
-            externalBootstrapPart,
-            contextualBootstrapPart
-          ))
-      )
-
-    (bootstrapJoin, diffBootstrapDf, externalBootstrapDf, contextualBoostrapDf)
-  }
-
   @Test
   def testBootstrapToDerivations(): Unit = {
-
+    val namespace = "test_derivations"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
 
-    val joinConf = Builders.Join(
+    val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
         query = Builders.Query()
@@ -174,7 +92,7 @@ class DerivationTest {
       metaData = Builders.MetaData(name = "test.derivations_join", namespace = namespace, team = "chronon")
     )
 
-    val runner = new ai.chronon.spark.Join(joinConf, today, tableUtils)
+    val runner = new ai.chronon.spark.Join(baseJoin, today, tableUtils)
     val outputDf = runner.computeJoin()
 
     assertTrue(
@@ -192,7 +110,90 @@ class DerivationTest {
         "ds"
       ))
 
-    val (bootstrapJoin, diffBootstrapDf, externalBootstrapDf, contextualBootstrapDf) = buildBootstrapConf(joinConf)
+    val leftTable = baseJoin.left.getEvents.table
+
+    /* directly bootstrap a derived feature field */
+    val diffBootstrapDf = spark
+      .table(leftTable)
+      .select(
+        col("request_id"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("user_amount_30d_minus_15d"),
+        col("ds")
+      )
+      .sample(0.8)
+    val diffBootstrapTable = s"$namespace.bootstrap_diff"
+    diffBootstrapDf.save(diffBootstrapTable)
+    val diffBootstrapRange = diffBootstrapDf.partitionRange
+    val diffBootstrapPart = Builders.BootstrapPart(
+      query = Builders.Query(
+        selects = Builders.Selects("request_id", "user_amount_30d_minus_15d"),
+        startPartition = diffBootstrapRange.start,
+        endPartition = diffBootstrapRange.end
+      ),
+      table = diffBootstrapTable
+    )
+
+    /* bootstrap an external feature field such that it can be used in a downstream derivation */
+    val externalBootstrapDf = spark
+      .table(leftTable)
+      .select(
+        col("request_id"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("ext_payments_service_user_txn_count_15d"),
+        col("ds")
+      )
+      .sample(0.8)
+    val externalBootstrapTable = s"$namespace.bootstrap_external"
+    externalBootstrapDf.save(externalBootstrapTable)
+    val externalBootstrapRange = externalBootstrapDf.partitionRange
+    val externalBootstrapPart = Builders.BootstrapPart(
+      query = Builders.Query(
+        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d"),
+        startPartition = externalBootstrapRange.start,
+        endPartition = externalBootstrapRange.end
+      ),
+      table = externalBootstrapTable
+    )
+
+    /* bootstrap an contextual feature field such that it can be used in a downstream derivation */
+    val contextualBootstrapDf = spark
+      .table(leftTable)
+      .select(
+        col("request_id"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("user_txn_count_30d"),
+        col("ds")
+      )
+      .sample(0.8)
+    val contextualBootstrapTable = s"$namespace.bootstrap_contextual"
+    contextualBootstrapDf.save(contextualBootstrapTable)
+    val contextualBootstrapRange = contextualBootstrapDf.partitionRange
+    val contextualBootstrapPart = Builders.BootstrapPart(
+      query = Builders.Query(
+        // bootstrap of contextual fields will against the keys but it should be propagated to the values as well
+        selects = Builders.Selects("request_id", "user_txn_count_30d"),
+        startPartition = contextualBootstrapRange.start,
+        endPartition = contextualBootstrapRange.end
+      ),
+      table = contextualBootstrapTable
+    )
+
+    /* construct final boostrap join with 3 bootstrap parts */
+    val bootstrapJoin = baseJoin.deepCopy()
+    bootstrapJoin.getMetaData.setName("test.derivations_join_w_bootstrap")
+    bootstrapJoin
+      .setBootstrapParts(
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(
+            diffBootstrapPart,
+            externalBootstrapPart,
+            contextualBootstrapPart
+          ))
+      )
 
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
     val computed = runner2.computeJoin()
@@ -231,6 +232,214 @@ class DerivationTest {
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testBootstrapToDerivationsNoStar(): Unit = {
+    val namespace = "test_derivations_no_star"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
+
+    val bootstrapDf = spark
+      .table(queryTable)
+      .select(
+        col("request_id"),
+        col("user"),
+        col("ts"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("user_amount_30d"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("user_amount_30d_minus_15d"),
+        col("ds")
+      )
+    val bootstrapTable = s"$namespace.bootstrap_table"
+    bootstrapDf.save(bootstrapTable)
+    val bootstrapPart = Builders.BootstrapPart(
+      query = Builders.Query(
+        selects = Builders.Selects("request_id", "user_amount_30d", "user_amount_30d_minus_15d")
+      ),
+      table = bootstrapTable
+    )
+
+    val joinPart = Builders.JoinPart(groupBy = groupBy)
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        table = queryTable,
+        query = Builders.Query()
+      ),
+      joinParts = Seq(joinPart),
+      derivations = Seq(
+        Builders.Derivation(
+          name = "user_amount_30d",
+          expression = "unit_test_user_transactions_amount_dollars_sum_30d"
+        ),
+        Builders.Derivation(
+          name = "user_amount_30d_minus_15d",
+          expression =
+            "unit_test_user_transactions_amount_dollars_sum_30d - unit_test_user_transactions_amount_dollars_sum_15d"
+        )
+      ),
+      bootstrapParts = Seq(
+        bootstrapPart
+      ),
+      rowIds = Seq("request_id"),
+      metaData = Builders.MetaData(name = "test.derivations_join_no_star", namespace = namespace, team = "chronon")
+    )
+
+    val runner = new ai.chronon.spark.Join(joinConf, today, tableUtils)
+    val outputDf = runner.computeJoin()
+
+    // assert that no computation happened for join part since all derivations have been bootstrapped
+    assertFalse(tableUtils.tableExists(joinConf.partOutputTable(joinPart)))
+
+    val diff = Comparison.sideBySide(outputDf, bootstrapDf, List("request_id", "user", "ts", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${outputDf.count()}")
+      println(s"Expected count: ${bootstrapDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testLoggingNonStar(): Unit = {
+    runLoggingTest("test_derivations_logging_non_star", wildcardSelection = false)
+  }
+
+  @Test
+  def testLogging(): Unit = {
+    runLoggingTest("test_derivations_logging", wildcardSelection = true)
+  }
+
+  private def runLoggingTest(namespace: String, wildcardSelection: Boolean): Unit = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
+    val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
+
+    val joinPart = Builders.JoinPart(groupBy = groupBy)
+    val baseJoin = Builders.Join(
+      left = Builders.Source.events(
+        table = queryTable,
+        query = Builders.Query(
+          startPartition = endDs
+        )
+      ),
+      externalParts = Seq(
+        Builders.ExternalPart(
+          Builders.ContextualSource(
+            Array(StructField("request_id", StringType))
+          )
+        )),
+      joinParts = Seq(joinPart),
+      derivations =
+        (if (wildcardSelection) {
+           Seq(Derivation("*", "*"))
+         } else {
+           Seq.empty
+         }) :+ Builders.Derivation(
+          name = "user_amount_30d_minus_15d",
+          expression =
+            "unit_test_user_transactions_amount_dollars_sum_30d - unit_test_user_transactions_amount_dollars_sum_15d"
+        ),
+      rowIds = Seq("request_id"),
+      metaData = Builders.MetaData(name = "test.derivations_logging", namespace = namespace, team = "chronon")
+    )
+
+    val bootstrapJoin = baseJoin.deepCopy()
+    bootstrapJoin.getMetaData.setName("test.derivations_logging.bootstrap")
+    bootstrapJoin.setBootstrapParts(
+      Seq(
+        Builders.BootstrapPart(
+          table = bootstrapJoin.metaData.loggedTable
+        )
+      ).toJava
+    )
+
+    // Init artifacts to run online fetching and logging
+    val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val mockApi = new MockApi(() => kvStore, namespace)
+    OnlineUtils.serve(tableUtils, kvStore, () => kvStore, namespace, endDs, groupBy)
+    val fetcher = mockApi.buildFetcher(debug = true)
+
+    val metadataStore = new MetadataStore(kvStore, timeoutMillis = 10000)
+    kvStore.create(Constants.ChrononMetadataKey)
+    metadataStore.putJoinConf(bootstrapJoin)
+
+    val requests = spark
+      .table(queryTable)
+      .select("user", "request_id", "ts")
+      .collect()
+      .map { row =>
+        val (user, requestId, ts) = (row.getLong(0), row.getString(1), row.getLong(2))
+        Request(bootstrapJoin.metaData.nameToFilePath,
+                Map(
+                  "user" -> user,
+                  "request_id" -> requestId
+                ).asInstanceOf[Map[String, AnyRef]],
+                atMillis = Some(ts))
+      }
+    val future = fetcher.fetchJoin(requests)
+    val responses = Await.result(future, Duration.Inf).toArray
+
+    // Populate log table
+    val logs = mockApi.flushLoggedValues
+    assertEquals(requests.length, responses.length)
+    assertEquals(1 + requests.length, logs.length)
+    mockApi
+      .loggedValuesToDf(logs, spark)
+      .save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
+    SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, endDs)
+    val flattenerJob = new LogFlattenerJob(spark, bootstrapJoin, endDs, mockApi.logTable, mockApi.schemaTable)
+    flattenerJob.buildLogTable()
+    val logDf = spark.table(bootstrapJoin.metaData.loggedTable)
+
+    // Verifies that logging is full regardless of select star
+    val baseColumns = Seq(
+      "unit_test_user_transactions_amount_dollars_sum_15d",
+      "unit_test_user_transactions_amount_dollars_sum_30d"
+    )
+    assertTrue(baseColumns.forall(logDf.columns.contains))
+
+    val bootstrapJoinJob = new ai.chronon.spark.Join(bootstrapJoin, endDs, tableUtils)
+    val computedDf = bootstrapJoinJob.computeJoin()
+    if (!wildcardSelection) {
+      assertTrue(baseColumns.forall(c => !computedDf.columns.contains(c)))
+    }
+
+    // assert that no computation happened for join part since all derivations have been bootstrapped
+    assertFalse(tableUtils.tableExists(bootstrapJoin.partOutputTable(joinPart)))
+
+    val baseJoinJob = new ai.chronon.spark.Join(baseJoin, endDs, tableUtils)
+    val baseDf = baseJoinJob.computeJoin()
+
+    val expectedDf = JoinUtils
+      .coalescedJoin(
+        leftDf = logDf,
+        rightDf = baseDf,
+        keys = Seq("request_id", "user", "ts", "ds"),
+        joinType = "right"
+      )
+      .drop("schema_hash")
+
+    val diff = Comparison.sideBySide(computedDf, expectedDf, List("request_id", "user", "ts", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computedDf.count()}")
+      println(s"Expected count: ${expectedDf.count()}")
       println(s"Diff count: ${diff.count()}")
       println(s"diff result rows")
       diff.show()

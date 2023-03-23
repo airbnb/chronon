@@ -295,6 +295,21 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
     - Backfilling feature values for external features (in which case Chronon is unable to run backfill)
     - Initializing a new Join by migrating old data from an older Join and reusing data
 
+    One can bootstrap against any of these:
+    - join part fields:
+        Bootstrap can happen at individual field level within a join part.
+        If all fields within a group by are bootstrapped, then we skip computation for group by. Otherwise, the whole
+        thing will be re-run but only the values for the non-bootstrapped fields will be retained in the final table.
+    - external part fields:
+        Bootstrap can happen at individual field level within an external part.
+        Since there is no backfill logic in chronon for external part, all non-bootstrapped fields in external parts
+        are left as NULLs
+    - derivation fields:
+        Derived fields can also be bootstrapped. Since derived fields depend on "base" fields (either join part or
+        external part), chronon will try to trigger the least amount of computation possible. For example,
+        if there is a join part where all derived fields that depend on the join part have been bootstrapped,
+        then we skip the computation for this join part.
+
     :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
     :param key_columns: Keys to join bootstrap table to left table
     :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.

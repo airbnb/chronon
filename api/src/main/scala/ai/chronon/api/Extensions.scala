@@ -879,6 +879,8 @@ object Extensions {
         Map.empty[String, Any]
       } ++ derivationsScala.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
+
+    def logFullValues: Boolean = true  // TODO: supports opt-out in the future
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
