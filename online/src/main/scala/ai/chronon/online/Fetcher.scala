@@ -26,6 +26,8 @@ object Fetcher {
                      atMillis: Option[Long] = None,
                      context: Option[Metrics.Context] = None)
 
+  case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
+
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
@@ -354,7 +356,10 @@ class Fetcher(val kvStore: KVStore,
     *
     * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
     */
-  def fetchStats(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Seq[Response]] = {
+  def fetchStats(request: StatsRequest): Future[Seq[Response]] = {
+    val joinName = request.name
+    val startTs = request.startTs
+    val endTs = request.endTs
     val joinCodecs = getJoinCodecs(joinName) match {
       case Success(joinCodec) => joinCodec
       case Failure(exception) => throw exception
@@ -382,7 +387,10 @@ class Fetcher(val kvStore: KVStore,
     * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
     * determining data distributions between [startTs, endTs]
     */
-  def fetchMergedStatsBetween(joinName: String, startTs: Option[Long], endTs: Option[Long]): Future[Response] = {
+  def fetchMergedStatsBetween(request: StatsRequest): Future[Response] = {
+    val joinName = request.name
+    val startTs = request.startTs
+    val endTs = request.endTs
     val joinCodecs = getJoinCodecs(joinName) match {
       case Success(joinCodec) => joinCodec
       case Failure(exception) => throw exception
@@ -394,7 +402,7 @@ class Fetcher(val kvStore: KVStore,
     val metrics = StatsGenerator.buildMetrics(valueSchema.map(sf => (sf.name, sf.fieldType)))
     // Aggregator needs to aggregate partial IRs of stats. This should include transformations over the metrics.
     val aggregator = StatsGenerator.buildAggregator(metrics, statsInputSchema)
-    val rawResponses = fetchStats(joinName, startTs, endTs)
+    val rawResponses = fetchStats(request)
     rawResponses.map {
       var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
       responseFuture => responseFuture.foreach {

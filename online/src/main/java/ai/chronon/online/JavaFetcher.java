@@ -30,6 +30,10 @@ public class JavaFetcher  {
     return result;
   }
 
+  public static JavaResponse toJavaResponse(Response response) {
+    return new JavaResponse(response);
+  }
+
   private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
         .toJava(responses)
@@ -57,6 +61,18 @@ public class JavaFetcher  {
     Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
     return convertResponses(responses);
+  }
+
+  public CompletableFuture<List<JavaResponse>> fetchStats(JavaStatsRequest request) {
+    Future<Seq<Response>> responses = this.fetcher.fetchStats(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return convertResponses(responses);
+  }
+
+  public CompletableFuture<JavaResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
+    Future<Response> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaResponse);
   }
 
 }
