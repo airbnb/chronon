@@ -78,6 +78,7 @@ lazy val root = (project in file("."))
   .enablePlugins(GitVersioning, GitBranchPrompt)
 
 // Git related config
+git.gitUncommittedChanges := true
 git.useGitDescribe := true
 git.gitTagToVersionNumber := { tag: String =>
   // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
