@@ -134,12 +134,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          val computeRangeDf = computeRange(leftDfInRange, range, sanitizedLabelDs)
-          computeRangeDf.show()
-          computeRangeDf.save(outputLabelTable,
-                  tableProps,
-                  Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn),
-                  true)
+          computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable,
+            tableProps,
+            Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn),
+            true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -179,7 +177,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                 val labeledDf = computeLabelPart(labelJoinPart, leftRange, leftBlooms)
                 // Cache join part data into intermediate table
                 println(s"Writing to join part table: $partTable for partition range $leftRange")
-                labeledDf.show()
                 labeledDf.save(
                   tableName = partTable,
                   tableProperties = confTableProps,
