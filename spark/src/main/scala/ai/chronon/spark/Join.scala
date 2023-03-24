@@ -37,36 +37,43 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * This is so that if any derivations depend on the these external fields, they will still pass and not complain
    * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
    */
-  private def padExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+  private def enrichBootstrapDf(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame =
+    synchronizeContextualFields(padExternalFields(bootstrapDf, bootstrapInfo), bootstrapInfo)
 
+  private def padExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
     val nonContextualFields = toSparkSchema(
       bootstrapInfo.externalParts
         .filter(!_.externalPart.isContextual)
         .flatMap(part => part.keySchema ++ part.valueSchema))
-    val contextualFields = toSparkSchema(
-      bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema))
 
-    def withNonContextualFields(df: DataFrame): DataFrame = padFields(df, nonContextualFields)
+    padFields(bootstrapDf, nonContextualFields)
+  }
 
-    // Ensure keys and values for contextual fields are consistent even if only one of them is explicitly bootstrapped
-    def withContextualFields(df: DataFrame): DataFrame =
-      contextualFields.foldLeft(df) {
-        case (df, field) => {
-          var newDf = df
-          if (!newDf.columns.contains(field.name)) {
-            newDf = newDf.withColumn(field.name, lit(null).cast(field.dataType))
-          }
-          val prefixedName = s"${Constants.ContextualPrefix}_${field.name}"
-          if (!newDf.columns.contains(prefixedName)) {
-            newDf = newDf.withColumn(prefixedName, lit(null).cast(field.dataType))
-          }
-          newDf = newDf.withColumn(field.name, coalesce(col(field.name), col(prefixedName)))
-          newDf = newDf.withColumn(prefixedName, coalesce(col(field.name), col(prefixedName)))
-          newDf
+  private def synchronizeContextualFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    val schema = toSparkSchema(bootstrapInfo.contextualParts.flatMap(_.keySchema))
+    schema.foldLeft(bootstrapDf) {
+      case (df, field) => {
+        val prefixedName = s"${Constants.ContextualPrefix}_${field.name}"
+        (df.columns.contains(field.name), df.columns.contains(prefixedName)) match {
+          case (true, true) =>
+            df.withColumn(field.name, coalesce(col(field.name), col(prefixedName))).drop(prefixedName)
+          case (true, false)  => df
+          case (false, true)  => df.withColumnRenamed(prefixedName, field.name)
+          case (false, false) => df.withColumn(field.name, lit(null).cast(field.dataType))
         }
       }
+    }
+  }
 
-    withContextualFields(withNonContextualFields(bootstrapDf))
+  private def expandContextualFields(joinedDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    // ensure that ext_contextual_xxx fields can also be used as base even though these columns are not materialized
+    val schema = toSparkSchema(bootstrapInfo.contextualParts.flatMap(_.keySchema))
+    schema.foldLeft(joinedDf) {
+      case (df, field) => {
+        val valueName = s"${Constants.ContextualPrefix}_${field.name}"
+        df.withColumn(valueName, col(field.name))
+      }
+    }
   }
 
   /*
@@ -126,7 +133,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
     val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
     val derivationOutputColumns = projections.map(_._1).toSet
-    val baseOutputColumns = baseDf.columns.toSet
+    val enrichedDf = expandContextualFields(baseDf, bootstrapInfo)
+    val baseOutputColumns = enrichedDf.columns.toSet
 
     val finalOutputColumns =
       /*
@@ -138,7 +146,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
        * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
        *    arbitrary columns selected from left.
        */
-      baseDf.columns.flatMap { c =>
+      enrichedDf.columns.flatMap { c =>
         if (bootstrapInfo.baseValueNames.contains(c)) {
           None
         } else if (derivationOutputColumns.contains(c)) {
@@ -149,25 +157,21 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       } ++
         /*
          * Loop through all clauses in derivation projections:
-         * 1. if it has the distinct contextualPrefix and is simply a reselection (where name & expr match), we skip it
-         *    as we don't want contextual fields to be doubly selected, since the key version is always selected
-         * 2. if the base output already has a column with a matching derivation column name, this is a bootstrapped
+         * 1. if the base output already has a column with a matching derivation column name, this is a bootstrapped
          *    derivation case (see case 2 above), then we do the coalescing to achieve the bootstrap behavior.
-         * 3. Else, we do the standard projection.
+         * 2. Else, we do the standard projection.
          */
         projections
           .flatMap {
             case (name, expression) =>
-              if (name == expression && name.startsWith(Constants.ContextualPrefix)) {
-                None
-              } else if (baseOutputColumns.contains(name)) {
+              if (baseOutputColumns.contains(name)) {
                 Some(coalesce(col(name), expr(expression)).as(name))
               } else {
                 Some(expr(expression).as(name))
               }
           }
 
-    baseDf.select(finalOutputColumns: _*)
+    enrichedDf.select(finalOutputColumns: _*)
   }
 
   /*
@@ -187,7 +191,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
 
     if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
-      return padExternalFields(leftDf, bootstrapInfo)
+      return enrichBootstrapDf(leftDf, bootstrapInfo)
     }
 
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
@@ -265,7 +269,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
         }
 
         // include all external fields if not already bootstrapped
-        val enrichedDf = padExternalFields(joinedDf, bootstrapInfo)
+        val enrichedDf = enrichBootstrapDf(joinedDf, bootstrapInfo)
 
         // set autoExpand = true since log table could be a bootstrap part
         enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)
