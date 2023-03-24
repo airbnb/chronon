@@ -56,8 +56,6 @@ case class BootstrapInfo(
   private lazy val baseValueFields: Seq[StructField] = {
     joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
   }
-
-  lazy val contextualParts = externalParts.filter(_.externalPart.isContextual)
 }
 
 object BootstrapInfo {
