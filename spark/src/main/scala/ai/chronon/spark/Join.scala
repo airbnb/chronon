@@ -9,6 +9,7 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import scala.collection.Seq
+import org.apache.spark.sql
 
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
@@ -17,6 +18,20 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
+  private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
+    structType.foldLeft(df) {
+      case (df, field) =>
+        if (df.columns.contains(field.name)) {
+          df
+        } else {
+          df.withColumn(field.name, lit(null).cast(field.dataType))
+        }
+    }
+  }
+
+  private def toSparkSchema(fields: Seq[StructField]): sql.types.StructType =
+    SparkConversions.fromChrononSchema(StructType("", fields.toArray))
+
   /*
    * For all external fields that are not already populated during the bootstrap step, fill in NULL.
    * This is so that if any derivations depend on the these external fields, they will still pass and not complain
@@ -24,21 +39,34 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    */
   private def padExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
 
-    val keySchema = bootstrapInfo.externalParts.flatMap(_.keySchema)
-    // exclude the value fields of contextual source since they are identical to keys except naming
-    // these are added on-the-fly during derivation phase
-    val valueSchema = bootstrapInfo.externalParts.filterNot(_.externalPart.isContextual).flatMap(_.valueSchema)
-    val externalFields = SparkConversions.fromChrononSchema(StructType("", (keySchema ++ valueSchema).toArray))
+    val nonContextualFields = toSparkSchema(
+      bootstrapInfo.externalParts
+        .filter(!_.externalPart.isContextual)
+        .flatMap(part => part.keySchema ++ part.valueSchema))
+    val contextualFields = toSparkSchema(
+      bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema))
 
-    externalFields.foldLeft(bootstrapDf) {
-      case (df, field) => {
-        if (df.columns.contains(field.name)) {
-          df
-        } else {
-          df.withColumn(field.name, lit(null).cast(field.dataType))
+    def withNonContextualFields(df: DataFrame): DataFrame = padFields(df, nonContextualFields)
+
+    // Ensure keys and values for contextual fields are consistent even if only one of them is explicitly bootstrapped
+    def withContextualFields(df: DataFrame): DataFrame =
+      contextualFields.foldLeft(df) {
+        case (df, field) => {
+          var newDf = df
+          if (!newDf.columns.contains(field.name)) {
+            newDf = newDf.withColumn(field.name, lit(null).cast(field.dataType))
+          }
+          val prefixedName = s"${Constants.ContextualPrefix}_${field.name}"
+          if (!newDf.columns.contains(prefixedName)) {
+            newDf = newDf.withColumn(prefixedName, lit(null).cast(field.dataType))
+          }
+          newDf = newDf.withColumn(field.name, coalesce(col(field.name), col(prefixedName)))
+          newDf = newDf.withColumn(prefixedName, coalesce(col(field.name), col(prefixedName)))
+          newDf
         }
       }
-    }
+
+    withContextualFields(withNonContextualFields(bootstrapDf))
   }
 
   /*
@@ -47,18 +75,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
    */
   private def padGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
-    val groupByFields =
-      SparkConversions.fromChrononSchema(StructType("", bootstrapInfo.joinParts.flatMap(_.valueSchema).toArray))
-
-    groupByFields.foldLeft(baseJoinDf) {
-      case (df, field) => {
-        if (df.columns.contains(field.name)) {
-          df
-        } else {
-          df.withColumn(field.name, lit(null).cast(field.dataType))
-        }
-      }
-    }
+    val groupByFields = toSparkSchema(bootstrapInfo.joinParts.flatMap(_.valueSchema))
+    padFields(baseJoinDf, groupByFields)
   }
 
   override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
@@ -106,19 +124,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       return baseDf
     }
 
-    // ensure that ext_contextual_xxx fields can also be used as base even though these columns are not materialized
-    val contextualFields = bootstrapInfo.externalParts.find(_.externalPart.isContextual).toSeq.flatMap(_.keySchema)
-    val contextualPrefix = s"${Constants.ExternalPrefix}_${Constants.ContextualSourceName}"
-    val enrichedBaseDf = contextualFields.foldLeft(baseDf) {
-      case (df, field) => {
-        val valueName = s"${contextualPrefix}_${field.name}"
-        df.withColumn(valueName, col(field.name))
-      }
-    }
-
     val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
     val derivationOutputColumns = projections.map(_._1).toSet
-    val baseOutputColumns = enrichedBaseDf.columns.toSet
+    val baseOutputColumns = baseDf.columns.toSet
 
     val finalOutputColumns =
       /*
@@ -130,7 +138,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
        * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
        *    arbitrary columns selected from left.
        */
-      enrichedBaseDf.columns.flatMap { c =>
+      baseDf.columns.flatMap { c =>
         if (bootstrapInfo.baseValueNames.contains(c)) {
           None
         } else if (derivationOutputColumns.contains(c)) {
@@ -142,7 +150,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
         /*
          * Loop through all clauses in derivation projections:
          * 1. if it has the distinct contextualPrefix and is simply a reselection (where name & expr match), we skip it
-         *    as we don't want contextual fields to be doubly selected, both as a key and as a value
+         *    as we don't want contextual fields to be doubly selected, since the key version is always selected
          * 2. if the base output already has a column with a matching derivation column name, this is a bootstrapped
          *    derivation case (see case 2 above), then we do the coalescing to achieve the bootstrap behavior.
          * 3. Else, we do the standard projection.
@@ -150,7 +158,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
         projections
           .flatMap {
             case (name, expression) =>
-              if (name == expression && name.startsWith(contextualPrefix)) {
+              if (name == expression && name.startsWith(Constants.ContextualPrefix)) {
                 None
               } else if (baseOutputColumns.contains(name)) {
                 Some(coalesce(col(name), expr(expression)).as(name))
@@ -159,7 +167,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
               }
           }
 
-    enrichedBaseDf.select(finalOutputColumns: _*)
+    baseDf.select(finalOutputColumns: _*)
   }
 
   /*

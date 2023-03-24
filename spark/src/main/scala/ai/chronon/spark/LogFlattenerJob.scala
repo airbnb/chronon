@@ -101,8 +101,7 @@ class LogFlattenerJob(session: SparkSession,
     val allDataFields = dedupeFields(schemaMap.values.flatMap(_.keyFields) ++ schemaMap.values.flatMap(_.valueFields))
     // contextual features are logged twice in keys and values, where values are prefixed with ext_contextual
     // here we exclude the duplicated fields as the two are always identical
-    val dataFields = allDataFields.filterNot(field =>
-      field.name.startsWith(s"${Constants.ExternalPrefix}_${Constants.ContextualSourceName}"))
+    val dataFields = allDataFields.filterNot(_.name.startsWith(Constants.ContextualPrefix))
     val metadataFields = StructField(Constants.SchemaHash, StringType) +: JoinCodec.timeFields
     val outputSchema = StructType("", metadataFields ++ dataFields)
     val (keyBase64Idx, valueBase64Idx, tsIdx, dsIdx, schemaHashIdx) = (0, 1, 2, 3, 4)

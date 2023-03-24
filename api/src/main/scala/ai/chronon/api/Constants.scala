@@ -36,6 +36,7 @@ object Constants {
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
   val ExternalPrefix: String = "ext"
   val ContextualSourceName: String = "contextual"
+  val ContextualPrefix: String = s"${ExternalPrefix}_${ContextualSourceName}"
   val ContextualSourceKeys: String = "contextual_keys"
   val ContextualSourceValues: String = "contextual_values"
   val TeamOverride: String = "team_override"
