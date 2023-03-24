@@ -96,7 +96,8 @@ lazy val api = project
     sourceGenerators in Compile += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
-      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java", insideCI.value)
+      val insideDockerLocal: Boolean = sys.env.contains("INSIDE_DOCKER_LOCAL")
+      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java", insideCI.value, insideDockerLocal)
     }.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
