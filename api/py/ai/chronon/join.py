@@ -273,8 +273,9 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     `ext_{external_source_name}_{value_column}`.
     Types are defined along with the schema by users for external sources.
 
-    Furthermore, since contextualSource is a special type of externalSource, any contextual columns can be referenced
-    in the SQL either in their "key" format (without prefix), or in their value format (with prefix `ext_contextual_`).
+    Note that only values can be used in derivations, not keys. If you want to use a key in the derivation, you must
+    define it as a contextual field. You also must refer to a contextual field with its prefix included, for example:
+    `ext_contextual_request_id`.
 
     If both name and expression are set to "*", then every raw column will be included along with the derived columns.
 
@@ -303,12 +304,16 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
     - external part fields:
         Bootstrap can happen at individual field level within an external part.
         Since there is no backfill logic in chronon for external part, all non-bootstrapped fields in external parts
-        are left as NULLs
+        are left as NULLs.
     - derivation fields:
         Derived fields can also be bootstrapped. Since derived fields depend on "base" fields (either join part or
         external part), chronon will try to trigger the least amount of computation possible. For example,
         if there is a join part where all derived fields that depend on the join part have been bootstrapped,
         then we skip the computation for this join part.
+    - keys:
+        Keys of both join parts and external parts can be bootstrapped. During offline table generation, we will first
+        try to utilize key's data from left table; if it's not there, then we utilize bootstrap.
+        For contextual features, we also support propagating the key bootstrap to the values.
 
     :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
     :param key_columns: Keys to join bootstrap table to left table
