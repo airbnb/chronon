@@ -291,21 +291,14 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return bootstrapDf
     }
-    val requiredFields = joinPartMetadata.requiringFields
-
-    // We mark some hashes to be valid. A valid hash means that records with this hash has all required columns
-    // pre-populated and backfill for those records can be skipped
-    val validHashes =
-      bootstrapInfo.hashToSchema.filter(entry => requiredFields.forall(f => entry._2.contains(f))).keys.toSeq
-
-    println(
-      s"""Finding records to backfill for joinPart: ${joinPartMetadata.joinPart.groupBy.metaData.name}
-         |by splitting left into filled vs unfilled based on valid_hashes: ${validHashes.prettyInline}
-         |""".stripMargin
-    )
 
     // Unfilled records are those that are not marked by any of the valid hashes, and thus require backfill
-    val filterCondition = not(contains_any(col(Constants.MatchedHashes), typedLit[Seq[String]](validHashes)))
+    val filterCondition = not(
+      contains_any(
+        col(Constants.MatchedHashes),
+        typedLit[Seq[String]](joinPartMetadata.validHashes)
+      )
+    )
     bootstrapDf.where(filterCondition)
   }
 }

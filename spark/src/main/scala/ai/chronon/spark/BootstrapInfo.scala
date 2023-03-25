@@ -9,6 +9,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
 
+import java.util.regex.Pattern
 import scala.collection.{Seq, immutable}
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
@@ -18,16 +19,15 @@ case class JoinPartMetadata(
     joinPart: JoinPart,
     keySchema: Array[StructField],
     valueSchema: Array[StructField],
-    // list of derived fields that depend on any of the value fields in this join part
-    requiringFields: Array[StructField]
+    // A valid hash means that any records with this hash during the bootstrap process has all required columns
+    // pre-populated, so backfill is not longer required for these records for this join part
+    validHashes: Seq[String]
 )
 
 case class ExternalPartMetadata(
     externalPart: ExternalPart,
     keySchema: Array[StructField],
-    valueSchema: Array[StructField],
-    // list of derived fields that depend on any of the value fields in this join part
-    requiringFields: Array[StructField]
+    valueSchema: Array[StructField]
 )
 
 case class BootstrapInfo(
@@ -37,13 +37,7 @@ case class BootstrapInfo(
     // external parts enriched with expected schema
     externalParts: Seq[ExternalPartMetadata],
     // derivations schema
-    derivations: Array[StructField],
-    // hashToSchema is a mapping from a hash string to an associated list of structField, such that if a record was
-    // marked by this hash, it means that all the associated structFields have been pre-populated.
-    // to generate the hash:
-    // - for chronon flattened log table: we use the schema_hash recorded at logging time generated per-row
-    // - for regular hive tables: we use the semantic_hash (a snapshot) of the bootstrap part object
-    hashToSchema: Map[String, Array[StructField]]
+    derivations: Array[StructField]
 ) {
 
   lazy val fieldNames: Set[String] = fields.map(_.name).toSet
@@ -67,7 +61,7 @@ object BootstrapInfo {
 
     // Enrich each join part with the expected output schema
     println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
-    val joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
+    var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
         val gb = GroupBy.from(part.groupBy, range, tableUtils)
@@ -75,15 +69,14 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
         val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
-        JoinPartMetadata(part, keySchema, valueSchema, Array.empty) // will be populated below
+        JoinPartMetadata(part, keySchema, valueSchema, Seq.empty) // will be populated below
       })
 
     // Enrich each external part with the expected output schema
     println(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
-      .map(part =>
-        ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull, Array.empty)) // will be populated below
+      .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
     val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
@@ -104,29 +97,6 @@ object BootstrapInfo {
       }
     } else {
       Array.empty[(StructField, String)]
-    }
-
-    // For each joinPart and externalPart find out the list of derived fields that depend on it
-    def findRequiringFields(inputFields: Array[StructField]): Array[StructField] = {
-      if (joinConf.isSetDerivations) {
-        derivedSchema
-          .filter {
-            // Check if the expression contains any fields from the join part by string matching.
-            // Note: this will fail if there are two fields from two join parts where one is a prefix of another.
-            // it should be fine if they are from the same join parts since the logic here applies at join part level.
-            case (_, expression) => inputFields.map(_.name).exists(expression.contains)
-          }
-          .map(_._1)
-      } else {
-        inputFields
-      }
-    }
-    val joinPartsEnriched = joinParts.map { m =>
-      m.copy(requiringFields = findRequiringFields(m.valueSchema))
-    }
-
-    val externalPartsEnriched = externalParts.map { m =>
-      m.copy(requiringFields = findRequiringFields(m.valueSchema))
     }
 
     /*
@@ -205,9 +175,62 @@ object BootstrapInfo {
       })
       .toMap
 
+    /*
+     * hashToSchema is a mapping from a hash string to an associated list of structField, such that if a record was
+     * marked by this hash, it means that all the associated structFields have been pre-populated.
+
+     * logic behind the hash:
+     * - for chronon flattened log table: we use the schema_hash recorded at logging time generated per-row
+     * - for regular hive tables: we use the semantic_hash (a snapshot) of the bootstrap part object
+     */
     val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
-    val bootstrapInfo =
-      BootstrapInfo(joinConf, joinPartsEnriched, externalPartsEnriched, derivedSchema.map(_._1), hashToSchema)
+
+    /*
+     * For each join part, a valid hash of a boostrap part needs to satisfy the condition:
+     *
+     * - For each derivation (no derivation is equivalent to *)
+     *   - if the expression has no column reference to this join part, then OK
+     *   - If the expression has column references to this join part, then
+     *     - either the output column name is covered by the bootstrap part
+     *     - or all input column names are covered by the bootstrap part
+     *
+     * TODO: this assumes that each join part can be covered by a single bootstrapPart, and does not handle when
+     *  two columns are covered by two or more separate bootstrapPart, which is much harder to calculate.
+     */
+    val identifierRegex = "[a-zA-Z_][a-zA-Z0-9_]*".r
+    def isValidHash(joinPart: JoinPartMetadata, hashSchema: Array[StructField], hash: String): Boolean = {
+
+      if (derivedSchema.isEmpty) {
+        joinPart.valueSchema.forall(hashSchema.contains)
+      } else {
+        derivedSchema
+          .map {
+            case (derivedField, expression) => {
+              // Check if the expression contains any fields from the join part by string matching.
+              val identifiers = identifierRegex.findAllIn(expression).toSet
+              val requiredBaseColumns = joinPart.valueSchema.filter(f => identifiers(f.name))
+              val condition = if (requiredBaseColumns.isEmpty) {
+                true
+              } else {
+                hashSchema.contains(derivedField) || requiredBaseColumns.forall(hashSchema.contains)
+              }
+              condition
+            }
+          }
+          .forall(identity)
+      }
+    }
+
+    joinParts = joinParts.map { part =>
+      val validHashes = hashToSchema.toSeq
+        .filter {
+          case (hash, schema) => isValidHash(part, schema, hash)
+        }
+        .map(_._1)
+      part.copy(validHashes = validHashes)
+    }
+
+    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1))
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
@@ -249,24 +272,22 @@ object BootstrapInfo {
     }
 
     println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
-    joinPartsEnriched.foreach { metadata =>
+    joinParts.foreach { metadata =>
       println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
            |${stringify(metadata.valueSchema)}
-           |Downstream Derived Schema:
-           |${stringify(metadata.requiringFields)}
+           |Valid Hashes:
+           |${metadata.validHashes.prettyInline}
            |""".stripMargin)
     }
-    externalPartsEnriched.foreach { metadata =>
+    externalParts.foreach { metadata =>
       println(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
            |${stringify(metadata.valueSchema)}
-           |Downstream Derived Schema:
-           |${stringify(metadata.requiringFields)}
            |""".stripMargin)
     }
     if (derivedSchema.nonEmpty) {
@@ -278,8 +299,9 @@ object BootstrapInfo {
          |Log Hashes: ${logHashes.keys.prettyInline}
          |""".stripMargin)
     tableHashes.foreach {
-      case (_, (schema, _, query)) =>
+      case (hash, (schema, _, query)) =>
         println(s"""Bootstrap Info for Table Bootstraps
+           |Table Hash: ${hash}
            |Bootstrap Query:
            |\n${query}\n
            |Bootstrap Schema:
