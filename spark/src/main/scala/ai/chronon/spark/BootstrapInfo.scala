@@ -11,6 +11,8 @@ import org.apache.spark.sql.types.StructType
 
 import scala.collection.{Seq, immutable}
 import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
+import scala.collection.mutable
 
 case class JoinPartMetadata(
     joinPart: JoinPart,
@@ -146,6 +148,9 @@ object BootstrapInfo {
         tblProps.isDefined && tblProps.get.contains(Constants.ChrononLogTable) && !hasSelect
       }
 
+    val exceptionList = mutable.ListBuffer[Throwable]()
+    def collectException(assertion: => Unit): Unit = Try(assertion).failed.foreach(exceptionList += _)
+
     println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the log table
     logBootstrapParts
@@ -153,10 +158,11 @@ object BootstrapInfo {
         // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
         val schema = tableUtils.getSchemaFromTable(part.table)
         val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
-        assert(
-          missingKeys.isEmpty,
-          s"Log table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
-        )
+        collectException(
+          assert(
+            missingKeys.isEmpty,
+            s"Log table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
+          ))
       })
 
     // Retrieve schema_hash mapping info from Hive table properties
@@ -176,15 +182,17 @@ object BootstrapInfo {
         val bootstrapDf = tableUtils.sql(bootstrapQuery)
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
-        assert(
-          missingKeys.isEmpty,
-          s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
-        )
+        collectException(
+          assert(
+            missingKeys.isEmpty,
+            s"Table ${part.table} does not contain some specified keys: ${missingKeys.prettyInline}"
+          ))
 
-        assert(
-          !bootstrapDf.columns.contains(Constants.SchemaHash),
-          s"${Constants.SchemaHash} is a reserved column that should only be used for chronon log tables"
-        )
+        collectException(
+          assert(
+            !bootstrapDf.columns.contains(Constants.SchemaHash),
+            s"${Constants.SchemaHash} is a reserved column that should only be used for chronon log tables"
+          ))
 
         val valueFields = SparkConversions
           .toChrononSchema(schema)
@@ -208,22 +216,24 @@ object BootstrapInfo {
       field <- fields
     ) yield {
 
-      assert(
-        bootstrapInfo.fieldsMap.contains(field.name),
-        s"""Table $table has column ${field.name} with ${field.fieldType}, but Join ${joinConf.metaData.name} does NOT have this field
+      collectException(
+        assert(
+          bootstrapInfo.fieldsMap.contains(field.name),
+          s"""Table $table has column ${field.name} with ${field.fieldType}, but Join ${joinConf.metaData.name} does NOT have this field
            |Bootstrap Query:
            |${query}
            |""".stripMargin
-      )
-      assert(
-        bootstrapInfo.fieldsMap(field.name) == field,
-        s"""Table $table has column ${field.name} with ${field.fieldType}, but Join ${joinConf.metaData.name} has the same field with ${bootstrapInfo
-          .fieldsMap(field.name)
-          .fieldType}
+        ))
+      collectException(
+        assert(
+          bootstrapInfo.fieldsMap(field.name) == field,
+          s"""Table $table has column ${field.name} with ${field.fieldType}, but Join ${joinConf.metaData.name} has the same field with ${bootstrapInfo
+            .fieldsMap(field.name)
+            .fieldType}
            |Bootstrap Query:
            |${query}
            |""".stripMargin
-      )
+        ))
     }
     def stringify(schema: Array[StructField]): String = {
       if (schema.isEmpty) {
@@ -231,6 +241,11 @@ object BootstrapInfo {
       } else {
         SparkConversions.fromChrononSchema(api.StructType("", schema)).pretty
       }
+    }
+
+    if (exceptionList.nonEmpty) {
+      exceptionList.foreach(t => println(t.traceString))
+      throw new Exception(s"Validation failed for bootstrapInfo construction for join ${joinConf.metaData.name}")
     }
 
     println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
