@@ -35,8 +35,6 @@ object Fetcher {
 
   case class GenericStat(xvalue: AnyRef, statValue: AnyRef)
 
-  case class TimedSeries(series: Seq[TimedStat])
-
   case class GenericSeries(series: Seq[GenericStat])
 
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
@@ -445,20 +443,17 @@ class Fetcher(val kvStore: KVStore,
           }
       }
       // val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr).map(_.asInstanceOf[AnyRef])).toMap
+        /** Other things that would require custom processing: HeavyHitters */
         val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
           case (statName, finalStat) =>
             if (statName.endsWith("percentile")) {
-              statName -> GenericSeries(StatsGenerator.finalizedPercentiles.indices.map(idx => GenericStat(StatsGenerator.finalizedPercentiles(idx), finalStat.asInstanceOf[Array[_]](idx))))
+              statName -> GenericSeries(StatsGenerator.finalizedPercentiles.indices.map(idx => GenericStat(StatsGenerator.finalizedPercentiles(idx).asInstanceOf[AnyRef], finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef])))
             } else {
               statName -> finalStat.asInstanceOf[AnyRef]
             }
         }.toMap
         MergedStatsResponse(request, Try(responseMap))
     }
-  }
-
-  def fetchStatsSeries(request: StatsRequest): Future[Map[String, Seq[AnyRef]]] = {
-
   }
 
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],

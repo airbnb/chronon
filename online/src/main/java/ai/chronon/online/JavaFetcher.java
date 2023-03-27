@@ -42,6 +42,12 @@ public class JavaFetcher  {
   public static JavaStatsResponse toJavaStatsResponse(Fetcher.StatsResponse response) {
     return new JavaStatsResponse(response);
   }
+  public static JavaMergedStatsResponse toJavaMergedStatsResponse(Fetcher.MergedStatsResponse response) {
+    return new JavaMergedStatsResponse(response);
+  }
+  public static JavaSeriesStatsResponse toJavaSeriesStatsResponse(Fetcher.SeriesStatsResponse response) {
+    return new JavaSeriesStatsResponse(response);
+  }
 
   private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
     return FutureConverters
@@ -85,10 +91,16 @@ public class JavaFetcher  {
     return convertStatsResponses(responses);
   }
 
-  public CompletableFuture<JavaStatsResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
-    Future<Fetcher.StatsResponse> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
+  public CompletableFuture<JavaMergedStatsResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
+    Future<Fetcher.MergedStatsResponse> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
     // Convert responses to CompletableFuture
-    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaStatsResponse);
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaMergedStatsResponse);
+  }
+
+  public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {
+    Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchStatsTimeseries(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
   }
 
 }

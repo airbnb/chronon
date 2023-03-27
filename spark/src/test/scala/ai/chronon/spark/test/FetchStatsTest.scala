@@ -5,10 +5,11 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
-import ai.chronon.online.Fetcher.{StatsRequest, Request}
+import ai.chronon.online.Fetcher.{MergedStatsResponse, Request, SeriesStatsResponse, StatsRequest}
+
 import scala.compat.java8.FutureConverters
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
-import ai.chronon.online.{MetadataStore, JavaStatsRequest, JavaStatsResponse}
+import ai.chronon.online.{JavaStatsRequest, JavaStatsResponse, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -17,10 +18,13 @@ import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
 import java.util.TimeZone
-import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.collection.JavaConverters._
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+
+import java.util.concurrent.Executors
+import scala.concurrent.{Await, ExecutionContext}
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 /**
   * For testing of the consumption side of Stats end to end.
@@ -112,15 +116,12 @@ class FetchStatsTest extends TestCase {
     println(s"Fetch Start ts: $fetchStartTs")
     val futures =
       fetcher.fetchStats(
-        new StatsRequest(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis())))
+        StatsRequest(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis())))
     val result = Await.result(futures, Duration(10000, SECONDS))
-    println(s"Test fetch: ")
-    println(result)
-    val request = new StatsRequest(joinConf.metaData.nameToFilePath,
-                                   Some(fetchStartTs),
-                                   Some(Constants.Partition.epochMillis(yesterday)))
+    val request = StatsRequest(joinConf.metaData.nameToFilePath,
+                               Some(fetchStartTs),
+                               Some(Constants.Partition.epochMillis(yesterday)))
     val statsMergedFutures = fetcher.fetchMergedStatsBetween(request)
-    val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     val mapper = new ObjectMapper()
     mapper.registerModule(DefaultScalaModule)
@@ -128,14 +129,30 @@ class FetchStatsTest extends TestCase {
     println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
     val statsTimeseriesFuture = fetcher.fetchStatsTimeseries(request)
     val statsSeries = Await.result(statsTimeseriesFuture, Duration(10000, SECONDS))
-    println(s"StatsSeries: ${writer.writeValuesAsString(statsSeries.series.get)}")
+    println(s"StatsSeries: ${writer.writeValueAsString(statsSeries.series.get)}")
+
+    /**
+      * Java Fetcher.
+      */
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val javaFetcher = mockApi.buildJavaFetcher()
-    val javaStatsFuture = javaFetcher.fetchMergedStatsBetween(
-      new JavaStatsRequest(joinConf.metaData.nameToFilePath,
-                           Some(fetchStartTs).get,
-                           Some(Constants.Partition.epochMillis(yesterday)).get))
-    val scalaFuture = FutureConverters.toScala(javaStatsFuture)
-    val javaStatsMerged = Await.result(scalaFuture, Duration(10000, SECONDS))
+    val javaRequest = new JavaStatsRequest(request)
+    val javaMergedFetch = javaFetcher.fetchMergedStatsBetween(javaRequest)
+    val javaSeriesFetch = javaFetcher.fetchStatsTimeseries(javaRequest)
+    val mergedResponse = FutureConverters
+      .toScala(javaMergedFetch)
+      .map(jres =>
+        MergedStatsResponse(request,
+                            jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)))
+    val javaMergedResponse = Await.result(mergedResponse, Duration(10000, SECONDS))
+    println(s"Java Stats Merged: ${writer.writeValueAsString(javaMergedResponse.values.get)}")
+    val seriesResponse = FutureConverters
+      .toScala(javaSeriesFetch)
+      .map(jres =>
+        SeriesStatsResponse(request,
+                            jres.series.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)))
+    val javaSeriesResponse = Await.result(seriesResponse, Duration(10000, SECONDS))
+    println(s"Java Stats Series: ${writer.writeValueAsString(javaSeriesResponse.series.get)}")
     println("Done!")
   }
 }
