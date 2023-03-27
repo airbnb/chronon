@@ -11,9 +11,20 @@ with open(os.path.join(current_dir, "requirements/base.in"), "r") as infile:
 
 
 __version__ = "local"
+__branch__ = "master"
 def get_version():
-    return os.environ.get("CHRONON_PY_VERSION", __version__)
+    version_str = os.environ.get("CHRONON_VERSION_STR", __version__)
+    branch_str = os.environ.get("CHRONON_BRANCH_STR", __branch__)
+    # Replace "-SNAPSHOT" with ".dev"
+    version_str = version_str.replace("-SNAPSHOT", ".dev0")
+    # If the prefix is the branch name, then convert it as suffix after '+' to make it Python PEP440 complaint
+    if version_str.startswith(branch_str + "-"):
+        version_str = "{}+{}".format(
+            version_str.replace(branch_str + "-", ""),
+            branch_str
+        )
 
+    return version_str
 
 setup(
     classifiers=[

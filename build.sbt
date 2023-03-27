@@ -215,8 +215,9 @@ python_api := {
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
-  s.log.info(s"Building Python API version: ${versionStr}, action: ${action} ...")
-  if ((s"api/py/python-api-build.sh ${versionStr} ${action}" !) == 0) {
+  val branchStr = git.gitCurrentBranch.value
+  s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
+  if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
   } else {
     throw new IllegalStateException("Python API build failed!")
