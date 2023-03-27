@@ -30,8 +30,17 @@ public class JavaFetcher  {
     return result;
   }
 
-  public static JavaResponse toJavaResponse(Response response) {
-    return new JavaResponse(response);
+  public static List<JavaStatsResponse> toJavaStatsResponses(Seq<Fetcher.StatsResponse> responseSeq) {
+    List<JavaStatsResponse> result = new ArrayList<>(responseSeq.size());
+    Iterator<Fetcher.StatsResponse> it = responseSeq.iterator();
+    while(it.hasNext()) {
+      result.add(new JavaStatsResponse(it.next()));
+    }
+    return result;
+  }
+
+  public static JavaStatsResponse toJavaStatsResponse(Fetcher.StatsResponse response) {
+    return new JavaStatsResponse(response);
   }
 
   private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
@@ -39,6 +48,13 @@ public class JavaFetcher  {
         .toJava(responses)
         .toCompletableFuture()
         .thenApply(JavaFetcher::toJavaResponses);
+  }
+
+  private CompletableFuture<List<JavaStatsResponse>> convertStatsResponses(Future<Seq<Fetcher.StatsResponse>> responses) {
+    return FutureConverters
+            .toJava(responses)
+            .toCompletableFuture()
+            .thenApply(JavaFetcher::toJavaStatsResponses);
   }
 
   private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
@@ -63,16 +79,16 @@ public class JavaFetcher  {
     return convertResponses(responses);
   }
 
-  public CompletableFuture<List<JavaResponse>> fetchStats(JavaStatsRequest request) {
-    Future<Seq<Response>> responses = this.fetcher.fetchStats(request.toScalaRequest());
+  public CompletableFuture<List<JavaStatsResponse>> fetchStats(JavaStatsRequest request) {
+    Future<Seq<Fetcher.StatsResponse>> responses = this.fetcher.fetchStats(request.toScalaRequest());
     // Convert responses to CompletableFuture
-    return convertResponses(responses);
+    return convertStatsResponses(responses);
   }
 
-  public CompletableFuture<JavaResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
-    Future<Response> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
+  public CompletableFuture<JavaStatsResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
+    Future<Fetcher.StatsResponse> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
     // Convert responses to CompletableFuture
-    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaResponse);
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaStatsResponse);
   }
 
 }
