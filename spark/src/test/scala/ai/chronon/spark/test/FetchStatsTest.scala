@@ -5,9 +5,10 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
-import ai.chronon.online.Fetcher.Request
+import ai.chronon.online.Fetcher.{StatsRequest, Request}
+import scala.compat.java8.FutureConverters
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
-import ai.chronon.online.MetadataStore
+import ai.chronon.online.{MetadataStore, JavaStatsRequest, JavaStatsResponse}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -32,7 +33,7 @@ class FetchStatsTest extends TestCase {
 
   val spark: SparkSession = SparkSessionBuilder.build("FetchStatsTest", local = true)
   val tableUtils = TableUtils(spark)
-  val namespace = "fetch_stats"
+  val namespace = "fetch_stats_4"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   private val today = Constants.Partition.at(System.currentTimeMillis())
   private val yesterday = Constants.Partition.before(today)
@@ -110,19 +111,28 @@ class FetchStatsTest extends TestCase {
     val fetchStartTs = Constants.Partition.epochMillis(start)
     println(s"Fetch Start ts: $fetchStartTs")
     val futures =
-      fetcher.fetchStats(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis()))
+      fetcher.fetchStats(
+        new StatsRequest(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis())))
     val result = Await.result(futures, Duration(10000, SECONDS))
     println(s"Test fetch: ")
     println(result)
-    val statsMergedFutures = fetcher.fetchMergedStatsBetween(joinConf.metaData.nameToFilePath,
-                                                             Some(fetchStartTs),
-                                                             Some(Constants.Partition.epochMillis(yesterday)))
+    val statsMergedFutures = fetcher.fetchMergedStatsBetween(
+      new StatsRequest(joinConf.metaData.nameToFilePath,
+                       Some(fetchStartTs),
+                       Some(Constants.Partition.epochMillis(yesterday))))
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     val mapper = new ObjectMapper()
     mapper.registerModule(DefaultScalaModule)
     val writer = mapper.writerWithDefaultPrettyPrinter
     println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
+    val javaFetcher = mockApi.buildJavaFetcher()
+    val javaStatsFuture = javaFetcher.fetchMergedStatsBetween(
+      new JavaStatsRequest(joinConf.metaData.nameToFilePath,
+                           Some(fetchStartTs).get,
+                           Some(Constants.Partition.epochMillis(yesterday)).get))
+    val scalaFuture = FutureConverters.toScala(javaStatsFuture)
+    val javaStatsMerged = Await.result(scalaFuture, Duration(10000, SECONDS))
     println("Done!")
   }
 }
