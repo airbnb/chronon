@@ -1,8 +1,9 @@
 #!/bin/bash
 set -o xtrace
 
-export CHRONON_PY_VERSION=$1
-ACTION=$2
+export CHRONON_VERSION_STR=$1
+export CHRONON_BRANCH_STR=$2
+ACTION=$3
 
 echo "Finding working directory.."
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -20,8 +21,8 @@ elif [[ "${ACTION}" == "release" ]]; then
   PYPI_REPOSITORY="chronon-pypi"
   # Sanity checks, git state, Run Tests, Build, Release
   # Make sure the version string doesn't contain SNAPSHOT if so it signifies development build and cannot be released.
-  if [[ "${CHRONON_PY_VERSION}" == *"SNAPSHOT"* ]]; then
-    echo "Python releases cannot be done for in development versions. Version: ${CHRONON_PY_VERSION}"
+  if [[ "${CHRONON_VERSION_STR}" == *"SNAPSHOT"* ]]; then
+    echo "Python releases cannot be done for in development versions. Version: ${CHRONON_VERSION_STR}"
     exit 1
   fi
   echo "Running tests, git check, build and release..."
