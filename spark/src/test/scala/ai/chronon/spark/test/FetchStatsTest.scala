@@ -116,16 +116,19 @@ class FetchStatsTest extends TestCase {
     val result = Await.result(futures, Duration(10000, SECONDS))
     println(s"Test fetch: ")
     println(result)
-    val statsMergedFutures = fetcher.fetchMergedStatsBetween(
-      new StatsRequest(joinConf.metaData.nameToFilePath,
-                       Some(fetchStartTs),
-                       Some(Constants.Partition.epochMillis(yesterday))))
+    val request = new StatsRequest(joinConf.metaData.nameToFilePath,
+                                   Some(fetchStartTs),
+                                   Some(Constants.Partition.epochMillis(yesterday)))
+    val statsMergedFutures = fetcher.fetchMergedStatsBetween(request)
     val gson = new Gson()
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     val mapper = new ObjectMapper()
     mapper.registerModule(DefaultScalaModule)
     val writer = mapper.writerWithDefaultPrettyPrinter
     println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
+    val statsTimeseriesFuture = fetcher.fetchStatsTimeseries(request)
+    val statsSeries = Await.result(statsTimeseriesFuture, Duration(10000, SECONDS))
+    println(s"StatsSeries: ${writer.writeValuesAsString(statsSeries.series.get)}")
     val javaFetcher = mockApi.buildJavaFetcher()
     val javaStatsFuture = javaFetcher.fetchMergedStatsBetween(
       new JavaStatsRequest(joinConf.metaData.nameToFilePath,
