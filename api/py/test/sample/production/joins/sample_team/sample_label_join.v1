@@ -217,12 +217,25 @@
           ],
           "keyColumns": [
             "group_by_subject"
+          ],
+          "aggregations": [
+            {
+              "inputColumn": "group_by_subject",
+              "operation": 7,
+              "argMap": {},
+              "windows": [
+                {
+                  "length": 7,
+                  "timeUnit": 1
+                }
+              ]
+            }
           ]
         }
       }
     ],
-    "leftStartOffset": 30,
-    "leftEndOffset": 10,
+    "leftStartOffset": 5,
+    "leftEndOffset": 5,
     "metaData": {
       "dependencies": [
         "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",

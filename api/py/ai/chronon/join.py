@@ -237,12 +237,18 @@ def LabelPart(labels: List[api.JoinPart],
     label versions based on the label ds. Label definition can be updated along the way but label join
     job can only accommodate the changes going forward unless a backfill is manually triggered
 
+    Label aggregation is supported with conditions applied. Single aggregation with one window is allowed.
+    If aggregation is present, we would infer the left_start_offset and left_end_offset based on the window
+    and the param input will be ignored.
+
     :param labels: List of labels
     :param left_start_offset: Integer to define the earliest date label should be refreshed
-                            comparing to label_ds date specified
+                            comparing to label_ds date specified. For labels with aggregations,
+                            this param will be inferred from aggregation window and no need to pass in.
     :param left_end_offset: Integer to define the most recent date label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
-                          prior to 'label_ds'
+                          prior to 'label_ds'. For labels with aggregations, this param will be inferred
+                          from aggregation window and no need to pass in.
     :param label_offline_schedule: Cron expression for Airflow to schedule a DAG for offline
                                    label join compute tasks
     """
@@ -250,6 +256,14 @@ def LabelPart(labels: List[api.JoinPart],
     label_metadata = api.MetaData(
         offlineSchedule=label_offline_schedule
     )
+
+    for label in labels:
+        if label.groupBy.aggregations is not None:
+            valid_agg = len(label.groupBy.aggregations) == 1 and label.groupBy.aggregations[0].windows is not None \
+                        and len(label.groupBy.aggregations[0].windows) == 1
+            assert valid_agg, "Too many aggregations or windows found. Single aggregation with one window allowed."
+            valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
+            assert valid_time_unit, "Label aggregation window unit must be DAYS"
 
     return api.LabelPart(
         labels=labels,
