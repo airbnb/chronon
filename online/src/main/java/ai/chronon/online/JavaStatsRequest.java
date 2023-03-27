@@ -18,6 +18,7 @@ public class JavaStatsRequest {
     this.startTs = startTs;
     this.endTs =  null;
   }
+
   public JavaStatsRequest(String name, Long startTs, Long endTs) {
     this.name = name;
     this.startTs = startTs;

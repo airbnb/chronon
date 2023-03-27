@@ -27,7 +27,17 @@ object Fetcher {
                      context: Option[Metrics.Context] = None)
 
   case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
-  case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
+  case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
+  case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
+  case class SeriesStatsResponse(request: StatsRequest, series: Try[Map[String, AnyRef]])
+
+  case class TimedStat(millis: Long, value: AnyRef)
+
+  case class GenericStat(xvalue: AnyRef, statValue: AnyRef)
+
+  case class TimedSeries(series: Seq[TimedStat])
+
+  case class GenericSeries(series: Seq[GenericStat])
 
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
@@ -377,7 +387,7 @@ class Fetcher(val kvStore: KVStore,
           case Success(responses) =>
             responses.toArray.filter(_.millis <= upperBound).map {
               tv =>
-                StatsResponse(StatsRequest(joinName, startTs, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)))
+                StatsResponse(StatsRequest(joinName, startTs, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
             }.toSeq
           case Failure(exception) => throw exception
         }
@@ -385,13 +395,32 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
+    * Main endpoint for fetching statistics over time available.
+    */
+  def fetchStatsTimeseries(request: StatsRequest): Future[SeriesStatsResponse] = {
+    val rawResponses = fetchStats(request)
+    rawResponses.map {
+      responseFuture =>
+        val convertedValue = responseFuture.flatMap {
+          response =>
+          response.values match {
+            case Failure(exc) => throw exc
+            case Success(valueMap) => valueMap.view.mapValues{ v => TimedStat(response.millis, v)}.toList
+          }
+        }.groupBy(_._1)
+          .view
+          .mapValues(_.map(_._2).toSeq)
+          .toMap
+        SeriesStatsResponse(request, Try(convertedValue))
+    }
+  }
+
+  /**
     * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
     * determining data distributions between [startTs, endTs]
     */
-  def fetchMergedStatsBetween(request: StatsRequest): Future[StatsResponse] = {
+  def fetchMergedStatsBetween(request: StatsRequest): Future[MergedStatsResponse] = {
     val joinName = request.name
-    val startTs = request.startTs
-    val endTs = request.endTs
     val joinCodecs = getJoinCodecs(joinName) match {
       case Success(joinCodec) => joinCodec
       case Failure(exception) => throw exception
@@ -415,9 +444,21 @@ class Fetcher(val kvStore: KVStore,
             case Failure(exception) => throw exception
           }
       }
-      val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr).map(_.asInstanceOf[AnyRef])).toMap
-      StatsResponse(StatsRequest(joinName, startTs, endTs), Try(responseMap))
+      // val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr).map(_.asInstanceOf[AnyRef])).toMap
+        val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
+          case (statName, finalStat) =>
+            if (statName.endsWith("percentile")) {
+              statName -> GenericSeries(StatsGenerator.finalizedPercentiles.indices.map(idx => GenericStat(StatsGenerator.finalizedPercentiles(idx), finalStat.asInstanceOf[Array[_]](idx))))
+            } else {
+              statName -> finalStat.asInstanceOf[AnyRef]
+            }
+        }.toMap
+        MergedStatsResponse(request, Try(responseMap))
     }
+  }
+
+  def fetchStatsSeries(request: StatsRequest): Future[Map[String, Seq[AnyRef]]] = {
+
   }
 
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],
