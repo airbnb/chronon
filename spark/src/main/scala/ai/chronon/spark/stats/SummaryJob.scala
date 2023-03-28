@@ -55,11 +55,13 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
             joinOutputDf.select(baseColumns.head, baseColumns.tail: _*)
           }
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
-          val aggregator = StatsGenerator.buildAggregator(stats.metrics, StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
+          val aggregator = StatsGenerator.buildAggregator(
+            stats.metrics,
+            StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           if (joinConf.metaData.online) {
             summaryKvRdd.toAvroDf
-              .withColumn(Constants.PartitionColumn, lit(endDate))
+              .withTimeBasedColumn(Constants.PartitionColumn)
               .save(dailyStatsAvroTable, tableProps)
           }
           stats

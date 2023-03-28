@@ -316,7 +316,7 @@ object Driver {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
-        choice(Seq("join", "group-by"), descr = "the type of conf to fetch", default = Some("join"))
+        choice(Seq("join", "group-by", "join-stats"), descr = "the type of conf to fetch", default = Some("join"))
       val keyJsonFile: ScallopOption[String] = opt[String](
         required = false,
         descr = "file path to json of the keys to fetch",
@@ -367,35 +367,48 @@ object Driver {
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
           println(s"--- [START FETCHING for ${keyMap}] ---")
-          val startNs = System.nanoTime
-          val requests = Seq(Fetcher.Request(args.name(), keyMap))
-          val resultFuture = if (args.`type`() == "join") {
-            fetcher.fetchJoin(requests)
+          if (args.`type`() == "join-stats") {
+            val resFuture = fetcher.fetchStatsTimeseries(Fetcher.StatsRequest(args.name()))
+            val stats = Await.result(resFuture, 5.seconds)
+            stats.series match {
+              case Success(series) =>
+                val statTMap = new java.util.TreeMap[String, AnyRef]()
+                series.foreach { case (k, v) => statTMap.put(k, v) }
+                println(
+                  s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(statTMap)}")
+              case Failure(exc) => throw exc
+            }
           } else {
-            fetcher.fetchGroupBys(requests)
-          }
-          val result = Await.result(resultFuture, 5.seconds)
-          val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
+            val startNs = System.nanoTime
+            val requests = Seq(Fetcher.Request(args.name(), keyMap))
+            val resultFuture = if (args.`type`() == "join") {
+              fetcher.fetchJoin(requests)
+            } else {
+              fetcher.fetchGroupBys(requests)
+            }
+            val result = Await.result(resultFuture, 5.seconds)
+            val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
 
-          // treeMap to produce a sorted result
-          val tMap = new java.util.TreeMap[String, AnyRef]()
-          result.foreach(r =>
-            r.values match {
-              case Success(valMap) => {
-                if (valMap == null) {
-                  println("No data present for the provided key.")
-                } else {
-                  valMap.foreach { case (k, v) => tMap.put(k, v) }
-                  println(
-                    s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+            // treeMap to produce a sorted result
+            val tMap = new java.util.TreeMap[String, AnyRef]()
+            result.foreach(r =>
+              r.values match {
+                case Success(valMap) => {
+                  if (valMap == null) {
+                    println("No data present for the provided key.")
+                  } else {
+                    valMap.foreach { case (k, v) => tMap.put(k, v) }
+                    println(
+                      s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                  }
+                  println(s"Fetched in: $awaitTimeMs ms")
                 }
-                println(s"Fetched in: $awaitTimeMs ms")
-              }
-              case Failure(exception) => {
-                exception.printStackTrace()
-              }
-            })
-          Thread.sleep(args.interval() * 1000)
+                case Failure(exception) => {
+                  exception.printStackTrace()
+                }
+              })
+            Thread.sleep(args.interval() * 1000)
+          }
         })
       }
 

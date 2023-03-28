@@ -403,10 +403,9 @@ class Fetcher(val kvStore: KVStore,
           response =>
           response.values match {
             case Failure(exc) => throw exc
-            case Success(valueMap) => valueMap.view.mapValues{ v => TimedStat(response.millis, v)}.toList
+            case Success(valueMap) => valueMap.mapValues{ v => TimedStat(response.millis, v)}.toList
           }
         }.groupBy(_._1)
-          .view
           .mapValues(_.map(_._2).toSeq)
           .toMap
         SeriesStatsResponse(request, Try(convertedValue))
