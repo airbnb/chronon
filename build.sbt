@@ -1,6 +1,7 @@
 import sbt.Keys._
 import sbt.Test
 
+import scala.io.StdIn
 import scala.sys.process._
 import complete.DefaultParsers._
 
@@ -65,6 +66,7 @@ lazy val releaseSettings = Seq(
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
     releaseStepCommandAndRemaining("+ publishSigned"),
+    releaseStepInputTask(releasePromptTask),          // Manual user prompt to wait for confirmation before proceeding
     releaseStepInputTask(python_api, " release"),  // This step handles the release of Python packages
     setNextVersion,
     commitNextVersion
@@ -211,7 +213,7 @@ ThisBuild / python_api_build := {
 lazy val python_api = inputKey[Unit]("Build Python API")
 python_api := {
   // Sbt has limited support for python and thus we are using bash script to achieve the same.
-  val action = spaceDelimited("<arg>").parsed.mkString(" ")
+  val action = spaceDelimited("<arg>").parsed.headOption.getOrElse("build")
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
@@ -221,6 +223,29 @@ python_api := {
     s.log.success("Built Python API")
   } else {
     throw new IllegalStateException("Python API build failed!")
+  }
+}
+
+lazy val releasePromptTask = inputKey[Unit]("Prompt the user for a yes/no answer")
+releasePromptTask := {
+  var wait = true
+  while (wait) {
+    println(s"""
+            |[WARNING] Scala artifacts have been published to the Sonatype staging.
+            |Please verify the Java builds are in order before proceeding with the Python API release.
+            |Python release is irreversible. So proceed with caution.
+            |""".stripMargin)
+    val userInput = StdIn.readLine(s"Do you want to continue with the release: (y)es (n)o ? ").trim.toLowerCase
+    if (userInput == "yes" || userInput == "y") {
+      println("Continuing with the Python API release..")
+      wait = false
+    } else if (userInput == "no" || userInput == "n") {
+      println("User selected `no`. Exiting the release process. Clear the workspace and release again as required.")
+      sys.exit(0)
+    } else {
+      println(s"Invalid input: $userInput")
+      // Keep prompting the user for valid input
+    }
   }
 }
 
