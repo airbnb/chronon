@@ -1,8 +1,11 @@
 package ai.chronon.spark.test
 
+import ai.chronon.aggregator.test.Column
+import ai.chronon.api
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -55,6 +58,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
     val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -101,6 +105,7 @@ object TestUtils {
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
     val df = makeDf(spark, schema, rows)
     df.save(s"${namespace}.${tableName}")
     GroupByTestSuite(
@@ -262,6 +267,51 @@ object TestUtils {
       conf,
       df
     )
+  }
+
+  def buildListingTable(spark: SparkSession, tableName: String): String = {
+    val listingSchema = List(
+      Column("listing_id", api.LongType, 50),
+      Column("m_views", api.LongType, 50)
+    )
+    DataFrameGen
+      .events(spark, listingSchema, 100, partitions = 10)
+      .where(col("listing_id").isNotNull and col("m_views").isNotNull)
+      .dropDuplicates("listing_id", "ds")
+      .save(tableName)
+
+    tableName
+  }
+
+  def buildLabelGroupBy(namespace: String, spark: SparkSession, tableName: String): api.GroupBy = {
+    val transactions = List(
+      Column("listing_id", LongType, 50),
+      Column("active_status", LongType, 50)
+    )
+
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+    DataFrameGen
+      .events(spark, transactions, 200, partitions = 10)
+      .where(col("listing_id").isNotNull)
+      .save(tableName)
+    val groupBySource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("listing_id", "active_status"),
+        timeColumn = "ts"
+      ),
+      table = tableName
+    )
+    val groupBy = Builders.GroupBy(
+      sources = Seq(groupBySource),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.MAX,
+          inputColumn = "active_status",
+          windows = Seq(new Window(5, TimeUnit.DAYS)))),
+      metaData = Builders.MetaData(name = "listing_label_table", namespace = namespace, team = "chronon")
+    )
+
+    groupBy
   }
 
   def createSampleLabelTableDf(spark: SparkSession, tableName: String = "listing_labels"): DataFrame = {

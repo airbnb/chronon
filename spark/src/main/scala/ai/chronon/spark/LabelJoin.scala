@@ -59,6 +59,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         assert(aggWindow.timeUnit == TimeUnit.DAYS,
           s"${aggWindow.timeUnit} window time unit not supported for label aggregations.")
         //override leftStart & leftEnd to align with window size for aggregation
+        // leftStartOffset/leftEndOffset = label_ds - window + 1
         leftStart = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
         leftEnd = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
       }
@@ -101,7 +102,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     def finalResult = tableUtils.sql(leftRange.genScanQuery(null, outputLabelTable))
     //TODO: use unfilledRanges instead of dropPartitionsAfterHole
     var leftFeatureRange = leftRange
-    if(leftStart != leftEnd) {
+    if(leftStart != leftEnd) { // none aggregation case
       val earliestHoleOpt =
         tableUtils.dropPartitionsAfterHole(left.table,
           outputLabelTable,
@@ -167,7 +168,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
           val leftRanges = tableUtils
             .unfilledRanges(partTable,
               labelOutputRange,
-              skipBeginningHoles = false)
+              skipFirstHole = false)
             .getOrElse(Seq())
           val partitionCount = leftRanges.map(_.partitions.length).sum
           if (partitionCount > 0) {
@@ -175,7 +176,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
             leftRanges
               .foreach(leftRange => {
                 val labeledDf = computeLabelPart(labelJoinPart, leftRange, leftBlooms)
-                // Cache join part data into intermediate table
+                // Cache label part data into intermediate table
                 println(s"Writing to join part table: $partTable for partition range $leftRange")
                 labeledDf.save(
                   tableName = partTable,

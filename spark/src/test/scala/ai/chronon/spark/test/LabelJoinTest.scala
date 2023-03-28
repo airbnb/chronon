@@ -281,7 +281,7 @@ class LabelJoinTest {
     // 5 day window
     val labelJoinConf = createTestLabelJoinWithAgg(0, 0)
     val joinConf = Builders.Join(
-      Builders.MetaData(name = "test_Label_agg", namespace = namespace, team = "chronon"),
+      Builders.MetaData(name = "test_label_agg", namespace = namespace, team = "chronon"),
       leftSource,
       joinParts = Seq.empty,
       labelPart = labelJoinConf
@@ -311,6 +311,60 @@ class LabelJoinTest {
     assertEquals(computed.select("label_ds").first().get(0), "2022-10-06")
 
     val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testLabelAggregationsWithLargerDataset(): Unit = {
+    val labelTableName = s"$namespace.listing_status"
+    val listingTableName = s"$namespace.listing_views_agg_left"
+    val listingTable = TestUtils.buildListingTable(spark, listingTableName)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = "test_label_agg_large", namespace = namespace, team = "chronon"),
+      left = Builders.Source.events(
+        table = listingTable,
+        query = Builders.Query()
+      ),
+      joinParts = Seq.empty,
+      labelPart = Builders.LabelPart(
+        labels = Seq(
+          Builders.JoinPart(groupBy = TestUtils.buildLabelGroupBy(namespace, spark, labelTableName))
+        ),
+        leftStartOffset = 50,
+        leftEndOffset = 2
+      )
+    )
+
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val runner = new LabelJoin(joinConf, tableUtils, today)
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
+    println(" == computed == ")
+    computed.show()
+
+    val expected =
+      tableUtils.sql(
+        s"""
+           |SELECT listing_id, ds, listing_label_table_active_status_max_5d, DATE_ADD(ds, 4) as label_ds
+           |FROM(
+           | SELECT v.listing_id,
+           |       v.ds,
+           |       MAX(active_status) as listing_label_table_active_status_max_5d
+           | FROM $listingTableName as v
+           | LEFT JOIN $labelTableName as a
+           |   ON v.listing_id = a.listing_id AND
+           |     a.ds >= v.ds AND a.ds < DATE_ADD(v.ds, 5)
+           | WHERE v.ds == DATE_SUB(CURRENT_DATE(), 4)
+           | GROUP BY v.listing_id, v.ds)
+           |""".stripMargin)
+    println(" == Expected == ")
+    expected.show()
+    val diff = Comparison.sideBySide(computed, expected, List("listing_id", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
