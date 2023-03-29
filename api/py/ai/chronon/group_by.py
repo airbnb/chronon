@@ -197,7 +197,11 @@ Keys {unselected_keys}, are unselected in source
 
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
-        assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
+        is_events = any([s.events for s in sources])
+        has_mutations = any([(s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
+                             for s in sources])
+        assert not (is_events or has_mutations), \
+            "You can only set aggregations=None in an EntitySource without mutations"
     else:
         columns = set([c for src in sources for c in utils.get_columns(src)])
         for agg in aggregations:
