@@ -246,7 +246,6 @@ This command will take into the account of `version.sbt` and handles a series of
 ### Troubleshooting
 * Most common reason for Python failure is re-uploading a version that's already uploaded.
 
->>>>>>> f61a5f31 (Updated Documentation)
 ## [TODO] Publishing a driver to github releases
 We use gh releases to release the driver that can backfill, upload, stream etc. 
 Currently the repo is not public and the run.py script can't reach it.

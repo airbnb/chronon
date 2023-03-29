@@ -16,7 +16,7 @@ def get_version():
     version_str = os.environ.get("CHRONON_VERSION_STR", __version__)
     branch_str = os.environ.get("CHRONON_BRANCH_STR", __branch__)
     # Replace "-SNAPSHOT" with ".dev"
-    version_str = version_str.replace("-SNAPSHOT", ".dev0")
+    version_str = version_str.replace("-SNAPSHOT", ".dev")
     # If the prefix is the branch name, then convert it as suffix after '+' to make it Python PEP440 complaint
     if version_str.startswith(branch_str + "-"):
         version_str = "{}+{}".format(
