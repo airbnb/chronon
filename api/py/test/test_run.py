@@ -115,7 +115,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
         '--repo', repo
     ]))
     # without conf still works.
-    assert os.environ['APP_NAME'] == 'chronon_metadata_export'
+    assert os.environ['APP_NAME'] == 'chronon_joins_metadata_export'
 
     reset_env(default_environment)
     run.set_runtime_env(parser.parse_args(args=[
@@ -123,6 +123,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
         '--conf', 'production/joins//',
         '--repo', repo
     ]))
+    assert os.environ['APP_NAME'] == 'chronon_joins_metadata_upload'
     reset_env(default_environment)
 
 

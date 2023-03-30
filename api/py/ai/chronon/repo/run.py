@@ -188,6 +188,7 @@ def set_runtime_env(args):
         "team_env": {},
         "cli_args": {},
     }
+    conf_type = None
     if args.repo:
         teams_file = os.path.join(args.repo, 'teams.json')
         if os.path.exists(teams_file):
@@ -221,8 +222,14 @@ def set_runtime_env(args):
     if args.app_name:
         environment['cli_args']['APP_NAME'] = args.app_name
     else:
-        if args.mode == 'metadata-export':
-            environment['cli_args']['APP_NAME'] = 'chronon_metadata_export'
+        if not args.app_name and not environment['cli_args'].get('APP_NAME'):
+            # Provide basic app_name when no conf is defined.
+            environment['cli_args']['APP_NAME'] = "_".join([k for k in [
+                "chronon",
+                conf_type,
+                args.mode.replace('-','_') if args.mode else None,
+            ] if k is not None])
+
     # Adding these to make sure they are printed if provided by the environment.
     environment['cli_args']['CHRONON_DRIVER_JAR'] = args.chronon_jar
     environment['cli_args']['CHRONON_ONLINE_JAR'] = args.online_jar
