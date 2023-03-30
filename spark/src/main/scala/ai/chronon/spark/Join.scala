@@ -97,7 +97,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
     val rightResults = bootstrapInfo.joinParts.parallel
       .flatMap { partMetadata =>
-        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, partMetadata, bootstrapInfo)
+        val unfilledLeftDf = findUnfilledRecords(bootstrapDf, partMetadata)
         val joinPart = partMetadata.joinPart
         computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
       }
@@ -114,7 +114,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
     val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
-    val finalDf = applyDerivation(finalBaseDf, bootstrapInfo)
+    val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo), bootstrapInfo, leftDf.columns)
     finalDf.explain()
     finalDf
   }
@@ -168,6 +168,31 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
           }
 
     baseDf.select(finalOutputColumns: _*)
+  }
+
+  /*
+   * Remove extra contextual keys unless it is a result of derivations or it is a column from left
+   */
+  def cleanUpContextualFields(finalDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
+
+    val contextualNames =
+      bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema).map(_.name)
+    val projections = if (joinConf.isSetDerivations) {
+      joinConf.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
+    } else {
+      Seq()
+    }
+    contextualNames.foldLeft(finalDf) {
+      case (df, name) => {
+        if (leftColumns.contains(name)) {
+          df
+        } else if (projections.contains(name)) {
+          df
+        } else {
+          df.drop(name)
+        }
+      }
+    }
   }
 
   /*
@@ -283,9 +308,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
    * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
    * full schema information.
    */
-  private def findUnfilledRecords(bootstrapDf: DataFrame,
-                                  joinPartMetadata: JoinPartMetadata,
-                                  bootstrapInfo: BootstrapInfo): DataFrame = {
+  private def findUnfilledRecords(bootstrapDf: DataFrame, joinPartMetadata: JoinPartMetadata): DataFrame = {
 
     if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
