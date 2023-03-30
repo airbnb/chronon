@@ -30,12 +30,7 @@ object Fetcher {
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class SeriesStatsResponse(request: StatsRequest, series: Try[Map[String, AnyRef]])
-
-  case class TimedStat(millis: Long, value: AnyRef)
-
-  case class GenericStat(xvalue: AnyRef, statValue: AnyRef)
-
-  case class GenericSeries(series: Seq[GenericStat])
+  case class GenericSeries(series: Seq[Map[String, AnyRef]])
 
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
@@ -403,10 +398,10 @@ class Fetcher(val kvStore: KVStore,
           response =>
           response.values match {
             case Failure(exc) => throw exc
-            case Success(valueMap) => valueMap.mapValues{ v => TimedStat(response.millis, v)}.toList
+            case Success(valueMap) => valueMap.mapValues{ v => ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(Map("millis" -> response.millis, "value" -> v))}.toList
           }
         }.groupBy(_._1)
-          .mapValues(_.map(_._2).toSeq)
+          .mapValues(v => ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(v.map(_._2).toList))
           .toMap
         SeriesStatsResponse(request, Try(convertedValue))
     }
@@ -446,7 +441,8 @@ class Fetcher(val kvStore: KVStore,
         val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
           case (statName, finalStat) =>
             if (statName.endsWith("percentile")) {
-              statName -> GenericSeries(StatsGenerator.finalizedPercentiles.indices.map(idx => GenericStat(StatsGenerator.finalizedPercentiles(idx).asInstanceOf[AnyRef], finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef])))
+              statName -> GenericSeries(
+                StatsGenerator.finalizedPercentiles.indices.map(idx => Map("xvalue" -> StatsGenerator.finalizedPercentiles(idx).asInstanceOf[AnyRef], "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef])))
             } else {
               statName -> finalStat.asInstanceOf[AnyRef]
             }

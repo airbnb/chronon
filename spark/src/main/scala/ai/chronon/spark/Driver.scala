@@ -379,7 +379,8 @@ object Driver {
             val stats = Await.result(resFuture, 5.seconds)
             stats.series match {
               case Success(series) =>
-                println(s"--- [FETCHED RESULT] ---\n${writer.writeValueAsString(series)}")
+                val sampleKey = series.keys.head
+                println(s"--- [FETCHED RESULT] ---\n${writer.writeValueAsString(series.get(sampleKey))}")
               case Failure(exc) => throw exc
             }
           } else {
@@ -610,16 +611,16 @@ object Driver {
             shouldExit = false
             GroupByStreaming.run(args.GroupByStreamingArgs)
 
-          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
-          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
-          case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
+          case args.MetadataUploaderArgs   => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareJoinQueryArgs => CompareJoinQuery.run(args.CompareJoinQueryArgs)
-          case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
-          case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs      => LabelJoin.run(args.LabelJoinArgs)
-          case _                       => println(s"Unknown subcommand: $x")
+          case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
+          case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
+          case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
+          case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
+          case _                           => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
     }
