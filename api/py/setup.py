@@ -22,7 +22,7 @@ def get_version():
         version_str = "{}+{}".format(
             version_str.replace(branch_str + "-", ""),
             branch_str
-        )
+        ).replace("__", "_")  # Replace `__` in the branch names to `_`
 
     return version_str
 
