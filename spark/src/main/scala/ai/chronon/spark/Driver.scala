@@ -5,10 +5,11 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.Extensions.StructTypeOps
-import ai.chronon.spark.stats.{ConsistencyJob, CompareJob, SummaryJob}
+import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.google.gson.GsonBuilder
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
@@ -369,20 +370,17 @@ object Driver {
         keyMapList.foreach(keyMap => {
           println(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
-            val mapper = new ObjectMapper()
-            mapper.registerModule(DefaultScalaModule)
-            val writer = mapper.writerWithDefaultPrettyPrinter
+            val gson = new GsonBuilder().setPrettyPrinting().create()
             val resFuture = fetcher.fetchStatsTimeseries(
-              Fetcher.StatsRequest(args.name(),
-                                   Some(System.currentTimeMillis() - 1000 * 3600 * 24 * 7),
-                                   Some(System.currentTimeMillis())))
+              Fetcher.StatsRequest(
+                args.name(),
+                //TODO: Address the issues with start and end time null. Get these from keyJson along with statsKey
+                Some(System.currentTimeMillis() - 1000 * 3600 * 24 * 7),
+                Some(System.currentTimeMillis())
+              ))
             val stats = Await.result(resFuture, 5.seconds)
-            stats.series match {
-              case Success(series) =>
-                val sampleKey = series.keys.head
-                println(s"--- [FETCHED RESULT] ---\n${writer.writeValueAsString(series.get(sampleKey))}")
-              case Failure(exc) => throw exc
-            }
+            val series = stats.series.get
+            println(s"--- [FETCHED RESULT] ---\n${gson.toJson(series)}")
           } else {
             val startNs = System.nanoTime
             val requests = Seq(Fetcher.Request(args.name(), keyMap))

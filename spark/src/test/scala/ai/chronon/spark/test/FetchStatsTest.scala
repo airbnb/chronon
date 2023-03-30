@@ -13,7 +13,7 @@ import ai.chronon.online.{JavaStatsRequest, JavaStatsResponse, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.gson.Gson
+import com.google.gson.{Gson, GsonBuilder}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
@@ -21,7 +21,9 @@ import java.util.TimeZone
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.collection.JavaConverters._
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.google.gson.reflect.TypeToken
 
+import java.lang.reflect.Type
 import java.util.concurrent.Executors
 import scala.concurrent.{Await, ExecutionContext}
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -123,12 +125,11 @@ class FetchStatsTest extends TestCase {
                                Some(Constants.Partition.epochMillis(yesterday)))
     val statsMergedFutures = fetcher.fetchMergedStatsBetween(request)
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
-    val mapper = new ObjectMapper()
-    val writer = mapper.writerWithDefaultPrettyPrinter
-    println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
+    val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
+    println(s"Stats Merged: ${gson.toJson(statsMerged.values.get)}")
     val statsTimeseriesFuture = fetcher.fetchStatsTimeseries(request)
     val statsSeries = Await.result(statsTimeseriesFuture, Duration(10000, SECONDS))
-    println(s"StatsSeries: ${writer.writeValueAsString(statsSeries.series.get)}")
+    println(s"StatsSeries: ${gson.toJson(statsSeries.series.get)}")
 
     /**
       * Java Fetcher.
@@ -144,14 +145,14 @@ class FetchStatsTest extends TestCase {
         MergedStatsResponse(request,
                             jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)))
     val javaMergedResponse = Await.result(mergedResponse, Duration(10000, SECONDS))
-    println(s"Java Stats Merged: ${writer.writeValueAsString(javaMergedResponse.values.get)}")
+    println(s"Java Stats Merged: ${gson.toJson(javaMergedResponse.values.get)}")
     val seriesResponse = FutureConverters
       .toScala(javaSeriesFetch)
       .map(jres =>
         SeriesStatsResponse(request,
                             jres.series.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)))
     val javaSeriesResponse = Await.result(seriesResponse, Duration(10000, SECONDS))
-    println(s"Java Stats Series: ${writer.writeValueAsString(javaSeriesResponse.series.get)}")
+    println(s"Java Stats Series: ${gson.toJson(javaSeriesResponse.series.get)}")
     println("Done!")
   }
 }

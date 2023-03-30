@@ -30,8 +30,6 @@ object Fetcher {
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class SeriesStatsResponse(request: StatsRequest, series: Try[Map[String, AnyRef]])
-  case class GenericSeries(series: Seq[Map[String, AnyRef]])
-
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
@@ -396,10 +394,11 @@ class Fetcher(val kvStore: KVStore,
       responseFuture =>
         val convertedValue = responseFuture.flatMap {
           response =>
-          response.values match {
-            case Failure(exc) => throw exc
-            case Success(valueMap) => valueMap.mapValues{ v => ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(Map("millis" -> response.millis, "value" -> v))}.toList
-          }
+            //TODO: Add handler to percentiles and sketches in general.
+            response.values.get.mapValues{ v =>
+              ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
+                Map("millis" -> response.millis.asInstanceOf[AnyRef], "value" -> v.asInstanceOf[AnyRef])
+              )}.toList
         }.groupBy(_._1)
           .mapValues(v => ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(v.map(_._2).toList))
           .toMap
@@ -441,8 +440,11 @@ class Fetcher(val kvStore: KVStore,
         val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
           case (statName, finalStat) =>
             if (statName.endsWith("percentile")) {
-              statName -> GenericSeries(
-                StatsGenerator.finalizedPercentiles.indices.map(idx => Map("xvalue" -> StatsGenerator.finalizedPercentiles(idx).asInstanceOf[AnyRef], "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef])))
+              statName ->
+                ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(
+                  StatsGenerator.finalizedPercentiles.indices.map(idx =>
+                  ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(Map("xvalue" -> StatsGenerator.finalizedPercentiles(idx).asInstanceOf[AnyRef], "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]))).toList
+                )
             } else {
               statName -> finalStat.asInstanceOf[AnyRef]
             }
