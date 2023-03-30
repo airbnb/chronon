@@ -204,6 +204,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def sql(query: String): DataFrame = {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val shouldCoalesce = sparkSession.sparkContext.getConf.getBoolean("spark.chronon.enable.coalesce", true)
     println(
       s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
     val df = sparkSession.sql(query).coalesce(partitionCount)

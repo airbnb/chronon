@@ -3,8 +3,8 @@ package ai.chronon.spark
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
 import ai.chronon.api.{Constants, ThriftJsonCodec}
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import ai.chronon.shaded.com.fasterxml.jackson.databind.ObjectMapper
+import ai.chronon.shaded.com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
 import java.nio.file.Files
 import java.nio.file.Paths

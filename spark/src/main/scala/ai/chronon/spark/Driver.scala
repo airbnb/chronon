@@ -7,7 +7,7 @@ import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.stats.{ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
-import com.fasterxml.jackson.databind.ObjectMapper
+import ai.chronon.shaded.com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}

@@ -104,10 +104,17 @@ git.gitTagToVersionNumber := { tag: String =>
   * scala 13 + spark 3.2.1: https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.13/3.2.1
   */
 val VersionMatrix: Map[String, VersionDependency] = Map(
+  "spark-core" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-core"
+    ),
+    Some(spark2_4_0),
+    Some(spark3_1_1),
+    Some(spark3_2_1)
+  ),
   "spark-sql" -> VersionDependency(
     Seq(
-      "org.apache.spark" %% "spark-sql",
-      "org.apache.spark" %% "spark-core"
+      "org.apache.spark" %% "spark-sql"
     ),
     Some(spark2_4_0),
     Some(spark3_1_1),
@@ -136,6 +143,24 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     None,
     None,
     Some("1.0.4")
+  ),
+  "jackson-core" -> VersionDependency(
+    Seq("com.fasterxml.jackson.core" % "jackson-core"),
+    Some("2.6.7"),
+    Some("2.10.0"),
+    Some("2.12.3")
+  ),
+  "jackson-databind" -> VersionDependency(
+    Seq("com.fasterxml.jackson.core" % "jackson-databind"),
+    Some("2.6.7"),
+    Some("2.10.0"),
+    Some("2.12.3")
+  ),
+  "jackson-module-scala" -> VersionDependency(
+    Seq("com.fasterxml.jackson.module" %% "jackson-module-scala"),
+    Some("2.6.7"),
+    Some("2.10.0"),
+    Some("2.12.3")
   ),
   "jackson" -> VersionDependency(
     Seq(
@@ -171,6 +196,7 @@ def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
   }
 
 lazy val api = project
+  .dependsOn(shadedSparkSql, shadedJacksonDatabind)
   .settings(
     publishSettings,
     Compile / sourceGenerators += Def.task {
@@ -180,29 +206,84 @@ lazy val api = project
     }.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
-      fromMatrix(scalaVersion.value, "spark-sql/provided") ++
-        Seq(
-          "org.apache.thrift" % "libthrift" % "0.13.0",
-          "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-          "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
-          "com.novocode" % "junit-interface" % "0.11" % "test"
-        )
-  )
-
-lazy val aggregator = project
-  .dependsOn(api.%("compile->compile;test->test"))
-  .settings(
-    publishSettings,
-    crossScalaVersions := supportedVersions,
-    libraryDependencies ++=
-      fromMatrix(scalaVersion.value, "spark-sql/provided") ++ Seq(
-        "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
-        "com.google.code.gson" % "gson" % "2.8.6"
+      //fromMatrix(scalaVersion.value, "spark-sql/provided") ++
+      Seq(
+        "org.apache.thrift" % "libthrift" % "0.13.0",
+        "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+        "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+        "com.novocode" % "junit-interface" % "0.11" % "test"
       )
   )
 
+lazy val aggregator = project
+  .dependsOn(api.%("compile->compile;test->test"), shadedSparkSql)
+  .settings(
+    publishSettings,
+    crossScalaVersions := supportedVersions,
+    libraryDependencies ++= Seq(
+      "com.yahoo.datasketches" % "sketches-core" % "0.13.4",
+      "com.google.code.gson" % "gson" % "2.8.6"
+    )
+  )
+
+lazy val shadeRules = Seq(
+  ShadeRuleBuilder.moveUnder("com.fasterxml.jackson.core", "ai.chronon.shaded"),
+  ShadeRuleBuilder.moveUnder("com.fasterxml.jackson.module", "ai.chronon.shaded"),
+  ShadeRuleBuilder.moveUnder("com.fasterxml.jackson.databind", "ai.chronon.shaded"),
+  ShadeRuleBuilder.moveUnder("org.apache.spark", "ai.chronon.shaded")
+)
+
+lazy val shadedJacksonCore = project
+  .enablePlugins(JarjarAbramsPlugin)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    name := "shaded-jackson-core",
+    jarjarLibraryDependency := fromMatrix(scalaVersion.value, "jackson-core").head,
+    jarjarShadeRules ++= shadeRules
+  )
+
+lazy val shadedJacksonDatabind = project
+  .enablePlugins(JarjarAbramsPlugin)
+  .dependsOn(shadedJacksonCore)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    name := "shaded-jackson-databind",
+    jarjarLibraryDependency := fromMatrix(scalaVersion.value, "jackson-databind").head,
+    jarjarShadeRules ++= shadeRules
+  )
+
+lazy val shadedJacksonScala = project
+  .enablePlugins(JarjarAbramsPlugin)
+  .dependsOn(shadedJacksonCore, shadedJacksonDatabind)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    name := "shaded-jackson-scala",
+    jarjarLibraryDependency := fromMatrix(scalaVersion.value, "jackson-module-scala").head,
+    jarjarShadeRules ++= shadeRules
+  )
+
+lazy val shadedSparkCore = project
+  .enablePlugins(JarjarAbramsPlugin)
+  .dependsOn(shadedJacksonCore, shadedJacksonScala)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    name := "shaded-spark-core",
+    jarjarLibraryDependency := fromMatrix(scalaVersion.value, "spark-core").head,
+    jarjarShadeRules ++= shadeRules
+  )
+
+lazy val shadedSparkSql = project
+  .enablePlugins(JarjarAbramsPlugin)
+  .dependsOn(shadedJacksonDatabind, shadedSparkCore)
+  .settings(
+    crossScalaVersions := supportedVersions,
+    name := "shaded-spark-sql",
+    jarjarLibraryDependency := fromMatrix(scalaVersion.value, "spark-sql").head,
+    jarjarShadeRules ++= shadeRules
+  )
+
 lazy val online = project
-  .dependsOn(aggregator.%("compile->compile;test->test"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), shadedSparkSql)
   .settings(
     publishSettings,
     crossScalaVersions := supportedVersions,
@@ -213,7 +294,7 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "scala-parallel-collections")
   )
 
 lazy val online_unshaded = (project in file("online"))
@@ -231,7 +312,7 @@ lazy val online_unshaded = (project in file("online"))
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "jackson",
                                        "avro",
-                                       "spark-all/provided",
+                                       "spark-sql/provided",
                                        "scala-parallel-collections")
   )
 

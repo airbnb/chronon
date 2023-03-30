@@ -2,8 +2,8 @@ package ai.chronon.api
 
 import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
-import com.fasterxml.jackson.core.`type`.TypeReference
-import com.fasterxml.jackson.databind.ObjectMapper
+import ai.chronon.shaded.com.fasterxml.jackson.core.`type`.TypeReference
+import ai.chronon.shaded.com.fasterxml.jackson.databind.ObjectMapper
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
