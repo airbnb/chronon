@@ -224,6 +224,7 @@ def set_runtime_env(args):
     else:
         if not args.app_name and not environment['cli_args'].get('APP_NAME'):
             # Provide basic app_name when no conf is defined.
+            # Modes like metadata-upload and metadata-export can rely on conf-type or folder rather than a conf.
             environment['cli_args']['APP_NAME'] = "_".join([k for k in [
                 "chronon",
                 conf_type,
