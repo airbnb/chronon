@@ -1,4 +1,5 @@
 import os
+import re
 from setuptools import find_packages, setup
 
 current_dir = os.path.abspath(os.path.dirname(__file__))
@@ -22,7 +23,10 @@ def get_version():
         version_str = "{}+{}".format(
             version_str.replace(branch_str + "-", ""),
             branch_str
-        ).replace("__", "_").replace("--", "-")  # Replace double `_` or `-` to single characters
+        )
+
+    # Replace multiple continuous '-' or '_' with a single period
+    version_str = re.sub(r'[-_]+', '.', version_str)
 
     return version_str
 
