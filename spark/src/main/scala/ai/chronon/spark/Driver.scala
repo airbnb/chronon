@@ -8,6 +8,7 @@ import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.stats.{ConsistencyJob, CompareJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
@@ -368,14 +369,17 @@ object Driver {
         keyMapList.foreach(keyMap => {
           println(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
-            val resFuture = fetcher.fetchStatsTimeseries(Fetcher.StatsRequest(args.name()))
+            val mapper = new ObjectMapper()
+            mapper.registerModule(DefaultScalaModule)
+            val writer = mapper.writerWithDefaultPrettyPrinter
+            val resFuture = fetcher.fetchStatsTimeseries(
+              Fetcher.StatsRequest(args.name(),
+                                   Some(System.currentTimeMillis() - 1000 * 3600 * 24 * 7),
+                                   Some(System.currentTimeMillis())))
             val stats = Await.result(resFuture, 5.seconds)
             stats.series match {
               case Success(series) =>
-                val statTMap = new java.util.TreeMap[String, AnyRef]()
-                series.foreach { case (k, v) => statTMap.put(k, v) }
-                println(
-                  s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(statTMap)}")
+                println(s"--- [FETCHED RESULT] ---\n${writer.writeValueAsString(series)}")
               case Failure(exc) => throw exc
             }
           } else {
