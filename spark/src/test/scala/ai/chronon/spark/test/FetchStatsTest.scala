@@ -124,7 +124,6 @@ class FetchStatsTest extends TestCase {
     val statsMergedFutures = fetcher.fetchMergedStatsBetween(request)
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     val mapper = new ObjectMapper()
-    mapper.registerModule(DefaultScalaModule)
     val writer = mapper.writerWithDefaultPrettyPrinter
     println(s"Stats Merged: ${writer.writeValueAsString(statsMerged.values.get)}")
     val statsTimeseriesFuture = fetcher.fetchStatsTimeseries(request)
