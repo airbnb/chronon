@@ -107,6 +107,17 @@ def test_environment(teams_json, repo, parser, test_conf_location):
             '--repo', repo
         ]))
 
+    # Check metadata export run.py
+    reset_env(default_environment)
+    run.set_runtime_env(parser.parse_args(args=[
+        '--mode', 'metadata-export',
+        '--conf', 'production/joins//',
+        '--repo', repo
+    ]))
+    # without conf still works.
+    assert os.environ['APP_NAME'] == 'chronon_metadata_export'
+    reset_env(default_environment)
+
 
 def test_property_default_update(repo, parser, test_conf_location):
     assert 'VERSION' not in os.environ

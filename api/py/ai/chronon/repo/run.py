@@ -202,18 +202,21 @@ def set_runtime_env(args):
                         "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
                         .format(args.conf))
                     raise e
+                if not team:
+                    team = "default"
                 logging.info(f"Context: {context} -- conf_type: {conf_type} -- team: {team}")
                 conf_path = os.path.join(args.repo, args.conf)
-                with open(conf_path, 'r') as conf_file:
-                    conf_json = json.load(conf_file)
-                environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
+                if os.path.isfile(conf_path):
+                    with open(conf_path, 'r') as conf_file:
+                        conf_json = json.load(conf_file)
+                    environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
+                    environment['cli_args']['APP_NAME'] = APP_NAME_TEMPLATE.format(
+                        mode=args.mode,
+                        conf_type=conf_type,
+                        context=context,
+                        name=conf_json['metaData']['name'])
                 environment['team_env'] = teams_json[team].get(context, {}).get(args.mode, {})
                 environment['default_env'] = teams_json.get('default', {}).get(context, {}).get(args.mode, {})
-                environment['cli_args']['APP_NAME'] = APP_NAME_TEMPLATE.format(
-                    mode=args.mode,
-                    conf_type=conf_type,
-                    context=context,
-                    name=conf_json['metaData']['name'])
                 environment['cli_args']["CHRONON_CONF_PATH"] = conf_path
     if args.app_name:
         environment['cli_args']['APP_NAME'] = args.app_name
