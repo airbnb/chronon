@@ -114,18 +114,20 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
     val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
-    val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo), bootstrapInfo, leftDf.columns)
+    val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo, leftDf.columns),
+                                          bootstrapInfo,
+                                          leftDf.columns)
     finalDf.explain()
     finalDf
   }
 
-  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
     if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
       return baseDf
     }
 
     val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
-    val derivationOutputColumns = projections.map(_._1).toSet
+    val projectionsMap = projections.toMap
     val baseOutputColumns = baseDf.columns.toSet
 
     val finalOutputColumns =
@@ -133,7 +135,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
        * Loop through all columns in the base join output:
        * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
        *    derived columns again - derivation is a projection from all value columns to desired derived columns
-       * 2. If it is matching one of the projected output columns, then this is a boostrapped derivation case, we also
+       * 2. If it is matching one of the projected output columns, then this is a bootstrapped derivation case, we also
        *    skip it here and it will be handled later as loop through derivations to perform coalescing
        * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
        *    arbitrary columns selected from left.
@@ -141,8 +143,12 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       baseDf.columns.flatMap { c =>
         if (bootstrapInfo.baseValueNames.contains(c)) {
           None
-        } else if (derivationOutputColumns.contains(c)) {
-          None // handled below
+        } else if (projectionsMap.contains(c)) {
+          if (leftColumns.contains(c)) {
+            Some(coalesce(col(c), expr(projectionsMap(c))).as(c))
+          } else {
+            None
+          }
         } else {
           Some(col(c))
         }
@@ -161,7 +167,11 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
               if (name == expression && name.startsWith(Constants.ContextualPrefix)) {
                 None
               } else if (baseOutputColumns.contains(name)) {
-                Some(coalesce(col(name), expr(expression)).as(name))
+                if (leftColumns.contains(name)) {
+                  None
+                } else {
+                  Some(coalesce(col(name), expr(expression)).as(name))
+                }
               } else {
                 Some(expr(expression).as(name))
               }

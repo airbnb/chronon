@@ -167,7 +167,7 @@ object BootstrapInfo {
         val valueFields = SparkConversions
           .toChrononSchema(schema)
           .filterNot {
-            case (name, _) => part.keys(joinConf).contains(name)
+            case (name, _) => part.keys(joinConf).contains(name) || name == "ts"
           }
           .map(field => StructField(field._1, field._2))
 
