@@ -106,7 +106,7 @@ class FeatureWithLabelJoinTest {
   def createTestLabelJoin(startOffset: Int,
                           endOffset: Int,
                           groupByTableName: String = "listing_labels"): ai.chronon.api.LabelPart = {
-    val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark, groupByTableName)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)

@@ -15,25 +15,23 @@ object TestUtils {
       tableName,
       Array(
         StructField("listing_id", LongType),
-        StructField("m_guests", LongType),
         StructField("m_views", LongType),
         StructField("ts", StringType),
         StructField("ds", StringType)
       )
     )
     val rows = List(
-      Row(1L, 2L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(2L, 3L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(3L, 1L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-      Row(4L, 2L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
-      Row(5L, 3L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
-      Row(1L, 5L, 15L, "2022-10-03 10:00:00", "2022-10-03")
+      Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
+      Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+      Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+      Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+      Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
     )
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
-          "m_guests" -> "m_guests",
           "m_views" -> "m_views"
         ),
         timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
@@ -46,11 +44,6 @@ object TestUtils {
       sources = Seq(source),
       keyColumns = Seq("listing"),
       aggregations = Seq(
-        Builders.Aggregation(
-          operation = Operation.SUM,
-          inputColumn = "m_guests",
-          windows = null
-        ),
         Builders.Aggregation(
           operation = Operation.SUM,
           inputColumn = "m_views",
@@ -72,34 +65,81 @@ object TestUtils {
     )
   }
 
-  def createAttributesGroupBy(namespace: String,
-                              spark: SparkSession,
-                              tableName: String = "listing_attributes"): GroupByTestSuite = {
+  def createRoomTypeGroupBy(namespace: String,
+                            spark: SparkSession,
+                            tableName: String = "listing_attributes_room"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
         StructField("listing_id", LongType),
-        StructField("dim_bedrooms", IntType),
         StructField("dim_room_type", StringType),
         StructField("ds", StringType)
       )
     )
     val rows = List(
-      Row(1L, 4, "ENTIRE_HOME", "2022-10-30"),
-      Row(2L, 4, "ENTIRE_HOME", "2022-10-30"),
-      Row(3L, 1, "PRIVATE_ROOM", "2022-10-30"),
-      Row(4L, 1, "PRIVATE_ROOM", "2022-10-30"),
-      Row(5L, 1, "PRIVATE_ROOM", "2022-10-30"),
-      Row(1L, 4, "ENTIRE_HOME_2", "2022-11-11"),
-      Row(2L, 3, "ENTIRE_HOME_2", "2022-11-11"),
-      Row(3L, 1, "PRIVATE_ROOM_2", "2022-11-11")
+      Row(1L, "ENTIRE_HOME", "2022-10-30"),
+      Row(2L, "ENTIRE_HOME", "2022-10-30"),
+      Row(3L, "PRIVATE_ROOM", "2022-10-30"),
+      Row(4L, "PRIVATE_ROOM", "2022-10-30"),
+      Row(5L, "PRIVATE_ROOM", "2022-10-30"),
+      Row(1L, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(2L, "ENTIRE_HOME_2", "2022-11-11"),
+      Row(3L, "PRIVATE_ROOM_2", "2022-11-11")
     )
     val source = Builders.Source.entities(
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
-          "dim_bedrooms" -> "dim_bedrooms",
           "dim_room_type" -> "dim_room_type"
+        )
+      ),
+      snapshotTable = s"${namespace}.${tableName}"
+    )
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("listing"),
+      aggregations = null,
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
+    )
+    val df = spark.createDataFrame(
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      SparkConversions.fromChrononSchema(schema)
+    )
+    df.save(s"${namespace}.${tableName}")
+    GroupByTestSuite(
+      tableName,
+      conf,
+      df
+    )
+  }
+
+  def createReservationGroupBy(namespace: String,
+                            spark: SparkSession,
+                            tableName: String = "listing_attributes_reservation"): GroupByTestSuite = {
+    val schema = StructType(
+      tableName,
+      Array(
+        StructField("listing_id", LongType),
+        StructField("dim_reservations", IntType),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, 4, "2022-10-30"),
+      Row(2L, 2, "2022-10-30"),
+      Row(3L, 6, "2022-10-30"),
+      Row(4L, 5, "2022-10-30"),
+      Row(5L, 3, "2022-10-30"),
+      Row(1L, 5, "2022-11-11"),
+      Row(2L, 10, "2022-11-11"),
+      Row(3L, 7, "2022-11-11")
+    )
+    val source = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Map(
+          "listing" -> "listing_id",
+          "dim_reservations" -> "dim_reservations",
         )
       ),
       snapshotTable = s"${namespace}.${tableName}"
