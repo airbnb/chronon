@@ -228,7 +228,7 @@ def set_runtime_env(args):
             environment['cli_args']['APP_NAME'] = "_".join([k for k in [
                 "chronon",
                 conf_type,
-                args.mode.replace('-','_') if args.mode else None,
+                args.mode.replace('-', '_') if args.mode else None,
             ] if k is not None])
 
     # Adding these to make sure they are printed if provided by the environment.
