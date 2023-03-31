@@ -230,9 +230,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                |
                |""".stripMargin)
 
-    updatedLeftDf.show()
-    println("== right ===")
-    prefixedRight.show()
     updatedLeftDf.validateJoinKeys(prefixedRight, partLeftKeys)
     updatedLeftDf.join(prefixedRight, partLeftKeys, "left_outer")
   }

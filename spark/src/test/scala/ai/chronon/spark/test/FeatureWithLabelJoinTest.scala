@@ -70,7 +70,7 @@ class FeatureWithLabelJoinTest {
     view.show()
     // listing 4 should not have any 2022-11-11 version labels
     assertEquals(null, view.where(view("label_ds") === "2022-11-11" && view("listing") === "4")
-      .select("label_listing_labels_dim_bedrooms").first().get(0))
+      .select("label_listing_labels_dim_room_type").first().get(0))
     // 11-11 label record number should be same as 10-30 label version record number
     assertEquals(view.where(view("label_ds") === "2022-10-30").count(),
       view.where(view("label_ds") === "2022-11-11").count())
