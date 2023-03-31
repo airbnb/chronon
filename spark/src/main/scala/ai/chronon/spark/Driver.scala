@@ -371,16 +371,21 @@ object Driver {
           println(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
             val gson = new GsonBuilder().setPrettyPrinting().create()
+            println(s"STARTTS: ${keyMap.get("startTs").map(_.asInstanceOf[String].toLong)}")
+            println(s"ENDTS: ${keyMap.get("endTs").map(_.asInstanceOf[String].toLong)}")
             val resFuture = fetcher.fetchStatsTimeseries(
               Fetcher.StatsRequest(
                 args.name(),
-                //TODO: Address the issues with start and end time null. Get these from keyJson along with statsKey
-                Some(System.currentTimeMillis() - 1000 * 3600 * 24 * 7),
-                Some(System.currentTimeMillis())
+                keyMap.get("startTs").map(_.asInstanceOf[String].toLong),
+                keyMap.get("endTs").map(_.asInstanceOf[String].toLong)
               ))
-            val stats = Await.result(resFuture, 5.seconds)
+            val stats = Await.result(resFuture, 100.seconds)
             val series = stats.series.get
             println(s"--- [FETCHED RESULT] ---\n${gson.toJson(series)}")
+            println(s"STATSKEY: ${keyMap.getOrElse("statsKey", "no stats key defined")}")
+            val toPrint =
+              if (keyMap.get("statsKey").isDefined) series.get(keyMap("statsKey").asInstanceOf[String]) else series
+            println(s"--- [FETCHED RESULT] ---\n${gson.toJson(toPrint)}")
           } else {
             val startNs = System.nanoTime
             val requests = Seq(Fetcher.Request(args.name(), keyMap))

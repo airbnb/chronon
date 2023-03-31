@@ -116,13 +116,7 @@ class FetchStatsTest extends TestCase {
     val fetcher = mockApi.buildFetcher(debug = true)
     val fetchStartTs = Constants.Partition.epochMillis(start)
     println(s"Fetch Start ts: $fetchStartTs")
-    val futures =
-      fetcher.fetchStats(
-        StatsRequest(joinConf.metaData.nameToFilePath, Some(fetchStartTs), Some(System.currentTimeMillis())))
-    val result = Await.result(futures, Duration(10000, SECONDS))
-    val request = StatsRequest(joinConf.metaData.nameToFilePath,
-                               Some(fetchStartTs),
-                               Some(Constants.Partition.epochMillis(yesterday)))
+    val request = StatsRequest(joinConf.metaData.nameToFilePath, None, None)
     val statsMergedFutures = fetcher.fetchMergedStatsBetween(request)
     val statsMerged = Await.result(statsMergedFutures, Duration(10000, SECONDS))
     val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()

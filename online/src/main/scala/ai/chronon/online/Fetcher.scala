@@ -362,27 +362,15 @@ class Fetcher(val kvStore: KVStore,
     val joinName = request.name
     val startTs = request.startTs
     val endTs = request.endTs
-    val joinCodecs = getJoinCodecs(joinName) match {
-      case Success(joinCodec) => joinCodec
-      case Failure(exception) => throw exception
-    }
-    val upperBound: Long = endTs match {
-      case Some(value) => value
-      case _ => System.currentTimeMillis()
-    }
+    val joinCodecs = getJoinCodecs(joinName).get
+    val upperBound: Long = endTs.getOrElse(System.currentTimeMillis())
     kvStore.get(
       GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)
-    ).map {
-      kvResponse =>
-        kvResponse.values match {
-          case Success(responses) =>
-            responses.toArray.filter(_.millis <= upperBound).map {
-              tv =>
-                StatsResponse(StatsRequest(joinName, startTs, endTs), Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
-            }.toSeq
-          case Failure(exception) => throw exception
-        }
-    }
+    ).map(_.values.get.toArray.filter(_.millis <= upperBound).map {
+      tv =>
+        println(s"Retrieved: ${tv.millis} ${java.util.Base64.getEncoder().encode(tv.bytes)}")
+        StatsResponse(request, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
+    }.toSeq)
   }
 
   /**
@@ -396,6 +384,7 @@ class Fetcher(val kvStore: KVStore,
           response =>
             //TODO: Add handler to percentiles and sketches in general.
             response.values.get.mapValues{ v =>
+              println(s"millis: ${response.millis} Value: $v")
               ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
                 Map("millis" -> response.millis.asInstanceOf[AnyRef], "value" -> v.asInstanceOf[AnyRef])
               )}.toList
@@ -412,10 +401,7 @@ class Fetcher(val kvStore: KVStore,
     */
   def fetchMergedStatsBetween(request: StatsRequest): Future[MergedStatsResponse] = {
     val joinName = request.name
-    val joinCodecs = getJoinCodecs(joinName) match {
-      case Success(joinCodec) => joinCodec
-      case Failure(exception) => throw exception
-    }
+    val joinCodecs = getJoinCodecs(joinName).get
     val valueSchema = joinCodecs.valueSchema
     val statsInputSchema = joinCodecs.statsInputSchema
     val statsIrSchema = joinCodecs.statsIrSchema
@@ -428,12 +414,8 @@ class Fetcher(val kvStore: KVStore,
       var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
       responseFuture => responseFuture.foreach {
         response =>
-          response.values match {
-            case Success(valueMap) =>
-              val batchRecord = aggregator.denormalize(statsIrSchema.map { field => valueMap(field.name).asInstanceOf[Any]}.toArray)
-              mergedIr = aggregator.merge(mergedIr, batchRecord)
-            case Failure(exception) => throw exception
-          }
+          val batchRecord = aggregator.denormalize(statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+          mergedIr = aggregator.merge(mergedIr, batchRecord)
       }
       // val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr).map(_.asInstanceOf[AnyRef])).toMap
         /** Other things that would require custom processing: HeavyHitters */
