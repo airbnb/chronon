@@ -860,27 +860,39 @@ object Extensions {
     lazy val derivationExpressionFlippedMap: Map[String, String] =
       derivationsWithoutStar.map(d => d.expression -> d.name).toMap
 
+    // Used during offline spark job and this method preserves ordering of derivations
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      (if (derivationsContainStar) { // select all baseColumns except renamed ones
-         val expressions = derivationsScala.iterator.map(_.expression).toSet
-         baseColumns.filterNot(expressions)
-       } else {
-         Seq.empty
-       }).map(c => c -> c) ++ derivationsWithoutStar.map(d => (d.name, d.expression))
+      val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
+        val expressions = derivationsScala.iterator.map(_.expression).toSet
+        baseColumns.filterNot(expressions)
+      } else {
+        Seq.empty
+      }
+
+      derivationsScala.iterator.flatMap { d =>
+        if (d.name == "*") {
+          wildcardDerivations.map(c => c -> c)
+        } else {
+          Seq(d.name -> d.expression)
+        }
+      }.toSeq
     }
 
+    // Used only during online fetching to reduce latency
     def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")
-      if (derivationsContainStar) {
+      val wildcardDerivations = if (derivationsContainStar) {
         baseColumns.filterNot(derivationExpressionSet contains _._1)
       } else {
         Map.empty[String, Any]
-      } ++ derivationsScala.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
+      }
+
+      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
 
-    def logFullValues: Boolean = true  // TODO: supports opt-out in the future
+    def logFullValues: Boolean = true // TODO: supports opt-out in the future
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
