@@ -242,10 +242,10 @@ def LabelPart(labels: List[api.JoinPart],
     and the param input will be ignored.
 
     :param labels: List of labels
-    :param left_start_offset: Integer to define the earliest date label should be refreshed
+    :param left_start_offset: Integer to define the earliest date(inclusive) label should be refreshed
                             comparing to label_ds date specified. For labels with aggregations,
                             this param will be inferred from aggregation window and no need to pass in.
-    :param left_end_offset: Integer to define the most recent date label should be refreshed.
+    :param left_end_offset: Integer to define the most recent date(inclusive) label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
                           prior to 'label_ds'. For labels with aggregations, this param will be inferred
                           from aggregation window and no need to pass in.
@@ -259,11 +259,17 @@ def LabelPart(labels: List[api.JoinPart],
 
     for label in labels:
         if label.groupBy.aggregations is not None:
-            valid_agg = len(label.groupBy.aggregations) == 1 and label.groupBy.aggregations[0].windows is not None \
-                        and len(label.groupBy.aggregations[0].windows) == 1
+            assert len(labels) == 1, "Multiple label joinPart is not supported yet"
+            valid_agg = (len(label.groupBy.aggregations) == 1
+                         and label.groupBy.aggregations[0].windows is not None
+                         and len(label.groupBy.aggregations[0].windows) == 1)
             assert valid_agg, "Too many aggregations or windows found. Single aggregation with one window allowed."
             valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
+            window_size = label.groupBy.aggregations[0].windows[0].length
+            if left_start_offset != (window_size - 1) or left_start_offset != left_end_offset:
+                print(f"""WARNING: left_start_offset and left_end_offset will be inferred from aggregation window and  \
+                "the given values {left_start_offset} and {left_end_offset} be ignored. """)
 
     return api.LabelPart(
         labels=labels,

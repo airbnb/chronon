@@ -49,6 +49,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
     labelJoinConf.labels.asScala.foreach { jp =>
       if(Option(jp.groupBy.aggregations).isDefined) {
+        assert(Option(jp.groupBy.dataModel).equals(Option(Events)),
+          s"groupBy.dataModel must be Events for label join with aggregations ${jp.groupBy.metaData.name}")
+
         assert(Option(jp.groupBy.aggregations).get.size() == 1,
           s"Multiple aggregations not yet supported for label join ${jp.groupBy.metaData.name}")
 
@@ -62,6 +65,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         // leftStartOffset/leftEndOffset = label_ds - window + 1
         leftStart = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
         leftEnd = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
+      } else {
+        assert(Option(jp.groupBy.dataModel).equals(Option(Entities)),
+          s"To perform a none-aggregation label join, the groupBy.dataModel must be entities: ${jp.groupBy.metaData.name}")
       }
 
       assert(Option(jp.groupBy.metaData.team).nonEmpty,

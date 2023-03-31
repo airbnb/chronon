@@ -234,6 +234,38 @@ class LabelJoinTest {
   }
 
   @Test(expected = classOf[AssertionError])
+  def testLabelJoinInvalidLabelGroupByDataModal(): Unit = {
+    // Invalid data model entities with aggregations, expected Events
+    val agg_label_conf = Builders.GroupBy(
+      sources = Seq(labelGroupBy.groupByConf.sources.get(0)),
+      keyColumns = Seq("listing"),
+      aggregations = Seq(Builders.Aggregation(
+        inputColumn = "is_active",
+        operation = Operation.MAX,
+        windows = Seq(new Window(5, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
+      )),
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
+    )
+
+    val labelJoin = Builders.LabelPart(
+      labels = Seq(
+        Builders.JoinPart(groupBy = agg_label_conf)
+      ),
+      leftStartOffset = 10,
+      leftEndOffset = 3
+    )
+
+    val invalidJoinConf = Builders.Join(
+      Builders.MetaData(name = "test_invalid_label_join", namespace = namespace, team = "chronon"),
+      left,
+      joinParts = Seq.empty,
+      labelPart = labelJoin
+    )
+    new LabelJoin(invalidJoinConf, tableUtils, labelDS).computeLabelJoin()
+  }
+
+  @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidAggregations(): Unit = {
     // multi window aggregations
     val agg_label_conf = Builders.GroupBy(
