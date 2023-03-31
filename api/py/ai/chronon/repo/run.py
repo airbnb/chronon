@@ -188,6 +188,7 @@ def set_runtime_env(args):
         "team_env": {},
         "cli_args": {},
     }
+    conf_type = None
     if args.repo:
         teams_file = os.path.join(args.repo, 'teams.json')
         if os.path.exists(teams_file):
@@ -202,24 +203,34 @@ def set_runtime_env(args):
                         "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
                         .format(args.conf))
                     raise e
+                if not team:
+                    team = "default"
                 logging.info(f"Context: {context} -- conf_type: {conf_type} -- team: {team}")
                 conf_path = os.path.join(args.repo, args.conf)
-                with open(conf_path, 'r') as conf_file:
-                    conf_json = json.load(conf_file)
-                environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
+                if os.path.isfile(conf_path):
+                    with open(conf_path, 'r') as conf_file:
+                        conf_json = json.load(conf_file)
+                    environment['conf_env'] = conf_json.get('metaData').get('modeToEnvMap', {}).get(args.mode, {})
+                    environment['cli_args']['APP_NAME'] = APP_NAME_TEMPLATE.format(
+                        mode=args.mode,
+                        conf_type=conf_type,
+                        context=context,
+                        name=conf_json['metaData']['name'])
                 environment['team_env'] = teams_json[team].get(context, {}).get(args.mode, {})
                 environment['default_env'] = teams_json.get('default', {}).get(context, {}).get(args.mode, {})
-                environment['cli_args']['APP_NAME'] = APP_NAME_TEMPLATE.format(
-                    mode=args.mode,
-                    conf_type=conf_type,
-                    context=context,
-                    name=conf_json['metaData']['name'])
                 environment['cli_args']["CHRONON_CONF_PATH"] = conf_path
     if args.app_name:
         environment['cli_args']['APP_NAME'] = args.app_name
     else:
-        if args.mode == 'metadata-export':
-            environment['cli_args']['APP_NAME'] = 'chronon_metadata_export'
+        if not args.app_name and not environment['cli_args'].get('APP_NAME'):
+            # Provide basic app_name when no conf is defined.
+            # Modes like metadata-upload and metadata-export can rely on conf-type or folder rather than a conf.
+            environment['cli_args']['APP_NAME'] = "_".join([k for k in [
+                "chronon",
+                conf_type,
+                args.mode.replace('-','_') if args.mode else None,
+            ] if k is not None])
+
     # Adding these to make sure they are printed if provided by the environment.
     environment['cli_args']['CHRONON_DRIVER_JAR'] = args.chronon_jar
     environment['cli_args']['CHRONON_ONLINE_JAR'] = args.online_jar
