@@ -2,6 +2,9 @@ package ai.chronon.aggregator.row
 
 import ai.chronon.api
 import ai.chronon.api.Extensions._
+import com.yahoo.memory.Memory
+import com.yahoo.sketches.kll.KllFloatsSketch
+
 import scala.collection.Seq
 import scala.util.ScalaVersionSpecificCollectionsConverter
 import java.util
@@ -73,6 +76,14 @@ object StatsGenerator {
 
       }.toArray
     )
+  }
+
+  def fetchFinalizer(key: String, value: AnyRef): AnyRef = {
+    if (key.endsWith("percentile") && value != null) {
+      val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
+      return sketch.getQuantiles(Array[Double](0.05, 0.25, 0.5, 0.75, 0.95)).asInstanceOf[AnyRef]
+    }
+    value
   }
 
   /**

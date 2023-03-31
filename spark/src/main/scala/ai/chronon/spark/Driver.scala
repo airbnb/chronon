@@ -370,9 +370,7 @@ object Driver {
         keyMapList.foreach(keyMap => {
           println(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
-            val gson = new GsonBuilder().setPrettyPrinting().create()
-            println(s"STARTTS: ${keyMap.get("startTs").map(_.asInstanceOf[String].toLong)}")
-            println(s"ENDTS: ${keyMap.get("endTs").map(_.asInstanceOf[String].toLong)}")
+            val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
             val resFuture = fetcher.fetchStatsTimeseries(
               Fetcher.StatsRequest(
                 args.name(),
@@ -381,10 +379,13 @@ object Driver {
               ))
             val stats = Await.result(resFuture, 100.seconds)
             val series = stats.series.get
-            println(s"--- [FETCHED RESULT] ---\n${gson.toJson(series)}")
-            println(s"STATSKEY: ${keyMap.getOrElse("statsKey", "no stats key defined")}")
             val toPrint =
-              if (keyMap.get("statsKey").isDefined) series.get(keyMap("statsKey").asInstanceOf[String]) else series
+              if (
+                keyMap.get("statsKey").isDefined
+                && series.contains(keyMap.get("statsKey").map(_.asInstanceOf[String]).getOrElse(""))
+              )
+                series.get(keyMap("statsKey").asInstanceOf[String])
+              else series
             println(s"--- [FETCHED RESULT] ---\n${gson.toJson(toPrint)}")
           } else {
             val startNs = System.nanoTime

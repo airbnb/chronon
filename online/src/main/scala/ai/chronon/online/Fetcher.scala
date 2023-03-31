@@ -368,7 +368,6 @@ class Fetcher(val kvStore: KVStore,
       GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinName)), Constants.StatsBatchDataset, afterTsMillis = startTs)
     ).map(_.values.get.toArray.filter(_.millis <= upperBound).map {
       tv =>
-        println(s"Retrieved: ${tv.millis} ${java.util.Base64.getEncoder().encode(tv.bytes)}")
         StatsResponse(request, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
     }.toSeq)
   }
@@ -383,10 +382,9 @@ class Fetcher(val kvStore: KVStore,
         val convertedValue = responseFuture.flatMap {
           response =>
             //TODO: Add handler to percentiles and sketches in general.
-            response.values.get.mapValues{ v =>
-              println(s"millis: ${response.millis} Value: $v")
-              ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
-                Map("millis" -> response.millis.asInstanceOf[AnyRef], "value" -> v.asInstanceOf[AnyRef])
+            response.values.get.map{ case (key, v) =>
+              key -> ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
+                Map("millis" -> response.millis.asInstanceOf[AnyRef], "value" -> StatsGenerator.fetchFinalizer(key, v))
               )}.toList
         }.groupBy(_._1)
           .mapValues(v => ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(v.map(_._2).toList))
