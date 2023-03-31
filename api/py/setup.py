@@ -25,7 +25,8 @@ def get_version():
             branch_str
         )
 
-    # Replace multiple continuous '-' or '_' with a single period
+    # Replace multiple continuous '-' or '_' with a single period '.'.
+    # In python version string, the label identifier that comes after '+', is all separated by periods '.'
     version_str = re.sub(r'[-_]+', '.', version_str)
 
     return version_str
