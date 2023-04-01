@@ -684,13 +684,6 @@ object Extensions {
         .convertJavaListToScala(join.joinParts)
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
-      val labelHashMap = Option(join.labelPart)
-        .map { labelPart =>
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaListToScala(labelPart.labels)
-            .map { label => partOutputTable(label) -> label.groupBy.semanticHash }
-            .toMap
-        }.getOrElse(Map.empty)
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -699,7 +692,7 @@ object Extensions {
         }
         .getOrElse(Map.empty)
       val bootstrapHash = ThriftJsonCodec.md5Digest(join.bootstrapParts)
-      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap ++ labelHashMap
+      partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap
     }
 
     /*

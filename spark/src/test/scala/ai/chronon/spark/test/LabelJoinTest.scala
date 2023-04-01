@@ -129,7 +129,7 @@ class LabelJoinTest {
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
     assertEquals(computed
-      .select("listing_attributes_dim_room_type")
+      .select("listing_label_not_exist_dim_room_type")
       .first()
       .get(0),
       null)
@@ -301,12 +301,12 @@ class LabelJoinTest {
   def testLabelAggregations(): Unit = {
     // left : listing_id, _, _, ts, ds
     val rows = List(
-      Row(1L, 2L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(2L, 3L, 30L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(3L, 1L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(1L, 2L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
-      Row(2L, 3L, 35L, "2022-10-04 11:00:00", "2022-10-04"),
-      Row(3L, 5L, 15L, "2022-10-05 11:00:00", "2022-10-05"))
+      Row(1L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(2L, 30L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(3L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(1L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
+      Row(2L, 35L, "2022-10-04 11:00:00", "2022-10-04"),
+      Row(3L, 15L, "2022-10-05 11:00:00", "2022-10-05"))
     val leftSource = TestUtils.createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
       .groupByConf.sources.get(0)
 

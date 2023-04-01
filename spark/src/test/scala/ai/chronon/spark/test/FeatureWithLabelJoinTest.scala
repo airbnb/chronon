@@ -89,12 +89,12 @@ class FeatureWithLabelJoinTest {
     createTestFeatureTable(tableName, featureRows).write.saveAsTable(featureTable)
 
     val rows = List(
-      Row(1L, 2L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(2L, 3L, 30L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(3L, 1L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
-      Row(1L, 2L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
-      Row(2L, 3L, 35L, "2022-10-03 11:00:00", "2022-10-03"),
-      Row(3L, 5L, 15L, "2022-10-03 11:00:00", "2022-10-03"))
+      Row(1L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(2L, 30L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(3L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
+      Row(1L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
+      Row(2L, 35L, "2022-10-03 11:00:00", "2022-10-03"),
+      Row(3L, 15L, "2022-10-03 11:00:00", "2022-10-03"))
     val leftSource = TestUtils.createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
       .groupByConf.sources.get(0)
     val labelJoinConf = createTestAggLabelJoin("listing_labels_agg")

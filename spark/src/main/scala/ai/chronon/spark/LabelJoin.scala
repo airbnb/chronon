@@ -32,10 +32,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
-  private val gson = new Gson()
-  protected val tableProps =
-    confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
-
   var leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
   var leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
 
@@ -142,7 +138,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable,
-            tableProps,
+            confTableProps,
             Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn),
             true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
