@@ -200,6 +200,13 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
+    // drop dup label_ds column if exists in leftDf.
+    val updatedLeftDf = if (leftDf.columns.contains(Constants.LabelPartitionColumn)) {
+      leftDf.drop(Constants.LabelPartitionColumn)
+    } else {
+      leftDf
+    }
+
     // apply key-renaming to key columns
     val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
       case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
@@ -216,14 +223,14 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
     println(s"""Join keys for $partName: ${partLeftKeys.mkString(", ")}
                |Left Schema:
-               |${leftDf.schema.pretty}
+               |${updatedLeftDf.schema.pretty}
                |
                |Right Schema:
                |${prefixedRight.schema.pretty}
                |
                |""".stripMargin)
 
-    leftDf.validateJoinKeys(prefixedRight, partLeftKeys)
-    leftDf.join(prefixedRight, partLeftKeys, "left_outer")
+    updatedLeftDf.validateJoinKeys(prefixedRight, partLeftKeys)
+    updatedLeftDf.join(prefixedRight, partLeftKeys, "left_outer")
   }
 }

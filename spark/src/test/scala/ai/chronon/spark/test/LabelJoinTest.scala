@@ -17,12 +17,53 @@ class LabelJoinTest {
   private val tableUtils = TableUtils(spark)
 
   private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
-  private val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark)
+  private val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
   private val left = viewsGroupBy.groupByConf.sources.get(0)
 
   @Test
   def testLabelJoin(): Unit = {
-    val labelJoinConf = createTestLabelJoin(30, 20)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_attributes").groupByConf
+    val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = "test_label_join_single_label", namespace = namespace, team = "chronon"),
+      left,
+      labelPart = labelJoinConf
+    )
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
+    println(" == Computed == ")
+    computed.show()
+    val expected = tableUtils.sql(s"""
+                                     SELECT v.listing_id as listing,
+                                        dim_room_type as listing_attributes_dim_room_type,
+                                        a.ds as label_ds,
+                                        v.ds
+                                     FROM label_join.listing_views as v
+                                     LEFT OUTER JOIN label_join.listing_attributes as a
+                                     ON v.listing_id = a.listing_id
+                                     WHERE a.ds = '2022-10-30'""".stripMargin)
+    println(" == Expected == ")
+    expected.show()
+    assertEquals(computed.count(), expected.count())
+    assertEquals(computed.select("label_ds").first().get(0), labelDS)
+
+    val diff = Comparison.sideBySide(computed,
+      expected,
+      List("listing", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testLabelJoinMultiLabels(): Unit = {
+    val labelGroupBy1 = TestUtils.createRoomTypeGroupBy(namespace, spark).groupByConf
+    val labelGroupBy2 = TestUtils.createReservationGroupBy(namespace, spark).groupByConf
+    val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy1, labelGroupBy2))
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
@@ -33,15 +74,28 @@ class LabelJoinTest {
     println(" == Computed == ")
     computed.show()
     val expected = tableUtils.sql(s"""
-                                     SELECT v.listing_id as listing,
-                                        dim_bedrooms as listing_attributes_dim_bedrooms,
-                                        dim_room_type as listing_attributes_dim_room_type,
-                                        a.ds as label_ds,
-                                        v.ds
-                                     FROM label_join.listing_views as v
-                                     LEFT OUTER JOIN label_join.listing_attributes as a
-                                     ON v.listing_id = a.listing_id
-                                     WHERE a.ds = '2022-10-30'""".stripMargin)
+                                     |SELECT listing,
+                                     |       listing_attributes_room_dim_room_type,
+                                     |       b.dim_reservations as listing_attributes_reservation_dim_reservations,
+                                     |       label_ds,
+                                     |       aa.ds
+                                     |FROM (
+                                     |  SELECT v.listing_id as listing,
+                                     |         dim_room_type as listing_attributes_room_dim_room_type,
+                                     |         a.ds as label_ds,
+                                     |         v.ds
+                                     |  FROM label_join.listing_views as v
+                                     |  LEFT OUTER JOIN label_join.listing_attributes_room as a
+                                     |  ON v.listing_id = a.listing_id
+                                     |  WHERE a.ds = '2022-10-30'
+                                     |) aa
+                                     |LEFT OUTER JOIN (
+                                     |  SELECT listing_id, dim_reservations
+                                     |  FROM label_join.listing_attributes_reservation
+                                     |  WHERE ds = '2022-10-30'
+                                     |) b
+                                     |ON aa.listing = b.listing_id
+                                    """.stripMargin)
     println(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
@@ -61,7 +115,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelDsDoesNotExist(): Unit = {
-    val labelJoinConf = createTestLabelJoin(30, 20)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_label_not_exist").groupByConf
+    val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
       Builders.MetaData(name = "test_null_label_ds", namespace = namespace, team = "chronon"),
       left,
@@ -74,7 +129,7 @@ class LabelJoinTest {
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
     assertEquals(computed
-      .select("listing_attributes_dim_room_type")
+      .select("listing_label_not_exist_dim_room_type")
       .first()
       .get(0),
       null)
@@ -82,7 +137,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelRefresh(): Unit = {
-    val labelJoinConf = createTestLabelJoin(60, 20)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_attributes_refresh").groupByConf
+    val labelJoinConf = createTestLabelJoin(60, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
       Builders.MetaData(name = "label_refresh", namespace = namespace, team = "chronon"),
       left,
@@ -110,7 +166,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelEvolution(): Unit = {
-    val labelJoinConf = createTestLabelJoin(30, 20, "listing_labels")
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_labels").groupByConf
+    val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val tableName = "label_evolution"
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
@@ -192,12 +249,10 @@ class LabelJoinTest {
 
   def createTestLabelJoin(startOffset: Int,
                           endOffset: Int,
-                          groupByTableName: String = "listing_attributes"): ai.chronon.api.LabelPart = {
-    val labelGroupBy = TestUtils.createAttributesGroupBy(namespace, spark, groupByTableName)
+                          groupBys: Seq[ai.chronon.api.GroupBy]): ai.chronon.api.LabelPart = {
+    val labelJoinParts = groupBys.map(gb => Builders.JoinPart(groupBy = gb)).toList
     Builders.LabelPart(
-      labels = Seq(
-        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
-      ),
+      labels = labelJoinParts,
       leftStartOffset = startOffset,
       leftEndOffset = endOffset
     )
