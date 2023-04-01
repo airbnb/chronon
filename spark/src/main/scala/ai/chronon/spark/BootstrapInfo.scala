@@ -9,11 +9,9 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
 import org.apache.spark.sql.types.StructType
 
-import java.util.regex.Pattern
-import scala.collection.{Seq, immutable}
+import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
-import scala.collection.mutable
 
 case class JoinPartMetadata(
     joinPart: JoinPart,
@@ -114,6 +112,9 @@ object BootstrapInfo {
       Option(joinConf.bootstrapParts.toScala).getOrElse(Seq.empty).partition { part =>
         // treat log table with additional selects as standard table bootstrap
         val hasSelect = part.isSetQuery && part.query.isSetSelects
+        if (!tableUtils.tableExists(part.table)) {
+          throw new Exception(s"Bootstrap table ${part.table} does NOT exist!")
+        }
         val tblProps = tableUtils.getTableProperties(part.table)
         tblProps.isDefined && tblProps.get.contains(Constants.ChrononLogTable) && !hasSelect
       }
@@ -147,7 +148,7 @@ object BootstrapInfo {
     // Verify that join keys are valid columns on the bootstrap source table
     val tableHashes = tableBootstrapParts
       .map(part => {
-        val range = PartitionRange(part.query.startPartition, part.query.endPartition)
+        val range = PartitionRange(part.startPartition, part.endPartition)
         val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
         val bootstrapDf = tableUtils.sql(bootstrapQuery)
         val schema = bootstrapDf.schema

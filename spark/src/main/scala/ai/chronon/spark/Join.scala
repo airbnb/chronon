@@ -6,11 +6,11 @@ import ai.chronon.api._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
+import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import scala.collection.Seq
-import org.apache.spark.sql
 
+import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
@@ -257,7 +257,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
             println(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
 
             val bootstrapRange = if (part.isSetQuery) {
-              unfilledRange.intersect(PartitionRange(part.query.startPartition, part.query.endPartition))
+              unfilledRange.intersect(PartitionRange(part.startPartition, part.endPartition))
             } else {
               unfilledRange
             }

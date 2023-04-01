@@ -649,6 +649,9 @@ object Extensions {
         definedKeys :+ Constants.PartitionColumn
       }
     }
+
+    lazy val startPartition: String = Option(bootstrapPart.query).map(_.startPartition).orNull
+    lazy val endPartition: String = Option(bootstrapPart.query).map(_.endPartition).orNull
   }
 
   object JoinOps {
