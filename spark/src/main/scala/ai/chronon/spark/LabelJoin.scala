@@ -3,10 +3,9 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Constants, JoinPart, Source, TimeUnit, Window}
+import ai.chronon.api.{Constants, JoinPart, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.Metrics
-import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.util.sketch.BloomFilter
@@ -32,8 +31,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
-  var leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
-  var leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
+  val leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
+  val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
 
   def computeLabelJoin(stepDays: Option[Int] = None, skipFinalJoin: Boolean = false): DataFrame = {
     // validations
@@ -43,27 +42,33 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
+    var leftRange = PartitionRange(leftStart, leftEnd)
     labelJoinConf.labels.asScala.foreach { jp =>
-      if(Option(jp.groupBy.aggregations).isDefined) {
+      if (Option(jp.groupBy.aggregations).isDefined) {
         assert(Option(jp.groupBy.dataModel).equals(Option(Events)),
-          s"groupBy.dataModel must be Events for label join with aggregations ${jp.groupBy.metaData.name}")
+               s"groupBy.dataModel must be Events for label join with aggregations ${jp.groupBy.metaData.name}")
 
         assert(Option(jp.groupBy.aggregations).get.size() == 1,
-          s"Multiple aggregations not yet supported for label join ${jp.groupBy.metaData.name}")
+               s"Multiple aggregations not yet supported for label join ${jp.groupBy.metaData.name}")
 
-        assert(Option(jp.groupBy.aggregations.get(0).windows).get.size() == 1,
-          s"Multiple aggregation windows not yet supported for label join ${jp.groupBy.metaData.name}")
+        assert(
+          Option(jp.groupBy.aggregations.get(0).windows).get.size() == 1,
+          s"Multiple aggregation windows not yet supported for label join ${jp.groupBy.metaData.name}"
+        )
 
         val aggWindow = jp.groupBy.aggregations.get(0).windows.get(0)
         assert(aggWindow.timeUnit == TimeUnit.DAYS,
-          s"${aggWindow.timeUnit} window time unit not supported for label aggregations.")
-        //override leftStart & leftEnd to align with window size for aggregation
+               s"${aggWindow.timeUnit} window time unit not supported for label aggregations.")
+        // update leftStart & leftEnd to align with window size for aggregation
         // leftStartOffset/leftEndOffset = label_ds - window + 1
-        leftStart = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
-        leftEnd = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
+        val updatedStart = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
+        val updatedEnd = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
+        leftRange = PartitionRange(updatedStart, updatedEnd)
       } else {
-        assert(Option(jp.groupBy.dataModel).equals(Option(Entities)),
-          s"To perform a none-aggregation label join, the groupBy.dataModel must be entities: ${jp.groupBy.metaData.name}")
+        assert(
+          Option(jp.groupBy.dataModel).equals(Option(Entities)),
+          s"To perform a none-aggregation label join, the groupBy.dataModel must be entities: ${jp.groupBy.metaData.name}"
+        )
       }
 
       assert(Option(jp.groupBy.metaData.team).nonEmpty,
@@ -71,7 +76,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    val labelTable = compute(joinConf.left, stepDays, Option(labelDS))
+    val labelTable = compute(leftRange, stepDays, Option(labelDS))
 
     if (skipFinalJoin) {
       labelTable
@@ -96,38 +101,13 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
   }
 
-  def compute(left: Source, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
-    val leftRange = PartitionRange(leftStart, leftEnd)
+  def compute(leftRange: PartitionRange, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val sanitizedLabelDs = labelDS.getOrElse(today)
     println(s"Label join range to fill $leftRange")
     def finalResult = tableUtils.sql(leftRange.genScanQuery(null, outputLabelTable))
-    //TODO: use unfilledRanges instead of dropPartitionsAfterHole
-    var leftFeatureRange = leftRange
-    if(leftStart != leftEnd) { // none aggregation case
-      val earliestHoleOpt =
-        tableUtils.dropPartitionsAfterHole(left.table,
-          outputLabelTable,
-          leftRange,
-          Map(Constants.LabelPartitionColumn -> sanitizedLabelDs))
-      if (earliestHoleOpt.forall(_ > leftRange.end)) {
-        println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
-        return finalResult
-      }
-      leftFeatureRange = PartitionRange(earliestHoleOpt.getOrElse(leftRange.start), leftEnd)
-      if (leftFeatureRange.start != null && leftFeatureRange.end != null) {
-        metrics.gauge(Metrics.Name.PartitionCount, leftFeatureRange.partitions.length)
-      }
-      labelJoinConf.labels.asScala.foreach { joinPart =>
-        val partTable = joinConf.partOutputTable(joinPart)
-        println(s"Dropping left unfilled range $leftFeatureRange from join part table $partTable")
-        tableUtils.dropPartitionsAfterHole(left.table,
-          partTable,
-          leftRange,
-          Map(Constants.LabelPartitionColumn -> sanitizedLabelDs))
-      }
-    }
 
+    val leftFeatureRange = leftRange
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = stepDays.map(leftFeatureRange.steps).getOrElse(Seq(leftFeatureRange))
     println(s"Label Join left ranges to compute: ${stepRanges.map { _.toString }.pretty}")
@@ -138,9 +118,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable,
-            confTableProps,
-            Seq(Constants.LabelPartitionColumn, Constants.PartitionColumn),
-            true)
+                                                                    confTableProps,
+                                                                    Seq(Constants.LabelPartitionColumn,
+                                                                        Constants.PartitionColumn),
+                                                                    true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -168,9 +149,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val partTable = joinConf.partOutputTable(labelJoinPart)
         try {
           val leftRanges = tableUtils
-            .unfilledRanges(partTable,
-              labelOutputRange,
-              skipFirstHole = false)
+            .unfilledRanges(partTable, labelOutputRange, skipFirstHole = false)
             .getOrElse(Seq())
           val partitionCount = leftRanges.map(_.partitions.length).sum
           if (partitionCount > 0) {
@@ -180,10 +159,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                 val labeledDf = computeLabelPart(labelJoinPart, leftRange, leftBlooms)
                 // Cache label part data into intermediate table
                 println(s"Writing to join part table: $partTable for partition range $leftRange")
-                labeledDf.save(
-                  tableName = partTable,
-                  tableProperties = confTableProps,
-                  partitionColumns = Seq(Constants.LabelPartitionColumn))
+                labeledDf.save(tableName = partTable,
+                               tableProperties = confTableProps,
+                               partitionColumns = Seq(Constants.LabelPartitionColumn))
               })
             val elapsedMins = (System.currentTimeMillis() - start) / 60000
             labelJoinPartMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
@@ -192,11 +170,13 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
           }
         } catch {
           case e: Exception =>
-            println(s"Error while processing groupBy: " +
-              s"${joinConf.metaData.name}/${labelJoinPart.groupBy.getMetaData.getName}")
+            println(
+              s"Error while processing groupBy: " +
+                s"${joinConf.metaData.name}/${labelJoinPart.groupBy.getMetaData.getName}")
             throw e
         }
-        tableUtils.sql(labelOutputRange.genScanQuery(query = null, partTable, partitionColumn = Constants.LabelPartitionColumn))
+        tableUtils.sql(
+          labelOutputRange.genScanQuery(query = null, partTable, partitionColumn = Constants.LabelPartitionColumn))
       }
     }
 

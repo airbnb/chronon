@@ -263,7 +263,8 @@ def LabelPart(labels: List[api.JoinPart],
             valid_agg = (len(label.groupBy.aggregations) == 1
                          and label.groupBy.aggregations[0].windows is not None
                          and len(label.groupBy.aggregations[0].windows) == 1)
-            assert valid_agg, "Too many aggregations or windows found. Single aggregation with one window allowed."
+            assert valid_agg, "Too many aggregations or invalid windows found. " \
+                              "Single aggregation with one window allowed."
             valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
             window_size = label.groupBy.aggregations[0].windows[0].length

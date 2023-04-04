@@ -373,7 +373,8 @@ class LabelJoinTest {
       )
     )
 
-    val today = Constants.Partition.at(System.currentTimeMillis())
+    val now = System.currentTimeMillis()
+    val today = Constants.Partition.at(now)
     val runner = new LabelJoin(joinConf, tableUtils, today)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == computed == ")
@@ -391,7 +392,7 @@ class LabelJoinTest {
            | LEFT JOIN $labelTableName as a
            |   ON v.listing_id = a.listing_id AND
            |     a.ds >= v.ds AND a.ds < DATE_ADD(v.ds, 5)
-           | WHERE v.ds == DATE_SUB(CURRENT_DATE(), 4)
+           | WHERE v.ds == DATE_SUB(from_unixtime(round($now / 1000), 'yyyy-MM-dd'), 4)
            | GROUP BY v.listing_id, v.ds)
            |""".stripMargin)
     println(" == Expected == ")
