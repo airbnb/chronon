@@ -60,9 +60,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
           if (!newDf.columns.contains(prefixedName)) {
             newDf = newDf.withColumn(prefixedName, lit(null).cast(field.dataType))
           }
-          newDf = newDf.withColumn(field.name, coalesce(col(field.name), col(prefixedName)))
-          newDf = newDf.withColumn(prefixedName, coalesce(col(field.name), col(prefixedName)))
           newDf
+            .withColumn(field.name, coalesce(col(field.name), col(prefixedName)))
+            .withColumn(prefixedName, coalesce(col(field.name), col(prefixedName)))
         }
       }
 
@@ -194,9 +194,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     }
     contextualNames.foldLeft(finalDf) {
       case (df, name) => {
-        if (leftColumns.contains(name)) {
-          df
-        } else if (projections.contains(name)) {
+        if (leftColumns.contains(name) || projections.contains(name)) {
           df
         } else {
           df.drop(name)

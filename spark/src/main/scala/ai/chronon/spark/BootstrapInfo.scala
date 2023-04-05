@@ -199,8 +199,7 @@ object BootstrapInfo {
      *  two columns are covered by two or more separate bootstrapPart, which is much harder to calculate.
      */
     val identifierRegex = "[a-zA-Z_][a-zA-Z0-9_]*".r
-    def isValidHash(joinPart: JoinPartMetadata, hashSchema: Array[StructField], hash: String): Boolean = {
-
+    def isValidHash(joinPart: JoinPartMetadata, hashSchema: Array[StructField]) = {
       if (derivedSchema.isEmpty) {
         joinPart.valueSchema.forall(hashSchema.contains)
       } else {
@@ -225,7 +224,7 @@ object BootstrapInfo {
     joinParts = joinParts.map { part =>
       val validHashes = hashToSchema.toSeq
         .filter {
-          case (hash, schema) => isValidHash(part, schema, hash)
+          case (_, schema) => isValidHash(part, schema)
         }
         .map(_._1)
       part.copy(validHashes = validHashes)
