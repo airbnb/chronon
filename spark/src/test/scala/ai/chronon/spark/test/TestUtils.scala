@@ -214,9 +214,10 @@ object TestUtils {
   }
 
   def createOrUpdateLabelGroupByWithAgg(namespace: String,
-                              spark: SparkSession,
-                              tableName: String = "listing_labels",
-                              customRows: List[Row] = List.empty): GroupByTestSuite = {
+                                        spark: SparkSession,
+                                        windowSize: Int,
+                                        tableName: String = "listing_labels",
+                                        customRows: List[Row] = List.empty): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -256,7 +257,7 @@ object TestUtils {
       aggregations = Seq(Builders.Aggregation(
         inputColumn = "is_active",
         operation = Operation.MAX,
-        windows = Seq(new Window(5, TimeUnit.DAYS))
+        windows = Seq(new Window(windowSize, TimeUnit.DAYS))
       )),
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
@@ -284,7 +285,7 @@ object TestUtils {
     tableName
   }
 
-  def buildLabelGroupBy(namespace: String, spark: SparkSession, tableName: String): api.GroupBy = {
+  def buildLabelGroupBy(namespace: String, spark: SparkSession, windowSize: Int, tableName: String): api.GroupBy = {
     val transactions = List(
       Column("listing_id", LongType, 50),
       Column("active_status", LongType, 50)
@@ -308,7 +309,7 @@ object TestUtils {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.MAX,
           inputColumn = "active_status",
-          windows = Seq(new Window(5, TimeUnit.DAYS)))),
+          windows = Seq(new Window(windowSize, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "listing_label_table", namespace = namespace, team = "chronon")
     )
 

@@ -311,7 +311,7 @@ class LabelJoinTest {
       .groupByConf.sources.get(0)
 
     // 5 day window
-    val labelJoinConf = createTestLabelJoinWithAgg(0, 0)
+    val labelJoinConf = createTestLabelJoinWithAgg(5)
     val joinConf = Builders.Join(
       Builders.MetaData(name = "test_label_agg", namespace = namespace, team = "chronon"),
       leftSource,
@@ -366,10 +366,10 @@ class LabelJoinTest {
       joinParts = Seq.empty,
       labelPart = Builders.LabelPart(
         labels = Seq(
-          Builders.JoinPart(groupBy = TestUtils.buildLabelGroupBy(namespace, spark, labelTableName))
+          Builders.JoinPart(groupBy = TestUtils.buildLabelGroupBy(namespace, spark, windowSize = 5, tableName = labelTableName))
         ),
-        leftStartOffset = 50,
-        leftEndOffset = 2
+        leftStartOffset = 5,
+        leftEndOffset = 5
       )
     )
 
@@ -380,6 +380,8 @@ class LabelJoinTest {
     println(" == computed == ")
     computed.show()
 
+    // For window based label, given specific label_ds and window, only one ds will be updated with label.
+    // The expected query would filter on this ds.
     val expected =
       tableUtils.sql(
         s"""
@@ -418,16 +420,15 @@ class LabelJoinTest {
     )
   }
 
-  def createTestLabelJoinWithAgg(startOffset: Int,
-                                 endOffset: Int,
+  def createTestLabelJoinWithAgg(windowSize: Int,
                                  groupByTableName: String = "listing_label_group_by"): ai.chronon.api.LabelPart = {
-    val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, groupByTableName)
+    val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
         Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
-      leftStartOffset = startOffset,
-      leftEndOffset = endOffset
+      leftStartOffset = windowSize,
+      leftEndOffset = windowSize
     )
   }
 }

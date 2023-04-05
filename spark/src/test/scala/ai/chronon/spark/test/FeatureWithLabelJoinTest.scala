@@ -97,7 +97,7 @@ class FeatureWithLabelJoinTest {
       Row(3L, 15L, "2022-10-03 11:00:00", "2022-10-03"))
     val leftSource = TestUtils.createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
       .groupByConf.sources.get(0)
-    val labelJoinConf = createTestAggLabelJoin("listing_labels_agg")
+    val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg")
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       leftSource,
@@ -124,7 +124,7 @@ class FeatureWithLabelJoinTest {
       Row(2L, 2, "2022-10-07", "2022-10-07 11:00:00"),
       Row(3L, 2, "2022-10-07", "2022-10-07 11:00:00"),
     )
-    TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, "listing_labels_agg", newLabelRows)
+    TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, 5, "listing_labels_agg", newLabelRows)
     val runner2 = new LabelJoin(joinConf, tableUtils, "2022-10-07")
     val updatedLabelDf = runner2.computeLabelJoin()
     updatedLabelDf.show()
@@ -187,12 +187,14 @@ class FeatureWithLabelJoinTest {
     )
   }
 
-  def createTestAggLabelJoin(groupByTableName: String = "listing_labels_agg"): ai.chronon.api.LabelPart = {
-    val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, groupByTableName)
+  def createTestAggLabelJoin(windowSize: Int, groupByTableName: String = "listing_labels_agg"): ai.chronon.api.LabelPart = {
+    val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
-        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
-      )
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf),
+      ),
+      leftStartOffset = windowSize,
+      leftEndOffset = windowSize
     )
   }
 

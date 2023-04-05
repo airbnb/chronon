@@ -247,8 +247,8 @@ def LabelPart(labels: List[api.JoinPart],
                             this param will be inferred from aggregation window and no need to pass in.
     :param left_end_offset: Integer to define the most recent date(inclusive) label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
-                          prior to 'label_ds'. For labels with aggregations, this param will be inferred
-                          from aggregation window and no need to pass in.
+                          prior to 'label_ds' (including `label_ds`). For labels with aggregations, this param will be
+                          inferred from aggregation window and no need to pass in.
     :param label_offline_schedule: Cron expression for Airflow to schedule a DAG for offline
                                    label join compute tasks
     """
@@ -268,9 +268,9 @@ def LabelPart(labels: List[api.JoinPart],
             valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
             window_size = label.groupBy.aggregations[0].windows[0].length
-            if left_start_offset != (window_size - 1) or left_start_offset != left_end_offset:
-                print(f"""WARNING: left_start_offset and left_end_offset will be inferred from aggregation window and  \
-                "the given values {left_start_offset} and {left_end_offset} be ignored. """)
+            if left_start_offset != window_size or left_start_offset != left_end_offset:
+                print(f"""WARNING: left_start_offset and left_end_offset will be inferred to be same as aggregation \
+                window and the given values {left_start_offset} and {left_end_offset} be ignored. """)
 
     return api.LabelPart(
         labels=labels,

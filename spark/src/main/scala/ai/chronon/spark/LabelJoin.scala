@@ -31,8 +31,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
-  val leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
-  val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
+  // offsets are inclusive, e.g label_ds = 04-03, left_start_offset = left_end_offset = 3, left_ds will be 04-01
+  val leftStart = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftStartOffset - 1, TimeUnit.DAYS))
+  val leftEnd = Constants.Partition.minus(labelDS, new Window(labelJoinConf.leftEndOffset - 1, TimeUnit.DAYS))
 
   def computeLabelJoin(stepDays: Option[Int] = None, skipFinalJoin: Boolean = false): DataFrame = {
     // validations
@@ -42,7 +43,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    var leftRange = PartitionRange(leftStart, leftEnd)
     labelJoinConf.labels.asScala.foreach { jp =>
       if (Option(jp.groupBy.aggregations).isDefined) {
         assert(Option(jp.groupBy.dataModel).equals(Option(Events)),
@@ -59,11 +59,6 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val aggWindow = jp.groupBy.aggregations.get(0).windows.get(0)
         assert(aggWindow.timeUnit == TimeUnit.DAYS,
                s"${aggWindow.timeUnit} window time unit not supported for label aggregations.")
-        // update leftStart & leftEnd to align with window size for aggregation
-        // leftStartOffset/leftEndOffset = label_ds - window + 1
-        val updatedStart = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
-        val updatedEnd = Constants.Partition.minus(labelDS, new Window(aggWindow.getLength - 1, TimeUnit.DAYS))
-        leftRange = PartitionRange(updatedStart, updatedEnd)
       } else {
         assert(
           Option(jp.groupBy.dataModel).equals(Option(Entities)),
@@ -76,7 +71,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     labelJoinConf.setups.foreach(tableUtils.sql)
-    val labelTable = compute(leftRange, stepDays, Option(labelDS))
+    val labelTable = compute(PartitionRange(leftStart, leftEnd), stepDays, Option(labelDS))
 
     if (skipFinalJoin) {
       labelTable

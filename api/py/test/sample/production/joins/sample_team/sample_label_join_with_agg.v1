@@ -234,8 +234,8 @@
         }
       }
     ],
-    "leftStartOffset": 6,
-    "leftEndOffset": 6,
+    "leftStartOffset": 7,
+    "leftEndOffset": 7,
     "metaData": {
       "dependencies": [
         "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
