@@ -148,6 +148,8 @@ class LogBootstrapTest {
           .as("unit_test_user_transactions_amount_dollars_sum_15d"),
         baseOutput("unit_test_user_transactions_v2_amount_dollars_sum"), // not covered by logging
         logDf("request_id_2"),
+        baseOutput("request_id").as("ext_contextual_request_id"),
+        logDf("request_id_2").as("ext_contextual_request_id_2"),
         baseOutput("ds")
       )
 

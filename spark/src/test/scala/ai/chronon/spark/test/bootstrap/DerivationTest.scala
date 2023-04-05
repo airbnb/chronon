@@ -56,6 +56,11 @@ class DerivationTest {
         Builders.Derivation(
           name = "*"
         ),
+        // contextual feature rename
+        Builders.Derivation(
+          name = "user_txn_count_30d",
+          expression = "ext_contextual_user_txn_count_30d"
+        ),
         // derivation based on one external field (rename)
         Builders.Derivation(
           name = "user_txn_count_15d",

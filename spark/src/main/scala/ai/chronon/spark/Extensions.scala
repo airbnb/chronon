@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{BootstrapPart, Constants}
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
