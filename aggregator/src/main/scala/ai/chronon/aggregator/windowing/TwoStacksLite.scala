@@ -4,8 +4,10 @@ import ai.chronon.aggregator.base.{SimpleAggregator, Sum}
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.{Aggregation, AggregationPart, IntType, Row, StructType, Window}
 import ai.chronon.api.Extensions.{AggregationOps, WindowOps}
+import com.google.common.collect.{Iterators, PeekingIterator}
 
 import java.util
+import scala.jdk.CollectionConverters.IteratorHasAsJava
 
 // DABALite - De-Amortized Bankers Aggregator for sliding windows
 // This is based on "In-Order Sliding-Window Aggregation in Worst-Case Constant Time" by Tangwongsan et. al
@@ -15,44 +17,58 @@ class TwoStacksLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggrega
 
   // create row aggregator per window - we will loop over data as many times as there are unique windows
   // we will use different row aggregators to do so
-  val windowToAggregator : Array[(Window, RowAggregator)] = aggregations.flatMap(_.unpack).groupBy(_.window).toArray.map{
-    case (window, parts) => window -> new RowAggregator(inputSchema.fields.map(f => f.name -> f.fieldType), parts)
+  case class PerWindowAggregator(window: Window, agg: RowAggregator) {
+    private val windowLength: Long = window.millis
+    private val tailHopSize = resolution.calculateTailHop(window)
+    def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
+    val bankersBuffer = new BankersAggregationBuffer[Row, Array[Any], Array[Any]](agg)
+
+  }
+
+  private val allParts = aggregations.flatMap(_.unpack)
+  val windowToAggregator : Array[PerWindowAggregator] = allParts.groupBy(_.window).toArray.map{
+    case (window, parts) => PerWindowAggregator(
+      window, new RowAggregator(inputSchema.fields.map(f => f.name -> f.fieldType), parts)
+    )
   }
 
   // inputs and queries are both assumed to be sorted by time in ascending order
   // all timestamps should be in milliseconds
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row]): Array[Array[Any]] = {
-    val perWindowAggregates: Array[Array[Array[Any]]] = windowToAggregator.map{case (window, rowAggregator) =>
-      val windowMillis = window.millis
-      val tailHopSize = resolution.calculateTailHop(window)
-      // TODO add two-stack buffer
-      while (queries.hasNext) {
-        val queryTs = queries.next()
-        // round down the tail to the nearest hop size
-        val queryTailTs = ((queryTs - windowMillis)/tailHopSize) * tailHopSize
-      }
+    val inputsPeekable = Iterators.peekingIterator(inputs.asJava)
+    val result = Array.fill[Any](queries.length, allParts.length)(null)
+    while (queries.hasNext) { // for each left query
+      val queryTs = queries.next()
+      while(inputsPeekable.hasNext && inputsPeekable.peek().ts < queryTs) { // for each right datum
+        while() { // for each unique window length
 
-      // TODO fix the nulls
-      null
+        }
+      }
     }
-    null
+    result
   }
 }
 
 // ported from: https://github.com/IBM/sliding-window-aggregators/blob/master/rust/src/two_stacks_lite/mod.rs
 class BankersAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggregator[Input, IR, Output]) {
-  case class Entry(var value: IR)
+  case class Entry(var value: IR, ts: Option[Long])
   val deque = new util.ArrayDeque[Entry]()
   var aggBack: IR = null
   var frontLen = 0
-  
-  def push(input: Input): Unit = {
+
+  def reset(): Unit = {
+    deque.clear()
+    aggBack = null
+    frontLen = 0
+  }
+
+  def push(input: Input, ts: Option[Long] = None): Unit = {
     val ir = aggregator.prepare(input)
-    deque.addLast(Entry(aggregator.clone(ir)))
+    deque.addLast(Entry(aggregator.clone(ir), ts))
     aggBack = if(aggBack == null) ir else aggregator.update(aggBack, input)
   }
 
-  def pop(): Unit = {
+  def pop(): (Option[Long], IR) = {
     if(!deque.isEmpty) {
       val end = deque.size() - 1
       if (frontLen == 0) {
@@ -68,7 +84,8 @@ class BankersAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: Si
       }
     }
     frontLen -= 1
-    deque.removeFirst()
+    val e = deque.removeFirst()
+    e.ts -> e.value
   }
 
   def query: Output = {
@@ -104,18 +121,19 @@ object BankersTest {
   }
 
   def main(args: Array[String]): Unit = {
-    import IntegerNumeric._
     val summer = new Sum[Integer](IntType)(IntegerNumeric)
     val bankersBuffer = new BankersAggregationBuffer(summer)
-    println(bankersBuffer.query)
-    Seq(7, 8, 9).map(x => new Integer(x)).foreach(bankersBuffer.push)
-    println(bankersBuffer.query)
-    bankersBuffer.pop()
-    println(bankersBuffer.query)
-    bankersBuffer.pop()
-    println(bankersBuffer.query)
-    bankersBuffer.pop()
-    println(bankersBuffer.query)
+    println(bankersBuffer.query) // null
+    Seq(7, 8, 9).map(x => new Integer(x)).foreach(i => bankersBuffer.push(i))
+    println(bankersBuffer.query) // 24
+    bankersBuffer.pop()  // pops 7
+    println(bankersBuffer.query) // 17
+    bankersBuffer.pop() // pops 8
+    println(bankersBuffer.query) // 9
+    bankersBuffer.pop() // pops 9
+    println(bankersBuffer.query) // null
+    bankersBuffer.push(new Integer(10))
+    println(bankersBuffer.query) // 10
   }
 }
 /**
