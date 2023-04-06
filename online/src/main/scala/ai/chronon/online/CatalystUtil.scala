@@ -1,7 +1,7 @@
 package ai.chronon.online
 
 import ai.chronon.api.{DataType, StructType}
-import ai.chronon.online.CatalystUtil.IteratorWrapper
+import ai.chronon.online.CatalystUtil.{IteratorWrapper, poolMap}
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
@@ -9,11 +9,12 @@ import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
 import org.apache.spark.sql.execution.{BufferedRowIterator, ProjectExec, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
 
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
+import java.util.function
 import java.util.function.Supplier
 import scala.collection.mutable
 
 object CatalystUtil {
-  val inputTable: String = "input_table"
   private class IteratorWrapper[T] extends Iterator[T] {
     def put(elem: T): Unit = elemArr.enqueue(elem)
 
@@ -35,15 +36,40 @@ object CatalystUtil {
     spark
   }
 
+  case class PoolInput(expressions: collection.Seq[(String, String)], inputSchema: StructType)
+  val poolMap: Pool[PoolInput, CatalystUtil] = new Pool[PoolInput, CatalystUtil](pi => new CatalystUtil(pi.expressions, pi.inputSchema))
 }
 
-class ThreadLocalCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
-  private val cu = ThreadLocal.withInitial[CatalystUtil](new Supplier[CatalystUtil] {
-    override def get(): CatalystUtil = new CatalystUtil(expressions, inputSchema)
-  })
+class Pool[Input, Entry](createFunc: Input => Entry, poolSize: Int = 100) {
+  val poolMap: ConcurrentHashMap[Input, ArrayBlockingQueue[Entry]] = new ConcurrentHashMap[Input, ArrayBlockingQueue[Entry]]()
+  def getPool(input: Input): ArrayBlockingQueue[Entry] = poolMap.computeIfAbsent(
+    input, (t: Input) => {
+      val result = new ArrayBlockingQueue[Entry](poolSize)
+      var i = 0
+      while(i < poolSize) {
+        result.add(createFunc(t))
+        i += 1
+      }
+      result
+    }
+  )
 
-  def performSql(values: Map[String, Any]): Map[String, Any] = cu.get().performSql(values)
-  def outputChrononSchema: Array[(String, DataType)] = cu.get().outputChrononSchema
+  def performWithEntry[Output](pool: ArrayBlockingQueue[Entry])(func: Entry => Output): Output = {
+    val entry = pool.take()
+    try {
+      func(entry)
+    } catch {
+      case e: Exception => throw e
+    } finally {
+      pool.add(entry)
+    }
+  }
+}
+
+class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
+  private val cuPool = CatalystUtil.poolMap.getPool(CatalystUtil.PoolInput(expressions, inputSchema))
+  def performSql(values: Map[String, Any]): Map[String, Any] = poolMap.performWithEntry(cuPool) {_.performSql(values)}
+  def outputChrononSchema: Array[(String, DataType)] = poolMap.performWithEntry(cuPool) { _.outputChrononSchema}
 }
 
 // This class by itself it not thread safe because of the transformBuffer
