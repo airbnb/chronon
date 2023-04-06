@@ -243,8 +243,8 @@ def LabelPart(labels: List[api.JoinPart],
     different label_ds or label version. Label join job would have all computed label versions available, as well as
     a view of latest version for easy label retrieval.
 
-    LabelPart definition can be updated along the way, but label join job can only accommodate these changes going forward
-    unless a backfill is manually triggered.
+    LabelPart definition can be updated along the way, but label join job can only accommodate these changes going
+    forward unless a backfill is manually triggered.
 
     Label aggregation is also supported but with conditions applied. Single aggregation with one window is allowed
     for now. If aggregation is present, we would infer the left_start_offset and left_end_offset same as window size
