@@ -217,13 +217,17 @@ trait BaseTableUtils {
     }
   }
 
-  def writeDf(frame: DataFrame, str: String, mode: SaveMode): Unit
+  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    df.write
+      .mode(saveMode)
+      .insertInto(tableName)
+  }
 
-  private def createTableSql(tableName: String,
-                             schema: StructType,
-                             partitionColumns: Seq[String],
-                             tableProperties: Map[String, String],
-                             fileFormat: String): String = {
+  def createTableSql(tableName: String,
+                     schema: StructType,
+                     partitionColumns: Seq[String],
+                     tableProperties: Map[String, String],
+                     fileFormat: String): String = {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"${field.name} ${field.dataType.catalogString}")
@@ -521,13 +525,7 @@ trait BaseTableUtils {
   }
 }
 
-case class TableUtils(sparkSession: SparkSession) extends BaseTableUtils {
-  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    df.write
-      .mode(saveMode)
-      .insertInto(tableName)
-  }
-}
+case class TableUtils(sparkSession: SparkSession) extends BaseTableUtils
 
 sealed case class IncompatibleSchemaException(inconsistencies: Seq[(String, DataType, DataType)]) extends Exception {
   override def getMessage: String = {
