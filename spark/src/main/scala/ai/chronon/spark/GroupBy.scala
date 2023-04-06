@@ -526,7 +526,7 @@ object GroupBy {
     }
     metaColumns ++= timeMapping
 
-    val partitionConditions = intersectedRange.map(_.whereClauses).getOrElse(Seq.empty)
+    val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
 
     println(s"""
          |Rendering source query:
