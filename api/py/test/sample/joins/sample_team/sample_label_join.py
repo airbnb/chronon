@@ -13,7 +13,7 @@ from ai.chronon.group_by import GroupBy
 
 label_part_group_by = GroupBy(
     name="sample_label_group_by",
-    sources=test_sources.entity_source,
+    sources=test_sources.batch_entity_source,
     keys=["group_by_subject"],
     aggregations=None,
     online=False,
