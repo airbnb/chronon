@@ -233,19 +233,28 @@ def LabelPart(labels: List[api.JoinPart],
     labels with features in the training window user specified using `leftStartOffset` and
     `leftEndOffset`.
 
-    Labels will be refreshed within this window given a label ds. As a result, there could be multiple
-    label versions based on the label ds. Label definition can be updated along the way but label join
-    job can only accommodate the changes going forward unless a backfill is manually triggered
+    The offsets are relative days compared to given label landing date `label_ds`. This parameter is required to be
+    passed in for each label join job. For example, given `label_ds = 2023-04-30`, `left_start_offset = 30`, and
+    `left_end_offset = 10`, the left size start date will be computed as 30 days before `label_ds` (inclusive),
+    which is 2023-04-01. Similarly, the left end date will be 2023-04-21. Labels will be refreshed within this window
+    [2023-04-01, 2023-04-21] in this specific label job run.
 
-    Label aggregation is supported with conditions applied. Single aggregation with one window is allowed.
-    If aggregation is present, we would infer the left_start_offset and left_end_offset based on the window
+    Since label join job will run continuously based on the schedule, multiple labels could be generated but with
+    different label_ds or label version. Label join job would have all computed label versions available, as well as
+    a view of latest version for easy label retrieval.
+
+    LabelPart definition can be updated along the way, but label join job can only accommodate these changes going forward
+    unless a backfill is manually triggered.
+
+    Label aggregation is also supported but with conditions applied. Single aggregation with one window is allowed
+    for now. If aggregation is present, we would infer the left_start_offset and left_end_offset same as window size
     and the param input will be ignored.
 
     :param labels: List of labels
-    :param left_start_offset: Integer to define the earliest date(inclusive) label should be refreshed
+    :param left_start_offset: Relative integer to define the earliest date label should be refreshed
                             comparing to label_ds date specified. For labels with aggregations,
                             this param will be inferred from aggregation window and no need to pass in.
-    :param left_end_offset: Integer to define the most recent date(inclusive) label should be refreshed.
+    :param left_end_offset: Relative integer to define the most recent date(inclusive) label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
                           prior to 'label_ds' (including `label_ds`). For labels with aggregations, this param will be
                           inferred from aggregation window and no need to pass in.
