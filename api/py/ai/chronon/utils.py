@@ -199,7 +199,7 @@ def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
     for bootstrap_part in bootstrap_parts:
         table = bootstrap_part.table
         start = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
-        end = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
+        end = bootstrap_part.query.endPartition if bootstrap_part.query is not None else None
         dependencies.append(
             wait_for_simple_schema(table, 0, start, end)
         )
