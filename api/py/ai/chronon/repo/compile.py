@@ -127,15 +127,20 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.team = team_name
 
 
+def __fill_template(table, obj, namespace):
+    if table:
+        table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
+        table = table.replace('{{ db }}', namespace)
+    return table
+
+
 def _set_templated_values(obj, cls, teams_path, team_name):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
     if cls == api.Join and obj.bootstrapParts:
         for bootstrap in obj.bootstrapParts:
-            table = bootstrap.table
-            if table:
-                table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
-                table = table.replace('{{ db }}', namespace)
-            bootstrap.table = table
+            bootstrap.table = __fill_template(bootstrap.table, obj, namespace)
+        if obj.metaData.dependencies:
+            obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
     if cls == api.Join and obj.labelPart:
         obj.labelPart.metaData.dependencies = [label_dep.replace('{{ join_backfill_table }}',
                                                                  utils.output_table_name(obj, full_name=True))

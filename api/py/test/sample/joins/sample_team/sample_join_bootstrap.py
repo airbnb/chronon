@@ -59,7 +59,10 @@ v2 = Join(
     bootstrap_from_log=True,
     bootstrap_parts=[
         BootstrapPart(
-            table=get_join_output_table_name(v1, full_name=True)
+            table=get_join_output_table_name(v1, full_name=True),
+            query=Query(
+                end_partition="2023-01-01"
+            )
         )
     ]
 )

@@ -345,6 +345,9 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
         try to utilize key's data from left table; if it's not there, then we utilize bootstrap.
         For contextual features, we also support propagating the key bootstrap to the values.
 
+    Dependencies are auto-generated based on source table and optional start_partition/end_partition.
+    To override, add overriding dependencies to the main one (join.dependencies)
+
     :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
     :param key_columns: Keys to join bootstrap table to left table
     :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.
@@ -532,19 +535,6 @@ def Join(left: api.Source,
 
     consistency_sample_percent = consistency_sample_percent if check_consistency else None
 
-    metadata = api.MetaData(
-        online=online,
-        production=production,
-        customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
-        outputNamespace=output_namespace,
-        tableProperties=table_properties,
-        modeToEnvMap=env,
-        samplePercent=sample_percent,
-        offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
-    )
-
     # external parts need to be unique on (prefix, part.source.metaData.name)
     if online_external_parts:
         count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
@@ -564,6 +554,21 @@ def Join(left: api.Source,
                 table="{{ logged_table }}"
             )
         ]
+
+    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
+
+    metadata = api.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(custom_json),
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
+        outputNamespace=output_namespace,
+        tableProperties=table_properties,
+        modeToEnvMap=env,
+        samplePercent=sample_percent,
+        offlineSchedule=offline_schedule,
+        consistencySamplePercent=consistency_sample_percent
+    )
 
     return api.Join(
         left=updated_left,

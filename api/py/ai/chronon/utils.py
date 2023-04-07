@@ -191,6 +191,21 @@ def get_dependencies(
     return [json.dumps(res) for res in result]
 
 
+def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
+    if bootstrap_parts is None:
+        return []
+
+    dependencies = []
+    for bootstrap_part in bootstrap_parts:
+        table = bootstrap_part.table
+        start = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
+        end = bootstrap_part.query.endPartition if bootstrap_part.query is not None else None
+        dependencies.append(
+            wait_for_simple_schema(table, 0, start, end)
+        )
+    return [json.dumps(dep) for dep in dependencies]
+
+
 def get_label_table_dependencies(label_part) -> List[str]:
     label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
     label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
