@@ -1,7 +1,7 @@
 package ai.chronon.online
 
 import ai.chronon.api.{DataType, StructType}
-import ai.chronon.online.CatalystUtil.{IteratorWrapper, poolMap}
+import ai.chronon.online.CatalystUtil.{IteratorWrapper, PoolInput, poolMap}
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
@@ -67,7 +67,7 @@ class Pool[Input, Entry](createFunc: Input => Entry, poolSize: Int = 100) {
 }
 
 class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
-  private val cuPool = CatalystUtil.poolMap.getPool(CatalystUtil.PoolInput(expressions, inputSchema))
+  private val cuPool = poolMap.getPool(PoolInput(expressions, inputSchema))
   def performSql(values: Map[String, Any]): Map[String, Any] = poolMap.performWithEntry(cuPool) {_.performSql(values)}
   def outputChrononSchema: Array[(String, DataType)] = poolMap.performWithEntry(cuPool) { _.outputChrononSchema}
 }
