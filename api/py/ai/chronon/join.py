@@ -532,19 +532,6 @@ def Join(left: api.Source,
 
     consistency_sample_percent = consistency_sample_percent if check_consistency else None
 
-    metadata = api.MetaData(
-        online=online,
-        production=production,
-        customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
-        outputNamespace=output_namespace,
-        tableProperties=table_properties,
-        modeToEnvMap=env,
-        samplePercent=sample_percent,
-        offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
-    )
-
     # external parts need to be unique on (prefix, part.source.metaData.name)
     if online_external_parts:
         count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
@@ -564,6 +551,21 @@ def Join(left: api.Source,
                 table="{{ logged_table }}"
             )
         ]
+
+    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
+
+    metadata = api.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(custom_json),
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
+        outputNamespace=output_namespace,
+        tableProperties=table_properties,
+        modeToEnvMap=env,
+        samplePercent=sample_percent,
+        offlineSchedule=offline_schedule,
+        consistencySamplePercent=consistency_sample_percent
+    )
 
     return api.Join(
         left=updated_left,
