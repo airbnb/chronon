@@ -2,10 +2,11 @@ package ai.chronon.spark
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.{Constants, ThriftJsonCodec}
+import ai.chronon.api.{Constants, DataType, ThriftJsonCodec}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
+
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -44,11 +45,11 @@ object MetadataExporter {
         Seq.empty
     }
 
-    val featureMetadata = analyzerOutput.map{ featureCol =>
+    val featureMetadata: Seq[Map[String, String]] = analyzerOutput.map { featureCol =>
       Map(
         "name" -> featureCol.name,
         "window" -> featureCol.window,
-        "columnType" -> featureCol.columnType,
+        "columnType" -> DataType.toString(featureCol.columnType),
         "inputColumn" -> featureCol.inputColumn,
         "operation" -> featureCol.operation,
         "groupBy" -> featureCol.groupByName
