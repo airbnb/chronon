@@ -45,7 +45,7 @@ object MetadataExporter {
         Seq.empty
     }
 
-    val featureMetadata = analyzerOutput.map{ featureCol =>
+    val featureMetadata: Seq[Map[String, String]] = analyzerOutput.map { featureCol =>
       Map(
         "name" -> featureCol.name,
         "window" -> featureCol.window,
