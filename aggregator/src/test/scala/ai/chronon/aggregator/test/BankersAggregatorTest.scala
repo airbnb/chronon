@@ -1,11 +1,10 @@
 package ai.chronon.aggregator.test
 
-import ai.chronon.aggregator.base.Sum
+import ai.chronon.aggregator.base.{Sum, TopK}
 import ai.chronon.aggregator.windowing.{BankersAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
 import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, TimeUnit, Window}
 import junit.framework.TestCase
 import org.junit.Assert._
-
 import ai.chronon.api.Extensions.AggregationOps
 
 import scala.collection.Seq
@@ -29,17 +28,43 @@ class BankersAggregatorTest extends TestCase{
   def testBufferWithSum(): Unit = {
     val summer = new Sum[Integer](IntType)(IntegerNumeric)
     val bankersBuffer = new BankersAggregationBuffer(summer)
+    assertEquals(null, bankersBuffer.query)
+    Seq(7, 8, 9).map(x => new Integer(x)).foreach(i => bankersBuffer.push(i))
+    assertEquals(24,bankersBuffer.query)
+    bankersBuffer.pop()
+    assertEquals(17,bankersBuffer.query)
+    bankersBuffer.pop()
+    assertEquals(9, bankersBuffer.query)
+    bankersBuffer.pop()
+    assertEquals(null, bankersBuffer.query)
+    bankersBuffer.push(new Integer(10))
+    assertEquals(10, bankersBuffer.query)
+  }
+
+
+  def testBufferWithTopK(): Unit = {
+    val topK = new TopK[Integer](IntType, 2)
+    val bankersBuffer = new BankersAggregationBuffer(topK)
     assertEquals(null, bankersBuffer.query) // null
     Seq(7, 8, 9).map(x => new Integer(x)).foreach(i => bankersBuffer.push(i))
-    assertEquals(24,bankersBuffer.query) // 24
-    bankersBuffer.pop()  // pops 7
-    assertEquals(17,bankersBuffer.query) // 17
-    bankersBuffer.pop() // pops 8
-    assertEquals(9, bankersBuffer.query) // 9
-    bankersBuffer.pop() // pops 9
-    assertEquals(null, bankersBuffer.query) // null
+    def assertBufferEquals(a: Seq[Int], b: java.util.ArrayList[Integer]): Unit = {
+      if(a==null || b == null) {
+        assertEquals(a, b)
+      } else {
+        assertArrayEquals(
+          Option(a).map(_.map(x => new Integer(x).asInstanceOf[AnyRef]).toArray).orNull,
+          Option(b).map(_.toArray).orNull)
+      }
+    }
+    assertBufferEquals(Seq(8, 9), bankersBuffer.query)
+    bankersBuffer.pop()
+    assertBufferEquals(Seq(8, 9),bankersBuffer.query)
+    bankersBuffer.pop()
+    assertBufferEquals(Seq(9), bankersBuffer.query)
+    bankersBuffer.pop()
+    assertBufferEquals(null, bankersBuffer.query)
     bankersBuffer.push(new Integer(10))
-    assertEquals(10, bankersBuffer.query) // 10
+    assertBufferEquals(Seq(10), bankersBuffer.query)
   }
 
   def testAgainstNaive(): Unit = {
@@ -54,7 +79,12 @@ class BankersAggregatorTest extends TestCase{
       Builders.Aggregation(
         Operation.AVERAGE,
         "num",
-        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))))
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))),
+      Builders.Aggregation(
+        Operation.TOP_K,
+        "num",
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS)))
+    )
     timer.publish("setup")
 
     val sawtoothAggregator =
@@ -68,6 +98,7 @@ class BankersAggregatorTest extends TestCase{
       tailHops
     )
     val naiveIrs = naiveAggregator.aggregate(events, queries)
+
   }
 
 }
