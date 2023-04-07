@@ -138,13 +138,14 @@ class Fetcher(val kvStore: KVStore,
               Map("external_part_fetch_exception" -> externalResponse.values.failed.get.traceString))
             val derivationStartTs = System.currentTimeMillis()
             val joinName = internalResponse.request.name
+            val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            Metrics.Context(Environment.JoinFetching, join = joinName).histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+            ctx.histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val baseMap = internalMap ++ externalMap
             val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, baseMap).mapValues(_.asInstanceOf[AnyRef]).toMap
             val requestEndTs = System.currentTimeMillis()
-            Metrics.Context(Environment.JoinFetching, join = joinName).histogram("derivation.latency.millis", requestEndTs - derivationStartTs)
-            Metrics.Context(Environment.JoinFetching, join = joinName).histogram("overall.latency.millis", requestEndTs - ts)
+            ctx.histogram("derivation.latency.millis", requestEndTs - derivationStartTs)
+            ctx.histogram("overall.latency.millis", requestEndTs - ts)
             ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
     }
@@ -187,6 +188,7 @@ class Fetcher(val kvStore: KVStore,
   }
 
   private def logResponse(resp: ResponseWithContext, ts: Long): Response = {
+    val loggingStartTs = System.currentTimeMillis()
     val joinContext = resp.request.context
     val loggingTs = resp.request.atMillis.getOrElse(ts)
     val joinCodecTry = getJoinCodecs(resp.request.name)
@@ -231,6 +233,7 @@ class Fetcher(val kvStore: KVStore,
         if (logFunc != null) {
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
+          joinContext.foreach(context => context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
           if (debug) {
             println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
           }
