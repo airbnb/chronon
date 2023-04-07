@@ -345,6 +345,9 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
         try to utilize key's data from left table; if it's not there, then we utilize bootstrap.
         For contextual features, we also support propagating the key bootstrap to the values.
 
+    Dependencies are auto-generated based on source table and optional start_partition/end_partition.
+    To override, add overriding dependencies to the main one (join.dependencies)
+
     :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
     :param key_columns: Keys to join bootstrap table to left table
     :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.
