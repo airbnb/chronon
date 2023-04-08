@@ -40,7 +40,7 @@ object Extensions {
   }
 
   implicit class WindowOps(window: Window) {
-    private def unbounded: Boolean = window.length == Int.MaxValue || window.length < 0
+    private def unbounded: Boolean = window.length == Int.MaxValue || window.length <= 0
 
     def str: String =
       if (unbounded) "unbounded" else s"${window.length}${window.timeUnit.str}"

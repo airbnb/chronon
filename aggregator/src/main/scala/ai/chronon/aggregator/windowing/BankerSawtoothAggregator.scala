@@ -30,11 +30,18 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
       .toArray
   }
 
-  val perWindowAggregators : Array[PerWindowAggregator] = allParts.groupBy(_.window).toArray.map{
+  val inputSchemaTuples: Array[(String, DataType)] = inputSchema.fields.map(f => f.name -> f.fieldType)
+  val perWindowAggregators : Array[PerWindowAggregator] = allParts.filter(_.window != null).groupBy(_.window).toArray.map{
     case (window, parts) => PerWindowAggregator(
-      window, new RowAggregator(inputSchema.fields.map(f => f.name -> f.fieldType), parts)
+      window, new RowAggregator(inputSchemaTuples, parts)
     )
   }
+
+  // lifetime aggregations don't need bankers buffer, simple unWindowed sum is good enough
+  private val unWindowedParts = allParts.filter(_.window == null).toArray
+  val unWindowedAggregator: Option[RowAggregator] =  if(unWindowedParts.isEmpty) None else
+    Some(new RowAggregator(inputSchemaTuples, unWindowedParts))
+  val unWindowedIndexMapping: Array[Int] = unWindowedParts.map(c => allParts.indexWhere(c.outputColumnName == _.outputColumnName))
 
   // inputs and queries are both assumed to be sorted by time in ascending order
   // all timestamps should be in milliseconds
@@ -42,6 +49,8 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
     val inputsPeeking = Iterators.peekingIterator(inputs.toJava)
     val buffers = perWindowAggregators.map(_.bankersBuffer())
+    var unWindowedAgg = if(unWindowedParts.isEmpty) null else new Array[Any](unWindowedParts.length)
+
     new Iterator[Array[Any]] {
       override def hasNext: Boolean = queries.hasNext
 
@@ -63,6 +72,8 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
         // add all new inputs
         while(inputsPeeking.hasNext && inputsPeeking.peek().ts < queryTs) {
           val row = inputsPeeking.next()
+          
+          // add to windowed
           i = 0
           while(i < perWindowAggregators.length) { // for each unique window length
             val perWindowAggregator = perWindowAggregators(i)
@@ -71,6 +82,11 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
               buffer.push(row, row.ts)
             }
             i += 1
+          }
+          
+          // add to unWindowed
+          unWindowedAggregator.foreach{ agg =>
+            unWindowedAgg = agg.update(unWindowedAgg, row)
           }
         }
 
@@ -102,6 +118,21 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
           i += 1
         }
 
+        // incorporate unWindowedAggregations
+        unWindowedAggregator.foreach{ agg =>
+          val cAgg = if(shouldFinalize) {
+            agg.finalize(unWindowedAgg)
+          } else {
+            unWindowedAgg
+          }
+
+          i = 0
+          while(i < unWindowedIndexMapping.length) {
+            result.update(unWindowedIndexMapping(i), cAgg(i))
+            i += 1
+          }
+        }
+        
         result
       }
     }

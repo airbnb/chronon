@@ -1,6 +1,7 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.{Sum, TopK}
+import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.chronon.aggregator.windowing.{BankerSawtoothAggregator, BankersAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
 import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, StructField, StructType, TimeUnit, Window}
 import junit.framework.TestCase
@@ -41,7 +42,7 @@ class BankersAggregatorTest extends TestCase{
     val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 10000, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
-    val events = CStream.gen(columns, 100000).rows
+    val events = CStream.gen(columns, 10000).rows
     val schema = columns.map(_.schema)
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -50,12 +51,19 @@ class BankersAggregatorTest extends TestCase{
         "num",
         Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))),
       Builders.Aggregation(
+        Operation.AVERAGE,
+        "num"),
+      Builders.Aggregation(
         Operation.TOP_K,
         "num",
         Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS)),
-        argMap = Map("k" -> "300")
-      )
+        argMap = Map("k" -> "300")),
+      Builders.Aggregation(
+        Operation.TOP_K,
+        "num",
+        argMap = Map("k" -> "300")),
     )
+
     timer.publish("setup")
 
     val sawtoothAggregator =
@@ -74,11 +82,23 @@ class BankersAggregatorTest extends TestCase{
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
+    // will finalize by default
     val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator).toArray
     timer.publish("sorting + banker")
+
+    val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
+      .map(sawtoothAggregator.windowedAggregator.finalize)
+    timer.publish("sawtooth")
+
+    // rough timings below will vary by processor
+    // naive                     256011 ms
+    // sorting + banker          1597 ms
+    // sawtooth                  914 ms
+
     val gson = new Gson()
-    naiveIrs.zip(bankersIrs).foreach{case (naive, bankers) =>
-        assertEquals(gson.toJson(naive), gson.toJson(bankers))
+    naiveIrs.zip(bankersIrs).zip(sawtoothIrs).foreach{case ((naive, bankers), sawtooth) =>
+      assertEquals(gson.toJson(naive), gson.toJson(bankers))
+      assertEquals(gson.toJson(naive), gson.toJson(sawtooth))
     }
   }
 
