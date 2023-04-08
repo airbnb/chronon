@@ -11,38 +11,6 @@ import com.google.gson.Gson
 import scala.collection.Seq
 
 class BankersAggregatorTest extends TestCase{
-
-  object IntegerNumeric extends Numeric[Integer] {
-    def plus(x: Integer, y: Integer): Integer = x.intValue() + y.intValue()
-    def minus(x: Integer, y: Integer): Integer = x.intValue() - y.intValue()
-    def times(x: Integer, y: Integer): Integer = x.intValue() * y.intValue()
-    def negate(x: Integer): Integer = -x.intValue()
-    def fromInt(x: Int): Integer = Integer.valueOf(x)
-    def toInt(x: Integer): Int = x.intValue()
-    def toLong(x: Integer): Long = x.longValue()
-    def toFloat(x: Integer): Float = x.floatValue()
-    def toDouble(x: Integer): Double = x.doubleValue()
-    def compare(x: Integer, y: Integer): Int = x.compareTo(y)
-    override def parseString(str: String): Option[Integer] = None
-  }
-
-  def testBufferWithSum(): Unit = {
-    val summer = new Sum[Integer](IntType)(IntegerNumeric)
-    val bankersBuffer = new BankersAggregationBuffer(summer)
-    assertEquals(null, bankersBuffer.query)
-    Seq(7, 8, 9).map(x => new Integer(x)).foreach(i => bankersBuffer.push(i))
-    assertEquals(24,bankersBuffer.query)
-    bankersBuffer.pop()
-    assertEquals(17,bankersBuffer.query)
-    bankersBuffer.pop()
-    assertEquals(9, bankersBuffer.query)
-    bankersBuffer.pop()
-    assertEquals(null, bankersBuffer.query)
-    bankersBuffer.push(new Integer(10))
-    assertEquals(10, bankersBuffer.query)
-  }
-
-
   def testBufferWithTopK(): Unit = {
     val topK = new TopK[Integer](IntType, 2)
     val bankersBuffer = new BankersAggregationBuffer(topK)

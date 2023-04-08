@@ -139,7 +139,7 @@ object TestUtils {
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
-          "dim_reservations" -> "dim_reservations",
+          "dim_reservations" -> "dim_reservations"
         )
       ),
       snapshotTable = s"${namespace}.${tableName}"
