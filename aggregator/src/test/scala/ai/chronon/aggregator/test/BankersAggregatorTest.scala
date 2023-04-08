@@ -1,11 +1,12 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.{Sum, TopK}
-import ai.chronon.aggregator.windowing.{BankersAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
-import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, TimeUnit, Window}
+import ai.chronon.aggregator.windowing.{BankerSawtoothAggregator, BankersAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
+import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, StructField, StructType, TimeUnit, Window}
 import junit.framework.TestCase
 import org.junit.Assert._
 import ai.chronon.api.Extensions.AggregationOps
+import com.google.gson.Gson
 
 import scala.collection.Seq
 
@@ -69,7 +70,7 @@ class BankersAggregatorTest extends TestCase{
 
   def testAgainstNaive(): Unit = {
     val timer = new Timer
-    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 10000, 5 * 60 * 1000)
+    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 1000, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
     val events = CStream.gen(columns, 10000).rows
@@ -83,7 +84,9 @@ class BankersAggregatorTest extends TestCase{
       Builders.Aggregation(
         Operation.TOP_K,
         "num",
-        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS)))
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS)),
+        argMap = Map("k" -> "300")
+      )
     )
     timer.publish("setup")
 
@@ -97,8 +100,18 @@ class BankersAggregatorTest extends TestCase{
       windows,
       tailHops
     )
-    val naiveIrs = naiveAggregator.aggregate(events, queries)
+    val naiveIrs = naiveAggregator.aggregate(events, queries).map(sawtoothAggregator.windowedAggregator.finalize)
+    
+    val bankersAggregator = new BankerSawtoothAggregator(
+      StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
+      aggregations)
 
+    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator).toArray
+
+    val gson = new Gson()
+    naiveIrs.zip(bankersIrs).foreach{case (naive, bankers) =>
+        assertEquals(gson.toJson(naive), gson.toJson(bankers))
+    }
   }
 
 }

@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps, WindowOps}
 import ai.chronon.api._
 import com.google.common.collect.Iterators
 
+import scala.collection.Seq
 import scala.jdk.CollectionConverters.IteratorHasAsJava
 
 // DABALite - De-Amortized Bankers Aggregator for sliding windows
@@ -21,7 +22,8 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
     private val windowLength: Long = window.millis
     private val tailHopSize = resolution.calculateTailHop(window)
     def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
-    val bankersBuffer = new BankersAggregationBuffer[Row, Array[Any], Array[Any]](agg)
+    def bankersBuffer() = new BankersAggregationBuffer[Row, Array[Any], Array[Any]](agg)
+    def init = new Array[Any](agg.length)
     val indexMapping: Array[Int] = agg
       .aggregationParts
       .iterator
@@ -40,6 +42,7 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
   // iterator api to reduce memory pressure
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
     val inputsPeeking = Iterators.peekingIterator(inputs.asJava)
+    val buffers = perWindowAggregators.map(_.bankersBuffer())
     new Iterator[Array[Any]] {
       override def hasNext: Boolean = queries.hasNext
 
@@ -50,20 +53,21 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
         var i = 0
         while(i < perWindowAggregators.length) {
           val perWindowAggregator = perWindowAggregators(i)
-          val buffer = perWindowAggregator.bankersBuffer
-          while(buffer.peekBack() != null && buffer.peekBack().ts <= perWindowAggregator.tailTs(queryTs)) {
+          val buffer = buffers(i)
+          val queryTail = perWindowAggregator.tailTs(queryTs)
+          while(buffer.peekBack() != null && buffer.peekBack().ts <= queryTail) {
             buffer.pop()
           }
           i += 1
         }
 
-        // add all new  inputs
+        // add all new inputs
         while(inputsPeeking.hasNext && inputsPeeking.peek().ts < queryTs) {
           val row = inputsPeeking.next()
           i = 0
           while(i < perWindowAggregators.length) { // for each unique window length
             val perWindowAggregator = perWindowAggregators(i)
-            val buffer = perWindowAggregator.bankersBuffer
+            val buffer = buffers(i)
             if(row.ts >= perWindowAggregator.tailTs(queryTs)) {
               buffer.push(row, row.ts)
             }
@@ -76,9 +80,17 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
         i = 0
         while(i < perWindowAggregators.length) {
           val perWindowAggregator = perWindowAggregators(i)
-          val buffer = perWindowAggregator.bankersBuffer
+          val buffer = buffers(i)
           val indexMapping = perWindowAggregator.indexMapping
-          val perWindowOutput = if(shouldFinalize) perWindowAggregator.agg.finalize(buffer.query) else buffer.query
+          val bufferIr = buffer.query
+
+          val perWindowOutput = if(bufferIr == null) {
+            perWindowAggregator.init
+          } else if(shouldFinalize) {
+            perWindowAggregator.agg.finalize(bufferIr)
+          } else {
+            bufferIr
+          }
 
           // arrange the perWindowOutput into the indices expected by final output
           if(perWindowOutput != null) {
