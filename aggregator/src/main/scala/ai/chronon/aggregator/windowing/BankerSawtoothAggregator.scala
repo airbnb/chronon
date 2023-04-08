@@ -4,9 +4,8 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps, WindowOps}
 import ai.chronon.api._
 import com.google.common.collect.Iterators
-
 import scala.collection.Seq
-import scala.jdk.CollectionConverters.IteratorHasAsJava
+import scala.util.ScalaJavaConversions.JIteratorOps
 
 // DABALite - De-Amortized Bankers Aggregator for sliding windows
 // This is based on "In-Order Sliding-Window Aggregation in Worst-Case Constant Time" by Tangwongsan et. al
@@ -41,7 +40,7 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
   // all timestamps should be in milliseconds
   // iterator api to reduce memory pressure
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
-    val inputsPeeking = Iterators.peekingIterator(inputs.asJava)
+    val inputsPeeking = Iterators.peekingIterator(inputs.toJava)
     val buffers = perWindowAggregators.map(_.bankersBuffer())
     new Iterator[Array[Any]] {
       override def hasNext: Boolean = queries.hasNext
