@@ -70,10 +70,10 @@ class BankersAggregatorTest extends TestCase{
 
   def testAgainstNaive(): Unit = {
     val timer = new Timer
-    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 1000, 5 * 60 * 1000)
+    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 10000, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
-    val events = CStream.gen(columns, 10000).rows
+    val events = CStream.gen(columns, 100000).rows
     val schema = columns.map(_.schema)
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -101,13 +101,13 @@ class BankersAggregatorTest extends TestCase{
       tailHops
     )
     val naiveIrs = naiveAggregator.aggregate(events, queries).map(sawtoothAggregator.windowedAggregator.finalize)
-    
+    timer.publish("naive")
     val bankersAggregator = new BankerSawtoothAggregator(
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
     val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator).toArray
-
+    timer.publish("sorting + banker")
     val gson = new Gson()
     naiveIrs.zip(bankersIrs).foreach{case (naive, bankers) =>
         assertEquals(gson.toJson(naive), gson.toJson(bankers))

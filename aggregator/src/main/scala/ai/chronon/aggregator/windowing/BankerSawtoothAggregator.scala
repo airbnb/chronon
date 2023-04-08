@@ -55,7 +55,7 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
           val perWindowAggregator = perWindowAggregators(i)
           val buffer = buffers(i)
           val queryTail = perWindowAggregator.tailTs(queryTs)
-          while(buffer.peekBack() != null && buffer.peekBack().ts <= queryTail) {
+          while(buffer.peekBack() != null && buffer.peekBack().ts < queryTail) {
             buffer.pop()
           }
           i += 1
