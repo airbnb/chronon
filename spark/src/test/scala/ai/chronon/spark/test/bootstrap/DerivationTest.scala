@@ -452,4 +452,133 @@ class DerivationTest {
 
     assertEquals(0, diff.count())
   }
+
+  @Test
+  def testContextual(): Unit = {
+    val namespace = "test_contextual"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
+    val bootstrapDf = spark
+      .table(queryTable)
+      .select(
+        col("request_id"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("context_1"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as("context_2"),
+        col("ds")
+      )
+      .withColumn("ext_contextual_context_1", col("context_1"))
+      .withColumn("ext_contextual_context_2", col("context_2"))
+
+    val bootstrapTable = s"$namespace.bootstrap_table"
+    bootstrapDf.save(bootstrapTable)
+
+    def buildJoinConf(derivations: Seq[Derivation], name: String): ai.chronon.api.Join = {
+      Builders.Join(
+        left = Builders.Source.events(
+          table = queryTable,
+          query = Builders.Query()
+        ),
+        joinParts = Seq(),
+        externalParts = Seq(
+          Builders.ExternalPart(
+            Builders.ContextualSource(
+              fields = Array(
+                StructField("context_1", LongType),
+                StructField("context_2", LongType)
+              )
+            )
+          )),
+        derivations = derivations,
+        // to simulate log-based bootstrap, and assumption is that logs will contain all columns
+        bootstrapParts = Seq(Builders.BootstrapPart(table = bootstrapTable)),
+        rowIds = Seq("request_id"),
+        metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon")
+      )
+    }
+    def getSchema(joinConf: ai.chronon.api.Join): Seq[String] = {
+      val runner = new ai.chronon.spark.Join(joinConf, today, tableUtils)
+      val outputDf = runner.computeJoin()
+      outputDf.columns
+    }
+
+    /* when no derivations are present, we keep the values and discard the keys */
+    val schema1 = getSchema(buildJoinConf(Seq(), "test_1"))
+    assertFalse(schema1.contains("context_1"))
+    assertTrue(schema1.contains("ext_contextual_context_1"))
+    assertFalse(schema1.contains("context_2"))
+    assertTrue(schema1.contains("ext_contextual_context_2"))
+
+
+    /*
+     * In order to keep the `key` format, use explicit rename derivation
+     * Otherwise, in a * derivation, we keep only the values and discard the keys
+     */
+    val schema2 = getSchema(
+      buildJoinConf(
+        Seq(
+          Builders.Derivation(
+            name = "context_1",
+            expression = "ext_contextual_context_1"
+          ),
+          Builders.Derivation(
+            name = "*",
+            expression = "*"
+          )
+        ),
+        "test_2"
+      ))
+
+    assertTrue(schema2.contains("context_1"))
+    assertFalse(schema2.contains("ext_contextual_context_1"))
+    assertFalse(schema2.contains("context_2"))
+    assertTrue(schema2.contains("ext_contextual_context_2"))
+
+    /*
+     * In order to keep the `key` format, use explicit rename derivation
+     * Without the * derivation, the other columns are all discarded
+     */
+    val schema3 = getSchema(
+      buildJoinConf(
+        Seq(
+          Builders.Derivation(
+            name = "context_1",
+            expression = "ext_contextual_context_1"
+          )
+        ),
+        "test_3"
+      ))
+
+    assertTrue(schema3.contains("context_1"))
+    assertFalse(schema3.contains("ext_contextual_context_1"))
+    assertFalse(schema3.contains("context_2"))
+    assertFalse(schema3.contains("ext_contextual_context_2"))
+
+
+    /*
+     * If we want to keep both format, select both format explicitly
+     */
+    val schema4 = getSchema(
+      buildJoinConf(
+        Seq(
+          Builders.Derivation(
+            name = "context_1",
+            expression = "ext_contextual_context_1"
+          ),
+          Builders.Derivation(
+            name = "ext_contextual_context_1",
+            expression = "ext_contextual_context_1"
+          )
+        ),
+        "test_4"
+      ))
+
+    assertTrue(schema4.contains("context_1"))
+    assertTrue(schema4.contains("ext_contextual_context_1"))
+    assertFalse(schema4.contains("context_2"))
+    assertFalse(schema4.contains("ext_contextual_context_2"))
+  }
 }
