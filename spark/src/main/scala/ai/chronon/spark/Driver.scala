@@ -258,9 +258,15 @@ object Driver {
   object CompareJoinQuery {
     class Args extends Subcommand("compare-join-query") with OfflineSubcommand {
       val queryConf: ScallopOption[String] =
-        opt[String](required = true, descr = "Conf to the Staging Query to compare with")
+        opt[String](required = false, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
         opt[String](required = false, descr = "Partition start date to compare the data from")
+      val modelName: ScallopOption[String] =
+        opt[String](required = false, descr = "Name of the streaming model")
+      val groupByConf: ScallopOption[String] =
+        opt[String](required = false, descr = "Conf to the GroupBy to compare with")
+      val featureNames: ScallopOption[List[String]] =
+        opt[List[String]](required = false, descr = "Zipline feature names that are being used by the model")
     }
 
     def run(args: Args): Unit = {
@@ -268,15 +274,19 @@ object Driver {
       assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
       val joinConf = parseConf[api.Join](args.confPath())
       val stagingQueryConf = parseConf[api.StagingQuery](args.queryConf())
+      val groupByConf = parseConf[api.GroupBy](args.groupByConf())
       new CompareJob(
         args.buildTableUtils(
           s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
         ),
         joinConf,
         stagingQueryConf,
+        groupByConf,
+        args.modelName(),
+        args.featureNames(),
         args.startDate(),
         args.endDate()
-      ).run()
+      ).streamingRun()
     }
   }
 
