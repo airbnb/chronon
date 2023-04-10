@@ -4,16 +4,16 @@ import ai.chronon.api.{DataType, StructType}
 import ai.chronon.online.CatalystUtil.{IteratorWrapper, PoolKey, poolMap}
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
+import org.apache.spark.sql.catalyst.expressions.{Predicate, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
-import org.apache.spark.sql.execution.{BufferedRowIterator, ProjectExec, WholeStageCodegenExec}
+import org.apache.spark.sql.execution.{BufferedRowIterator, FilterExec, ProjectExec, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
 import java.util.function
 import java.util.function.Supplier
-import scala.collection.mutable
+import scala.collection.{Seq, mutable}
 
 object CatalystUtil {
   private class IteratorWrapper[T] extends Iterator[T] {
@@ -78,11 +78,20 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
 }
 
 // This class by itself it not thread safe because of the transformBuffer
-class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
+class CatalystUtil(
+    expressions: collection.Seq[(String, String)],
+    inputSchema: StructType,
+    filters: collection.Seq[String] = Seq.empty) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
-  private val (transformFunc: (InternalRow => InternalRow), outputSparkSchema: types.StructType) = initialize()
+  private val mayBeWhereClause = Option(filters)
+    .filter(_.nonEmpty)
+    .map { w =>
+      s"${w.mkString(" AND ")}"
+    }
+
+  private val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
   @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
   private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
@@ -104,7 +113,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: S
     Option(outputVal).map(_.asInstanceOf[Map[String, Any]]).orNull
   }
 
-  private def initialize(): (InternalRow => InternalRow, types.StructType) = {
+  private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
 
     // create dummy df with sql query and schema
@@ -113,9 +122,10 @@ class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: S
     val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
     emptyDf.createOrReplaceTempView(sessionTable)
     val df = session.sqlContext.table(sessionTable).selectExpr(selectClauses.toSeq: _*)
+    val filteredDf = mayBeWhereClause.map(df.where(_)).getOrElse(df)
 
     // extract transform function from the df spark plan
-    val func: InternalRow => InternalRow = df.queryExecution.executedPlan match {
+    val func: InternalRow => Option[InternalRow] = filteredDf.queryExecution.executedPlan match {
       case whc: WholeStageCodegenExec => {
         val (ctx, cleanedSource) = whc.doCodeGen()
         val (clazz, _) = CodeGenerator.compile(cleanedSource)
@@ -123,19 +133,34 @@ class CatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: S
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
         val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
         buffer.init(0, Array(iteratorWrapper))
-        def codegenFunc(row: InternalRow): InternalRow = {
+        def codegenFunc(row: InternalRow): Option[InternalRow] = {
           iteratorWrapper.put(row)
           while (buffer.hasNext) {
-            return buffer.next()
+            return Some(buffer.next())
           }
           null
         }
         codegenFunc
       }
+      case ProjectExec(projectList, fp@FilterExec(condition, child)) => {
+        val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
+
+        def projectFun(row: InternalRow): Option[InternalRow] = {
+          val predicate = Predicate.create(condition, child.output)
+          predicate.initialize(0)
+          val r = predicate.eval(row)
+          if (r)
+            Some(unsafeProjection.apply(row))
+          else
+            None
+        }
+
+        projectFun
+      }
       case ProjectExec(projectList, childPlan) => {
         val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
-        def projectFunc(row: InternalRow): InternalRow = {
-          unsafeProjection.apply(row)
+        def projectFunc(row: InternalRow): Option[InternalRow] = {
+          Some(unsafeProjection.apply(row))
         }
         projectFunc
       }
