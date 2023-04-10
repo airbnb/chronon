@@ -38,22 +38,27 @@ object CatalystUtil {
   }
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)
-  val poolMap: PoolMap[PoolKey, CatalystUtil] = new PoolMap[PoolKey, CatalystUtil](pi => new CatalystUtil(pi.expressions, pi.inputSchema))
+  val poolMap: PoolMap[PoolKey, CatalystUtil] = new PoolMap[PoolKey, CatalystUtil](pi =>
+    new CatalystUtil(pi.expressions, pi.inputSchema))
 }
 
 class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialSize: Int = 2) {
   val map: ConcurrentHashMap[Key, ArrayBlockingQueue[Value]] = new ConcurrentHashMap[Key, ArrayBlockingQueue[Value]]()
-  def getPool(input: Key): ArrayBlockingQueue[Value] = map.computeIfAbsent(
-    input, (t: Key) => {
-      val result = new ArrayBlockingQueue[Value](maxSize)
-      var i = 0
-      while(i < initialSize) {
-        result.add(createFunc(t))
-        i += 1
+  def getPool(input: Key): ArrayBlockingQueue[Value] =
+    map.computeIfAbsent(
+      input,
+      new function.Function[Key, ArrayBlockingQueue[Value]] {
+        override def apply(t: Key): ArrayBlockingQueue[Value] = {
+          val result = new ArrayBlockingQueue[Value](maxSize)
+          var i = 0
+          while (i < initialSize) {
+            result.add(createFunc(t))
+            i += 1
+          }
+          result
+        }
       }
-      result
-    }
-  )
+    )
 
   def performWithValue[Output](key: Key, pool: ArrayBlockingQueue[Value])(func: Value => Output): Output = {
     var value = pool.poll()
@@ -73,8 +78,10 @@ class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialS
 class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
   private val poolKey = PoolKey(expressions, inputSchema)
   private val cuPool = poolMap.getPool(PoolKey(expressions, inputSchema))
-  def performSql(values: Map[String, Any]): Map[String, Any] = poolMap.performWithValue(poolKey, cuPool) {_.performSql(values)}
-  def outputChrononSchema: Array[(String, DataType)] = poolMap.performWithValue(poolKey, cuPool) { _.outputChrononSchema}
+  def performSql(values: Map[String, Any]): Map[String, Any] =
+    poolMap.performWithValue(poolKey, cuPool) { _.performSql(values) }
+  def outputChrononSchema: Array[(String, DataType)] =
+    poolMap.performWithValue(poolKey, cuPool) { _.outputChrononSchema }
 }
 
 // This class by itself it not thread safe because of the transformBuffer
