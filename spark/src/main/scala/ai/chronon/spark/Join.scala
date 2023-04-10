@@ -135,8 +135,10 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
        * Loop through all columns in the base join output:
        * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
        *    derived columns again - derivation is a projection from all value columns to desired derived columns
-       * 2. If it is matching one of the projected output columns, then this is a bootstrapped derivation case, we also
-       *    skip it here and it will be handled later as loop through derivations to perform coalescing
+       * 2.  (see case 2 below) If it is matching one of the projected output columns, then there are 2 sub-cases
+       *     a. matching with a left column, then we handle the coalesce here to make sure left columns show on top
+       *     b. a bootstrapped derivation case, the skip it here and it will be handled later as
+       *        loop through derivations to perform coalescing
        * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
        *    arbitrary columns selected from left.
        */
@@ -155,18 +157,16 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
       } ++
         /*
          * Loop through all clauses in derivation projections:
-         * 1. if it has the distinct contextualPrefix and is simply a reselection (where name & expr match), we skip it
-         *    as we don't want contextual fields to be doubly selected, since the key version is always selected
-         * 2. if the base output already has a column with a matching derivation column name, this is a bootstrapped
-         *    derivation case (see case 2 above), then we do the coalescing to achieve the bootstrap behavior.
-         * 3. Else, we do the standard projection.
+         * 1. (see case 2 above) If it is matching one of the projected output columns, then there are 2 sub-cases
+         *     a. matching with a left column, then we skip since it is handled above
+         *     b. a bootstrapped derivation case (see case 2 below), then we do the coalescing to achieve the bootstrap
+         *        behavior.
+         * 2. Else, we do the standard projection.
          */
         projections
           .flatMap {
             case (name, expression) =>
-              if (name == expression && name.startsWith(Constants.ContextualPrefix)) {
-                None
-              } else if (baseOutputColumns.contains(name)) {
+              if (baseOutputColumns.contains(name)) {
                 if (leftColumns.contains(name)) {
                   None
                 } else {
