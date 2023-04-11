@@ -92,7 +92,7 @@ class CatalystUtil(
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
-  private val mayBeWhereClause = Option(filters)
+  private val whereClauseOpt = Option(filters)
     .filter(_.nonEmpty)
     .map { w =>
       s"${w.mkString(" AND ")}"
@@ -108,8 +108,8 @@ class CatalystUtil(
 
   def performSql(values: Array[Any]): Option[Array[Any]] = {
     val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
-    val resultRowMaybe = transformFunc(internalRow)
-    val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
+    val resultRowOpt = transformFunc(internalRow)
+    val outputVal = resultRowOpt.map(resultRow => outputArrDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Array[Any]])
   }
 
@@ -129,7 +129,7 @@ class CatalystUtil(
     val emptyDf = session.createDataFrame(emptyRowRdd, inputSparkSchema)
     emptyDf.createOrReplaceTempView(sessionTable)
     val df = session.sqlContext.table(sessionTable).selectExpr(selectClauses.toSeq: _*)
-    val filteredDf = mayBeWhereClause.map(df.where(_)).getOrElse(df)
+    val filteredDf = whereClauseOpt.map(df.where(_)).getOrElse(df)
 
     // extract transform function from the df spark plan
     val func: InternalRow => Option[InternalRow] = filteredDf.queryExecution.executedPlan match {
