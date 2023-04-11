@@ -7,11 +7,9 @@ import com.google.common.collect.Iterators
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JIteratorOps
 
-// DABALite - De-Amortized Bankers Aggregator for sliding windows
-// This is based on "In-Order Sliding-Window Aggregation in Worst-Case Constant Time" by Tangwongsan et. al
-// see: https://arxiv.org/pdf/2009.13768.pdf
+// This implements the two-stack-lite algorithm
 // To understand the intuition behind the algorithm I highly recommend reading the intuition text in the end of this file
-class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggregation], resolution: Resolution = FiveMinuteResolution) {
+class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregation], resolution: Resolution = FiveMinuteResolution) {
 
   private val allParts = aggregations.flatMap(_.unpack)
   private val outputColumnNames = allParts.map(_.outputColumnName)
@@ -21,7 +19,7 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
     private val windowLength: Long = window.millis
     private val tailHopSize = resolution.calculateTailHop(window)
     def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
-    def bankersBuffer() = new BankersAggregationBuffer[Row, Array[Any], Array[Any]](agg)
+    def bankersBuffer(inputSize: Int) = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, inputSize)
     def init = new Array[Any](agg.length)
     val indexMapping: Array[Int] = agg
       .aggregationParts
@@ -46,9 +44,9 @@ class BankerSawtoothAggregator(inputSchema: StructType, aggregations: Seq[Aggreg
   // inputs and queries are both assumed to be sorted by time in ascending order
   // all timestamps should be in milliseconds
   // iterator api to reduce memory pressure
-  def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
+  def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], inputSize: Int = 1000, shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
     val inputsPeeking = Iterators.peekingIterator(inputs.toJava)
-    val buffers = perWindowAggregators.map(_.bankersBuffer())
+    val buffers = perWindowAggregators.map(_.bankersBuffer(inputSize))
     var unWindowedAgg = if(unWindowedParts.isEmpty) null else new Array[Any](unWindowedParts.length)
 
     new Iterator[Array[Any]] {

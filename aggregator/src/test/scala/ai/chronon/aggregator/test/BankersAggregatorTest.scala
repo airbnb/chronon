@@ -2,7 +2,7 @@ package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.{Sum, TopK}
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.chronon.aggregator.windowing.{BankerSawtoothAggregator, BankersAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
+import ai.chronon.aggregator.windowing.{TwoStackLiteAggregator, TwoStackLiteAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
 import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, StructField, StructType, TimeUnit, Window}
 import junit.framework.TestCase
 import org.junit.Assert._
@@ -14,7 +14,7 @@ import scala.collection.Seq
 class BankersAggregatorTest extends TestCase{
   def testBufferWithTopK(): Unit = {
     val topK = new TopK[Integer](IntType, 2)
-    val bankersBuffer = new BankersAggregationBuffer(topK)
+    val bankersBuffer = new TwoStackLiteAggregationBuffer(topK, 5)
     assertEquals(null, bankersBuffer.query) // null
     Seq(7, 8, 9).map(x => new Integer(x)).foreach(i => bankersBuffer.push(i))
     def assertBufferEquals(a: Seq[Int], b: java.util.ArrayList[Integer]): Unit = {
@@ -37,12 +37,12 @@ class BankersAggregatorTest extends TestCase{
     assertBufferEquals(Seq(10), bankersBuffer.query)
   }
 
-  def testAgainstNaive(): Unit = {
+  def testAgainstSawtooth(): Unit = {
     val timer = new Timer
-    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 10000, 5 * 60 * 1000)
+    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 1000000, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
-    val events = CStream.gen(columns, 10000).rows
+    val events = CStream.gen(columns, 100000).rows
     val schema = columns.map(_.schema)
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -69,36 +69,35 @@ class BankersAggregatorTest extends TestCase{
     val sawtoothAggregator =
       new SawtoothAggregator(aggregations, schema, FiveMinuteResolution)
 
-    val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
-    val naiveAggregator = new NaiveAggregator(
-      sawtoothAggregator.windowedAggregator,
-      windows,
-      tailHops
-    )
-    val naiveIrs = naiveAggregator.aggregate(events, queries).map(sawtoothAggregator.windowedAggregator.finalize)
-    timer.publish("naive")
-    val bankersAggregator = new BankerSawtoothAggregator(
+//    val windows = aggregations.flatMap(_.unpack.map(_.window)).toArray
+//    val tailHops = windows.map(FiveMinuteResolution.calculateTailHop)
+//    val naiveAggregator = new NaiveAggregator(
+//      sawtoothAggregator.windowedAggregator,
+//      windows,
+//      tailHops
+//    )
+//    val naiveIrs = naiveAggregator.aggregate(events, queries).map(sawtoothAggregator.windowedAggregator.finalize)
+//    timer.publish("naive")
+    val bankersAggregator = new TwoStackLiteAggregator(
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
     // will finalize by default
-    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator).toArray
+    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator, events.length).toArray
     timer.publish("sorting + banker")
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
       .map(sawtoothAggregator.windowedAggregator.finalize)
     timer.publish("sawtooth")
 
-    // rough timings below will vary by processor
+    // rough timings below will vary by processor - but at 100k
     // naive                     256011 ms
     // sorting + banker          1597 ms
     // sawtooth                  914 ms
 
     val gson = new Gson()
-    naiveIrs.zip(bankersIrs).zip(sawtoothIrs).foreach{case ((naive, bankers), sawtooth) =>
-      assertEquals(gson.toJson(naive), gson.toJson(bankers))
-      assertEquals(gson.toJson(naive), gson.toJson(sawtooth))
+    bankersIrs.zip(sawtoothIrs).foreach{case (bankers, sawtooth) =>
+      assertEquals(gson.toJson(sawtooth), gson.toJson(bankers))
     }
   }
 
