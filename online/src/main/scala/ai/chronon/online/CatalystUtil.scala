@@ -78,7 +78,7 @@ class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialS
 class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
   private val poolKey = PoolKey(expressions, inputSchema)
   private val cuPool = poolMap.getPool(PoolKey(expressions, inputSchema))
-  def performSql(values: Map[String, Any]): Map[String, Any] =
+  def performSql(values: Map[String, Any]): Option[Map[String, Any]] =
     poolMap.performWithValue(poolKey, cuPool) { _.performSql(values) }
   def outputChrononSchema: Array[(String, DataType)] =
     poolMap.performWithValue(poolKey, cuPool) { _.outputChrononSchema }
@@ -106,18 +106,18 @@ class CatalystUtil(
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
-  def performSql(values: Array[Any]): Array[Any] = {
+  def performSql(values: Array[Any]): Option[Array[Any]] = {
     val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
-    val resultRow = transformFunc(internalRow)
-    val outputVal = outputArrDecoder(resultRow)
-    Option(outputVal).map(_.asInstanceOf[Array[Any]]).orNull
+    val resultRowMaybe = transformFunc(internalRow)
+    val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
+    outputVal.map(_.asInstanceOf[Array[Any]])
   }
 
-  def performSql(values: Map[String, Any]): Map[String, Any] = {
+  def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    val resultRow = transformFunc(internalRow)
-    val outputVal = outputDecoder(resultRow)
-    Option(outputVal).map(_.asInstanceOf[Map[String, Any]]).orNull
+    val resultRowMaybe = transformFunc(internalRow)
+    val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
+    outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
 
   private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {

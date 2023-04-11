@@ -41,13 +41,13 @@ class CatalystUtilTest extends TestCase {
 
     val result =
       ctUtil.performSql(Map("a" -> 1, "b" -> 0.58, "c" -> Map("e" -> 3.6f, "d" -> 9L), "mp" -> mapVal, "ls" -> listVal))
-    val expected = Map("a_plus" -> 2,
+    val expected = Some(Map("a_plus" -> 2,
                        "b_str" -> "0.58",
                        "c_e" -> 3.6f,
                        "c" -> Map("e" -> 3.6f, "d" -> 9L),
                        "mp_d" -> 8L,
                        "mp" -> mapVal,
-                       "ls" -> listVal)
+                       "ls" -> listVal))
     assertEquals(expected, result)
   }
 }

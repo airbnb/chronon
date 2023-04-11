@@ -55,7 +55,7 @@ case class JoinCodec(conf: JoinOps,
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(catalystUtil.performSql(keys ++ values), values)
+              JoinCodec.adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
           }
         )
       }
