@@ -46,15 +46,15 @@ jobs:
                 name: Build docker image
                 command: |
                     set +o pipefail
-                    docker build -t houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
+                    docker build -t houpy0829/chronon-ci:base--pr-${CIRCLE_PULL_REQUEST##*/} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
             - deploy:
                 name: Push docker image
                 command: |
-                    set +o pipefail
+                    set +euxo pipefail
                     docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
-                    docker push houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER}
+                    docker push houpy0829/chronon-ci:base--${CIRCLE_PULL_REQUEST##*/}
                     if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                        docker tag houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER} houpy0829/chronon-ci:base
+                        docker tag houpy0829/chronon-ci:base--${CIRCLE_PULL_REQUEST##*/} houpy0829/chronon-ci:base
                         docker push houpy0829/chronon-ci:base
                     fi
 
