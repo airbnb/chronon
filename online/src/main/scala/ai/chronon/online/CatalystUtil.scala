@@ -145,7 +145,7 @@ class CatalystUtil(
           while (buffer.hasNext) {
             return Some(buffer.next())
           }
-          null
+          None
         }
         codegenFunc
       }
