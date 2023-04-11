@@ -214,7 +214,7 @@ python3 -m pip install -U tox build twine
 ## Publishing all the artifacts of Chronon
 1. Run release command in the right HEAD of chronon repository.
 ```
-GPG_TTY=$(tty) sbt release
+GPG_TTY=$(tty) sbt -mem 8192 release
 ```
 This command will take into the account of `version.sbt` and handles a series of events:
 * Marks the current SNAPSHOT codebase as final (git commits).
