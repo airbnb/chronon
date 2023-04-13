@@ -44,6 +44,39 @@ class GroupByUploadTest {
   }
 
   @Test
+  def snapshotEntitiesTest(): Unit = {
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val yesterday = Constants.Partition.before(today)
+    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.sql(s"USE $namespace")
+    val entitiesTable = "entities_table"
+    val entitySchema = List(
+      Column("user", StringType, 10),
+      Column("country", StringType, 100)
+    )
+    val entitiesDf = DataFrameGen.entities(spark, entitySchema, 1000, 10)
+    entitiesDf.save(s"$namespace.$entitiesTable")
+
+    val keys = Seq("user").toArray
+    val groupByConf =
+      Builders.GroupBy(
+        sources = Seq(
+          Builders.Source.entities(
+            Builders.Query(
+              selects = Map("user" -> "user", "country" -> "country"),
+              timeColumn = "UNIX_TIMESTAMP(ds) * 1000"
+            ),
+            snapshotTable = entitiesTable
+          )),
+        keyColumns = keys,
+        metaData = Builders.MetaData(namespace = namespace, name = "testEntities"),
+        accuracy = Accuracy.SNAPSHOT
+      )
+    GroupByUpload.run(groupByConf, endDs = yesterday)
+
+  }
+
+  @Test
   def structSupportTest(): Unit = {
     val today = Constants.Partition.at(System.currentTimeMillis())
     val yesterday = Constants.Partition.before(today)
@@ -61,8 +94,7 @@ class GroupByUploadTest {
     val eventBaseDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
     eventBaseDf.save(s"$namespace.$eventsBase")
 
-    val eventDf = spark.sql(
-      s"""
+    val eventDf = spark.sql(s"""
       SELECT
         user
         , ts
