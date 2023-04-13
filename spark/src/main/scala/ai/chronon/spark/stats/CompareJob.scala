@@ -44,11 +44,9 @@ class CompareJob(
 
     // Run the staging query sql directly
     val rightDf = tableUtils.sql(
-      stagingQueryConf.query
-        .replaceAll(StagingQuery.StartDateRegex, startDate)
-        .replaceAll(StagingQuery.EndDateRegex, endDate)
-        .replaceAll(StagingQuery.LatestDateRegex, endDate)
+      StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
     )
+
     val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
       CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
 
@@ -94,10 +92,7 @@ class CompareJob(
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
     val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
     val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
-    val finalStagingQuery = stagingQueryConf.query
-      .replaceAll(StagingQuery.StartDateRegex, startDate)
-      .replaceAll(StagingQuery.EndDateRegex, endDate)
-      .replaceAll(StagingQuery.LatestDateRegex, endDate)
+    val finalStagingQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
     val stagingQuerySchema = tableUtils.sql(
       s"${finalStagingQuery} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
 
