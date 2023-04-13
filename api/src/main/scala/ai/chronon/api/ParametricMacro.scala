@@ -8,7 +8,7 @@ case class ParametricMacro(value: String, func: Map[String, String] => String) {
 
   def replace(str: String): String = {
     var startIndex = 0
-    val fragments = new mutable.ListBuffer[String] {}
+    val fragments = new mutable.ArrayBuffer[String] {}
     pattern.findAllMatchIn(str) foreach {
       m =>
         fragments.append(str.substring(startIndex, m.start))
