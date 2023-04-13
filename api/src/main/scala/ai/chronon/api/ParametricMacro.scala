@@ -8,17 +8,17 @@ case class ParametricMacro(value: String, func: Map[String, String] => String) {
 
   def replace(str: String): String = {
     var startIndex = 0
-    val fragments = new mutable.ArrayBuffer[String] {}
+    val fragments = new mutable.ListBuffer[String] {}
     pattern.findAllMatchIn(str) foreach {
       m =>
-        fragments.addOne(str.substring(startIndex, m.start))
+        fragments.append(str.substring(startIndex, m.start))
         val args = m.group(1)
         val argMap = args.split(":").filter(_.nonEmpty).map(_.split("=")).map(x => x(0) -> x(1)).toMap
         val result = func(argMap)
-        fragments.addOne(result)
+        fragments.append(result)
         startIndex = m.end
     }
-    fragments.addOne(str.substring(startIndex, str.length))
+    fragments.append(str.substring(startIndex, str.length))
     fragments.mkString("")
   }
 }
