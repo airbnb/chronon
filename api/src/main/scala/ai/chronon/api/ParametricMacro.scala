@@ -4,7 +4,7 @@ import scala.collection.mutable
 
 // takes a map of macro names and functions and applies the functions on macro arguments
 case class ParametricMacro(value: String, func: Map[String, String] => String) {
-  private val pattern = s"""\\{\\{\\s*$value((:[0-9A-Za-z_]*=[0-9A-Za-z_,]*)*)\\s*}}""".r
+  private val pattern = s"""\\{\\{\\s*$value((:[0-9A-Za-z_]*=[0-9A-Za-z_,.]*)*)\\s*}}""".r
 
   def replace(str: String): String = {
     var startIndex = 0
