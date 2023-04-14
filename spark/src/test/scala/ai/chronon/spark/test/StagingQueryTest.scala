@@ -130,7 +130,7 @@ class StagingQueryTest {
     val df = DataFrameGen
       .events(spark, schema, count = 1000, partitions = 100)
       .dropDuplicates("ts") // duplicates can create issues in comparisons
-    val viewName = s"$namespace.test_staging_query_latest_date"
+    val viewName = s"$namespace.test_staging_query_max_date"
     df.save(viewName)
 
     val stagingQueryConf = Builders.StagingQuery(
@@ -141,7 +141,7 @@ class StagingQueryTest {
                  |FROM $viewName
                  |WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'""".stripMargin,
       startPartition = ninetyDaysAgo,
-      metaData = Builders.MetaData(name = "test.staging_latest_date",
+      metaData = Builders.MetaData(name = "test.staging_max_date",
         namespace = namespace,
         tableProperties = Map("key" -> "val"))
     )
