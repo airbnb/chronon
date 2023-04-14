@@ -1,11 +1,12 @@
 package ai.chronon.spark.test.bootstrap
 
+import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Comparison, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.junit.Assert.assertEquals
+import org.junit.Assert.{assertEquals, assertFalse}
 import org.junit.Test
 
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -13,13 +14,52 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class TableBootstrapTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
-  val namespace = "test_table_bootstrap"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val tableUtils = TableUtils(spark)
   private val today = Constants.Partition.at(System.currentTimeMillis())
 
+  // Create bootstrap dataset with randomly overwritten data
+  def buildBootstrapPart(queryTable: String,
+                         namespace: String,
+                         tableName: String,
+                         columnName: String = "unit_test_user_transactions_amount_dollars_sum_30d",
+                         samplePercent: Double = 0.8): (BootstrapPart, DataFrame) = {
+    val bootstrapTable = s"$namespace.$tableName"
+    val preSampleBootstrapDf = spark
+      .table(queryTable)
+      .select(
+        col("request_id"),
+        (rand() * 30000)
+          .cast(org.apache.spark.sql.types.LongType)
+          .as(columnName),
+        col("ds")
+      )
+
+    val bootstrapDf = if (samplePercent < 1.0) {
+      preSampleBootstrapDf.sample(samplePercent)
+    } else {
+      preSampleBootstrapDf
+    }
+
+    bootstrapDf.save(bootstrapTable)
+    val partitionRange = bootstrapDf.partitionRange
+
+    val bootstrapPart = Builders.BootstrapPart(
+      query = Builders.Query(
+        selects = Builders.Selects("request_id", columnName),
+        startPartition = partitionRange.start,
+        endPartition = partitionRange.end
+      ),
+      table = bootstrapTable
+    )
+
+    (bootstrapPart, bootstrapDf)
+  }
+
   @Test
   def testBootstrap(): Unit = {
+
+    val namespace = "test_table_bootstrap"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
     // group by
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
@@ -42,39 +82,10 @@ class TableBootstrapTest {
     val runner1 = new ai.chronon.spark.Join(baseJoin, today, tableUtils)
     val baseOutput = runner1.computeJoin()
 
-    // Create bootstrap dataset with randomly overwritten data
-    def buildBootstrapPart(tableName: String): (BootstrapPart, DataFrame) = {
-      val bootstrapTable = s"$namespace.$tableName"
-      val bootstrapDf = spark
-        .table(queryTable)
-        .select(
-          col("request_id"),
-          (rand() * 30000)
-            .cast(org.apache.spark.sql.types.LongType)
-            .as("unit_test_user_transactions_amount_dollars_sum_30d"),
-          col("ds")
-        )
-        .sample(0.8)
-
-      bootstrapDf.save(bootstrapTable)
-      val partitionRange = bootstrapDf.partitionRange
-
-      val bootstrapPart = Builders.BootstrapPart(
-        query = Builders.Query(
-          selects = Builders.Selects("request_id", "unit_test_user_transactions_amount_dollars_sum_30d"),
-          startPartition = partitionRange.start,
-          endPartition = partitionRange.end
-        ),
-        table = bootstrapTable
-      )
-
-      (bootstrapPart, bootstrapDf)
-    }
-
     // Create two bootstrap parts to verify that bootstrap coalesce respects the ordering of the input bootstrap parts
     val (bootstrapTable1, bootstrapTable2) = ("user_transactions_bootstrap1", "user_transactions_bootstrap2")
-    val (bootstrapPart1, bootstrapDf1) = buildBootstrapPart(bootstrapTable1)
-    val (bootstrapPart2, bootstrapDf2) = buildBootstrapPart(bootstrapTable2)
+    val (bootstrapPart1, bootstrapDf1) = buildBootstrapPart(queryTable, namespace, bootstrapTable1)
+    val (bootstrapPart2, bootstrapDf2) = buildBootstrapPart(queryTable, namespace, bootstrapTable2)
 
     // Create bootstrap join using base join as template
     val bootstrapJoin = baseJoin.deepCopy()
@@ -129,5 +140,56 @@ class TableBootstrapTest {
     }
 
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testBootstrapSameJoinPartMultipleSources(): Unit = {
+
+    val namespace = "test_bootstrap_multi_source"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
+    val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
+
+    val joinPart = Builders.JoinPart(groupBy = BootstrapUtils.buildGroupBy(namespace, spark))
+    val derivations = Seq(
+      Builders.Derivation(
+        name = "amount_dollars_sum_15d",
+        expression = "unit_test_user_transactions_amount_dollars_sum_15d"
+      ),
+      Builders.Derivation(
+        name = "amount_dollars_sum_30d",
+        expression = "unit_test_user_transactions_amount_dollars_sum_30d"
+      )
+    )
+
+    val bootstrapPart1 = buildBootstrapPart(queryTable,
+                                            namespace,
+                                            tableName = "bootstrap_1",
+                                            columnName = "unit_test_user_transactions_amount_dollars_sum_30d",
+                                            samplePercent = 1.0)
+
+    val bootstrapPart2 = buildBootstrapPart(queryTable,
+                                            namespace,
+                                            tableName = "bootstrap_2",
+                                            columnName = "unit_test_user_transactions_amount_dollars_sum_15d",
+                                            samplePercent = 1.0)
+    val join = Builders.Join(
+      left = Builders.Source.events(table = queryTable, query = Builders.Query()),
+      joinParts = Seq(joinPart),
+      rowIds = Seq("request_id"),
+      bootstrapParts = Seq(
+        bootstrapPart1._1,
+        bootstrapPart2._1
+      ),
+      derivations = derivations,
+      metaData = Builders.MetaData(name = "test.bootstrap_multi_source", namespace = namespace, team = "chronon")
+    )
+
+    val joinJob = new ai.chronon.spark.Join(join, endDs, tableUtils)
+    joinJob.computeJoin()
+
+    // assert that no computation happened for join part since all derivations have been bootstrapped
+    assertFalse(tableUtils.tableExists(join.partOutputTable(joinPart)))
   }
 }

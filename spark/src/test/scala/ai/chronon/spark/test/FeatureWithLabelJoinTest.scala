@@ -122,7 +122,7 @@ class FeatureWithLabelJoinTest {
     val newLabelRows = List(
       Row(1L, 0, "2022-10-07", "2022-10-07 11:00:00"),
       Row(2L, 2, "2022-10-07", "2022-10-07 11:00:00"),
-      Row(3L, 2, "2022-10-07", "2022-10-07 11:00:00"),
+      Row(3L, 2, "2022-10-07", "2022-10-07 11:00:00")
     )
     TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, 5, "listing_labels_agg", newLabelRows)
     val runner2 = new LabelJoin(joinConf, tableUtils, "2022-10-07")
@@ -191,7 +191,7 @@ class FeatureWithLabelJoinTest {
     val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
-        Builders.JoinPart(groupBy = labelGroupBy.groupByConf),
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = windowSize,
       leftEndOffset = windowSize
