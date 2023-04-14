@@ -115,11 +115,7 @@ class StagingQueryTest {
     }
     assertEquals(0, diff.count())
   }
-
-  /** Test that max_date is returns max written partition
-    * Compute in several step ranges a trivial query and for the first step range (first partition) the max_date
-    * value should be that of the latest partition (today) of the view table.
-    */
+  
   @Test
   def testStagingQueryMaxDate(): Unit = {
     val schema = List(
@@ -137,7 +133,7 @@ class StagingQueryTest {
       query = s"""
                  |SELECT
                  |  *
-                 |  , '{{ max_date:table=$viewName }}' AS latest_ds
+                 |  , '{{ max_date(table=$viewName) }}' AS latest_ds
                  |FROM $viewName
                  |WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'""".stripMargin,
       startPartition = ninetyDaysAgo,
