@@ -24,15 +24,17 @@ object TestUtils {
         StructField("ds", StringType)
       )
     )
-    val rows = if (customRows.isEmpty)
-      List(
-        Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-        Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-        Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-        Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
-        Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
-        Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
-      ) else customRows
+    val rows =
+      if (customRows.isEmpty)
+        List(
+          Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
+          Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+          Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+          Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+          Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+          Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
+        )
+      else customRows
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
@@ -116,8 +118,8 @@ object TestUtils {
   }
 
   def createReservationGroupBy(namespace: String,
-                            spark: SparkSession,
-                            tableName: String = "listing_attributes_reservation"): GroupByTestSuite = {
+                               spark: SparkSession,
+                               tableName: String = "listing_attributes_reservation"): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
@@ -140,7 +142,7 @@ object TestUtils {
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
-          "dim_reservations" -> "dim_reservations",
+          "dim_reservations" -> "dim_reservations"
         )
       ),
       snapshotTable = s"${namespace}.${tableName}"
@@ -238,14 +240,14 @@ object TestUtils {
         Row(1L, 0, "2022-10-06", "2022-10-06 11:00:00"),
         Row(2L, 1, "2022-10-06", "2022-10-06 11:00:00"),
         Row(3L, 0, "2022-10-06", "2022-10-06 11:00:00"),
-        Row(1L, 2, "2022-10-07", "2022-10-07 11:00:00"), // not included in agg window
+        Row(1L, 2, "2022-10-07", "2022-10-07 11:00:00") // not included in agg window
       )
     } else customRows
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
-          "is_active" -> "is_active",
+          "is_active" -> "is_active"
         ),
         timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
       ),
@@ -254,11 +256,12 @@ object TestUtils {
     val conf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("listing"),
-      aggregations = Seq(Builders.Aggregation(
-        inputColumn = "is_active",
-        operation = Operation.MAX,
-        windows = Seq(new Window(windowSize, TimeUnit.DAYS))
-      )),
+      aggregations = Seq(
+        Builders.Aggregation(
+          inputColumn = "is_active",
+          operation = Operation.MAX,
+          windows = Seq(new Window(windowSize, TimeUnit.DAYS))
+        )),
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
@@ -308,8 +311,8 @@ object TestUtils {
       keyColumns = Seq("listing_id"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.MAX,
-          inputColumn = "active_status",
-          windows = Seq(new Window(windowSize, TimeUnit.DAYS)))),
+                             inputColumn = "active_status",
+                             windows = Seq(new Window(windowSize, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "listing_label_table", namespace = namespace, team = "chronon")
     )
 
