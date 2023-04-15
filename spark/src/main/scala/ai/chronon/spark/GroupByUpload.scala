@@ -7,7 +7,7 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.{Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions.{col, lit, not}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
@@ -139,8 +139,12 @@ object GroupByUpload {
       .withColumn("ds", lit(endDs))
       .saveUnPartitioned(groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
 
+    val kvDfReloaded = tableUtils.sparkSession
+      .table(groupByConf.metaData.uploadTable)
+      .where(not(col("key_json").eqNullSafe(Constants.GroupByServingInfoKey)))
+
     val metricRow =
-      kvDf.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
+      kvDfReloaded.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
     context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
     context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
     context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
