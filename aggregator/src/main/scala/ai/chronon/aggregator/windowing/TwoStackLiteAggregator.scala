@@ -13,25 +13,24 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   private val outputColumnNames = allParts.map(_.outputColumnName)
   // create row aggregator per window - we will loop over data as many times as there are unique windows
   // we will use different row aggregators to do so
-  case class PerWindowAggregator(window: Window, agg: RowAggregator) {
+  case class PerWindowAggregator(window: Window, agg: RowAggregator, indexMapping: Array[Int]) {
     private val windowLength: Long = window.millis
     private val tailHopSize = resolution.calculateTailHop(window)
     def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
     def bankersBuffer(inputSize: Int) = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, inputSize)
     def init = new Array[Any](agg.length)
-    val indexMapping: Array[Int] = agg
-      .aggregationParts
-      .iterator
-      .map(part => outputColumnNames.indexWhere(_ == part.outputColumnName))
-      .toArray
   }
 
   val inputSchemaTuples: Array[(String, DataType)] = inputSchema.fields.map(f => f.name -> f.fieldType)
-  val perWindowAggregators : Array[PerWindowAggregator] = allParts.filter(_.window != null).groupBy(_.window).toArray.map{
-    case (window, parts) => PerWindowAggregator(
-      window, new RowAggregator(inputSchemaTuples, parts)
-    )
-  }
+  val perWindowAggregators : Array[PerWindowAggregator] = allParts.iterator.zipWithIndex.toArray
+    .filter { case (p, _) => p.window != null }
+    .groupBy { case (p, _)  => p.window }
+    .map {
+      case (w, ps) =>
+        val parts = ps.map(_._1)
+        val idxs = ps.map(_._2)
+        PerWindowAggregator(w, new RowAggregator(inputSchemaTuples, parts), idxs)
+    }.toArray
 
   // lifetime aggregations don't need bankers buffer, simple unWindowed sum is good enough
   private val unWindowedParts = allParts.filter(_.window == null).toArray
