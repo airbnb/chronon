@@ -234,6 +234,8 @@ class Fetcher(val kvStore: KVStore,
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
           joinContext.foreach(context => context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
+          joinContext.foreach(context => context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
+
           if (debug) {
             println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
           }
