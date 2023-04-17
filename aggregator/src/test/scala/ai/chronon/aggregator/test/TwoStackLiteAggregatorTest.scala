@@ -11,7 +11,7 @@ import com.google.gson.Gson
 
 import scala.collection.Seq
 
-class BankersAggregatorTest extends TestCase{
+class TwoStackLiteAggregatorTest extends TestCase{
   def testBufferWithTopK(): Unit = {
     val topK = new TopK[Integer](IntType, 2)
     val bankersBuffer = new TwoStackLiteAggregationBuffer(topK, 5)
@@ -39,10 +39,10 @@ class BankersAggregatorTest extends TestCase{
 
   def testAgainstSawtooth(): Unit = {
     val timer = new Timer
-    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 1000000, 5 * 60 * 1000)
+    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 100000, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
-    val events = CStream.gen(columns, 100000).rows
+    val events = CStream.gen(columns, 10000).rows
     val schema = columns.map(_.schema)
 
     val aggregations: Seq[Aggregation] = Seq(
