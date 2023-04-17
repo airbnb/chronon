@@ -16,7 +16,7 @@ if [[ -z "${ACTION}" ]] || [[ "${ACTION}" == "build" ]]; then
   echo "Running build..."
   cd $SCRIPT_DIR
   set -e
-  python -m build
+  python3 -m build
 elif [[ "${ACTION}" == "release" ]]; then
   PYPI_REPOSITORY="chronon-pypi"
   # Sanity checks, git state, Run Tests, Build, Release

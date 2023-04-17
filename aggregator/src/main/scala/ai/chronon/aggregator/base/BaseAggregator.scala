@@ -2,7 +2,7 @@ package ai.chronon.aggregator.base
 
 import ai.chronon.api.DataType
 
-abstract class BaseAggregator[Input, IR, Output] extends Serializable {
+trait BaseAggregator[Input, IR, Output] extends Serializable {
   def outputType: DataType
   def irType: DataType
 
@@ -24,7 +24,7 @@ abstract class BaseAggregator[Input, IR, Output] extends Serializable {
 }
 
 // sum, count, min, max, avg, approx_unique, topK, bottomK
-abstract class SimpleAggregator[Input, IR, Output] extends BaseAggregator[Input, IR, Output] {
+trait SimpleAggregator[Input, IR, Output] extends BaseAggregator[Input, IR, Output] {
 
   def prepare(input: Input): IR
   def update(ir: IR, input: Input): IR

@@ -32,6 +32,11 @@ object ScalaJavaConversions {
       iterator.asScala
     }
   }
+  implicit class JIteratorOps[T](iterator: Iterator[T]) {
+    def toJava: java.util.Iterator[T] = {
+      iterator.asJava
+    }
+  }
   implicit class ListOps[T](list: java.util.List[T]) {
     def toScala: List[T] = {
       if (list == null) {
