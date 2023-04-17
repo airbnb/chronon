@@ -1,9 +1,10 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, ParametricMacro}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
@@ -49,10 +50,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
           case (range, index) =>
             val progress = s"| [${index + 1}/${stepRanges.size}]"
             println(s"Computing staging query for range: $range  $progress")
-            val renderedQuery = stagingQueryConf.query
-              .replaceAll(StagingQuery.StartDateRegex, range.start)
-              .replaceAll(StagingQuery.EndDateRegex, range.end)
-              .replaceAll(StagingQuery.LatestDateRegex, endPartition)
+            val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             println(s"Rendered Staging Query to run is:\n$renderedQuery")
             val df = tableUtils.sql(renderedQuery)
             tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
@@ -78,11 +76,25 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
 object StagingQuery {
 
-  final val StartDateRegex = replacementRegexFor("start_date")
-  final val EndDateRegex = replacementRegexFor("end_date")
-  // Useful for cumulative tables. So the split on step days always get the latest partition.
-  final val LatestDateRegex = replacementRegexFor("latest_date")
-  private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
+  def substitute(tu: TableUtils, query: String, start: String, end: String, latest: String): String = {
+    val macros: Array[ParametricMacro] = Array(
+      ParametricMacro("start_date", _ => start),
+      ParametricMacro("end_date", _ => end),
+      ParametricMacro("latest_date", _ => latest),
+      ParametricMacro("max_date", args => {
+        lazy val table = args("table")
+        lazy val partitions = tu.partitions(table)
+        if(table == null) {
+          throw new IllegalArgumentException(s"No table in args:[$args] to macro max_date")
+        } else if (partitions.isEmpty) {
+          throw new IllegalStateException(s"No partitions exist for table $table to calculate max_date")
+        }
+        partitions.max
+      })
+    )
+
+    macros.foldLeft(query) { case(q, m) => m.replace(q)}
+  }
 
   def main(args: Array[String]): Unit = {
     val parsedArgs = new Args(args)
