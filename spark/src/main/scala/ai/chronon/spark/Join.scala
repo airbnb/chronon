@@ -14,6 +14,13 @@ import scala.collection.Seq
 import scala.collection.mutable
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
+/*
+ * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
+ *         during the bootstrap join
+ * rowCount: number of records with this particular combination of hashes. for logging purpose only
+ * isCovering: whether this combination of hashes fully covers the required fields of a join_part. the join_part
+ *             reference itself is omitted here. but essentially each CoveringSet is pertinent to a specific join_part
+ */
 private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
