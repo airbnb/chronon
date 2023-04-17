@@ -3,9 +3,7 @@ package ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps, WindowOps}
 import ai.chronon.api._
-import com.google.common.collect.Iterators
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.JIteratorOps
 
 // This implements the two-stack-lite algorithm
 // To understand the intuition behind the algorithm I highly recommend reading the intuition text in the end of this file
@@ -45,7 +43,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   // all timestamps should be in milliseconds
   // iterator api to reduce memory pressure
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], inputSize: Int = 1000, shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
-    val inputsPeeking = Iterators.peekingIterator(inputs.toJava)
+    val inputsBuffered = inputs.buffered
     val buffers = perWindowAggregators.map(_.bankersBuffer(inputSize))
     var unWindowedAgg = if(unWindowedParts.isEmpty) null else new Array[Any](unWindowedParts.length)
 
@@ -68,8 +66,8 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
         }
 
         // add all new inputs
-        while(inputsPeeking.hasNext && inputsPeeking.peek().ts < queryTs) {
-          val row = inputsPeeking.next()
+        while(inputsBuffered.hasNext && inputsBuffered.head.ts < queryTs) {
+          val row = inputsBuffered.next()
           
           // add to windowed
           i = 0
