@@ -4,15 +4,13 @@ import ai.chronon.api.{DataType, StructType}
 import ai.chronon.online.CatalystUtil.{IteratorWrapper, PoolKey, poolMap}
 import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Predicate, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
 import org.apache.spark.sql.execution.{BufferedRowIterator, FilterExec, ProjectExec, WholeStageCodegenExec}
 import org.apache.spark.sql.{SparkSession, types}
 
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
 import java.util.function
-import java.util.function.Supplier
 import scala.collection.{Seq, mutable}
 
 object CatalystUtil {
@@ -153,9 +151,7 @@ class CatalystUtil(
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
         def projectFun(row: InternalRow): Option[InternalRow] = {
-          val predicate = Predicate.create(condition, child.output)
-          predicate.initialize(0)
-          val r = predicate.eval(row)
+          val r = ScalaVersionSpecificCatalystHelper.evalFilterExec(row, condition, child.output)
           if (r)
             Some(unsafeProjection.apply(row))
           else

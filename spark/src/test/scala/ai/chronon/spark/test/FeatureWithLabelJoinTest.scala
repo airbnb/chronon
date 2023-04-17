@@ -43,8 +43,8 @@ class FeatureWithLabelJoinTest {
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
     val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()),
-      labelJoinConf.rowIdentifier(),
-      "left_outer")
+                                       labelJoinConf.rowIdentifier(),
+                                       "left_outer")
     assertResult(computed, expectedFinal)
 
     // add another label version
@@ -55,21 +55,28 @@ class FeatureWithLabelJoinTest {
     val view = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView} order by label_ds")
     view.show()
     // listing 4 should not have any 2022-11-11 version labels
-    assertEquals(null, view.where(view("label_ds") === "2022-11-11" && view("listing") === "4")
-      .select("label_listing_labels_dim_room_type").first().get(0))
+    assertEquals(null,
+                 view
+                   .where(view("label_ds") === "2022-11-11" && view("listing") === "4")
+                   .select("label_listing_labels_dim_room_type")
+                   .first()
+                   .get(0))
     // 11-11 label record number should be same as 10-30 label version record number
     assertEquals(view.where(view("label_ds") === "2022-10-30").count(),
-      view.where(view("label_ds") === "2022-11-11").count())
+                 view.where(view("label_ds") === "2022-11-11").count())
     // listing 5 should not not have any label
-    assertEquals(null, view.where(view("listing") === "5")
-      .select("label_ds").first().get(0))
+    assertEquals(null,
+                 view
+                   .where(view("listing") === "5")
+                   .select("label_ds")
+                   .first()
+                   .get(0))
 
     //validate the latest label view
     val latest = tableUtils.sql(s"select * from ${joinConf.metaData.outputLatestLabelView} order by label_ds")
     latest.show()
     // latest label should be all same "2022-11-11"
-    assertEquals(latest.agg(max("label_ds")).first().getString(0),
-                 latest.agg(min("label_ds")).first().getString(0))
+    assertEquals(latest.agg(max("label_ds")).first().getString(0), latest.agg(min("label_ds")).first().getString(0))
     assertEquals("2022-11-11", latest.agg(max("label_ds")).first().getString(0))
   }
 
@@ -94,9 +101,13 @@ class FeatureWithLabelJoinTest {
       Row(3L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
       Row(1L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
       Row(2L, 35L, "2022-10-03 11:00:00", "2022-10-03"),
-      Row(3L, 15L, "2022-10-03 11:00:00", "2022-10-03"))
-    val leftSource = TestUtils.createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
-      .groupByConf.sources.get(0)
+      Row(3L, 15L, "2022-10-03 11:00:00", "2022-10-03")
+    )
+    val leftSource = TestUtils
+      .createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
+      .groupByConf
+      .sources
+      .get(0)
     val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg")
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
@@ -114,15 +125,15 @@ class FeatureWithLabelJoinTest {
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
     val expectedFinal = featureDf.join(prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier()),
-      labelJoinConf.rowIdentifier(),
-      "left_outer")
+                                       labelJoinConf.rowIdentifier(),
+                                       "left_outer")
     assertResult(computed, expectedFinal)
 
     // add new labels
     val newLabelRows = List(
       Row(1L, 0, "2022-10-07", "2022-10-07 11:00:00"),
       Row(2L, 2, "2022-10-07", "2022-10-07 11:00:00"),
-      Row(3L, 2, "2022-10-07", "2022-10-07 11:00:00"),
+      Row(3L, 2, "2022-10-07", "2022-10-07 11:00:00")
     )
     TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, 5, "listing_labels_agg", newLabelRows)
     val runner2 = new LabelJoin(joinConf, tableUtils, "2022-10-07")
@@ -132,10 +143,18 @@ class FeatureWithLabelJoinTest {
     //validate the label view
     val latest = tableUtils.sql(s"select * from ${joinConf.metaData.outputLatestLabelView} order by label_ds")
     latest.show()
-    assertEquals(2, latest.where(latest("listing") === "3" && latest("ds") === "2022-10-03")
-      .select("label_listing_labels_agg_is_active_max_5d").first().get(0))
-    assertEquals("2022-10-07", latest.where(latest("listing") === "1" && latest("ds") === "2022-10-03")
-      .select("label_ds").first().get(0))
+    assertEquals(2,
+                 latest
+                   .where(latest("listing") === "3" && latest("ds") === "2022-10-03")
+                   .select("label_listing_labels_agg_is_active_max_5d")
+                   .first()
+                   .get(0))
+    assertEquals("2022-10-07",
+                 latest
+                   .where(latest("listing") === "1" && latest("ds") === "2022-10-03")
+                   .select("label_ds")
+                   .first()
+                   .get(0))
   }
 
   private def assertResult(computed: DataFrame, expected: DataFrame): Unit = {
@@ -143,11 +162,7 @@ class FeatureWithLabelJoinTest {
     computed.show()
     println(" == Expected == ")
     expected.show()
-    val diff = Comparison.sideBySide(computed,
-      expected,
-      List("listing",
-        "ds",
-        "label_ds"))
+    val diff = Comparison.sideBySide(computed, expected, List("listing", "ds", "label_ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${computed.count()}")
       println(s"Expected count: ${expected.count()}")
@@ -165,7 +180,7 @@ class FeatureWithLabelJoinTest {
     println(exceptions.mkString(", "))
     val renamedColumns = df.columns
       .map(col => {
-        if(exceptions.contains(col) || col.startsWith(prefix)) {
+        if (exceptions.contains(col) || col.startsWith(prefix)) {
           df(col)
         } else {
           df(col).as(s"$prefix$col")
@@ -187,11 +202,12 @@ class FeatureWithLabelJoinTest {
     )
   }
 
-  def createTestAggLabelJoin(windowSize: Int, groupByTableName: String = "listing_labels_agg"): ai.chronon.api.LabelPart = {
+  def createTestAggLabelJoin(windowSize: Int,
+                             groupByTableName: String = "listing_labels_agg"): ai.chronon.api.LabelPart = {
     val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
-        Builders.JoinPart(groupBy = labelGroupBy.groupByConf),
+        Builders.JoinPart(groupBy = labelGroupBy.groupByConf)
       ),
       leftStartOffset = windowSize,
       leftEndOffset = windowSize
