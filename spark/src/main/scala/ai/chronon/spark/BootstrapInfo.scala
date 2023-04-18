@@ -17,9 +17,7 @@ case class JoinPartMetadata(
     joinPart: JoinPart,
     keySchema: Array[StructField],
     valueSchema: Array[StructField],
-    // A valid hash means that any records with this hash during the bootstrap process has all required columns
-    // pre-populated, so backfill is not longer required for these records for this join part
-    validHashes: Seq[String]
+    derivationDependencies: Map[StructField, Seq[StructField]]
 )
 
 case class ExternalPartMetadata(
@@ -35,7 +33,8 @@ case class BootstrapInfo(
     // external parts enriched with expected schema
     externalParts: Seq[ExternalPartMetadata],
     // derivations schema
-    derivations: Array[StructField]
+    derivations: Array[StructField],
+    hashToSchema: Map[String, Array[StructField]]
 ) {
 
   lazy val fieldNames: Set[String] = fields.map(_.name).toSet
@@ -67,7 +66,7 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
         val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
-        JoinPartMetadata(part, keySchema, valueSchema, Seq.empty) // will be populated below
+        JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
       })
 
     // Enrich each external part with the expected output schema
@@ -187,50 +186,32 @@ object BootstrapInfo {
     val hashToSchema = logHashes ++ tableHashes.mapValues(_._1).toMap
 
     /*
-     * For each join part, a valid hash of a boostrap part needs to satisfy the condition:
-     *
-     * - For each derivation (no derivation is equivalent to *)
-     *   - if the expression has no column reference to this join part, then OK
-     *   - If the expression has column references to this join part, then
-     *     - either the output column name is covered by the bootstrap part
-     *     - or all input column names are covered by the bootstrap part
-     *
-     * TODO: this assumes that each join part can be covered by a single bootstrapPart, and does not handle when
-     *  two columns are covered by two or more separate bootstrapPart, which is much harder to calculate.
+     * For each join part, find a mapping from a derived field to the subset of base fields that this derived field
+     * depends on. Skip the ones that don't have any dependency on the join part.
      */
     val identifierRegex = "[a-zA-Z_][a-zA-Z0-9_]*".r
-    def isValidHash(joinPart: JoinPartMetadata, hashSchema: Array[StructField]) = {
+    def findDerivationDependencies(joinPartMetadata: JoinPartMetadata): Map[StructField, Seq[StructField]] = {
       if (derivedSchema.isEmpty) {
-        joinPart.valueSchema.forall(hashSchema.contains)
+        joinPartMetadata.valueSchema.map { structField => structField -> Seq(structField) }.toMap
       } else {
-        derivedSchema
-          .map {
-            case (derivedField, expression) => {
-              // Check if the expression contains any fields from the join part by string matching.
-              val identifiers = identifierRegex.findAllIn(expression).toSet
-              val requiredBaseColumns = joinPart.valueSchema.filter(f => identifiers(f.name))
-              val condition = if (requiredBaseColumns.isEmpty) {
-                true
-              } else {
-                hashSchema.contains(derivedField) || requiredBaseColumns.forall(hashSchema.contains)
-              }
-              condition
+        derivedSchema.flatMap {
+          case (derivedField, expression) =>
+            // Check if the expression contains any fields from the join part by string matching.
+            val identifiers = identifierRegex.findAllIn(expression).toSet
+            val requiredBaseColumns = joinPartMetadata.valueSchema.filter(f => identifiers(f.name))
+            if (requiredBaseColumns.nonEmpty) {
+              Some(derivedField -> requiredBaseColumns.toSeq)
+            } else {
+              None
             }
-          }
-          .forall(identity)
+        }.toMap
       }
     }
 
     joinParts = joinParts.map { part =>
-      val validHashes = hashToSchema.toSeq
-        .filter {
-          case (_, schema) => isValidHash(part, schema)
-        }
-        .map(_._1)
-      part.copy(validHashes = validHashes)
+      part.copy(derivationDependencies = findDerivationDependencies(part))
     }
-
-    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1))
+    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1), hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
@@ -278,8 +259,6 @@ object BootstrapInfo {
            |${stringify(metadata.keySchema)}
            |Value Schema:
            |${stringify(metadata.valueSchema)}
-           |Valid Hashes:
-           |${metadata.validHashes.prettyInline}
            |""".stripMargin)
     }
     externalParts.foreach { metadata =>
