@@ -56,7 +56,7 @@ class DABALiteBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggreg
 
   def push(input: Input, ts: Long): Unit = {
     val ir = aggregator.prepare(input)
-    deque.append(InOrderAggregationEntry(ir, ts))
+    deque.enqueue(InOrderAggregationEntry(ir, ts))
     aggBack = if (aggBack == null) aggregator.clone(ir) else aggregator.merge(aggBack, ir)
     fixup()
   }

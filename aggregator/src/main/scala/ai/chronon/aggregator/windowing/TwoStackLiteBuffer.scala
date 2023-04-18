@@ -24,7 +24,7 @@ class TwoStackLiteBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAg
 
   def push(input: Input, ts: Long = -1): Unit = {
     val ir = aggregator.prepare(input)
-    deque.append(InOrderAggregationEntry(aggregator.clone(ir), ts))
+    deque.enqueue(InOrderAggregationEntry(aggregator.clone(ir), ts))
     aggBack = if (aggBack == null) ir else aggregator.update(aggBack, input)
   }
 
