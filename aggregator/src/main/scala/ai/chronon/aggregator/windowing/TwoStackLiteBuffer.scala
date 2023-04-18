@@ -43,7 +43,7 @@ class TwoStackLiteBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAg
       }
     }
     frontLen -= 1
-    deque.removeHead()
+    deque.dequeue()
   }
 
   def peekBack(): InOrderAggregationEntry[IR] = if (deque.isEmpty) null else deque.head

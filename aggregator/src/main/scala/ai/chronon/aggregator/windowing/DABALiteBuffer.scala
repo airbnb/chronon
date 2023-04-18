@@ -43,7 +43,7 @@ class DABALiteBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggreg
   def peekBack(): InOrderAggregationEntry[IR] = if (deque.isEmpty) null else deque.head
 
   def pop(): InOrderAggregationEntry[IR] = {
-    val head = deque.removeHead()
+    val head = deque.dequeue()
     // The first element is removed, shift all indexes to the left by 1
     l -= 1
     r -= 1
