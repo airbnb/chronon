@@ -2,9 +2,8 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
 import ai.chronon.api._
-import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
@@ -15,9 +14,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
-import scala.util.matching.Regex
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 object Fetcher {
   case class Request(name: String,
@@ -32,7 +29,7 @@ object Fetcher {
 }
 
 
-
+private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
 
 
 // BaseFetcher + Logging + External service calls
@@ -109,6 +106,12 @@ class Fetcher(val kvStore: KVStore,
   },
     {join: String => Metrics.Context(environment = "join.codec.fetch", join = join)}
   )
+
+  private[online] def withTs(responses: Future[scala.collection.Seq[Response]]): Future[FetcherResponseWithTs] = {
+    responses.map { response =>
+      FetcherResponseWithTs(response, System.currentTimeMillis())
+    }
+  }
 
   override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()

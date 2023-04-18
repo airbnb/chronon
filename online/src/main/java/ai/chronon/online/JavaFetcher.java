@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class JavaFetcher {
   Fetcher fetcher;
@@ -29,56 +30,66 @@ public class JavaFetcher {
     return result;
   }
 
-  private CompletableFuture<List<JavaResponse>> convertResponses(Future<Seq<Response>> responses) {
-    return FutureConverters
-        .toJava(responses)
-        .toCompletableFuture()
-        .thenApply(JavaFetcher::toJavaResponses);
+  private CompletableFuture<List<JavaResponse>> convertResponsesWithTs(Future<FetcherResponseWithTs> responses, boolean isGroupBy, long startTs) {
+    return FutureConverters.toJava(responses).toCompletableFuture().thenApply(resps -> {
+      List<JavaResponse> jResps = toJavaResponses(resps.responses());
+      List<String> requestNames = jResps.stream().map(jResp -> jResp.request.name).collect(Collectors.toList());
+      instrument(requestNames, isGroupBy, "java.response_conversion.latency.millis", resps.endTs());
+      instrument(requestNames, isGroupBy, "java.overall.latency.millis", startTs);
+      return jResps;
+    });
   }
 
-  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests) {
+  private Seq<Request> convertJavaRequestList(List<JavaRequest> requests, boolean isGroupBy, long startTs) {
     ArrayBuffer<Request> scalaRequests = new ArrayBuffer<>();
     for (JavaRequest request : requests) {
       Request convertedRequest = request.toScalaRequest();
       scalaRequests.$plus$eq(convertedRequest);
     }
-    return scalaRequests.toSeq();
+    Seq<Request> scalaRequestsSeq = scalaRequests.toSeq();
+    instrument(requests.stream().map(jReq -> jReq.name).collect(Collectors.toList()), isGroupBy, "java.request_conversion.latency.millis", startTs);
+    return scalaRequestsSeq;
   }
 
   public CompletableFuture<List<JavaResponse>> fetchGroupBys(List<JavaRequest> requests) {
+    long startTs = System.currentTimeMillis();
+    // Convert java requests to scala requests
+    Seq<Request> scalaRequests = convertJavaRequestList(requests, true, startTs);
     // Get responses from the fetcher
-    Future<Seq<Response>> responses = this.fetcher.fetchGroupBys(convertJavaRequestList(requests));
+    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchGroupBys(scalaRequests));
     // Convert responses to CompletableFuture
-    return convertResponses(responses);
+    return convertResponsesWithTs(scalaResponses, true, startTs);
   }
 
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
-    Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
+    // Convert java requests to scala requests
+    Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+    // Get responses from the fetcher
+    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests));
     // Convert responses to CompletableFuture
-    CompletableFuture<List<JavaResponse>> jRespFuture = convertResponses(responses);
-    jRespFuture.thenApply(jResps -> {
-      for (JavaResponse jResp : jResps) {
-        Metrics.Context ctx = getJoinContext(jResp.request.name);
-        ctx.histogram("java.overall.latency.millis", System.currentTimeMillis() - startTs);
+    return convertResponsesWithTs(scalaResponses, false, startTs);
+  }
+
+  private void instrument(List<String> requestNames, boolean isGroupBy, String metricName, Long startTs) {
+    long endTs = System.currentTimeMillis();
+    for (String s : requestNames) {
+      Metrics.Context ctx;
+      if (isGroupBy) {
+        ctx = getGroupByContext(s);
+      } else {
+        ctx = getJoinContext(s);
       }
-      return jResps;
-    });
-    return jRespFuture;
+      ctx.histogram(metricName, endTs - startTs);
+    }
   }
 
   private Metrics.Context getJoinContext(String joinName) {
-    return new Metrics.Context(
-        "join.fetch",
-        joinName,
-        null,
-        null,
-        false,
-        null,
-        null,
-        null,
-        null
-    );
+    return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null);
+  }
+
+  private Metrics.Context getGroupByContext(String groupByName) {
+    return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
   }
 
 }
