@@ -1,6 +1,5 @@
 package ai.chronon.online;
 
-import ai.chronon.api.Constants;
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import scala.collection.Iterator;
@@ -14,7 +13,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-public class JavaFetcher  {
+public class JavaFetcher {
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -24,7 +23,7 @@ public class JavaFetcher  {
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
     List<JavaResponse> result = new ArrayList<>(responseSeq.size());
     Iterator<Response> it = responseSeq.iterator();
-    while(it.hasNext()) {
+    while (it.hasNext()) {
       result.add(new JavaResponse(it.next()));
     }
     return result;
@@ -54,9 +53,32 @@ public class JavaFetcher  {
   }
 
   public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
+    long startTs = System.currentTimeMillis();
     Future<Seq<Response>> responses = this.fetcher.fetchJoin(convertJavaRequestList(requests));
     // Convert responses to CompletableFuture
-    return convertResponses(responses);
+    CompletableFuture<List<JavaResponse>> jRespFuture = convertResponses(responses);
+    jRespFuture.thenApply(jResps -> {
+      for (JavaResponse jResp : jResps) {
+        Metrics.Context ctx = getJoinContext(jResp.request.name);
+        ctx.histogram("java.overall.latency.millis", System.currentTimeMillis() - startTs);
+      }
+      return jResps;
+    });
+    return jRespFuture;
+  }
+
+  private Metrics.Context getJoinContext(String joinName) {
+    return new Metrics.Context(
+        "join.fetch",
+        joinName,
+        null,
+        null,
+        false,
+        null,
+        null,
+        null,
+        null
+    );
   }
 
 }

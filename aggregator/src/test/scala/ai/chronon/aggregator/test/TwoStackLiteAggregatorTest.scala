@@ -61,7 +61,7 @@ class TwoStackLiteAggregatorTest extends TestCase{
       Builders.Aggregation(
         Operation.TOP_K,
         "num",
-        argMap = Map("k" -> "300")),
+        argMap = Map("k" -> "300"))
     )
 
     timer.publish("setup")
