@@ -65,9 +65,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val aggregationParts = aggregations.flatMap(_.unpack)
 
   lazy val columnAggregators = (new RowAggregator(selectedSchema, aggregationParts)).columnAggregators
-  private val repartitionColsEvents: scala.collection.immutable.Seq[Column] = keyColumns.map(col(_)).toSeq
-  private val repartitionColsEntities: scala.collection.immutable.Seq[Column] =
-    (keyColumns :+ Constants.PartitionColumn).map(col(_)).toSeq
+  private val repartitionColsEvents = keyColumns.map(col(_)).toSeq
+  private val repartitionColsEntities = (keyColumns :+ Constants.PartitionColumn).map(col(_)).toSeq
 
   //should be only used when aggregations != null
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
