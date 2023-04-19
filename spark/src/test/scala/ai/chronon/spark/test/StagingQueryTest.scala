@@ -8,6 +8,7 @@ import ai.chronon.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUti
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.apache.spark.sql.functions.{max, col}
 
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
@@ -128,6 +129,7 @@ class StagingQueryTest {
       .dropDuplicates("ts") // duplicates can create issues in comparisons
     val viewName = s"$namespace.test_staging_query_max_date"
     df.save(viewName)
+    val maxDate = tableUtils.partitions(viewName).max
 
     val stagingQueryConf = Builders.StagingQuery(
       query = s"""
@@ -147,7 +149,7 @@ class StagingQueryTest {
       tableUtils.sql(s"""
                         |SELECT
                         |  *
-                        |  , '$today' as latest_ds
+                        |  , '$maxDate' as latest_ds
                         |FROM $viewName
                         |WHERE ds = '$ninetyDaysAgo' AND user IS NOT NULL""".stripMargin)
 
