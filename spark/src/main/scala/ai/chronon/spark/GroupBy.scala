@@ -10,8 +10,9 @@ import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
@@ -32,6 +33,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
   implicit val sparkSession: SparkSession = inputDf.sparkSession
+  val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
   // distinct inputs to aggregations - post projection types that needs to match with
   // streaming's post projection types etc.,
   val preAggSchema: StructType = if (aggregations != null) {
@@ -63,6 +65,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val aggregationParts = aggregations.flatMap(_.unpack)
 
   lazy val columnAggregators = (new RowAggregator(selectedSchema, aggregationParts)).columnAggregators
+  private val repartitionColsEvents: scala.collection.immutable.Seq[Column] = keyColumns.map(col(_)).toSeq
+  private val repartitionColsEntities: scala.collection.immutable.Seq[Column] =
+    (keyColumns :+ Constants.PartitionColumn).map(col(_)).toSeq
 
   //should be only used when aggregations != null
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
@@ -101,7 +106,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     println("prepped input schema")
     println(preppedInputDf.schema.pretty)
 
-    preppedInputDf.rdd
+    preppedInputDf
+      .repartitionByRange(partitionCount, repartitionColsEntities: _*)
+      .rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
       .map { case (keyWithHash, ir) => keyWithHash.data -> normalizeOrFinalize(ir) }
@@ -336,7 +343,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    inputDf
+      .repartitionByRange(partitionCount, repartitionColsEvents: _*)
+      .rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
@@ -601,7 +610,7 @@ object GroupBy {
       val length = exceptions.length
       val fullMessage = exceptions.zipWithIndex
         .map {
-          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+          case (message, index) => s"[${index + 1}/${length} exceptions]\n${message}"
         }
         .mkString("\n")
       throw new Exception(fullMessage)
