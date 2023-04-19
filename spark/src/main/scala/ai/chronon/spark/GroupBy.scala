@@ -10,7 +10,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Encoders, KeyValueGroupedDataset, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -239,6 +239,82 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
           }
       }
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
+  }
+
+  /**
+    * Temporal events two stack was implemented to avoid the many shuffles that temporal events does.
+    * Queries and Inputs are grouped by key, sorted by time, and then aggregated on using the two stack aggregator.
+    *
+    * Existing TODOS:
+    * 1. Implement query time range so that we can filter out non needed records from the inputDf
+    * 2. Impact analysis of kryo encoders
+    * 3. Replace in memory sort with something similar to sortWithinGroups (https://github.com/apache/spark/pull/37551)
+    */
+  def temporalEventsTwoStack(queriesUnfilteredDf: DataFrame,
+                             queryTimeRange: Option[TimeRange] = None,
+                             resolution: Resolution = FiveMinuteResolution): DataFrame = {
+    println("Running temporal events two stack")
+
+    val queriesDf = skewFilter
+      .map {
+        queriesUnfilteredDf.filter
+      }
+      .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
+
+    queriesDf.validateJoinKeys(inputDf, keyColumns)
+
+
+    val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
+    val inputsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
+
+
+    val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
+    val queryTsType = queriesDf.schema(queryTsIndex).dataType
+    assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
+
+    val queriesByKey: KeyValueGroupedDataset[KeyWithHash, Row] = queriesDf.groupByKey(queriesKeyGen)(Encoders.kryo)
+    val inputsByKey: KeyValueGroupedDataset[KeyWithHash, Row] = inputDf.groupByKey(inputsKeyGen)(Encoders.kryo)
+    val inputChrononSchema = inputDf.schema.toChrononSchema("TwoStack")
+    val partitionIndex = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
+
+    val sawtoothWindowRdd: RDD[(Array[Any], Array[Any])] = queriesByKey.cogroup(inputsByKey) { (k: KeyWithHash, queries: Iterator[Row], inputs: Iterator[Row]) =>
+      val twoStackAgg = new TwoStackLiteAggregator(inputChrononSchema, aggregations, resolution)
+
+      val (qs1, qs2) = sort(queries, queryTsIndex).duplicate
+      val queryTimestampsAndPartitionsSorted: Iterator[(Long, String)] = qs1.map(r => (r.getLong(tsIndex), r.getString(partitionIndex)))
+      val queryTimestampsSorted: Iterator[Long] = qs2.map(r => r.getLong(tsIndex))
+
+
+      val (inputSize, inputChrononRowsSorted) = {
+        val (i1, i2) = sort(inputs, tsIndex).map(Conversions.toChrononRow(_, tsIndex)).duplicate
+        (i1.length, i2)
+      }
+
+      twoStackAgg.slidingSawtoothWindow(queryTimestampsSorted, inputChrononRowsSorted, inputSize, shouldFinalize = true).zip(queryTimestampsAndPartitionsSorted).map {
+        case (finalized: Array[Any], (ts: Long, partition: String)) =>
+          val timeTuple = TimeTuple.make(ts, partition)
+          (k.data ++ timeTuple.toArray, finalized)
+      }
+    }(Encoders.kryo)
+      .rdd
+
+    toDf(sawtoothWindowRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
+  }
+
+  private def sort(
+                    rows: Iterator[Row],
+                    tsIndex: Int,
+                  ): Iterator[Row] = {
+    val ordering = Ordering.by[Row, Long](_.getLong(tsIndex)).reverse
+
+    val queue = mutable.PriorityQueue[Row]()(ordering) ++= rows
+    new Iterator[Row] {
+      override def hasNext: Boolean = queue.nonEmpty
+
+      override def next(): Row = {
+        queue.dequeue()
+      }
+    }
   }
 
   // Use another dataframe with the same key columns and time columns to

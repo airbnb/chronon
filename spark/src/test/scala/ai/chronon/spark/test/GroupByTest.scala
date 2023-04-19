@@ -8,7 +8,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType, IntegerType => SparkIntType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -236,6 +236,89 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def temporalEventsTwoStackLastKTest(): Unit = {
+    val eventSchema = List(
+      Column("user", StringType, 10),
+      Column("listing_view", StringType, 100)
+    )
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
+    eventDf.createOrReplaceTempView("events_last_k")
+
+    val querySchema = List(Column("user", StringType, 10))
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
+    queryDf.createOrReplaceTempView("queries_last_k")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
+      Builders.Aggregation(Operation.COUNT, "listing_view", Seq(WindowUtils.Unbounded))
+    )
+    val keys = Seq("user").toArray
+    val groupBy =
+      new GroupBy(aggregations,
+        keys,
+        eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
+    val resultDf = groupBy.temporalEventsTwoStack(queryDf)
+
+    val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
+    val expected = eventDf.sqlContext.sql(
+      s"""
+         |SELECT
+         |      events_last_k.user as user,
+         |      queries_last_k.ts as ts,
+         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30,
+         |      SUM(case when events_last_k.listing_view <=> NULL then 0 else 1 end) as listing_view_count
+         |FROM events_last_k CROSS JOIN queries_last_k
+         |ON events_last_k.user = queries_last_k.user
+         |WHERE events_last_k.ts < queries_last_k.ts
+         |GROUP BY events_last_k.user, queries_last_k.ts
+         |""".stripMargin)
+
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ts"))
+    if (diff.count() > 0) {
+      diff.rdd.foreach { row =>
+        val gson = new Gson()
+        val computed =
+          Option(row(4)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
+        val expected =
+          Option(row(5))
+            .map(_.asInstanceOf[mutable.WrappedArray[String]].toArray.sorted.reverse.take(30))
+            .getOrElse(Array.empty[String])
+        assertEquals(gson.toJson(computed), gson.toJson(expected))
+      }
+    }
+
+}
+
+  @Test
+  def testTemporalEventsTwoStack(): Unit = {
+    val eventSchema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
+    )
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180).select("user", "ts", "ds", "session_length")
+
+    val querySchema = List(Column("user", StringType, 10))
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(
+        Operation.AVERAGE,
+        "session_length",
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))))
+
+    val keys = Seq("user").toArray
+    val groupBy = new GroupBy(aggregations, keys, eventDf)
+
+    val twoStackResult = groupBy.temporalEventsTwoStack(queryDf)
+    val temporalEventsResult = groupBy.temporalEvents(queryDf)
+
+    val diff = Comparison.sideBySide(twoStackResult, temporalEventsResult, List("user", "ts"))
+    
+    assertEquals(0, diff.count())
+
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)

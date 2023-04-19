@@ -60,6 +60,10 @@ object Driver {
         opt[Boolean](required = false,
                      default = Some(false),
                      descr = "Check if this join has already run with a different conf, if so it will fail the job")
+      val useTwoStack: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          default = Some(false),
+          descr = "Will force Chronon to use the two stack aggregator if possible.")
     }
 
     def run(args: Args): Unit = {
@@ -67,7 +71,8 @@ object Driver {
       val join = new Join(
         joinConf,
         args.endDate(),
-        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}"))
+        TableUtils(SparkSessionBuilder.build(s"join_${joinConf.metaData.name}")),
+        useTwoStack = args.useTwoStack()
       )
       join.computeJoin(args.stepDays.toOption)
     }

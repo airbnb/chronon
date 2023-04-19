@@ -15,7 +15,7 @@ import scala.collection.JavaConverters._
 import scala.collection.parallel.ParMap
 import scala.util.Try
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -146,8 +146,9 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils)
       case (Events, Events, Accuracy.SNAPSHOT) =>
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
       case (Events, Events, Accuracy.TEMPORAL) =>
-        genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
-
+        val groupBy = genGroupBy(unfilledTimeRange.toPartitionRange)
+        if (useTwoStack) groupBy.temporalEventsTwoStack(renamedLeftDf, Some(unfilledTimeRange))
+        else groupBy.temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) => {

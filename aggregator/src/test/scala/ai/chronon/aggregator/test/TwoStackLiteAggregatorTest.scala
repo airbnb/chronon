@@ -87,11 +87,11 @@ class TwoStackLiteAggregatorTest extends TestCase{
     timer.publish("naive")
 
 
-    val bankersAggregator = new TwoStackLiteAggregator(
+    val twoStackLiteAggregator = new TwoStackLiteAggregator(
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
-    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator, events.length).toArray
+    val bankersIrs = twoStackLiteAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator, events.length).toArray
 
     timer.publish("bankers")
 
