@@ -12,7 +12,7 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
@@ -65,8 +65,6 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val aggregationParts = aggregations.flatMap(_.unpack)
 
   lazy val columnAggregators = (new RowAggregator(selectedSchema, aggregationParts)).columnAggregators
-  private val repartitionColsEvents = keyColumns.map(col(_)).toSeq
-  private val repartitionColsEntities = (keyColumns :+ Constants.PartitionColumn).map(col(_)).toSeq
 
   //should be only used when aggregations != null
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
@@ -106,7 +104,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     println(preppedInputDf.schema.pretty)
 
     preppedInputDf
-      .repartitionByRange(partitionCount, repartitionColsEntities: _*)
+      .repartition(partitionCount)
       .rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
@@ -343,7 +341,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
     inputDf
-      .repartitionByRange(partitionCount, repartitionColsEvents: _*)
+      .repartition(partitionCount)
       .rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
