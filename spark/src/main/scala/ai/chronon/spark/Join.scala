@@ -19,6 +19,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
+  private val joinsAtATime = 8
 
   // Get table properties from config
   private val confTableProps = Option(joinConf.metaData.tableProperties)
@@ -210,8 +211,15 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
       }
     }
 
-    val joined = rightDfs.zip(joinConf.joinParts.asScala).foldLeft(leftTaggedDf) {
-      case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
+    val joined = rightDfs.zip(joinConf.joinParts.asScala).zipWithIndex.foldLeft(leftTaggedDf) {
+      case (partialDf, ((rightDf, joinPart), i)) => {
+        val next = joinWithLeft(partialDf, rightDf, joinPart)
+        if (((i + 1) % joinsAtATime) == 0) {
+          tableUtils.addJoinBreak(next)
+        } else {
+          next
+        }
+      }
     }
 
     joined.explain()

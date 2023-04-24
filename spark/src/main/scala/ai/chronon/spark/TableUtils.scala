@@ -30,6 +30,14 @@ trait BaseTableUtils {
       .toMap
   }
 
+  // A method to add breaks between joins. When joining many dataframes together at once,
+  // the Spark driver can experience memory pressure. To alleviate this, breaks in the
+  // execution plan can be added. There are various ways to do this (including choosing
+  // not to which is the default here) and so we make it configurable by exposing in TableUtils.
+  def addJoinBreak(dataFrame: DataFrame): DataFrame = {
+    dataFrame
+  }
+
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
