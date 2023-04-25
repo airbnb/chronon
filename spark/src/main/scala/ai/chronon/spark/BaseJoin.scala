@@ -216,8 +216,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     val updatedKeyMapping = collection.mutable.HashMap[String, String]()
     /*
-      guest  -> host
-      host  -> guest
+      For the corner case when the values of the key mapping also exist in the keys, for example:
+      Map(guest -> host, host -> guest)
+      the below logic will first rename the conflicted column with some random suffix and update the rename map
        */
     keyMapping.flatMap {
       case (leftKey, rightKey) =>
