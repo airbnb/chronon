@@ -14,6 +14,7 @@ import org.apache.spark.sql.functions._
 import java.time.Instant
 import scala.collection.Seq
 import scala.collection.JavaConverters._
+import scala.util.Random
 import scala.util.ScalaJavaConversions.IterableOps
 
 abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
@@ -209,14 +210,28 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       }
       .getOrElse(leftDf)
 
-    lazy val renamedLeftDf = Option(joinPart.keyMapping)
+     lazy val keyMapping = Option(joinPart.keyMapping)
       .map(_.asScala)
-      .getOrElse(Map.empty)
-      .foldLeft(skewFilteredLeft) {
-        case (left, (leftKey, rightKey)) =>
-          val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
-          result.withColumnRenamed(leftKey, rightKey)
-      }
+      .getOrElse(Map.empty[String, String])
+
+    val updatedKeyMapping = collection.mutable.HashMap[String, String]()
+    /*
+      guest  -> host
+      host  -> guest
+       */
+    keyMapping.flatMap {
+      case (leftKey, rightKey) =>
+        val updatedColName = if (keyMapping.contains(rightKey)) s"$rightKey${Random.alphanumeric.take(4).mkString}"
+        else leftKey
+        skewFilteredLeft.withColumnRenamed(rightKey, updatedColName)
+        updatedKeyMapping.put(updatedColName, rightKey)
+    }
+
+    lazy val renamedLeftDf = updatedKeyMapping.foldLeft(skewFilteredLeft) {
+      case (left, (leftKey, rightKey)) =>
+        val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
+        result.withColumnRenamed(leftKey, rightKey)
+    }
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     val rightDf = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
