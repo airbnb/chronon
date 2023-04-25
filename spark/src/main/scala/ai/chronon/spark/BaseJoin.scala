@@ -210,7 +210,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       }
       .getOrElse(leftDf)
 
-     lazy val keyMapping = Option(joinPart.keyMapping)
+    lazy val keyMapping = Option(joinPart.keyMapping)
       .map(_.asScala)
       .getOrElse(Map.empty[String, String])
 
