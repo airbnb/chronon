@@ -361,6 +361,7 @@ case class TableUtils(sparkSession: SparkSession) {
                |Unfilled range computation:
                |   Output table: $outputTable
                |   Missing output partitions: ${outputMissing.toSeq.sorted.prettyInline}
+               |   Input tables: ${inputTables.getOrElse(Seq("None")).mkString(", ")}
                |   Missing input partitions: ${inputMissing.toSeq.sorted.prettyInline}
                |   Unfilled Partitions: ${missingPartitions.toSeq.sorted.prettyInline}
                |   Unfilled ranges: ${missingChunks.sorted}
