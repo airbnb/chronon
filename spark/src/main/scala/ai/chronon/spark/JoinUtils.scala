@@ -253,14 +253,14 @@ object JoinUtils {
   def handleCircularKeyMapping(df: DataFrame, keyMapping: Map[String, String]): (Map[String, String], DataFrame) = {
     val updatedKeyMapping = collection.mutable.HashMap[String, String]()
     val updatedDf = keyMapping.foldLeft(df) {
-      case (left, (_, rightKey)) =>
+      case (left, (leftKey, rightKey)) =>
         if (keyMapping.contains(rightKey)) {
           val updatedColName = s"${rightKey}_${Random.alphanumeric.take(4).mkString}"
           updatedKeyMapping.put(updatedColName, keyMapping(rightKey))
           val result = left.withColumnRenamed(rightKey, updatedColName)
           result
         } else {
-          updatedKeyMapping.put(_, rightKey)
+          updatedKeyMapping.put(leftKey, rightKey)
           left
         }
     }
