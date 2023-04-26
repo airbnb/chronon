@@ -4,10 +4,13 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
+import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
+
 import scala.collection.Seq
+import scala.collection.JavaConverters._
 
 object JoinUtils {
 
@@ -15,7 +18,10 @@ object JoinUtils {
     * Util methods for join computation
     */
 
-  def leftDf(joinConf: ai.chronon.api.Join, range: PartitionRange, tableUtils: TableUtils, allowEmpty: Boolean = false): Option[DataFrame] = {
+  def leftDf(joinConf: ai.chronon.api.Join,
+             range: PartitionRange,
+             tableUtils: TableUtils,
+             allowEmpty: Boolean = false): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -241,5 +247,17 @@ object JoinUtils {
     val columnsToDrop = df.columns
       .filterNot(col => filter.contains(col))
     df.drop(columnsToDrop: _*)
+  }
+
+  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Seq[String] = {
+    val gson = new Gson()
+    (for (
+      props <- tableUtils.getTableProperties(outputTable);
+      oldSemanticJson <- props.get(Constants.SemanticHashKey);
+      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
+    ) yield {
+      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
+      joinConf.tablesToDrop(oldSemanticHash)
+    }).getOrElse(collection.Seq.empty)
   }
 }

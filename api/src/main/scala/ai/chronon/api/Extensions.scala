@@ -94,6 +94,8 @@ object Extensions {
     def consistencyTable = s"${outputTable}_consistency"
 
     def uploadTable = s"${outputTable}_upload"
+    def dailyStatsOutputTable = s"${outputTable}_daily_stats"
+    def dailyStatsUploadTable = s"${dailyStatsOutputTable}_upload"
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -670,6 +672,8 @@ object Extensions {
         .toSet
         .toArray
     }
+
+    def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
 
     def partOutputTable(jp: JoinPart): String =
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
