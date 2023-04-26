@@ -13,11 +13,13 @@ class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregato
   // last is where new events go, first is where old events get popped from
   val deque = new util.ArrayDeque[BankersEntry[IR]](maxSize)
   var aggBack: IR = null
+  var aggHop: BankersEntry[IR] = null
   var frontLen = 0
 
   def reset(): Unit = {
     deque.clear()
     aggBack = null
+    aggHop = null
     frontLen = 0
   }
 

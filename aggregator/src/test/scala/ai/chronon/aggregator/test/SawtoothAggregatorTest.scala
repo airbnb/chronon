@@ -159,6 +159,35 @@ class SawtoothAggregatorTest extends TestCase {
 }
 
 object SawtoothAggregatorTest {
+  def sawtoothAggregate2(events: Array[TestRow],
+                         queries: Array[Long],
+                         specs: Seq[Aggregation],
+                         schema: Seq[(String, DataType)],
+                         resolution: Resolution = FiveMinuteResolution): Array[Array[Any]] = {
+    val hopsAggregator =
+      new HopsAggregator(queries.min, specs, schema, resolution)
+    val hopLeftBoundaries: Array[(Long, Option[Long])] = resolution.hopSizes.zip(hopsAggregator.leftBoundaries)
+
+    val sortedQueries = queries.sorted
+    val sortedEvents = events.sortBy(_.ts)
+    val sortedHops: Array[util.ArrayList[Array[Any]]] = Array.fill(resolution.hopSizes.length)(new util.ArrayList[Array[Any]]())
+
+    var eventsFrontIdx = 0
+    // marks to the nearest hour
+    var eventsBackIdx = 0
+    // day buffer
+    var dayHopBackIdx = 0
+    var dayHopFrontIdx = 0
+
+    // for a given query, we resolve two time timestamps - tail, headStart
+
+    // we move the back_cursor in events to tail
+    // we move the front_cursor in events to head using two_stack buffer
+
+    // we break the window into 4
+    // forward pass - accumulate from nearest(ts, tailHop(window)++
+    // backward pass - accumulate from
+  }
   // the result is irs in sorted order of queries
   // with head real-time accuracy and tail hop accuracy
   // NOTE: This provides a sketch for a distributed topology

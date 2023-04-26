@@ -37,12 +37,12 @@ class TwoStackLiteAggregatorTest extends TestCase{
     assertBufferEquals(Seq(10), bankersBuffer.query)
   }
 
-  def testAgainstSawtooth(): Unit = {
+  def testAgainstSawtooth(queryCount: Int, eventCount: Int): Unit = {
     val timer = new Timer
-    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 100000, 5 * 60 * 1000)
+    val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), queryCount, 5 * 60 * 1000)
 
     val columns = Seq(Column("ts", LongType, 180), Column("num", LongType, 1000))
-    val events = CStream.gen(columns, 10000).rows
+    val events = CStream.gen(columns, eventCount).rows
     val schema = columns.map(_.schema)
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -82,9 +82,13 @@ class TwoStackLiteAggregatorTest extends TestCase{
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
+    val sortedQueries = queries.sorted
+    val sortedEvents = events.sortBy(_.ts)
+    timer.publish("sorting")
+
     // will finalize by default
-    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator, events.length).toArray
-    timer.publish("sorting + banker")
+    val bankersIrs = bankersAggregator.slidingSawtoothWindow(sortedQueries.iterator, sortedEvents.iterator, events.length).toArray
+    timer.publish("banker")
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
       .map(sawtoothAggregator.windowedAggregator.finalize)

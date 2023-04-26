@@ -16,6 +16,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   case class PerWindowAggregator(window: Window, agg: RowAggregator, indexMapping: Array[Int]) {
     private val windowLength: Long = window.millis
     private val tailHopSize = resolution.calculateTailHop(window)
+    def roundedHeadTs(eventTs: Long): Long = (eventTs/tailHopSize) * tailHopSize
     def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
     def bankersBuffer(inputSize: Int) = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, inputSize)
     def init = new Array[Any](agg.length)
@@ -67,7 +68,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
         // add all new inputs
         while(inputsBuffered.hasNext && inputsBuffered.head.ts < queryTs) {
           val row = inputsBuffered.next()
-          
+
           // add to windowed
           i = 0
           while(i < perWindowAggregators.length) { // for each unique window length
