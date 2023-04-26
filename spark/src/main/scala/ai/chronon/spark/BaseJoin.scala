@@ -6,7 +6,7 @@ import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, handleCircularKeyMapping, leftDf}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
@@ -48,7 +48,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val keys = partLeftKeys ++ additionalKeys
 
     // apply key-renaming to key columns
-    val keyRenamedRightDf = joinPart.rightToLeft.foldLeft(rightDf) {
+    lazy val (updatedKeyMapping, updatedRightDf) = handleCircularKeyMapping(rightDf, joinPart.rightToLeft)
+
+    lazy val keyRenamedRightDf = updatedKeyMapping.foldLeft(updatedRightDf) {
       case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
     }
 
@@ -210,25 +212,13 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       }
       .getOrElse(leftDf)
 
-    lazy val keyMapping = Option(joinPart.keyMapping)
+    val keyMapping = Option(joinPart.keyMapping)
       .map(_.asScala)
       .getOrElse(Map.empty[String, String])
 
-    val updatedKeyMapping = collection.mutable.HashMap[String, String]()
-    /*
-      For the corner case when the values of the key mapping also exist in the keys, for example:
-      Map(guest -> host, host -> guest)
-      the below logic will first rename the conflicted column with some random suffix and update the rename map
-       */
-    keyMapping.flatMap {
-      case (leftKey, rightKey) =>
-        val updatedColName = if (keyMapping.contains(rightKey)) s"$rightKey${Random.alphanumeric.take(4).mkString}"
-        else leftKey
-        skewFilteredLeft.withColumnRenamed(rightKey, updatedColName)
-        updatedKeyMapping.put(updatedColName, rightKey)
-    }
+    lazy val (updatedKeyMapping, updatedSkewFilteredLeft) = handleCircularKeyMapping(skewFilteredLeft, keyMapping.toMap)
 
-    lazy val renamedLeftDf = updatedKeyMapping.foldLeft(skewFilteredLeft) {
+    lazy val renamedLeftDf = updatedKeyMapping.foldLeft(updatedSkewFilteredLeft) {
       case (left, (leftKey, rightKey)) =>
         val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
         result.withColumnRenamed(leftKey, rightKey)

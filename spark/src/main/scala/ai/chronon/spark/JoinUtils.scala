@@ -7,7 +7,9 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
+
 import scala.collection.Seq
+import scala.util.Random
 
 object JoinUtils {
 
@@ -241,5 +243,27 @@ object JoinUtils {
     val columnsToDrop = df.columns
       .filterNot(col => filter.contains(col))
     df.drop(columnsToDrop: _*)
+  }
+
+  /*
+    For the corner case when the values of the key mapping also exist in the keys, for example:
+    Map(user -> user_name, user_name -> user)
+    the below logic will first rename the conflicted column with some random suffix and update the rename map
+   */
+  def handleCircularKeyMapping(df: DataFrame, keyMapping: Map[String, String]): (Map[String, String], DataFrame) = {
+    val updatedKeyMapping = collection.mutable.HashMap[String, String]()
+    val updatedDf = keyMapping.foldLeft(df) {
+      case (left, (_, rightKey)) =>
+        if (keyMapping.contains(rightKey)) {
+          val updatedColName = s"${rightKey}_${Random.alphanumeric.take(4).mkString}"
+          updatedKeyMapping.put(updatedColName, keyMapping(rightKey))
+          val result = left.withColumnRenamed(rightKey, updatedColName)
+          result
+        } else {
+          updatedKeyMapping.put(_, rightKey)
+          left
+        }
+    }
+    (updatedKeyMapping.toMap, updatedDf)
   }
 }
