@@ -98,7 +98,6 @@ class JoinTest {
     val queryTable = s"$namespace.queries"
     DataFrameGen
       .events(spark, queriesSchema, 3000, partitions = 180)
-//      .withColumnRenamed("user", "user_name") // to test chronon renaming logic
       .save(queryTable)
 
     val start = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
