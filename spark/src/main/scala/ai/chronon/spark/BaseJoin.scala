@@ -14,7 +14,6 @@ import org.apache.spark.sql.functions._
 import java.time.Instant
 import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.Random
 import scala.util.ScalaJavaConversions.IterableOps
 
 abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
