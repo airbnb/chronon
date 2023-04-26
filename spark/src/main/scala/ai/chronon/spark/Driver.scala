@@ -5,9 +5,11 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.Extensions.StructTypeOps
-import ai.chronon.spark.stats.{ConsistencyJob, CompareJob, SummaryJob}
+import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.google.gson.GsonBuilder
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
@@ -316,7 +318,7 @@ object Driver {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
-        choice(Seq("join", "group-by"), descr = "the type of conf to fetch", default = Some("join"))
+        choice(Seq("join", "group-by", "join-stats"), descr = "the type of conf to fetch", default = Some("join"))
       val keyJsonFile: ScallopOption[String] = opt[String](
         required = false,
         descr = "file path to json of the keys to fetch",
@@ -334,11 +336,30 @@ object Driver {
       )
     }
 
+    def fetchStats(args: Args, objectMapper: ObjectMapper, keyMap: Map[String, AnyRef], fetcher: Fetcher): Unit = {
+      val resFuture = fetcher.fetchStatsTimeseries(
+        Fetcher.StatsRequest(
+          args.name(),
+          keyMap.get("startTs").map(_.asInstanceOf[String].toLong),
+          keyMap.get("endTs").map(_.asInstanceOf[String].toLong)
+        ))
+      val stats = Await.result(resFuture, 100.seconds)
+      val series = stats.values.get
+      val toPrint =
+        if (
+          keyMap.get("statsKey").isDefined
+          && series.contains(keyMap.get("statsKey").map(_.asInstanceOf[String]).getOrElse(""))
+        )
+          series.get(keyMap("statsKey").asInstanceOf[String])
+        else series
+      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
+    }
+
     def run(args: Args): Unit = {
       if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
         throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
-      val objectMapper = new ObjectMapper()
+      val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
         objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
       }
@@ -359,7 +380,6 @@ object Driver {
           file.close()
           mapList
         }
-
       if (keyMapList.length > 1) {
         println(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
       }
@@ -367,38 +387,41 @@ object Driver {
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
           println(s"--- [START FETCHING for ${keyMap}] ---")
-          val startNs = System.nanoTime
-          val requests = Seq(Fetcher.Request(args.name(), keyMap))
-          val resultFuture = if (args.`type`() == "join") {
-            fetcher.fetchJoin(requests)
+          if (args.`type`() == "join-stats") {
+            fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
-            fetcher.fetchGroupBys(requests)
-          }
-          val result = Await.result(resultFuture, 5.seconds)
-          val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
+            val startNs = System.nanoTime
+            val requests = Seq(Fetcher.Request(args.name(), keyMap))
+            val resultFuture = if (args.`type`() == "join") {
+              fetcher.fetchJoin(requests)
+            } else {
+              fetcher.fetchGroupBys(requests)
+            }
+            val result = Await.result(resultFuture, 5.seconds)
+            val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
 
-          // treeMap to produce a sorted result
-          val tMap = new java.util.TreeMap[String, AnyRef]()
-          result.foreach(r =>
-            r.values match {
-              case Success(valMap) => {
-                if (valMap == null) {
-                  println("No data present for the provided key.")
-                } else {
-                  valMap.foreach { case (k, v) => tMap.put(k, v) }
-                  println(
-                    s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+            // treeMap to produce a sorted result
+            val tMap = new java.util.TreeMap[String, AnyRef]()
+            result.foreach(r =>
+              r.values match {
+                case Success(valMap) => {
+                  if (valMap == null) {
+                    println("No data present for the provided key.")
+                  } else {
+                    valMap.foreach { case (k, v) => tMap.put(k, v) }
+                    println(
+                      s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
+                  }
+                  println(s"Fetched in: $awaitTimeMs ms")
                 }
-                println(s"Fetched in: $awaitTimeMs ms")
-              }
-              case Failure(exception) => {
-                exception.printStackTrace()
-              }
-            })
-          Thread.sleep(args.interval() * 1000)
+                case Failure(exception) => {
+                  exception.printStackTrace()
+                }
+              })
+            Thread.sleep(args.interval() * 1000)
+          }
         })
       }
-
       iterate()
       while (args.loop()) {
         println("loop is set to true, start next iteration. will only exit if manually killed.")
@@ -593,16 +616,16 @@ object Driver {
             shouldExit = false
             GroupByStreaming.run(args.GroupByStreamingArgs)
 
-          case args.MetadataUploaderArgs => MetadataUploader.run(args.MetadataUploaderArgs)
-          case args.FetcherCliArgs       => FetcherCli.run(args.FetcherCliArgs)
-          case args.LogFlattenerArgs     => LogFlattener.run(args.LogFlattenerArgs)
+          case args.MetadataUploaderArgs   => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareJoinQueryArgs => CompareJoinQuery.run(args.CompareJoinQueryArgs)
-          case args.AnalyzerArgs       => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs     => DailyStats.run(args.DailyStatsArgs)
-          case args.MetadataExportArgs => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs      => LabelJoin.run(args.LabelJoinArgs)
-          case _                       => println(s"Unknown subcommand: $x")
+          case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
+          case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
+          case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
+          case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
+          case _                           => println(s"Unknown subcommand: $x")
         }
       case None => println(s"specify a subcommand please")
     }
