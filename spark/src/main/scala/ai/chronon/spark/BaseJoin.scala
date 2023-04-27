@@ -47,11 +47,14 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val keys = partLeftKeys ++ additionalKeys
 
     // apply key-renaming to key columns
-    lazy val (updatedKeyMapping, updatedRightDf) = handleCircularKeyMapping(rightDf, joinPart.rightToLeft)
-
-    lazy val keyRenamedRightDf = updatedKeyMapping.foldLeft(updatedRightDf) {
-      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
+    val newColumns = rightDf.columns.map { column =>
+      if (joinPart.rightToLeft.contains(column)) {
+        col(column).as(joinPart.rightToLeft(column))
+      } else {
+        col(column)
+      }
     }
+    val keyRenamedRightDf =  rightDf.select(newColumns: _*)
 
     // apply prefix to value columns
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
