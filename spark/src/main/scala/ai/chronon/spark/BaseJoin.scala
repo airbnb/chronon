@@ -47,9 +47,14 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val keys = partLeftKeys ++ additionalKeys
 
     // apply key-renaming to key columns
-    val keyRenamedRightDf = joinPart.rightToLeft.foldLeft(rightDf) {
-      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
+    val newColumns = rightDf.columns.map { column =>
+      if (joinPart.rightToLeft.contains(column)) {
+        col(column).as(joinPart.rightToLeft(column))
+      } else {
+        col(column)
+      }
     }
+    val keyRenamedRightDf =  rightDf.select(newColumns: _*)
 
     // apply prefix to value columns
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
@@ -209,14 +214,23 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       }
       .getOrElse(leftDf)
 
-    lazy val renamedLeftDf = Option(joinPart.keyMapping)
-      .map(_.asScala)
-      .getOrElse(Map.empty)
-      .foldLeft(skewFilteredLeft) {
-        case (left, (leftKey, rightKey)) =>
-          val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
-          result.withColumnRenamed(leftKey, rightKey)
+    /*
+      For the corner case when the values of the key mapping also exist in the keys, for example:
+      Map(user -> user_name, user_name -> user)
+      the below logic will first rename the conflicted column with some random suffix and update the rename map
+    */
+    lazy val renamedLeftDf = {
+      val columns = skewFilteredLeft.columns.flatMap { column =>
+        if (joinPart.leftToRight.contains(column)) {
+          Some(col(column).as(joinPart.leftToRight(column)))
+        } else if (joinPart.rightToLeft.contains(column)) {
+          None
+        } else {
+          Some(col(column))
+        }
       }
+      skewFilteredLeft.select(columns: _*)
+    }
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     val rightDf = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
