@@ -10,9 +10,7 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 
 import scala.collection.Seq
-import scala.util.Random
 import scala.collection.JavaConverters._
-
 
 object JoinUtils {
 
