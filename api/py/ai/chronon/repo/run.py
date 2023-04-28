@@ -41,6 +41,7 @@ MODE_ARGS = {
     'log-flattener': OFFLINE_ARGS,
     'metadata-export': OFFLINE_ARGS,
     'label-join': OFFLINE_ARGS,
+    'info': '',
 }
 
 ROUTES = {
@@ -72,6 +73,7 @@ ROUTES = {
 }
 
 APP_NAME_TEMPLATE = "chronon_{conf_type}_{mode}_{context}_{name}"
+RENDER_INFO_DEFAULT_SCRIPT = 'scripts/render_info.py'
 
 
 def retry_decorator(retries=3, backoff=20):
@@ -270,7 +272,7 @@ class Runner:
                     "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
                     .format(self.conf))
                 raise e
-            possible_modes = ROUTES[self.conf_type].keys()
+            possible_modes = list(ROUTES[self.conf_type].keys()) + ["info"]
             assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
                 args.mode, self.conf, self.conf_type, possible_modes)
         else:
@@ -282,6 +284,10 @@ class Runner:
         self.app_name = args.app_name
         if self.mode == 'streaming':
             self.spark_submit = args.spark_streaming_submit_path
+        elif self.mode == 'info':
+            assert os.path.exists(args.render_info), "Invalid path for the render info script: {}".format(
+                args.render_info)
+            self.render_info = args.render_info
         else:
             self.spark_submit = args.spark_submit_path
         self.list_apps_cmd = args.list_apps
@@ -290,15 +296,21 @@ class Runner:
         base_args = MODE_ARGS[self.mode].format(
             conf_path=self.conf, ds=self.ds, online_jar=self.online_jar, online_class=self.online_class)
         final_args = base_args + ' ' + str(self.args)
-        subcommand = ROUTES[self.conf_type][self.mode]
-        if self.sub_help or (self.mode not in SPARK_MODES):
+        if self.mode == 'info':
+            command = 'python3 {script} --conf {conf} --ds {ds} --repo {repo}'.format(
+                script=self.render_info,
+                conf=self.conf,
+                ds=self.ds,
+                repo=self.repo
+            )
+        elif self.sub_help or (self.mode not in SPARK_MODES):
             command = 'java -cp {jar} ai.chronon.spark.Driver {subcommand} {args}'.format(
                 jar=self.jar_path,
                 args='--help' if self.sub_help else final_args,
-                subcommand=subcommand
+                subcommand=ROUTES[self.conf_type][self.mode]
             )
         else:
-            if self.mode in ('streaming'):
+            if self.mode in ['streaming']:
                 print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
                 running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8").split('\n')
                 running_app_map = {}
@@ -323,7 +335,7 @@ class Runner:
             command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
-                subcommand=subcommand,
+                subcommand=ROUTES[self.conf_type][self.mode],
                 args=final_args
             )
         check_call(command)
@@ -349,6 +361,7 @@ def set_defaults(parser):
         online_args=os.environ.get('CHRONON_ONLINE_ARGS', ''),
         chronon_jar=os.environ.get('CHRONON_DRIVER_JAR'),
         list_apps="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
+        render_info=os.path.join(chronon_repo_path, RENDER_INFO_DEFAULT_SCRIPT),
     )
 
 
@@ -378,6 +391,9 @@ if __name__ == "__main__":
     parser.add_argument('--chronon-jar', help='Path to chronon OS jar')
     parser.add_argument('--release-tag', help='Use the latest jar for a particular tag.')
     parser.add_argument('--list-apps', help='command/script to list running jobs on the scheduler')
+    parser.add_argument('--render-info',
+                        help='Path to script rendering additional information of the given config. ' +
+                             "Only applicable when mode is set to info")
     set_defaults(parser)
     pre_parse_args, _ = parser.parse_known_args()
     # We do a pre-parse to extract conf, mode, etc and set environment variables and re parse default values.

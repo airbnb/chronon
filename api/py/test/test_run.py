@@ -12,7 +12,7 @@ import os
 def parser():
     """ Basic parser for tests relative to the main arguments of run.py """
     parser = argparse.ArgumentParser()
-    args = ['repo', 'conf', 'mode', 'app-name', 'chronon-jar', 'online-jar', 'online-class']
+    args = ['repo', 'conf', 'mode', 'app-name', 'chronon-jar', 'online-jar', 'online-class', 'render-info', 'sub-help']
     for arg in args:
         parser.add_argument(f"--{arg}")
     run.set_defaults(parser)
@@ -36,6 +36,7 @@ def reset_env(default_env):
 def test_download_jar(monkeypatch, sleepless):
     def mock_cmd(url, path):
         return url
+
     monkeypatch.setattr(time, 'sleep', sleepless)
     monkeypatch.setattr(run, 'download_only_once', mock_cmd)
     jar_path = run.download_jar("version", jar_type="uber", release_tag=None, spark_version='2.4.0')
@@ -127,7 +128,6 @@ def test_environment(teams_json, repo, parser, test_conf_location):
     reset_env(default_environment)
 
 
-
 def test_property_default_update(repo, parser, test_conf_location):
     assert 'VERSION' not in os.environ
     args, _ = parser.parse_known_args(args=[
@@ -146,3 +146,64 @@ def test_property_default_update(repo, parser, test_conf_location):
         '--repo', repo
     ])
     assert reparsed.version is not None
+
+
+def test_render_info_setting_update(repo, parser, test_conf_location):
+    default_environment = os.environ
+
+    run.set_defaults(parser)
+    args, _ = parser.parse_known_args(args=[
+        '--mode', 'info',
+        '--conf', test_conf_location,
+        '--repo', repo
+    ])
+    run.set_defaults(parser)
+    assert args.render_info == os.path.join('.', run.RENDER_INFO_DEFAULT_SCRIPT)
+
+    reset_env(default_environment)
+    run.set_runtime_env(args)
+    os.environ['CHRONON_REPO_PATH'] = repo
+    run.set_defaults(parser)
+    args, _ = parser.parse_known_args(args=[
+        '--mode', 'info',
+        '--conf', test_conf_location,
+        '--repo', repo
+    ])
+    assert args.render_info == os.path.join(repo, run.RENDER_INFO_DEFAULT_SCRIPT)
+
+    reset_env(default_environment)
+    run.set_defaults(parser)
+    somewhere = '/tmp/somewhere/script.py'
+    args, _ = parser.parse_known_args(args=[
+        '--mode', 'info',
+        '--conf', test_conf_location,
+        '--render-info', somewhere,
+    ])
+    assert args.render_info == somewhere
+
+
+def test_render_info(repo, parser, test_conf_location, monkeypatch):
+    actual_cmd = None
+
+    def mock_check_call(cmd):
+        nonlocal actual_cmd
+        actual_cmd = cmd
+        return cmd
+
+    def mock_exists(_):
+        return True
+
+    monkeypatch.setattr(run, 'check_call', mock_check_call)
+    monkeypatch.setattr(os.path, 'exists', mock_exists)
+    run.set_defaults(parser)
+    args, _ = parser.parse_known_args(args=[
+        '--mode', 'info',
+        '--conf', test_conf_location,
+        '--repo', repo
+    ])
+
+    args.args = _
+    runner = run.Runner(args, 'some.jar')
+    runner.run()
+
+    assert run.RENDER_INFO_DEFAULT_SCRIPT in actual_cmd
