@@ -6,7 +6,7 @@ import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{coalescedJoin, handleCircularKeyMapping, leftDf, tablesToRecompute}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
@@ -214,16 +214,22 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       }
       .getOrElse(leftDf)
 
-    lazy val keyMapping = Option(joinPart.keyMapping)
-      .map(_.asScala)
-      .getOrElse(Map.empty[String, String])
-
-    lazy val (updatedKeyMapping, updatedSkewFilteredLeft) = handleCircularKeyMapping(skewFilteredLeft, keyMapping.toMap)
-
-    lazy val renamedLeftDf = updatedKeyMapping.foldLeft(updatedSkewFilteredLeft) {
-      case (left, (leftKey, rightKey)) =>
-        val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
-        result.withColumnRenamed(leftKey, rightKey)
+    /*
+      For the corner case when the values of the key mapping also exist in the keys, for example:
+      Map(user -> user_name, user_name -> user)
+      the below logic will first rename the conflicted column with some random suffix and update the rename map
+    */
+    lazy val renamedLeftDf = {
+      val columns = skewFilteredLeft.columns.flatMap { column =>
+        if (joinPart.leftToRight.contains(column)) {
+          Some(col(column).as(joinPart.leftToRight(column)))
+        } else if (joinPart.rightToLeft.contains(column)) {
+          None
+        } else {
+          Some(col(column))
+        }
+      }
+      skewFilteredLeft.select(columns: _*)
     }
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
