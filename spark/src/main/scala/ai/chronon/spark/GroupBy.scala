@@ -252,9 +252,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     */
   def temporalEventsTwoStack(queriesUnfilteredDf: DataFrame,
                              queryTimeRange: Option[TimeRange] = None,
-                             resolution: Resolution = FiveMinuteResolution): DataFrame = {
-    println("Running temporal events two stack")
-
+                             resolution: Resolution = FiveMinuteResolution,
+                             sparkUtils: Option[SparkUtils] = None): DataFrame = {
     val queriesDf = skewFilter
       .map {
         queriesUnfilteredDf.filter
@@ -274,29 +273,36 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     val queriesByKey: KeyValueGroupedDataset[KeyWithHash, Row] = queriesDf.groupByKey(queriesKeyGen)(Encoders.kryo)
     val inputsByKey: KeyValueGroupedDataset[KeyWithHash, Row] = inputDf.groupByKey(inputsKeyGen)(Encoders.kryo)
-    val inputChrononSchema = inputDf.schema.toChrononSchema("TwoStack")
-    val partitionIndex = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
 
-    val sawtoothWindowRdd: RDD[(Array[Any], Array[Any])] = queriesByKey.cogroup(inputsByKey) { (k: KeyWithHash, queries: Iterator[Row], inputs: Iterator[Row]) =>
+    val inputChrononSchema: api.StructType = inputDf.schema.toChrononSchema("TwoStack")
+    val partitionIndex: Int = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
+
+    val coGroupFn = (sortIterators: Boolean) => (k: KeyWithHash, queries: Iterator[Row], inputs: Iterator[Row]) => {
       val twoStackAgg = new TwoStackLiteAggregator(inputChrononSchema, aggregations, resolution)
-
-      val (qs1, qs2) = sort(queries, queryTsIndex).duplicate
-      val queryTimestampsAndPartitionsSorted: Iterator[(Long, String)] = qs1.map(r => (r.getLong(tsIndex), r.getString(partitionIndex)))
-      val queryTimestampsSorted: Iterator[Long] = qs2.map(r => r.getLong(tsIndex))
-
-
-      val (inputSize, inputChrononRowsSorted) = {
-        val (i1, i2) = sort(inputs, tsIndex).map(Conversions.toChrononRow(_, tsIndex)).duplicate
-        (i1.length, i2)
-      }
-
-      twoStackAgg.slidingSawtoothWindow(queryTimestampsSorted, inputChrononRowsSorted, inputSize, shouldFinalize = true).zip(queryTimestampsAndPartitionsSorted).map {
+      // If cogroupSorted was used, the iterators are already sorted and so we don't need to sort.
+      val (qs1, qs2) = if (sortIterators) sort(queries, queryTsIndex).duplicate else queries.duplicate
+      val queryTimestampsAndPartitionsSorted: Iterator[(Long, String)] = qs1.map(r => (r.getLong(queryTsIndex), r.getString(partitionIndex)))
+      val queryTimestampsSorted: Iterator[Long] = qs2.map(r => r.getLong(queryTsIndex))
+      val inputChrononRowsSorted = if(sortIterators) sort(inputs, tsIndex).map(Conversions.toChrononRow(_, tsIndex)) else inputs.map(Conversions.toChrononRow(_, tsIndex))
+      val result = twoStackAgg.slidingSawtoothWindow(queryTimestampsSorted, inputChrononRowsSorted).zip(queryTimestampsAndPartitionsSorted).map {
         case (finalized: Array[Any], (ts: Long, partition: String)) =>
           val timeTuple = TimeTuple.make(ts, partition)
           (k.data ++ timeTuple.toArray, finalized)
       }
-    }(Encoders.kryo)
-      .rdd
+      result
+    }
+
+    val sawtoothWindowRdd: RDD[(Array[Any], Array[Any])] = {
+      if (sparkUtils.isDefined) {
+        sparkUtils
+          .get
+          .cogroupSorted(queriesByKey, inputsByKey, Seq(queriesDf(Constants.TimeColumn)), Seq(inputDf(Constants.TimeColumn)), coGroupFn(false))(Encoders.kryo)
+          .rdd
+      }
+      else {
+        queriesByKey.cogroup(inputsByKey)(coGroupFn(true))(Encoders.kryo).rdd
+      }
+    }
 
     toDf(sawtoothWindowRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
   }
