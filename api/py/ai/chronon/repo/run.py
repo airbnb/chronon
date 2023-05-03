@@ -72,6 +72,8 @@ ROUTES = {
     },
 }
 
+UNIVERSAL_ROUTES = ["info"]
+
 APP_NAME_TEMPLATE = "chronon_{conf_type}_{mode}_{context}_{name}"
 RENDER_INFO_DEFAULT_SCRIPT = 'scripts/render_info.py'
 
@@ -272,7 +274,7 @@ class Runner:
                     "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder"
                     .format(self.conf))
                 raise e
-            possible_modes = list(ROUTES[self.conf_type].keys()) + ["info"]
+            possible_modes = list(ROUTES[self.conf_type].keys()) + UNIVERSAL_ROUTES
             assert args.mode in possible_modes, "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
                 args.mode, self.conf, self.conf_type, possible_modes)
         else:
