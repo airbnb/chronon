@@ -402,7 +402,7 @@ if __name__ == "__main__":
     set_runtime_env(pre_parse_args)
     set_defaults(parser)
     args, unknown_args = parser.parse_known_args()
-    jar_type = 'embedded' if args.mode == 'local-streaming' else 'uber'
+    jar_type = 'embedded' if args.mode in ['local-streaming', 'fetch'] else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(
