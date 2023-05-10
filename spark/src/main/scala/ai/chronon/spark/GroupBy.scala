@@ -9,6 +9,7 @@ import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Encoders, KeyValueGroupedDataset, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
@@ -254,11 +255,17 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
                              queryTimeRange: Option[TimeRange] = None,
                              resolution: Resolution = FiveMinuteResolution,
                              sparkUtils: Option[SparkUtils] = None): DataFrame = {
+
+    println("Computing join part using two stack")
+
+    val selectCols = keyColumns :+ Constants.TimeColumn :+ Constants.PartitionColumn
     val queriesDf = skewFilter
       .map {
         queriesUnfilteredDf.filter
       }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
+      .select(selectCols.map(col) : _*)
+      .distinct()
 
     queriesDf.validateJoinKeys(inputDf, keyColumns)
 
@@ -329,6 +336,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
+
+    println("Computing join part using temporal events")
 
     val queriesDf = skewFilter
       .map { queriesUnfilteredDf.filter }

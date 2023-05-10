@@ -3,15 +3,15 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType, IntegerType => SparkIntType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
-import org.junit.Test
+import org.junit.{Test}
 
 import scala.collection.mutable
 
@@ -291,6 +291,59 @@ class GroupByTest {
     }
 
 }
+
+  @Test
+  def confirmDistinctQueriesTest(): Unit = {
+
+    val eventSchema = new StructType()
+      .add("ts", org.apache.spark.sql.types.LongType)
+      .add("ds", org.apache.spark.sql.types.StringType)
+      .add("card_number", org.apache.spark.sql.types.StringType)
+      .add("charge_id", org.apache.spark.sql.types.StringType)
+      .add("charge_amount", org.apache.spark.sql.types.DoubleType)
+
+    val lookupSchema = new StructType()
+      .add("ts", org.apache.spark.sql.types.LongType)
+      .add("ds", org.apache.spark.sql.types.StringType)
+      .add("merchant_id", org.apache.spark.sql.types.StringType)
+      .add("card_number", org.apache.spark.sql.types.StringType)
+
+    //pretend there was another column in the event data `merchant_id` that was not included in the schema and resulted in this
+
+    val eventData: Seq[Row] = Seq(
+      Row(1000000000000L, "day 1", "1234", "abc123", 100.0), //merchant_1
+      Row(1000000000000L, "day 1", "1234", "def456", 100.0), //merchant_2
+      Row(2000000000000L, "day 2", "4567", "ghi789", 25.0),  //merchant_1
+    )
+
+    val lookupData: Seq[Row] = Seq(
+      Row(1000000000001L, "day 1", "merchant_1", "1234"),
+      Row(1000000000001L, "day 1", "merchant_2", "1234"),
+      Row(2000000000001L, "day 2", "merchant_1", "4567"),
+    )
+
+    val eventDf = spark.createDataFrame(spark.sparkContext.parallelize(eventData), eventSchema)
+    val queryDf = spark.createDataFrame(spark.sparkContext.parallelize(lookupData), lookupSchema)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.LAST_K, "charge_amount", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
+      Builders.Aggregation(Operation.SUM, "charge_amount", Seq(WindowUtils.Unbounded))
+    )
+    val keys = Seq("card_number").toArray
+    val groupBy =
+      new GroupBy(aggregations,
+        keys,
+        eventDf)
+
+    val temporalEvents = groupBy.temporalEvents(queryDf)
+    val twoStack = groupBy.temporalEventsTwoStack(queryDf)
+
+    val twoStackResults = twoStack.collect()
+    val temporalEventsResults = temporalEvents.collect()
+
+    assert(twoStackResults.length == temporalEventsResults.length && twoStackResults.toSet == temporalEventsResults.toSet)
+
+  }
 
   @Test
   def testTemporalEventsTwoStack(): Unit = {
