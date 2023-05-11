@@ -134,11 +134,16 @@ object Metrics {
 
     def increment(metric: String): Unit = stats.increment(metric)
     def incrementException(exception: Throwable): Unit = {
-      val stackRoot = exception.getStackTrace.apply(0)
-      val file = stackRoot.getFileName
-      val line = stackRoot.getLineNumber
-      val method = stackRoot.getMethodName
-      val exceptionSignature = s"[$method@$file:$line]${exception.getClass.toString}"
+      val stackTrace = exception.getStackTrace
+      val exceptionSignature = if (stackTrace.isEmpty) {
+        exception.getClass.toString
+      } else {
+        val stackRoot = stackTrace.apply(0)
+        val file = stackRoot.getFileName
+        val line = stackRoot.getLineNumber
+        val method = stackRoot.getMethodName
+        s"[$method@$file:$line]${exception.getClass.toString}"
+      }
       stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
     }
 
