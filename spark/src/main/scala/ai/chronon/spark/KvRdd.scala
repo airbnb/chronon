@@ -29,10 +29,10 @@ sealed trait BaseKvRdd {
   val baseFlatSchema: StructType = StructType(keySchema ++ valueSchema)
   def flatSchema: StructType = if (withTime) StructType(baseFlatSchema :+ timeField) else baseFlatSchema
   def flatZSchema: api.StructType = flatSchema.toChrononSchema("Flat")
-  val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
-  val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
-  val keyToJson = AvroConversions.encodeJson(keyZSchema, GenericRowHandler.func)
-  val valueToJson = AvroConversions.encodeJson(valueZSchema, GenericRowHandler.func)
+  lazy val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+  lazy val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
+  lazy val keyToJson = AvroConversions.encodeJson(keyZSchema, GenericRowHandler.func)
+  lazy val valueToJson = AvroConversions.encodeJson(valueZSchema, GenericRowHandler.func)
   val baseRowSchema = StructType(
     Seq(
       StructField("key_bytes", BinaryType),
