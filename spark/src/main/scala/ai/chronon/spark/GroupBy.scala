@@ -551,7 +551,8 @@ object GroupBy {
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
-                      stepDays: Option[Int] = None): Unit = {
+                      stepDays: Option[Int] = None,
+                      outputParallelism: Option[Int] = None): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -584,11 +585,12 @@ object GroupBy {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill = from(groupByConf, range, tableUtils)
+              val daysInRange = range.partitions.length
               (groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
                 case Events   => groupByBackfill.snapshotEvents(range)
-              }).save(outputTable, tableProps)
+              }).save(outputTable, tableProps, outputParallelism = outputParallelism)
               println(s"Wrote to table $outputTable, into partitions: $range")
           }
           println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
@@ -601,23 +603,10 @@ object GroupBy {
       val length = exceptions.length
       val fullMessage = exceptions.zipWithIndex
         .map {
-          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+          case (message, index) => s"[${index + 1}/${length} exceptions]\n${message}"
         }
         .mkString("\n")
       throw new Exception(fullMessage)
     }
-  }
-
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new Args(args)
-    parsedArgs.verify()
-    println(s"Parsed Args: $parsedArgs")
-    val groupByConf = parsedArgs.parseConf[api.GroupBy]
-    computeBackfill(
-      groupByConf,
-      parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
-      parsedArgs.stepDays.toOption
-    )
   }
 }

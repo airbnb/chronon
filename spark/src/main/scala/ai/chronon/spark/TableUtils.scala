@@ -3,14 +3,13 @@ package ai.chronon.spark
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, lit, rand, round}
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import scala.collection.mutable
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.util.{Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
@@ -155,7 +154,8 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
-                       autoExpand: Boolean = false): Unit = {
+                       autoExpand: Boolean = false,
+                       outputParallelism: Option[Int] = None): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -199,7 +199,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, outputParallelism)
   }
 
   def sql(query: String): DataFrame = {
@@ -227,23 +227,59 @@ case class TableUtils(sparkSession: SparkSession) {
     repartitionAndWrite(df, tableName, saveMode)
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    val rowCount = df.count()
-    println(s"$rowCount rows requested to be written into table $tableName")
-    if (rowCount > 0) {
-      // at-least a million rows per partition per 100 columns - or there will be too many files.
-      val rddPartitionCount =
-        math.min(800, math.ceil(rowCount / 1000000.0).toInt) * math.ceil(df.columns.length / 100.0).toInt
-      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+  def columnSizeEstimator(dataType: DataType): Long = {
+    dataType match {
+      // TODO: improve upon this very basic estimate approach
+      case ArrayType(elementType, _)      => 50 * columnSizeEstimator(elementType)
+      case StructType(fields)             => fields.map(_.dataType).map(columnSizeEstimator).sum
+      case MapType(keyType, valueType, _) => 10 * (columnSizeEstimator(keyType) + columnSizeEstimator(valueType))
+      case _                              => 1
+    }
+  }
 
+  private def repartitionAndWrite(df: DataFrame,
+                                  tableName: String,
+                                  saveMode: SaveMode,
+                                  outputParallelism: Option[Int] = None): Unit = {
+
+    // get row count and table partition count statistics
+    val (rowCount: Long, tablePartitionCount: Int) =
+      if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
+        val result = df.select(count(lit(1)), approx_count_distinct(col(Constants.PartitionColumn))).head()
+        (result.getAs[Long](0), result.getAs[Long](1).toInt)
+      } else {
+        (df.count(), 1)
+      }
+
+    println(s"$rowCount rows requested to be written into table $tableName")
+    if (outputParallelism.isDefined) {
+      println(s"Using custom outputParallelism ${outputParallelism.get}")
+    }
+    if (rowCount > 0) {
+      val columnSizeEstimate = columnSizeEstimator(df.schema)
+
+      // roughly 1 partition count per 1m rows x 100 columns
+      val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / 1e8).toInt
+      val dailyFileCountUpperBound = 2000
+      val dailyFileCountLowerBound = 10
+      val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
+      val dailyFileCountBounded =
+        math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
+      val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
+
+      // finalized shuffle parallelism
+      val shuffleParallelism = dailyFileCount * tablePartitionCount
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
+      val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
+
+      println(
+        s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
       val repartitionCols =
         if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
           Seq(Constants.PartitionColumn, saltCol)
         } else { Seq(saltCol) }
       saltedDf
-        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col).toSeq: _*)
+        .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
         .drop(saltCol)
         .write
         .mode(saveMode)

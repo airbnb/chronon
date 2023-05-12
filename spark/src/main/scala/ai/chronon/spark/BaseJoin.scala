@@ -16,7 +16,11 @@ import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
-abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
+abstract class BaseJoin(joinConf: api.Join,
+                        endPartition: String,
+                        tableUtils: TableUtils,
+                        skipFirstHole: Boolean,
+                        outputParallelism: Option[Int] = None) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -54,7 +58,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         col(column)
       }
     }
-    val keyRenamedRightDf =  rightDf.select(newColumns: _*)
+    val keyRenamedRightDf = rightDf.select(newColumns: _*)
 
     // apply prefix to value columns
     val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
@@ -218,7 +222,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       For the corner case when the values of the key mapping also exist in the keys, for example:
       Map(user -> user_name, user_name -> user)
       the below logic will first rename the conflicted column with some random suffix and update the rename map
-    */
+     */
     lazy val renamedLeftDf = {
       val columns = skewFilteredLeft.columns.flatMap { column =>
         if (joinPart.leftToRight.contains(column)) {
@@ -302,8 +306,12 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
+          val daysInRange = range.partitions.length
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
+          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable,
+                                                                 tableProps,
+                                                                 autoExpand = true,
+                                                                 outputParallelism = outputParallelism)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
