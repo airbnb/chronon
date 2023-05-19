@@ -1,13 +1,7 @@
-<!--
-  If this branch is in-progress, start the title with [wip]. CIBot will prevent this branch from being merged until the title is edited to remove the leading [wip].
--->
-
 ### Notify
 cc @stripe-private-oss-forks/ml-features
 
-<!--
-  Assign a reviewer by commenting `r? <TEAM>` once your PR has built successfully. See go/code-review for more guidance on the code review process.
--->
+<!-- Assign a reviewer by commenting `r? <TEAM>` once your PR has built successfully. See go/code-review for more guidance on the code review process. -->
 
 ### Summary
 <!-- What does the code do? What have you changed? -->
@@ -16,11 +10,7 @@ cc @stripe-private-oss-forks/ml-features
 <!-- Why are you making this change? This can be a link to a Jira task. -->
 
 ### Testing
-<!--
-  How did you test this change?
--->
+<!-- How did you test this change? -->
 
 ### Rollout/monitoring/revert plan
-<!--
-  Instructions for deploying, monitoring, and reverting this change.
--->
+<!-- Instructions for deploying, monitoring, and reverting this change. -->
