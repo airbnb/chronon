@@ -252,7 +252,7 @@ def LabelPart(labels: List[api.JoinPart],
 
     :param labels: List of labels
     :param left_start_offset: Relative integer to define the earliest date label should be refreshed
-                            comparing to label_ds date specified. For labels with aggregations,
+                            compared to label_ds date specified. For labels with aggregations,
                             this param has to be same as aggregation window size.
     :param left_end_offset: Relative integer to define the most recent date(inclusive) label should be refreshed.
                           e.g. left_end_offset = 3 most recent label available will be 3 days
@@ -278,10 +278,9 @@ def LabelPart(labels: List[api.JoinPart],
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
             window_size = label.groupBy.aggregations[0].windows[0].length
             if left_start_offset != window_size or left_start_offset != left_end_offset:
-                print(f"""WARNING: left_start_offset and left_end_offset will be inferred to be same as aggregation \
-                window {window_size} and the incorrect values will be ignored. """)
-                left_start_offset = window_size
-                left_end_offset = window_size
+                assert left_start_offset == window_size and left_end_offset == window_size, \
+                    "left_start_offset and left_end_offset will be inferred to be same as aggregation" \
+                    "window {window_size} and the incorrect values will be ignored. "
 
     return api.LabelPart(
         labels=labels,
