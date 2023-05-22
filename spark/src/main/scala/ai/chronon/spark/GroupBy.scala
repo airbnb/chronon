@@ -122,13 +122,13 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val shiftedEndTimes = endTimes.map(_ + Constants.Partition.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
-
+    val partitionSpec = Constants.Partition
     hops
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, shiftedEndTimes)
           irs.indices.map { i =>
-            (keys.data :+ Constants.Partition.at(endTimes(i)), normalizeOrFinalize(irs(i)))
+            (keys.data :+ partitionSpec.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
       }
   }
