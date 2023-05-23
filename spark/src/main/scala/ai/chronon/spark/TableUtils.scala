@@ -252,19 +252,23 @@ case class TableUtils(sparkSession: SparkSession) {
       }
 
     println(s"$rowCount rows requested to be written into table $tableName")
-    if (outputParallelism.isDefined) {
-      println(s"Using custom outputParallelism ${outputParallelism.get}")
-    }
     if (rowCount > 0) {
       val columnSizeEstimate = columnSizeEstimator(df.schema)
+
+      // check if spark is running in local mode or cluster mode
+      val isLocal = sparkSession.conf.get("spark.master").startsWith("local")
 
       // roughly 1 partition count per 1m rows x 100 columns
       val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / 1e8).toInt
       val dailyFileCountUpperBound = 2000
-      val dailyFileCountLowerBound = 10
+      val dailyFileCountLowerBound = if (isLocal) 1 else 10
       val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
+
+      if (outputParallelism.isDefined && !isLocal) {
+        println(s"Using custom outputParallelism ${outputParallelism.get}")
+      }
       val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
 
       // finalized shuffle parallelism
