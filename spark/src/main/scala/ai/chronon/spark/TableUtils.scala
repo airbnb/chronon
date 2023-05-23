@@ -3,7 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, lit, rand, round}
+import org.apache.spark.sql.functions.{col, count, lit, max, min, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
@@ -228,7 +228,12 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    val rowCount = df.count()
+
+    val stats = df
+      .select(
+        count(lit(1)))
+      .head()
+    val rowCount = stats.getLong(0)
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
       // at-least a million rows per partition per 100 columns - or there will be too many files.
