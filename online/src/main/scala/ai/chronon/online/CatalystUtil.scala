@@ -6,7 +6,13 @@ import ai.chronon.online.Extensions.StructTypeOps
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
-import org.apache.spark.sql.execution.{BufferedRowIterator, FilterExec, ProjectExec, WholeStageCodegenExec}
+import org.apache.spark.sql.execution.{
+  BufferedRowIterator,
+  FilterExec,
+  LocalTableScanExec,
+  ProjectExec,
+  WholeStageCodegenExec
+}
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
@@ -150,7 +156,7 @@ class CatalystUtil(
       case ProjectExec(projectList, fp@FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
-        def projectFun(row: InternalRow): Option[InternalRow] = {
+        def projectFunc(row: InternalRow): Option[InternalRow] = {
           val r = ScalaVersionSpecificCatalystHelper.evalFilterExec(row, condition, child.output)
           if (r)
             Some(unsafeProjection.apply(row))
@@ -158,7 +164,7 @@ class CatalystUtil(
             None
         }
 
-        projectFun
+        projectFunc
       }
       case ProjectExec(projectList, childPlan) => {
         val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
@@ -167,7 +173,13 @@ class CatalystUtil(
         }
         projectFunc
       }
+      case ltse: LocalTableScanExec => {
+        // Input `row` is unused because for LTSE, no input is needed to compute the output
+        def projectFunc(row: InternalRow): Option[InternalRow] =
+          ltse.executeCollect().headOption
 
+        projectFunc
+      }
       case unknown => throw new RuntimeException(s"Unrecognized stage in codegen: ${unknown.getClass}")
     }
 
