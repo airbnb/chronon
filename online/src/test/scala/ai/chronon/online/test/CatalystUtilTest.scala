@@ -8,7 +8,7 @@ import org.junit.Test
 
 import java.util
 
-class CatalystUtilTest extends TestCase {
+class OldCatalystUtilTest extends TestCase {
 
   private val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
   private val outerStruct = StructType(
