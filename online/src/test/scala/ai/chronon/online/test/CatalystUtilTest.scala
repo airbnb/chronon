@@ -9,16 +9,15 @@ import org.junit.Test
 import java.util
 
 trait CatalystUtilTestSparkSQLStructs {
-  import org.apache.spark.sql.types._
 
   val CommonScalarsSSS: StructType =
     StructType(
-      StructField("bool_x", BooleanType, nullable = false) ::
-        StructField("int32_x", IntegerType, nullable = false) ::
-        StructField("int64_x", LongType, nullable = false) ::
-        StructField("float64_x", DoubleType, nullable = false) ::
-        StructField("string_x", StringType, nullable = false) ::
-        StructField("bytes_x", BinaryType, nullable = false) :: Nil
+   "CommonScalarsSSS", Array(  StructField("bool_x", BooleanType),
+        StructField("int32_x", IntType),
+        StructField("int64_x", LongType),
+        StructField("float64_x", DoubleType),
+        StructField("string_x", StringType),
+        StructField("bytes_x", BinaryType))
     )
 
   val CommonScalarsRow: Map[String, Any] = Map(
@@ -32,12 +31,12 @@ trait CatalystUtilTestSparkSQLStructs {
 
   val CommonScalarsOptionalSSS: StructType =
     StructType(
-      StructField("bool_x", BooleanType, nullable = true) ::
-        StructField("int32_x", IntegerType, nullable = true) ::
-        StructField("int64_x", LongType, nullable = true) ::
-        StructField("float64_x", DoubleType, nullable = true) ::
-        StructField("string_x", StringType, nullable = true) ::
-        StructField("bytes_x", BinaryType, nullable = true) :: Nil
+      "CommonScalarsOptionalSSS", Array(   StructField("bool_x", BooleanType),
+        StructField("int32_x", IntType),
+        StructField("int64_x", LongType),
+        StructField("float64_x", DoubleType),
+        StructField("string_x", StringType),
+        StructField("bytes_x", BinaryType))
     )
 
   val CommonScalarsNullRow: Map[String, Any] = Map(
@@ -50,19 +49,17 @@ trait CatalystUtilTestSparkSQLStructs {
   )
 
   val NestedInnerSSS: StructType = StructType(
-    StructField("int32_req", IntegerType, nullable = false) :: StructField(
+    "NestedInnerSSS", Array(   StructField("int32_req", IntType), StructField(
       "int32_opt",
-      IntegerType,
-      nullable = true
-    ) :: Nil
+      IntType
+    ))
   )
 
   val NestedOuterSSS: StructType = StructType(
-    StructField("inner_req", NestedInnerSSS, nullable = false) :: StructField(
+    "NestedOuterSSS", Array(   StructField("inner_req", NestedInnerSSS), StructField(
       "inner_opt",
-      NestedInnerSSS,
-      nullable = true
-    ) :: Nil
+      NestedInnerSSS
+    ))
   )
 
   val NestedRow: Map[String, Any] = Map(
@@ -76,12 +73,12 @@ trait CatalystUtilTestSparkSQLStructs {
   )
 
   val ListContainersSSS: StructType = StructType(
-    StructField("bools", ArrayType(BooleanType, containsNull = false), nullable = false) ::
-      StructField("int32s", ArrayType(IntegerType, containsNull = false), nullable = false) ::
-      StructField("int64s", ArrayType(LongType, containsNull = false), nullable = false) ::
-      StructField("float64s", ArrayType(DoubleType, containsNull = false), nullable = false) ::
-      StructField("strings", ArrayType(StringType, containsNull = false), nullable = false) ::
-      StructField("bytess", ArrayType(BinaryType, containsNull = false), nullable = false) :: Nil
+    "ListContainersSSS", Array(   StructField("bools", ListType(BooleanType)),
+      StructField("int32s", ListType(IntType)),
+      StructField("int64s", ListType(LongType)),
+      StructField("float64s", ListType(DoubleType)),
+      StructField("strings", ListType(StringType)),
+      StructField("bytess", ListType(BinaryType)))
   )
 
   def makeArrayList(vals: Any*): util.ArrayList[Any] =
@@ -97,36 +94,30 @@ trait CatalystUtilTestSparkSQLStructs {
   )
 
   val MapContainersSSS: StructType = StructType(
-    StructField(
+    "MapContainersSSS", Array(   StructField(
       "bools",
-      MapType(IntegerType, BooleanType, valueContainsNull = false),
-      nullable = false
-    ) ::
+      MapType(IntType, BooleanType)
+    ),
       StructField(
         "int32s",
-        MapType(IntegerType, IntegerType, valueContainsNull = false),
-        nullable = false
-      ) ::
+        MapType(IntType, IntType)
+      ),
       StructField(
         "int64s",
-        MapType(IntegerType, LongType, valueContainsNull = false),
-        nullable = false
-      ) ::
+        MapType(IntType, LongType)
+      ),
       StructField(
         "float64s",
-        MapType(StringType, DoubleType, valueContainsNull = false),
-        nullable = false
-      ) ::
+        MapType(StringType, DoubleType)
+      ),
       StructField(
         "strings",
-        MapType(StringType, StringType, valueContainsNull = false),
-        nullable = false
-      ) ::
+        MapType(StringType, StringType)
+      ),
       StructField(
         "bytess",
-        MapType(StringType, BinaryType, valueContainsNull = false),
-        nullable = false
-      ) :: Nil
+        MapType(StringType, BinaryType)
+      ))
   )
 
   def makeHashMap(kvs: (Any, Any)*): util.HashMap[Any, Any] = {
