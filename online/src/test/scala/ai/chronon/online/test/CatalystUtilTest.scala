@@ -137,6 +137,434 @@ trait CatalystUtilTestSparkSQLStructs {
 
 }
 
+
+
+
+class CatalystUtilTest   extends TestCase with CatalystUtilTestSparkSQLStructs {
+
+
+
+  @Test
+  def testSelectStarWithCommonScalarsShouldReturnAsIs():Unit= {
+    val selects = Seq(
+      "bool_x" -> "bool_x",
+      "int32_x" -> "int32_x",
+      "int64_x" -> "int64_x",
+      "float64_x" -> "float64_x",
+      "string_x" -> "string_x",
+      "bytes_x" -> "bytes_x"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==6)
+    assert(res.get("bool_x")==true)
+    assert(res.get("int32_x")==Int.MaxValue)
+    assert(res.get("int64_x")==Long.MaxValue)
+    assert(res.get("float64_x")==Double.MaxValue)
+    assert(res.get("string_x")=="hello")
+    assert(res.get("bytes_x")=="world".getBytes())
+  }
+
+  @Test
+  def testMathWithCommonScalarsShouldFollowOrderOfOperations():Unit= {
+    val selects = Seq(
+      "a" -> "4 + 5 * 32 - 2",
+      "b" -> "(int32_x - 1) / 6 * 3 + 7 % 3",
+      "c" -> "(int64_x / int32_x) + 7 * 3"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==3)
+    assert(res.get("a")==162)
+    assert(res.get("b")==1073741824)
+    assert(res.get("c")==4294967319L)
+  }
+
+  @Test
+  def testCommonFunctionsWithCommonScalarsShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "ABS(CAST(-1.0 * `int32_x` + 1.5 AS LONG))",
+      "b" -> "BASE64('Spark SQL')",
+      "c" -> "CONCAT_WS(' ', string_x, CAST(`bytes_x` AS STRING), 'foobar')",
+      "d" -> "CHR(ASCII('A'))",
+      "e" -> "BINARY('hello')",
+      "f" -> "IF(int32_x >= `int64_x`, 'a', 'b')",
+      "g" -> "CASE WHEN int32_x >= `int64_x` THEN 'NO' WHEN int64_x > `int32_x` THEN 'YES' ELSE 'NO' END",
+      "h" -> "UUID()",
+      "i" -> "regEXP_Extract(`string_x`, 'e(.l)o$', 1)",
+      "j" -> "Rand()",
+      "k" -> "COALESCE(NULL, NULL, int32_x, int64_x, NULL)"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==11)
+    assert(res.get("a")==2147483645L)
+    assert(res.get("b")=="U3BhcmsgU1FM")
+    assert(res.get("c")=="hello world foobar")
+    assert(res.get("d")=="A")
+    assert(res.get("e")=="hello".getBytes())
+    assert(res.get("f")=="b")
+    assert(res.get("g")=="YES")
+    assert(res.get("h").toString.size==36)
+    assert(res.get("i")=="ll")
+    val j = res.get("j").toString.toFloat
+    assert(j >= 0.0f && j <1.0f)
+    assert(res.get("k")==Int.MaxValue)
+  }
+
+  @Test
+  def testDatetimeWithCommonScalarsShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "FROM_UNIXTIME(int32_x)",
+      "b" -> "CURRENT_TIMESTAMP()",
+      "c" -> "DATE_TRUNC('HOUR', '2015-03-05T09:32:05.359')",
+      "d" -> "DAY('2023-05-17')",
+      "e" -> "DAYOFWEEK('2009-07-30')",
+      "f" -> "DATE_PART('DAY', DATE_ADD('2016-07-30', 3))"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==6)
+    assert(res.get("a")=="2038-01-19 03:14:07")
+    assert(res.get("b").isInstanceOf[java.lang.Long])
+    assert(res.get("c")==1425546000000000L)
+    assert(res.get("d")==17)
+    assert(res.get("e")==5)
+    assert(res.get("f")==2)
+  }
+
+  @Test
+  def testSimpleUdfsWithCommonScalarsShouldWork():Unit= {
+    CatalystUtil.session.udf.register("bool_udf", (x: Boolean) => x ^ x)
+    CatalystUtil.session.udf.register("INT32_UDF", (x: Int) => x - 1)
+    CatalystUtil.session.udf.register("int64_UDF", (x: Long) => x - 1)
+    CatalystUtil.session.udf.register("float64_udf", (x: Double) => x - 1.0)
+    CatalystUtil.session.udf.register("string_udf", (x: String) => x + "123")
+    CatalystUtil.session.udf.register("BYTES_UDF", (x: Array[Byte]) => x ++ x)
+    val selects = Seq(
+      "bool_x" -> "BOOL_UDF(bool_x)",
+      "int32_x" -> "INT32_udf(`int32_x`)",
+      "int64_x" -> "int64_udF(int64_x)",
+      "float64_x" -> "float64_udf(float64_x)",
+      "string_x" -> "string_udf(`string_x`)",
+      "bytes_x" -> "bytes_udf(bytes_x)"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==6)
+    assert(res.get("bool_x")==false)
+    assert(res.get("int32_x")==Int.MaxValue - 1)
+    assert(res.get("int64_x")==Long.MaxValue - 1L)
+    assert(res.get("float64_x")==Double.MaxValue - 1.0f)
+    assert(res.get("string_x")=="hello123")
+    assert(res.get("bytes_x")=="worldworld".getBytes())
+  }
+
+  @Test
+  def testComplexUdfsWithCommonScalarsShouldWork():Unit= {
+    CatalystUtil.session.udf.register("two_param_udf", (x: Int, y: Long) => y - x)
+    val add_one = (x: Int) => x + 1
+    CatalystUtil.session.udf.register("add_two_udf", (x: Int) => add_one(add_one(x)))
+    def fib(n: Int): Int =
+      if (n <= 1) n else fib(n - 1) + fib(n - 2)
+    CatalystUtil.session.udf.register("recursive_udf", (x: Int) => fib(x))
+    val selects = Seq(
+      "two_param_udf" -> "two_param_udf(int32_x, `int64_x`)",
+      "add_two_udf" -> "add_two_udf(1)",
+      "recursive_udf" -> "recursive_udf(8)"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==3)
+    assert(res.get("two_param_udf")==Long.MaxValue - Int.MaxValue)
+    assert(res.get("add_two_udf")==3)
+    assert(res.get("recursive_udf")==21)
+  }
+
+
+
+  @Test
+  def testDefinitelyFalseFilterWithCommonScalarsShouldReturnNone():Unit= {
+    // aka. optimized False, LocalTableScanExec case
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("FALSE AND int64_x > `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res==None)
+  }
+
+  @Test
+  def testTrueFilterWithCommonScalarsShouldReturnData():Unit= {
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("FALSE OR int64_x > `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==Int.MaxValue)
+  }
+
+  @Test
+  def testFalseFilterWithCommonScalarsShouldReturnNone():Unit= {
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("FALSE OR int64_x < `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res==None)
+  }
+
+  @Test
+  def testTrueFiltersWithCommonScalarsShouldReturnData():Unit= {
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("int64_x > `int32_x`", "FALSE OR int64_x > `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==Int.MaxValue)
+  }
+
+  @Test
+  def testFalseFiltersWithCommonScalarsShouldReturnNone():Unit= {
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("int64_x > `int32_x`", "FALSE OR int64_x < `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res==None)
+  }
+
+  @Test
+  def testEmptySeqFiltersWithCommonScalarsShouldReturnData():Unit= {
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq()
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==Int.MaxValue)
+  }
+
+  @Test
+  def testFunctionInFilterWithCommonScalarsShouldWork():Unit= {
+    CatalystUtil.session.udf.register("sub_one", (x: Int) => x - 1)
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("COALESCE(NULL, NULL, int32_x, int64_x, NULL) = `int32_x`")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==Int.MaxValue)
+  }
+
+  @Test
+  def testUdfInFilterWithCommonScalarsShouldWork():Unit= {
+    CatalystUtil.session.udf.register("sub_one", (x: Int) => x - 1)
+    val selects = Seq("a" -> "int32_x")
+    val wheres = Seq("int32_x - 1 = SUB_ONE(int32_x)")
+    val cu = new CatalystUtil(selects, CommonScalarsSSS, wheres)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==Int.MaxValue)
+  }
+
+
+
+  @Test
+  def testSelectStarWithCommonOptionalScalarsShouldReturnAsIs():Unit= {
+    val selects = Seq(
+      "bool_x" -> "bool_x",
+      "int32_x" -> "int32_x",
+      "int64_x" -> "int64_x",
+      "float64_x" -> "float64_x",
+      "string_x" -> "string_x",
+      "bytes_x" -> "bytes_x"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsOptionalSSS)
+    val res = cu.performSql(CommonScalarsRow)
+    assert(res.get.size==6)
+    assert(res.get("bool_x")==true)
+    assert(res.get("int32_x")==Int.MaxValue)
+    assert(res.get("int64_x")==Long.MaxValue)
+    assert(res.get("float64_x")==Double.MaxValue)
+    assert(res.get("string_x")=="hello")
+    assert(res.get("bytes_x")=="world".getBytes())
+  }
+
+  @Test
+  def testSelectStarWithCommonOptionalScalarsNullShouldReturnNulls():Unit= {
+    val selects = Seq(
+      "bool_x" -> "bool_x",
+      "int32_x" -> "int32_x",
+      "int64_x" -> "int64_x",
+      "float64_x" -> "float64_x",
+      "string_x" -> "string_x",
+      "bytes_x" -> "bytes_x"
+    )
+    val cu = new CatalystUtil(selects, CommonScalarsOptionalSSS)
+    val res = cu.performSql(CommonScalarsNullRow)
+    assert(res.get.size==6)
+    assert(res.get("bool_x") == null)
+    assert(res.get("int32_x") == null)
+    assert(res.get("int64_x") == null)
+    assert(res.get("float64_x") == null)
+    assert(res.get("string_x") == null)
+    assert(res.get("bytes_x") == null)
+  }
+
+
+
+  @Test
+  def testSelectWithNestedShouldWork():Unit= {
+    val selects = Seq(
+      "inner_req" -> "inner_req",
+      "inner_opt" -> "inner_opt",
+      "inner_req_int32_req" -> "inner_req.int32_req",
+      "inner_req_int32_opt" -> "inner_req.int32_opt",
+      "inner_opt_int32_req" -> "inner_opt.int32_req",
+      "inner_opt_int32_opt" -> "inner_opt.int32_opt"
+    )
+    val cu = new CatalystUtil(selects, NestedOuterSSS)
+    val res = cu.performSql(NestedRow)
+    assert(res.get.size==6)
+    assert(res.get("inner_req")==Map("int32_req" -> 12, "int32_opt" -> 34))
+    assert(res.get("inner_opt")==Map("int32_req" -> 56, "int32_opt" -> 78))
+    assert(res.get("inner_req_int32_req")==12)
+    assert(res.get("inner_req_int32_opt")==34)
+    assert(res.get("inner_opt_int32_req")==56)
+    assert(res.get("inner_opt_int32_opt")==78)
+  }
+
+  @Test
+  def testSelectWithNestedNullsShouldWork():Unit= {
+    val selects = Seq(
+      "inner_req" -> "inner_req",
+      "inner_opt" -> "inner_opt",
+      "inner_req_int32_req" -> "inner_req.int32_req",
+      "inner_req_int32_opt" -> "inner_req.int32_opt"
+    )
+    val cu = new CatalystUtil(selects, NestedOuterSSS)
+    val res = cu.performSql(NestedNullRow)
+    assert(res.get.size==4)
+    assert(res.get("inner_req")==Map("int32_req" -> 12, "int32_opt" -> null))
+    assert(res.get("inner_opt") == null)
+    assert(res.get("inner_req_int32_req")==12)
+    assert(res.get("inner_req_int32_opt") == null)
+  }
+
+
+
+  @Test
+  def testSelectStarWithListContainersShouldReturnAsIs():Unit= {
+    val selects = Seq(
+      "bools" -> "bools",
+      "int32s" -> "int32s",
+      "int64s" -> "int64s",
+      "float64s" -> "float64s",
+      "strings" -> "strings",
+      "bytess" -> "bytess"
+    )
+    val cu = new CatalystUtil(selects, ListContainersSSS)
+    val res = cu.performSql(ListContainersRow)
+    assert(res.get.size==6)
+    assert(res.get("bools")==makeArrayList(false, true, false))
+    assert(res.get("int32s")==makeArrayList(1, 2, 3))
+    assert(res.get("int64s")==makeArrayList(4L, 5L, 6L))
+    assert(res.get("float64s")==makeArrayList(7.7, 8.7, 9.9))
+    assert(res.get("strings")==makeArrayList("hello", "world"))
+    val res_bytess = res.get("bytess").asInstanceOf[util.ArrayList[Any]]
+    assert(res_bytess.size==2)
+    assert(res_bytess.get(0)=="hello".getBytes())
+    assert(res_bytess.get(1)=="world".getBytes())
+  }
+
+  @Test
+  def testIndexingWithListContainersShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "int64s[1] + int32s[2]"
+    )
+    val cu = new CatalystUtil(selects, ListContainersSSS)
+    val res = cu.performSql(ListContainersRow)
+    assert(res.get.size==1)
+    assert(res.get("a")==8L)
+  }
+
+  @Test
+  def testFunctionsWithListContainersShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "ARRAY(2, 4, 6)",
+      "b" -> "ARRAY_REPEAT('123', 2)",
+      "c" -> "AGGREGATE(`int32s`, 0, (acc, x) -> acc + x, acc -> acc * 10)",
+      "d" -> "ARRAY_MIN(`int32s`)",
+      "e" -> "CARDINALITY(int32s)"
+    )
+    val cu = new CatalystUtil(selects, ListContainersSSS)
+    val res = cu.performSql(ListContainersRow)
+    assert(res.get.size==5)
+    assert(res.get("a")==makeArrayList(2, 4, 6))
+    assert(res.get("b")==makeArrayList("123", "123"))
+    assert(res.get("c")==60)
+    assert(res.get("d")==1)
+    assert(res.get("e")==3)
+  }
+
+
+  @Test
+  def testSelectStarWithMapContainersShouldReturnAsIs():Unit= {
+    val selects = Seq(
+      "bools" -> "bools",
+      "int32s" -> "int32s",
+      "int64s" -> "int64s",
+      "float64s" -> "float64s",
+      "strings" -> "strings",
+      "bytess" -> "bytess"
+    )
+    val cu = new CatalystUtil(selects, MapContainersSSS)
+    val res = cu.performSql(MapContainersRow)
+    assert(res.get.size==6)
+    assert(res.get("bools")==makeHashMap(1 -> false, 2 -> true, 3 -> false))
+    assert(res.get("int32s")==makeHashMap(1 -> 1, 2 -> 2, 3 -> 3))
+    assert(res.get("int64s")==makeHashMap(1 -> 4L, 2 -> 5L, 3 -> 6L))
+    assert(res.get("float64s")==makeHashMap("a" -> 7.7, "b" -> 8.7, "c" -> 9.9))
+    assert(res.get("strings")==makeHashMap("a" -> "hello", "b" -> "world"))
+    val res_bytess = res.get("bytess").asInstanceOf[util.HashMap[Any, Any]]
+    assert(res_bytess.size==2)
+    assert(res_bytess.get("a")=="hello".getBytes())
+    assert(res_bytess.get("b")=="world".getBytes())
+  }
+
+  @Test
+  def testIndexingWithMapContainersShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "int32s[2]",
+      "b" -> "strings['a']"
+    )
+    val cu = new CatalystUtil(selects, MapContainersSSS)
+    val res = cu.performSql(MapContainersRow)
+    assert(res.get.size==2)
+    assert(res.get("a")==2)
+    assert(res.get("b")=="hello")
+  }
+
+  @Test
+  def testFunctionsWithMapContainersShouldWork():Unit= {
+    val selects = Seq(
+      "a" -> "MAP(1, '2', 3, '4')",
+      "b" -> "map_keys(int32s)",
+      "c" -> "MAP_VALUES(strings)"
+    )
+    val cu = new CatalystUtil(selects, MapContainersSSS)
+    val res = cu.performSql(MapContainersRow)
+    assert(res.get.size==3)
+    assert(res.get("a")==makeHashMap(1 -> "2", 3 -> "4"))
+    assert(res.get("b").asInstanceOf[util.ArrayList[Any]].size==3)
+    assert(res.get("b").asInstanceOf[util.ArrayList[Any]].contains(1))
+    assert(res.get("b").asInstanceOf[util.ArrayList[Any]].contains(2))
+    assert(res.get("b").asInstanceOf[util.ArrayList[Any]].contains(3))
+    assert(res.get("c").asInstanceOf[util.ArrayList[Any]].size==2)
+    assert(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("hello"))
+    assert(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("world"))
+  }
+
+}
+
+
+
 class OldCatalystUtilTest extends TestCase {
 
   private val innerStruct = StructType("inner", Array(StructField("d", LongType), StructField("e", FloatType)))
