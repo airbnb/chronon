@@ -32,19 +32,6 @@ trait CatalystUtilTestSparkSQLStructs {
     "bytes_x" -> "world".getBytes()
   )
 
-  val CommonScalarsOptionalStruct: StructType =
-    StructType(
-      "CommonScalarsOptionalStruct",
-      Array(
-        StructField("bool_x", BooleanType),
-        StructField("int32_x", IntType),
-        StructField("int64_x", LongType),
-        StructField("float64_x", DoubleType),
-        StructField("string_x", StringType),
-        StructField("bytes_x", BinaryType)
-      )
-    )
-
   val CommonScalarsNullRow: Map[String, Any] = Map(
     "bool_x" -> null,
     "int32_x" -> null,
@@ -373,7 +360,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
   }
 
   @Test
-  def testSelectStarWithCommonOptionalScalarsShouldReturnAsIs(): Unit = {
+  def testSelectStarWithCommonScalarsNullShouldReturnNulls(): Unit = {
     val selects = Seq(
       "bool_x" -> "bool_x",
       "int32_x" -> "int32_x",
@@ -382,28 +369,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "string_x" -> "string_x",
       "bytes_x" -> "bytes_x"
     )
-    val cu = new CatalystUtil(selects, CommonScalarsOptionalStruct)
-    val res = cu.performSql(CommonScalarsRow)
-    assertEquals(res.get.size, 6)
-    assertEquals(res.get("bool_x"), true)
-    assertEquals(res.get("int32_x"), Int.MaxValue)
-    assertEquals(res.get("int64_x"), Long.MaxValue)
-    assertEquals(res.get("float64_x"), Double.MaxValue)
-    assertEquals(res.get("string_x"), "hello")
-    assertArrayEquals(res.get("bytes_x").asInstanceOf[Array[Byte]], "world".getBytes())
-  }
-
-  @Test
-  def testSelectStarWithCommonOptionalScalarsNullShouldReturnNulls(): Unit = {
-    val selects = Seq(
-      "bool_x" -> "bool_x",
-      "int32_x" -> "int32_x",
-      "int64_x" -> "int64_x",
-      "float64_x" -> "float64_x",
-      "string_x" -> "string_x",
-      "bytes_x" -> "bytes_x"
-    )
-    val cu = new CatalystUtil(selects, CommonScalarsOptionalStruct)
+    val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsNullRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bool_x"), null)
