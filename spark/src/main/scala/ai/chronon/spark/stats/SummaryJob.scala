@@ -55,11 +55,10 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
             stats.metrics,
             StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
-          if (joinConf.metaData.online) {
-            summaryKvRdd.toAvroDf
-              .withTimeBasedColumn(Constants.PartitionColumn)
-              .save(dailyStatsAvroTable, tableProps)
-          }
+          // Build upload table for stats store.
+          summaryKvRdd.toAvroDf
+            .withTimeBasedColumn(Constants.PartitionColumn)
+            .save(dailyStatsAvroTable, tableProps)
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
             .save(dailyStatsTable, tableProps)

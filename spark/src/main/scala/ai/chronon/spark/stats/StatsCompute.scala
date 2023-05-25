@@ -57,11 +57,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     val addedPercentilesDf = percentileColumns.foldLeft(withNullRatesDF) { (tmpDf, column) =>
       tmpDf.withColumn(s"${column}_finalized", percentileFinalizerUdf(col(column)))
     }
-    if (selectedDf.columns.contains(api.Constants.TimeColumn)) {
-      addedPercentilesDf.withTimeBasedColumn(api.Constants.PartitionColumn)
-    } else {
-      addedPercentilesDf
-    }
+    addedPercentilesDf.withTimeBasedColumn(api.Constants.PartitionColumn)
   }
 
   /** Navigate the dataframe and compute statistics partitioned by date stamp
