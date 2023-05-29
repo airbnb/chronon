@@ -76,6 +76,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   protected[spark] lazy val windowAggregator: RowAggregator =
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
+  // Aggregation is only done for records within the last window (i.e., [end_of_date_ts - window, end_of_date_ts]
+  // The aggregation is done within a partition. I.e., all records within 2023-05-15 will be aggregated together.
+  // However, records in 2023-05-14 are not included in the 2023-05-15 aggregation.
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
@@ -114,6 +117,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       toDf(snapshotEntitiesBase, Seq(Constants.PartitionColumn -> StringType))
     }
 
+  // Unlike `snapshotEntities`, the aggregation for events will look at all partitions as a whole,
+  // while using the end-of-day ts of each partition as the queries.
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
@@ -425,7 +430,7 @@ object GroupBy {
             renderDataSourceQuery(groupByConf,
                                   _,
                                   groupByConf.getKeyColumns.toScala,
-                                  queryRange.shift(1),
+                                  queryRange.shift(1), // mutation is on the next day
                                   tableUtils,
                                   groupByConf.maxWindow,
                                   groupByConf.inferredAccuracy,
@@ -466,6 +471,9 @@ object GroupBy {
           val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
           SourceDataProfile(latestValid, latestValid, latestValid)
         } else {
+          // For events, the logic will extend the partition range based on the windows as necessary.
+          // For example, the range is [2023-05-01, 2023-05-15], and there is a 7-day aggregation window.
+          // The following logic will calculate the first requried as 2023-05-01 - 7 days.
           val minQuery = Constants.Partition.before(queryStart)
           val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
           lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters)

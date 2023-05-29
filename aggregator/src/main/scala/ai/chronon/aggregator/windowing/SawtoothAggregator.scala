@@ -45,6 +45,9 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient private lazy val arena =
     Array.fill(resolution.hopSizes.length)(Array.fill[Entry](windowedAggregator.length)(null))
 
+  // The endTimes are sorted, and they should all align with the window right boundaries.
+  // The function generate the sawtooth tailing windows -> the windows to be used for adding the
+  // final heads.
   def computeWindows(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
@@ -53,6 +56,10 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
     for (i <- endTimes.indices) {
       for (col <- windowedAggregator.indices) {
+        // the cache here is provide the caching for the aggregation for the `col-th` window aggregation.
+        // The idea is that, in the next end time, it might still either:
+        // * share the same tail, so that there is no need to aggregate again.
+        // * the events in the window are much later than the tail, so that the result can be reused.
         result(i).update(col, genIr(cache, col, endTimes(i)))
       }
     }
@@ -68,6 +75,9 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     var baseIr: Any = null
     var start = TsUtils.round(endTime - window.millis, hopMillis)
     while (hopIndex < hopSizes.length) {
+      // The idea of the code here is to use different granularities of hops to calculate the window.
+      // For example: to find a window of [6:00 - 8:15)
+      // the logic will find [6:00 - 7:00) + [7:00 - 8:00) + [8:00-8:05) + [8:05-8:10) + [8:10-8:15)
       val end = TsUtils.round(endTime, hopSizes(hopIndex))
       baseIr = windowedAggregator(col).merge(baseIr, cache.merge(hopIndex, col, start, end))
       start = end
@@ -99,6 +109,8 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
       }
       if (updateIndex < sortedEndTimes.length && updateIndex >= 0) {
         if (result(updateIndex) == null) {
+          // This code here is very very very very very confusing.
+          // it basically first initialize result[i] as [baseAggregator.length] to store per bucket (no window) result
           result.update(updateIndex, new Array[Any](baseAggregator.length))
         }
         baseAggregator.update(result(updateIndex), row)
@@ -110,14 +122,17 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     for (i <- result.indices) {
       val binned = result(i)
       if (binned != null) {
+        // The currBase stores the the result of aggregation up to the last event.
+        // Note all events here shares the same start ts, so that the previous result can be reused.
         currBase = windowedAggregator.clone(currBase)
         for (col <- windowedAggregator.indices) {
+          // the code here uses the result from line 112 - 114, to aggregate with the currBase
           val merged = windowedAggregator(col)
             .merge(currBase(col), binned(baseIrIndices(col)))
           currBase.update(col, merged)
         }
       }
-      result.update(i, currBase)
+      result.update(i, currBase) // now result[i] is changed from [baseAggregator.length] to [windowedAggregator.length], be careful.
     }
     result
   }
@@ -166,7 +181,7 @@ private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayTyp
     }
 
     while (endIdx < hops.length && ts(hops(endIdx)) < end) {
-      ir = agg.merge(ir, hops(endIdx)(baseCol))
+      ir = agg.merge(ir, hops(endIdx)(baseCol)) // hops dont care about window, so that are all bucket based
       endIdx += 1
     }
 

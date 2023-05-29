@@ -234,15 +234,29 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     val rightDf = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
+      // for entities <> events, entities are EOD snapshots. So entities and events share the same
+      // range, since the EOD snapshot entities should use all events.
       case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
+      // for entities <> entities, they are all EOD snapshots, so again, same range.
       case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
+      // For events <> snapshot events, this means the right side are all snapshots. In this case,
+      // left side will be joining with the data from yesterday. Imagine this case as streaming events
+      // querying event db exports.
       case (Events, Events, Accuracy.SNAPSHOT) =>
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
+      // for events <> events, it's straightforward that the partitions of left and right should align
       case (Events, Events, Accuracy.TEMPORAL) =>
+        // unfilledTimeRange.toPartitionRange` holds the range of ts, instead of ds. Assuming ts might be
+        // out of the ds range.
         genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
 
+      // for events <> snapshot entities, it's like streaming event left and looking up the right side
+      // in a db export. The db export should be one day behind the event range.
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
+      // for events <> temporal entities, there is mutation events available for the entities.
+      // The db export is still one day behind, but the `groupBy.from` logic will find the mutation
+      // for the next day.
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)

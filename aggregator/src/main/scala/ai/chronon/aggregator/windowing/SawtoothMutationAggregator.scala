@@ -58,8 +58,10 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     while (i < windowedAggregator.length) {
       if (batchEndTs > rowTs && tailTs(batchEndTs)(i).forall(rowTs > _)) { // relevant for the window
         if (tailTs(batchEndTs)(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
+          // if within 2 days, just aggregate
           windowedAggregator.columnAggregators(i).update(batchIr.collapsed, row)
         } else { // update tailHops part
+          // otherwise, use hops to reduce aggregation, but only the corresponding window size.
           val hopIndex = tailHopIndices(i)
           // eg., 7d, 8d windows shouldn't update the same 1hr tail hop twice
           // so update a hop only once

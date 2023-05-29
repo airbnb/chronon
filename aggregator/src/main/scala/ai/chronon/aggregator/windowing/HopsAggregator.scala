@@ -139,9 +139,19 @@ class HopsAggregator(minQueryTs: Long,
 
 object HopsAggregator {
   // [IR1, IR2, IR3,.... IRN, ts_millis_long]
-  // hops have timestamps attached to the end
+  // Each IR corresponds to the internal representation of a column aggregator (windowed bucket)
+  // hops have timestamps attached to the end (for sorting purposes)
   type HopIr = Array[Any]
-  type OutputArrayType = Array[Array[HopIr]]
+
+  // Each hop size has a map in this type.
+  // Each map is keyed by the start of the hop (the beginning of the 5 min / 1 hour / 1 day, etc).
+  // The key is also stored at the end of the HopIr.
   type IrMapType = Array[java.util.HashMap[Long, HopIr]]
 
+  // Very similar to the IrMapType above. Each hop size has an array of the IRs of the column
+  // aggregators in the RowAggregator. The `IrMapType` stores the HopIrs of aggregated based on the
+  // start of the hop. Instead of a map, the HopIrs of each hop size are stored as a sorted array
+  // based on the the "start", so that it can be used in binary search during the "accumulation"
+  // phrase later.
+  type OutputArrayType = Array[Array[HopIr]]
 }

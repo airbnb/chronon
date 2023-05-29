@@ -63,6 +63,8 @@ case class TableUtils(sparkSession: SparkSession) {
       }
   }
 
+  // Return all ds partition values, e.g. ['2023-01-01', '2023-01-02', ...]
+  // The subPartitionsFilter can be something like [{'hr': '01'}] to only retrieve one ds partition.
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
@@ -295,6 +297,9 @@ case class TableUtils(sparkSession: SparkSession) {
     s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
   }
 
+  // Given a set of partitions (ds), chunk the continuous ones into ranges.
+  // E.g. [2023-01-01, 2023-01-02, 2023-01-03, 2023-02-01, 2023-02-02, 2023-03-01]
+  // will be [(2023-01-01, 2023-01-03), (2023-02-01, 2023-02-02), (2023-03-01, 2023-03-01)]
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
     sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
