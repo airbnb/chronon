@@ -53,14 +53,26 @@ object Driver {
       opt[String](required = false,
                   descr = "End date to compute as of, start date is taken from conf.",
                   default = Some(Constants.Partition.now))
+    val localTableMapping: Map[String, String] = propsLong[String](
+      name = "local-table-mapping",
+      keyName = "namespace.table",
+      valueName = "path_to_local_input_file",
+      descr =
+        """Use this option to specify a list of table <> local input file mappings for running local
+          |Chronon jobs. For example,
+          |`--local-data-list ns_1.table_a=p1/p2/ta.csv ns_2.table_b=p3/tb.csv`
+          |will load the two files into the specified tables `table_a` and `table_b` locally.
+          |Once this option is used, the `--local-data-path` will be ignored.
+          |""".stripMargin
+    )
     val localDataPath: ScallopOption[String] =
       opt[String](
         required = false,
         default = None,
         descr =
-          """Path to a folder containing csv data to load from. You can refer to these in Sources to run the backfill. 
+          """Path to a folder containing csv data to load from. You can refer to these in Sources to run the backfill.
             |The name of each file should be in the format namespace.table.csv. They can be referred to in the confs
-            |as "namespace.table". When namespace is not specified we will default to 'default'. We can also 
+            |as "namespace.table". When namespace is not specified we will default to 'default'. We can also
             |auto-convert ts columns encoded as readable strings in the format 'yyyy-MM-dd HH:mm:ss'',
             |into longs values expected by Chronon automatically.
             |""".stripMargin
@@ -72,17 +84,28 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
-    def buildTableUtils(sessionName: String): TableUtils =
-      if (localDataPath.isDefined) {
+    def buildTableUtils(sessionName: String): TableUtils = {
+      if (localTableMapping.nonEmpty) {
+        val localSession = SparkSessionBuilder.build(
+          sessionName,
+          local = true,
+          localWarehouseLocation.toOption)
+        localTableMapping.foreach { case (table, filePath) =>
+          val file = new File(filePath)
+          LocalDataLoader.loadDataFileAsTable(file, localSession, table)
+        }
+        TableUtils(localSession)
+      } else if (localDataPath.isDefined) {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
         val localSession =
           SparkSessionBuilder.build(sessionName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
-        LocalDataLoader.loadData(dir, localSession)
+        LocalDataLoader.loadDataRecursively(dir, localSession)
         TableUtils(localSession)
       } else {
         TableUtils(SparkSessionBuilder.build(sessionName))
       }
+    }
   }
 
   object JoinBackfill {
