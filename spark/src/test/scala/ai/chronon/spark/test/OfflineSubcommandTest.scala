@@ -23,10 +23,16 @@ class OfflineSubcommandTest {
   @Test
   def localTableMappingIsParsedCorrectly(): Unit = {
     val confPath = "joins/team/example_join.v1"
-    val argList = Seq("--conf-path", confPath, "--local-table-mapping", "a=b", "c=d")
+    val endData = "2023-03-03"
+    val argList = Seq(
+      "--local-table-mapping", "a=b", "c=d",
+      "--conf-path", "joins/team/example_join.v1",
+      "--end-date", endData)
     val args = new TestArgs(argList.toArray)
     assertTrue(args.localTableMapping.nonEmpty)
     assertEquals("b", args.localTableMapping("a"))
     assertEquals("d", args.localTableMapping("c"))
+    assertEquals(confPath, args.confPath())
+    assertEquals(endData, args.endDate())
   }
 }
