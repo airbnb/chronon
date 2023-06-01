@@ -139,14 +139,16 @@ object Builders {
   }
 
   object Join {
-    def apply(metaData: MetaData = null,
-              left: Source = null,
-              joinParts: Seq[JoinPart] = null,
-              externalParts: Seq[ExternalPart] = null,
-              labelPart: LabelPart = null,
-              bootstrapParts: Seq[BootstrapPart] = null,
-              rowIds: Seq[String] = null,
-              derivations: Seq[Derivation] = null): Join = {
+    def apply(
+        metaData: MetaData = null,
+        left: Source = null,
+        joinParts: Seq[JoinPart] = null,
+        externalParts: Seq[ExternalPart] = null,
+        labelPart: LabelPart = null,
+        bootstrapParts: Seq[BootstrapPart] = null,
+        rowIds: Seq[String] = null,
+        derivations: Seq[Derivation] = null,
+        skewKeys: Map[String, Seq[String]] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
@@ -162,6 +164,8 @@ object Builders {
         result.setRowIds(rowIds.asJava)
       if (derivations != null)
         result.setDerivations(derivations.asJava)
+      if (skewKeys != null)
+        result.setSkewKeys(skewKeys.view.mapValues(_.asJava).toMap.asJava)
       result
     }
   }
