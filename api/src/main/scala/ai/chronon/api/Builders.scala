@@ -165,7 +165,7 @@ object Builders {
       if (derivations != null)
         result.setDerivations(derivations.asJava)
       if (skewKeys != null)
-        result.setSkewKeys(skewKeys.view.mapValues(_.asJava).toMap.asJava)
+        result.setSkewKeys(skewKeys.mapValues(_.asJava).toMap.asJava)
       result
     }
   }
