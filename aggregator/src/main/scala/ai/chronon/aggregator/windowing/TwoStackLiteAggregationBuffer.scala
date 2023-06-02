@@ -27,6 +27,12 @@ class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregato
     aggBack = if (aggBack == null) ir else aggregator.update(aggBack, input)
   }
 
+  def extend(ir: IR, ts: Long): Unit = {
+    val clone = aggregator.clone(ir)
+    deque.addLast(BankersEntry(clone, ts))
+    aggBack = if (aggBack == null) clone else aggregator.merge(aggBack, clone)
+  }
+
   def pop(): BankersEntry[IR] = {
     if (!deque.isEmpty) {
       if (frontLen == 0) {

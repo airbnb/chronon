@@ -1,10 +1,10 @@
 package ai.chronon.aggregator.windowing
 
-import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.row.{DirectColumnAggregator, RowAggregator}
 import ai.chronon.api.Extensions.{UnpackedAggregations, WindowMapping, WindowOps}
 import ai.chronon.api.{Aggregation, AggregationPart, DataType, Row}
-
 import java.util
+
 import scala.collection.Seq
 
 // Head Sliding, Tail Hopping Window - effective window size when plotted against query timestamp
@@ -24,7 +24,7 @@ import scala.collection.Seq
 //       c. query_times by hopStart - `(key, hopStart) -> [query_ts]`
 //      And produce `key -> [query_ts, IR]`
 // NOTE: Not using the `cumulate` method will result in snapshot accuracy.
-class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution)
+class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution, useTwoStack: Boolean = false)
     extends Serializable {
 
   protected val hopSizes = resolution.hopSizes
@@ -37,6 +37,7 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient lazy val windowMappings: Array[WindowMapping] = unpackedAggs.perWindow
   @transient lazy val perWindowAggs: Array[AggregationPart] = windowMappings.map(_.aggregationPart)
   @transient lazy val windowedAggregator = new RowAggregator(inputSchema, unpackedAggs.perWindow.map(_.aggregationPart))
+  @transient lazy val perWindowAggregators = unpackedAggs.perWindow.map { w => new RowAggregator(inputSchema, Seq(w.aggregationPart)) }
   @transient lazy val baseAggregator = new RowAggregator(inputSchema, unpackedAggs.perBucket)
   @transient protected lazy val baseIrIndices = windowMappings.map(_.baseIrIndex)
 
@@ -45,18 +46,40 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
   @transient private lazy val arena =
     Array.fill(resolution.hopSizes.length)(Array.fill[Entry](windowedAggregator.length)(null))
 
+  @transient private lazy val twoStackArena = resolution
+    .hopSizes
+    .map { _ =>
+      perWindowAggregators.map { agg =>
+        new TwoStackLiteAggregationBuffer(agg, 1000)
+      }
+    }
+    //Array.fill(resolution.hopSizes.length)(Array.fill[TwoStackLiteAggregationBuffer[Any, Any, Any]](windowedAggregator.length)(null))
+
+
+  @transient private lazy val lastIdxes =
+    Array.fill(resolution.hopSizes.length)(Array.fill[Int](windowedAggregator.length)(0))
+
   def computeWindows(hops: HopsAggregator.OutputArrayType, endTimes: Array[Long]): Array[Array[Any]] = {
     val result = Array.fill[Array[Any]](endTimes.length)(windowedAggregator.init)
 
     if (hops == null) return result
 
-    val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
-    for (i <- endTimes.indices) {
-      for (col <- windowedAggregator.indices) {
-        result(i).update(col, genIr(cache, col, endTimes(i)))
+    if (useTwoStack) {
+      val cache = new TwoStackHopRangeCache(hops, baseIrIndices, twoStackArena, lastIdxes)
+      for (i <- endTimes.indices) {
+        for (col <- windowedAggregator.indices) {
+          result(i).update(col, twoStackGenIr(cache, col, endTimes(i)))
+        }
       }
+    } else {
+      val cache = new HopRangeCache(hops, windowedAggregator, baseIrIndices, arena)
+      for (i <- endTimes.indices) {
+        for (col <- windowedAggregator.indices) {
+          result(i).update(col, genIr(cache, col, endTimes(i)))
+        }
+      }
+      cache.reset()
     }
-    cache.reset()
     result
   }
 
@@ -70,6 +93,21 @@ class SawtoothAggregator(aggregations: Seq[Aggregation], inputSchema: Seq[(Strin
     while (hopIndex < hopSizes.length) {
       val end = TsUtils.round(endTime, hopSizes(hopIndex))
       baseIr = windowedAggregator(col).merge(baseIr, cache.merge(hopIndex, col, start, end))
+      start = end
+      hopIndex += 1
+    }
+    baseIr
+  }
+
+  private def twoStackGenIr(cache: TwoStackHopRangeCache, col: Int, endTime: Long): Any = {
+    val window = unpackedAggs.perWindow(col).aggregationPart.window
+    var hopIndex = tailHopIndices(col)
+    val hopMillis = hopSizes(hopIndex)
+    var baseIr: Any = null
+    var start = TsUtils.round(endTime - window.millis, hopMillis)
+    while (hopIndex < hopSizes.length) {
+      val end = TsUtils.round(endTime, hopSizes(hopIndex))
+      baseIr = perWindowAggregators(col)(0).merge(baseIr, cache.merge(hopIndex, col, start, end))
       start = end
       hopIndex += 1
     }
@@ -181,6 +219,39 @@ private[windowing] class HopRangeCache(hopsArrays: HopsAggregator.OutputArrayTyp
     }
 
     ir
+  }
+
+}
+
+private[windowing] class TwoStackHopRangeCache(
+    hopsArrays: HopsAggregator.OutputArrayType,
+    hopIrIndices: Array[Int],
+    arena: Array[Array[TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]]]],
+    lastIdxes: Array[Array[Int]]) {
+
+  @inline
+  private def ts(hop: Array[Any]): Long = hop.last.asInstanceOf[Long]
+
+  def merge(hopIndex: Int, col: Int, start: Long, end: Long): Any = {
+    val hops = hopsArrays(hopIndex)
+    val twoStack = arena(hopIndex)(col)
+    val lastIdx = lastIdxes(hopIndex)
+    val baseCol = hopIrIndices(col)
+
+    while (twoStack.peekBack() != null && twoStack.peekBack().ts < start) {
+      twoStack.pop()
+    }
+
+    while (lastIdx(col) < hops.length && ts(hops(lastIdx(col))) < end) {
+      if (ts(hops(lastIdx(col))) >= start) {
+        twoStack.extend(Array(hops(lastIdx(col))(baseCol)), ts(hops(lastIdx(col))))
+      }
+      lastIdx(col) += 1
+    }
+
+    val result = twoStack.query
+    if (result == null) result
+    else result(0)
   }
 
 }

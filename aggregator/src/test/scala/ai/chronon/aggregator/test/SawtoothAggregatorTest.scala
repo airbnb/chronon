@@ -167,14 +167,15 @@ object SawtoothAggregatorTest {
       queries: Array[Long],
       specs: Seq[Aggregation],
       schema: Seq[(String, DataType)],
-      resolution: Resolution = FiveMinuteResolution
+      resolution: Resolution = FiveMinuteResolution,
+      useTwoStack: Boolean = false
   ): Array[Array[Any]] = {
 
     // STEP-1. build hops
     val hopsAggregator =
       new HopsAggregator(queries.min, specs, schema, resolution)
     val sawtoothAggregator =
-      new SawtoothAggregator(specs, schema, resolution)
+      new SawtoothAggregator(specs, schema, resolution, useTwoStack)
     var hopMaps = hopsAggregator.init()
     for (i <- events.indices)
       hopMaps = hopsAggregator.update(hopMaps, events(i))

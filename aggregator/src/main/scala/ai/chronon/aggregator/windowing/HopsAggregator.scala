@@ -119,8 +119,6 @@ class HopsAggregator(minQueryTs: Long,
       .zip(readableLeftBounds)
       .map { case (hop, left) => s"$hop->$left" }
       .mkString(", ")
-    println(s"""Left bounds: $readableHopsToBoundsMap 
-         |minQueryTs = ${TsUtils.toStr(minQueryTs)}""".stripMargin)
     result
   }
 
