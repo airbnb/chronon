@@ -28,9 +28,18 @@ object DataFrameGen {
                          from_unixtime(generated.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
   }
 
+  def unpartitionedEvents(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
+    events(spark, columns, count, 200)
+      .drop("ds")
+  }
+
   //  Generates Entity data
   def entities(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
     gen(spark, columns :+ Column(Constants.PartitionColumn, StringType, partitions), count)
+  }
+
+  def unpartitionedEntities(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
+    entities(spark, columns, count, 200).drop("ds")
   }
 
   /**

@@ -76,6 +76,17 @@ case class PartitionRange(start: String, end: String) extends DataRange {
                      fillIfAbsent = fillIfAbsent)
   }
 
+  def genScanQueryBasedOnTime(query: Query, table: String, fillIfAbsent: Map[String, String] = Map.empty): String = {
+    val queryOpt = Option(query)
+    val startClause = Option(start).map(start => s"${fillIfAbsent(Constants.TimeColumn)} >= " + Constants.Partition.epochMillis(start))
+    val endClause = Option(end).map(end => s"${fillIfAbsent(Constants.TimeColumn)} < " + Constants.Partition.epochMillis(Constants.Partition.after(end)))
+    val wheres = (startClause ++ endClause).toSeq
+    QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
+      from = table,
+      wheres = wheres,
+      fillIfAbsent = fillIfAbsent)
+  }
+
   def steps(days: Int): Seq[PartitionRange] = {
     partitions
       .sliding(days, days)

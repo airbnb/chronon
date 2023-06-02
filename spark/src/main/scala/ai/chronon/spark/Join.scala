@@ -12,6 +12,7 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
 import scala.collection.JavaConverters._
+import scala.collection.convert.ImplicitConversions._
 import scala.collection.parallel.ParMap
 import scala.util.Try
 
@@ -70,13 +71,13 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
          |
          |""".stripMargin)
 
-    import org.apache.spark.sql.functions.{col, date_add, date_format}
+    import org.apache.spark.sql.functions.{col, to_date, date_add, date_format}
     val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
       prefixedRight
         .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(col(Constants.PartitionColumn), 1), Constants.Partition.format))
+                    date_format(date_add(to_date(col(Constants.PartitionColumn), Constants.Partition.format), 1), Constants.Partition.format))
         .drop(Constants.PartitionColumn)
     } else {
       prefixedRight
@@ -179,7 +180,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
       } else {
         // compute only the missing piece
         val joinPartTableName = joinConf.partOutputTable(joinPart)
-        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, Some(joinConf.left.table))
+        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, joinConf, Some(joinConf.left.table))
         println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
 
         if (rightUnfilledRange.isDefined) {
@@ -268,7 +269,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
     val rangeToFill = PartitionRange(leftStart, leftEnd)
     println(s"Join range to fill $rangeToFill")
     def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill)
+    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, joinConf=Some(joinConf))
     if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
       println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
       return finalResult
@@ -280,7 +281,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
     joinConf.joinParts.asScala.foreach { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
-      tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill)
+      tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill, joinConf=Some(joinConf))
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))

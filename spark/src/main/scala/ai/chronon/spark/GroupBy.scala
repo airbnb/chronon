@@ -466,12 +466,19 @@ object GroupBy {
     logger.info(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map { source =>
-        renderDataSourceQuery(source,
-                              groupByConf.getKeyColumns.asScala,
-                              queryRange,
-                              tableUtils,
-                              groupByConf.maxWindow,
-                              groupByConf.inferredAccuracy)
+        if (tableUtils.isUnpartitionedTable(source)) {
+          renderUnpartitionedDataSourceQuery(source,
+            groupByConf.getKeyColumns.asScala,
+            groupByConf.inferredAccuracy)
+        } else {
+          renderDataSourceQuery(source,
+            groupByConf.getKeyColumns.asScala,
+            queryRange,
+            tableUtils,
+            groupByConf.maxWindow,
+            groupByConf.inferredAccuracy)
+        }
+
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
@@ -612,6 +619,30 @@ object GroupBy {
       Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
       metaColumns ++ keys.map(_ -> null)
     )
+    query
+  }
+
+  def renderUnpartitionedDataSourceQuery(source: api.Source,
+                            keys: Seq[String],
+                            accuracy: api.Accuracy): String = {
+    var metaColumns: Map[String, String] = Map()
+
+    val timeMapping = accuracy match {
+      case api.Accuracy.TEMPORAL => Some(Constants.TimeColumn -> source.query.timeColumn)
+      case api.Accuracy.SNAPSHOT => {
+        val dsBasedTimestamp = // 1 millisecond before ds + 1
+          s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
+        Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
+      }
+    }
+    metaColumns ++= timeMapping
+    val query = api.QueryUtils.build(
+      selects=Option(source.query.selects).map(_.asScala.toMap).orNull,
+      from=source.table,
+      wheres=Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]),
+      fillIfAbsent=metaColumns ++ keys.map(_ -> null)
+    )
+    logger.info("Querying unpartitioned data from renderUnpartitionedDataSourceQuery with query: " + query)
     query
   }
 

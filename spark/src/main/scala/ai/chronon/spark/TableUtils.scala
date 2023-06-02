@@ -1,6 +1,8 @@
 package ai.chronon.spark
 
+import ai.chronon.api
 import ai.chronon.api.{Constants, PartitionSpec}
+import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions.{col, lit, rand, round}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
@@ -286,11 +288,26 @@ trait BaseTableUtils {
     }
   }
 
+  def isUnpartitionedTable(table: api.Source): Boolean = {
+    // Consider the table to be unpartitioned if it does not contain the partition column.
+    !sparkSession.catalog.listColumns(table.table)
+      .filter(col("isPartition") === true)
+      .select(col("name"))
+      .collect
+      .map(_.getString(0))
+      .contains(Constants.PartitionColumn)
+  }
+
   @deprecated
   def unfilledRange(outputTable: String,
                     partitionRange: PartitionRange,
+                    joinConf: api.Join,
                     inputTable: Option[String] = None,
                     inputSubPartitionFilters: Map[String, String] = Map.empty): Option[PartitionRange] = {
+    if (isUnpartitionedTable(joinConf.left)) {
+      // If the left is unpartitioned, we fall back to just using the passed-in range.
+      return Some(partitionRange)
+    }
     // TODO: delete this after feature stiching PR
     val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTable.flatMap(firstAvailablePartition(_, inputSubPartitionFilters))
@@ -402,8 +419,13 @@ trait BaseTableUtils {
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange,
-                              labelPartition: Map[String, String] = Map.empty): Option[String] = {
-
+                              labelPartition: Map[String, String] = Map.empty,
+                              joinConf: Option[api.Join] = None): Option[String] = {
+    if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
+      // If the left is unpartitioned, we return the start of the range and drop the entire range.
+      dropPartitionRange(outputTable, partitionRange.start, partitionRange.end)
+      return Some(partitionRange.start)
+    }
     def partitionsInRange(table: String, partitionFilter: Map[String, String] = Map.empty): Set[String] = {
       val allParts = partitions(table, partitionFilter)
       val startPrunedParts = Option(partitionRange.start).map(start => allParts.filter(_ >= start)).getOrElse(allParts)

@@ -5,7 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.spark.GroupBy.{renderDataSourceQuery, renderUnpartitionedDataSourceQuery}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
@@ -13,7 +13,7 @@ import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
-import org.junit.Test
+import org.junit.{Before, Test}
 
 import scala.collection.JavaConverters._
 
@@ -27,9 +27,17 @@ class JoinTest {
   private val dayAndMonthBefore = Constants.Partition.before(monthAgo)
 
   private val namespace = "test_namespace_jointest"
+  private val viewsTable = s"$namespace.view_events"
+  val itemQueriesTable = s"$namespace.item_queries"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   private val tableUtils = TableUtils(spark)
+
+  @Before
+  def before(): Unit = {
+    spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
+    spark.sql(s"DROP TABLE IF EXISTS $itemQueriesTable")
+  }
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
@@ -316,7 +324,6 @@ class JoinTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     val viewsSource = Builders.Source.events(
@@ -336,7 +343,6 @@ class JoinTest {
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
@@ -377,6 +383,227 @@ class JoinTest {
     }
     assertEquals(diff.count(), 0)
   }
+
+  @Test
+  def testEntitiesEventsSnapshotWithUnpartitionedTables(): Unit = {
+    // This tests unpartitioned left and right with entities on the left.
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    DataFrameGen
+      .unpartitionedEvents(spark, viewsSchema, count = 1000)
+      .save(viewsTable, partitionColumns = Seq())
+
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), timeColumn = "ts", startPartition = yearAgo),
+      table = viewsTable,
+      isCumulative = true
+    )
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side - this side is unpartitioned.
+    val itemQueries = List(Column("item", api.StringType, 100))
+    DataFrameGen
+      .unpartitionedEntities(spark, itemQueries, 1000)
+      .distinct()
+      .save(itemQueriesTable, partitionColumns = Seq())
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(startPartition = monthAgo), snapshotTable = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
+    )
+
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val computed = join.computeJoin()
+    computed.show()
+
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   queries AS (SELECT item from $itemQueriesTable),
+         |   views as (SELECT *, from_unixtime(ts/1000, 'yyyy-MM-dd') ds from $viewsTable)
+         | SELECT queries.item,
+         |        '$monthAgo' ds,
+         |        AVG(time_spent_ms) as user_unit_test_item_views_time_spent_ms_average
+         | FROM queries left outer join views
+         |  ON queries.item = views.item
+         | WHERE (views.item IS NOT NULL) AND views.ds >= '$yearAgo' AND views.ds <= '$monthAgo'
+         | GROUP BY 1,2
+         |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ds"))
+
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testEventsEventsSnapshotWithCumulativeUnpartitionedTableForRightEvents(): Unit = {
+    // This tests an event / event snapshot join where the events for the groupby
+    // are unpartitioned and the events for the left are partitioned.
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    DataFrameGen
+      .unpartitionedEvents(spark, viewsSchema, count = 1000)
+      .save(viewsTable, partitionColumns = Seq())
+
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), timeColumn = "ts", startPartition = yearAgo),
+      table = viewsTable,
+      isCumulative = true
+    )
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side - this side is partitioned.
+    val itemQueries = List(Column("item", api.StringType, 100))
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
+    )
+
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val computed = join.computeJoin()
+    computed.show()
+
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo'),
+         |   views as (SELECT *, from_unixtime(ts/1000, 'yyyy-MM-dd') ds from $viewsTable)
+         | SELECT queries.item,
+         |        queries.ts,
+         |        queries.ds,
+         |        AVG(IF(queries.ds > views.ds, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+         | FROM queries left outer join views
+         |  ON queries.item = views.item
+         | WHERE (views.item IS NOT NULL) AND views.ds >= '$yearAgo' AND views.ds <= '$dayAndMonthBefore'
+         | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+         |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testEventsEventsSnapshotWithCumulativeUnpartitionedTableForLeftAndRightEvents(): Unit = {
+    // This tests an event / event snapshot join where the events for the groupby
+    // and left lookup events are both unpartitioned.
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    // Have the right side be unpartitioned by dropping the ds column.
+    // This has the effect of making the right side cumulative and unpartitioned.
+    DataFrameGen
+      .events(spark, viewsSchema, count = 1000, partitions = 200)
+      .drop("ds")
+      .save(viewsTable, partitionColumns = Seq())
+
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), timeColumn = "ts", startPartition = yearAgo),
+      table = viewsTable,
+      isCumulative = true
+    )
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side - this side is also unpartitioned.
+    val itemQueries = List(Column("item", api.StringType, 100))
+    DataFrameGen
+      .unpartitionedEvents(spark, itemQueries, 1000)
+      .drop("ds")
+      .save(itemQueriesTable, partitionColumns = Seq())
+
+    val start = Constants.Partition.minus(today, new Window(100, TimeUnit.DAYS))
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start, timeColumn = "ts"), isCumulative = true, table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
+    )
+
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val computed = join.computeJoin()
+    computed.show()
+
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   queries AS (SELECT item, ts, from_unixtime(ts/1000, 'yyyy-MM-dd') ds from $itemQueriesTable where from_unixtime(ts/1000, 'yyyy-MM-dd') >= '$start' and from_unixtime(ts/1000, 'yyyy-MM-dd') <= '$monthAgo'),
+         |   views as (SELECT *, from_unixtime(ts/1000, 'yyyy-MM-dd') ds from $viewsTable)
+         | SELECT queries.item,
+         |        queries.ts,
+         |        queries.ds,
+         |        AVG(IF(queries.ds > views.ds, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+         | FROM queries left outer join views
+         |  ON queries.item = views.item
+         | WHERE (views.item IS NOT NULL) AND views.ds >= '$yearAgo' AND views.ds <= '$dayAndMonthBefore'
+         | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+         |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(expected, computed, List("item", "ts", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
   @Test
   def testJoinAnalyzerSchema(): Unit = {
     val viewsSource = genTestEventSource
@@ -402,7 +629,6 @@ class JoinTest {
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
@@ -426,12 +652,13 @@ class JoinTest {
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
     println("=== expected schema =====")
     println(expectedSchema.mkString("\n"))
+    println("=== analyzer schema =====")
+    println(analyzerSchema.mkString("\n"))
 
     assertTrue(expectedSchema sameElements analyzerSchema)
   }
   @Test
   def testEventsEventsTemporal(): Unit = {
-
     val joinConf = getEventsEventsTemporal("temporal")
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -461,7 +688,6 @@ class JoinTest {
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
     val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 10000, partitions = 100)
     // duplicate the events
@@ -517,7 +743,6 @@ class JoinTest {
     joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
 
     // Run job
-    val itemQueriesTable = s"$namespace.item_queries"
     println("Item Queries DF: ")
     val q =
       s"""
@@ -633,6 +858,16 @@ class JoinTest {
     )
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"ds >= '2021-01-01' AND ds <= '2021-01-03'"))
+
+    // Test cumulative
+    val viewsGroupByUnpartitioned = getViewsGroupBy(suffix = "render", makeCumulative = true, makeUnpartitioned = true)
+    val renderedUnpartitioned = renderUnpartitionedDataSourceQuery(
+      viewsGroupByUnpartitioned.sources.asScala.head,
+      Seq("item"),
+      viewsGroupByUnpartitioned.inferredAccuracy
+    )
+    // Only checking that the date logic is correct in the query
+    assertFalse(renderedUnpartitioned.contains("ds"))
   }
 
   @Test
@@ -807,7 +1042,7 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false) = {
+  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false, makeUnpartitioned: Boolean = false) = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -823,13 +1058,24 @@ class JoinTest {
       isCumulative = makeCumulative
     )
 
-    val dfToWrite = if (makeCumulative) {
+    val dfTemp = if (makeCumulative) {
       // Move all events into latest partition and set isCumulative on thrift object
       df.drop("ds").withColumn("ds", lit(today))
     } else { df }
 
+    val dfToWrite = if (makeUnpartitioned) {
+      df.drop("ds")
+    } else {
+      df
+    }
+
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
-    dfToWrite.save(viewsTable, Map("tblProp1" -> "1"))
+    val partitionColumns = if (makeUnpartitioned) {
+      Seq()
+    } else {
+      Seq("ds")
+    }
+    dfToWrite.save(viewsTable, Map("tblProp1" -> "1"), partitionColumns = partitionColumns)
 
     Builders.GroupBy(
       sources = Seq(viewsSource),
@@ -849,7 +1095,6 @@ class JoinTest {
   private def getEventsEventsTemporal(nameSuffix: String = "") = {
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
     val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 10000, partitions = 100)
     // duplicate the events
@@ -950,7 +1195,6 @@ class JoinTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
