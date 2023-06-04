@@ -818,18 +818,10 @@ object Extensions {
           .convertJavaMapToScala(jmap)
           .flatMap { case (leftKey, values) =>
             Option(joinPart.keyMapping)
-              .map {
-                ScalaVersionSpecificCollectionsConverter
-                  .convertJavaMapToScala(_)
-                  .getOrElse(leftKey, leftKey)
-              }
+              .map(_.toScala.getOrElse(leftKey, leftKey))
               .orElse(Some(leftKey))
               .filter(joinPart.groupBy.keyColumns.contains(_))
-              .map {
-                generateSkewFilterSql(
-                  _,
-                  ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values))
-              }
+              .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
