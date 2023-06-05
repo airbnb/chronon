@@ -164,7 +164,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     // we do this by utilizing the per-record metadata computed during the bootstrap process.
     // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
     // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
-    val rightResults = bootstrapCoveringSets.parallel
+    val rightResults = bootstrapCoveringSets
       .flatMap {
         case (partMetadata, coveringSets) =>
           val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
