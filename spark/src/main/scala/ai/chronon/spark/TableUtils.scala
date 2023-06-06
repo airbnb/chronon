@@ -255,10 +255,12 @@ case class TableUtils(sparkSession: SparkSession) {
       val isLocal = sparkSession.conf.get("spark.master").startsWith("local")
 
       // roughly 1 partition count per 1m rows x 100 columns
-      val rowCountPerPartition = SparkConstants
-        .readSparkChrononConf(df.sparkSession, SparkConstants.ChrononRowCountPerPartition)
+      val rowCountPerPartition = df.sparkSession.conf
+        .getOption(SparkConstants.ChrononRowCountPerPartition)
         .map(_.toDouble)
+        .flatMap(value => if (value > 0) Some(value) else None)
         .getOrElse(1e8)
+
       val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
       val dailyFileCountUpperBound = 2000
       val dailyFileCountLowerBound = if (isLocal) 1 else 10
@@ -266,9 +268,11 @@ case class TableUtils(sparkSession: SparkSession) {
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
 
-      val outputParallelism = SparkConstants
-        .readSparkChrononConf(df.sparkSession, SparkConstants.ChrononOutputParallelismOverride)
+      val outputParallelism = df.sparkSession.conf
+        .getOption(SparkConstants.ChrononOutputParallelismOverride)
         .map(_.toInt)
+        .flatMap(value => if (value > 0) Some(value) else None)
+
       if (outputParallelism.isDefined) {
         println(s"Using custom outputParallelism ${outputParallelism.get}")
       }
