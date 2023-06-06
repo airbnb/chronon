@@ -3,7 +3,6 @@ import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
 import copy
-import re
 import gc
 import importlib
 import json
@@ -368,7 +367,7 @@ def validate_join(join: api.Join) -> List[str]:
     - No joinParts with the same output table.
     """
     errors = []
-    name = join.metaData.name
+
     def joinpart_output_table(joinPart: api.JoinPart):
         components = []
         if join.metaData.name:
