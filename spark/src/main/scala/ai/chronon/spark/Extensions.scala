@@ -142,11 +142,20 @@ object Extensions {
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
            |""".stripMargin)
+
+
+      // we are choosing fpp so that optimal number of bits is at-least 1G
+      val fpps = Seq(1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10)
+      val factor =  Math.log(2) * Math.log(2)
+      def fppCapacities(numGB: Int) = fpps.map(fpp => - numGB.toLong * 1e9 * 8 / (Math.log(fpp) / factor))
+      val newFPP = fppCapacities(1).zip(fpps).takeWhile{case (cap, fpp) => approxCount < cap}.last._2
+      println(" === new fpp: ===" + newFPP)
+
       val bloomFilter = df
         .filter(df.col(col).isNotNull)
         .stat
-        .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
-
+//        .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
+        .bloomFilter(col, approxCount + 1, 1e-10) // expectedNumItems must be positive
       println(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
