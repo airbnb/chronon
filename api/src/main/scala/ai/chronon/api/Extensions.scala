@@ -813,26 +813,24 @@ object Extensions {
     }
 
     def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
-      Option(join.skewKeys).map { jmap =>
+      Option(join.skewKeys).flatMap { jmap =>
         val result = ScalaVersionSpecificCollectionsConverter
           .convertJavaMapToScala(jmap)
-          .flatMap {
-            case (leftKey, values) =>
-              val replacedKey = Option(joinPart.keyMapping)
-                .map {
-                  ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).getOrElse(leftKey, leftKey)
-                }
-                .getOrElse(leftKey)
-              if (joinPart.groupBy.keyColumns.contains(replacedKey))
-                Some(
-                  generateSkewFilterSql(replacedKey,
-                                        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values).toSeq))
-              else None
+          .flatMap { case (leftKey, values) =>
+            Option(joinPart.keyMapping)
+              .map(_.toScala.getOrElse(leftKey, leftKey))
+              .orElse(Some(leftKey))
+              .filter(joinPart.groupBy.keyColumns.contains(_))
+              .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
-        println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
-        result
+
+        if (result.nonEmpty) {
+          println(
+            s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+          Some(result)
+        } else None
       }
     }
 
