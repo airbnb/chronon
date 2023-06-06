@@ -175,8 +175,8 @@ def _write_obj(full_output_root: str,
         return False
     validation_errors = validator.validate_obj(obj)
     if validation_errors:
-        _print_error(f"Could not write {class_name} {name}",
-                     ', '.join(validation_errors))
+        _print_error(f"Could not write {class_name} {name}\n\t",
+                     '\n\t - '.join(validation_errors))
         return False
     if force_overwrite:
         _print_warning(f"Force overwrite {class_name} {name}")

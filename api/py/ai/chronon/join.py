@@ -3,6 +3,7 @@ import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
 import copy
+import re
 import gc
 import importlib
 import json
@@ -358,6 +359,31 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
         query=query,
         keyColumns=key_columns
     )
+
+
+def validate_join(join: api.Join) -> List[str]:
+    """
+    Validations for a compiled join.
+    - No duplicate joinParts
+    - No joinParts with the same output table.
+    """
+    errors = []
+    name = join.metaData.name
+    def joinpart_output_table(joinPart: api.JoinPart):
+        components = []
+        if join.metaData.name:
+            components = [join.metaData.name]
+        if joinPart.prefix:
+            components += [joinPart.prefix]
+        if joinPart.groupBy and joinPart.groupBy.metaData and joinPart.groupBy.metaData.name:
+            components += [joinPart.groupBy.metaData.name]
+        table_name = utils.sanitize_name("_".join(components))
+        return f"{join.metaData.outputNamespace}.{table_name}"
+    all_tables = [joinpart_output_table(jp) for jp in join.joinParts]
+    for idx, tbl in enumerate(all_tables):
+        if all_tables.count(tbl) > 1:
+            errors.append(f"Repeated joinPart output tables in join: {tbl} joinPart: #{idx}")
+    return errors
 
 
 def Join(left: api.Source,

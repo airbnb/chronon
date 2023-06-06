@@ -45,5 +45,9 @@
     "kaggle": {
         "description": "Workspace for kaggle compeitions",
         "namespace": "default"
+    },
+    "sample_failures": {
+        "description": "Failure compilation examples",
+        "namespace": "default"
     }
 }

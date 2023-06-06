@@ -5,6 +5,7 @@ import logging
 import os
 from ai.chronon.api.ttypes import \
     GroupBy, Join, Source
+from ai.chronon.join import validate_join
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
@@ -155,7 +156,7 @@ class ChrononRepoValidator(object):
         included_group_bys = [rp.groupBy for rp in join.joinParts]
         offline_included_group_bys = [gb.metaData.name for gb in included_group_bys
                                       if not gb.metaData or gb.metaData.online is False]
-        errors = []
+        errors = validate_join(join)
         old_group_bys = [group_by for group_by in included_group_bys
                          if self._get_old_obj(GroupBy, group_by.metaData.name)]
         non_prod_old_group_bys = [group_by.metaData.name for group_by in old_group_bys

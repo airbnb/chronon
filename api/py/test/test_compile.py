@@ -55,3 +55,15 @@ def test_failed_compile_missing_input_column():
         '--debug'
     ])
     assert result.exit_code != 0
+
+
+def test_duplicate_join_parts():
+    """
+    Should raise as it writes to the same join part table.
+    """
+    runner = CliRunner()
+    result = runner.invoke(extract_and_convert, [
+        '--chronon_root=test/sample',
+        '--input_path=joins/sample_failures/sample_join.py'
+    ])
+    assert "Could not write " in result.output and "Repeated joinPart" in result.output

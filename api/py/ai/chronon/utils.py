@@ -248,3 +248,7 @@ def dedupe_in_order(seq):
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not (x in seen or seen_add(x))]
+
+
+def sanitize_name(name):
+    return re.sub("[^a-zA-Z0-9_]", "_", name)
