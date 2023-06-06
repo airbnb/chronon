@@ -162,8 +162,7 @@ class LabelJoinTest {
     println(" == Refreshed == ")
     refreshed.show()
     assertEquals(refreshed.count(), 6)
-    val refreshedRows = refreshed.collect()
-    assertEquals(computedRows.toSet, refreshedRows.toSet)
+    assertTrue(computedRows sameElements (refreshed.collect()))
   }
 
   @Test

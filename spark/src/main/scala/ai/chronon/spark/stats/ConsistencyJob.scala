@@ -106,7 +106,10 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       println("Saving output.")
       val outputDf = metricsDf.withTimeBasedColumn("ds")
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
-      tableUtils.insertPartitions(outputDf, joinConf.metaData.consistencyTable, tableProperties = tblProperties, autoExpand = true)
+      tableUtils.insertPartitions(outputDf,
+                                  joinConf.metaData.consistencyTable,
+                                  tableProperties = tblProperties,
+                                  autoExpand = true)
       metrics
     }
     DataMetrics(allMetrics.flatMap(_.series))

@@ -229,7 +229,9 @@ class TableUtilsTest {
         Row(3L, 8, "2022-10-05", "2022-11-03")
       )
     )
-    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
     tableUtils.dropPartitions(tableName,
                               Seq("2022-10-01", "2022-10-02"),
                               subPartitionFilters = Map(Constants.LabelPartitionColumn -> "2022-11-02"))
@@ -274,7 +276,9 @@ class TableUtilsTest {
         Row(3L, 8, "2022-10-05", "2022-11-09")
       )
     )
-    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
     val par = tableUtils.allPartitions(tableName)
     assertTrue(par.size == 6)
     assertEquals(par(0).keys, Set(Constants.PartitionColumn, Constants.LabelPartitionColumn))
@@ -312,7 +316,9 @@ class TableUtilsTest {
         Row(3L, "2022-11-03", "2022-11-03")
       )
     )
-    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
 
   }
 

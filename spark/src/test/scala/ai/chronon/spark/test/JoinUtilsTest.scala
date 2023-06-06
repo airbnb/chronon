@@ -248,7 +248,9 @@ class JoinUtilsTest {
     val rightTableName = "joinUtil.testLabelTable2"
     spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
-    tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark), rightTableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark),
+      rightTableName,
+      partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
     val keys = Array("listing_id", Constants.PartitionColumn)
 
     JoinUtils.createOrReplaceView(finalViewName, leftTableName, rightTableName, keys, tableUtils,

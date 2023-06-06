@@ -254,9 +254,13 @@ class SchemaEvolutionTest extends TestCase {
 
   private def insertLogsToHive(mockApi: MockApi, logs: Seq[LoggableResponseBase64], ds: String): Unit = {
     val logDf = mockApi.loggedValuesToDf(logs, spark)
-    TableUtils(spark).insertPartitions(logDf
+    TableUtils(spark).insertPartitions(
+      logDf
         .withColumn("ds", lit(ds))
-        .withPartitionBasedTimestamp("ts_millis"), mockApi.logTable, partitionColumns = Seq("ds", "name"))
+        .withPartitionBasedTimestamp("ts_millis"),
+      mockApi.logTable,
+      partitionColumns = Seq("ds", "name")
+    )
   }
 
   /*

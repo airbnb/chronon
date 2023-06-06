@@ -584,7 +584,6 @@ object GroupBy {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill = from(groupByConf, range, tableUtils)
-              val daysInRange = range.partitions.length
               (groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
