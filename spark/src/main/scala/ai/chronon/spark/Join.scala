@@ -23,12 +23,8 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
  */
 private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
-class Join(joinConf: api.Join,
-           endPartition: String,
-           tableUtils: TableUtils,
-           skipFirstHole: Boolean = true,
-           outputParallelism: Option[Int] = None)
-    extends BaseJoin(joinConf, endPartition, tableUtils, skipFirstHole, outputParallelism) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
+    extends BaseJoin(joinConf, endPartition, tableUtils, skipFirstHole) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 

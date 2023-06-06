@@ -450,11 +450,7 @@ class FetcherTest extends TestCase {
                |""".stripMargin)
     val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
     if (logToHive) {
-      TableUtils(spark).insertPartitions(
-        loggedDf,
-        mockApi.logTable,
-        partitionColumns = Seq("ds", "name")
-      )
+      TableUtils(spark).insertPartitions(loggedDf, mockApi.logTable, partitionColumns = Seq("ds", "name"))
     }
     if (samplePercent > 0) {
       println(s"logged count: ${loggedDf.count()}")

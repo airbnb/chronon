@@ -154,8 +154,7 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
-                       autoExpand: Boolean = false,
-                       outputParallelism: Option[Int] = None): Unit = {
+                       autoExpand: Boolean = false): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -199,7 +198,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode, outputParallelism)
+    repartitionAndWrite(finalizedDf, tableName, saveMode)
   }
 
   def sql(query: String): DataFrame = {
@@ -237,10 +236,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  private def repartitionAndWrite(df: DataFrame,
-                                  tableName: String,
-                                  saveMode: SaveMode,
-                                  outputParallelism: Option[Int] = None): Unit = {
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
 
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
@@ -266,7 +262,8 @@ case class TableUtils(sparkSession: SparkSession) {
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
 
-      if (outputParallelism.isDefined && !isLocal) {
+      val outputParallelism = df.sparkSession.conf.getOption(SparkConstants.ChrononOutputParallelism).map(_.toInt)
+      if (outputParallelism.isDefined) {
         println(s"Using custom outputParallelism ${outputParallelism.get}")
       }
       val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)

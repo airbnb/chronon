@@ -126,8 +126,7 @@ object Driver {
         joinConf,
         args.endDate(),
         args.buildTableUtils(s"join_${joinConf.metaData.name}"),
-        !args.runFirstHole(),
-        Option(System.getenv("OUTPUT_PARALLELISM")).map(_.toInt)
+        !args.runFirstHole()
       )
       join.computeJoin(args.stepDays.toOption)
     }
@@ -146,8 +145,7 @@ object Driver {
         groupByConf,
         args.endDate(),
         TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
-        args.stepDays.toOption,
-        Option(System.getenv("OUTPUT_PARALLELISM")).map(_.toInt)
+        args.stepDays.toOption
       )
     }
   }

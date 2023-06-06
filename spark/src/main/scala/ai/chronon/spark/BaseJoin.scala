@@ -16,11 +16,7 @@ import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
-abstract class BaseJoin(joinConf: api.Join,
-                        endPartition: String,
-                        tableUtils: TableUtils,
-                        skipFirstHole: Boolean,
-                        outputParallelism: Option[Int] = None) {
+abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -308,10 +304,7 @@ abstract class BaseJoin(joinConf: api.Join,
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           val daysInRange = range.partitions.length
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable,
-                                                                 tableProps,
-                                                                 autoExpand = true,
-                                                                 outputParallelism = outputParallelism)
+          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

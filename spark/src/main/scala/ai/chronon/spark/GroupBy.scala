@@ -551,8 +551,7 @@ object GroupBy {
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
-                      stepDays: Option[Int] = None,
-                      outputParallelism: Option[Int] = None): Unit = {
+                      stepDays: Option[Int] = None): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -590,7 +589,7 @@ object GroupBy {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
                 case Events   => groupByBackfill.snapshotEvents(range)
-              }).save(outputTable, tableProps, outputParallelism = outputParallelism)
+              }).save(outputTable, tableProps)
               println(s"Wrote to table $outputTable, into partitions: $range")
           }
           println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")

@@ -112,11 +112,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable,
-                                                                    confTableProps,
-                                                                    Seq(Constants.LabelPartitionColumn,
-                                                                        Constants.PartitionColumn),
-                                                                    true)
+          computeRange(leftDfInRange, range, sanitizedLabelDs).save(outputLabelTable, confTableProps, Seq(Constants.LabelPartitionColumn,
+                                                                        Constants.PartitionColumn), true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -154,9 +151,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                 val labeledDf = computeLabelPart(labelJoinPart, leftRange, leftBlooms)
                 // Cache label part data into intermediate table
                 println(s"Writing to join part table: $partTable for partition range $leftRange")
-                labeledDf.save(tableName = partTable,
-                               tableProperties = confTableProps,
-                               partitionColumns = Seq(Constants.LabelPartitionColumn))
+                labeledDf.save(tableName = partTable, tableProperties = confTableProps, partitionColumns = Seq(Constants.LabelPartitionColumn))
               })
             val elapsedMins = (System.currentTimeMillis() - start) / 60000
             labelJoinPartMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
