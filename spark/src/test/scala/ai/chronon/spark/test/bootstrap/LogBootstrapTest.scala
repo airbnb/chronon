@@ -131,7 +131,7 @@ class LogBootstrapTest {
     val logDf = spark.table(joinV1.metaData.loggedTable)
     assertEquals(logDf.count(), responses.length)
 
-    val baseJoinJob = new ai.chronon.spark.Join(baseJoinV2, endDs)
+    val baseJoinJob = new ai.chronon.spark.Join(baseJoinV2, endDs, tableUtils)
     val baseOutput = baseJoinJob.computeJoin()
 
     val expected = baseOutput
@@ -153,7 +153,7 @@ class LogBootstrapTest {
         baseOutput("ds")
       )
 
-    val joinJob = new ai.chronon.spark.Join(joinV2, endDs)
+    val joinJob = new ai.chronon.spark.Join(joinV2, endDs, tableUtils)
     val computed = joinJob.computeJoin()
 
     val overlapCount = baseOutput.join(logDf, Seq("request_id", "ds")).count()

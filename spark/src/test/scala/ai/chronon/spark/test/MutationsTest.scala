@@ -185,7 +185,7 @@ class MutationsTest {
       metaData = Builders.MetaData(name = joinName, namespace = namespace(suffix), team = "chronon")
     )
 
-    val runner = new Join(joinConf, endPartition)
+    val runner = new Join(joinConf, endPartition, tableUtils)
     runner.computeJoin()
   }
 

@@ -156,11 +156,11 @@ object Driver {
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
-      implicit lazy val tableUtils = TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}"))
       val labelJoin = new LabelJoin(
         joinConf,
+        TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}")),
         args.endDate()
-      )(tableUtils)
+      )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
     }
   }
@@ -225,11 +225,10 @@ object Driver {
     }
     def run(args: Args): Unit = {
       val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
-      implicit val tableUtils: TableUtils =
-        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
       val stagingQueryJob = new StagingQuery(
         stagingQueryConf,
-        args.endDate()
+        args.endDate(),
+        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
     }

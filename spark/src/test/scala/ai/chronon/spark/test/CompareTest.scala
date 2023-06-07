@@ -42,7 +42,8 @@ class CompareTest {
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val (compareDf, metricsDf, result): (DataFrame, DataFrame, DataMetrics) = CompareBaseJob.compare(leftDf, rightDf, keys)
+    val (compareDf, metricsDf, result): (DataFrame, DataFrame, DataMetrics) =
+      CompareBaseJob.compare(leftDf, rightDf, keys, tableUtils)
     metricsDf.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
@@ -76,6 +77,7 @@ class CompareTest {
         leftDf,
         rightDf,
         keys,
+        tableUtils,
         Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
     )
     metricsDf.show()
@@ -196,6 +198,7 @@ class CompareTest {
         leftDf,
         rightDf,
         keys,
+        tableUtils,
         mapping
       )
       throw new AssertionError("Expecting an error")

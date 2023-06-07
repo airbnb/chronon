@@ -27,8 +27,8 @@ object StatsGenerator {
   val finalizedPercentilesMerged: Array[Double] = Array(0.01) ++ (5 until 100 by 5).map(_.toDouble / 100) ++ Array(0.99)
   // Leveraged to build candlestick time series.
   val finalizedPercentilesSeries: Array[Double] = Array(0.05, 0.25, 0.5, 0.75, 0.95)
-  val ignoreColumns = Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn)
-
+//  val ignoreColumns = Seq(api.Constants.TimeColumn, api.Constants.PartitionColumn)
+  val ignoreColumns = Seq(api.Constants.TimeColumn)
   /**
     * InputTransform acts as a signal of how to process the metric.
     *

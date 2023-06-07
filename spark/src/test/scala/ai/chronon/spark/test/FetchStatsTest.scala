@@ -34,8 +34,8 @@ class FetchStatsTest extends TestCase {
   val tableUtils = TableUtils(spark)
   val namespace = "fetch_stats"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val yesterday = Constants.Partition.before(today)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val yesterday = tableUtils.partitionSpec.before(today)
 
   def testFetchStats(): Unit = {
     // Part 1: Build the assets. Join definition, compute and serve stats.
@@ -53,7 +53,7 @@ class FetchStatsTest extends TestCase {
     itemQueriesDf.save(s"${itemQueriesTable}_tmp")
     val leftDf = tableUtils.sql(s"SELECT item, value, ts, ds FROM ${itemQueriesTable}_tmp")
     leftDf.save(itemQueriesTable)
-    val start = Constants.Partition.minus(today, new Window(10, TimeUnit.DAYS))
+    val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
 
     // RightDf -> user, item, value
     val viewsSchema = List(

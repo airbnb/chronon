@@ -43,7 +43,7 @@ class StagingQueryTest {
                                    customJson = "{\"additional_partition_cols\": [\"user\"]}")
     )
 
-    val stagingQuery = new StagingQuery(stagingQueryConf, today)
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
     val expected =
       tableUtils.sql(s"select * from $viewName where ds between '$ninetyDaysAgo' and '$today' AND user IS NOT NULL")
@@ -91,7 +91,7 @@ class StagingQueryTest {
                                    namespace = namespace,
                                    tableProperties = Map("key" -> "val"))
     )
-    val stagingQuery = new StagingQuery(stagingQueryConf, today)
+    val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
     val expected =
       tableUtils.sql(s"""

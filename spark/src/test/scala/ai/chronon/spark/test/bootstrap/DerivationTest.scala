@@ -22,7 +22,7 @@ class DerivationTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
   private val tableUtils = TableUtils(spark)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
   def testBootstrapToDerivations(): Unit = {
@@ -334,7 +334,7 @@ class DerivationTest {
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
-    val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
+    val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)
 
     val joinPart = Builders.JoinPart(groupBy = groupBy)
     val baseJoin = Builders.Join(
@@ -407,7 +407,7 @@ class DerivationTest {
     assertEquals(1 + requests.length, logs.length)
     mockApi
       .loggedValuesToDf(logs, spark)
-      .save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
+      .save(mockApi.logTable, partitionColumns = Seq(tableUtils.partitionColumn, "name"))
     SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, endDs)
     val flattenerJob = new LogFlattenerJob(spark, bootstrapJoin, endDs, mockApi.logTable, mockApi.schemaTable)
     flattenerJob.buildLogTable()

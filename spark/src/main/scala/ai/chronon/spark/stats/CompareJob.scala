@@ -48,7 +48,7 @@ class CompareJob(
     )
 
     val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
-      CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), migrationCheck = true)
+      CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), tableUtils, migrationCheck = true)
 
     // Save the comparison table
     println("Saving comparison output..")
@@ -100,6 +100,7 @@ class CompareJob(
       joinSchema,
       stagingQuerySchema,
       getJoinKeys(joinConf),
+      tableUtils,
       migrationCheck = true)
   }
 }

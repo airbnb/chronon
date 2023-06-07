@@ -159,7 +159,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       .head()
     val rowCount = stats.getLong(0)
 
-    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))
+    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))(tableUtils)
     if (rowCount == 0) {
       // happens when all rows are already filled by bootstrap tables
       println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
@@ -274,7 +274,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val leftStart = Option(joinConf.left.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
-    val rangeToFill = PartitionRange(leftStart, leftEnd)
+    val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)

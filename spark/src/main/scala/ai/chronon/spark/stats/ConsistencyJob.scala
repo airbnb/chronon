@@ -62,7 +62,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
                       Some(Seq(joinConf.metaData.loggedTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return
-    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end)
+    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end, TableUtils(session))
     println("Starting compute Join for comparison table")
     val compareDf = join.computeJoin(Some(30))
     println("======= side-by-side comparison schema =======")
@@ -102,7 +102,10 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
       println(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
-      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDf, loggedDfNoExternalCols, keys = joinKeys)
+      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDf,
+                                                                   loggedDfNoExternalCols,
+                                                                   keys = joinKeys,
+                                                                   tableUtils)
       println("Saving output.")
       val outputDf = metricsDf.withTimeBasedColumn("ds")
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
