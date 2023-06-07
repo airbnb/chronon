@@ -341,4 +341,28 @@ class TableUtilsTest {
       assertTrue(firstDs.contains("2022-11-01"))
     }
   }
+
+  @Test
+  def testColumnSizeEstimator(): Unit = {
+    val chrononType = StructType(
+      "table_schema",
+      Array(
+        StructField("key", LongType),
+        StructField("ts", LongType),
+        StructField("int_field", IntType),
+        StructField("array_field", ListType(IntType)),
+        StructField("struct_field",
+                    StructType(name = "",
+                               fields = Array(
+                                 StructField("double_field", DoubleType),
+                                 StructField("array_field", ListType(StringType))
+                               )))
+      )
+    )
+    val sparkType = SparkConversions.fromChrononType(chrononType)
+    assertEquals(
+      104L,
+      tableUtils.columnSizeEstimator(sparkType)
+    )
+  }
 }

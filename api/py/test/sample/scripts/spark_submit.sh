@@ -72,6 +72,8 @@ $SPARK_SUBMIT_PATH \
 --driver-memory "${DRIVER_MEMORY:-8G}" \
 --conf spark.executor.memoryOverhead=2G \
 --conf spark.app.name=${APP_NAME} \
+--conf spark.chronon.outputParallelismOverride=${OUTPUT_PARALLELISM:--1} \
+--conf spark.chronon.rowCountPerPartition=${ROW_COUNT_PER_PARTITION:--1} \
 --jars "${CHRONON_ONLINE_JAR:-}" \
 "$@" 2>&1                                                  |
 grep --line-buffered -v "YarnScheduler:70"                 |

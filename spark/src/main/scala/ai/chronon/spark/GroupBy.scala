@@ -601,23 +601,10 @@ object GroupBy {
       val length = exceptions.length
       val fullMessage = exceptions.zipWithIndex
         .map {
-          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+          case (message, index) => s"[${index + 1}/${length} exceptions]\n${message}"
         }
         .mkString("\n")
       throw new Exception(fullMessage)
     }
-  }
-
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new Args(args)
-    parsedArgs.verify()
-    println(s"Parsed Args: $parsedArgs")
-    val groupByConf = parsedArgs.parseConf[api.GroupBy]
-    computeBackfill(
-      groupByConf,
-      parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
-      parsedArgs.stepDays.toOption
-    )
   }
 }
