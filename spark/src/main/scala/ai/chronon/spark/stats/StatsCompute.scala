@@ -73,6 +73,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     */
   def dailySummary(aggregator: RowAggregator, sample: Double = 1.0, timeBucketMinutes: Long = 60): TimedKvRdd = {
     val partitionIdx = selectedDf.schema.fieldIndex(tableUtils.partitionColumn)
+    val partitionSpec = tableUtils.partitionSpec
     val bucketMs = timeBucketMinutes * 1000 * 60
     val tsIdx =
       if (selectedDf.columns.contains(api.Constants.TimeColumn)) selectedDf.schema.fieldIndex(api.Constants.TimeColumn)
@@ -85,7 +86,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
       .map(SparkConversions.toChrononRow(_, tsIdx))
       .keyBy(row =>
         if (isTimeBucketed) (row.ts / bucketMs) * bucketMs
-        else tableUtils.partitionSpec.epochMillis(row.getAs[String](partitionIdx)))
+        else partitionSpec.epochMillis(row.getAs[String](partitionIdx)))
       .aggregateByKey(aggregator.init)(seqOp = aggregator.updateWithReturn, combOp = aggregator.merge)
       .mapValues(aggregator.normalize(_))
       .map { case (k, v) => (Array(keyName), v, k) } // To use KvRdd
