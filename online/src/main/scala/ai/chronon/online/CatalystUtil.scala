@@ -35,6 +35,7 @@ object CatalystUtil {
       .builder()
       .appName(s"catalyst_test_${Thread.currentThread().toString}")
       .master("local[*]")
+      .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.adaptive.enabled", "false")
       .getOrCreate()
     assert(spark.sessionState.conf.wholeStageEnabled)
