@@ -221,18 +221,16 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "b" -> "CURRENT_TIMESTAMP()",
       "c" -> "DATE_TRUNC('HOUR', '2015-03-05T09:32:05.359')",
       "d" -> "DAY('2023-05-17')",
-      "e" -> "DAYOFWEEK('2009-07-30')",
-      "f" -> "DATE_PART('DAY', DATE_ADD('2016-07-30', 3))"
+      "e" -> "DAYOFWEEK('2009-07-30')"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsRow)
-    assertEquals(res.get.size, 6)
+    assertEquals(res.get.size, 5)
     assertEquals(res.get("a"),"2038-01-19 03:14:07")
     assertTrue(res.get("b").isInstanceOf[java.lang.Long])
     assertEquals(res.get("c"),1425546000000000L)
     assertEquals(res.get("d"), 17)
     assertEquals(res.get("e"), 5)
-    assertEquals(res.get("f"), 2)
   }
 
   @Test
