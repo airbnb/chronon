@@ -11,6 +11,7 @@ import org.apache.spark.sql.execution.{
   FilterExec,
   LocalTableScanExec,
   ProjectExec,
+  RDDScanExec,
   WholeStageCodegenExec
 }
 import org.apache.spark.sql.{SparkSession, types}
@@ -178,6 +179,13 @@ class CatalystUtil(
         // Input `row` is unused because for LTSE, no input is needed to compute the output
         def projectFunc(row: InternalRow): Option[InternalRow] =
           ltse.executeCollect().headOption
+
+        projectFunc
+      }
+      case rddse: RDDScanExec => {
+        val unsafeProjection = UnsafeProjection.create(rddse.schema)
+        def projectFunc(row: InternalRow): Option[InternalRow] =
+          Some(unsafeProjection.apply(row))
 
         projectFunc
       }
