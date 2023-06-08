@@ -43,7 +43,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
 
   def init: BatchIr = BatchIr(Array.fill(windowedAggregator.length)(null), hopsAggregator.init())
 
-  def update(batchEndTs: Long, batchIr: BatchIr, row: Row): BatchIr = {
+  def update(batchEndTs: Long, batchIr: BatchIr, row: Row, batchTails: Array[Option[Long]] = null): BatchIr = {
     val rowTs = row.ts
     // To track if a tail value for a particular (hopIndex, baseIrIndex) is updated
     val updatedFlagsBitset = new util.BitSet(hopSizes.length * baseAggregator.length)
@@ -54,10 +54,11 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
       isSet
     }
 
+    val tailTimes = if(batchTails == null) batchTails else tailTs(batchEndTs)
     var i = 0
     while (i < windowedAggregator.length) {
-      if (batchEndTs > rowTs && tailTs(batchEndTs)(i).forall(rowTs > _)) { // relevant for the window
-        if (tailTs(batchEndTs)(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
+      if (batchEndTs > rowTs && tailTimes(i).forall(rowTs > _)) { // relevant for the window
+        if (tailTimes(i).forall(rowTs >= _ + tailBufferMillis)) { // update collapsed part
           windowedAggregator.columnAggregators(i).update(batchIr.collapsed, row)
         } else { // update tailHops part
           val hopIndex = tailHopIndices(i)
