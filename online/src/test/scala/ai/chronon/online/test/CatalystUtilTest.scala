@@ -168,14 +168,18 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq(
       "a" -> "4 + 5 * 32 - 2",
       "b" -> "(int32_x - 1) / 6 * 3 + 7 % 3",
-      "c" -> "(int64_x / int32_x) + 7 * 3"
+      "c" -> "(int64_x / int32_x) + 7 * 3",
+      "d" -> "2 / 2 + 1",
+      "e" -> "1 / 2 + 1"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsRow)
-    assertEquals(res.get.size, 3)
+    assertEquals(res.get.size, 5)
     assertEquals(res.get("a"), 162)
     assertEquals(res.get("b"), 1073741824.0)
     assertEquals(res.get("c"), 4294967319.0)
+    assertEquals(res.get("d"), 2.0)
+    assertEquals(res.get("e"), 1.5)
   }
 
   @Test
