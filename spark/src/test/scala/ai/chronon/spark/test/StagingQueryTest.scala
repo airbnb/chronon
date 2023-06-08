@@ -13,6 +13,7 @@ import org.apache.spark.sql.functions.{max, col}
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   implicit private val tableUtils: TableUtils = TableUtils(spark)
+
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
   private val namespace = "staging_query_chronon_test"

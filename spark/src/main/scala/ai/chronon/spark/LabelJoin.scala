@@ -32,8 +32,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     .getOrElse(Map.empty[String, String])
 
   // offsets are inclusive, e.g label_ds = 04-03, left_start_offset = left_end_offset = 3, left_ds will be 04-01
-  val leftStart = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftStartOffset, TimeUnit.DAYS))
-  val leftEnd = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftEndOffset, TimeUnit.DAYS))
+  val leftStart = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftStartOffset - 1, TimeUnit.DAYS))
+  val leftEnd = tableUtils.partitionSpec.minus(labelDS, new Window(labelJoinConf.leftEndOffset - 1, TimeUnit.DAYS))
 
   def computeLabelJoin(stepDays: Option[Int] = None, skipFinalJoin: Boolean = false): DataFrame = {
     // validations

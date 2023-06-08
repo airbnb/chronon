@@ -80,7 +80,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
                |Left Schema:
                |${leftDf.schema.pretty}
                |Right Schema:
-               |${joinableRightDf.schema.pretty}
+               |${prefixedRightDf.schema.pretty}
                |Final Schema:
                |${joinedDf.schema.pretty}
                |""".stripMargin)

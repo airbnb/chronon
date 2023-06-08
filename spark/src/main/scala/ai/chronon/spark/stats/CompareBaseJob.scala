@@ -87,13 +87,13 @@ object CompareBaseJob {
    * Navigate the dataframes and compare them and fetch statistics.
    */
   def compare(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
-      keys: Seq[String],
-      tableUtils: TableUtils,
-      mapping: Map[String, String] = Map.empty,
-      migrationCheck: Boolean = false,
-  ): (DataFrame, DataFrame, DataMetrics) = {
+               leftDf: DataFrame,
+               rightDf: DataFrame,
+               keys: Seq[String],
+               tableUtils: TableUtils,
+               mapping: Map[String, String] = Map.empty,
+               migrationCheck: Boolean = false
+             ): (DataFrame, DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap

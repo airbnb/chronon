@@ -15,12 +15,12 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
   * Leverage the compare module for computation between sources.
   */
 class CompareJob(
-    tableUtils: TableUtils,
-    joinConf: api.Join,
-    stagingQueryConf: api.StagingQuery,
-    startDate: String,
-    endDate: String,
-) extends Serializable {
+                  tableUtils: TableUtils,
+                  joinConf: api.Join,
+                  stagingQueryConf: api.StagingQuery,
+                  startDate: String,
+                  endDate: String
+                ) extends Serializable {
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
     .orNull

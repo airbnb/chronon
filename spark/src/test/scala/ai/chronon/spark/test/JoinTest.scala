@@ -21,6 +21,7 @@ import scala.util.ScalaJavaConversions.ListOps
 class JoinTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
+  private val tableUtils = TableUtils(spark)
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
@@ -29,8 +30,6 @@ class JoinTest {
 
   private val namespace = "test_namespace_jointest"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-
-  private val tableUtils = TableUtils(spark)
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {

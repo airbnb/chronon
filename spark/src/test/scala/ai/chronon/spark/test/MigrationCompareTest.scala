@@ -13,13 +13,13 @@ import org.junit.Test
 
 class MigrationCompareTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("MigrationCompareTest", local = true)
+  private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
   private val namespace = "migration_compare_chronon_test"
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-  private val tableUtils = TableUtils(spark)
 
   def setupTestData(): (api.Join, api.StagingQuery) = {
     // ------------------------------------------JOIN------------------------------------------
