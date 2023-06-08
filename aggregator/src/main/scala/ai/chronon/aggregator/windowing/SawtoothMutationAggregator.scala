@@ -54,7 +54,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
       isSet
     }
 
-    val tailTimes = if(batchTails == null) batchTails else tailTs(batchEndTs)
+    val tailTimes = if(batchTails == null) tailTs(batchEndTs) else batchTails
     var i = 0
     while (i < windowedAggregator.length) {
       if (batchEndTs > rowTs && tailTimes(i).forall(rowTs > _)) { // relevant for the window
