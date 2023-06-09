@@ -593,7 +593,13 @@ case class TableUtils(sparkSession: SparkSession) {
   def findAllTables(): Map[String, Seq[String]] = {
     val databases = sparkSession.catalog.listDatabases().collect().map(_.name)
     databases.map { db =>
-      db -> sparkSession.catalog.listTables(db).collect().map(_.name).toSeq
+      val tables = sparkSession.catalog
+        .listTables(db)
+        .filter(!_.isTemporary) // filter out views
+        .collect()
+        .map(_.name)
+        .toSeq
+      db -> tables
     }.toMap
   }
 }

@@ -1,12 +1,13 @@
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
+import ai.chronon.api
 import ai.chronon.api.{Constants, IntType, LongType, StringType}
 import ai.chronon.spark.test.LocalTableExporterTest.{spark, tmpDir}
 import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import org.apache.commons.io.FileUtils
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.{AfterClass, Test}
 
@@ -15,7 +16,7 @@ import java.io.File
 object LocalTableExporterTest {
 
   val tmpDir: File = Files.createTempDir()
-  val spark: SparkSession = SparkSessionBuilder.build("LocalTableExporterTest", local = true)
+  val spark: SparkSession = SparkSessionBuilder.build("LocalTableExporterTest", local = true, Some(tmpDir.getPath))
 
   @AfterClass
   def teardown(): Unit = {
@@ -29,29 +30,67 @@ class LocalTableExporterTest {
   def exporterExportsTablesCorrectly(): Unit = {
     val schema = List(
       Column("user", StringType, 10),
-      Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      Column(Constants.TimeColumn, LongType, 10000), // ts = last 10000 days to avoid conflict
       Column("session_length", IntType, 10000)
     )
 
     val df = DataFrameGen.entities(spark, schema, 20, 3)
-    val viewName = "exporter_test_1"
-    df.createOrReplaceTempView(viewName)
+    val tableName = "exporter_test_1"
+    df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
     val tableUtils = TableUtils(spark)
 
     val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "parquet", Some("local_test"))
     exporter.exportAllTables()
 
     // check if the file is created
-    val expectedPath = s"${tmpDir.getAbsolutePath}/local_test.default.$viewName.parquet"
+    val expectedPath = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.parquet"
     val outputFile = new File(expectedPath)
     assertTrue(outputFile.isFile)
 
     // compare the content of the file with the generated
     val loadedDf = spark.read.parquet(expectedPath)
-    val generatedData = df.collect()
-    val loadedData = loadedDf.collect()
+    val generatedData = df.collect().sortBy(_.getAs[Long](1))
+    val loadedData = loadedDf.collect().sortBy(_.getAs[Long](1))
     assertEquals(generatedData.length, loadedData.length)
 
     generatedData.zip(loadedData).foreach { case (g, l) => assertEquals(g, l) }
+  }
+
+  @Test
+  def exporterExportsMultipleTablesWithFilesInCorrectPlace(): Unit = {
+    val schema = List(
+      Column("user", StringType, 10),
+      Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      Column("session_length", IntType, 10000)
+    )
+
+    val df = DataFrameGen.entities(spark, schema, 20, 3)
+    val tableName = "exporter_test_1"
+    df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
+
+    val weightSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("weight", api.DoubleType, 500)
+    )
+    val namespace = "test_namespace"
+    val weightTable = s"$namespace.weights"
+    val wdf = DataFrameGen.entities(spark, weightSchema, 15, partitions = 5)
+    spark.sql(s"CREATE DATABASE $namespace")
+    wdf.write.mode(SaveMode.Overwrite).saveAsTable(weightTable)
+
+    val tableUtils = TableUtils(spark)
+
+    val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "csv", Some("local_test"))
+    exporter.exportAllTables()
+
+    // check if the file is created
+    val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.csv"
+    val outputFile1 = new File(outputFilePath1)
+    assertTrue(outputFile1.isFile)
+
+    val outputFilePath2 = s"${tmpDir.getAbsolutePath}/local_test.$weightTable.csv"
+    val outputFile2 = new File(outputFilePath2)
+    assertTrue(outputFile2.isFile)
   }
 }

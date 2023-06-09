@@ -259,8 +259,8 @@ object Driver {
     class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
-          descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-          default = Option(30))
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
     }
 
     def run(args: Args): Unit = {
