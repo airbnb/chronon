@@ -35,15 +35,15 @@ class LocalTableExporterTest {
     )
 
     val df = DataFrameGen.entities(spark, schema, 20, 3)
-    val tableName = "exporter_test_1"
+    val tableName = "default.exporter_test_1"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
     val tableUtils = TableUtils(spark)
 
     val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "parquet", Some("local_test"))
-    exporter.exportTable(s"default.$tableName")
+    exporter.exportTable(tableName)
 
     // check if the file is created
-    val expectedPath = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.parquet"
+    val expectedPath = s"${tmpDir.getAbsolutePath}/local_test.$tableName.parquet"
     val outputFile = new File(expectedPath)
     assertTrue(outputFile.isFile)
 
@@ -65,7 +65,7 @@ class LocalTableExporterTest {
     )
 
     val df = DataFrameGen.entities(spark, schema, 20, 3)
-    val tableName = "exporter_test_1"
+    val tableName = "default.exporter_test_2"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
 
     val weightSchema = List(
@@ -82,11 +82,11 @@ class LocalTableExporterTest {
     val tableUtils = TableUtils(spark)
 
     val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "csv", Some("local_test"))
-    exporter.exportTable(s"default.$tableName")
-    exporter.exportTable(s"$weightTable")
+    exporter.exportTable(tableName)
+    exporter.exportTable(weightTable)
 
     // check if the file is created
-    val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.csv"
+    val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.$tableName.csv"
     val outputFile1 = new File(outputFilePath1)
     assertTrue(outputFile1.isFile)
 
