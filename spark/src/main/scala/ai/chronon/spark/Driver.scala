@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.Extensions.StructTypeOps
@@ -14,11 +14,7 @@ import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.functions.{col, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
@@ -138,14 +134,14 @@ object Driver {
       new LocalTableExporter(
         tableUtils, localTableExportPath(), localTableExportFormat(), localTableExportPrefix.toOption)
 
-    def exportAllTablesToLocalIfNecessary(tableUtils: TableUtils): Unit = {
+    def exportTableToLocalIfNecessary(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
       val isLocal = localTableMapping.nonEmpty || localDataPath.isDefined
       val shouldExport = localTableExportPath.isDefined
       if (!isLocal || !shouldExport) {
         return
       }
 
-      buildLocalTableExporter(tableUtils).exportAllTables()
+      buildLocalTableExporter(tableUtils).exportTable(namespaceAndTable)
     }
   }
 
@@ -166,7 +162,7 @@ object Driver {
       val tableUtils = args.buildTableUtils(s"join_${joinConf.metaData.name}")
       val join = new Join(joinConf, args.endDate(), tableUtils, !args.runFirstHole())
       join.computeJoin(args.stepDays.toOption)
-      args.exportAllTablesToLocalIfNecessary(tableUtils)
+      args.exportTableToLocalIfNecessary(joinConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -183,7 +179,7 @@ object Driver {
       val tableUtils = TableUtils(
         SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill"))
       GroupBy.computeBackfill(groupByConf, args.endDate(), tableUtils, args.stepDays.toOption)
-      args.exportAllTablesToLocalIfNecessary(tableUtils)
+      args.exportTableToLocalIfNecessary(groupByConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -200,7 +196,7 @@ object Driver {
       val tableUtils = TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}"))
       val labelJoin = new LabelJoin(joinConf, tableUtils, args.endDate())
       labelJoin.computeLabelJoin(args.stepDays.toOption)
-      args.exportAllTablesToLocalIfNecessary(tableUtils)
+      args.exportTableToLocalIfNecessary(joinConf.metaData.outputLabelTable, tableUtils)
     }
   }
 
@@ -268,7 +264,7 @@ object Driver {
       val tableUtils = args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
       val stagingQueryJob = new StagingQuery(stagingQueryConf, args.endDate(), tableUtils)
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
-      args.exportAllTablesToLocalIfNecessary(tableUtils)
+      args.exportTableToLocalIfNecessary(stagingQueryConf.metaData.outputTable, tableUtils)
     }
   }
 

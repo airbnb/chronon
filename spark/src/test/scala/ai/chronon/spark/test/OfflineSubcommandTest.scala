@@ -4,6 +4,7 @@ import ai.chronon.spark.Driver.OfflineSubcommand
 import ai.chronon.spark.{LocalTableExporter, TableUtils}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{doNothing, mock, never, times, verify, when}
 import org.rogach.scallop.ScallopConf
 
@@ -44,8 +45,8 @@ class OfflineSubcommandTest {
     val exporter = mock(classOf[LocalTableExporter])
     val tableUtils = mock(classOf[TableUtils])
     val args = new TestArgs(argList.toArray, exporter)
-    args.exportAllTablesToLocalIfNecessary(tableUtils)
-    verify(exporter, never()).exportAllTables()
+    args.exportTableToLocalIfNecessary("test.test_table", tableUtils)
+    verify(exporter, never()).exportTable(any())
   }
 
   @Test
@@ -55,8 +56,8 @@ class OfflineSubcommandTest {
     val exporter = mock(classOf[LocalTableExporter])
     val tableUtils = mock(classOf[TableUtils])
     val args = new TestArgs(argList.toArray, exporter)
-    args.exportAllTablesToLocalIfNecessary(tableUtils)
-    verify(exporter, never()).exportAllTables()
+    args.exportTableToLocalIfNecessary("test.test_table", tableUtils)
+    verify(exporter, never()).exportTable(any())
   }
 
   @Test
@@ -80,14 +81,14 @@ class OfflineSubcommandTest {
     )
     val exporter = mock(classOf[LocalTableExporter])
     val tableUtils = mock(classOf[TableUtils])
-    doNothing().when(exporter).exportAllTables()
+    doNothing().when(exporter).exportTable(any())
     val args = new TestArgs(argList.toArray, exporter)
 
     assertEquals(targetOutputPath, args.localTableExportPath())
     assertEquals(targetFormat, args.localTableExportFormat())
     assertEquals(prefix, args.localTableExportPrefix())
-    
-    args.exportAllTablesToLocalIfNecessary(tableUtils)
-    verify(exporter, times(1)).exportAllTables()
+
+    args.exportTableToLocalIfNecessary("test.test_table", tableUtils)
+    verify(exporter, times(1)).exportTable(any())
   }
 }

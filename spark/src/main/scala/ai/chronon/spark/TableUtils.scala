@@ -589,19 +589,6 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
     }
   }
-
-  def findAllTables(): Map[String, Seq[String]] = {
-    val databases = sparkSession.catalog.listDatabases().collect().map(_.name)
-    databases.map { db =>
-      val tables = sparkSession.catalog
-        .listTables(db)
-        .filter(!_.isTemporary) // filter out views
-        .collect()
-        .map(_.name)
-        .toSeq
-      db -> tables
-    }.toMap
-  }
 }
 
 sealed case class IncompatibleSchemaException(inconsistencies: Seq[(String, DataType, DataType)]) extends Exception {

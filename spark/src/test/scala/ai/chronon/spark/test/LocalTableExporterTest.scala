@@ -40,7 +40,7 @@ class LocalTableExporterTest {
     val tableUtils = TableUtils(spark)
 
     val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "parquet", Some("local_test"))
-    exporter.exportAllTables()
+    exporter.exportTable(s"default.$tableName")
 
     // check if the file is created
     val expectedPath = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.parquet"
@@ -82,7 +82,8 @@ class LocalTableExporterTest {
     val tableUtils = TableUtils(spark)
 
     val exporter = new LocalTableExporter(tableUtils, tmpDir.getAbsolutePath, "csv", Some("local_test"))
-    exporter.exportAllTables()
+    exporter.exportTable(s"default.$tableName")
+    exporter.exportTable(s"$weightTable")
 
     // check if the file is created
     val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.default.$tableName.csv"
