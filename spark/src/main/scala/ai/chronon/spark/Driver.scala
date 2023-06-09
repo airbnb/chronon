@@ -44,11 +44,13 @@ object Driver {
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
 
   trait OfflineSubcommand { this: ScallopConf =>
+    def subcommandName: String
+
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
     val endDate: ScallopOption[String] =
       opt[String](required = false,
                   descr = "End date to compute as of, start date is taken from conf.",
-                  default = Some(buildTableUtils("test").partitionSpec.now))
+                  default = Some(buildTableUtils().partitionSpec.now))
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
@@ -80,27 +82,29 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
-    def buildTableUtils(sessionName: String): TableUtils = {
-      if (localTableMapping.nonEmpty) {
-        val localSession = SparkSessionBuilder.build(
-          sessionName,
-          local = true,
-          localWarehouseLocation.toOption)
-        localTableMapping.foreach { case (table, filePath) =>
-          val file = new File(filePath)
-          LocalDataLoader.loadDataFileAsTable(file, localSession, table)
-        }
-        TableUtils(localSession)
-      } else if (localDataPath.isDefined) {
-        val dir = new File(localDataPath())
-        assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
-        val localSession =
-          SparkSessionBuilder.build(sessionName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
-        LocalDataLoader.loadDataRecursively(dir, localSession)
-        TableUtils(localSession)
-      } else {
-        TableUtils(SparkSessionBuilder.build(sessionName))
+    lazy val sparkSession: SparkSession = if (localTableMapping.nonEmpty) {
+      val localSession = SparkSessionBuilder.build(
+        subcommandName,
+        local = true,
+        localWarehouseLocation.toOption)
+      localTableMapping.foreach { case (table, filePath) =>
+        val file = new File(filePath)
+        LocalDataLoader.loadDataFileAsTable(file, localSession, table)
       }
+      localSession
+    } else if (localDataPath.isDefined) {
+      val dir = new File(localDataPath())
+      assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
+      val localSession =
+        SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
+      LocalDataLoader.loadDataRecursively(dir, localSession)
+      localSession
+    } else {
+      SparkSessionBuilder.build(subcommandName)
+    }
+
+    def buildTableUtils(): TableUtils = {
+      TableUtils(sparkSession)
     }
   }
 
@@ -114,14 +118,15 @@ object Driver {
         opt[Boolean](required = false,
                      default = Some(false),
                      descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+      val joinConf = parseConf[api.Join](confPath())
+      override val subcommandName = s"join_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
       val join = new Join(
-        joinConf,
+        args.joinConf,
         args.endDate(),
-        args.buildTableUtils(s"join_${joinConf.metaData.name}"),
+        args.buildTableUtils(),
         !args.runFirstHole()
       )
       join.computeJoin(args.stepDays.toOption)
@@ -134,13 +139,14 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
+      override val subcommandName = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
     def run(args: Args): Unit = {
-      val groupByConf = parseConf[api.GroupBy](args.confPath())
       GroupBy.computeBackfill(
-        groupByConf,
+        args.groupByConf,
         args.endDate(),
-        TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
+        args.buildTableUtils(),
         args.stepDays.toOption
       )
     }
@@ -152,13 +158,14 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs label join in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val joinConf = parseConf[api.Join](confPath())
+      override val subcommandName = s"label_join_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
       val labelJoin = new LabelJoin(
-        joinConf,
-        TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}")),
+        args.joinConf,
+        args.buildTableUtils(),
         args.endDate()
       )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
@@ -189,10 +196,11 @@ object Driver {
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
+      override val subcommandName = "analyzer_util"
     }
 
     def run(args: Args): Unit = {
-      val tableUtils = args.buildTableUtils("analyzer_util")
+      val tableUtils = args.buildTableUtils()
       new Analyzer(tableUtils,
                    args.confPath(),
                    args.startDate.getOrElse(tableUtils.partitionSpec.shiftBackFromNow(3)),
@@ -209,6 +217,7 @@ object Driver {
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path to write output metadata files to")
+      override val subcommandName = "metadata-export"
     }
 
     def run(args: Args): Unit = {
@@ -222,13 +231,14 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
+      override val subcommandName = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
     def run(args: Args): Unit = {
-      val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
       val stagingQueryJob = new StagingQuery(
-        stagingQueryConf,
+        args.stagingQueryConf,
         args.endDate(),
-        args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
+        args.buildTableUtils()
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
     }
@@ -244,19 +254,22 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
-
+      val joinConf: api.Join = parseConf[api.Join](confPath())
+      override val subcommandName = s"daily_stats_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
-      new SummaryJob(SparkSessionBuilder.build(s"daily_stats_${joinConf.metaData.name}"),
+      new SummaryJob(args.sparkSession,
                      joinConf = joinConf,
                      endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
     }
   }
 
   object GroupByUploader {
-    class Args extends Subcommand("group-by-upload") with OfflineSubcommand {}
+    class Args extends Subcommand("group-by-upload") with OfflineSubcommand {
+      override val subcommandName = "group-by-upload"
+    }
 
     def run(args: Args): Unit = {
       GroupByUpload.run(parseConf[api.GroupBy](args.confPath()), args.endDate())
@@ -264,12 +277,14 @@ object Driver {
   }
 
   object ConsistencyMetricsCompute {
-    class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {}
+    class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {
+      override val subcommandName = "consistency-metrics-compute"
+    }
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
       new ConsistencyJob(
-        args.buildTableUtils(s"consistency_metrics_join_${joinConf.metaData.name}").sparkSession,
+        args.sparkSession,
         joinConf,
         args.endDate()
       ).buildConsistencyMetrics()
@@ -282,20 +297,20 @@ object Driver {
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
         opt[String](required = false, descr = "Partition start date to compare the data from")
+
+      assert(confPath().contains("/joins/"), "Conf should refer to the join path")
+      assert(queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+      val joinConf: api.Join = parseConf[api.Join](confPath())
+      val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](queryConf())
+      override val subcommandName = s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
-      assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
-      val joinConf = parseConf[api.Join](args.confPath())
-      val stagingQueryConf = parseConf[api.StagingQuery](args.queryConf())
-      val tableUtils = args.buildTableUtils(
-        s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
-      )
+      val tableUtils = args.buildTableUtils()
       new CompareJob(
         tableUtils,
-        joinConf,
-        stagingQueryConf,
+        args.joinConf,
+        args.stagingQueryConf,
         args.startDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis())),
         args.endDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis()))
       ).run()
@@ -476,14 +491,15 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs consistency metrics job in steps, step-days at a time. Default is 15 days",
                  default = Option(15))
+      val joinConf: api.Join = parseConf[api.Join](confPath())
+      override val subcommandName = s"log_flattener_join_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
-      val spark = SparkSessionBuilder.build(s"log_flattener_join_${joinConf.metaData.name}")
+      val spark = args.sparkSession
       val logFlattenerJob = new LogFlattenerJob(
         spark,
-        joinConf,
+        args.joinConf,
         args.endDate(),
         args.logTable(),
         args.schemaTable(),
