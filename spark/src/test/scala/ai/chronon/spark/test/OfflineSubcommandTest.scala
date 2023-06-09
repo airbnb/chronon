@@ -1,6 +1,8 @@
 package ai.chronon.spark.test
 
 import ai.chronon.spark.Driver.OfflineSubcommand
+import ai.chronon.spark.SparkSessionBuilder
+import org.apache.spark.sql.SparkSession
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.rogach.scallop.ScallopConf
@@ -10,6 +12,10 @@ class OfflineSubcommandTest {
 
   class TestArgs(args: Array[String]) extends ScallopConf(args) with OfflineSubcommand {
     verify()
+
+    override def subcommandName: String = "test"
+
+    override def buildSparkSession(): SparkSession = SparkSessionBuilder.build(subcommandName, local = true)
   }
 
   @Test

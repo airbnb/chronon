@@ -82,25 +82,29 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
-    lazy val sparkSession: SparkSession = if (localTableMapping.nonEmpty) {
-      val localSession = SparkSessionBuilder.build(
-        subcommandName,
-        local = true,
-        localWarehouseLocation.toOption)
-      localTableMapping.foreach { case (table, filePath) =>
-        val file = new File(filePath)
-        LocalDataLoader.loadDataFileAsTable(file, localSession, table)
+    lazy val sparkSession: SparkSession = buildSparkSession()
+
+    protected def buildSparkSession(): SparkSession = {
+      if (localTableMapping.nonEmpty) {
+        val localSession = SparkSessionBuilder.build(
+          subcommandName,
+          local = true,
+          localWarehouseLocation.toOption)
+        localTableMapping.foreach { case (table, filePath) =>
+          val file = new File(filePath)
+          LocalDataLoader.loadDataFileAsTable(file, localSession, table)
+        }
+        localSession
+      } else if (localDataPath.isDefined) {
+        val dir = new File(localDataPath())
+        assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
+        val localSession =
+          SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
+        LocalDataLoader.loadDataRecursively(dir, localSession)
+        localSession
+      } else {
+        SparkSessionBuilder.build(subcommandName)
       }
-      localSession
-    } else if (localDataPath.isDefined) {
-      val dir = new File(localDataPath())
-      assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
-      val localSession =
-        SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
-      LocalDataLoader.loadDataRecursively(dir, localSession)
-      localSession
-    } else {
-      SparkSessionBuilder.build(subcommandName)
     }
 
     def buildTableUtils(): TableUtils = {
