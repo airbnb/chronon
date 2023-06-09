@@ -191,7 +191,9 @@ lazy val api = project
           "org.apache.thrift" % "libthrift" % "0.13.0",
           "org.scala-lang" % "scala-reflect" % scalaVersion.value,
           "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
-          "com.novocode" % "junit-interface" % "0.11" % "test"
+          "com.novocode" % "junit-interface" % "0.11" % "test",
+          "org.scalatest" %% "scalatest" % "3.2.15" % "test",
+          "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test"
         )
   )
 

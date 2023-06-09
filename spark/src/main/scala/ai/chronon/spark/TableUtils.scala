@@ -33,6 +33,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
 
+  def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
+
   def isPartitioned(tableName: String): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
@@ -586,6 +588,13 @@ case class TableUtils(sparkSession: SparkSession) {
       // set a flag in table props to indicate that this is a dynamic table
       sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
     }
+  }
+
+  def findAllTables(): Map[String, Seq[String]] = {
+    val databases = sparkSession.catalog.listDatabases().collect().map(_.name)
+    databases.map { db =>
+      db -> sparkSession.catalog.listTables(db).collect().map(_.name).toSeq
+    }.toMap
   }
 }
 
