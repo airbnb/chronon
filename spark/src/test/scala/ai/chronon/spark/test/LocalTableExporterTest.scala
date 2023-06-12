@@ -89,9 +89,11 @@ class LocalTableExporterTest {
     val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.$tableName.csv"
     val outputFile1 = new File(outputFilePath1)
     assertTrue(outputFile1.isFile)
+    assertEquals(df.count(), spark.read.option("header", true).csv(outputFilePath1).count())
 
     val outputFilePath2 = s"${tmpDir.getAbsolutePath}/local_test.$weightTable.csv"
     val outputFile2 = new File(outputFilePath2)
     assertTrue(outputFile2.isFile)
+    assertEquals(wdf.count(), spark.read.option("header", true).csv(outputFilePath2).count())
   }
 }
