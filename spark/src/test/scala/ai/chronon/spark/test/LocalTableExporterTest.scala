@@ -59,23 +59,23 @@ class LocalTableExporterTest {
   @Test
   def exporterExportsMultipleTablesWithFilesInCorrectPlace(): Unit = {
     val schema = List(
-      Column("user", StringType, 10),
+      Column("user", StringType, 100000),
       Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
       Column("session_length", IntType, 10000)
     )
 
-    val df = DataFrameGen.entities(spark, schema, 20, 3)
+    val df = DataFrameGen.entities(spark, schema, 20, 3).filter(_.get(0) != null)
     val tableName = "default.exporter_test_2"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
 
     val weightSchema = List(
-      Column("user", api.StringType, 1000),
+      Column("user", api.StringType, 100000),
       Column("country", api.StringType, 100),
       Column("weight", api.DoubleType, 500)
     )
     val namespace = "test_namespace"
     val weightTable = s"$namespace.weights"
-    val wdf = DataFrameGen.entities(spark, weightSchema, 15, partitions = 5)
+    val wdf = DataFrameGen.entities(spark, weightSchema, 100, partitions = 5).filter(_.get(0) != null)
     spark.sql(s"CREATE DATABASE $namespace")
     wdf.write.mode(SaveMode.Overwrite).saveAsTable(weightTable)
 
@@ -85,15 +85,22 @@ class LocalTableExporterTest {
     exporter.exportTable(tableName)
     exporter.exportTable(weightTable)
 
-    // check if the file is created
     val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.$tableName.csv"
     val outputFile1 = new File(outputFilePath1)
     assertTrue(outputFile1.isFile)
-    assertEquals(df.count(), spark.read.option("header", true).csv(outputFilePath1).count())
+    val generatedData1 = df.collect().sortBy(_.getAs[String](0))
+    val loadedData1 = spark.read.option("header", true).csv(outputFilePath1).collect().sortBy(_.getAs[String](0))
+    assertEquals(generatedData1.length, loadedData1.length)
+    // We are using CSV in this test. CSV/JSON will lose type precision, hence we are using string format of the data
+    // instead
+    generatedData1.zip(loadedData1).foreach { case (g, l) => assertEquals(g.toString(), l.toString()) }
 
     val outputFilePath2 = s"${tmpDir.getAbsolutePath}/local_test.$weightTable.csv"
     val outputFile2 = new File(outputFilePath2)
     assertTrue(outputFile2.isFile)
-    assertEquals(wdf.count(), spark.read.option("header", true).csv(outputFilePath2).count())
+    val generatedData2 = wdf.collect().sortBy(_.getAs[String](0))
+    val loadedData2 = spark.read.option("header", true).csv(outputFilePath2).collect().sortBy(_.getAs[String](0))
+    assertEquals(generatedData2.length, loadedData2.length)
+    generatedData2.zip(loadedData2).foreach { case (g, l) => assertEquals(g.toString(), l.toString()) }
   }
 }
