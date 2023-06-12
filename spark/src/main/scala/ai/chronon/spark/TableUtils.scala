@@ -290,6 +290,14 @@ trait BaseTableUtils {
 
   def isUnpartitionedTable(table: api.Source): Boolean = {
     // Consider the table to be unpartitioned if it does not contain the partition column.
+    if (isIcebergTable(table.table)) {
+      val partitionDf = sparkSession.read.format("iceberg").load(s"${table.table}.partitions")
+      return !partitionDf.schema
+        .filter(_.name == "partition")
+        .flatMap(_.dataType.asInstanceOf[StructType].fields)
+        .map(_.name)
+        .contains(Constants.PartitionColumn)
+    }
     !sparkSession.catalog.listColumns(table.table)
       .filter(col("isPartition") === true)
       .select(col("name"))
