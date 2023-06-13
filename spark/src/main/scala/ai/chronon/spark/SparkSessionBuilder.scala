@@ -36,6 +36,7 @@ object SparkSessionBuilder {
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     if (SPARK_VERSION.startsWith("2")) {
       // Otherwise files left from deleting the table with the same name result in test failures

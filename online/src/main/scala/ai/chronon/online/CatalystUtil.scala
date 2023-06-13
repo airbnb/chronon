@@ -38,7 +38,6 @@ object CatalystUtil {
       .master("local[*]")
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.adaptive.enabled", "false")
-      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
       .getOrCreate()
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
