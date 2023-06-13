@@ -50,9 +50,7 @@ class Analyzer(tableUtils: TableUtils,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
-               silenceMode: Boolean = false,
-               statsSchema: Boolean = false,
-              ) {
+               silenceMode: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
   def heavyHittersWithTsAndCount(df: DataFrame,
