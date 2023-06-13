@@ -2,7 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.api.{Constants, ThriftJsonCodec}
+import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
@@ -16,7 +16,6 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
   QueryStartedEvent,
   QueryTerminatedEvent
 }
-import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -44,14 +43,15 @@ object Driver {
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
 
-  trait OfflineSubcommand { this: ScallopConf =>
+  trait OfflineSubcommand {
+    this: ScallopConf =>
     def subcommandName: String
 
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
     val endDate: ScallopOption[String] =
       opt[String](required = false,
-                  descr = "End date to compute as of, start date is taken from conf.",
-                  default = Some(buildTableUtils().partitionSpec.now))
+        descr = "End date to compute as of, start date is taken from conf.",
+        default = Some(buildTableUtils().partitionSpec.now))
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
@@ -137,6 +137,7 @@ object Driver {
 
     def buildTableUtils(): TableUtils = {
       TableUtils(sparkSession)
+    }
 
     protected def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter =
       new LocalTableExporter(
@@ -168,11 +169,15 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
-      val tableUtils = args.buildTableUtils(s"join_${joinConf.metaData.name}")
-      val join = new Join(joinConf, args.endDate(), tableUtils, !args.runFirstHole())
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
       join.computeJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(joinConf.metaData.outputTable, tableUtils)
+      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -187,11 +192,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val groupByConf = parseConf[api.GroupBy](args.confPath())
-      val tableUtils = TableUtils(
-        SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill"))
-      GroupBy.computeBackfill(groupByConf, args.endDate(), tableUtils, args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(groupByConf.metaData.outputTable, tableUtils)
+      val tableUtils = args.buildTableUtils()
+      GroupBy.computeBackfill(
+        args.groupByConf,
+        args.endDate(),
+        tableUtils,
+        args.stepDays.toOption
+      )
+      args.exportTableToLocalIfNecessary(args.groupByConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -206,11 +214,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
-      val tableUtils = TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}"))
-      val labelJoin = new LabelJoin(joinConf, tableUtils, args.endDate())
+      val tableUtils = args.buildTableUtils()
+      val labelJoin = new LabelJoin(
+        args.joinConf,
+        tableUtils,
+        args.endDate()
+      )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(joinConf.metaData.outputLabelTable, tableUtils)
+      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputLabelTable, tableUtils)
     }
   }
 
@@ -278,11 +289,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
-      val tableUtils = args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
-      val stagingQueryJob = new StagingQuery(stagingQueryConf, args.endDate(), tableUtils)
+      val tableUtils = args.buildTableUtils()
+      val stagingQueryJob = new StagingQuery(
+        args.stagingQueryConf,
+        args.endDate(),
+        tableUtils
+      )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(stagingQueryConf.metaData.outputTable, tableUtils)
+      args.exportTableToLocalIfNecessary(args.stagingQueryConf.metaData.outputTable, tableUtils)
     }
   }
 
