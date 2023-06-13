@@ -38,6 +38,7 @@ object Extensions {
   }
 
   implicit class DataframeOps(df: DataFrame) {
+    private implicit val tableUtils = TableUtils(df.sparkSession)
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
@@ -54,7 +55,7 @@ object Extensions {
     }
 
     def partitionRange: PartitionRange = {
-      val (start, end) = df.range[String](Constants.PartitionColumn)
+      val (start, end) = df.range[String](tableUtils.partitionColumn)
       PartitionRange(start, end)
     }
 
@@ -77,7 +78,7 @@ object Extensions {
 
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
-             partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+             partitionColumns: Seq[String] = Seq(tableUtils.partitionColumn),
              autoExpand: Boolean = false): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    tableName,
@@ -180,7 +181,7 @@ object Extensions {
     // convert a millisecond timestamp to string with the specified format
     def withTimeBasedColumn(columnName: String,
                             timeColumn: String = Constants.TimeColumn,
-                            format: String = Constants.Partition.format): DataFrame =
+                            format: String = tableUtils.partitionSpec.format): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
     private def camelToSnake(name: String) = {
@@ -192,11 +193,12 @@ object Extensions {
     def camelToSnake: DataFrame =
       df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))
 
-    def withPartitionBasedTimestamp(colName: String, inputColumn: String = Constants.PartitionColumn): DataFrame =
-      df.withColumn(colName, unix_timestamp(df.col(inputColumn), Constants.Partition.format) * 1000)
+    def withPartitionBasedTimestamp(colName: String, inputColumn: String = tableUtils.partitionColumn): DataFrame =
+      df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
 
     def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(colName, date_format(date_add(df.col(Constants.PartitionColumn), days), Constants.Partition.format))
+      df.withColumn(colName,
+                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>

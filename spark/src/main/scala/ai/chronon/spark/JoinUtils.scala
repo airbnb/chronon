@@ -29,7 +29,7 @@ object JoinUtils {
     }
     val scanQuery = range.genScanQuery(joinConf.left.query,
                                        joinConf.left.table,
-                                       fillIfAbsent = Map(Constants.PartitionColumn -> null) ++ timeProjection)
+                                       fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection)
 
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()
@@ -222,8 +222,8 @@ object JoinUtils {
   def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {
     val partitions = tableUtils.allPartitions(tableName)
     assert(
-      partitions(0).keys.equals(Set(Constants.PartitionColumn, Constants.LabelPartitionColumn)),
-      s""" Table must have label partition columns for latest label computation: `${Constants.PartitionColumn}`
+      partitions(0).keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
+      s""" Table must have label partition columns for latest label computation: `${tableUtils.partitionColumn}`
          | & `${Constants.LabelPartitionColumn}`
          |inputView: ${tableName}
          |""".stripMargin
@@ -231,7 +231,7 @@ object JoinUtils {
 
     val labelMap = collection.mutable.Map[String, String]()
     partitions.foreach(par => {
-      val ds_value = par.get(Constants.PartitionColumn).get
+      val ds_value = par.get(tableUtils.partitionColumn).get
       val label_value: String = par.get(Constants.LabelPartitionColumn).get
       if (!labelMap.contains(ds_value)) {
         labelMap.put(ds_value, label_value)

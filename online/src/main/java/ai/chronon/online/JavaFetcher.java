@@ -135,5 +135,4 @@ public class JavaFetcher {
     // Convert responses to CompletableFuture
     return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
   }
-
 }

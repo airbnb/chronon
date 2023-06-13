@@ -32,6 +32,7 @@ import scala.collection.mutable
 class GroupByTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
+  implicit val tableUtils = TableUtils(spark)
 
   @Test
   def testSnapshotEntities(): Unit = {
@@ -59,7 +60,7 @@ class GroupByTest {
                                           |GROUP BY user, ds
                                           |""".stripMargin)
 
-    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", Constants.PartitionColumn))
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
       println("diff result rows")
@@ -75,7 +76,7 @@ class GroupByTest {
       Column("rating", DoubleType, 2000)
     )
 
-    val outputDates = CStream.genPartitions(10)
+    val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
 
     val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
     df.drop("ts") // snapshots don't need ts.
@@ -107,11 +108,11 @@ class GroupByTest {
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*(10-1)) * 1000, session_length, null)) AS session_length_sum_10d,
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*(10-1)) * 1000, rating, null)) AS rating_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
-                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${Constants.Partition.spanMillis}
+                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis}
                                           |group by user, $datesViewName.ds
                                           |""".stripMargin)
 
-    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", Constants.PartitionColumn))
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
       println("diff result rows")
@@ -265,7 +266,7 @@ class GroupByTest {
         s"SELECT * FROM ${backfill(name = "unit_test_item_views_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils, stepDays = testSteps)}"),
       tableUtils.sql(
         s"SELECT * FROM ${backfill(name = "unit_test_item_views_no_steps", source = source, endPartition = endPartition, namespace = namespace, tableUtils = tableUtils)}"),
-      List("item", Constants.PartitionColumn)
+      List("item", tableUtils.partitionColumn)
     )
     if (diff.count() != 0) {
       diff.show(100)
@@ -280,7 +281,7 @@ class GroupByTest {
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
-    val today = Constants.Partition.at(System.currentTimeMillis())
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val aggregationsMetadata =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views",
@@ -314,10 +315,10 @@ class GroupByTest {
       keyColumns = Seq("item"),
       aggregations = null,
       metaData = Builders.MetaData(name = testName, namespace = namespace, team = "chronon"),
-      backfillStartDate =
-        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                         new Window(60, TimeUnit.DAYS))
     )
-    val today = Constants.Partition.at(System.currentTimeMillis())
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val aggregationsMetadata =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
 
@@ -379,9 +380,9 @@ class GroupByTest {
   }
 
   private def createTestSource(windowSize: Int = 365, suffix: String = ""): (Source, String) = {
-    val today = Constants.Partition.at(System.currentTimeMillis())
-    val startPartition = Constants.Partition.minus(today, new Window(windowSize, TimeUnit.DAYS))
-    val endPartition = Constants.Partition.at(System.currentTimeMillis())
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val startPartition = tableUtils.partitionSpec.minus(today, new Window(windowSize, TimeUnit.DAYS))
+    val endPartition = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val sourceSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
@@ -438,8 +439,8 @@ class GroupByTest {
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ) ++ additionalAgg,
       metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
-      backfillStartDate =
-        Constants.Partition.minus(Constants.Partition.at(System.currentTimeMillis()), new Window(60, TimeUnit.DAYS))
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                         new Window(60, TimeUnit.DAYS))
     )
   }
 

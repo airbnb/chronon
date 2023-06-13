@@ -3,6 +3,7 @@ package ai.chronon.spark.stats
 import ai.chronon.api._
 import ai.chronon.online.{SparkConversions, _}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.TableUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 
@@ -14,6 +15,7 @@ object CompareBaseJob {
       leftFields: Map[String, DataType],
       rightFields: Map[String, DataType],
       keys: Seq[String],
+      tableUtils: TableUtils,
       mapping: Map[String, String] = Map.empty,
       migrationCheck: Boolean = false
   ): Unit = {
@@ -74,7 +76,7 @@ object CompareBaseJob {
     }
 
     // Make sure the passed keys has one of the time elements in it
-    if (keys.intersect(Constants.ReservedColumns).length == 0) {
+    if (keys.intersect(Constants.ReservedColumns(tableUtils.partitionColumn)).length == 0) {
       errors += "Ensure that one of the key columns is a time column"
     }
 
@@ -85,16 +87,17 @@ object CompareBaseJob {
    * Navigate the dataframes and compare them and fetch statistics.
    */
   def compare(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
-      keys: Seq[String],
-      mapping: Map[String, String] = Map.empty,
-      migrationCheck: Boolean = false
-  ): (DataFrame, DataFrame, DataMetrics) = {
+               leftDf: DataFrame,
+               rightDf: DataFrame,
+               keys: Seq[String],
+               tableUtils: TableUtils,
+               mapping: Map[String, String] = Map.empty,
+               migrationCheck: Boolean = false
+             ): (DataFrame, DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
-    checkConsistency(leftFields, rightFields, keys, mapping, migrationCheck)
+    checkConsistency(leftFields, rightFields, keys, tableUtils, mapping, migrationCheck)
 
     // 2. Prune the extra columns that we may have on the left side for migration use cases
     // so that the comparison becomes consistent across both sides.

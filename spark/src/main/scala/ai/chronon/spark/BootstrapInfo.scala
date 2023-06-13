@@ -127,7 +127,7 @@ object BootstrapInfo {
       .foreach(part => {
         // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
         val schema = tableUtils.getSchemaFromTable(part.table)
-        val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
+        val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(
           assert(
             missingKeys.isEmpty,
@@ -147,11 +147,11 @@ object BootstrapInfo {
     // Verify that join keys are valid columns on the bootstrap source table
     val tableHashes = tableBootstrapParts
       .map(part => {
-        val range = PartitionRange(part.startPartition, part.endPartition)
-        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
+        val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
+        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
         val bootstrapDf = tableUtils.sql(bootstrapQuery)
         val schema = bootstrapDf.schema
-        val missingKeys = part.keys(joinConf).filterNot(schema.fieldNames.contains)
+        val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(
           assert(
             missingKeys.isEmpty,
@@ -167,7 +167,7 @@ object BootstrapInfo {
         val valueFields = SparkConversions
           .toChrononSchema(schema)
           .filterNot {
-            case (name, _) => part.keys(joinConf).contains(name) || name == "ts"
+            case (name, _) => part.keys(joinConf, tableUtils.partitionColumn).contains(name) || name == "ts"
           }
           .map(field => StructField(field._1, field._2))
 

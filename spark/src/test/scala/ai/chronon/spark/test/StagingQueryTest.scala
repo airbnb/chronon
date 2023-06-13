@@ -12,11 +12,13 @@ import org.apache.spark.sql.functions.{max, col}
 
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val ninetyDaysAgo = Constants.Partition.minus(today, new Window(90, TimeUnit.DAYS))
+  implicit private val tableUtils: TableUtils = TableUtils(spark)
+
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
   private val namespace = "staging_query_chronon_test"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-  private val tableUtils = TableUtils(spark)
+
   @Test
   def testStagingQuery(): Unit = {
     val schema = List(
@@ -37,9 +39,9 @@ class StagingQueryTest {
       startPartition = ninetyDaysAgo,
       setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.user_session_features",
-        namespace = namespace,
-        tableProperties = Map("key" -> "val"),
-        customJson = "{\"additional_partition_cols\": [\"user\"]}")
+                                   namespace = namespace,
+                                   tableProperties = Map("key" -> "val"),
+                                   customJson = "{\"additional_partition_cols\": [\"user\"]}")
     )
 
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
@@ -87,8 +89,8 @@ class StagingQueryTest {
             |WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'""".stripMargin,
       startPartition = ninetyDaysAgo,
       metaData = Builders.MetaData(name = "test.staging_latest_date",
-        namespace = namespace,
-        tableProperties = Map("key" -> "val"))
+                                   namespace = namespace,
+                                   tableProperties = Map("key" -> "val"))
     )
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))

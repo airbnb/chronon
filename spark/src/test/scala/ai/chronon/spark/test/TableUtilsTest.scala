@@ -201,9 +201,9 @@ class TableUtilsTest {
   @Test
   def ChunkTest(): Unit = {
     val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
-    val expected = Seq(PartitionRange("2021-01-01", "2021-01-02"),
-                       PartitionRange("2021-01-05", "2021-01-05"),
-                       PartitionRange("2021-01-07", "2021-01-07"))
+    val expected = Seq(PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
+                       PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
+                       PartitionRange("2021-01-07", "2021-01-07")(tableUtils))
     assertEquals(expected, actual)
   }
 
@@ -231,7 +231,7 @@ class TableUtilsTest {
     )
     tableUtils.insertPartitions(df1,
                                 tableName,
-                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
     tableUtils.dropPartitions(tableName,
                               Seq("2022-10-01", "2022-10-02"),
                               subPartitionFilters = Map(Constants.LabelPartitionColumn -> "2022-11-02"))
@@ -278,10 +278,10 @@ class TableUtilsTest {
     )
     tableUtils.insertPartitions(df1,
                                 tableName,
-                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
     val par = tableUtils.allPartitions(tableName)
     assertTrue(par.size == 6)
-    assertEquals(par(0).keys, Set(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+    assertEquals(par(0).keys, Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
 
     // filter subset of partitions
     val filtered = tableUtils.allPartitions(tableName, Seq(Constants.LabelPartitionColumn))
@@ -291,7 +291,7 @@ class TableUtilsTest {
     // verify the latest label version
     val labels = JoinUtils.getLatestLabelMapping(tableName, tableUtils)
     assertEquals(labels.get("2022-11-09").get,
-                 List(PartitionRange("2022-10-01", "2022-10-02"), PartitionRange("2022-10-05", "2022-10-05")))
+                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils), PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
   private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
@@ -318,7 +318,7 @@ class TableUtilsTest {
     )
     tableUtils.insertPartitions(df1,
                                 tableName,
-                                partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
 
   }
 

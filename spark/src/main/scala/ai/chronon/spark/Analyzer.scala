@@ -44,8 +44,8 @@ class ItemSketchSerializable extends Serializable {
 
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
-               startDate: String = Constants.Partition.at(System.currentTimeMillis()),
-               endDate: String = Constants.Partition.at(System.currentTimeMillis()),
+               startDate: String,
+               endDate: String,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
@@ -118,7 +118,7 @@ class Analyzer(tableUtils: TableUtils,
     frequentItemKeys.zip(freqMaps)
   }
 
-  private val range = PartitionRange(startDate, endDate)
+  private val range = PartitionRange(startDate, endDate)(tableUtils)
   // returns with heavy hitter analysis for the specified keys
   def analyze(df: DataFrame, keys: Array[String], sourceTable: String): String = {
     val result = heavyHittersWithTsAndCount(df, keys, count, sample)
@@ -146,7 +146,7 @@ class Analyzer(tableUtils: TableUtils,
                         aggPart.inputColumn.toLowerCase)
   }
 
-  def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
+  def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
     AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
   }
 

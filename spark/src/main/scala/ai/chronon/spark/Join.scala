@@ -325,7 +325,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
             println(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
 
             val bootstrapRange = if (part.isSetQuery) {
-              unfilledRange.intersect(PartitionRange(part.startPartition, part.endPartition))
+              unfilledRange.intersect(PartitionRange(part.startPartition, part.endPartition)(tableUtils))
             } else {
               unfilledRange
             }
@@ -334,7 +334,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
               partialDf
             } else {
               var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(Constants.PartitionColumn -> null))
+                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
               )
 
               // attach semantic_hash for either log or regular table bootstrap
@@ -348,15 +348,17 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
               // include only necessary columns. in particular,
               // this excludes columns that are NOT part of Join's output (either from GB or external source)
               val includedColumns = bootstrapDf.columns
-                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf) ++ Seq(Constants.BootstrapHash))
+                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf, tableUtils.partitionColumn)
+                        ++ Seq(Constants.BootstrapHash,
+                        tableUtils.partitionColumn))
                 .sorted
 
               bootstrapDf = bootstrapDf
                 .select(includedColumns.map(col): _*)
                 // TODO: allow customization of deduplication logic
-                .dropDuplicates(part.keys(joinConf).toArray)
+                .dropDuplicates(part.keys(joinConf, tableUtils.partitionColumn).toArray)
 
-              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf))
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf, tableUtils.partitionColumn))
               // as part of the left outer join process, we update and maintain matched_hashes for each record
               // that summarizes whether there is a join-match for each bootstrap source.
               // later on we use this information to decide whether we still need to re-run the backfill logic

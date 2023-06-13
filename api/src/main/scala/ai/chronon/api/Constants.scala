@@ -4,15 +4,12 @@ import ai.chronon.api.Extensions._
 
 object Constants {
   val TimeColumn: String = "ts"
-  val PartitionColumn: String = "ds"
   val LabelPartitionColumn: String = "label_ds"
   val TimePartitionColumn: String = "ts_ds"
   val ReversalColumn: String = "is_before"
   val MutationTimeColumn: String = "mutation_ts"
-  val ReservedColumns: Seq[String] =
-    Seq(TimeColumn, PartitionColumn, TimePartitionColumn, ReversalColumn, MutationTimeColumn)
-  val Partition: PartitionSpec =
-    PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
+  def ReservedColumns(partitionColumn: String): Seq[String] =
+    Seq(TimeColumn, partitionColumn, TimePartitionColumn, ReversalColumn, MutationTimeColumn)
   val StartPartitionMacro = "[START_PARTITION]"
   val EndPartitionMacro = "[END_PARTITION]"
   val GroupByServingInfoKey = "group_by_serving_info"

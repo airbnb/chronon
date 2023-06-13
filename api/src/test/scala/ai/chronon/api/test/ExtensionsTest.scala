@@ -40,7 +40,7 @@ class ExtensionsTest {
   @Test
   def testRowIdentifier(): Unit = {
     val labelPart = Builders.LabelPart();
-    val res = labelPart.rowIdentifier(Arrays.asList("yoyo", "yujia"))
+    val res = labelPart.rowIdentifier(Arrays.asList("yoyo", "yujia"), "ds")
     assertTrue(res.contains("ds"))
   }
 

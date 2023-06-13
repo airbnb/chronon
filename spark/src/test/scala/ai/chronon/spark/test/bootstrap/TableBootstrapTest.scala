@@ -15,7 +15,7 @@ class TableBootstrapTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   private val tableUtils = TableUtils(spark)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
   // Create bootstrap dataset with randomly overwritten data
   def buildBootstrapPart(queryTable: String,
@@ -149,7 +149,7 @@ class TableBootstrapTest {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
-    val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
+    val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)
 
     val joinPart = Builders.JoinPart(groupBy = BootstrapUtils.buildGroupBy(namespace, spark))
     val derivations = Seq(

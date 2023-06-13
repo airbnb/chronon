@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark._
 import org.apache.spark.sql.{Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LabelJoinTest {
@@ -375,7 +375,7 @@ class LabelJoinTest {
     )
 
     val now = System.currentTimeMillis()
-    val today = Constants.Partition.at(now)
+    val today = tableUtils.partitionSpec.at(now)
     val runner = new LabelJoin(joinConf, tableUtils, today)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
     println(" == computed == ")

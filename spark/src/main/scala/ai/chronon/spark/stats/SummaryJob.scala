@@ -25,7 +25,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, dailyStatsTable, tableUtils).isEmpty
     if (backfillRequired) Seq(dailyStatsTable, dailyStatsAvroTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
-      .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate), Some(Seq(joinConf.metaData.outputTable)))
+      .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate)(tableUtils), Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) {
       println(s"No data to compute for $dailyStatsTable")
@@ -44,7 +44,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
                |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ Constants.PartitionColumn
+          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
           val inputDf = if (joinOutputDf.columns.contains(Constants.TimeColumn)) {
             joinOutputDf.select(Constants.TimeColumn, baseColumns: _*)
           } else {
@@ -57,7 +57,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           val summaryKvRdd = stats.dailySummary(aggregator, sample)
           // Build upload table for stats store.
           summaryKvRdd.toAvroDf
-            .withTimeBasedColumn(Constants.PartitionColumn)
+            .withTimeBasedColumn(tableUtils.partitionColumn)
             .save(dailyStatsAvroTable, tableProps)
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)

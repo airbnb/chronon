@@ -1,11 +1,13 @@
 package ai.chronon.spark.test
 
 import ai.chronon.spark.Driver.OfflineSubcommand
+import ai.chronon.spark.SparkSessionBuilder
+import org.apache.spark.sql.SparkSession
 import ai.chronon.spark.{LocalTableExporter, TableUtils}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.{doNothing, mock, never, times, verify, when}
+import org.mockito.Mockito.{doNothing, mock, never, times, verify}
 import org.rogach.scallop.ScallopConf
 
 class OfflineSubcommandTest {
@@ -15,7 +17,12 @@ class OfflineSubcommandTest {
       with OfflineSubcommand {
     verify()
 
+    override def subcommandName: String = "test"
+
+    override def buildSparkSession(): SparkSession = SparkSessionBuilder.build(subcommandName, local = true)
+        
     protected override def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter = localTableExporter
+
   }
 
   @Test

@@ -13,13 +13,13 @@ import org.junit.Test
 
 class MigrationCompareTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("MigrationCompareTest", local = true)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val ninetyDaysAgo = Constants.Partition.minus(today, new Window(90, TimeUnit.DAYS))
-  private val namespace = "migration_compare_chronon_test"
-  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = Constants.Partition.minus(today, new Window(365, TimeUnit.DAYS))
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val tableUtils = TableUtils(spark)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
+  private val namespace = "migration_compare_chronon_test"
+  private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+  private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
+  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
 
   def setupTestData(): (api.Join, api.StagingQuery) = {
     // ------------------------------------------JOIN------------------------------------------
@@ -81,7 +81,7 @@ class MigrationCompareTest {
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
-    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    val result = CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
     assert(result.size == 0)
   }
 
@@ -100,7 +100,7 @@ class MigrationCompareTest {
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
-    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    val result = CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
     assert(result.size == 0)
   }
 
@@ -110,7 +110,7 @@ class MigrationCompareTest {
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
-    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    val result = CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
     assert(result.size == 0)
   }
 
@@ -129,7 +129,7 @@ class MigrationCompareTest {
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
 
-    val result = CompareJob.printAndGetBasicMetrics(metrics)
+    val result = CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
     assert(result.size != 0)
   }
 }

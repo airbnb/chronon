@@ -4,7 +4,7 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions.toChrononSchema
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.SparkSessionBuilder
+import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 import ai.chronon.spark.stats.StatsCompute
@@ -12,7 +12,9 @@ import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
+  implicit val tableUtils = TableUtils(spark)
   val namespace: String = "stats_compute_test"
+
   @Test
   def summaryTest(): Unit = {
     val data = Seq(
@@ -23,7 +25,7 @@ class StatsComputeTest {
     )
     val columns = Seq("keyId", "value", "double_value", "string_value")
     val rdd = spark.sparkContext.parallelize(data)
-    val df = spark.createDataFrame(rdd).toDF(columns: _*).withColumn(Constants.PartitionColumn, lit("2022-04-09"))
+    val df = spark.createDataFrame(rdd).toDF(columns: _*).withColumn(tableUtils.partitionColumn, lit("2022-04-09"))
     val stats = new StatsCompute(df, Seq("keyId"), "test")
     val aggregator =
       StatsGenerator.buildAggregator(stats.metrics, StructType.from("test", toChrononSchema(stats.selectedDf.schema)))
@@ -45,7 +47,7 @@ class StatsComputeTest {
     val df = spark
       .createDataFrame(rdd)
       .toDF(columns: _*)
-      .withColumn(Constants.PartitionColumn, lit("2022-04-09"))
+      .withColumn(tableUtils.partitionColumn, lit("2022-04-09"))
       .drop(Constants.TimeColumn)
     val stats = new StatsCompute(df, Seq("keyId"), "snapshotTest")
     val aggregator =

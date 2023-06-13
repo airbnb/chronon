@@ -21,8 +21,8 @@ class LogBootstrapTest {
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-  private val tableUtils = TableUtils(spark)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private implicit val tableUtils: TableUtils = TableUtils(spark)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
   def testBootstrap(): Unit = {
@@ -90,7 +90,7 @@ class LogBootstrapTest {
     // Init artifacts to run online fetching and logging
     val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
     val mockApi = new MockApi(() => kvStore, namespace)
-    val endDs = spark.table(queryTable).select(max(Constants.PartitionColumn)).head().getString(0)
+    val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)
     OnlineUtils.serve(tableUtils, kvStore, () => kvStore, namespace, endDs, groupBy)
     val fetcher = mockApi.buildFetcher(debug = true)
 
@@ -100,7 +100,7 @@ class LogBootstrapTest {
 
     val requests = spark
       .table(queryTable)
-      .where(col(Constants.PartitionColumn) === endDs)
+      .where(col(tableUtils.partitionColumn) === endDs)
       .where(col("user").isNotNull and col("request_id").isNotNull)
       .select("user", "request_id", "ts")
       .collect()
@@ -123,7 +123,7 @@ class LogBootstrapTest {
     assertEquals(logs.length, 1 + requests.length)
     mockApi
       .loggedValuesToDf(logs, spark)
-      .save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
+      .save(mockApi.logTable, partitionColumns = Seq(tableUtils.partitionColumn, "name"))
     SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, endDs)
     val flattenerJob = new LogFlattenerJob(spark, joinV1, endDs, mockApi.logTable, mockApi.schemaTable)
     flattenerJob.buildLogTable()

@@ -11,10 +11,10 @@ import org.junit.Test
 
 class AvroTest {
   val spark: SparkSession = SparkSessionBuilder.build("AvroTest", local = true)
-  private val today = Constants.Partition.at(System.currentTimeMillis())
-  private val monthAgo = Constants.Partition.minus(today, new Window(30, TimeUnit.DAYS))
-  private val twoMonthsAgo = Constants.Partition.minus(today, new Window(60, TimeUnit.DAYS))
   private val tableUtils = TableUtils(spark)
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+  private val twoMonthsAgo = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
 
   @Test
   def testDecimal(): Unit = {
@@ -82,7 +82,7 @@ class AvroTest {
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
       metaData = Builders.MetaData(name = "unit_test.test_decimal", namespace = namespace, team = "chronon")
     )
-    val runner = new Join(joinConf, Constants.Partition.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
+    val runner = new Join(joinConf, tableUtils.partitionSpec.minus(today, new Window(40, TimeUnit.DAYS)), tableUtils)
     val df = runner.computeJoin()
     df.printSchema()
   }

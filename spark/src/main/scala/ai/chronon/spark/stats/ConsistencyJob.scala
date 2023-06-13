@@ -17,7 +17,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
-  val tableUtils: TableUtils = TableUtils(session)
+  implicit val tableUtils: TableUtils = TableUtils(session)
 
   // Replace join's left side with the logged table events to determine offline values of the aggregations.
   private def buildComparisonJoin(): Join = {
@@ -102,7 +102,10 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
       println(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
-      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDf, loggedDfNoExternalCols, keys = joinKeys)
+      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDf,
+                                                                   loggedDfNoExternalCols,
+                                                                   keys = joinKeys,
+                                                                   tableUtils)
       println("Saving output.")
       val outputDf = metricsDf.withTimeBasedColumn("ds")
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")

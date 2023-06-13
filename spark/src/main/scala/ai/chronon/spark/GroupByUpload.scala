@@ -15,14 +15,14 @@ import scala.collection.Seq
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
-
+  implicit private val tableUtils = TableUtils(sparkSession)
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
     KvRdd(rdd.map { case (keyAndDs, values) => keyAndDs.init -> values }, groupBy.keySchema, groupBy.postAggSchema)
   }
   def snapshotEntities: KvRdd = {
     if (groupBy.aggregations == null || groupBy.aggregations.isEmpty) {
       // pre-agg to PairRdd
-      val keysAndPartition = (groupBy.keyColumns :+ Constants.PartitionColumn).toArray
+      val keysAndPartition = (groupBy.keyColumns :+ tableUtils.partitionColumn).toArray
       val keyBuilder = FastHashing.generateKeyBuilder(keysAndPartition, groupBy.inputDf.schema)
       val values = groupBy.inputDf.schema.map(_.name).filterNot(keysAndPartition.contains)
       val valuesIndices = values.map(groupBy.inputDf.schema.fieldIndex).toArray
@@ -41,7 +41,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 
   // Shared between events and mutations (temporal entities).
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
-    val endTs = Constants.Partition.epochMillis(endPartition)
+    val endTs = tableUtils.partitionSpec.epochMillis(endPartition)
     println(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(
       endTs,
@@ -75,14 +75,14 @@ object GroupByUpload {
   def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[TableUtils] = None): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
-    val tableUtils =
+    implicit val tableUtils =
       tableUtilsOpt.getOrElse(
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
-    val batchEndDate = Constants.Partition.after(endDs)
+    val batchEndDate = tableUtils.partitionSpec.after(endDs)
     // for snapshot accuracy
     lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
