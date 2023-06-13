@@ -65,8 +65,7 @@ class LocalTableExporterTest {
       Column("session_length", IntType, 10000)
     )
 
-    val df = DataFrameGen
-      .entities(spark, schema, 20, 3)
+    val df = DataFrameGen.gen(spark, schema, 20)
     val tableName = "default.exporter_test_2"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
 
@@ -78,8 +77,7 @@ class LocalTableExporterTest {
     )
     val namespace = "test_namespace"
     val weightTable = s"$namespace.weights"
-    val wdf = DataFrameGen
-      .entities(spark, weightSchema, 100, partitions = 5)
+    val wdf = DataFrameGen.gen(spark, weightSchema, 100)
     spark.sql(s"CREATE DATABASE $namespace")
     wdf.write.mode(SaveMode.Overwrite).saveAsTable(weightTable)
 
