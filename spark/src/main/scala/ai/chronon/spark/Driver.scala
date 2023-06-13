@@ -1,8 +1,8 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.api.{ThriftJsonCodec}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.{Constants, ThriftJsonCodec}
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
@@ -16,6 +16,7 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
   QueryStartedEvent,
   QueryTerminatedEvent
 }
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -82,6 +83,33 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
+    val localTableExportPath: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr =
+          """Path to a folder for exporting all the tables generated during the run. This is only effective when local
+            |input data is used: when either `local-table-mapping` or `local-data-path` is set. The name of the file
+            |will be of format [<prefix>].<namespace>.<table_name>.<format>. For example: "default.test_table.csv" or
+            |"local_prefix.some_namespace.another_table.parquet".
+            |""".stripMargin
+      )
+
+    val localTableExportFormat: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = Some("csv"),
+        validate = (format: String) => LocalTableExporter.SupportedExportFormat.contains(format.toLowerCase),
+        descr = "The table output format, supports csv(default), parquet, json."
+      )
+
+    val localTableExportPrefix: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr = "The prefix to put in the exported file name."
+      )
+
     lazy val sparkSession: SparkSession = buildSparkSession()
 
     protected def buildSparkSession(): SparkSession = {
@@ -109,6 +137,19 @@ object Driver {
 
     def buildTableUtils(): TableUtils = {
       TableUtils(sparkSession)
+
+    protected def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter =
+      new LocalTableExporter(
+        tableUtils, localTableExportPath(), localTableExportFormat(), localTableExportPrefix.toOption)
+
+    def exportTableToLocalIfNecessary(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
+      val isLocal = localTableMapping.nonEmpty || localDataPath.isDefined
+      val shouldExport = localTableExportPath.isDefined
+      if (!isLocal || !shouldExport) {
+        return
+      }
+
+      buildLocalTableExporter(tableUtils).exportTable(namespaceAndTable)
     }
   }
 
@@ -127,13 +168,11 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val join = new Join(
-        args.joinConf,
-        args.endDate(),
-        args.buildTableUtils(),
-        !args.runFirstHole()
-      )
+      val joinConf = parseConf[api.Join](args.confPath())
+      val tableUtils = args.buildTableUtils(s"join_${joinConf.metaData.name}")
+      val join = new Join(joinConf, args.endDate(), tableUtils, !args.runFirstHole())
       join.computeJoin(args.stepDays.toOption)
+      args.exportTableToLocalIfNecessary(joinConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -146,13 +185,13 @@ object Driver {
       val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
       override val subcommandName = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
+
     def run(args: Args): Unit = {
-      GroupBy.computeBackfill(
-        args.groupByConf,
-        args.endDate(),
-        args.buildTableUtils(),
-        args.stepDays.toOption
-      )
+      val groupByConf = parseConf[api.GroupBy](args.confPath())
+      val tableUtils = TableUtils(
+        SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill"))
+      GroupBy.computeBackfill(groupByConf, args.endDate(), tableUtils, args.stepDays.toOption)
+      args.exportTableToLocalIfNecessary(groupByConf.metaData.outputTable, tableUtils)
     }
   }
 
@@ -167,12 +206,11 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val labelJoin = new LabelJoin(
-        args.joinConf,
-        args.buildTableUtils(),
-        args.endDate()
-      )
+      val joinConf = parseConf[api.Join](args.confPath())
+      val tableUtils = TableUtils(SparkSessionBuilder.build(s"label_join_${joinConf.metaData.name}"))
+      val labelJoin = new LabelJoin(joinConf, tableUtils, args.endDate())
       labelJoin.computeLabelJoin(args.stepDays.toOption)
+      args.exportTableToLocalIfNecessary(joinConf.metaData.outputLabelTable, tableUtils)
     }
   }
 
@@ -238,13 +276,13 @@ object Driver {
       val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override val subcommandName = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
+
     def run(args: Args): Unit = {
-      val stagingQueryJob = new StagingQuery(
-        args.stagingQueryConf,
-        args.endDate(),
-        args.buildTableUtils()
-      )
+      val stagingQueryConf = parseConf[api.StagingQuery](args.confPath())
+      val tableUtils = args.buildTableUtils(s"staging_query_${stagingQueryConf.metaData.name}_backfill")
+      val stagingQueryJob = new StagingQuery(stagingQueryConf, args.endDate(), tableUtils)
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
+      args.exportTableToLocalIfNecessary(stagingQueryConf.metaData.outputTable, tableUtils)
     }
   }
 

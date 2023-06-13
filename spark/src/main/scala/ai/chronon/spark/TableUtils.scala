@@ -37,6 +37,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
 
+  def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
+
   def isPartitioned(tableName: String): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
