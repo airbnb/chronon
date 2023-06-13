@@ -92,13 +92,13 @@ class LocalTableExporterTest {
     val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.$tableName.csv"
     val outputFile1 = new File(outputFilePath1)
     assertTrue(outputFile1.isFile)
-    val generatedData1 = df.collect().sortBy(r => r.getAs[Long](1))
+    val generatedData1 = df.collect().sortBy(_.getAs[Long](1))
     val loadedData1 = spark.read
       .option("header", true)
       .option("inferSchema", true)
       .csv(outputFilePath1)
       .collect()
-      .sortBy(r => r.getAs[Long](1))
+      .sortBy(_.getAs[Long](1))
     assertEquals(generatedData1.length, loadedData1.length)
     // We are using CSV in this test. CSV/JSON will lose type precision, hence we are using string format of the data
     // instead
@@ -107,13 +107,13 @@ class LocalTableExporterTest {
     val outputFilePath2 = s"${tmpDir.getAbsolutePath}/local_test.$weightTable.csv"
     val outputFile2 = new File(outputFilePath2)
     assertTrue(outputFile2.isFile)
-    val generatedData2 = wdf.collect().sortBy(r => r.getAs[Long](1))
+    val generatedData2 = wdf.collect().sortBy(_.getAs[Long](1))
     val loadedData2 = spark.read
       .option("header", true)
       .option("inferSchema", true)
       .csv(outputFilePath2)
       .collect()
-      .sortBy(r => r.getAs[Long](1))
+      .sortBy(_.getAs[Long](1))
     assertEquals(generatedData2.length, loadedData2.length)
     generatedData2.zip(loadedData2).foreach { case (g, l) => assertEquals(g.toString(), l.toString()) }
   }
