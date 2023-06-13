@@ -10,7 +10,7 @@ import ai.chronon.online.Fetcher.{SeriesStatsResponse, StatsRequest}
 import scala.compat.java8.FutureConverters
 import ai.chronon.online.{JavaStatsRequest, MetadataStore}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
@@ -115,6 +115,10 @@ class FetchStatsTest extends TestCase {
 
     // Appendix: Incremental run to check incremental updates for summary job.
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, today, joinConf)
+
+    // Appendix: Test Analyzer output.
+    val analyzer = new Analyzer(tableUtils,joinConf)
+    analyzer.analyzeJoin(joinConf)
   }
 
   def fetchStatsSeries(request: StatsRequest,

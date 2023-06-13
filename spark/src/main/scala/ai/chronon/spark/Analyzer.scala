@@ -11,6 +11,7 @@ import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
+import ai.chronon.aggregator.row.StatsGenerator
 
 import scala.collection.mutable.ListBuffer
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
@@ -230,6 +231,8 @@ class Analyzer(tableUtils: TableUtils,
            |${leftSchema.mkString("\n")}
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
+           |------ STATS SCHEMA ---------
+           |${StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray)).unpack.toMap.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
     }
