@@ -8,7 +8,7 @@ import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.row_number
+import org.apache.spark.sql.functions.{lit, row_number}
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.{AfterClass, Test}
@@ -38,7 +38,7 @@ class LocalTableExporterTest {
 
     val df = DataFrameGen
       .entities(spark, schema, 20, 3)
-      .withColumn("rid", row_number().over(Window.partitionBy("session_length").orderBy("session_length")))
+      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     val tableName = "default.exporter_test_1"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
     val tableUtils = TableUtils(spark)
@@ -70,7 +70,7 @@ class LocalTableExporterTest {
 
     val df = DataFrameGen
       .entities(spark, schema, 20, 3)
-      .withColumn("rid", row_number().over(Window.partitionBy("session_length").orderBy("session_length")))
+      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     val tableName = "default.exporter_test_2"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
 
@@ -83,7 +83,7 @@ class LocalTableExporterTest {
     val weightTable = s"$namespace.weights"
     val wdf = DataFrameGen
       .entities(spark, weightSchema, 100, partitions = 5)
-      .withColumn("rid", row_number().over(Window.partitionBy("weight").orderBy("weight")))
+      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     spark.sql(s"CREATE DATABASE $namespace")
     wdf.write.mode(SaveMode.Overwrite).saveAsTable(weightTable)
 
