@@ -283,8 +283,7 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections"),
-    dependencyOverrides ++= fromMatrix(scalaVersion.value, "netty-buffer")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
   )
 
 lazy val online_unshaded = (project in file("online"))
@@ -303,8 +302,8 @@ lazy val online_unshaded = (project in file("online"))
                                        "jackson",
                                        "avro",
                                        "spark-all/provided",
-                                       "scala-parallel-collections"),
-    dependencyOverrides ++= fromMatrix(scalaVersion.value, "netty-buffer")
+                                       "scala-parallel-collections",
+                                       "netty-buffer")
   )
 
 def cleanSparkMeta(): Unit = {
