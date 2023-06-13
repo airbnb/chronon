@@ -217,8 +217,6 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)}
     }
 
-
-
     val rightSchema: Map[String, DataType] = aggregationsMetadata.map(
       aggregation => (aggregation.name, aggregation.columnType)).toMap
     if (silenceMode) {
