@@ -77,6 +77,7 @@ object SparkSessionBuilder {
       .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
       .config("spark.kryoserializer.buffer.max", "2000m")
       .config("spark.kryo.referenceTracking", "false")
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     val builder = if (local) {
       baseBuilder
