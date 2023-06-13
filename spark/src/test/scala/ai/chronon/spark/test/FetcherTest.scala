@@ -21,13 +21,12 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
@@ -163,7 +162,7 @@ class FetcherTest extends TestCase {
     sourceData.foreach {
       case (schema, rows) =>
         spark
-          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
+          .createDataFrame(rows.toJava, SparkConversions.fromChrononSchema(schema))
           .save(s"$namespace.${schema.name}")
 
     }
@@ -401,14 +400,14 @@ class FetcherTest extends TestCase {
         .map { r =>
           val responses = if (useJavaFetcher) {
             // Converting to java request and using the toScalaRequest functionality to test conversion
-            val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
+            val convertedJavaRequests = r.map(new JavaRequest(_)).toJava
             val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
             FutureConverters
               .toScala(javaResponse)
-              .map(_.asScala.map(jres =>
+              .map(_.toScala.map(jres =>
                 Response(
-                  Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
-                  jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+                  Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
+                  jres.values.toScala.map(_.toScala)
                 )))
           } else {
             fetcher.fetchJoin(r)
@@ -479,7 +478,7 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.asScala.foreach(jp =>
+    joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values

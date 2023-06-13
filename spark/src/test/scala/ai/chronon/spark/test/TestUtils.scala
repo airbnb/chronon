@@ -8,7 +8,7 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.JListOps
 
 object TestUtils {
   def createViewsGroupBy(namespace: String,
@@ -155,7 +155,7 @@ object TestUtils {
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
@@ -364,7 +364,7 @@ object TestUtils {
 
   def makeDf(spark: SparkSession, schema: StructType, rows: List[Row]): DataFrame = {
     spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
   }

@@ -21,6 +21,7 @@ public abstract class JavaExternalSourceHandler extends ExternalSourceHandler {
 
     @Override
     public Future<Seq<Fetcher.Response>> fetch(Seq<Fetcher.Request> requests) {
+        // TODO: deprecate ScalaVersionSpecificCollectionsConverter in java
         java.util.List<JavaRequest> javaRequests = ScalaVersionSpecificCollectionsConverter
                 .convertScalaListToJava(requests.toList())
                 .stream()

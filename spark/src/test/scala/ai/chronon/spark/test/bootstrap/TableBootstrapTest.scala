@@ -9,7 +9,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse}
 import org.junit.Test
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.JListOps
 
 class TableBootstrapTest {
 
@@ -90,10 +90,7 @@ class TableBootstrapTest {
     // Create bootstrap join using base join as template
     val bootstrapJoin = baseJoin.deepCopy()
     bootstrapJoin.getMetaData.setName("test.user_transaction_features.bootstrap")
-    bootstrapJoin
-      .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(Seq(bootstrapPart1, bootstrapPart2))
-      )
+    bootstrapJoin.setBootstrapParts(Seq(bootstrapPart1, bootstrapPart2).toJava)
 
     // Runs through boostrap backfill which combines backfill and bootstrap
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)

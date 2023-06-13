@@ -13,8 +13,8 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import java.util.Base64
 import scala.collection.mutable
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.IterableOps
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
+import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
+import scala.util.{Failure, Success, Try}
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field
@@ -36,7 +36,7 @@ class LogFlattenerJob(session: SparkSession,
     extends Serializable {
   implicit val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+    .map(_.toScala)
     .getOrElse(Map.empty[String, String])
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 

@@ -10,7 +10,7 @@ import java.util
 import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 object Extensions {
 
@@ -106,7 +106,7 @@ object Extensions {
 
     def tableProps: Map[String, String] =
       Option(metaData.tableProperties)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
+        .map(_.toScala.toMap)
         .orNull
 
     def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
@@ -117,7 +117,7 @@ object Extensions {
       val mapper = new ObjectMapper();
       val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
       val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
-      ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jMap).get(key).orNull
+      jMap.toScala.get(key).orNull
     }
 
     def owningTeam: String = {
@@ -132,7 +132,7 @@ object Extensions {
 
     def getInt(arg: String, default: Option[Int] = None): Int = {
       val argOpt = Option(aggregationPart.argMap)
-        .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).get(arg))
+        .flatMap(_.toScala.get(arg))
       require(
         argOpt.isDefined || default.isDefined,
         s"$arg needs to be specified in the `argMap` for ${aggregationPart.operation} type"
@@ -187,7 +187,7 @@ object Extensions {
     // ignoring the windowing
     def unWindowed: Seq[AggregationPart] = {
       val buckets = Option(aggregation.buckets)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+        .map(_.toScala)
         .getOrElse(Seq(null))
         .toSeq
       for (bucket <- buckets) yield {
@@ -197,7 +197,7 @@ object Extensions {
           WindowUtils.Unbounded,
           Option(aggregation.argMap)
             .map(
-              ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+              _.toScala.toMap
             )
             .orNull,
           bucket
@@ -217,10 +217,10 @@ object Extensions {
       val perWindow = new mutable.ArrayBuffer[WindowMapping]
       aggregations.foreach { agg =>
         val buckets = Option(agg.buckets)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(null))
         val windows = Option(agg.windows)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(WindowUtils.Unbounded))
         for (bucket <- buckets) {
           perBucket += Builders.AggregationPart(
@@ -229,7 +229,7 @@ object Extensions {
             WindowUtils.Unbounded,
             Option(agg.argMap)
               .map(
-                ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                _.toScala.toMap
               )
               .orNull,
             bucket
@@ -241,7 +241,7 @@ object Extensions {
                                        window,
                                        Option(agg.argMap)
                                          .map(
-                                           ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                                           _.toScala.toMap
                                          )
                                          .orNull,
                                        bucket),
@@ -271,7 +271,7 @@ object Extensions {
         aggs.flatMap { agg =>
           Option(agg.windows)
             .map(
-              ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)
+              _.toScala
             )
             .getOrElse(Seq(null))
         }
@@ -350,7 +350,7 @@ object Extensions {
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
-        .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq.allWindowsOpt)
+        .flatMap(_.toScala.toSeq.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
@@ -364,8 +364,7 @@ object Extensions {
     }
 
     def dataModel: DataModel = {
-      val models = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      val models = groupBy.sources.toScala
         .map(_.dataModel)
       assert(models.distinct.length == 1,
              s"All source of the groupBy: ${groupBy.metaData.name} " +
@@ -379,8 +378,7 @@ object Extensions {
       // if user specified something - respect it
       if (groupBy.accuracy != null) return groupBy.accuracy
       // if a topic is specified - then treat it as temporally accurate
-      val validTopics = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      val validTopics = groupBy.sources.toScala
         .map(_.topic)
         .filter(_ != null)
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
@@ -408,8 +406,7 @@ object Extensions {
     def kvTable: String = s"${groupBy.metaData.outputTable}_upload"
 
     def streamingSource: Option[Source] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      groupBy.sources.toScala
         .find(_.topic != null)
 
     def buildStreamingQuery: String = {
@@ -418,13 +415,12 @@ object Extensions {
       val query = streamingSource.get.query
       val selects = Option(query.selects)
         .map(
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(_)
+          _.toScala
             .toMap)
         .orNull
       val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
       val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
-      val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.getKeyColumns)
+      val keys = groupBy.getKeyColumns.toScala
 
       val baseWheres = Option(query.wheres)
         .map(_.toScala)
@@ -502,8 +498,7 @@ object Extensions {
     private def schemaNames(schema: TDataType): Array[String] = schemaFields(schema).map(_.name)
 
     private def schemaFields(schema: TDataType): Array[StructField] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(schema.params)
+      schema.params.toScala
         .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
         .toArray
 
@@ -524,8 +519,7 @@ object Extensions {
     def flip(leftToRight: java.util.Map[String, String]): Map[String, String] = {
       Option(leftToRight)
         .map(mp =>
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(mp)
+          mp.toScala
             .map({ case (key, value) => value -> key }))
         .getOrElse(Map.empty[String, String])
     }
@@ -579,14 +573,12 @@ object Extensions {
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
     def rightToLeft: Map[String, String] = {
-      val rightToRight = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinPart.groupBy.keyColumns)
+      val rightToRight = joinPart.groupBy.keyColumns.toScala
         .map { key => key -> key }
         .toMap
       Option(joinPart.keyMapping)
         .map { leftToRight =>
-          val rToL = ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(leftToRight)
+          val rToL = leftToRight.toScala
             .map {
               case (left, right) => right -> left
             }
@@ -609,8 +601,7 @@ object Extensions {
 
   implicit class LabelPartOps(val labelPart: LabelPart) extends Serializable {
     def leftKeyCols: Array[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelPart.labels)
+      labelPart.labels.toScala
         .flatMap {
           _.rightToLeft.values
         }
@@ -619,8 +610,7 @@ object Extensions {
     }
 
     def setups: Seq[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelPart.labels)
+      labelPart.labels.toScala
         .flatMap(_.groupBy.setups)
         .distinct
     }
@@ -651,9 +641,9 @@ object Extensions {
 
     def keys(join: Join, partitionColumn: String): Seq[String] = {
       val definedKeys = if (bootstrapPart.isSetKeyColumns) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(bootstrapPart.keyColumns)
+        bootstrapPart.keyColumns.toScala
       } else if (join.isSetRowIds) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.getRowIds)
+        join.getRowIds.toScala
       } else {
         throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
       }
@@ -676,8 +666,7 @@ object Extensions {
   implicit class JoinOps(val join: Join) extends Serializable {
     // all keys on left
     def leftKeyCols: Array[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
+      join.joinParts.toScala
         .flatMap {
           _.rightToLeft.values
         }
@@ -699,8 +688,7 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
-      val partHashes = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
+      val partHashes = join.joinParts.toScala
         .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
         .toMap
       val derivedHashMap = Option(join.derivations)
@@ -721,15 +709,12 @@ object Extensions {
     def getExternalFeatureCols: Seq[String] = {
       Option(join.onlineExternalParts)
         .map(
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaListToScala(_)
+          _.toScala
             .map { part =>
               {
-                val keys = ScalaVersionSpecificCollectionsConverter
-                  .convertJavaListToScala(part.source.getKeySchema.params)
+                val keys = part.source.getKeySchema.params.toScala
                   .map(_.name)
-                val values = ScalaVersionSpecificCollectionsConverter
-                  .convertJavaListToScala(part.source.getValueSchema.params)
+                val values = part.source.getValueSchema.params.toScala
                   .map(_.name)
                 keys ++ values
               }
@@ -748,8 +733,7 @@ object Extensions {
         return Map.empty[String, String]
       }
 
-      val externalPartHashes = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.onlineExternalParts)
+      val externalPartHashes = join.onlineExternalParts.toScala
         .map { part => part.fullName -> part.semanticHash }
         .toMap
 
@@ -801,8 +785,7 @@ object Extensions {
     // TODO: validate that non keys are not specified in - join.skewKeys
     def skewFilter(keys: Option[Seq[String]] = None, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
-        val result = ScalaVersionSpecificCollectionsConverter
-          .convertJavaMapToScala(jmap)
+        val result = jmap.toScala
           .filterKeys(key =>
             keys.forall {
               _.contains(key)
@@ -815,7 +798,7 @@ object Extensions {
                   s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
               generateSkewFilterSql(leftKey,
-                                    ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values).toSeq)
+                                    values.toScala.toSeq)
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -826,15 +809,13 @@ object Extensions {
 
     def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).flatMap { jmap =>
-        val result = ScalaVersionSpecificCollectionsConverter
-          .convertJavaMapToScala(jmap)
-          .flatMap {
-            case (leftKey, values) =>
-              Option(joinPart.keyMapping)
-                .map(_.toScala.getOrElse(leftKey, leftKey))
-                .orElse(Some(leftKey))
-                .filter(joinPart.groupBy.keyColumns.contains(_))
-                .map(generateSkewFilterSql(_, values.toScala))
+        val result = jmap.toScala
+          .flatMap { case (leftKey, values) =>
+            Option(joinPart.keyMapping)
+              .map(_.toScala.getOrElse(leftKey, leftKey))
+              .orElse(Some(leftKey))
+              .filter(joinPart.groupBy.keyColumns.contains(_))
+              .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -847,8 +828,7 @@ object Extensions {
     }
 
     def setups: Seq[String] =
-      (join.left.query.setupsSeq ++ ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
+      (join.left.query.setupsSeq ++ join.joinParts.toScala
         .flatMap(_.groupBy.setups)).distinct
 
     def copyForVersioningComparison(): Join = {
@@ -864,8 +844,7 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
+      Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()).toScala
         .toSeq
         .map(new JoinPartOps(_))
 
@@ -927,7 +906,7 @@ object Extensions {
     def setupsSeq: Seq[String] = {
       Option(query.setups)
         .map(
-          ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
+          _.toScala.toSeq
         )
         .getOrElse(Seq.empty)
     }
