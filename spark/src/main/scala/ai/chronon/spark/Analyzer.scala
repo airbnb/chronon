@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{AggregationPart, Constants, DataType}
+import ai.chronon.api.{AggregationPart, Constants, DataType, StructType}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
@@ -42,6 +42,8 @@ class ItemSketchSerializable extends Serializable {
     sketch = ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
   }
 }
+
+case class Analysis(outputTable: String, schemas: Map[String, Seq[Map[String,String]]], aggregationMetadata: AggregationMetadata)
 
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
@@ -137,7 +139,16 @@ class Analyzer(tableUtils: TableUtils,
                                  operation: String = null,
                                  window: String = null,
                                  inputColumn: String = null,
-                                 groupByName: String = null)
+                                 groupByName: String = null) {
+    def asMap: Map[String, String] = Map(
+      "name" -> name,
+      "window" -> window,
+      "columnType" -> DataType.toString(columnType),
+      "inputColumn" -> inputColumn,
+      "operation" -> operation,
+      "groupBy" -> groupByName
+    )
+  }
 
   def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(aggPart.outputColumnName,
@@ -196,7 +207,7 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+                  enableHitter: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String,DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
@@ -219,6 +230,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val rightSchema: Map[String, DataType] = aggregationsMetadata.map(
       aggregation => (aggregation.name, aggregation.columnType)).toMap
+    val statsSchema = StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray))
     if (silenceMode) {
       println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -232,12 +244,12 @@ class Analyzer(tableUtils: TableUtils,
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
            |------ STATS SCHEMA ---------
-           |${StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray)).unpack.toMap.mkString("\n")}
+           |${statsSchema.unpack.toMap.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggregationsMetadata)
+    (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
   }
 
   def run(): Unit =
