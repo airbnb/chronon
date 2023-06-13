@@ -7,8 +7,6 @@ import ai.chronon.spark.test.LocalTableExporterTest.{spark, tmpDir}
 import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import org.apache.commons.io.FileUtils
-import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{lit, row_number}
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.{AfterClass, Test}
@@ -38,7 +36,6 @@ class LocalTableExporterTest {
 
     val df = DataFrameGen
       .entities(spark, schema, 20, 3)
-      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     val tableName = "default.exporter_test_1"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
     val tableUtils = TableUtils(spark)
@@ -53,8 +50,8 @@ class LocalTableExporterTest {
 
     // compare the content of the file with the generated
     val loadedDf = spark.read.parquet(expectedPath)
-    val generatedData = df.collect().sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
-    val loadedData = loadedDf.collect().sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
+    val generatedData = df.collect().sortBy(_.getAs[Long](1))
+    val loadedData = loadedDf.collect().sortBy(_.getAs[Long](1))
     assertEquals(generatedData.length, loadedData.length)
 
     generatedData.zip(loadedData).foreach { case (g, l) => assertEquals(g, l) }
@@ -64,18 +61,18 @@ class LocalTableExporterTest {
   def exporterExportsMultipleTablesWithFilesInCorrectPlace(): Unit = {
     val schema = List(
       Column("user", StringType, 100000),
-      Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
+      Column(Constants.TimeColumn, LongType, 10000),
       Column("session_length", IntType, 10000)
     )
 
     val df = DataFrameGen
       .entities(spark, schema, 20, 3)
-      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     val tableName = "default.exporter_test_2"
     df.write.mode(SaveMode.Overwrite).saveAsTable(tableName)
 
     val weightSchema = List(
       Column("user", api.StringType, 100000),
+      Column(Constants.TimeColumn, LongType, 10000),
       Column("country", api.StringType, 100),
       Column("weight", api.IntType, 500)
     )
@@ -83,7 +80,6 @@ class LocalTableExporterTest {
     val weightTable = s"$namespace.weights"
     val wdf = DataFrameGen
       .entities(spark, weightSchema, 100, partitions = 5)
-      .withColumn("rid", row_number().over(Window.partitionBy(lit("")).orderBy(lit(""))))
     spark.sql(s"CREATE DATABASE $namespace")
     wdf.write.mode(SaveMode.Overwrite).saveAsTable(weightTable)
 
@@ -96,13 +92,13 @@ class LocalTableExporterTest {
     val outputFilePath1 = s"${tmpDir.getAbsolutePath}/local_test.$tableName.csv"
     val outputFile1 = new File(outputFilePath1)
     assertTrue(outputFile1.isFile)
-    val generatedData1 = df.collect().sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
+    val generatedData1 = df.collect().sortBy(r => r.getAs[Long](1))
     val loadedData1 = spark.read
       .option("header", true)
       .option("inferSchema", true)
       .csv(outputFilePath1)
       .collect()
-      .sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
+      .sortBy(r => r.getAs[Long](1))
     assertEquals(generatedData1.length, loadedData1.length)
     // We are using CSV in this test. CSV/JSON will lose type precision, hence we are using string format of the data
     // instead
@@ -111,13 +107,13 @@ class LocalTableExporterTest {
     val outputFilePath2 = s"${tmpDir.getAbsolutePath}/local_test.$weightTable.csv"
     val outputFile2 = new File(outputFilePath2)
     assertTrue(outputFile2.isFile)
-    val generatedData2 = wdf.collect().sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
+    val generatedData2 = wdf.collect().sortBy(r => r.getAs[Long](1))
     val loadedData2 = spark.read
       .option("header", true)
       .option("inferSchema", true)
       .csv(outputFilePath2)
       .collect()
-      .sortBy(r => r.getAs[Int](r.fieldIndex("rid")))
+      .sortBy(r => r.getAs[Long](1))
     assertEquals(generatedData2.length, loadedData2.length)
     generatedData2.zip(loadedData2).foreach { case (g, l) => assertEquals(g.toString(), l.toString()) }
   }
