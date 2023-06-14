@@ -36,6 +36,7 @@ object SparkSessionBuilder {
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     additionalConfig.foreach{configMap =>
       configMap.foreach{config => baseBuilder = baseBuilder.config(config._1, config._2)}
@@ -82,6 +83,7 @@ object SparkSessionBuilder {
       .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
       .config("spark.kryoserializer.buffer.max", "2000m")
       .config("spark.kryo.referenceTracking", "false")
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     val builder = if (local) {
       baseBuilder

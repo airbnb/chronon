@@ -66,8 +66,8 @@ lazy val releaseSettings = Seq(
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
     releaseStepCommandAndRemaining("+ publishSigned"),
-    releaseStepInputTask(releasePromptTask),          // Manual user prompt to wait for confirmation before proceeding
-    releaseStepInputTask(python_api, " release"),  // This step handles the release of Python packages
+    releaseStepInputTask(releasePromptTask), // Manual user prompt to wait for confirmation before proceeding
+    releaseStepInputTask(python_api, " release"), // This step handles the release of Python packages
     setNextVersion,
     commitNextVersion
     //pushChanges                                     // : Pushes the local Git changes to GitHub
@@ -159,6 +159,14 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("1.8.2"),
     Some("1.8.2"),
     Some("1.10.2")
+  ),
+  "netty-buffer" -> VersionDependency(
+    Seq(
+      "io.netty" % "netty-buffer"
+    ),
+    Some("4.1.17.Final"),
+    Some("4.1.51.Final"),
+    Some("4.1.68.Final")
   )
 )
 
@@ -275,7 +283,7 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
   )
 
 lazy val online_unshaded = (project in file("online"))
@@ -294,7 +302,8 @@ lazy val online_unshaded = (project in file("online"))
                                        "jackson",
                                        "avro",
                                        "spark-all/provided",
-                                       "scala-parallel-collections")
+                                       "scala-parallel-collections",
+                                       "netty-buffer")
   )
 
 def cleanSparkMeta(): Unit = {
