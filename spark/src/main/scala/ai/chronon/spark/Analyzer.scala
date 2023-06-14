@@ -43,8 +43,6 @@ class ItemSketchSerializable extends Serializable {
   }
 }
 
-case class Analysis(outputTable: String, schemas: Map[String, Seq[Map[String,String]]], aggregationMetadata: AggregationMetadata)
-
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
                startDate: String,

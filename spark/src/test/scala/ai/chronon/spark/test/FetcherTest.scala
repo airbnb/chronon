@@ -42,8 +42,11 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
 
-    val src =
-      Source.fromFile("./spark/src/test/scala/ai/chronon/spark/test/resources/joins/team/example_join.v1")
+    val joinPath = "joins/team/example_join.v1"
+    val confResource = getClass.getResource(s"/$joinPath")
+    val src = Source.fromFile(confResource.getPath)
+
+
     val expected = {
       try src.mkString
       finally src.close()
@@ -54,10 +57,9 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(
-      "./spark/src/test/scala/ai/chronon/spark/test/resources/joins/team/example_join.v1")
+    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
     Await.result(singleFilePut, Duration.Inf)
-    val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
+    val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
@@ -67,10 +69,10 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/chronon/spark/test/resources")
+    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
-      inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
+      inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
     val dirActual = new String(dirRes.values.get.head.bytes)
