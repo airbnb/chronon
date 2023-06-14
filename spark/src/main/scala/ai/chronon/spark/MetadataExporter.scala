@@ -19,6 +19,8 @@ object MetadataExporter {
   val mapper = new ObjectMapper()
   mapper.registerModule(DefaultScalaModule)
   val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val yesterday = tableUtils.partitionSpec.before(today)
 
   def getFilePaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
@@ -30,7 +32,7 @@ object MetadataExporter {
 
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
-    val analyzer = new Analyzer(tableUtils, path, null, null, silenceMode = true)
+    val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true)
     val enrichedData: Map[String, Any] = try {
       if (path.contains(GROUPBY_PATH_SUFFIX)) {
         val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)

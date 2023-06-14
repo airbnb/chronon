@@ -9,11 +9,36 @@ import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
 import java.io.File
+import scala.io.Source
 
 class MetadataExporterTest extends TestCase {
   val sessionName = "MetadataExporter"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   val tableUtils: TableUtils = TableUtils(spark)
+
+  def printFilesInDirectory(directoryPath: String): Unit = {
+    val directory = new File(directoryPath)
+
+    if (directory.exists && directory.isDirectory) {
+      println("Valid Directory")
+      val files = directory.listFiles
+
+      for (file <- files) {
+        println(file.getPath)
+        if (file.isFile) {
+          println(s"File: ${file.getName}")
+          val source = Source.fromFile(file)
+          val fileContents = source.getLines.mkString("\n")
+          source.close()
+          println(fileContents)
+          println("----------------------------------------")
+        }
+      }
+    } else {
+      println("Invalid directory path!")
+    }
+  }
+
   def testMetadataExport(): Unit = {
     // Create the tables.
     val namespace = "example_namespace"
@@ -33,6 +58,8 @@ class MetadataExporterTest extends TestCase {
     val confResource = getClass.getResource("/")
     val tmpDir: File = Files.createTempDir()
     MetadataExporter.run(confResource.getPath, tmpDir.getAbsolutePath)
+    printFilesInDirectory(s"${confResource.getPath}/joins/team")
+    printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
   }
 
 }

@@ -12,7 +12,11 @@
               "snapshotTable": "example_namespace.table",
               "query": {
                 "selects": {
-                  "a": "a"
+                  "a": "a",
+                  "b": "b",
+                  "c": "c",
+                  "d": "d",
+                  "e": "e"
                 },
                 "startPartition": "2021-06-01",
                 "setups": []
