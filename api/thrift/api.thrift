@@ -108,6 +108,7 @@ struct ExternalSource {
 union Source {
     1: EventSource events
     2: EntitySource entities
+    3: Join join
 }
 
 enum Operation {

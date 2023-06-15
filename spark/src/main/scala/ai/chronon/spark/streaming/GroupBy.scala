@@ -5,6 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
 import ai.chronon.api.Extensions._
+import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.spark.GenericRowHandler
 import com.google.gson.Gson
 import org.apache.spark.sql._
@@ -16,6 +17,7 @@ import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
 import scala.collection.Seq
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 
 class GroupBy(inputStream: DataFrame,
@@ -62,7 +64,6 @@ class GroupBy(inputStream: DataFrame,
 
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
-    val kvStore = onlineImpl.genKvStore
     val fetcher = onlineImpl.buildFetcher(local)
     val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
@@ -70,6 +71,12 @@ class GroupBy(inputStream: DataFrame,
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
+
+    // first fetch the join
+    if(streamingSource.isSetJoin) {
+
+    }
+
     val streamingQuery = buildStreamingQuery()
 
     val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
@@ -166,5 +173,26 @@ class GroupBy(inputStream: DataFrame,
       .outputMode("append")
       .trigger(Trigger.Continuous(2.minute))
       .foreach(dataWriter)
+  }
+}
+
+// designed to be used on online and streaming contexts
+class ChainedEnricher(fetcher: Fetcher, leafJoin: Join) {
+  implicit val ec: ExecutionContext = fetcher.executionContext
+  // In a streaming environment, we need to synchronously fetch for micro batches
+  // Recommendation is to have multiple micro-batches in flight to achieve maximum throughput
+
+  // this is an internal method to fetch for a given branch join until we reach the root
+  def multiFetchImpl(join: Join, requests: Seq[Request]): Future[Seq[Response]] = {
+    // we need to first find the root and fetch from there downwards - using recursion
+    if(join.left.isSetJoin) { // not a root join
+      val innerJoin = join.left.getJoin
+      val innerRequestFuture = fetcher.fetchJoin(requests).map{
+        responses: Seq[Response] => responses.map { response => 
+
+        }
+      }
+      multiFetch(join.left.getJoin, )
+    }
   }
 }
