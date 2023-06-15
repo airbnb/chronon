@@ -61,5 +61,4 @@ class MetadataExporterTest extends TestCase {
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
   }
-
 }
