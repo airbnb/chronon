@@ -49,7 +49,7 @@ class MetadataExporterTest extends TestCase {
       Column("b", api.StringType, 10),
       Column("c", api.LongType, 100),
       Column("d", api.LongType, 100),
-      Column("e", api.LongType, 100),
+      Column("e", api.LongType, 100)
     )
     val sampleTable = s"$namespace.$tablename"
     val sampleDf = DataFrameGen
