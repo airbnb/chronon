@@ -65,8 +65,8 @@ def file2thrift(path, thrift_class):
         with open(path, 'r') as file:
             return json2thrift(file.read(), thrift_class)
     except json.decoder.JSONDecodeError as e:
-        raise Exception(f"Production file already exists but does not have proper JSON format: {path}. Try delete it "
-                        f"and rerun compile.py") from e
+        raise Exception(f"Error decoding file into a {thrift_class.__name__}:  {path}. " +
+                        f"Please double check that {path} represents a valid {thrift_class.__name__}.") from e
 
 
 def thrift_json(obj):
