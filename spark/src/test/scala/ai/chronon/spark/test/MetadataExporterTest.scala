@@ -8,6 +8,9 @@ import com.google.common.io.Files
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import scala.io.Source
 import java.io.File
 import scala.io.Source
 
@@ -60,5 +63,11 @@ class MetadataExporterTest extends TestCase {
     MetadataExporter.run(confResource.getPath, tmpDir.getAbsolutePath)
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
+    // Check that the stats field is there.
+    val jsonString = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1").getLines().mkString("\n")
+    val objectMapper = new ObjectMapper()
+    objectMapper.registerModule(DefaultScalaModule)
+    val jsonNode = objectMapper.readTree(jsonString)
+    assert(jsonNode.has("stats"), "Failed to find 'stats' field in exported metadata")
   }
 }
