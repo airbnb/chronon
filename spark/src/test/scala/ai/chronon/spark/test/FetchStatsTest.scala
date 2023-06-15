@@ -117,7 +117,7 @@ class FetchStatsTest extends TestCase {
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, today, joinConf)
 
     // Appendix: Test Analyzer output.
-    val analyzer = new Analyzer(tableUtils,joinConf)
+    val analyzer = new Analyzer(tableUtils,joinConf, today, today)
     analyzer.analyzeJoin(joinConf)
   }
 
