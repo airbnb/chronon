@@ -61,8 +61,13 @@ def json2thrift(json_str, thrift_class):
 
 
 def file2thrift(path, thrift_class):
-    with open(path, 'r') as file:
-        return json2thrift(file.read(), thrift_class)
+    try:
+        with open(path, 'r') as file:
+            return json2thrift(file.read(), thrift_class)
+    except json.decoder.JSONDecodeError as e:
+        # print(f"encounter mal-formatted json file: {path}")
+        raise Exception(f"Production file already exists but does not have proper JSON format: {path}. Try delete it "
+                        f"and rerun compile.py") from e
 
 
 def thrift_json(obj):
