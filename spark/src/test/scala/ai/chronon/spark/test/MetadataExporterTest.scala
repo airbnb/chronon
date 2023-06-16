@@ -15,6 +15,7 @@ import java.io.File
 import scala.io.Source
 
 class MetadataExporterTest extends TestCase {
+
   val sessionName = "MetadataExporter"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   val tableUtils: TableUtils = TableUtils(spark)
