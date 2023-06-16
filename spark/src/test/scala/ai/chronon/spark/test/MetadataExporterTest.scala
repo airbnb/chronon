@@ -12,7 +12,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import scala.io.Source
 import java.io.File
-import scala.io.Source
 
 class MetadataExporterTest extends TestCase {
 
