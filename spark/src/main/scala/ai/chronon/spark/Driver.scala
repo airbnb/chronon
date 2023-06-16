@@ -48,10 +48,14 @@ object Driver {
     def subcommandName: String
 
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
-    val endDate: ScallopOption[String] =
+
+    private val endDateInternal: ScallopOption[String] =
       opt[String](required = false,
         descr = "End date to compute as of, start date is taken from conf.",
-        default = Some(buildTableUtils().partitionSpec.now))
+      )
+
+    def endDate() = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
+
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
@@ -172,7 +176,7 @@ object Driver {
       val tableUtils = args.buildTableUtils()
       val join = new Join(
         args.joinConf,
-        args.endDate(),
+        args.endDate,
         args.buildTableUtils(),
         !args.runFirstHole()
       )
@@ -368,7 +372,7 @@ object Driver {
         args.joinConf,
         args.stagingQueryConf,
         args.startDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis())),
-        args.endDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis()))
+        args.endDate()
       ).run()
     }
   }
