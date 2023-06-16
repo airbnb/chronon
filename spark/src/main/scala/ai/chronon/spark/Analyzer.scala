@@ -138,14 +138,18 @@ class Analyzer(tableUtils: TableUtils,
                                  window: String = null,
                                  inputColumn: String = null,
                                  groupByName: String = null) {
-    def asMap: Map[String, String] = Map(
-      "name" -> name,
-      "window" -> window,
-      "columnType" -> DataType.toString(columnType),
-      "inputColumn" -> inputColumn,
-      "operation" -> operation,
-      "groupBy" -> groupByName
-    )
+
+    def asMap: Map[String, String] = {
+      Map(
+        "name" -> name,
+        "window" -> window,
+        "columnType" -> DataType.toString(columnType),
+        "inputColumn" -> inputColumn,
+        "operation" -> operation,
+        "groupBy" -> groupByName
+      )
+    }
+
   }
 
   def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
@@ -156,7 +160,7 @@ class Analyzer(tableUtils: TableUtils,
                         aggPart.inputColumn.toLowerCase)
   }
 
-  def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
+  def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
   }
 
@@ -204,15 +208,15 @@ class Analyzer(tableUtils: TableUtils,
     }
   }
 
-  def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String,DataType]) = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false)
+      : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
     val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema: Map[String, DataType] = leftDf.schema.fields.map(
-      field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+    val leftSchema: Map[String, DataType] =
+      leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     joinConf.joinParts.toScala.parallel.foreach { part =>
@@ -223,11 +227,12 @@ class Analyzer(tableUtils: TableUtils,
                             aggMeta.operation,
                             aggMeta.window,
                             aggMeta.inputColumn,
-                            part.getGroupBy.getMetaData.getName)}
+                            part.getGroupBy.getMetaData.getName)
+      }
     }
 
-    val rightSchema: Map[String, DataType] = aggregationsMetadata.map(
-      aggregation => (aggregation.name, aggregation.columnType)).toMap
+    val rightSchema: Map[String, DataType] =
+      aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
     val statsSchema = StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray))
     if (silenceMode) {
       println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
