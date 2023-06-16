@@ -4,18 +4,14 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
+import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.TopicChecker
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -30,6 +26,7 @@ import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success, Try}
+import scala.util.ScalaJavaConversions.ListOps
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions
@@ -82,38 +79,13 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
-    val localTableExportPath: ScallopOption[String] =
-      opt[String](
-        required = false,
-        default = None,
-        descr =
-          """Path to a folder for exporting all the tables generated during the run. This is only effective when local
-            |input data is used: when either `local-table-mapping` or `local-data-path` is set. The name of the file
-            |will be of format [<prefix>].<namespace>.<table_name>.<format>. For example: "default.test_table.csv" or
-            |"local_prefix.some_namespace.another_table.parquet".
-            |""".stripMargin
-      )
-
-    val localTableExportFormat: ScallopOption[String] =
-      opt[String](
-        required = false,
-        default = Some("csv"),
-        validate = (format: String) => LocalTableExporter.SupportedExportFormat.contains(format.toLowerCase),
-        descr = "The table output format, supports csv(default), parquet, json."
-      )
-
-    val localTableExportPrefix: ScallopOption[String] =
-      opt[String](
-        required = false,
-        default = None,
-        descr = "The prefix to put in the exported file name."
-      )
-
     lazy val sparkSession: SparkSession = buildSparkSession()
 
     def endDate(): String = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
 
     def subcommandName(): String
+
+    def isLocal: Boolean = localTableMapping.nonEmpty || localDataPath.isDefined
 
     protected def buildSparkSession(): SparkSession = {
       if (localTableMapping.nonEmpty) {
@@ -141,6 +113,37 @@ object Driver {
     def buildTableUtils(): TableUtils = {
       TableUtils(sparkSession)
     }
+  }
+
+  trait LocalExportTableAbility {
+    this: ScallopConf with OfflineSubcommand =>
+
+    val localTableExportPath: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr =
+          """Path to a folder for exporting all the tables generated during the run. This is only effective when local
+            |input data is used: when either `local-table-mapping` or `local-data-path` is set. The name of the file
+            |will be of format [<prefix>].<namespace>.<table_name>.<format>. For example: "default.test_table.csv" or
+            |"local_prefix.some_namespace.another_table.parquet".
+            |""".stripMargin
+      )
+
+    val localTableExportFormat: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = Some("csv"),
+        validate = (format: String) => LocalTableExporter.SupportedExportFormat.contains(format.toLowerCase),
+        descr = "The table output format, supports csv(default), parquet, json."
+      )
+
+    val localTableExportPrefix: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr = "The prefix to put in the exported file name."
+      )
 
     protected def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter =
       new LocalTableExporter(tableUtils,
@@ -148,7 +151,9 @@ object Driver {
                              localTableExportFormat(),
                              localTableExportPrefix.toOption)
 
-    def exportTableToLocalIfNecessary(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
+    def shouldExport(): Boolean = isLocal && localTableExportPath.isDefined
+
+    def exportTableToLocal(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
       val isLocal = localTableMapping.nonEmpty || localDataPath.isDefined
       val shouldExport = localTableExportPath.isDefined
       if (!isLocal || !shouldExport) {
@@ -159,8 +164,40 @@ object Driver {
     }
   }
 
+  trait ResultValidationAbility {
+    this: ScallopConf with OfflineSubcommand =>
+
+    val expectedResultTable: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr =
+          """The name of the table containing expected result of a job.
+            |The table should have the exact schema of the output of the job""".stripMargin
+      )
+
+    def shouldPerformValidate(): Boolean = expectedResultTable.isDefined
+
+    def validateResult(df: DataFrame, keys: Seq[String], tableUtils: TableUtils): Boolean = {
+      val expectedDf = tableUtils.loadEntireTable(expectedResultTable())
+      val (_, _, metrics) = CompareBaseJob.compare(df, expectedDf, keys, tableUtils)
+      val result = CompareJob.getConsolidatedData(metrics, tableUtils.partitionSpec)
+
+      if (result.nonEmpty) {
+        println("[Validation] Failed. Please try exporting the result and investigate.")
+        false
+      } else {
+        println("[Validation] Success.")
+        true
+      }
+    }
+  }
+
   object JoinBackfill {
-    class Args extends Subcommand("join") with OfflineSubcommand {
+    class Args extends Subcommand("join")
+      with OfflineSubcommand
+      with LocalExportTableAbility
+      with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -181,13 +218,24 @@ object Driver {
         args.buildTableUtils(),
         !args.runFirstHole()
       )
-      join.computeJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputTable, tableUtils)
+      val df = join.computeJoin(args.stepDays.toOption)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.joinConf.metaData.outputTable, tableUtils)
+      }
+
+      if (args.shouldPerformValidate()) {
+        val keys = CompareJob.getJoinKeys(args.joinConf, tableUtils)
+        args.validateResult(df, keys, tableUtils)
+      }
     }
   }
 
   object GroupByBackfill {
-    class Args extends Subcommand("group-by-backfill") with OfflineSubcommand {
+    class Args extends Subcommand("group-by-backfill")
+      with OfflineSubcommand
+      with LocalExportTableAbility
+      with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -204,12 +252,22 @@ object Driver {
         tableUtils,
         args.stepDays.toOption
       )
-      args.exportTableToLocalIfNecessary(args.groupByConf.metaData.outputTable, tableUtils)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.groupByConf.metaData.outputTable, tableUtils)
+      }
+
+      if (args.shouldPerformValidate()) {
+        val df = tableUtils.loadEntireTable(args.groupByConf.metaData.outputTable)
+        args.validateResult(df, args.groupByConf.keys(tableUtils.partitionColumn).toSeq, tableUtils)
+      }
     }
   }
 
   object LabelJoin {
-    class Args extends Subcommand("label-join") with OfflineSubcommand {
+    class Args extends Subcommand("label-join")
+      with OfflineSubcommand
+      with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs label join in steps, step-days at a time. Default is 30 days",
@@ -226,7 +284,10 @@ object Driver {
         args.endDate()
       )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputLabelTable, tableUtils)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.joinConf.metaData.outputLabelTable, tableUtils)
+      }
     }
   }
 
@@ -284,7 +345,9 @@ object Driver {
   }
 
   object StagingQueryBackfill {
-    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
+    class Args extends Subcommand("staging-query-backfill")
+      with OfflineSubcommand
+      with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -301,7 +364,10 @@ object Driver {
         tableUtils
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.stagingQueryConf.metaData.outputTable, tableUtils)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
+      }
     }
   }
 

@@ -478,6 +478,25 @@ object Extensions {
             .filterNot(groupBy.keyColumns.contains)
             .toArray
         )
+
+    def keys(partitionColumn: String): Seq[String] = {
+      val baseKeys = if (groupBy.isSetKeyColumns) {
+        groupBy.keyColumns.toScala
+      } else {
+        List()
+      }
+
+      Option(baseKeys)
+        .map { keys => if (keys.contains(partitionColumn)) keys else partitionColumn :: keys }
+        .map { keys =>
+          if (groupBy.inferredAccuracy == Accuracy.TEMPORAL && !keys.contains(Constants.TimeColumn)) {
+            Constants.TimeColumn :: keys
+          } else {
+            keys
+          }
+        }
+        .get
+    }
   }
 
   implicit class StringOps(string: String) {
