@@ -146,6 +146,7 @@ object Extensions {
         .filter(df.col(col).isNotNull)
         .stat
         .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
+
       println(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount

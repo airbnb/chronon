@@ -6,6 +6,7 @@ import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, Thrif
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.{Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
+import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
 import org.apache.spark.sql.types.StructType
@@ -51,10 +52,14 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     val irSchema = SparkConversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
+    println(
+      s"""
+        |BatchIR Element Size: ${SparkEnv.get.serializer.newInstance().serialize(sawtoothOnlineAggregator.init).capacity()}
+        |""".stripMargin)
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
-      .aggregateByKey(sawtoothOnlineAggregator.init)(
+      .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
         seqOp = sawtoothOnlineAggregator.update,
         combOp = sawtoothOnlineAggregator.merge
       )
