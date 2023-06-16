@@ -9,6 +9,7 @@ import org.apache.commons.lang.exception.ExceptionUtils
 
 import java.nio.file.Files
 import java.nio.file.Paths
+import scala.collection.immutable.Map
 
 object MetadataExporter {
 
@@ -18,6 +19,8 @@ object MetadataExporter {
   val mapper = new ObjectMapper()
   mapper.registerModule(DefaultScalaModule)
   val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
+  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val yesterday = tableUtils.partitionSpec.before(today)
 
   def getFilePaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
@@ -29,35 +32,26 @@ object MetadataExporter {
 
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
-    val analyzer = new Analyzer(tableUtils, path, null, null, silenceMode = true)
-    val analyzerOutput: Seq[analyzer.AggregationMetadata] = try {
+    val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true)
+    val enrichedData: Map[String, Any] = try {
       if (path.contains(GROUPBY_PATH_SUFFIX)) {
         val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-        analyzer.analyzeGroupBy(groupBy)
+        configData + {"features" -> analyzer.analyzeGroupBy(groupBy).map(_.asMap)}
       } else {
         val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-        analyzer.analyzeJoin(join)._2.toSeq
+        val joinAnalysis = analyzer.analyzeJoin(join)
+        val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
+        val statsSchema: Map[String, String] = joinAnalysis._3.map(st => st._1 -> DataType.toString(st._2))
+        configData + {"features" -> featureMetadata} + {"stats" -> statsSchema}
       }
     } catch {
       case exception: Throwable =>
         println(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
-        Seq.empty
+        configData
     }
-
-    val featureMetadata: Seq[Map[String, String]] = analyzerOutput.map { featureCol =>
-      Map(
-        "name" -> featureCol.name,
-        "window" -> featureCol.window,
-        "columnType" -> DataType.toString(featureCol.columnType),
-        "inputColumn" -> featureCol.inputColumn,
-        "operation" -> featureCol.operation,
-        "groupBy" -> featureCol.groupByName
-      )
-    }
-    val enrichedData = configData + { "features" -> featureMetadata }
     mapper.writeValueAsString(enrichedData)
   }
-  
+
   def writeOutput(data: String, path: String, outputDirectory: String): Unit = {
     Files.createDirectories(Paths.get(outputDirectory))
     val file = new File(outputDirectory + "/" + path.split("/").last)

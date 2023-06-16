@@ -1,0 +1,73 @@
+{
+  "metaData": {
+    "name": "team.example_join.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false}",
+    "dependencies": [
+    ],
+    "tableProperties": {
+    },
+    "outputNamespace": "example_namespace",
+    "team": "relevance"
+  },
+  "left": {
+    "entities": {
+      "snapshotTable": "example_namespace.table",
+      "query": {
+        "startPartition": "2021-06-01",
+        "timeColumn": "CONCAT(ds, ' 23:59:59.999')",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "team.example_group_by.v1",
+          "production": 0,
+          "dependencies": [
+          ],
+          "team": "team"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "example_namespace.table",
+              "query": {
+                "selects": {
+                  "a": "a",
+                  "b": "b",
+                  "c": "c",
+                  "d": "d",
+                  "e": "e"
+                },
+                "startPartition": "2021-06-01",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "a",
+          "b"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "c",
+            "operation": 7
+          },
+          {
+            "inputColumn": "d",
+            "operation": 7
+          },
+          {
+            "inputColumn": "e",
+            "operation": 7
+          }
+        ]
+      }
+    }
+  ]
+}
