@@ -289,7 +289,7 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
-      val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
+      lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
 
@@ -315,13 +315,12 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
-      val joinConf: api.Join = parseConf[api.Join](confPath())
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"daily_stats_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
-      new SummaryJob(args.sparkSession, joinConf = joinConf, endDate = args.endDate())
+      new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
         .dailyRun(Some(args.stepDays()), args.sample())
     }
   }
@@ -358,14 +357,15 @@ object Driver {
       val startDate: ScallopOption[String] =
         opt[String](required = false, descr = "Partition start date to compare the data from")
 
-      assert(confPath().contains("/joins/"), "Conf should refer to the join path")
-      assert(queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](queryConf())
       override def subcommandName() = s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
+      assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
+      assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+
       val tableUtils = args.buildTableUtils()
       new CompareJob(
         tableUtils,
