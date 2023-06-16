@@ -50,9 +50,7 @@ object Driver {
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
 
     private val endDateInternal: ScallopOption[String] =
-      opt[String](required = false,
-        descr = "End date to compute as of, start date is taken from conf.",
-      )
+      opt[String](required = false, descr = "End date to compute as of, start date is taken from conf.")
 
     def endDate() = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
 
@@ -60,8 +58,7 @@ object Driver {
       name = "local-table-mapping",
       keyName = "namespace.table",
       valueName = "path_to_local_input_file",
-      descr =
-        """Use this option to specify a list of table <> local input file mappings for running local
+      descr = """Use this option to specify a list of table <> local input file mappings for running local
           |Chronon jobs. For example,
           |`--local-data-list ns_1.table_a=p1/p2/ta.csv ns_2.table_b=p3/tb.csv`
           |will load the two files into the specified tables `table_a` and `table_b` locally.
@@ -118,20 +115,20 @@ object Driver {
 
     protected def buildSparkSession(): SparkSession = {
       if (localTableMapping.nonEmpty) {
-        val localSession = SparkSessionBuilder.build(
-          subcommandName,
-          local = true,
-          localWarehouseLocation.toOption)
-        localTableMapping.foreach { case (table, filePath) =>
-          val file = new File(filePath)
-          LocalDataLoader.loadDataFileAsTable(file, localSession, table)
+        val localSession = SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation.toOption)
+        localTableMapping.foreach {
+          case (table, filePath) =>
+            val file = new File(filePath)
+            LocalDataLoader.loadDataFileAsTable(file, localSession, table)
         }
         localSession
       } else if (localDataPath.isDefined) {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
         val localSession =
-          SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
+          SparkSessionBuilder.build(subcommandName,
+                                    local = true,
+                                    localWarehouseLocation = localWarehouseLocation.toOption)
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
@@ -144,8 +141,10 @@ object Driver {
     }
 
     protected def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter =
-      new LocalTableExporter(
-        tableUtils, localTableExportPath(), localTableExportFormat(), localTableExportPrefix.toOption)
+      new LocalTableExporter(tableUtils,
+                             localTableExportPath(),
+                             localTableExportFormat(),
+                             localTableExportPrefix.toOption)
 
     def exportTableToLocalIfNecessary(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
       val isLocal = localTableMapping.nonEmpty || localDataPath.isDefined
@@ -320,9 +319,8 @@ object Driver {
 
     def run(args: Args): Unit = {
       val joinConf = parseConf[api.Join](args.confPath())
-      new SummaryJob(args.sparkSession,
-                     joinConf = joinConf,
-                     endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
+      new SummaryJob(args.sparkSession, joinConf = joinConf, endDate = args.endDate())
+        .dailyRun(Some(args.stepDays()), args.sample())
     }
   }
 
