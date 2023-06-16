@@ -149,7 +149,14 @@ class Fetcher(val kvStore: KVStore,
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val baseMap = internalMap ++ externalMap
-            val derivedMap: Map[String, AnyRef] = joinCodec.deriveFunc(internalResponse.request.keys, baseMap).mapValues(_.asInstanceOf[AnyRef]).toMap
+            val derivedMap: Map[String, AnyRef] = Try(joinCodec.deriveFunc(internalResponse.request.keys, baseMap)
+              .mapValues(_.asInstanceOf[AnyRef]).toMap) match {
+              case Success(derivedMap) => derivedMap
+              case Failure(exception) => {
+                ctx.incrementException(exception)
+                throw exception
+              }
+            }
             val requestEndTs = System.currentTimeMillis()
             ctx.histogram("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.histogram("overall.latency.millis", requestEndTs - ts)
