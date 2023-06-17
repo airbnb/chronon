@@ -373,7 +373,7 @@ object GroupBy {
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
-           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
+           bloomMapOpt: Option[Map[String, _]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")

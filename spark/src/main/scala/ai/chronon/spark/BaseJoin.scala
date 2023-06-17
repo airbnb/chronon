@@ -8,6 +8,7 @@ import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
 import com.google.gson.Gson
+import org.apache.parquet.column.values.bloomfilter.BloomFilter
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
@@ -168,27 +169,40 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
 
-    val leftBlooms = joinConf.leftKeyCols.toSeq.parallel.map { key =>
-      key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
-    }.toMap
-
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
-    val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-    println(s"""
-         |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metaData.name},
-         |  left type : ${joinConf.left.dataModel},
-         |  right type: ${joinPart.groupBy.dataModel},
-         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
-         |  part unfilled range: $unfilledRange,
-         |  left row count: $rowCount
-         |  bloom sizes: $bloomSizes
-         |  groupBy: ${joinPart.groupBy.toString}
+
+    val leftFilterMap = if (rowCount <= 5000) {
+      joinConf.leftKeyCols.toSeq.parallel.map { key =>
+        key -> leftDf.generateKeysSet(key)
+      }.toMap
+    } else {
+      joinConf.leftKeyCols.toSeq.parallel.map { key =>
+        key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
+      }.toMap
+    }
+
+    val rightBloomMap = joinPart.rightToLeft.mapValues(leftFilterMap(_)).toMap
+    println(
+      s"""left filter map
+         | ${leftFilterMap}
+         | right current
+         | ${rightBloomMap}
          |""".stripMargin)
 
+//    val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
+    println(s"""
+               |JoinPart Info:
+               |  part name : ${joinPart.groupBy.metaData.name},
+               |  left type : ${joinConf.left.dataModel},
+               |  right type: ${joinPart.groupBy.dataModel},
+               |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
+               |  part unfilled range: $unfilledRange,
+               |  left row count: $rowCount
+               |  groupBy: ${joinPart.groupBy.toString}
+               |""".stripMargin)
+
     def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+        GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)

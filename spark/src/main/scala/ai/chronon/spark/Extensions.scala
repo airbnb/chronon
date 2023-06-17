@@ -113,13 +113,33 @@ object Extensions {
       }
     }
 
-    private def mightContain(f: BloomFilter): UserDefinedFunction =
+    private def mightContain(f: BloomFilter): UserDefinedFunction = {
       udf((x: Object) => if (x != null) f.mightContain(x) else true)
+    }
 
-    def filterBloom(bloomMap: Map[String, BloomFilter]): DataFrame =
-      bloomMap.foldLeft(df) {
-        case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom)(dfIter(col)))
+    private def setContains(f: Set[Any]): UserDefinedFunction = {
+      udf((x: Object) => if (x != null) f.contains(x) else true)
+    }
+
+    def filterBloom[T](filterMap: Map[String, T]): DataFrame = {
+      filterMap.values.headOption match {
+        case Some(_: BloomFilter) =>
+          println("$$$ Using bloomFilter...")
+          filterMap.foldLeft(df) {
+            case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom.asInstanceOf[BloomFilter])(dfIter(col)))
+          }
+
+        case Some(_: Set[_]) =>
+          println("$$$ Using HashSet...")
+          filterMap.foldLeft(df) {
+            case (dfIter, (col, set)) => dfIter.where(setContains(set.asInstanceOf[Set[Any]])(dfIter(col)))
+          }
       }
+    }
+
+    def generateKeysSet(col: String): Set[Any] = {
+      df.filter(df.col(col).isNotNull).select(col).collect().toSet
+    }
 
     // math for computing bloom size
     // n = number of keys (hardcoded as 1000000000 = billion distinct keys)
