@@ -40,8 +40,12 @@ trait BaseTableUtils {
     dataFrame
   }
 
+  def tableExists(tableName: String): Boolean = {
+    sparkSession.catalog.tableExists(tableName)
+  }
+
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
-    if (!sparkSession.catalog.tableExists(tableName)) return Seq.empty[String]
+    if (!tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {
         throw new NotImplementedError("subPartitionsFilter is not supported on Iceberg tables yet.")
@@ -67,7 +71,7 @@ trait BaseTableUtils {
       }
   }
 
-  private def isIcebergTable(tableName: String): Boolean =
+  def isIcebergTable(tableName: String): Boolean =
     Try {
       sparkSession.read.format("iceberg").load(tableName)
     } match {
@@ -79,7 +83,7 @@ trait BaseTableUtils {
         false
     }
 
-  private def getIcebergPartitions(tableName: String): Seq[String] = {
+  def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
     if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
@@ -142,7 +146,7 @@ trait BaseTableUtils {
       df
     }
 
-    if (!sparkSession.catalog.tableExists(tableName)) {
+    if (!tableExists(tableName)) {
       val creationSql = createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat)
       try {
         sql(creationSql)
@@ -194,7 +198,7 @@ trait BaseTableUtils {
                           saveMode: SaveMode = SaveMode.Overwrite,
                           fileFormat: String = "PARQUET"): Unit = {
 
-    if (!sparkSession.catalog.tableExists(tableName)) {
+    if (!tableExists(tableName)) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
@@ -202,10 +206,10 @@ trait BaseTableUtils {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode)
+    repartitionAndWrite(df, tableName, saveMode, partition = false)
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true): Unit = {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
@@ -222,12 +226,12 @@ trait BaseTableUtils {
       val partitionedDf = saltedDf
         .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
-      writeDf(partitionedDf, tableName, saveMode) // side-effecting- this actually writes the table
+      writeDf(partitionedDf, tableName, saveMode, partition) // side-effecting- this actually writes the table
       println(s"Finished writing to $tableName")
     }
   }
 
-  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true): Unit = {
     df.write
       .mode(saveMode)
       .insertInto(tableName)
@@ -265,7 +269,7 @@ trait BaseTableUtils {
     Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
   }
 
-  private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
+  def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
     // Only SQL api exists for setting TBLPROPERTIES
     val propertiesString = properties
       .map {
@@ -414,7 +418,7 @@ trait BaseTableUtils {
   }
 
   def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
+    if (tableExists(tableName)) {
       val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
       val finalArchiveTableName = s"${tableName}_${humanReadableTimestamp}"
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
@@ -463,7 +467,7 @@ trait BaseTableUtils {
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
                      labelPartition: Option[String] = None): Unit = {
-    if (partitions.nonEmpty && sparkSession.catalog.tableExists(tableName)) {
+    if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = if (labelPartition.isEmpty) {
         partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
       } else {
@@ -478,7 +482,7 @@ trait BaseTableUtils {
   }
 
   def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {
-    if (sparkSession.catalog.tableExists(tableName)) {
+    if (tableExists(tableName)) {
       val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
       val partitionSpecs =
         toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
@@ -499,7 +503,7 @@ trait BaseTableUtils {
    * take an extra step to sync Table-level schema into Partition-level schema in order to read updated data
    * in Hive. To read from Spark, this is not required since it always uses the Table-level schema.
    */
-  private def expandTable(tableName: String, newSchema: StructType): Unit = {
+  def expandTable(tableName: String, newSchema: StructType): Unit = {
 
     val existingSchema = getSchemaFromTable(tableName)
     val existingFieldsMap = existingSchema.fields.map(field => (field.name, field)).toMap

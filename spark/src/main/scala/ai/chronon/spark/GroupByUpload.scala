@@ -134,7 +134,7 @@ object GroupByUpload {
     kvDf
       .union(metaDf)
       .withColumn("ds", lit(endDs))
-      .saveUnPartitioned(groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
+      .saveUnPartitioned(tableUtils, groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
 
     val metricRow =
       kvDf.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()

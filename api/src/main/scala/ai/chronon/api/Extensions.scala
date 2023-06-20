@@ -71,16 +71,29 @@ object Extensions {
     }
   }
 
+  // Custom output locations can be set by specifying an output_tables map in the custom json.
+  // The "output" key maps to the output for the job and for joins keys with the groupby names specify
+  // outputs for the intermediate groupby outputs.
+  def getOutputTableMap(metaData: MetaData): Option[util.HashMap[String, String]] = {
+    val outputTableMap = Option(metaData.customJsonLookUp("output_tables"))
+    outputTableMap.map(_.asInstanceOf[util.HashMap[String, String]])
+  }
+
   implicit class MetadataOps(metaData: MetaData) {
     def cleanName: String = metaData.name.sanitize
 
-    def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+    def outputTable = getOutputTableMap(metaData)
+      .map(_.get("output"))
+      .getOrElse(s"${metaData.outputNamespace}.${metaData.cleanName}")
+
     def loggedTable = s"${outputTable}_logged"
     private def comparisonPrefix = "comparison"
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
     def consistencyTable = s"${outputTable}_consistency"
-    def uploadTable = s"${outputTable}_upload"
+    def uploadTable = getOutputTableMap(metaData)
+      .map(_.get("output"))
+      .getOrElse(s"${outputTable}_upload")
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -535,8 +548,11 @@ object Extensions {
         .toArray
     }
 
-    def partOutputTable(jp: JoinPart): String =
-      (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
+    def partOutputTable(jp: JoinPart): String = {
+      getOutputTableMap(join.metaData)
+        .map(_.get(jp.groupBy.metaData.name))
+        .getOrElse((Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_"))
+    }
 
     private val leftSourceKey: String = "left_source"
 

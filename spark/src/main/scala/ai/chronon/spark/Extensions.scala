@@ -89,8 +89,8 @@ object Extensions {
         autoExpand = autoExpand)
     }
 
-    def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
-      TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
+    def saveUnPartitioned(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null): Unit = {
+      tableUtils.insertUnPartitioned(df, tableName, tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
