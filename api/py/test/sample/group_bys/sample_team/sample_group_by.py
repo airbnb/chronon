@@ -20,3 +20,15 @@ v1 = GroupBy(
     },
     output_namespace="sample_namespace",
 )
+
+require_backfill = GroupBy(
+    sources=test_sources.staging_entities,
+    keys=["s2CellId", "place_id"],
+    aggregations=[
+        Aggregation(input_column="impressed_unique_count_1d", operation=Operation.SUM),
+        Aggregation(input_column="viewed_unique_count_1d", operation=Operation.SUM),
+    ],
+    production=False,
+    output_namespace="sample_namespace",
+    backfill_start_date="2023-01-01"
+)
