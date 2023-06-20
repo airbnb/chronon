@@ -189,6 +189,79 @@ class GroupByTest {
       }
     }
   }
+
+  @Test
+  def temporalEventsTwoStackLastKTest(): Unit = {
+    val eventSchema = List(
+      Column("user", StringType, 10),
+      Column("listing_view", StringType, 100)
+    )
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
+    eventDf.createOrReplaceTempView("events_last_k")
+
+    val querySchema = List(Column("user", StringType, 10))
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
+    queryDf.createOrReplaceTempView("queries_last_k")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
+      Builders.Aggregation(Operation.COUNT, "listing_view", Seq(WindowUtils.Unbounded))
+    )
+    val keys = Seq("user").toArray
+    val groupBy =
+      new GroupBy(aggregations,
+        keys,
+        eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
+    val resultDf = groupBy.twoStackHopTemporalEvents(queryDf)
+    val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
+    computed.show()
+
+    val expected = eventDf.sqlContext.sql(
+      s"""
+         |SELECT
+         |      events_last_k.user as user,
+         |      queries_last_k.ts as ts,
+         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30,
+         |      SUM(case when events_last_k.listing_view <=> NULL then 0 else 1 end) as listing_view_count
+         |FROM events_last_k CROSS JOIN queries_last_k
+         |ON events_last_k.user = queries_last_k.user
+         |WHERE events_last_k.ts < queries_last_k.ts
+         |GROUP BY events_last_k.user, queries_last_k.ts
+         |""".stripMargin)
+
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ts"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${computed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows last_k_test")
+      diff.show()
+      diff.rdd.foreach { row =>
+        val gson = new Gson()
+        val computed =
+          Option(row(4)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
+        val expected =
+          Option(row(5))
+            .map(_.asInstanceOf[mutable.WrappedArray[String]].toArray.sorted.reverse.take(30))
+            .getOrElse(Array.empty[String])
+        val computedCount = Option(row(2)).map(_.asInstanceOf[Long]).getOrElse(0)
+        val expectedCount = Option(row(3)).map(_.asInstanceOf[Long]).getOrElse(0)
+        val computedStr = gson.toJson(computed)
+        val expectedStr = gson.toJson(expected)
+        if (computedStr != expectedStr) {
+          println(
+            s"""
+               |computed [$computedCount]: ${gson.toJson(computed)}
+               |expected [$expectedCount]: ${gson.toJson(expected)}
+               |""".stripMargin)
+        }
+        assertEquals(gson.toJson(computed), gson.toJson(expected))
+      }
+    }
+  }
+
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
@@ -211,6 +284,7 @@ class GroupByTest {
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
     val resultDf = groupBy.temporalEvents(queryDf)
+    val anotherResultDf = groupBy.twoStackHopTemporalEvents(queryDf)
 
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
@@ -251,6 +325,13 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+
+    val diff1 = Comparison.sideBySide(naiveDf, anotherResultDf, List("user", Constants.TimeColumn))
+    if (diff1.count() > 0) {
+      diff1.show()
+      println("diff1 result rows")
+    }
+    assertEquals(0, diff1.count())
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
