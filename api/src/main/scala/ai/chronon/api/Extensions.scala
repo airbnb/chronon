@@ -480,22 +480,15 @@ object Extensions {
         )
 
     def keys(partitionColumn: String): Seq[String] = {
-      val baseKeys = if (groupBy.isSetKeyColumns) {
-        groupBy.keyColumns.toScala
-      } else {
-        List()
-      }
+      val baseKeys = if (groupBy.isSetKeyColumns) groupBy.keyColumns.toScala else List()
+      val partitionKey = if (baseKeys.contains(partitionColumn)) None else Some(partitionColumn)
+      val timeKey =
+        if (groupBy.inferredAccuracy == Accuracy.TEMPORAL && !baseKeys.contains(Constants.TimeColumn))
+          Some(Constants.TimeColumn)
+        else
+          None
 
-      Option(baseKeys)
-        .map { keys => if (keys.contains(partitionColumn)) keys else partitionColumn :: keys }
-        .map { keys =>
-          if (groupBy.inferredAccuracy == Accuracy.TEMPORAL && !keys.contains(Constants.TimeColumn)) {
-            Constants.TimeColumn :: keys
-          } else {
-            keys
-          }
-        }
-        .get
+      baseKeys ++ partitionKey ++ timeKey
     }
   }
 
@@ -835,19 +828,19 @@ object Extensions {
       Option(join.skewKeys).flatMap { jmap =>
         val result = ScalaVersionSpecificCollectionsConverter
           .convertJavaMapToScala(jmap)
-          .flatMap { case (leftKey, values) =>
-            Option(joinPart.keyMapping)
-              .map(_.toScala.getOrElse(leftKey, leftKey))
-              .orElse(Some(leftKey))
-              .filter(joinPart.groupBy.keyColumns.contains(_))
-              .map(generateSkewFilterSql(_, values.toScala))
+          .flatMap {
+            case (leftKey, values) =>
+              Option(joinPart.keyMapping)
+                .map(_.toScala.getOrElse(leftKey, leftKey))
+                .orElse(Some(leftKey))
+                .filter(joinPart.groupBy.keyColumns.contains(_))
+                .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
 
         if (result.nonEmpty) {
-          println(
-            s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+          println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
           Some(result)
         } else None
       }
