@@ -18,6 +18,7 @@ ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
 SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-compute',
                'compare', 'analyze', 'stats-summary',
                'log-flattener', 'metadata-export', 'label-join']
+MODES_USING_EMBEDDED = ['metadata-upload', 'fetch', 'local-streaming']
 
 # Constants for supporting multiple spark versions.
 SUPPORTED_SPARK = ['2.4.0', '3.1.1', '3.2.1']
@@ -402,7 +403,7 @@ if __name__ == "__main__":
     set_runtime_env(pre_parse_args)
     set_defaults(parser)
     args, unknown_args = parser.parse_known_args()
-    jar_type = 'embedded' if args.mode in ['local-streaming', 'fetch'] else 'uber'
+    jar_type = 'embedded' if args.mode in MODES_USING_EMBEDDED else 'uber'
     extra_args = (' ' + args.online_args) if args.mode in ONLINE_MODES else ''
     args.args = ' '.join(unknown_args) + extra_args
     jar_path = args.chronon_jar if args.chronon_jar else download_jar(
