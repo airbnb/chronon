@@ -181,7 +181,7 @@ trait BaseTableUtils {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, partition = true, tableProperties)
   }
 
   def sql(query: String): DataFrame = {
@@ -206,10 +206,11 @@ trait BaseTableUtils {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode, partition = false)
+    repartitionAndWrite(df, tableName, saveMode, partition = false, tableProperties)
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true): Unit = {
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true,
+                                  tableProperties: Map[String, String] = null): Unit = {
     val rowCount = df.count()
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
@@ -226,12 +227,12 @@ trait BaseTableUtils {
       val partitionedDf = saltedDf
         .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
-      writeDf(partitionedDf, tableName, saveMode, partition) // side-effecting- this actually writes the table
+      writeDf(partitionedDf, tableName, saveMode, partition, tableProperties) // side-effecting- this actually writes the table
       println(s"Finished writing to $tableName")
     }
   }
 
-  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true): Unit = {
+  def writeDf(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true, tableProperties: Map[String, String] = null): Unit = {
     df.write
       .mode(saveMode)
       .insertInto(tableName)
