@@ -334,7 +334,7 @@ lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
-    crossScalaVersions := Seq(scala211, scala212, scala213),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
   )
 
@@ -342,7 +342,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
-    crossScalaVersions := Seq(scala211, scala212),
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
