@@ -1,0 +1,670 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helper functions for extracting information from the Henson and Centralized Service Configuration context.
+
+The context is the single `ctx` argument passed to the `main` function when
+deploying a Henson service with Skycfg. It contains a dictionary of data that can be
+useful when defining a workload. These functions provide a consistent interface for
+accessing that data.
+"""
+HORIZON_MANIFEST_V1_PROTO_PKG = proto.package("com.stripe.horizon.manifest.v_1")
+CSC_PB = proto.package("com.stripe.gocode.service_config")
+COMPUTE_YAML_MISSING_ERROR = """
+########################################################################
+# The service_configs/<service_name>/compute.yaml file is missing.
+# Make sure the file is present before calling one of the following functions from your henson/kube/my-service-name.sky file:
+# * get_entrypoint_command
+# * get_puma_port
+# * get_puma_num_workers
+# * get_puma_tags
+# * get_puma_worker_shutdown_timeout_seconds
+# * get_num_replicas
+# * get_instance_type
+########################################################################
+"""
+
+def get_name(ctx):
+    """
+    Get the name of the Henson service being deployed.
+
+    Fails if the service name is too long to safely use as a Kubernetes resource name.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The service name
+    """
+    name = get_henson_config(ctx).service_name
+
+    # Kubernetes has a hard limit of 63 chars on object names. We sometimes append values to names,
+    # and also put names in labels for things like obtaining certs. Therefore we impose a hard limit
+    # of 48 chars, which should be reasonable.
+    # See https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+    if len(name) > 48:
+        fail("Object identifiers should be maximum 48 chars, but found '{}' with length {}".format(name, len(name)))
+    return name
+
+def has_availability_tier(ctx):
+    """
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        a boolean indicating if the service's availability_tier is defined in the henson config.
+    """
+    return get_availability_tier(ctx) != ''
+
+def get_availability_tier(ctx):
+    """
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A string representing the availability tier of the service (ex. "A400"). May return an empty
+        string if the availability tier is undefined in henson.
+    """
+    availability_tier_name_from_csc = ctx.vars.get("service.config.availability_tier")
+    if availability_tier_name_from_csc != None and availability_tier_name_from_csc != '':
+        return availability_tier_name_from_csc
+
+    henson_config = get_henson_config(ctx)
+    if hasattr(henson_config, "availability_tier"):
+        return henson_config.availability_tier
+    else:
+        return ""
+
+def get_inbound_rate_limits(ctx):
+    """
+    Gets the inbound rate limits specified in Service Config.
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        A list of inbound rate limit configurations (as a List<RateLimiting.InboundConfig>)
+    """
+    rate_limits = ctx.vars.get("service.config.rate_limiters", None)
+    if not rate_limits or not rate_limits.inbound_configs:
+        return []
+    return rate_limits.inbound_configs
+
+def get_owner(ctx):
+    """
+    Get the owner of the service being deployed.
+
+    This comes from the `contact.responsible_team` key in the Henson service YAML.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The service owner.
+    """
+    contact_info_from_csc = ctx.vars.get("service.config.contact")
+    if contact_info_from_csc != None:
+        return contact_info_from_csc.responsible_team
+
+    return get_henson_config(ctx).contact.responsible_team
+
+def get_cluster(ctx):
+    """
+    Get the name of the Stripe cluster being deployed to.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The name of the Stripe cluster. For example: "northwest".
+    """
+    return ctx.vars["stripe.cluster"]
+
+def get_deploy_time(ctx):
+    """
+    Get the time the current deploy started.
+    WARNING: Adding this value to your skycfg makes the build/deploy not reproducible. It'll also cause
+    kubernetes to redeploy your code every time henson runs even if there are no code changes.
+
+    NOTE: this requires setting provide_deploy_time_in_ctx in your henson configs
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A string containing a timestamp of the time the current deploy started.
+    """
+    return ctx.vars.get("henson.deploy_time", "")
+
+def get_henson_config(ctx):
+    return ctx.vars["henson.service"]
+
+def get_henson_git_commit(ctx):
+    """
+    Get the revision of the Git commit being deployed.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The SHA1 hash of the Git commit.
+    """
+    return ctx.vars["henson.git_commit"]
+
+def get_env(ctx):
+    """
+    Get the environment being deployed to.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        "qa", "preprod", or "prod"
+    """
+    return ctx.vars["stripe.environment"]
+
+def get_henson_repo(ctx):
+    """
+    Get the repository for the service being deployed.
+
+    This maps to the `repo` key in the Henson service YAML.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The repository name.
+    """
+    service_repo_from_csc = get_repo(ctx)
+    if service_repo_from_csc != None and service_repo_from_csc != "":
+        return service_repo_from_csc
+
+    return get_henson_config(ctx).repo
+
+def get_container_images(ctx):
+    """
+    Gets the service's mapping of container image build artifacts to ECR repository URLs.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A dictionary where the keys are build artifact names for container images and the values
+        are cluster/environment-specific ECR URLs for that build artifact's image.
+    """
+    return ctx.vars.get("henson.container_images", {})
+
+def get_sidecar_container_images(ctx):
+    """
+    Gets the service's mapping of sidecar service names to container image URLs.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A dictionary where the keys are names of sidecar services and the values
+        are the URLs that should be used for the container image for that service.
+    """
+    return ctx.vars.get("henson.sidecar_container_images", {})
+
+def get_blue_green_color(ctx):
+    """
+    Gets the service's "colour", for blue/green deploys.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The colour as a string, or None if there is no colour provided
+    """
+    return ctx.vars.get("henson.blue_green_color")
+
+def get_aws_region(ctx):
+    """
+    Gets the AWS region that the service is being deployed to, e.g. us-west-2
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        An AWS region, e.g. us-west-2
+    """
+    return ctx.vars["aws.region"]
+
+def get_rolling_speed_override(ctx):
+    """
+    Gets the rolling speed override for this deployment
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The rolling speed override, an int between 0 and 100 (inclusive)
+    """
+    return ctx.vars.get("henson.rolling_speed_override", 0)
+
+def get_service_consul_services(ctx):
+    """
+    Gets the consul services associated to the service for this deployment
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The consul services as a list
+    """
+    return ctx.vars.get("henson.service_consul_services", [])
+
+def get_function_name(ctx):
+    """
+    Gets the skycfg function name used to generate the protos for this deployment.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        The name of the skycfg function passed into the ctx
+    """
+    return ctx.vars.get("skycfg.function_name", None)
+
+def get_target_shard(ctx):
+    """
+    Gets the target shard to which the evaluated resource should be deployed
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The name of the shard
+    """
+    return ctx.vars.get("stripe.shard", "kubemaster")
+
+def get_repo(ctx):
+    """
+    Gets the name of the repo where the service is defined
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The name of the repo where the service is defined (e.g. stripe-internal/zoolander)
+    """
+    return ctx.vars.get("service.config.repo")
+
+def get_identity(ctx):
+    """
+    Gets the identity name of the service, used for MSP namespacing
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The identity name of the service
+    """
+    identity = ctx.vars.get("service.config.identity")
+    if not identity or identity == "":
+      fail("Identity not set, please check your service_config file")
+    return identity
+
+def get_other_identity(ctx, index):
+    """
+    Retrieve an identity value from ServiceConfig.other_identities, used for MSP namespacing and host_type
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        index: The 0-based integer index of the other_identities value to retrieve
+    Returns:
+        The specified "other identity" for the service
+    """
+    other_identities = ctx.vars.get("service.config.other_identities")
+
+    if not other_identities:
+      fail("ServiceConfig.other_identities is not set; please check the service_config/services.yaml file for this service")
+
+    other_identities_size = len(other_identities)
+    if other_identities_size == 0:
+      fail("ServiceConfig.other_identities is empty; please check the service_config/services.yaml file for this service")
+    if index >= other_identities_size:
+      fail("ServiceConfig.other_identities has %d elements, but 0-based index %d was requested; please check the service_config/services.yaml file for this service" % (other_identities_size, index))
+    return other_identities[index]
+
+# TODO (https://jira.corp.stripe.com/browse/SERVICEINFRA-861)
+# remove once per env service configs are fully supported
+def is_legacy_compute_config(ctx):
+    """
+    Checks if working with the legacy compute config (without cluster/role overrides).
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        A boolean indicating if the service uses the legacy compute config.
+    """
+    compute_config = ctx.vars.get("service.config.compute")
+
+    if not compute_config:
+        fail(COMPUTE_YAML_MISSING_ERROR)
+
+    return compute_config.qa_config or compute_config.preprod_config or compute_config.prod_config
+
+# TODO (https://jira.corp.stripe.com/browse/SERVICEINFRA-861)
+# remove once per env service configs are fully supported
+def get_legacy_compute_config(ctx):
+    """
+    Gets the legacy compute config of the service
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The compute config of the service
+    """
+    environment = get_env(ctx)
+    compute_config = ctx.vars.get("service.config.compute")
+    env_override_config = None
+
+    if not compute_config:
+        fail(COMPUTE_YAML_MISSING_ERROR)
+
+    if environment == "qa":
+        env_override_config = compute_config.qa_config
+    elif environment == "preprod":
+        env_override_config = compute_config.preprod_config
+    else:
+        env_override_config = compute_config.prod_config
+
+    # Merge env overrides into the base config to have easier access to all of the fields.
+    # Otherwise, for instance, `entrypoint_command` and `instance_type` have to be
+    # retrieved from differently (`entrypoint_command` is a top-level key,
+    # while `instance_type` is defined under the `%env%_config` namespace).
+    compute_config = merge_compute(compute_config, env_override_config)
+
+    return compute_config
+
+def get_compute_config(ctx, role=None, priority_tier=None):
+    """
+    Gets the compute config with overrides applied according to the service role and/or cluster
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+        priority_tier: [optional] if using host isolation, priority tier can be used as a selector for overrides
+    Returns:
+        The compute config of the service
+    """
+    # TODO (https://jira.corp.stripe.com/browse/SERVICEINFRA-861)
+    # remove once per env service configs are fully supported
+    if is_legacy_compute_config(ctx):
+        return get_legacy_compute_config(ctx)
+
+    compute_config = ctx.vars.get("service.config.compute")
+
+    if not compute_config:
+        fail(COMPUTE_YAML_MISSING_ERROR)
+
+    cluster = get_cluster(ctx)
+    # TODO: persist role in kube vars, implement get_role(ctx)
+    # role = get_role(ctx)
+    overrides = compute_config.overrides
+    priority_tier = _normalize_priority_tier(priority_tier)
+
+    def is_match(override, cluster, role, priority_tier):
+        if override.filter.cluster and override.filter.cluster != cluster:
+            return False
+
+        if override.filter.role and override.filter.role != role:
+            return False
+
+        if override.filter.priority_tier and _normalize_priority_tier(override.filter.priority_tier) != priority_tier:
+            return False
+
+        return True
+
+    overrides = [override for override in overrides if is_match(override, cluster, role, priority_tier)]
+
+    for override in overrides:
+        compute_config = merge_compute(compute_config, override.config)
+
+    return compute_config
+
+def _normalize_priority_tier(priority_tier):
+    if priority_tier == None:
+        return None
+
+    # normalizes the priority tier by putting everything into lower case and replace _ with -
+    return priority_tier.lower().replace('_', '-')
+
+def merge_compute(a, b):
+    """
+    Merges Compute proto messages into a single object, effectively replacing all the fields in
+    the proto mesasge 'a' with the matching ones in the proto message 'b'
+    """
+    a_config = proto.decode_json(CSC_PB.Compute, proto.encode_json(a))
+    b_config = proto.decode_json(CSC_PB.Compute, proto.encode_json(b))
+
+    return proto.merge(a_config, b_config)
+
+def get_entrypoint_command(ctx, role=None):
+    """
+    Gets the path to the entrypoint that boots the service
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+    Returns:
+        The entry point command of the service. Return type is a list of strings.
+    """
+    entrypoint_command = get_compute_config(ctx, role).entrypoint_command
+
+    # empty sequences are treated as False in Starlark (https://github.com/bazelbuild/starlark/blob/master/spec.md#booleans)
+    if not entrypoint_command:
+      fail("Entrypoint not set, please check your service_config file")
+
+    return entrypoint_command.split(" ")
+
+def get_puma_port(ctx, role=None):
+    """
+    Gets the port on which Puma will listen to connections
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+    Returns:
+        The port on which Puma will listen to connections
+    """
+    return get_compute_config(ctx, role).puma_cluster_config.port
+
+def get_puma_num_workers(ctx, role=None):
+    """
+    Gets the number of Puma workers that the service should boot
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+    Returns:
+        The number of workers in the Puma cluster
+    """
+    return get_compute_config(ctx, role).puma_cluster_config.num_workers
+
+def get_puma_tags(ctx, role=None):
+    """
+    Gets the tags to initialize Puma processes
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+    Returns:
+        The tags to initialize your Puma processes with
+    """
+    return get_compute_config(ctx, role).puma_cluster_config.tags
+
+def get_puma_worker_shutdown_timeout_seconds(ctx, role=None):
+    """
+    Gets the timeout for gracefully shutting down Puma workers
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+    Returns:
+        The graceful worker shutdown timeout in seconds
+    """
+    return get_compute_config(ctx, role).puma_cluster_config.worker_shutdown_timeout_seconds
+
+def get_num_replicas(ctx, role=None, priority_tier=None):
+    """
+    Gets the number of replicas requested for the environment present in ctx
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+        priority_tier: [optional] if using host isolation, priority tier can be used as a selector for overrides
+    Returns:
+        The number of replicas requested
+    """
+    return get_compute_config(ctx, role, priority_tier).num_replicas
+
+def get_instance_type(ctx, role=None, priority_tier=None):
+    """
+    Gets the instance type requested for the environment present in ctx
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+        role: [optional] The role assigned to the service (e.g. RpcServer, LoadTester).
+        priority_tier: [optional] if using host isolation, priority tier can be used as a selector for overrides
+    Returns:
+        The instance type requested in the given environment
+    """
+    # TODO(moe): convert this string to a struct defined in aws_instance_sizes.sky
+    return get_compute_config(ctx, role, priority_tier).instance_type
+
+def get_fail_on_warnings(ctx):
+    """
+    Returns whether all warnings should result in a failure during Skycfg rendering,
+    rather than print a warning to the console.
+
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        The value of the context variable or None if not specified
+    """
+
+    return ctx.vars.get("henson.fail_on_warnings", None)
+
+def get_render_yaml(ctx):
+    return ctx.vars.get("skycfg.render_yaml", False)
+
+def get_suppress_warnings(ctx):
+    """
+    Returns whether all warnings should be suppressed from the output.
+
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        The value of the context variable or None if not specified
+    """
+    return ctx.vars.get("henson.suppress_warnings", None)
+
+def is_bin_packing_enabled(ctx):
+    """
+    Gets whether binpacking is set to true or not
+
+        Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        Bin packing enabled or not
+    """
+    return ctx.vars.get("msp.binpacking", False)
+
+def is_horizontal_pod_autoscaling_enabled(ctx):
+    """
+    Gets whether hpa is set to true or not
+        Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        Bin packing enabled or not
+    """
+    return ctx.vars.get("msp.horizontal_pod_autoscaling", False) or ctx.vars.get("msp.horizonal_pod_autoscaling", False)
+
+def get_sc_bundle_manifest(ctx):
+    """
+    Load up data from ${REPO}/service_configs/<service-name>/bundle_manifest.yaml.
+
+    The key for the vars is defined by `const bundleManifestConfigKey` in
+    henson_src/shared/config_loader/config_loader.go.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A skycfg.NewProtoMessage(serviceConfig.BundleManifest)
+    """
+    return ctx.vars.get("service.config.bundle_manifest")
+
+def get_sc_bundle_manifest_dict(ctx):
+    """
+    Load up data from ${REPO}/service_configs/<service-name>/bundle_manifest.yaml
+
+    The bundle manifest is loaded into a dict that acts like the old CONSTANTS dict.
+    It also has its "bundle" value lower-cased, the same as the old CONSTANTS.
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+
+    Returns:
+        A dict() that is similar to the old CONSTANTS dict used before the adoption
+        of service config.
+    """
+    bundle_manifest = get_sc_bundle_manifest(ctx)
+
+    result = dict()
+
+    if bundle_manifest == None:
+        return result
+
+    # Round-trip through JSON to get available field names
+    for i in json.decode(proto.encode_json(bundle_manifest)).keys():
+        # Use starlark's #getattr(obj, field_name) to dynamically fetch field values
+        result[i] = getattr(bundle_manifest, i)
+        if i == "bundle":
+            result[i] = result[i].lower()
+
+    return result
+
+
+def get_sc_bm_bundle(ctx):
+    """
+    Return the "bundle" from the bundle manifest within the service config
+    data.
+    """
+    return get_sc_bundle_manifest(ctx).bundle.lower()
+
+def get_sc_bm_secrets(ctx):
+    bundle_manifest = get_sc_bundle_manifest(ctx)
+
+    if bundle_manifest == None:
+      return []
+
+    return bundle_manifest.secrets
+
+def get_sc_bm_workload_identity(ctx):
+    default = HORIZON_MANIFEST_V1_PROTO_PKG.MigrationsPb.WorkloadIdentityOptions.DISABLED
+
+    bm = get_sc_bundle_manifest(ctx)
+
+    if bm == None or bm.migrations == None or bm.migrations.workload_identity == None:
+        return default
+
+    return bm.migrations.workload_identity
+
+def use_sc_bm_workload_identity(ctx):
+    """
+    Return true if migrations.workload_identity == ENABLED
+    """
+    return get_sc_bm_workload_identity(ctx) == HORIZON_MANIFEST_V1_PROTO_PKG.MigrationsPb.WorkloadIdentityOptions.ENABLED
+
+def get_sc_bm_has_load_balancer(ctx):
+    bundle_manifest = get_sc_bundle_manifest(ctx)
+    return bundle_manifest != None and bundle_manifest.load_balancer != None
+
+def is_msp_consul_deprecation_enabled(ctx):
+    """
+    Gets whether MSP Consul Deprecation mechanism is enabled or not. This variable is injected by
+    Henson after checking the `gocode.msp.consul_deprecation_rollout` feature flag.
+        Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        MSP Consul Deprecation mechanism enabled
+    """
+    return ctx.vars.get("msp.consul_deprecating", False)

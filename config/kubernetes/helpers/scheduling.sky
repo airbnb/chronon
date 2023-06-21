@@ -1,0 +1,32 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+
+MSP_FLEET_MANAGER_SCHEDULING_DELAY_KEY = "mspfleetmanager.stripe.io/scheduling-delay"
+
+def msp_fleet_manager_scheduling_delay(delay):
+    """
+        Adds an annotation to the Pod that controls how long msp-fleet-manager
+        will wait before creating a new node for it.
+
+        This allows you to give kube-scheduler a chance to schedule the Pod in
+        a pre-existing node rather than bootstrap a new one.
+
+        Note: Unless you've been explicitly told by the Orchestration team that
+        you can use this plugin, you're likely to see longer scheduling/deploy
+        times if you use this plugin.
+
+        Args:
+            delay: The duration (e.g. 5m, 40s) to delay your pod being scheduled
+             by msp-fleet-manager
+
+        Returns:
+            A plugin that adds an annotation
+            (`mspfleetmanager.stripe.io/scheduling-delay`) to a pod
+    """
+    return pod_plugin(
+        _add_msp_fleet_manager_scheduling_delay,
+        delay = delay
+    )
+
+def _add_msp_fleet_manager_scheduling_delay(ctx, plugin, pod_def):
+    pod_def['resource']["metadata"]["annotations"][MSP_FLEET_MANAGER_SCHEDULING_DELAY_KEY] = plugin.delay

@@ -1,0 +1,123 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/apps/deployment.sky", "deployment", "deployment_options")
+load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
+load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_sidecar")
+load("config/kubernetes/core/container.sky", "container_port")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/networking/public/config.sky", "networking_config")
+load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/sidecars/consul.sky", "consul_service")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+load(
+    "config/kubernetes/async-processing/monster/util.sky",
+    "format_isolation_group",
+    "generate_consul_name",
+    "get_jmx_java_options",
+    "get_monster_env_cmd_arguments",
+    "get_worker_envoy_address_from_consul",
+    "monster_deployment_labels",
+)
+
+def monster_sweeper_deployment(ctx, unformatted_host_set, config):
+    """Generates a Sweeper deployment for a specific host_set (isolation group)
+
+    Args:
+        ctx: The skycfg context variable, see http://go/disky
+        unformatted_host_set: host set names, without changing to be hyphenated
+        config: shared metadata data structure provided by config.sky
+
+    Returns:
+        A deployment representing a Sweeper service with the passed-in
+        configuration applied
+
+    """
+    host_set = format_isolation_group(unformatted_host_set)
+
+    consul_service_name = generate_consul_name(host_set, config.monster_service)
+    host_type = "monstersweeper"
+    mongo_address = "127.0.0.1:10087"
+    port = 8080
+    jmx_port = 8086
+
+    command = [
+        # See src/scala/com/stripe/monster/sweeper/BUILD for how we generate a container image
+        # that ultimately contains this Scala binary
+        "./src/scala/com/stripe/monster/sweeper/sweeper_binary",
+        "--config-service",
+        get_worker_envoy_address_from_consul(generate_consul_name(host_set, "config-workers")),
+        "--consul-service-name",
+        consul_service_name,
+        "--mongo-address",
+        mongo_address,
+    ] + get_monster_env_cmd_arguments(ctx, unformatted_host_set, host_type)
+
+    deploy = deployment(
+        ctx,
+        stripe_pod(
+            ctx,
+            name = consul_service_name,
+            instance_type = config.aws_instance_size,
+            availability_tier = get_msp_availability_tier(config.monster_availability_tier),
+            namespace = host_type,
+            container_name = "monster-sweeper",  # unified sourcetype field for Splunk
+            image = image(ctx, artifact = "monster-sweeper-image"),
+            command = command,
+        ),
+        container_env_vars(
+            vars = {
+                "JAVA_OPTS": " ".join([
+                    "-Djava.util.logging.config.file=/src/scala/com/stripe/monster/sweeper/logging.properties",
+                    "-XX:+ExitOnOutOfMemoryError",
+                ] + get_jmx_java_options(jmx_port)),
+            },
+        ),
+
+        # identify the deployment
+        monster_deployment_labels(config),
+
+        # Add jmx metrics sidecar
+        container_port(jmx_port),
+        add_jmxfetch_sidecar(ctx, "monster-sweeper", jmx_port),
+
+        # generic healthcheck for deployment control
+        healthchecked_service(
+            ctx,
+            port = port,
+            name = "monster-sweeper",
+            # When we're instructed to shutdown by a SIGTERM, this is how long we'll wait (in seconds)
+            # to gracefully drain traffic before we're forcibly stopped by a SIGKILL
+            #
+            # monster-sweeper need only finish its current Mongo queries as part of shutting down:
+            # https://git.corp.stripe.com/stripe-internal/zoolander/blob/8869919e8133bfb61f3963b2d55709edbf14aa43/src/scala/com/stripe/monster/utils/DBUtils.scala#L19-L26
+            #
+            # Read more:
+            # https://paper.dropbox.com/doc/Investigation-Traffic-Draining-for-Monster-on-Shared-MSP-byFrxy0nX26Vz51t28ois
+            # https://confluence.corp.stripe.com/display/CDS/Safe+Draining+on+Shared+MSP
+            request_drain_grace_period_seconds = 60,
+        ),
+
+        # per-host-set Consul registry for SRV-based work sharing
+        consul_service(
+            port = port,
+            name = consul_service_name,
+        ),
+        add_security_groups(
+            "monstersweeper",
+        ),
+        auto_secrets(),
+        config_srv_sidecar(ctx),
+        networking_config(mproxy_tier = "monster"),
+        # We limit how many previous revisions of ReplicaSet's we keep around to limit
+        # the amount of metadata the k8s control plane has to serve up for Monster
+        # See: https://jira.corp.stripe.com/browse/RUN_ORCH-11446, http://go/ir/gray-fuse, http://go/ir/whim-tangent
+        # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
+        deployment_options(revisionHistoryLimit = 3),
+        replicas = config.replicas,
+        strategy = config.strategy,
+        shared_msp = True,
+    )
+    return deploy

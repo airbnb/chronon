@@ -1,0 +1,522 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for creating and configuring Kubernetes [Deployment][]s, which are the main way that
+we run long-running service workloads on Kubernetes.
+
+[deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+"""
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+load("config/kubernetes/core/pod.sky", "all_containers", "main_container", "pod_runtime_class")
+load("config/kubernetes/helpers/bluegreen.sky", "with_blue_green_traffic_shifting", "add_blue_green_strategy")
+load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "prestop_all_infra_sidecars", "DEFAULT_GRACE_PERIOD_SECONDS", "grace_period", "generate_prestop_sleep_action", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME")
+load("config/kubernetes/helpers/rolling.sky", "add_rolling_speed_override")
+load("config/kubernetes/helpers/service_consul_services.sky", "add_service_consul_services")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "get_availability_tier_from_metadata")
+load("config/kubernetes/networking/public/networking.sky", "networking")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/sidecars/metrics.sky", "metrics")
+load("config/kubernetes/sidecars/sansshell.sky", "sansshell_sidecar")
+load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "get_render_yaml", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled")
+load("config/kubernetes/core/volume.sky", "volume_mount_all_containers", "mount_pod_volume")
+load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Deployment", "DeploymentSpec")
+load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
+load("config/kubernetes/sidecars/credentials_proxy_shim.sky", "credentials_proxy_shim_sidecar")
+load("config/kubernetes/autoscaling/horizontalpodautoscaler.sky", "horizontal_pod_autoscaler")
+load("config/kubernetes/helpers/resource_sharing.sky", "share_resources_with_envoy")
+load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "HOST_HEALTH_AGENT_SIDECAR_NAME")
+load("config/kubernetes/stripe.sky", "CONSUL_AGENT_ENABLED_LABEL", "CONSUL_AGENT_ENABLED_LABEL_DISABLED")
+load("config/kubernetes/core/container.sky", "container", "container_resources")
+load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
+load("config/kubernetes/helpers/multi_arch_deployment_transition.sky", "calculate_multi_arch_replica_split", "multi_arch_dynamic_replicas_desired_size","multi_arch_override_node_selector","add_arch_suffix","graviton_deployment_0_replicas")
+load("config/kubernetes/helpers/aws_instance_sizes.sky","get_graviton_eq_instance_type","aws_instance_size")
+
+def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_migration_enabled=False, graviton_migration_size=0, graviton_migration_target_6g=False, **kwargs):
+    """
+    Schedule one or more instances of a stateless service.
+
+    A Deployment allows running one of more instances (pods) of a service, and facilitates smoothly
+    rolling out new versions of those instances when the configuration is changed. Most stateless
+    services that run on Kubernetes are described by a deployment.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        *plugins: One or more plugins to configure the service.
+        shared_msp: boolean which is True iff the deployment should go to shared MSP (default is False)
+        mount_ldap_volumes: Whether we should auto-apply the
+            `mount_ldap_host_volumes` plugin. Defaults to true to mirror pre-MSP, but
+            some applications may wish to opt-out if it conflicts with other mounts
+            in their countainer image.
+        **kwargs: Options for the [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deploymentspec-v1-apps).
+            A shortcut for the `deployment_options` plugin.
+
+    Returns:
+        A [Deployment](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deployment-v1-apps)
+        Kubernetes protobuf message describing the configuration of the service.
+    """
+
+    deployment = {
+        "render": _render_deployment,
+        "type": "deployment",
+        "metadata": {},
+        "shared_msp": shared_msp,
+        "registered_services": [],
+        "kwargs": {},
+        "networking_config": None,
+        "metrics_config": None,
+        "plugin_overrides":[],
+    }
+
+    # Let's recompute the desired count for the non-graviton deployment
+    if graviton_migration_enabled:
+        replicas, graviton_replicas =  calculate_multi_arch_replica_split(
+            kwargs["replicas"],
+            graviton_migration_size
+            )
+
+        deployment["plugin_overrides"] = [multi_arch_dynamic_replicas_desired_size(desired_count=replicas)]
+        kwargs["replicas"] = replicas
+
+    amd_64_deployment = _deployment_impl(
+        ctx=ctx,
+        deployment=deployment,
+        plugins=plugins,
+        kwargs = kwargs,
+        shared_msp=shared_msp,
+        mount_ldap_volumes=mount_ldap_volumes,
+        disable_default_metrics_sidecar=disable_default_metrics_sidecar
+        )
+
+    if graviton_migration_enabled:
+        original_instance_type = deployment.get("pod").get("node_selectors").get("stripe.io/aws-instance-type")
+        graviton_deployment =_graviton_deployment(
+            ctx = ctx,
+            plugins=plugins,
+            original_instance_type = original_instance_type,
+            shared_msp=shared_msp,
+            mount_ldap_volumes=mount_ldap_volumes,
+            disable_default_metrics_sidecar=disable_default_metrics_sidecar,
+            graviton_replicas = graviton_replicas,
+            graviton_migration_target_6g = graviton_migration_target_6g,
+            kwargs = kwargs,
+            )
+
+        return [amd_64_deployment, graviton_deployment ]
+    return amd_64_deployment
+
+def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False):
+    """
+    This function encapsulates the creation of a deployment resource such that we can create multiple deployments from the a single request for a deployment.
+    """
+    all_plugins = [
+        deployment_options(
+            strategy = rolling_update_strategy(
+                ctx,
+                max_unavailable = 1,
+                max_surge = 1,
+            ),
+            # allow plenty of time for autoscale-srv to scale up capacity for the deployment
+            progressDeadlineSeconds = 3600,
+        ),
+        add_blue_green_strategy(), # Do this early to allow overrides by the user's plugins
+    ]
+    all_plugins.extend(plugins)
+    all_plugins.append(deployment_options(**kwargs))
+    all_plugins.append(with_blue_green_traffic_shifting())
+    all_plugins.append(add_rolling_speed_override())
+    all_plugins.append(add_service_consul_services())
+
+    plugin = compose_plugins(*all_plugins)
+    _apply_plugin(ctx, plugin, deployment)
+
+    # for shared msp, services get registered at update time, but the plugin needs them
+    # at create time, so we init and update the networking plugin after all the others
+    if shared_msp:
+        namespace = deployment["metadata"].get("namespace", None)
+        if namespace == None:
+            fail("Namespace not set for shared MSP deployment. Perhaps missing a namespace param to your pod?")
+
+        # If no grace period is set, use the default
+        _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), deployment)
+        pod_termination_grace_period_seconds = deployment["pod"]["grace_period"]
+
+        # If the pod has marked themselves as not needing consul, we will never turn on consul-agent
+        # as a result we need the networking sidecars to handle a lack of consul-agent gracefully.
+        consul_deprecated_in_pod = deployment["metadata"].get("labels", {}).get(CONSUL_AGENT_ENABLED_LABEL, "")
+
+        networking_plugin = networking(
+            ctx,
+            namespace=namespace,
+            availability_tier=get_availability_tier_from_metadata(deployment["metadata"]),
+            host_network=False,
+            register_services=deployment['registered_services'],
+            config=deployment["networking_config"],
+            pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
+            consul_deprecated=(consul_deprecated_in_pod == CONSUL_AGENT_ENABLED_LABEL_DISABLED),
+        )
+        _apply_plugin(ctx, networking_plugin, deployment)
+        # Automatically add the metrics sidecar to any deployments. If we encounter a service that
+        # wants to disable this we can add a flag.
+        if not disable_default_metrics_sidecar:
+            _apply_plugin(ctx, metrics(ctx, config=deployment["metrics_config"]), deployment)
+
+        _apply_plugin(ctx, sansshell_sidecar(ctx), deployment)  # go/sod:sansshell
+
+        _apply_plugin(ctx, host_health_agent(ctx, deployment["registered_services"]), deployment)
+
+        _apply_plugin(ctx, compose_plugins(
+            prestop_all_infra_sidecars(ctx, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds),
+            prestop_all_containers(generate_prestop_sleep_action(ctx, DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME)),
+            volume_mount_all_containers(
+                "/usr/stripe/bin/kube-prestop",
+                read_only=True,
+            ),
+        ), deployment)
+
+        # If Bin Packing is enabled we need to inject a few custom plugins
+        # More information can be read at go/binpacking
+        if is_bin_packing_enabled(ctx) == True:
+            _apply_plugin(ctx, compose_plugins(
+
+            	# Set the proper runtime for this pod, which is kata runtime. Which will enclose the pod in a MicroVM
+            	pod_runtime_class("kata-clh"),
+
+                # The /run/stripe/credentials-proxy which is usually a host_mount needs to now be a pod_mount
+                # as each pod in a multi-tenant node will need their own isolated credentials-proxy socket.
+                volume_mount_all_containers("/run/stripe/credentials-proxy", name = None, read_only = False),
+                mount_pod_volume("/run/stripe/credentials-proxy", mount_args = {"read_only": False}),
+
+                # Since the /run/stripe/credentials-proxy socket is now a pod_mount, we need a shim to
+                # transparently copy the requests/responses through a vsocket to the credentials-proxy daemonset
+                # which lives outside of the pod and handles requests for all multi-tenant pods.
+                credentials_proxy_shim_sidecar(),
+            ), deployment)
+
+        if is_horizontal_pod_autoscaling_enabled(ctx) == True and deployment["kwargs"]["replicas"] > 2:
+            # Feature flag opt in is only available for services with 3 or more replicas.
+            _apply_plugin(ctx, compose_plugins(horizontal_pod_autoscaler()), deployment)
+
+    # Mount ldap volumes to a container if a host mount named etc-lmscache does not exist.
+    # Repeatedly mounting the same directory causes a failed deploy.
+    # Currently, some services explicitly mount etc-lmscache by calling this plugin.
+    # We want to mount this directory to all containers by default without
+    # breaking existing services.
+    # We cannot add this plugin to the default plugin list above (`all_plugins`) as it requires
+    # the plugins provided in the *plugins argument to run beforehand. The default plugin list
+    # may already have resulted in mounting of /etc/lmscache
+    container = main_container(deployment["pod"])
+    if mount_ldap_volumes and container and LDAP_MOUNT_NAME not in container["volume_mounts"]:
+        _apply_plugin(ctx, compose_plugins(mount_ldap_host_volumes()), deployment)
+
+    if deployment.get("plugin_overrides") != None:
+        _apply_plugin(ctx, compose_plugins(*deployment.get("plugin_overrides")), deployment)
+
+    # add the resource sharing plugin (this plugin will apply itself if the pod is Shared MSP)
+    # this plugin should come fairly late in the `deployment` sequence as it needs to examine and modify multiple
+    # pod containers
+    _apply_plugin(ctx, compose_plugins(share_resources_with_envoy()), deployment)
+
+    rendered_deployment = deployment["render"](ctx, deployment)
+
+    return rendered_deployment
+
+def _apply_plugin(ctx, plugin, deployment):
+    plugin.update_deployment(ctx, plugin, deployment)
+    plugin.update_pod(ctx, plugin, deployment["pod"])
+
+    for container in all_containers(deployment["pod"]):
+        plugin.update_containers(ctx, plugin, container)
+
+def deployment_options(**kwargs):
+    """
+    Defines options for a deployment.
+
+    The arguments map directly to fields on the DeploymentSpec in Kubernetes. Commonly used
+    options include `replicas` and `strategy`.
+
+    Args:
+        **kwargs: Options to apply to the deployment. These map directly to fields on the Kubernetes
+            [DeploymentSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deploymentspec-v1-apps).
+
+    Returns:
+        A plugin that applies the options to a deployment.
+    """
+    return deployment_plugin(
+        _update_deployment_options,
+        kwargs = kwargs,
+    )
+
+def _update_deployment_options(ctx, plugin, deployment_def):
+    deployment_def["kwargs"].update(plugin.kwargs)
+
+def _render_deployment(ctx, deployment_def):
+    deployment_def["metadata"] = struct(**deployment_def["metadata"])
+    deployment = struct(**deployment_def)
+
+    _validate_deployment(ctx, deployment)
+
+    pod_template = deployment.pod["render"](ctx, deployment.pod)
+    _validate_pod_container_resources(ctx, pod_template)
+
+    rendered_deployment = Deployment(
+        ctx,
+        metadata = render_metadata(ctx, deployment.metadata),
+        spec = DeploymentSpec(
+            ctx,
+            selector = render_selector(ctx, deployment.metadata),
+            template = pod_template,
+            **deployment.kwargs
+        ),
+    )
+
+    sgp_yaml = None
+    hpa_obj = None
+
+    if deployment_def.get("securitygrouppolicy", "") and is_security_group_policy_enabled(ctx, deployment_def):
+        sgp_obj = deployment.securitygrouppolicy["render"](ctx, deployment.securitygrouppolicy)
+        sgp_yaml = yaml.marshal(sgp_obj)
+
+    if "horizontalpodautoscaler" in deployment_def:
+        hpa_obj = deployment.horizontalpodautoscaler["render"](ctx, deployment.horizontalpodautoscaler, deployment.kwargs["replicas"], deployment.shared_msp)
+
+    if sgp_yaml == None and hpa_obj == None:
+        return rendered_deployment
+
+    obj_list = []
+
+    if sgp_yaml != None:
+        obj_list.append(sgp_yaml)
+
+    obj_list.append(rendered_deployment)
+
+    if hpa_obj != None:
+        obj_list.append(hpa_obj)
+
+    return obj_list
+
+def _validate_pod_container_resources(ctx, pod_template):
+    containers_with_resources = 0
+    first_container_with_resources = None
+
+    if get_render_yaml(ctx):
+        containers = pod_template["spec"]["containers"]
+    else:
+        containers = pod_template.spec.containers
+
+    for container in containers:
+        if not _container_has_resources(ctx, container):
+            continue
+
+        if get_render_yaml(ctx):
+            name = container["name"]
+        else:
+            name = container.name
+
+        if first_container_with_resources == None:
+            first_container_with_resources = name
+        elif name == ENVOY_CONFIG_SRV_SIDECAR_NAME or name == HOST_HEALTH_AGENT_SIDECAR_NAME:
+            # For envoy-config-srv, resources are intentionally configured the envoy container
+            # as part of the share_resources_with_envoy plugin.
+            # For host-health-agent, the container only asks for limits on cpu and memory, but
+            # the resource requests are set to zero.
+            continue
+        else:
+            warn(ctx, "".join([
+                "More than one container in a Deployment specified requests or limits on resources, which will soon be disallowed. ",
+                "The sidecar container with name " + name + " needs to have its CPU and memory resource requirements removed: ",
+                "container with name " + first_container_with_resources + " already specified CPU or memory resources for this Deployment. ",
+            ]))
+
+def _container_has_resources(ctx, container):
+    if get_render_yaml(ctx):
+        if "resources" not in container:
+            return False
+
+        if "resources" in container and "limits" in container["resources"]:
+            if "cpu" in container["resources"]["limits"] or "memory" in container["resources"]["limits"]:
+                return True
+
+        if "resources" in container and "requests" in container["resources"]:
+            if "memory" in container["resources"]["requests"] and container["resources"]["requests"]["memory"] != "0Mi":
+                return True
+            if "cpu" in container["resources"]["requests"] and container["resources"]["requests"]["cpu"] != "0.0":
+                return True
+
+        return False
+
+    else:
+        if not container.resources:
+            return False
+
+        if container.resources.limits:
+            if "cpu" in container.resources.limits or "memory" in container.resources.limits:
+                return True
+
+        if container.resources.requests:
+            if "memory" in container.resources.requests and container.resources.requests["memory"].string != "0Mi":
+                return True
+
+            if "cpu" in container.resources.requests and container.resources.requests["cpu"].string != "0.0":
+                return True
+
+        return False
+
+
+def _validate_deployment(ctx, deployment):
+    name = deployment.metadata.name
+    replicas = deployment.kwargs.get("replicas", None)
+
+    if replicas == None:
+        fail("There are no replicas specified in the deployment for %s. Without replicas specified, Kubernetes will fall back on 1 replica which is unsafe. Please explicitly specify replicas in your deployment." % name)
+
+    if replicas == 1 and get_env(ctx) == "prod" and not ("-canary" in name or "canary-" in name):
+        warn(ctx, "".join([
+            "WARNING: %s is only configured with 1 replica in production. " % name,
+            "Please ensure before continuing that this level of risk is acceptable for your service!"
+        ]))
+
+    annotations = deployment.metadata.annotations
+    _validate_dynamic_replicas_desired_count(ctx, name, replicas, annotations)
+
+    strategy = deployment.kwargs["strategy"]
+    _validate_strategy_max_unavailable(ctx, name, replicas, strategy)
+
+# see config/kubernetes/helpers/dynamic.sky
+def _validate_dynamic_replicas_desired_count(ctx, name, replicas, annotations):
+    enabled = annotations.get("stripe.io/dynamic-replicas-enabled", "no")
+    if enabled != "yes":
+        return
+
+    desired = annotations.get("stripe.io/dynamic-replicas-count-desired", "")
+    if desired != str(replicas):
+        fail("%s has dynamic replicas enabled, but its desired count (%s) does not match the given replica count (%s)" % (name, desired, replicas))
+
+# max_unavailable must be less than 1/6th the number of total pods to ensure
+# uptime availability across AZs during deployment events (ir-aqua-factorial)
+MAX_PERCENT = 16
+MIN_REPLICAS_FOR_CHECK = 6
+def _validate_strategy_max_unavailable(ctx, name, replicas, strategy):
+    if strategy == None:
+        return
+
+    # This is not ideal but because we no longer have a wrapped struct with the value/type
+    # which wasn't ideal in the first palce we can't modify the code in place neatly.
+    if get_render_yaml(ctx):
+        # Only RollingUpdate deployment strategies are checked.
+        if strategy["type"] != "RollingUpdate":
+            return
+
+        max_unavailable = strategy["rollingUpdate"]["maxUnavailable"]
+        if max_unavailable == None:
+            fail("Deployment %s specifies a RollingUpdate strategy without maxUnavailable" % name)
+
+        if type(max_unavailable) == "string" and len(max_unavailable) > 0:
+            if "%" in max_unavailable:
+                percent = int(max_unavailable.split("%")[0])
+                _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent)
+            else:
+                literal = int(max_unavailable)
+                percent = 0
+                if replicas > 0:
+                    percent = 100 * literal // replicas
+                _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, literal)
+        elif type(max_unavailable) == "int" and max_unavailable > 0:
+            percent = 0
+            if replicas > 0:
+                percent = 100 * max_unavailable // replicas
+            _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, max_unavailable)
+    else:
+        # Only RollingUpdate deployment strategies are checked.
+        if strategy.type != "RollingUpdate":
+            return
+
+        max_unavailable = strategy.rollingUpdate.maxUnavailable
+        if max_unavailable == None:
+            fail("Deployment %s specifies a RollingUpdate strategy without maxUnavailable" % name)
+
+        if max_unavailable.type == 1 and len(max_unavailable.strVal) > 0:
+            if "%" in max_unavailable.strVal:
+                percent = int(max_unavailable.strVal.split("%")[0])
+                _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent)
+            else:
+                literal = int(max_unavailable.strVal)
+                percent = 0
+                if replicas > 0:
+                    percent = 100 * literal // replicas
+                _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, literal)
+        elif max_unavailable.intVal != None:
+            literal = max_unavailable.intVal
+            percent = 0
+            if replicas > 0:
+                percent = 100 * literal // replicas
+            _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, literal)
+
+def _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, literal=None):
+    if replicas < MIN_REPLICAS_FOR_CHECK:
+        return
+
+    # Skip for blue-green services
+    if percent == 100 and get_blue_green_color(ctx) != None:
+        return
+
+    if percent > MAX_PERCENT:
+        if literal != None:
+            minLiteral = (MAX_PERCENT * replicas) // 100
+            warn(ctx, "".join([
+                "WARNING: The MaxUnavailable value for %s " % name,
+                "is above the threshold of %d%% " % MAX_PERCENT,
+                "for Deployments with more than %d replicas. " % MIN_REPLICAS_FOR_CHECK,
+                "The specified value is %d, corresponding to %d%% of %d replicas. " % (literal, percent, replicas),
+                "Please reduce the MaxUnavailable value to %d or below. " % minLiteral
+            ]))
+        else:
+            warn(ctx, "".join([
+                "WARNING: The MaxUnavailable value for %s " % name,
+                "is above the threshold of %d%% " % MAX_PERCENT,
+                "for Deployments with more than %d replicas. " % MIN_REPLICAS_FOR_CHECK,
+                "The specified value is %d%%. " % percent,
+                "Please reduce the MaxUnavailable percent below the threshold."
+            ]))
+
+def _graviton_deployment(ctx, plugins, original_instance_type, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_replicas=0, graviton_migration_target_6g=False):
+        graviton_deployment_def = {
+            "render": _render_deployment,
+            "type": "deployment",
+            "metadata": {},
+            "shared_msp": shared_msp,
+            "registered_services": [],
+            "kwargs": {},
+            "networking_config": None,
+            "metrics_config": None,
+            "plugin_overrids":[],
+        }
+
+        graviton_eq = get_graviton_eq_instance_type(ctx, original_instance_type, graviton_migration_target_6g)
+        graviton_eq_resources = aws_instance_size(graviton_eq)
+
+        cpu = millicores(ctx, graviton_eq_resources.cpu_millicores - graviton_eq_resources.slack_cpu_millicores)
+        memory = mebibytes(ctx, graviton_eq_resources.memory_mib)
+
+        dynamic_replicas_override = multi_arch_dynamic_replicas_desired_size(desired_count=graviton_replicas) if graviton_replicas != 0 else graviton_deployment_0_replicas()
+
+        graviton_deployment_def["plugin_overrides"] = [
+            add_arch_suffix("graviton"),
+            multi_arch_override_node_selector(graviton_eq),
+            container_resources(cpu = cpu, memory = memory),
+            dynamic_replicas_override,
+        ]
+
+        kwargs["replicas"] = graviton_replicas
+
+        return _deployment_impl(
+            ctx=ctx,
+            deployment=graviton_deployment_def,
+            plugins=plugins,
+            kwargs = kwargs,
+            shared_msp=shared_msp,
+            mount_ldap_volumes=mount_ldap_volumes,
+            disable_default_metrics_sidecar=disable_default_metrics_sidecar
+            )

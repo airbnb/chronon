@@ -1,0 +1,388 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins and helpers for registering Consul services when a pod runs.
+
+For a service to receive traffic from other machines, it must be registered in Consul,
+which allows other services to discover it. The `consul_service` plugin does this by
+adding an additional container to the pod that keeps services registered in Consul as
+long as the pod is running.
+"""
+
+load("config/kubernetes/core/container.sky", "container_port", "resource_requirements")
+load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/lifecycle.sky", "render_lifecycle")
+load("config/kubernetes/core/probe.sky", "http_probe", "probes")
+load("config/kubernetes/core/volume.sky", "host_volume", "volume_mount", "render_volume_mount")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin")
+load("config/kubernetes/sidecars/variables.sky", "CONSUL_CONTAINER_FALLBACK_DIGEST", "CONSUL_CONTAINER_FALLBACK_ENV")
+load("config/kubernetes/sidecars/config_file.sky", "config_file")
+load("config/kubernetes/networking/public/consul.sky", "register_service")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+
+
+# Name of the sidecar container that registers Consul services for a pod.
+#
+# Use to reference the consul container when adding volume mounts.
+consul_container_name = "consul-sidecar"
+UNPRIVILEGED_ENVOY_PORT = 1643
+UNPRIVILEGED_ENVOY_SERVICE_META = {
+ "envoy_inbound_port": str(UNPRIVILEGED_ENVOY_PORT),
+}
+BUILTIN_TAGS = ["namespace:$(STRIPE_POD_NAMESPACE)"]
+BUILTIN_SERVICE_META = {
+  "k8s_namespace": "$(STRIPE_POD_NAMESPACE)",
+  "k8s_pod_id": "$(STRIPE_POD_NAME)",
+  "k8s_node": "$(STRIPE_NODE_NAME)",
+}
+
+def consul_service(
+        port,
+        name,
+        tags = [],
+        checks = [],
+        meta = {},
+        container_name = None,
+        port_name = None,
+        **kwargs):
+    """
+    Registers a Consul service to allow traffic to be routed to the pod.
+
+    This plugin adds a sidecar container to the pod, which keeps the service registered in Consul
+    as long as the pod is running.
+
+    This plugin can be used multiple time to register additional Consul services.
+
+    This plugin does not automatically set up healthchecking. Healthchecking is supported by adding
+    tags and checks to the service. This can be set up automatically by using the
+    `healthchecked_service` plugin instead of `consul_service`.
+
+    Args:
+        port: The port the service is running on.
+        name: The name of the service to register in Consul.
+        tags: Optional tags for the Consul service.
+        checks: Optional checks for the Consul service.
+        meta: Optional metadata for the Consul service.
+        container_name: Optional name of the container that is running the service. Defaults to the
+            main container of the pod.
+        port_name: Optional name for the port that can be referred to by services.
+        **kwargs: Optional extra settings for the service, which will be provided directly to the
+            Consul sidecar. Generally, this is not needed.
+
+    Returns:
+        A plugin that sets the pod up to register the Consul service.
+    """
+    return compose_plugins(
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=register_service(port, name, tags, checks, meta, container_name, port_name),
+        ),
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=_legacy_consul_service(port, name, tags, checks, meta, container_name, port_name, **kwargs),
+        ),
+    )
+
+def _legacy_consul_service(
+        port,
+        name,
+        tags = [],
+        checks = [],
+        meta = {},
+        container_name = None,
+        port_name = None,
+        **kwargs):
+    # https://jira.corp.stripe.com/browse/ORCH-1006
+    if len(tags) == 0:
+        tags = []
+
+    service_meta = {}
+    service_meta.update(**meta)
+    service_meta.update(**BUILTIN_SERVICE_META)
+
+    service = {
+        "name": name,
+        "port": port,
+        "tags": tags + BUILTIN_TAGS,
+        "checks": checks,
+        "meta": service_meta,
+    }
+    service.update(kwargs)
+
+    pod = pod_plugin(
+        _update_pod,
+        service = service,
+    )
+
+    # for port 0, we don't add the container_port because we can schedule conflicting containers
+    if port == 0:
+        return pod
+
+    return compose_plugins(
+        pod,
+        container_port(port, container_name = container_name, port_name = port_name),
+    )
+
+def consul_options(use_proxy = None, use_probes = None):
+    return pod_plugin(
+        _update_options,
+        use_proxy = use_proxy,
+        use_probes = use_probes,
+    )
+
+def envoy_consul_tag(healthcheck):
+    """
+    Creates a Consul tag telling Envoy how to healthcheck the service.
+
+    Using the `healthchecked_service` plugin will set up this tag for you.
+
+    Args:
+        healthcheck: The HTTP path of the healthcheck endpoint for the service.
+
+    Returns:
+        A tag that can be used with `consul_service`.
+    """
+    return "envoy_health_check?%s" % url.encode_query({"path": healthcheck})
+
+def consul_http_check(path, port, interval = "10s", timeout = "5s", notes = None):
+    """
+    Creates a Consul check to perform HTTP healthchecking on the service.
+
+    Using the `healthchecked_service` plugin will set up this check for you.
+
+    Args:
+        path: The HTTP path of the healthcheck endpoint for the service.
+        port: The HTTP port to use to perform the healthcheck.
+        interval: The frequency at which to perform the check. Defaults to 10s.
+        timeout: The timeout of the check attempts. Defaults to 5s.
+        notes: Optional notes to add to the check.
+
+    Returns:
+        A check that can be used with `consul_service`.
+    """
+    check = {
+        "interval": interval,
+        "http": {
+            "scheme": "http",
+            "port": port,
+            "path": path,
+        },
+        "timeout": timeout,
+    }
+
+    if notes != None:
+        check["notes"] = notes
+
+    return check
+
+
+def consul_grpc_check(*, port, interval = "10s", service = None, notes = None):
+    """
+    Creates a Consul check to perform gRPC healthchecking on the service.
+
+    Args:
+        port: The port to use to perform the healthcheck.
+        interval: The frequency at which to perform the check. Defaults to 10s.
+        service: Optional service identifier for Consul to include in the gRPC health check request.
+        notes: Optional notes to add to the check.
+
+    Returns:
+        A check that can be used with `consul_service`.
+    """
+    check = {
+        "interval": interval,
+        "grpc": {
+            "port": port,
+        },
+    }
+
+    if service != None:
+        check["grpc"]["service"] = service
+
+    if notes != None:
+        check["notes"] = notes
+
+    return check
+
+
+def consul_tcp_check(*, port, interval = "10s", timeout = "5s", notes = None):
+    """
+    Creates a Consul check to perform TCP healthchecking on the service.
+
+    Args:
+        port: The port to use to perform the healthcheck.
+        interval: The frequency at which to perform the check. Defaults to 10s.
+        timeout: The timeout of the check attempts. Defaults to 5s.
+        notes: Optional notes to add to the check.
+
+    Returns:
+        A check that can be used with `consul_service`.
+    """
+    check = {
+        "interval": interval,
+        "tcp": {
+            "port": port,
+        },
+        "timeout": timeout,
+    }
+
+    if notes != None:
+        check["notes"] = notes
+
+    return check
+
+
+# Backwards compatibility
+consul_check = consul_http_check
+
+def _update_pod(ctx, plugin, pod_def):
+    if "consul_sidecar" in pod_def:
+        sidecar = pod_def["consul_sidecar"]
+    else:
+        sidecar = _create_consul_container(ctx, pod_def)
+
+    service = plugin.service
+    sidecar["services"].append(service)
+    _write_envoy_configs(ctx, sidecar, service, pod_def)
+
+def _update_options(ctx, plugin, pod_def):
+    if plugin.use_proxy != None:
+        pod_def["consul_sidecar"]["use_proxy"] = plugin.use_proxy
+        if plugin.use_proxy:
+            _add_consul_proxy_volumes(ctx, pod_def)
+    if plugin.use_proxy != None:
+        pod_def["consul_sidecar"]["use_probes"] = plugin.use_probes
+
+def _add_consul_proxy_volumes(ctx, pod_def):
+    socket_volume = host_volume("/run/stripe/consul-proxy", type = "Directory", reason = "Allows accessing Consul from within a network-isolated pod.")
+    socket_volume.update_pod(ctx, socket_volume, pod_def)
+    socket_volume_mount = volume_mount("/run/stripe/consul-proxy", read_only = True)
+    socket_volume_mount.update_container(ctx, socket_volume_mount, pod_def["consul_sidecar"])
+
+_envoy_config_container = "envoy-inbound-configs"
+
+def _create_consul_container(ctx, pod_def):
+    is_network_isolated = not pod_def["host_network"]
+    sidecar = {
+        "render": _render_consul_sidecar,
+        "name": consul_container_name,
+        "services": [],
+        "volume_mounts": {},
+        "termination_delay": None,
+        "probes": {},
+        "use_proxy": is_network_isolated,
+        "use_probes": is_network_isolated,
+        "sidecar_service": "consul-sidecar",
+    }
+
+    if not is_network_isolated:
+        inbound_config = ctx.vars["henson.service"].inbound_config
+        if inbound_config != None:
+            envoy = host_volume("/etc/envoy", type = "Directory", reason = "Allows setting up inbound Envoy listener configuration.")
+            envoy.update_pod(ctx, envoy, pod_def)
+
+            sidecar["envoy_config"] = json.marshal(inbound_config)
+
+    pod_def["consul_sidecar"] = sidecar
+    pod_def["containers"].append(sidecar)
+
+    if sidecar["use_proxy"]:
+        _add_consul_proxy_volumes(ctx, pod_def)
+
+    return sidecar
+
+_envoy_config_dir = "/etc/envoy"
+
+def _write_envoy_configs(ctx, sidecar, service, pod_def):
+    # don't try to write config files if there's no envoy config to write out
+    if not "envoy_config" in sidecar:
+        return
+
+    path = "%s/%s.json" % (_envoy_config_dir, service["name"])
+    file = config_file(path, sidecar["envoy_config"], _envoy_config_dir)
+    file.update_pod(ctx, file, pod_def)
+
+def _render_consul_sidecar(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    volume_mounts = [render_volume_mount(ctx, mount) for mount in container.volume_mounts.values()]
+
+    lifecycle = render_lifecycle(ctx, container.lifecycle) if "lifecycle" in container_def else None
+
+    if container.use_proxy:
+      for srv in container.services:
+        service_meta = {}
+        service_meta.update(**srv['meta'])
+        service_meta.update(**UNPRIVILEGED_ENVOY_SERVICE_META)
+        srv['meta'] = service_meta
+
+    command = [
+        "/bin/consul-sidecar",
+        "--services-json=" + json.marshal(container.services),
+    ]
+
+    if container.use_proxy:
+        command.append("--service-address=$(STRIPE_POD_IP)")
+        command.append("--consul-address=unix:///run/stripe/consul-proxy/consul-proxy-srv.sock")
+        command.append("--bind-tcp-shim=127.0.0.1:8500")
+
+    if container.termination_delay != None:
+        command.append("--termination-delay={}".format(container.termination_delay))
+
+    probes = container.probes
+
+    if container.use_probes:
+        command.append("--bind-msp-probe-responder=0.0.0.0:8599")
+        probes["readinessProbe"] = http_probe(
+            ctx,
+            port = 8599,
+            path = "/msp-infra-ready",
+        )
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = _consul_image(ctx),
+        command = command,
+        env = default_env_vars(ctx),
+        volumeMounts = volume_mounts,
+        lifecycle = lifecycle,
+        resources = resource_requirements(ctx),
+        **probes
+    )
+
+def _consul_image(ctx):
+    return sidecar_image(ctx,
+        name = "consul-sidecar",
+        fallback = image(
+            ctx,
+            name = "stripe/compute/consul-sidecar-image",
+            label = CONSUL_CONTAINER_FALLBACK_DIGEST,
+            env = CONSUL_CONTAINER_FALLBACK_ENV,
+        ),
+    )
+
+def consul_termination_delay(delay = "90s"):
+    """
+    Delays the termination of the consul sidecar.
+
+    This allows a service to fail healthchecks for a while before deregistering from consul.
+
+    Args:
+        delay: The duration to delay, in golang time.Duration notation
+
+    Returns:
+        A plugin that delays the consul sidecar from deregistering the service from consul.
+    """
+
+    return container_plugin(
+        _add_termination_delay_to_consul,
+        container_name = consul_container_name,
+        delay = delay,
+    )
+
+def _add_termination_delay_to_consul(ctx, arguments, container_def):
+    container_def["termination_delay"] = arguments.delay

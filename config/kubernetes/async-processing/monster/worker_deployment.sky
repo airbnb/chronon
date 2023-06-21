@@ -1,0 +1,281 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/apps/deployment.sky", "deployment_options")
+load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
+load("config/kubernetes/async-processing/monster/secrets.sky", "monster_secrets")
+load("config/kubernetes/async-processing/monster/util.sky", "generate_consul_name", "monster_deployment_labels", "worker_type")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/entrypoints.sky", "deployment")
+load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env", "get_availability_tier")
+load("config/kubernetes/helpers/dynamic.sky", "dynamic_replicas")
+load("config/kubernetes/helpers/failure_threshold.sky", "failure_threshold")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes")
+load("config/kubernetes/helpers/msp_shard.sky", "autoset_shard")
+load("config/kubernetes/helpers/node_selectors.sky", "host_set")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/meta/metadata.sky", "labels")
+load("config/kubernetes/networking/public/config.sky", "networking_config")
+load("config/kubernetes/pay-server.sky", "default_pay_server_image", "pay_server_pod", "einhorn_service")
+load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
+load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
+load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+
+def generate_pod_name(prefix, monster_service, monster_isolation_group, suffix):
+    name = "monster-{}-{}-{}{}".format(prefix, worker_type(monster_service), monster_isolation_group, suffix)
+    if len(name) > 63:
+        fail("pod name {} is too long and will fail on deployment".format(name))
+
+    return name
+
+def monster_deployment(ctx, config, port, suffix = ""):
+    return monster_deployment_shared_msp(ctx, config, port, suffix=suffix)
+
+# Checks if the value is a struct, If it is a struct return the desried_count value, else simply returns the value
+def extract_replica_count(replicas):
+    # if the replicas are specified as a structure that means we are using dynamic configuration need to extract the desired count and return that.
+    if type(replicas) == 'struct':
+        return replicas.desired
+    return replicas
+
+def make_deployment_options_plugins(config):
+    # If replicas are defined using dynamic configurations we will set those up using dynamic configs.
+    if type(config.replicas) == 'struct':
+        return [
+            deployment_options(replicas = config.replicas.desired),
+            dynamic_replicas(config.replicas.desired, config.replicas.max, config.replicas.min)
+        ]
+
+    # We limit how many previous revisions of ReplicaSet's we keep around to limit
+    # the amount of metadata the k8s control plane has to serve up for Monster
+    # See: https://jira.corp.stripe.com/browse/RUN_ORCH-11446, http://go/ir/gray-fuse, http://go/ir/whim-tangent
+    # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
+    return [deployment_options(replicas = config.replicas, revisionHistoryLimit = 3)]
+
+def monster_ruby_3_1_policy(ctx, **kwargs):
+    """Define a ruby_3_1_policy for monster
+
+    See: https://git.corp.stripe.com/stripe-internal/third-party-containers/blob/e53c8d53/config/kubernetes/pay-server.sky#L73
+    for a description of how the policy applies to a pod.
+    """
+    if get_env(ctx) == "qa" and get_availability_tier(ctx) == "A400":
+        return 2 # 50% enabled
+    return False
+
+def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
+    formatted_isolation_group = config.monster_isolation_group.replace("_", "-")
+    name = generate_pod_name("smsp", config.monster_service, formatted_isolation_group, suffix)
+    env_vars = {
+        "MONSTER_IS_MSP": "1", # TODO(tonyyang): remove this and other pay-server usage
+        "MONSTER_SERVICE": config.monster_service,
+        "MONSTER_ISOLATION_GROUP": config.monster_isolation_group,
+        "MONSTER_DEPLOYMENT": name,
+        "MONSTER_EINHORN_SERVICE_NAME": generate_consul_name(formatted_isolation_group, config.monster_service),
+        # Comments copied from
+        # https://learning.oreilly.com/library/view/ruby-performance-optimization/9781680501681/f_0060.html
+        #
+        # RUBY_GC_HEAP_INIT_SLOTS
+        # Initial number of object slots on the Ruby heap. Default value is 10000.
+        #
+        # You might want to change this number if you know that your application
+        # will allocate lots of objects right from the start.
+        #
+        # But on the other hand, we saw that Ruby is quite good at growing the heap space.
+        # It usually grows faster than we need. So there’s little need to change this parameter in practice.
+        #
+        # Based on this Splunk query:
+        #
+        #     sourcetype=monster "Preloading" AND "constants"
+        #     | rex "Preloading (?<num_constants>\d+) constants"
+        #     | stats avg(num_constants) by monster_isolation_group
+        #
+        # We load at least 172,000 constants initially, as of 2022-08-01.
+        "RUBY_GC_HEAP_INIT_SLOTS": "172000",
+
+        # RUBY_GC_HEAP_FREE_SLOTS
+        # Minimum number of free slots that must be free after GC. If this condition is not met,
+        # Ruby might grow the heap space. Default value is 4096.
+        #
+        # As we discussed in ​GC Triggered by Heap Usage​, the heap growth rule is more complicated.
+        # This value is used only once at runtime during the first heap growth after the initial one.
+        # So there’s absolutely no need to change it.
+
+        # RUBY_GC_HEAP_GROWTH_FACTOR
+        # Heap growth factor. Default value is 1.8.
+
+        # Ruby is already aggressive enough at heap growth, so you should not increase this number.
+        # Decreasing it also makes little sense. Heaps are allocated on demand in modern interpreters,
+        # so decreasing this number will not reduce the total memory consumption.
+
+        # RUBY_GC_HEAP_GROWTH_MAX_SLOTS
+        # Maximum number of slots Ruby can add to the heap space at a time. The default value is 0,
+        # meaning that there’s no maximum.
+        #
+        # If your application needs to allocate millions of objects during its lifetime, you might want
+        # to cap the heap growth increments by setting this value.
+        #
+        # However, it will not help to reduce the GC time for such an application. Ruby is not the right
+        # tool to process lots of objects, and you should consider using other tools rather than trying
+        # to tweak Ruby.
+
+        # RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR
+        # This forces Ruby to do major GC when the number of old objects is more than
+        # RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR * <number of old objects after the last full GC>.
+        # The default value is 2.0.
+        #
+        # In theory, you might want to increase this number if you expect that too many of your objects
+        # will become unused after getting into the old generation (surviving one GC in Ruby 2.1 and three
+        # in Ruby 2.2).
+        #
+        # In practice, this is very rarely needed, and the default setting is good enough for most people.
+        #
+        #
+        # RUBY_GC_MALLOC_LIMIT, RUBY_GC_MALLOC_LIMIT_MAX, RUBY_GC_MALLOC_LIMIT_GROWTH_FACTOR
+        # Minimum and maximum malloc limits for the new generation, and the limit’s growth factor.
+        # The default values are 16 MB minimum, 32 MB maximum, 1.4 growth factor.
+        #
+        # These are the parameters you might want to change. If your application uses more memory than
+        # average, then increase the minimum and maximum values. If your application allocates memory in
+        # chunks, consider increasing the growth factor. There’s little sense in decreasing these values.
+        #
+        # You might find advice on the Internet to set the minimum limit to 64 MB, or even 128 MB (that
+        # Twitter used at some point). But be careful. Larger limits lead to higher peak memory consumption.
+        #
+        # Increase the limits incrementally, adding, for example, 8 MB at a time, and measuring the outcome.
+        # Be even more careful changing the growth factor.
+        #
+        # I personally find that these days 50% of applications run just fine with the default settings, and
+        # another 50% benefit from a two times increase of minimum and maximum limits.
+        "RUBY_GC_MALLOC_LIMIT": "32000000", # 32MB
+        "RUBY_GC_MALLOC_LIMIT_MAX": "64000000", # 64 MB
+        # RUBY_GC_OLDMALLOC_LIMIT, RUBY_GC_OLDMALLOC_LIMIT_MAX, RUBY_GC_OLDMALLOC_LIMIT_GROWTH_FACTOR
+        # Minimum and maximum malloc limits for the old generation, and the limit’s growth factor. The default
+        # values are 16 MB minimum, 128 MB maximum, 1.2 growth factor.
+        #
+        # These are also candidates for tweaking. It’s a good idea to change them together with the limits for
+        # new generation, and in the same manner.
+        "RUBY_GC_OLDMALLOC_LIMIT": "32000000", # 32MB
+        "RUBY_GC_OLDMALLOC_LIMIT_MAX": "256000000", # 256MB
+    }
+
+    groups_with_experimental_gc = [
+        "general",
+        "sigma",
+        "model-ingestion",
+        "clearing"
+    ]
+    if config.monster_isolation_group in groups_with_experimental_gc:
+        env_vars.update({
+            # Based on GC-STAT-LINE: logs from this Splunk query:
+            # sourcetype=monster "GC-STAT-LINE" | timechart avg(before_heap_live_slots) by monster_isolation_group
+            # Host sets have an average of 15MM or 25MM live slots. Going with the smaller number here.
+            "RUBY_GC_HEAP_INIT_SLOTS": "15000000",
+        })
+
+    env_vars.update(config.extra_env or [])
+
+    return deployment(
+        ctx,
+
+        pay_server_pod(
+            ctx,
+            # Example for consuming workers: monster-smsp-workers-radar, maybe with "-canary"
+            name = name,
+            image = default_pay_server_image,
+            # Namespaces replace host types for service identity in Shared MSP
+            namespace = "monsterworkersbox",
+            command = ["/deploy/pay-server/current/{}".format(config.script)],
+            instance_type = config.aws_instance_size,
+            availability_tier = get_msp_availability_tier(config.monster_availability_tier),
+            ruby_3_1_policy = monster_ruby_3_1_policy,
+        ),
+
+        einhorn_service(
+            ctx,
+            name = generate_consul_name(formatted_isolation_group, config.monster_service),
+            workers = config.einhorn_workers,
+            # Ports must be unique per host, it's just easier to give each pod a unique port.
+            port = port,
+            tags = ["http2"],
+            meta = {
+                "lb_policy": "LEAST_REQUEST",
+                "monster_isolation_group": config.monster_isolation_group,
+                "monster_service": config.monster_service,
+            },
+            nonblocking = True,
+            # When we're instructed to shutdown by a SIGTERM, this is how long we'll wait (in seconds)
+            # to gracefully drain traffic before we're forcibly stopped by a SIGKILL
+            # We need AbstractConsumerTimeout < WorkersTimeout < FeederTimeout, so that in-flight consumptions are not dropped
+            #
+            # Context:
+            # https://paper.dropbox.com/doc/Investigation-Dropped-FQEs--BmjR2ZtcRz5y8Ti6xV39Dxv6Ag-PMxGFUlHgby3fudTy0pwy
+            # https://paper.dropbox.com/doc/Investigation-Traffic-Draining-for-Monster-on-Shared-MSP-byFrxy0nX26Vz51t28ois
+            # https://confluence.corp.stripe.com/display/CDS/Safe+Draining+on+Shared+MSP
+            signal_timeout = 330,
+            max_unacked = 1,
+            max_upgrade_additional = 1,
+            nice = "15:0",
+            gc_before_fork = True,
+            seconds = "0.1",  # skycfg doesn't support floats
+            kill_children_on_exit = True,
+            preload_or_fail = True,
+            startup_failure_threshold = 900,
+
+            # Require that 95% (up from 70%, the default) of Einhorn workers
+            # be ready before routing traffic to the container. This is an
+            # attempt to avoid processing events on a container that is
+            # experiencing very high CPU load during boot-up.
+            worker_availability_threshold = "0.95", # skycfg doesn't support floats
+
+            hack_kick_interval = config.hack_kick_interval,
+            hack_kick_start_delay = config.hack_kick_start_delay,
+            hack_kick_restart_only = config.hack_kick_restart_only,
+        ),
+
+        container_env_vars(env_vars),
+
+        # Identify the deployment
+        monster_deployment_labels(config),
+
+        # Make GeoIP cron autorefresher files accessible to service
+        use_geoip_databases(),
+
+        # Required for Authz usage in monster consumers
+        mount_ldap_host_volumes(),
+
+        monster_secrets(),
+        auto_secrets(autoload_dir="/pay/secrets"),
+
+        add_security_groups(
+          "monsterworkersbox",
+          "pay-server",
+          "s3_ap_cidrs",
+          "s3_us_cidrs",
+        ),
+
+        failure_threshold(config.failure_threshold),
+
+        networking_config(
+            enable_global_ratelimit = True,
+            envoy_concurrency = 5,
+        ),
+
+        use_offload_profiles(),
+        autoset_shard(),
+
+        # https://confluence.corp.stripe.com/display/DEPLOY/Config-srv+sidecar
+        config_srv_sidecar(ctx),
+
+        # Wait 5 seconds after service starts before we begin health checks
+        # This configuration catches failures when the service appears healthy briefly but begins crashlooping
+        minReadySeconds = 5,
+
+        shared_msp = True,
+        strategy = config.strategy,
+        graviton_migration_enabled=config.graviton_migration_enabled,
+        graviton_migration_size=config.graviton_migration_size,
+        graviton_migration_target_6g=config.graviton_migration_target_6g,
+        replicas=extract_replica_count(config.replicas),
+        *make_deployment_options_plugins(config),
+    )

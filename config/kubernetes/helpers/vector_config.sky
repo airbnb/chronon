@@ -1,0 +1,511 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
+
+_BASE_CONFIG = """---
+sources:
+{sources}
+transforms:
+{transforms}
+"""
+
+##########
+# Config #
+##########
+
+def build_vector_config(ctx, targets):
+    """
+    Builds the sources and transforms sections of a YAML-based Vector config, for use with the Vector sidecar or daemonset.
+
+    Args:
+        ctx: The pod context (currently unused: here for future compatibility)
+        targets: `list of struct` source and transform information which will be injected into the config.
+                 This can be a list of outputs from the vector_target() helper function.
+                 Each struct must have fields which follow this schema:
+                     sources: `list of string` YAML configurations for Vector sources
+                     transforms: `list of string` YAML configurations for Vector transforms
+                     inputs: `list of string` names of all the sources or transforms which should be sent to prometheus.
+
+    Returns:
+        A struct, which can have its arguments passed to vector_sidecar(), containing:
+            sources: `string` YAML configuration for Vector sources and transforms.
+            inputs: `list of string` names of all the sources or transforms which should be sent to prometheus.
+
+    Examples:
+        Scrape a number of vector_targets with the Vector sidecar:
+        ```
+        vector = build_vector_config(ctx, [
+            vector_target(ctx, "my-service", ["http://localhost:1234"]),
+            vector_target(ctx, "my-sidecar", ["http://localhost:5678"])
+        ])
+
+        return deployment(
+            ...,
+            vector_sidecar(
+                ctx,
+                sources = vector.sources,
+                inputs = vector.inputs,
+                team_token = TEAM_TOKEN
+            )
+        )
+        ```
+    """
+    source_entries = []
+    transform_entries = []
+    input_entries = []
+
+    for target in targets:
+        source_entries += target.sources
+        if target.transforms:
+            transform_entries += target.transforms
+        input_entries += target.inputs
+
+    sources = _BASE_CONFIG.format(
+        sources = "\n".join(source_entries),
+        transforms = "\n".join(transform_entries)
+    )
+
+    return struct(**{
+        "sources": sources,
+        "inputs": input_entries
+    })
+
+###########
+# Targets #
+###########
+
+_PROMETHEUS_SCRAPE_TARGET_CONFIG = """\
+  "{name}":
+    type: prometheus_scrape
+    endpoints: {endpoints}
+    scrape_interval_secs: {scrape_interval}
+    instance_tag: instance
+"""
+
+# {{.ca_file}} and etc. are evaluated inside the vector-{daemonset,sidecar}-init binary's Go templating
+# based on either the credentials from credentials-proxy (for the sidecar) or the host certificate paths.
+# Vector already uses these TLS certs for talking to prom-proxy-srv, but for a mTLS-protected scrape endpoint,
+# we also need to include it on the source configuration.
+_PROMETHEUS_SCRAPE_TARGET_TLS_CONFIG = """\
+    tls:
+      ca_file: "{{.ca_file}}"
+      crt_file: "{{.crt_file}}"
+      key_file: "{{.key_file}}"
+"""
+
+def vector_target(ctx, name, endpoints, scrape_interval=10, filter_rules=None, remap_rules=None, extra_tags=None):
+    """
+    Builds a subset of the Vector configuration for a specific target, which should be scraped on the given endpoint.
+
+    Args:
+        ctx: The pod context
+        name: `string` name of the component to be scraped.
+        endpoints: `list of string` the URLs to be scraped as part of this source.
+                   For HTTPS/mTLS-protected endpoints, `{{.hostname}}` can be used to get the machine's hostname in SRFC4 format,
+                   and `{{.hostname_srfc39}}` can be used to get the machine's hostname in SRFC39 format. For more details on the
+                   available templated options, see `gocode/vector-image/cmd/vector-init`.
+        scrape_interval: `int` the scrape interval in seconds to push to Prometheus, defaults to 10 seconds.
+        filter_rules: `list of string` when provided, rules to evaluate each metric against. e.g., `metric_name == "xxx"` or `starts_with(metric_name, "xxx")`.
+        remap_rules: `list of string` when provided, custom lines of VRL which are added to the remap configuration which can be used to drop labels.
+        extra_tags: `dict` when provided, these extra fields will be added as tags. host_cluster and host_env are always added.
+
+    Returns:
+        A struct containing:
+            sources: `list of string` YAML configurations for Vector sources
+            transforms: `list of string` YAML configurations for Vector transforms
+            inputs: `list of string` names of all the sources or transforms which should be sent to prometheus.
+
+        This struct should be provided in the `targets` array to `build_vector_config()`.
+
+    Examples:
+        Scrape a single Prometheus target with defaults:
+        ```
+        vector_target(ctx, "my-service", ["http://localhost:1234"])
+        ```
+
+        Only scrape specific metric names:
+        ```
+        vector_target(ctx, "my-service", ["http://localhost:1234"],
+            filter_rules=metric_name_filter("http_requests_total", "grpc_requests_total")
+        )
+        ```
+
+        Only scrape specific metric names, and drop labels on some metrics:
+        ```
+        vector_target(ctx, "my-service", ["http://localhost:1234"],
+            filter_rules=metric_name_prefix_filter("http_requests_", "grpc_requests_"),
+            remap_rules=\
+                drop_labels_remap(metric_name_prefix_filter("http_requests_"), ["http_method"]) + \
+                drop_labels_remap(metric_name_prefix_filter("grpc_requests_"), ["grpc_method"])
+        )
+        ```
+    """
+    source = _PROMETHEUS_SCRAPE_TARGET_CONFIG.format(name=name, endpoints=endpoints, scrape_interval=scrape_interval)
+
+    if any([endpoint.startswith("https") for endpoint in endpoints]):
+        source += _PROMETHEUS_SCRAPE_TARGET_TLS_CONFIG
+
+    transforms, tagged_name = _build_transforms(ctx, name, filter_rules, remap_rules, extra_tags)
+
+    return struct(**{
+        "sources": [source],
+        "transforms": transforms,
+        "inputs": [tagged_name]
+    })
+
+def vector_internal_metrics_target(ctx, scrape_interval=10, filter_rules=None, remap_rules=None, extra_tags=None):
+    """
+    Returns the configuration for the static vector_internal_metrics target.
+
+    Args:
+        ctx: The pod context
+        scrape_interval: `int` the scrape interval in seconds to push to Prometheus, defaults to 10 seconds.
+        filter_rules: `list of string` when provided, rules to evaluate each metric against. e.g., `metric_name == "xxx"` or `starts_with(metric_name, "xxx")`.
+        remap_rules: `list of string` when provided, custom lines of VRL which are added to the remap configuration which can be used to drop labels.
+        extra_tags: `dict` when provided, these extra fields will be added as tags. host_cluster and host_env are always added.
+
+    Returns:
+        The identical struct format to vector_target, which should be provided in the `targets` array to `build_vector_config()`
+
+    Example:
+        ```
+            vector_internal_metrics_target(
+                ctx,
+                scrape_interval = 60,
+                filter_rules = metric_name_filter(
+                    "component_errors_total",
+                    "utilization",
+                    "component_sent_events_total",
+                ),
+                extra_tags = dict(
+                    msp_component = "vector_internal_metrics",
+                    **tags
+                ),
+            )
+        ```
+    """
+
+    source = _VECTOR_INTERNAL_METRICS_TARGET_CONFIG.format(scrape_interval=scrape_interval)
+
+    transforms, tagged_name = _build_transforms(ctx, "vector_internal_metrics", filter_rules, remap_rules, extra_tags)
+
+    return struct(**{
+        "sources": [source],
+        "transforms": transforms,
+        "inputs": [tagged_name]
+    })
+
+################
+# Conditionals #
+################
+
+def _conditional_go_template(if_condition, text, add_newlines=True):
+    """Given raw text, wraps it in a Go template if statement which is processed by vector-init."""
+    newline = '\n' if add_newlines else ''
+    return '{{if %s}}%s%s{{end}}%s' % (if_condition, newline, text, newline)
+
+def vector_conditional_target(ctx, if_condition, target_struct):
+    """
+    Given a Vector target configuration, only scrapes it when the given Go text/template if expression matches when run inside vector-init.
+
+    Args:
+        ctx: The pod context
+        if_condition: The inside of a Go text/template if condition, which determines whether the provided Vector target should be scraped.
+                      This condition MUST operate on provided render parameters added in the vector-init binary.
+        target_struct: The return value from a vector_target.
+
+    Returns:
+        The identical struct format to vector_target, which should be provided in the `targets` array to `build_vector_config()`
+
+    Example:
+        ```
+            build_vector_config(ctx, [
+                conditional_target(ctx, ".kata_monitor_enabled",
+                    vector_target(ctx, "kata-monitor", ["http://localhost:1234"])
+                ),
+                conditional_target(ctx, ".vpc_cni_enabled",
+                    vector_target(ctx, "vpc-cni", ["http://localhost:5678"])
+                )
+            ])
+        ```
+    """
+
+    return struct(**{
+        "sources": [_conditional_go_template(if_condition, source, add_newlines=True) for source in target_struct.sources],
+        "transforms": [_conditional_go_template(if_condition, transform, add_newlines=True) for transform in target_struct.transforms],
+        "inputs": [_conditional_go_template(if_condition, input, add_newlines=False) for input in target_struct.inputs]
+    })
+
+##############
+# Transforms #
+##############
+
+# The base template when defining a new filter configuration
+_TRANSFORM_FILTER_CONFIG = """\
+  "{filtered_name}":
+    type: filter
+    inputs:
+      - "{name}"
+    condition:
+      type: vrl
+      source: |
+        metric_name = to_string(.name) ?? "unknown"
+{filter_vrl}
+"""
+
+# The base template when defining a new remap configuration
+_TRANSFORM_REMAP_CONFIG = """\
+  "{remap_name}":
+    type: remap
+    inputs:
+      - "{filtered_name}"
+    source: |-
+      metric_name = to_string(.name) ?? "unknown"
+{remap_vrl}
+"""
+
+def _build_transforms(ctx, name, filter_rules=None, remap_rules=None, extra_tags=None):
+    """Helper function to build a set of transforms which applies any given set of VRL statements, filters, and extra tags."""
+    transforms = []
+
+    base_tags = {
+        "host_cluster": get_cluster(ctx),
+        "host_env": get_env(ctx)
+    }
+
+    filtered_name = name
+    if filter_rules:
+        filtered_name = "{name}_filtered".format(name=name)
+
+        filter_statements = []
+        filter_condition = " || ".join(filter_rules)
+        filter_statements.append(filter_condition)
+
+        filter_vrl = _indent(8, "\n".join(filter_statements))
+
+        filter_transform = _TRANSFORM_FILTER_CONFIG.format(
+            filtered_name=filtered_name,
+            name=name,
+            filter_vrl=filter_vrl,
+        )
+
+        transforms.append(filter_transform)
+
+    remap_name = "{name}_remapped".format(name=name)
+
+    if not remap_rules:
+        remap_rules = []
+
+    tags = base_tags
+    if extra_tags:
+        tags.update(extra_tags)
+
+    remap_rules += ['.tags."{key}" = "{val}"'.format(key=key, val=val) for key, val in tags.items()]
+    remap_vrl = _indent(6, "\n".join(remap_rules))
+
+    remapped_transform = _TRANSFORM_REMAP_CONFIG.format(
+        remap_name=remap_name,
+        filtered_name=filtered_name,
+        remap_vrl=remap_vrl)
+
+    transforms.append(remapped_transform)
+    return transforms, remap_name
+
+###########
+# Filters #
+###########
+
+def metric_name_filter(*names):
+    """
+    Returns a filter_rule which checks that the metric name is in a specified allowlist.
+
+    Args:
+        `string` a variable number of strings of metric names allowed
+
+    Returns:
+        A list which can be passed to `filter_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            filter_rules=metric_name_filter("http_requests_total", "grpc_requests_total")
+        )
+        ```
+    """
+    return ["includes(%s, metric_name)" % str(list(names))]
+
+def metric_name_prefix_filter(*prefixes):
+    """
+    Returns a filter_rule which checks that the metric name matches one of the provided prefixes.
+
+    Args:
+        `string` a variable number of strings of metric prefixes allowed
+
+    Returns:
+        A list which can be passed to `filter_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            filter_rules=metric_name_prefix_filter("http_requests_", "grpc_requests_")
+        )
+        ```
+    """
+    return ['starts_with(metric_name, "%s")' % pfx for pfx in prefixes]
+
+def metric_label_filter(label_name, *label_values):
+    """
+    Returns a filter_rule which checks that the given metric name matches the provided value.
+
+    Args:
+        label_name: `string` name of the label
+        *label_values: `string` variable number of allowed values of the label
+
+    Returns:
+        A list which can be passed to `filter_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            filter_rules=metric_name_prefix_filter("http_requests_") + \
+                         metric_label_filter("http_status", "500", "501", "502", "503")
+        )
+        ```
+    """
+    return ['.tags."%s" == "%s"' % (label_name, value) for value in label_values]
+
+def metric_label_non_empty_filter(*label_names):
+    """
+    Returns a filter_rule which checks that the given metric name has a non-empty value.
+
+    Args:
+        *label_names: `string` name of the labels which should be non-empty
+
+    Returns:
+        A list which can be passed to `filter_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            filter_rules=metric_name_prefix_filter("http_requests_") + \
+                         metric_label_non_empty_filter("http_status")
+        )
+        ```
+    """
+    return ['.tags."%s" != ""' % (lbl) for lbl in label_names]
+
+
+##############
+# Transforms #
+##############
+
+# Note: the '{' and '}' are escaped.
+_DROP_LABELS_REMAP_CONDITIONAL = """\
+if {vrl_if} {{
+{vrl_then}
+}}"""
+def drop_labels_remap(filter_rules, dropped_labels):
+    """
+    Returns a remap_rule which drops the specified label names on Vector events with a matching filter.
+
+    Args:
+        filter_rules: `list of string` filter_rules for which if any match, then labels are dropped. e.g., `metric_name_filter()`
+        dropped_labels: `list of string` Prometheus labels (Vector calls them tags) to drop.
+
+    Returns:
+        A list which can be passed to `remap_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            remap_rules = \
+                drop_labels_remap(metric_name_prefix_filter("http_requests_"), ["http_method"]) + \
+                drop_labels_remap(metric_name_filter("my_metric_name"), ["unneeded_label"])
+        )
+        ```
+    """
+
+    drop_vrl = ['del(.tags."%s")' % tag for tag in dropped_labels]
+
+    if not filter_rules:
+        return drop_vrl
+
+    vrl_if = ' || '.join(filter_rules)
+    vrl_then = _indent(2, "\n".join(drop_vrl))
+
+    return [_DROP_LABELS_REMAP_CONDITIONAL.format(vrl_if=vrl_if, vrl_then=vrl_then)]
+
+
+_VECTOR_INTERNAL_METRICS_TARGET_CONFIG = """\
+  "vector_internal_metrics":
+    type: internal_metrics
+    scrape_interval_secs: {scrape_interval}
+"""
+
+def and_filters(*filter_rules):
+    """
+    Converts an OR'ed expression into an AND'ed filter expression.
+
+    Args:
+        *filter_rules: `list of list of string`: a list of individual filter_rules for which each should be ANDed together.
+                       Each filter_rule should be specified as its own argument rather than `+` joining them together.
+
+    Returns:
+        A list which can be passed to `remap_rules` in `vector_target()` or to `vrl_filters` in `drop_labels_remap`,
+        where given and_filters([A, B], [C, D]), returns (A or B) and (C or D).
+        This is needed because filters return lists which, when they contain multiple values, are OR'ed together.
+
+    Example:
+        ```
+        and_filters(
+            metric_name_filter("http_requests_total", "grpc_requests_total"),
+            metric_label_filter("http_status", "500") + metric_label_filter("grpc_status", "OK")
+        )
+        ```
+        returns a filter where ((metric_name is http_requests_total) OR (metric_name is grpc_requests_total)) AND ((http_status is 200) OR (grpc_status is OK))
+    """
+    return ['(%s)' % (' && '.join(['(%s)' % (' || '.join(rules)) for rules in filter_rules]))]
+
+def not_filters(*filter_rules):
+    """
+    Negates the provided filter_rule(s).
+
+    Args:
+        *filter_rules: `list of list of string`: a list of individual filter_rules for which their OR'ed aggregate should be negated.
+
+    Returns:
+        A list which can be passed to `remap_rules` in `vector_target()` or to `vrl_filters` in `drop_labels_remap`,
+        where given not_filters([A, B]), returns not (A or B). Given not_filters([A, B], [C, D]), returns not ((A or B) or (C or D))
+
+    Example:
+        ```
+        not_filters(
+            metric_name_filter("very_high_cardinality_metric") + metric_name_prefix_filter("high_cardinality_"),
+            metric_label_filter("ignore_me", "true")
+        )
+        ```
+        returns a filter where NOT ((metric_name is very_high_cardinality_metric OR metric_name starts with high_cardinality_) OR (ignore_me is true))
+    """
+    return ['!(%s)' % (' || '.join(['(%s)' % (' || '.join(rules)) for rules in filter_rules]))]
+
+
+def _indent(chars, string):
+    """Indents each line of the given string by the number of characters."""
+    out = ""
+    for line in string.splitlines():
+        out += "%s%s\n" % (" " * chars, line)
+    return out[:-1]

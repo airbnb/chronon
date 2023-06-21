@@ -1,0 +1,30 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to help with rolling deployments
+"""
+
+load("config/kubernetes/helpers/context.sky", "get_rolling_speed_override")
+load("config/kubernetes/plugins/types.sky", "container_plugin",
+     "deployment_plugin")
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+
+
+def add_rolling_speed_override():
+    """
+    If the rolling_speed_override context var is a non-zero value n it will
+    override max_surge to n% and max_unavailable to n%.
+    """
+    return deployment_plugin(add_override_to_def)
+
+
+def add_override_to_def(ctx, arguments, deployment_def):
+    override = get_rolling_speed_override(ctx)
+    if override <= 0:
+        return
+    if deployment_def["kwargs"]["strategy"].type != "RollingUpdate":
+        return
+    deployment_def["kwargs"]["strategy"] = rolling_update_strategy(
+        ctx,
+        max_surge="{}%".format(override),
+        max_unavailable="{}%".format(override),
+    )

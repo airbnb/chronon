@@ -1,0 +1,119 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/proto_or_yaml.sky", "MutatingWebhook", "MutatingWebhookConfiguration", "WebhookClientConfig")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "webhook_configuration_plugin")
+load("config/kubernetes/meta/metadata.sky", "metadata", "render_metadata")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def mutating_webhook_configuration(ctx, *plugins, webhook_name = None, **kwargs):
+    """
+    Define a Mutating Webhook Configuration, with a set of defined webhooks.
+    Admission webhooks are HTTP callbacks that receive admission requests and do something with them.
+    You can define two types of admission webhooks, validating admission webhook and mutating admission webhook.
+    Mutating admission webhooks are invoked first, and can modify objects sent to the API server to enforce custom defaults.
+    After all object modifications are complete, and after the incoming object is validated by the API server,
+    validating admission webhooks are invoked and can reject requests to enforce custom policies.
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        *plugins: One or more plugins to configure the service.
+        **kwargs: Options for the [MutatingWebhookConfiguration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#mutatingwebhookconfiguration-v1-admissionregistration-k8s-io).
+    Returns:
+        A [MutatingWebhookConfiguration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#mutatingwebhookconfiguration-v1-admissionregistration-k8s-io)
+        Kubernetes protobuf message describing the configuration of the validating webhooks.
+    """
+
+    if webhook_name == None:
+        fail("must specify a webhook_name when defining a mutating webhook configuration")
+
+    mutating_webhooks = {
+        "render": _render_webhooks,
+        "type": "mutating_webhook_configuration",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = [
+        metadata(
+            namespace = "webhooks-admin",
+            service_name = ("%s-mutating-webhook" % webhook_name),
+        ),
+    ]
+    all_plugins.extend(plugins)
+    all_plugins.append(mutating_webhook_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_webhook(ctx, plugin, mutating_webhooks)
+
+    return mutating_webhooks["render"](ctx, mutating_webhooks)
+
+def mutating_webhook_options(**kwargs):
+    return webhook_configuration_plugin(
+        _update_mutating_webhook_options,
+        kwargs = kwargs,
+    )
+
+def _update_mutating_webhook_options(ctx, plugin, webhook_def):
+    webhook_def["kwargs"].update(plugin.kwargs)
+
+def _render_webhooks(ctx, mutating_webhooks):
+    mutating_webhooks["metadata"] = struct(**mutating_webhooks["metadata"])
+    mutating_webhooks = struct(**mutating_webhooks)
+
+    kargs = struct(**mutating_webhooks.kwargs)
+
+    obj_webhooks_list = []
+    if hasattr(kargs, "webhooks"):
+        webhooks = kargs.webhooks
+        if type(webhooks) == type([]):
+            for wh in webhooks:
+                obj_webhooks_list.append(wh)
+        else:
+            fail("webhooks passed in must be an array")
+
+    webhooks_obj = MutatingWebhookConfiguration(ctx)
+    if get_render_yaml(ctx):
+        webhooks_obj["metadata"] = render_metadata(ctx, mutating_webhooks.metadata)
+        if webhooks_obj["metadata"].get("namespace"):
+            # remove the namespace from the metadata however
+            webhooks_obj["metadata"].pop("namespace")
+        if len(obj_webhooks_list) > 0:
+            webhooks_obj["webhooks"] = obj_webhooks_list
+        return yaml.marshal(webhooks_obj)
+    else:
+        webhooks_obj.metadata = render_metadata(ctx, mutating_webhooks.metadata)
+        # remove the namespace from the metadata however
+        webhooks_obj.metadata.namespace = None
+        if len(obj_webhooks_list) > 0:
+            webhooks_obj.Webhooks = obj_webhooks_list
+
+    return webhooks_obj
+
+def mutating_webhook(
+    ctx,
+    name,
+    url,
+    failurePolicy = "Ignore",
+    rules = [],
+    timeoutSeconds = 1,
+):
+    if len(name) == 0:
+        fail("invalid webhook name passed: %s" % name)
+    if len(url) <= 8:
+        fail("invalid webhook url passed: %s" % url)
+    if not url[:8] == "https://":
+        fail("the scheme must be 'https'; the URL must begin with 'https://'")
+
+    return MutatingWebhook(
+        ctx,
+        name = name,
+        clientConfig = WebhookClientConfig(
+            ctx,
+            url = url,
+        ),
+        rules = rules,
+        failurePolicy = failurePolicy,
+        matchPolicy = "Equivalent",
+        sideEffects = "None",
+        timeoutSeconds = timeoutSeconds,
+        admissionReviewVersions = ["v1"],
+    )

@@ -1,0 +1,199 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# NB: The boolean field should never change. It's name this way soley to make it
+# obvious what's going on when a skycfg error message prints this struct.
+NOT_PROVIDED = struct(NO_USER_VALUE_PROVIDED = True)
+
+def _matched(target, rule):
+    for field in dir(rule):
+        rval = getattr(rule, field, None)
+        tval = getattr(target, field, None)
+        if rval != "*" and tval != rval:
+            return False
+    return True
+
+def match(target, default, *whens):
+    """
+    Matches `target` against a sequence of conditions (`whens`) and some default
+    catch-all value (`default`). Returns the value of the first matching condition.
+
+    Returns:
+        The value specified by the first matching condition for `target` or
+        `default` if there is no match.
+
+    Args:
+        target: deploy-time context to match against the `whens` conditions
+        default: the catch-all default value
+        whens: a sequence of rules to match `target` against
+    """
+    if target == None:
+        return default
+
+    for rule in whens:
+        if _matched(target, rule.target):
+            return rule.value
+    return default
+
+def when(
+        *,
+        value,
+        role = "*",
+        region = "*",
+        env = "*",
+        availability_tier = "*"):
+    """
+    Syntactic sugar for a configuration condition that specifies `(target, value)`
+    i.e. if the deploy-time context matches `target`, then the value should be `value`
+
+    NB: Since skycfg does not support recursion, targets are analogous to but do not fully
+    replicate the override syntax in go/kube-tools/blob/master/util/config/host_override.go
+
+    Returns:
+        A struct with fields `target` and `value`
+
+    Args:
+        value: What value ought to be used if this `when` condition matches the target
+        remaining args: are used to construct the target
+    """
+    return struct(
+        target = target(
+            role = role,
+            region = region,
+            env = env,
+            availability_tier = availability_tier,
+        ),
+        value = value,
+    )
+
+def target(
+        role,
+        region,
+        env,
+        availability_tier):
+    """
+    A descriptor of deploy-time properties of the workload e.g. (role, region, env, domain)
+    NB: Since skycfg does not support recursion, targets are analogous to but do not fully
+    replicate the override syntax in go/kube-tools/blob/8c79053a/util/config/host_override.go
+
+    Returns:
+        A struct with all fields passed as-is.
+
+    Args:
+        role: equivalent to `host_type` (non-MSP) e.g. namespace
+            TODO: We may consider a more granular role like `//namespace/<get_name(henson_context)>`.
+            For now, we want `target()` to be intentionally broad, because service owners should
+            always have the agency to configure their specific workloads via `networking_config`
+        region: AWS region e.g. east
+        env: e.g. qa or prod
+    """
+    return struct(
+        # TODO(xyu): consider more granular role like `//namespace/<get_name(ctx)>`?
+        role = role,  # namespace
+        region = region,  # get_cluster(ctx)
+        env = env,  # get_env(ctx)
+        availability_tier = availability_tier,  # TODO(xyu): how to access in skycfg?
+    )
+
+# NB(xyu): This introduces the same ordering problems as the skycfg
+# plugin system. All network_config_updater objects must be fully self-contained
+# and cannot depend on other configuration!
+def network_config_updater(
+        _update_envoy_config_srv_config = None,
+        _update_envoy_config_srv_cli_args = None,
+        _update_envoy_config_srv_version = None,
+        _update_envoy_sidecar_config = None,
+        _update_envoy_bootstrap_config = None,
+        _update_envoy_sidecar_cli_args = None,
+        _update_envoy_monitor_cli_args = None,
+        _update_envoy_config_srv_container_config = None,
+        **kwargs):
+    """
+    Returns:
+        A struct that
+        (1) stows away custom user-provied arguments (`kwargs`)
+        (2) knows how to update various bits of networking configuration
+        (3) will evaluate to True when passed to `is_network_config_updater()`
+
+        Every user-provided argument in `networking_config` should map to a
+        `network_config_updater` struct.
+
+    Args:
+        **kwargs: arguments to stow and eventually pass to the `_update_*` config update functions.
+        _update_<config>: must have signature `def update(stowed_args) -> dict`
+            Setting `_update_<config_type>` signals to the config generation system that
+            this updater knows how to generate values for `<config_type>`
+            (e.g. envoy-config-srv cli options).
+
+            Each _update_* function should return a dictionary of (field, value)
+            to overwrite the appropriate <config_type>, where `field` must exist
+            in the schema of the underlying configuration.
+    """
+    return struct(
+        _networking_user_override = True,
+        _update_envoy_config_srv_config = _update_envoy_config_srv_config,
+        _update_envoy_config_srv_cli_args = _update_envoy_config_srv_cli_args,
+        _update_envoy_config_srv_version = _update_envoy_config_srv_version,
+        _update_envoy_sidecar_config = _update_envoy_sidecar_config,
+        _update_envoy_bootstrap_config = _update_envoy_bootstrap_config,
+        _update_envoy_sidecar_cli_args = _update_envoy_sidecar_cli_args,
+        _update_envoy_monitor_cli_args = _update_envoy_monitor_cli_args,
+        _update_envoy_config_srv_container_config = _update_envoy_config_srv_container_config,
+        kwargs = struct(**kwargs),
+    )
+
+def is_network_config_updater(value):
+    return (type(value) == "struct" and
+            getattr(value, "_networking_user_override", None) == True)
+
+def _update_if_provided(cfg, key, val):
+    if cfg.get(key, NOT_PROVIDED) == NOT_PROVIDED:
+        fail("".join([
+            "FATAL: Cannot update '%s' because it is not a field in the " % key,
+            "underlying config schema (valid keys: %s)" % cfg.keys(),
+        ]))
+    if val != NOT_PROVIDED:
+        if is_network_config_updater(val):
+            fail("".join([
+                "FATAL: Cannot update '%s' to a value that is a `network_config_updater`: %s.  " % (key, val),
+                "This point of config evaluation expects a valid runtime-consumable config value ",
+                "(`network_config_updater` values are deferred computations and are not consumable). ",
+                "Should '%s' be a top-level field in the `networking_config` struct?" % key,
+            ]))
+        cfg[key] = val
+
+def populate_config(cfg, user_overrides, update_fn_name):
+    for field in dir(user_overrides):
+        user_value = getattr(user_overrides, field, None)
+        if (user_value != NOT_PROVIDED and user_value != None):
+            if is_network_config_updater(user_value):
+                update_fn = getattr(user_value, update_fn_name, None)
+                if update_fn != None:
+                    for k, v in update_fn(user_value.kwargs).items():
+                        _update_if_provided(cfg, k, v)
+            else:
+                fail("".join([
+                    "FATAL: [%s] " % update_fn_name,
+                    "Field '%s' with user-provided value '%s' must be " % (field, user_value),
+                    "constructed as a `network_config_updater()`.\n",
+                    "(1) If you are implementing a new user-facing config knob, ",
+                    "check the struct in `networking_config`\n",
+                    "(2) If you are trying to use the `networking_config` API, please ",
+                    "reach out to #service-networking.",
+                ]))
+    return cfg
+
+
+def merge_configs(*configs):
+    """
+    Merges an ordered list of configuration dictionaries.
+
+    Returns:
+        The resulting merged configuration dictionary.
+
+    Args:
+        configs: an ordered list of configuration dictionaries to merge.
+            When configuration keys intersect, the entries from the latter dictionaries win.
+    """
+    config = dict()
+    for c in configs:
+        config.update(c)
+    return config

@@ -1,0 +1,31 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of RoleRef message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L168-L177
+"""
+
+load("config/kubernetes/rbac/rbacschema.sky", "rbac")
+
+def role_ref(ctx, role_ref_mapping):
+    obj_role_ref = rbac.RoleRef()
+    role_ref_mapping = struct(**role_ref_mapping)
+
+    if hasattr(role_ref_mapping, "apiGroup"):
+        if type(role_ref_mapping.apiGroup) == "string":
+            obj_role_ref.apiGroup = role_ref_mapping.apiGroup
+        else:
+            fail("RoleRef apiGroup field called with non string value")
+
+    if hasattr(role_ref_mapping, "kind"):
+        if type(role_ref_mapping.kind) == "string":
+            obj_role_ref.kind = role_ref_mapping.kind
+        else:
+            fail("RoleRef kind field called with non string value")
+
+    if hasattr(role_ref_mapping, "name"):
+        if type(role_ref_mapping.name) == "string":
+            obj_role_ref.name = role_ref_mapping.name
+        else:
+            fail("RoleRef name field called with non string value")
+
+    return obj_role_ref

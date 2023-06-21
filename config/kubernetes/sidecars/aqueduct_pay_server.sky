@@ -1,0 +1,58 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "init_container")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume")
+load("config/kubernetes/helpers/images.sky", "sidecar_image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+
+AQPS_CONTAINER_NAME = "aqueduct-pay-server"
+AQPS_MOUNT_PATH_MAP = {
+    "primary": "/pay/deploy/aqueduct-pay-server/current/lib/hydra",
+    "staging": "/pay/deploy/aqueduct-pay-server-staging/current/lib/hydra",
+}
+
+def aqueduct_pay_server(ctx, target="primary"):
+    """
+    pay-server mount owned by reporting-data-platform.
+    The version is managed by deploying http://go/service/aqueduct-pay-server-sidecar
+
+    Args:
+        ctx: The Henson context passed into your service's main() function.
+
+    Returns:
+        A plugin that mounts the current aqueduct-pay-service-sidecar pay-server version
+        into /pay/deploy/aqueduct-pay-server/current on the main container.
+    """
+    AQPS_MOUNT_PATH = AQPS_MOUNT_PATH_MAP[target]
+    return compose_plugins(
+        mount_pod_volume(AQPS_MOUNT_PATH, container_name=AQPS_CONTAINER_NAME, mount_args={"read_only": False}),
+        mount_pod_volume(AQPS_MOUNT_PATH),# Mounts volume to main container
+
+        # Previously, we copied in the entirety of the pay-server image into
+        # the pod volume. However, at the time of writing this comment, this
+        # image is ~8.3G. Furthermore, it has lots of tiny files. This means
+        # that for each Airflow scheduler pod scheduled, we spent about 12
+        # minutes just copying files. The hope here is that we only copy the
+        # files we really need. Based on QA testing, the time for container
+        # initialization drops down to ~1 second.
+        #
+        # This intentionally excludes a bunch of scripts used from Airflow
+        # workers at runtime (these scripts live in `scripts/sigma/...`). As we
+        # have only moved the scheduler to MSP for now, all we care about is
+        # successful task registration, and not task execution. We should
+        # definitely revisit this decision if/when we containerize job
+        # execution. My (Akshay's) dream state would be that we would not need
+        # to touch this at all, and can instead run that pay-server dependent
+        # task directly within a `pay-server-image` container, rather than the
+        # default Zoolander jobs container.
+        #
+        # See https://jira.corp.stripe.com/browse/RUN_DATAORCH-1369 for more
+        # context about this change.
+        init_container(
+            name=AQPS_CONTAINER_NAME,
+            image=sidecar_image(ctx, name="aqueduct-pay-server-sidecar", fallback=None),
+            # Specifying `/deploy/pay-server/current/.` copies the contents of `current`,
+            # rather than the `current` directory itself
+            command=["cp", "-r", "/deploy/pay-server/current/lib/hydra/.", AQPS_MOUNT_PATH],
+            sidecar_service="aqueduct-pay-server-sidecar",
+        ),
+    )

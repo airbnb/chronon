@@ -1,0 +1,365 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugin for creating a pod in the standard way for Stripe.
+"""
+
+load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/core/container.sky", "container", "container_resources")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/pod.sky", "pod", "pod_host_network")
+load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "host_volume")
+load("config/kubernetes/helpers/availability_tiers.sky", "A400")
+load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "exec_action")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size", "get_bin_packing_instance_type")
+load("config/kubernetes/helpers/msp_shard.sky", "prefer_msp_shard")
+load("config/kubernetes/helpers/msp_shard.sky", "autoset_shard_shared_msp")
+load("config/kubernetes/helpers/node_selectors.sky", "node_selectors", host_type_plugin="host_type", "SHARED_MSP_HOST_TYPE")
+load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
+load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
+load("config/kubernetes/helpers/pod_sizing.sky", "auto_size")
+load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/confidant.sky", "secret_options")
+load("config/kubernetes/sidecars/feature_flags.sky", "use_feature_flags")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled")
+load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
+load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
+
+
+def stripe_pod(
+        ctx,
+        name,
+        command,
+        cpu = None,
+        memory = None,
+        storage = None,
+        image = None,
+        host_network = None,
+        share_pid_namespace = False,
+        host_type = None,
+        namespace = None,
+        container_name = None,
+        instance_type = None,
+        availability_tier = None,
+        use_shared_msp_service_account = True,
+        requires_consul = None
+):
+    """
+    Create a standard Stripe job or service with a main container.
+
+    This plugin, or a repository-specific one like `pay_server_pod` or `gocode_pod`, should generally be the
+    first plugin used when defining a new workload. It sets up important metadata about the workload and creates
+    a basic pod with a single main container that runs a command.
+
+    This plugin does not set up secrets or Consul service registration. Other plugins can be added after this one
+    to add those to the pod.
+
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations
+        name: The name of service or job. Generally, this should match the Henson service name.
+        image: The name of the ECR repository of the container images the pod should run for its main container.
+        command: An array containing the command and arguments that should run in the main container
+        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
+        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        storage: The amount of ephemeral storage the main container needs, provided using `gigabytes` or `megabytes`.
+        host_type: The host type of the machines this pod should be able to
+            schedule on. This will also be the namespace of the pods in Kubernetes.
+            Must be set iff shared_msp=False (the default).
+        namespace: The namespace of the pods in Kubernetes. Must be set iff shared_msp=True.
+        container_name: The name of the main container for this service or job. If none is provided, will
+            default to the `name` param.
+        instance_type: The aws instance type on which the pod should run. Must be set iff shared_msp=True.
+            (should be a type loaded from config/kubernetes/helpers/aws_instance_sizes.sky)
+        availability_tier: The availability tier of the instance on which the pod should run.  If shared_msp=True
+            will default to A400 if not set. availability_tier can be set for dedicated MSP services, but
+            it *must* match the availability tier of the ASG the pods run on, or pods may fail to schedule
+            correctly. (should be a tier loaded from config/kubernetes/helpers/availability_tiers.sky)
+        use_shared_msp_service_account: Whether we should associate the Shared
+            MSP service account (`shared-msp-sa`) with this pod. This is neccesary
+            as a temporary measure to associate the appropriate pod security policy
+            with a Shared MSP pod. Please consult with Orchestration before
+            setting/disabling this flag.
+        requires_consul: Whether the service uses Consul or not. This flag is part of Consul deprecation effort and
+            should be set to either `True` or `False` only upon explicit request to your team and following the corresponding
+            instructions.
+    Returns:
+        A plugin that can be used with an entrypoint like `deployment` or `cronjob`.
+    """
+
+    if command == None or len(command) == 0:
+        fail("No command specified in stripe_pod " + str(name))
+
+    if str(type(command)) != 'list':
+        fail("Invalid command specified in stripe_pod " + str(name) + ": was not of type list, was " + str(type(command)))
+
+    all_args = dict(
+        name=name,
+        image=image,
+        command=command,
+        cpu=cpu,
+        memory=memory,
+        storage=storage,
+        host_network=host_network,
+        share_pid_namespace=share_pid_namespace,
+        host_type=host_type,
+        namespace=namespace,
+        container_name=container_name,
+        instance_type=instance_type,
+        availability_tier=availability_tier,
+    )
+    defaulted_host_network = True if host_network == None else host_network # default to True for dedicated MSP
+    defaulted_availability_tier = A400 if availability_tier == None else availability_tier  # default to A400 for shared_msp
+
+    # On shared MSP, we default to A400 if you don't specify an availability tier,
+    # as the availability tier label is needed to schedule pods onto the right
+    # ASG. However, on dedicated MSP this may not match the underlying ASG, so
+    # defaulting to A400 on dedicated MSP is not safe.
+    # If availability_tier isn't set, we do not want to fail to schedule pods, so
+    # we simply omit the annotation and selector.
+    dedicated_msp_atier = {}
+    if availability_tier != None:
+        # On dedicated MSP, there is no distinction between pod tier and node tier, so we set both annotation and
+        #   node selector to the more fine-grained pod_tier
+        dedicated_msp_atier['stripe.io/availability-tier'] = availability_tier.pod_tier
+
+    plugins = [
+        pod(share_pid_namespace = share_pid_namespace),
+        use_feature_flags(ctx, use_legacy_host_mounts = True),
+        container(
+            name = container_name if container_name != None else name,
+            is_main_container = True,
+            image = image,
+            command = command,
+            storage = storage,
+        ),
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=compose_plugins(
+                _validate_shared_msp_params_plugin(**all_args),
+                use_shared_msp(
+                    ctx,
+                    namespace=namespace,
+                    name=name,
+                    instance_type=instance_type,
+                    availability_tier=defaulted_availability_tier,
+                    requires_consul=requires_consul,
+                ),
+            )
+        ),
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=compose_plugins(
+                _validate_dedicated_msp_params_plugin(**all_args),
+                metadata(
+                    namespace = host_type,
+                    service_name = name,
+                ),
+                container_resources(cpu = cpu, memory = memory),
+                host_type_plugin(host_type),
+                pod_host_network(defaulted_host_network),
+                labels({'stripe.io/shared-msp': 'false'}),
+                labels(dedicated_msp_atier),
+                annotations(dedicated_msp_atier),
+                node_selectors(dedicated_msp_atier)
+            ),
+        ),
+    ]
+    if use_shared_msp_service_account:
+        plugins.append(shared_msp_service_account_plugin())
+
+    return compose_plugins(*plugins)
+
+
+def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None):
+    """
+    Plugin for enabling a pod to run on Shared MSP.
+    """
+    if instance_type == None:
+        return _fail_plugin("No instance type specified for shared msp")
+    total_resources = aws_instance_size(instance_type.name)
+    cpu = millicores(ctx, total_resources.cpu_millicores - instance_type.slack_cpu_millicores)
+    memory = mebibytes(ctx, total_resources.memory_mib)
+    shard_plugin = autoset_shard_shared_msp()
+    bin_pack = is_bin_packing_enabled(ctx)
+    node_selectors_map = {"stripe.io/availability-tier": availability_tier.node_tier}
+    annotations_map = {
+        "stripe.io/availability-tier": availability_tier.pod_tier,
+        "stripe.io/bin-packing": "disabled"
+    }
+    bin_packing_label={"stripe.io/bin-packing": "disabled"}
+    if bin_pack:
+        annotations_map["stripe.io/requested-instance-type"] = instance_type.name
+        annotations_map["stripe.io/bin-packing"] = "enabled"
+        node_selectors_map["stripe.io/aws-instance-type"]= get_bin_packing_instance_type(ctx=ctx, requested_instance_type=instance_type.name)
+        bin_packing_label["stripe.io/bin-packing"] = "enabled"
+    else:
+        node_selectors_map["stripe.io/aws-instance-type"]= instance_type.name
+
+    return compose_plugins(
+        pod_plugin(_set_shared_msp),
+
+        metadata(
+            namespace = namespace,
+            service_name = name,
+        ),
+        labels({'stripe.io/shared-msp': 'true'}),
+        labels({'stripe.io/availability-tier': availability_tier.pod_tier}),
+        labels(bin_packing_label),
+        annotations(annotations_map),
+
+        container_resources(cpu = cpu, memory = memory),
+        node_selectors(node_selectors_map),
+
+        pod_host_network(False),
+        run_as_unprivileged(),
+
+        shard_plugin,
+
+        host_type_plugin(SHARED_MSP_HOST_TYPE),
+
+        _with_consul_agent_enablement(ctx, requires_consul = requires_consul),
+
+        # Plugins neccesary for credentials proxy.
+        # TODO(alecb): Find a way to move these into secret plugins. I *think*
+        # it might be safe to move the two mounts into `secret_options` when
+        # `use_credentials_proxy` is `True`, but I'm unsure if this'll change
+        # anything for Dedicated MSP users using credentials proxy.
+        secret_options(use_credentials_proxy = True),
+        mount_host_volume(
+            "/run/stripe/credentials-proxy",
+            volume_args = {"type": "Directory"},
+        ),
+        mount_host_volume(
+            "/etc/ssl/certs/stripe-cas",
+            volume_args = {"type": "Directory"},
+        ),
+        # TODO(ORCH-2190) Remove kube-iam-credentials bind mount for Shared MSP
+        container_env_vars({"AWS_CONFIG_FILE": "/pay/aws-config/kube_iam_aws_credentials.ini"}),
+        container_env_vars({"AWS_SDK_LOAD_CONFIG": "true"}), # necessary for go/js AWS SDK's (possibly more) to use the config file
+        mount_host_volume(path="/pay/aws-config/kube_iam_aws_credentials.ini", volume_args = {"type": "File"}),
+        mount_host_volume(path="/usr/stripe/bin/kube-iam-credentials", volume_args={"type": "File"}),
+
+        # The volume mounted below is an in-memory volume used to store an
+        # in-memory file caching AWS credentials For security reasons (this
+        # directory will store a file with valid AWS credentials) this
+        # file has to be stored in a RAM-backed filesystem and cannot be
+        # stored in the underlying hosts filesystem.
+        mount_pod_volume(path="/kube-iam-credentials", volume_args = {"medium": "Memory"}, mount_args = {"read_only": False}),
+
+        host_volume(path="/usr/stripe/bin/kube-prestop", type="File"),
+    )
+
+# TODO we may no longer need this as shared_msp is already set
+def _set_shared_msp(ctx, arguments, pod_def):
+    pod_def["shared_msp"] = True
+
+def _fail_plugin(message):
+    return pod_plugin(
+        _fail_with_message,
+        message=message
+    )
+
+def _fail_with_message(ctx, arguments, pod_def):
+    fail(arguments.message)
+
+def _validate_shared_msp_params_plugin(**params):
+    return pod_plugin(
+        _validate_shared_msp_params,
+        **params
+    )
+
+def _validate_shared_msp_params(ctx, arguments, deployment):
+    if arguments.namespace == None:
+        fail("must specify namespace when shared_msp=True")
+    if arguments.host_type != None:
+        fail("cannot specify host_type (%r) when shared_msp=True" % arguments.host_type)
+    if arguments.host_network != None:
+        fail("cannot specify host_network value (%r) when shared_msp=True (host_network is implicitly False for Shared MSP)" % arguments.host_network)
+    if arguments.cpu != None or arguments.memory != None:
+        fail("cannot specify explicit cpu (%s) or memory (%s) requirements when shared_msp=True" % (arguments.cpu, arguments.memory))
+    if arguments.instance_type == None:
+        fail("must specify an instance_type when shared_msp=True")
+
+def _validate_dedicated_msp_params_plugin(**params):
+    return pod_plugin(
+        _validate_dedicated_msp_params,
+        **params
+    )
+
+def _validate_dedicated_msp_params(ctx, arguments, deployment):
+    if arguments.host_type == None:
+        fail("must specify host_type when shared_msp=False")
+    if arguments.host_type == SHARED_MSP_HOST_TYPE:
+        fail("Cannot use the Shared MSP host type (%s) as a host type for Dedicated MSP. Set shared_msp=True instead." % SHARED_MSP_HOST_TYPE)
+    if arguments.namespace != None:
+        fail("cannot specify namespace (%r) when shared_msp=False (your namespace will be the same as your host type, %s)" % (arguments.namespace, arguments.host_type))
+    if arguments.cpu == None or arguments.memory == None:
+        fail("must specify CPU and memory explicitly when shared_msp=False")
+    if arguments.instance_type != None:
+        fail("cannot specify instance_type when shared_msp=False")
+
+def shared_msp_service_account_plugin():
+    return pod_plugin(_set_shared_msp_service_account)
+
+def _set_shared_msp_service_account(ctx, arguments, pod_def):
+    pod_def["service_account_name"] = "shared-msp-sa"
+
+
+def is_msp_consul_deprecation_enabled_extra_safe(ctx):
+    return is_msp_consul_deprecation_enabled(ctx)
+
+CONSUL_AGENT_ENABLED_LABEL = "stripe.io/consul-agent"
+CONSUL_AGENT_ENABLED_LABEL_UNKNOWN = "unknown"
+CONSUL_AGENT_ENABLED_LABEL_ENABLED = "enabled"
+CONSUL_AGENT_ENABLED_LABEL_DISABLED = "disabled"
+
+def _with_consul_agent_enablement(ctx, requires_consul = None):
+    """Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off
+
+    Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off. This will
+    depends on whether services require Consul agent or not to run. Service owners should explicitly
+    set that dependency by setting `requires_consul` to True/False. It is also possible to leave this
+    parameter unset that technically means it's required.
+
+    The're are basically two plugins to add: a label and an init container.
+
+    +-----------------+------------------------+----------------+-----------------------------------------------+
+    | requires_consul | stripe.io/consul-agent | Init container | Explanation                                   |
+    +-----------------+------------------------+----------------+-----------------------------------------------+
+    | True            | enabled                | Added          | Service owners are requesting that their      |
+    |                 |                        |                | service runs in a node with Consul enabled.   |
+    |                 |                        |                | The label will be added as `enabled` and the  |
+    |                 |                        |                | init container attached to wait for Consul    |
+    |                 |                        |                | agent to be ready.                            |
+    +-----------------+------------------------+----------------+-----------------------------------------------+
+    | False           | disabled               | Not added      | Service owners identified that their service  |
+    |                 |                        |                | doesn't need Consul. We then set the label to |
+    |                 |                        |                | `disabled` and skip the init container since  |
+    |                 |                        |                | there's nothing to wait for.                  |
+    +-----------------+------------------------+----------------+-----------------------------------------------+
+    | None            | unknown                | Added          | In this case, Consul will be required         |
+    |                 |                        |                | but we will use this value to track down      |
+    |                 |                        |                | services that need to explicitly set their    |
+    |                 |                        |                | dependency.                                   |
+    +-----------------+------------------------+----------------+-----------------------------------------------+
+    """
+
+    if not is_msp_consul_deprecation_enabled_extra_safe(ctx):
+        return compose_plugins()
+
+    # "unknown" label means that Consul request wasn't explicitly set by the service owner but
+    # will be considered as needed. Having a third value for the label will allow us to track down
+    # services that haven't been reviewed and added the Consul dependency explicitly.
+    consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_UNKNOWN
+    if requires_consul == True:
+        consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_ENABLED
+    elif requires_consul == False:
+        consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
+
+    plugins = [labels({CONSUL_AGENT_ENABLED_LABEL: consul_agent_label_value})]
+    if consul_agent_label_value != CONSUL_AGENT_ENABLED_LABEL_DISABLED:
+        plugins.append(consul_agent_init(ctx))
+
+    return compose_plugins(*plugins)

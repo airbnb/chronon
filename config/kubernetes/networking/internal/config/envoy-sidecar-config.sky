@@ -1,0 +1,56 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+[Service Networking Internal] Default schema and config value generation rules
+for `envoy-sidecar` sidecar in Shared MSP. Config values are computed from
+deploy-time context of the current workload and covers:
+- commandline arguments for `envoy-sidecar`
+- bootstrap configuration for the `envoy` process spawned by `envoy-sidecar`
+- (TODO) sidecar image versioning
+
+Service owners may override default values by calling the `networking_config`.
+"""
+
+load(
+    "config/kubernetes/networking/internal/config/override.sky",
+    "match",
+    "when",
+    "NOT_PROVIDED",
+    "is_network_config_updater",
+    "populate_config",
+)
+
+
+def _default_envoy_bootstrap_config_flags(target):
+    """
+    Args:
+        target: deploy-time properties about the current workload. Used to match
+            against config generation rules to synthesize the correct values for
+            the workload.
+
+    Returns:
+        A dictionary used to configure the envoy bootstrap config used by the
+        Shared MSP per-pod envoy
+    """
+    return {
+        "add_global_ratelimit_cluster": False,
+        "global_downstream_max_connections": 120000,
+        "stats_flush_interval": match(target, 60,
+            when(env = "qa", value = 60),
+            when(env = "prod", value = 30),
+        ),
+        "include_upstream_downstream_stats": False,
+        "stats_flush_on_admin": False,
+    }
+
+def generate_envoy_bootstrap_opts(target, user_overrides):
+    cfg = _default_envoy_bootstrap_config_flags(target)
+    return populate_config(cfg, user_overrides, "_update_envoy_bootstrap_config")
+
+def _default_cli_args(target):
+    return {
+        "envoy_concurrency": None,
+    }
+
+def generate_cli_args(target, user_overrides):
+    cfg = _default_cli_args(target)
+    return populate_config(cfg, user_overrides, "_update_envoy_sidecar_cli_args")

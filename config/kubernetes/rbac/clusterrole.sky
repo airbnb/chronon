@@ -1,0 +1,138 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of ClusterRole message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L40-L54
+"""
+
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "rbac_plugin")
+load("config/kubernetes/rbac/policyrule.sky", "policy_rule")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "ClusterRole", "AggregationRule", "LabelSelector", "LabelSelectorRequirement")
+
+def cluster_role(ctx, *plugins, **kwargs):
+    cluster_role_mapping = {
+        "render": _render_cluster_role,
+        "type": "rbac",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(cluster_role_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_rbac(ctx, plugin, cluster_role_mapping)
+
+    return cluster_role_mapping["render"](ctx, cluster_role_mapping)
+
+def cluster_role_options(**kwargs):
+    return rbac_plugin(
+        _update_cluster_role_options,
+        kwargs = kwargs,
+    )
+
+def _update_cluster_role_options(ctx, plugin, cluster_role_def):
+    cluster_role_def["kwargs"].update(plugin.kwargs)
+
+def _render_cluster_role(ctx, cluster_role_mapping):
+    cluster_role_mapping["metadata"] = struct(**cluster_role_mapping["metadata"])
+    cluster_role_mapping = struct(**cluster_role_mapping)
+
+    kargs = struct(**cluster_role_mapping.kwargs)
+    obj_rule_list = []
+    if hasattr(kargs, "rules"):
+            if type(kargs.rules) == type([]):
+
+                for rule in kargs.rules:
+                    obj_rule = policy_rule(ctx, rule)
+                    obj_rule_list.append(obj_rule)
+
+            else:
+                fail("ClusterRole rules field called with non list value")
+
+    obj_aggregation_rule = None
+    if hasattr(kargs, "aggregationRule"):
+        obj_aggregation_rule = AggregationRule(ctx)
+
+        # Nested map must be turned to struct before it can be utilized
+        aggRule = struct(**kargs.aggregationRule)
+
+        if hasattr(aggRule, "clusterRoleSelectors"):
+            if type(aggRule.clusterRoleSelectors) == type([]):
+                obj_cluster_role_selector_list = []
+
+                for role_selector in aggRule.clusterRoleSelectors:
+                    obj_cluster_role_selector = _label_selector(ctx, role_selector)
+                    obj_cluster_role_selector_list.append(obj_cluster_role_selector)
+
+                obj_aggregation_rule.clusterRoleSelectors = obj_cluster_role_selector_list
+            else:
+                fail("ClusterRole aggregationRule.clusterRoleSelectors field called with non list value")
+
+
+
+    obj_cluster_role = ClusterRole(ctx)
+    if get_render_yaml(ctx):
+        obj_cluster_role["metadata"] = render_metadata(ctx, cluster_role_mapping.metadata)
+        if len(obj_rule_list) > 0:
+            obj_cluster_role["rules"] = obj_rule_list
+        if obj_aggregation_rule != None:
+            obj_cluster_role["aggregationRule"] = obj_aggregation_rule
+        return yaml.marshal(obj_cluster_role)
+    else:
+        obj_cluster_role.metadata = render_metadata(ctx, cluster_role_mapping.metadata)
+        if len(obj_rule_list) > 0:
+            obj_cluster_role.rules = obj_rule_list
+        if obj_aggregation_rule != None:
+            obj_cluster_role.aggregationRule = obj_aggregation_rule
+
+    return obj_cluster_role
+
+def _label_selector(ctx, object):
+    obj_label_selector = LabelSelector(ctx)
+    object = struct(**object)
+
+    if hasattr(object, "matchLabels"):
+        if type(object.matchLabels) == type({}):  # is a map
+            obj_label_selector.matchLabels = object.matchLabels
+        else:
+            fail("LabelSelector matchLabels field called with non map value")
+
+    if hasattr(object, "matchExpressions"):
+        if type(object.matchExpressions) == type([]):  # is a list
+            expressions = []
+            for expression in object.matchExpressions:
+                obj_expression = _label_selector_requirement(ctx, expression)
+                expressions.append(obj_expression)
+            obj_label_selector.matchExpressions = expressions
+        else:
+            fail("LabelSelector matchExpressions field called with non list value")
+
+    return obj_label_selector
+
+def _label_selector_requirement(ctx, requirement):
+    obj_label_selector_requirement = LabelSelectorRequirement(ctx)
+    requirement = struct(**requirement)
+
+    if hasattr(requirement, "key"):
+        if type(requirement.key) == "string":
+            obj_label_selector_requirement.key = requirement.key
+        else:
+            fail("LabelSelectorRequirement key field called with non string value")
+
+    if hasattr(requirement, "operator"):
+        if type(requirement.operator) == "string":
+            obj_label_selector_requirement.operator = requirement.operator
+        else:
+            fail("LabelSelectorRequirement operator field called with non string value")
+
+    if hasattr(requirement, "values"):
+        if type(requirement.values) == "string":
+            obj_label_selector_requirement.values = requirement.values
+        else:
+            fail("LabelSelectorRequirement values field called with non string value")
+
+    return obj_label_selector_requirement

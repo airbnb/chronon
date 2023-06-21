@@ -1,0 +1,170 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for creating and configuring Kubernetes [StatefulSet][]s.
+
+[statefulset]: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
+"""
+load("config/kubernetes/core/pod.sky", "all_containers", "main_container")
+load("config/kubernetes/helpers/msp_shard.sky", "MSP_SHARD_ANNOTATION", "prefer_msp_shard")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "get_availability_tier_from_metadata")
+load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "prestop_all_infra_sidecars", "DEFAULT_GRACE_PERIOD_SECONDS", "grace_period", "generate_prestop_sleep_action", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME")
+load("config/kubernetes/networking/public/networking.sky", "networking")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "statefulset_plugin")
+load("config/kubernetes/sidecars/metrics.sky", "metrics")
+load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml")
+load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
+load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "StatefulSet", "StatefulSetSpec")
+load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
+
+def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwargs):
+    """
+    Schedule multiple instances of a stateful service.
+
+    StatefulSets are different from Deployments in that their replicas are not interchangeable.
+    Pods are numbered from 0 to `replicas - 1`, and rolling updates are performed in a specific
+    order. This is sometimes used to run services in a leader-follower setup, where pod 0 is
+    the leader and all other replicas are followers.
+
+    If the different instances of your service are interchangeable, which we expect to be true
+    for most services, favor creating a `deployment`. They are better supported and their
+    rollouts are more flexible.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        *plugins: One or more plugins to configure the service.
+        shared_msp: boolean which is True iff the deployment should go to shared MSP (default is False)
+        mount_ldap_volumes: Whether we should auto-apply the
+            `mount_ldap_host_volumes` plugin. Defaults to true to mirror pre-MSP, but
+            some applications may wish to opt-out if it conflicts with other mounts
+            in their countainer image.
+        **kwargs: Options for the [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#statefulsetspec-v1-apps).
+            A shortcut for the `statefulset_options` plugin.
+
+    Returns:
+        A [StatefulSet](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#statefulset-v1-apps)
+        Kubernetes protobuf message describing the configuration of the service.
+    """
+
+    statefulset = {
+        "render": _render_statefulset,
+        "type": "statefulset",
+        "metadata": {},
+        "shared_msp": shared_msp,
+        "registered_services": [],
+        "networking_config": None,
+        "kwargs": {},
+        "metrics_config": None,
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(statefulset_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    _apply_plugin(ctx, plugin, statefulset)
+
+    # for shared msp, services get registered at update time, but the plugin needs them
+    # at create time, so we init and update the networking plugin after all the others
+    if shared_msp:
+        namespace = statefulset['metadata'].get("namespace", None)
+        if namespace == None:
+            fail("Namespace not set for shared MSP statefulset. Perhaps missing a namespace param to your pod?")
+
+        # If no grace period is set, use the default
+        _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), statefulset)
+        pod_termination_grace_period_seconds = statefulset["pod"]["grace_period"]
+
+        networking_plugin = networking(
+            ctx,
+            namespace=namespace,
+            availability_tier=get_availability_tier_from_metadata(statefulset["metadata"]),
+            host_network=False,
+            register_services=statefulset['registered_services'],
+            config=statefulset["networking_config"],
+            pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
+        )
+        _apply_plugin(ctx, networking_plugin, statefulset)
+        # Automatically add the metrics sidecar to any statefulsets. If we encounter a service that
+        # wants to disable this we can add a flag.
+        _apply_plugin(ctx, metrics(ctx, config=statefulset["metrics_config"]), statefulset)
+
+        _apply_plugin(ctx, host_health_agent(ctx, statefulset["registered_services"]), statefulset)
+
+        _apply_plugin(ctx, compose_plugins(
+            prestop_all_infra_sidecars(ctx, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds),
+            prestop_all_containers(generate_prestop_sleep_action(ctx, DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME)),
+            volume_mount_all_containers(
+                "/usr/stripe/bin/kube-prestop",
+                read_only=True,
+            ),
+        ), statefulset)
+
+    # Mount ldap volumes to a container if a host mount named etc-lmscache does not exist.
+    # Repeatedly mounting the same directory causes a failed deploy.
+    # Currently, some services explicitly mount etc-lmscache by calling this plugin.
+    # We want to mount this directory to all containers by default without
+    # breaking existing services.
+    # We cannot add this plugin to the default plugin list above (`all_plugins`) as it requires
+    # the plugins provided in the *plugins argument to run beforehand. The default plugin list
+    # may already have resulted in mounting of /etc/lmscache
+    container = main_container(statefulset["pod"])
+    if mount_ldap_volumes and container and LDAP_MOUNT_NAME not in container["volume_mounts"]:
+        _apply_plugin(ctx, compose_plugins(mount_ldap_host_volumes()), statefulset)
+
+    return statefulset["render"](ctx, statefulset)
+
+def _apply_plugin(ctx, plugin, statefulset):
+    plugin.update_statefulset(ctx, plugin, statefulset)
+    plugin.update_pod(ctx, plugin, statefulset["pod"])
+
+    for container in all_containers(statefulset["pod"]):
+        plugin.update_containers(ctx, plugin, container)
+
+def statefulset_options(**kwargs):
+    """
+    Defines options for a statefulset.
+
+    Args:
+        **kwargs: Options to apply to the deployment. These map directly to fields on the Kubernetes
+            [StatefulSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#statefulsetspec-v1-apps).
+
+    Returns:
+        A plugin that applies the options to a statefulset.
+    """
+    return statefulset_plugin(
+        _update_statefulset_options,
+        kwargs = kwargs,
+    )
+
+def _update_statefulset_options(ctx, plugin, statefulset_def):
+    statefulset_def["kwargs"].update(plugin.kwargs)
+
+def _render_statefulset(ctx, statefulset_def):
+    statefulset_def["metadata"] = struct(**statefulset_def["metadata"])
+    statefulset = struct(**statefulset_def)
+
+    pod_template = statefulset.pod["render"](ctx, statefulset.pod)
+
+    rendered_stateful_set = StatefulSet(
+        ctx,
+        metadata = render_metadata(ctx, statefulset.metadata),
+        spec = StatefulSetSpec(
+            ctx,
+            selector = render_selector(ctx, statefulset.metadata),
+            template = pod_template,
+            **statefulset.kwargs
+        ),
+    )
+
+    if statefulset_def.get("securitygrouppolicy", "") and is_security_group_policy_enabled(ctx, statefulset_def):
+        sgp_obj = statefulset.securitygrouppolicy["render"](ctx, statefulset.securitygrouppolicy)
+        sgp_yaml = yaml.marshal(sgp_obj)
+        return [
+            sgp_yaml,
+            rendered_stateful_set
+        ]
+
+    return rendered_stateful_set

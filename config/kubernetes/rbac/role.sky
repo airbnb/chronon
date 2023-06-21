@@ -1,0 +1,63 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of Role message please refer to
+https://github.com/kubernetes/api/blob/v0.18.6/rbac/v1/generated.proto#L118-L127
+"""
+
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "rbac_plugin")
+load("config/kubernetes/rbac/policyrule.sky", "policy_rule")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Role")
+
+def role(ctx, *plugins, **kwargs):
+    role_mapping = {
+        "render": _render_role,
+        "type": "rbac",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(role_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_rbac(ctx, plugin, role_mapping)
+
+    return role_mapping["render"](ctx, role_mapping)
+
+def role_options(**kwargs):
+    return rbac_plugin(
+        _update_role_options,
+        kwargs = kwargs,
+    )
+
+def _update_role_options(ctx, plugin, role_def):
+    role_def["kwargs"].update(plugin.kwargs)
+
+def _render_role(ctx, role_mapping):
+    role_mapping["metadata"] = struct(**role_mapping["metadata"])
+    role_mapping = struct(**role_mapping)
+
+    kargs = struct(**role_mapping.kwargs)
+    obj_rule_list = []
+    if hasattr(kargs, "rules"):
+            if type(kargs.rules) == type([]):
+                for rule in kargs.rules:
+                    obj_rule = policy_rule(ctx, rule)
+                    obj_rule_list.append(obj_rule)
+            else:
+                fail("Role rules field called with non list value")
+    obj_role = Role(ctx)
+    if get_render_yaml(ctx):
+        obj_role["metadata"] = render_metadata(ctx, role_mapping.metadata)
+        if len(obj_rule_list) > 0:
+            obj_role["rules"] = obj_rule_list
+        return yaml.marshal(obj_role)
+    else:
+        obj_role.metadata = render_metadata(ctx, role_mapping.metadata)
+        if len(obj_rule_list) > 0:
+            obj_role.rules = obj_rule_list
+    return obj_role

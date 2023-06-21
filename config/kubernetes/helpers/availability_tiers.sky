@@ -1,0 +1,57 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+A400 = struct(
+    pod_tier="A400",
+    node_tier="A400",
+)
+A300 = struct(
+    pod_tier="A300",
+    node_tier="A300",
+)
+A200 = struct(
+    pod_tier="A200",
+    node_tier="A200",
+)
+A150 = struct(
+    pod_tier="A150",
+    node_tier="A100",
+)
+A140 = struct(
+    pod_tier="A140",
+    node_tier="A100",
+)
+A130 = struct(
+    pod_tier="A130",
+    node_tier="A100",
+)
+A120 = struct(
+    pod_tier="A120",
+    node_tier="A100",
+)
+A110 = struct(
+    pod_tier="A110",
+    node_tier="A100",
+)
+A100 = struct(
+    pod_tier="A100",
+    node_tier="A100",
+)
+
+
+_TIERS = [
+    A400,
+    A300,
+    A200,
+    A150,
+    A140,
+    A130,
+    A120,
+    A110,
+    A100,
+]
+
+
+def get_pod_availability_tier_by_name(name):
+    for tier in _TIERS:
+        if name.upper() == tier.pod_tier:
+            return tier
+    fail("Invalid availability tier: {}".format(name))

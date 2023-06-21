@@ -1,0 +1,60 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# See http://go/metadata-yaml for information on supported keys and values
+#
+# Note: this code ownership file (and _only_ this code ownership file, in the
+# entire subtree) is copied during the vendoring process. To avoid unnecessary
+# review hangups, if you own code anywhere in this subtree and plan to execute
+# vendor mirror operations into other repos, you should declare your team as a
+# reviewer in this file as well.
+---
+responsible_team: orchestration
+change_notifications:
+  slack: true
+review_requirements:
+- assignees:
+  - codeowners-orchestration
+  reviewers:
+  - codeowners-service-networking
+  - codeowners-orchestration
+  - codeowners-service-deployments
+  - codeowners-feature-deployments
+  - codeowners-cloud
+  - codeowners-infra-platform
+  - codeowners-fleet-management
+  - codeowners-async-processing # for vendor mirroring
+- files:
+  - sidecars/envoy_ratelimit.sky
+  - sidecars/envoy_ratelimit_test.sky
+  assignees:
+  - codeowners-reliability-patterns-and-practices
+  reviewers:
+  - codeowners-reliability-patterns-and-practices
+  - codeowners-orchestration
+  - codeowners-service-networking
+
+- files:
+  - sidecars/confidant.sky
+  - sidecars/confidant_test.sky
+  assignees:
+  - codeowners-secrets-infra
+  reviewers:
+  - codeowners-orchestration
+  - codeowners-service-networking
+
+- files:
+  - sidecars/kafka.sky
+  - sidecars/kafka_test.sky
+  assignees:
+  - codeowners-stream-infrastructure
+  reviewers:
+  - codeowners-service-networking
+  - codeowners-orchestration
+
+- files:
+  - sidecars/metrics.sky
+  - sidecars/metrics_test.sky
+  assignees:
+  - codeowners-observability-monitoring
+  reviewers:
+  - codeowners-service-networking
+  - codeowners-orchestration

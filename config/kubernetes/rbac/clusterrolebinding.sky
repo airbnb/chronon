@@ -1,0 +1,76 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of ClusterRoleBinding message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L58-L70
+"""
+
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/rbac/subject.sky", "subject")
+load("config/kubernetes/rbac/roleref.sky", "role_ref")
+load("config/kubernetes/helpers/roleref_name.sky", "role_ref_helper")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "rbac_plugin")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "ClusterRoleBinding")
+
+def cluster_role_binding(ctx, *plugins, **kwargs):
+    cluster_role_binding_mapping = {
+        "render": _render_cluster_role_binding,
+        "type": "rbac",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(cluster_role_binding_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_rbac(ctx, plugin, cluster_role_binding_mapping)
+
+    return cluster_role_binding_mapping["render"](ctx, cluster_role_binding_mapping)
+
+def cluster_role_binding_options(**kwargs):
+    return rbac_plugin(
+        _update_cluster_role_binding_options,
+        kwargs = kwargs,
+    )
+
+def _update_cluster_role_binding_options(ctx, plugin, cluster_role_binding_def):
+    cluster_role_binding_def["kwargs"].update(plugin.kwargs)
+
+def _render_cluster_role_binding(ctx, cluster_role_binding_mapping):
+    cluster_role_binding_mapping["metadata"] = struct(**cluster_role_binding_mapping["metadata"])
+    cluster_role_binding_mapping = struct(**cluster_role_binding_mapping)
+
+    kargs = struct(**cluster_role_binding_mapping.kwargs)
+    subject_list = []
+    if hasattr(kargs, "subjects"):
+        if type(kargs.subjects) == type([]):
+
+            for obj_subject in kargs.subjects:
+                cluster_role_binding_subject = subject(ctx, obj_subject)
+                subject_list.append(cluster_role_binding_subject)
+        else:
+            fail("ClusterRoleBinding subjects field called with non list value")
+
+    r_ref = None
+    if hasattr(kargs, "roleName"):
+        r_ref = role_ref(ctx, role_ref_helper(kargs.roleName, "ClusterRole"))
+
+    obj_cluster_role_binding = ClusterRoleBinding(ctx)
+    if get_render_yaml(ctx):
+        obj_cluster_role_binding["metadata"] = render_metadata(ctx, cluster_role_binding_mapping.metadata)
+        if len(subject_list) > 0:
+            obj_cluster_role_binding["subjects"] = subject_list
+        if r_ref != None:
+            obj_cluster_role_binding["roleRef"] = r_ref
+        return yaml.marshal(obj_cluster_role_binding)
+    else:
+        obj_cluster_role_binding.metadata = render_metadata(ctx, cluster_role_binding_mapping.metadata)
+        if len(subject_list) > 0:
+            obj_cluster_role_binding.subjects = subject_list
+        if r_ref != None:
+            obj_cluster_role_binding.roleRef = r_ref
+
+    return obj_cluster_role_binding

@@ -1,0 +1,55 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helper function for mapping a t-shirt size and workload type (e.g. large, memory_optimized) to a cpu/memory request amount and instance type.
+"""
+
+load("config/kubernetes/helpers/quantities.sky", "cores", "gibibytes")
+
+_SHIRT_SIZES = ["small", "medium", "large"]
+
+# From https://confluence.corp.stripe.com/x/ajSYCg
+# Not set in stone
+_WORKLOAD_TYPES = ["general_purpose", "compute_optimized", "memory_optimized", "high_io_compute"]
+
+def auto_size(ctx, shirt_size, workload_type):
+    """
+    EXPERIMENTAL and subject to change. This functionality may stop working abruptly or be removed. Do not use for production services.
+
+    Get the resource requests for a pod running of a given size and shape. You _must_ use this iff you are scheduling onto Shared MSP.
+
+    Currently only medium compute_optimized workloads are supported.
+
+    Args:
+        shirt_size: Rough size (compute/memory footprint) of your pod. One of "small", "medium", or "large".
+        workload_type: Shape of your pod in terms of resource requirements. One of "general_purpose", "compute_optimized", "memory_optimized", or "high_io_compute".
+    Returns:
+        A dict with keys "cpu", "memory", and "instance_type".
+    """
+
+    _SIZE_AND_WORKLOAD_TO_SIZING_MAPPING = {
+            "general_purpose": {
+                "medium": {
+                    'cpu': cores(ctx, 3),
+                    'memory': gibibytes(ctx, 14),
+                    'instance_type': 'm5d.xlarge', # 4 cpu and 16 GB
+                },
+            },
+        }
+
+    def _get_sizing(shirt_size, workload_type):
+        if workload_type not in _SIZE_AND_WORKLOAD_TO_SIZING_MAPPING:
+            fail("This workload type " + workload_type + " is currently unsupported. List of currently supported workload types: " + ', '.join(_SIZE_AND_WORKLOAD_TO_SIZING_MAPPING.keys()))
+        elif shirt_size not in _SIZE_AND_WORKLOAD_TO_SIZING_MAPPING[workload_type]:
+            fail("This shirt size " + shirt_size + " for workload type " + workload_type + " is currently unsupported. List of currently supported sizes for this workload_type: " + ', '.join(_SIZE_AND_WORKLOAD_TO_SIZING_MAPPING[workload_type].keys()))
+
+        return _SIZE_AND_WORKLOAD_TO_SIZING_MAPPING[workload_type][shirt_size]
+
+
+    if shirt_size not in _SHIRT_SIZES:
+        fail("Unknown shirt size " + shirt_size + ". List of supported shirt sizes: " + ', '.join(_SHIRT_SIZES))
+
+    if workload_type not in _WORKLOAD_TYPES:
+        fail("Unknown workload type " + workload_type + ". List of supported workload types: " + ', '.join(_WORKLOAD_TYPES))
+
+    return _get_sizing(shirt_size, workload_type)
+

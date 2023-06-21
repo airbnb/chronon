@@ -1,0 +1,109 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# Helper functions for jmxfetch sidecar running along with Monster Scala services
+# jmxfetch is used to get JMX metrics to statsd / veneur
+
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/sidecars/config_file.sky", "config_file")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/core/container.sky", "container")
+load("config/kubernetes/helpers/images.sky", "image")
+
+def add_jmxfetch_sidecar(ctx, service_name, jmx_port):
+    return compose_plugins(
+      container(
+        name = "jmxfetch",
+        # TODO: switch to zoolander image where we don't rely on prebuilt jar binary
+        # blocked by https://jira.corp.stripe.com/browse/RUN_ZOOLANDER-3843
+        image = image(
+            ctx,
+            "third-party/jmxfetch",
+            label = "latest",
+        ),
+        command = [
+            "java",
+            "-classpath",
+            "/jmxfetch-0.14.0-jar-with-dependencies.jar",
+            "org.datadog.jmxfetch.App",
+            "--check",
+            "mongo_java_client.yaml",
+            "--check_period",
+            "15000",
+            "--conf_directory",
+            "/datadog_compat_config/",
+            "--log_level",
+            "ERROR",
+            "--log_location",
+            "System.out",
+            "--reporter",
+            "statsd:127.0.0.1:8200",
+            "--status_location",
+            "status-mongo_java_client.yaml",
+            "collect",
+        ],
+        plugins = [
+            container_env_vars(
+                vars = {
+                    "JAVA_OPTS": " ".join([
+                        "-Xms50m",
+                        "-Xmx200m",
+                    ]),
+                },
+            ),
+        ],
+      ),
+      config_file(
+        "/datadog_compat_config/mongo_java_client.yaml",
+        get_jmx_mongo_java_client_yaml_content(service_name, jmx_port),
+        "/datadog_compat_config",
+      ),
+      mount_pod_volume("/datadog_compat_config", container_name = "jmxfetch"),
+    )
+
+def get_jmx_mongo_java_client_yaml_content(service_name, port):
+    return """
+instances:
+  - host: 127.0.0.1
+    name: {}
+    port: {}
+
+init_config:
+  is_jmx: true
+
+  conf:
+    - include:
+        domain: 'org.mongodb.driver'
+        bean_regex: 'org\\.mongodb\\.driver:type=ConnectionPool.*'
+        attribute:
+          MinSize:
+            metric_type: gauge
+            alias: mongo.client.min_pool_size
+    - include:
+        domain: 'org.mongodb.driver'
+        bean_regex: 'org\\.mongodb\\.driver:type=ConnectionPool.*'
+        attribute:
+          MaxSize:
+            metric_type: gauge
+            alias: mongo.client.max_pool_size
+    - include:
+        domain: 'org.mongodb.driver'
+        bean_regex: 'org\\.mongodb\\.driver:type=ConnectionPool.*'
+        attribute:
+          Size:
+            metric_type: gauge
+            alias: mongo.client.pool_size
+    - include:
+        domain: 'org.mongodb.driver'
+        bean_regex: 'org\\.mongodb\\.driver:type=ConnectionPool.*'
+        attribute:
+          WaitQueueSize:
+            metric_type: gauge
+            alias: mongo.client.wait_queue_size
+    - include:
+        domain: 'org.mongodb.driver'
+        bean_regex: 'org\\.mongodb\\.driver:type=ConnectionPool.*'
+        attribute:
+          CheckedOutCount:
+            metric_type: gauge
+            alias: mongo.client.in_use_connections
+""".format(service_name, port)

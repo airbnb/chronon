@@ -1,0 +1,145 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "deployment_plugin","pod_plugin")
+
+def calculate_multi_arch_replica_split(replicas, migration_size):
+        if type(replicas) != "int":
+            fail("You must provide an integer replicas count for the mutli architecture replica split calculation")
+        if replicas < 0:
+            fail("You must provide a positive integer replicas count for the mutli architecture replica split calculation")
+        if type(migration_size) != "string" and type(migration_size) != "int":
+            fail("You must provide either a string or integer for migration_size")
+        if type(migration_size) == "string" and migration_size[-1] != "%":
+            fail("If split_factor is a string it must be of the following format INTEGER%")
+        if type(migration_size) == "int" and migration_size < 0:
+            fail("You must provide a positive integer as the migration_size")
+
+        graviton_replicas = 0
+
+        if replicas >= 1:
+            if type(migration_size) == "int":
+                if replicas < migration_size:
+                    fail("Replicas size cannot be smaller than the migration_size")
+                replicas -= migration_size
+                graviton_replicas += migration_size
+            elif type(migration_size) == "string":
+                migration_size = int(migration_size.replace("%",""))\
+
+                graviton_replicas = replicas * migration_size/100
+                graviton_replicas = graviton_replicas // 1 # floor
+
+                replicas *= (1 - migration_size/100)
+                replicas = int(-(replicas // -1)) # Ceil
+        else:
+            graviton_replicas = 0
+            replicas = 0
+
+        return int(replicas), int(graviton_replicas)
+
+def multi_arch_dynamic_replicas_desired_size(desired_count=1):
+    """
+    IMPORTANT: This plugin overrides the dynamic replicas settings iff they already exist in the rendered deployment.
+    Otherwise it remains untouched. In other words this plugin relies on dynamic replicas already being present and overrides.
+
+    Args:
+        desired_count: The initial replica count for the first deployment. After
+            your first deployment, if this value changes from one deployment to
+            the next the new value will override the deployment's replica
+            count. Otherwise the current replica count will remain unchanged.
+    """
+    return deployment_plugin(
+        _override_dynamic_replicas_desired_size,
+        desired_count=str(desired_count),
+    )
+
+def graviton_deployment_0_replicas():
+    """
+    IMPORTANT: This plugin sets the replica size to 0 and set the minimum replica count for dynamic replicas to 0 as well
+
+    """
+    return deployment_plugin(
+        _graviton_deployment_0_replicas,
+    )
+
+def multi_arch_override_node_selector(instance_type):
+    """
+    IMPORTANT: This plugin overrides the node selector settings' instance-type section iff they already exist in the rendered deployment.
+    Otherwise it remains untouched.
+
+    Args:
+        instance_type: The instance type you wish to use for the deployment you are overriding.
+    """
+    return pod_plugin(
+        _override_node_selector_instance_type,
+        instance_type=instance_type,
+    )
+
+def add_arch_suffix(suffix):
+    """
+    Modifies the deployment name by tacking on a suffix of your choice to the existing name field
+
+    Args:
+        suffix: The suffix to append to the deployment name.
+
+    Returns:
+        A plugin that modifies the deployment and service name to NAME-SUFFIX
+    """
+    return deployment_plugin(
+        _add_arch_suffix,
+        suffix = suffix
+    )
+
+
+def _override_dynamic_replicas_desired_size(ctx, arguments, deployment_def):
+    if deployment_def.get('metadata').get('annotations').get('stripe.io/dynamic-replicas-enabled'):
+        original_max = int(deployment_def.get('metadata').get('annotations').get('stripe.io/dynamic-replicas-count-max'))
+        original_min = int(deployment_def.get('metadata').get('annotations').get('stripe.io/dynamic-replicas-count-min'))
+        desired = int(arguments.desired_count)
+
+        if desired > original_max:
+            print("desired_count (%d) is greater than max_count (%d) setting your desired dynamic replica count to max" % (desired, original_max))
+            desired = original_max
+        if desired < original_min:
+            print("desired_count (%d) is less than min_count (%d) setting your desired dynamic replica count to min" % (desired, original_min))
+            desired = original_min
+
+        deployment_def['metadata']['annotations'].update({
+            "stripe.io/dynamic-replicas-count-desired": str(desired),
+        })
+        deployment_def['kwargs']['replicas'] = desired
+    else:
+        print("You are attempting to override dynamic replicas plugin but dynamic replicas has not been enabled on this deployment. Not overriding")
+
+
+
+def _override_node_selector_instance_type(ctx, arguments, deployment_definition):
+    instance_type = arguments.instance_type
+
+    if type(instance_type) != "string" :
+        fail("You must provide an instance type which of type string")
+
+    node_selectors = deployment_definition.get("node_selectors")
+
+    if node_selectors == None:
+        fail("You are attempting to override node selectors without having them applied first. Checkout your plugin ordering")
+
+    if node_selectors.get("stripe.io/host-type") != "mspworker":
+        fail("The node selectors instance type override plugin is only compatible for mspworkers")
+
+    selectors_copy = dict(deployment_definition["node_selectors"])
+    selectors_copy["stripe.io/aws-instance-type"] = instance_type
+    deployment_definition["node_selectors"] = selectors_copy
+
+def _add_arch_suffix(ctx, arguments, deployment_def):
+    if type(arguments.suffix) != "string":
+        fail("You must provide a string for the arch suffix plugin")
+    if arguments.suffix != None:
+        deployment_def['metadata'].update({
+        "name": deployment_def["metadata"]["name"] + "-" + arguments.suffix
+        })
+
+def _graviton_deployment_0_replicas(ctx,argument,deployment_def):
+    if deployment_def.get('metadata').get('annotations').get('stripe.io/dynamic-replicas-enabled'):
+        deployment_def['metadata']['annotations'].update({
+            "stripe.io/dynamic-replicas-count-desired": str(0),
+            "stripe.io/dynamic-replicas-count-min": str(0),
+        })

@@ -1,0 +1,164 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/apps/deployment.sky", "deployment", "deployment_options")
+load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
+load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_sidecar")
+load("config/kubernetes/core/container.sky", "container_port")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/helpers/bluegreen.sky", "add_blue_green_to_env_vars")
+load("config/kubernetes/helpers/context.sky", "get_cluster")
+load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/sidecars/consul.sky", "consul_service", "consul_check")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+load("config/kubernetes/networking/public/consul.sky", "consul_tag_envoy_healthcheck")
+
+load(
+    "config/kubernetes/async-processing/monster/util.sky",
+    "format_isolation_group",
+    "generate_consul_name",
+    "get_jmx_java_options",
+    "get_monster_env_cmd_arguments",
+    "get_worker_envoy_address_from_consul",
+    "monster_deployment_labels",
+)
+
+def generate_fqe_lock_preemption(config):
+    ig = format_isolation_group(config.monster_isolation_group)
+
+    # Webhook consumers time out at 45s:
+    # https://git.corp.stripe.com/stripe-internal/pay-server/blob/e757cb944082408acd91578223a021b65d57cba5/lib/event/consumer/webhooks/abstract_webhook_consumer.rb#L15
+    if ig == "high_priority_webhooks":
+        return ["--fqe-lock-preemption-s", "90"]
+    else:
+        return []
+
+def generate_fqe_mongo_connection_pool_max_size(ctx):
+    if get_cluster(ctx) == "northwest":
+        fqe_mongo_connection_pool_max_size = 10
+    else:
+        fqe_mongo_connection_pool_max_size = 5
+
+    return ["--fqe-mongo-connection-pool-max-size", str(fqe_mongo_connection_pool_max_size)]
+
+def monster_express_deployment(ctx, unformatted_host_set, config):
+    """Generates a express deployment for a specific host_set (isolation group)
+
+    Args:
+        ctx: The skycfg context variable, see http://go/disky
+        unformatted_host_set: host set names, without changing to be hyphenated
+        config: shared metadata data structure provided by config.sky
+
+    Returns:
+        A deployment representing a Express service with the passed-in
+        configuration applied
+
+    """
+    host_set = format_isolation_group(unformatted_host_set)
+
+    consul_service_name = generate_consul_name(host_set, config.monster_service)
+    host_type = "monsterexpress"
+    mongo_address = "127.0.0.1:10087"
+    port = 8080
+    jmx_port = 8086
+
+    healthcheck_path = "/healthcheck"
+
+    runtime_args = [
+        # See src/scala/com/stripe/monster/express/BUILD for how we generate a container image
+        # that ultimately contains this Scala binary
+        ["./src/scala/com/stripe/monster/express/express_binary"],
+        ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "consume-workers"))],
+        ["--consul-service-name", consul_service_name],
+        ["--port", str(port)],
+        ["--config-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "config-workers"))],
+        ["--queue-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "fanout-workers")) + "/v4/monster/queue/{}".format(unformatted_host_set)],
+        ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "consume-workers")) + "/v4/monster/consume"],
+        ["--mongo-addr", mongo_address],
+        generate_fqe_mongo_connection_pool_max_size(ctx),
+        generate_fqe_lock_preemption(config),
+        get_monster_env_cmd_arguments(ctx, unformatted_host_set, host_type),
+    ]
+
+    deploy = deployment(
+        ctx,
+        stripe_pod(
+            ctx,
+            name = consul_service_name,
+            instance_type = config.aws_instance_size,
+            availability_tier = get_msp_availability_tier(config.monster_availability_tier),
+            namespace = host_type,
+            container_name = "monster-express",  # unified sourcetype field for Splunk
+            image = image(ctx, artifact = "monster-express-image"),
+            # Empty lists are filtered out by this list comprehension
+            command = [el for arg in runtime_args for el in arg],
+        ),
+
+        # Add an environment variable to be able to distinguish blue vs. green pods
+        add_blue_green_to_env_vars(),
+
+        container_env_vars(
+            vars = {
+                "JAVA_OPTS": " ".join([
+                    "-Djava.io.tmpdir=/pay/tmp",
+                    "-Djava.util.logging.config.file=/src/scala/com/stripe/monster/express/logging.properties",
+                    "-Xlog:all=warning:stdout:utc,level,tags",
+                    "-Xlog:gc*=info:stdout:utc,level,tags:filesize=20M,filecount=5",
+                    "-Xmx{}m".format(config.raw_memory_mb),
+                    "-XX:-UseBiasedLocking",
+                    "-XX:+AlwaysPreTouch",
+                    "-XX:+ExitOnOutOfMemoryError",
+                    "-XX:+UseShenandoahGC",
+                ] + get_jmx_java_options(jmx_port)),
+            },
+        ),
+        container_port(jmx_port),
+        add_jmxfetch_sidecar(ctx, "monster-express", jmx_port),
+
+        # identify the deployment
+        monster_deployment_labels(config),
+
+        # generic healthcheck for deployment control and traffic routing
+        healthchecked_service(
+            ctx,
+            port = port,
+            name = consul_service_name,
+            # When we're instructed to shutdown by a SIGTERM, this is how long we'll wait (in seconds)
+            # to gracefully drain traffic before we're forcibly stopped by a SIGKILL
+            #
+            # monster-express needs to match the worker timeout:
+            # https://git.corp.stripe.com/stripe-internal/pay-server/blob/de9bbe8d1da32be6c813e8e8e9551fc5416d3f33/lib/event/framework/abstract_consumer.rb#L19
+            #
+            # Read more:
+            # https://paper.dropbox.com/doc/Investigation-Traffic-Draining-for-Monster-on-Shared-MSP-byFrxy0nX26Vz51t28ois
+            # https://confluence.corp.stripe.com/display/CDS/Safe+Draining+on+Shared+MSP
+            request_drain_grace_period_seconds = 300,
+        ),
+
+        # legacy consul service that includes all Monster Express nodes
+        consul_service(
+            port = port,
+            name = "monster-express",
+            # consul healthcheck
+            checks = [consul_check(healthcheck_path, port)],
+            # envoy healthcheck requires the following consul tag
+            tags = [consul_tag_envoy_healthcheck(healthcheck_path)],
+        ),
+        add_security_groups(
+            "monsterexpress",
+        ),
+
+        auto_secrets(),
+        config_srv_sidecar(ctx),
+        # We limit how many previous revisions of ReplicaSet's we keep around to limit
+        # the amount of metadata the k8s control plane has to serve up for Monster
+        # See: https://jira.corp.stripe.com/browse/RUN_ORCH-11446, http://go/ir/gray-fuse, http://go/ir/whim-tangent
+        # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
+        deployment_options(revisionHistoryLimit = 3),
+        replicas = config.replicas,
+        strategy = config.strategy,
+        shared_msp = True,
+    )
+    return deploy

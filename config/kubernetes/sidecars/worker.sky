@@ -1,0 +1,192 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume", "volume_mount", "render_volume_mount")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/health.sky", "pod_health_volume")
+load("config/kubernetes/sidecars/variables.sky", "WORKER_CONTAINER_FALLBACK_SHA", "WORKER_CONTAINER_FALLBACK_ENV")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+sidecar_name = "worker-sidecar"
+health_pod_volume_name = "pay-pod-health"
+
+def add_worker_sidecar(
+    einhorn_socket_dir,
+    puma_statefile_dir,
+    einhorn_socket_name = None,
+    worker_availability_threshold = "0.7",
+    service = None,
+    container_name = None,
+    mode = "einhorn",
+    puma_statefile_name = None,
+    hack_kick_interval = None,
+    hack_kick_start_delay = None,
+    hack_kick_restart_only = None):
+
+    # TODO: make einhorn_socket_dir optional when mode is 'puma-cluster'
+    if mode == "einhorn":
+        if einhorn_socket_name == None:
+            fail("einhorn_socket_name must be provided when mode is 'einhorn'")
+    elif mode == "puma-cluster":
+        if puma_statefile_name == None:
+            fail("puma_statefile_name must be provided when mode is 'puma_cluster'")
+    else:
+        fail("Mode must be one of 'einhorn' or 'puma-cluster', got '{}'".format(mode))
+
+    config = {
+       "service": service,
+       "container_name": container_name,
+       "einhorn_socket_dir": einhorn_socket_dir,
+       "einhorn_socket_name": einhorn_socket_name,
+       "puma_statefile_dir": puma_statefile_dir,
+       "worker_availability_threshold": worker_availability_threshold,
+       "mode": mode,
+       "puma_statefile_name": puma_statefile_name,
+       "hack_kick_interval": hack_kick_interval,
+       "hack_kick_start_delay": hack_kick_start_delay,
+       "hack_kick_restart_only": hack_kick_restart_only,
+    }
+
+    pod = pod_plugin(
+        _add_worker_container_to_pod,
+        config = config
+    )
+
+    return compose_plugins(
+       pod,
+
+        mount_pod_volume(
+            einhorn_socket_dir,
+            mount_args = {"read_only": False},
+            container_name = container_name,
+        ),
+
+        mount_pod_volume(
+            puma_statefile_dir,
+            mount_args = {"read_only": False},
+            container_name = container_name,
+        ),
+
+        volume_mount(
+            einhorn_socket_dir,
+            read_only = False,
+            container_name = sidecar_name,
+        ),
+
+        volume_mount(
+            puma_statefile_dir,
+            read_only = False,
+            container_name = sidecar_name,
+        ),
+
+        pod_health_volume(),
+        volume_mount(
+            '/pay/health',
+            name = health_pod_volume_name,
+            read_only = False,
+            container_name = sidecar_name,
+        ),
+        volume_mount(
+            '/pay/health',
+            name = health_pod_volume_name,
+            container_name = container_name,
+        ),
+    )
+
+def _add_worker_container_to_pod(ctx, plugin, pod_def):
+    if sidecar_name in pod_def:
+        fail("there should only be one worker sidecar")
+
+    config = plugin.config
+
+    if config["service"] == None:
+        config["service"] = pod_def["resource"]["metadata"]["name"]
+
+    if config["container_name"] == None:
+        config["container_name"] = pod_def["main_container"]["name"]
+
+    sidecar = {
+        "render": _render_go_worker_sidecar,
+        "name": sidecar_name,
+        "volume_mounts": {},
+        "config": config,
+        "sidecar_service": "workermanager-sidecar",
+    }
+
+    pod_def[sidecar_name] = sidecar
+    pod_def["containers"].append(sidecar)
+
+    return sidecar
+
+def _render_go_worker_sidecar(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    volume_mounts = [render_volume_mount(ctx, mount) for mount in container.volume_mounts.values()]
+
+    command = _go_worker_command(container.config)
+
+    img = _worker_image(ctx)
+
+    env = default_env_vars(ctx)
+    blue_green_color = get_blue_green_color(ctx)
+    if blue_green_color != None:
+        env += [
+            EnvVar(ctx, name = "STRIPE_BLUE_GREEN_COLOR", value = blue_green_color),
+            EnvVar(ctx, name = "STRIPE_BLUE_GREEN_ENABLE_METRICS_TAGGING", value = "1"),
+        ]
+
+    resources = resource_requirements(ctx)
+
+    return Container(
+        ctx,
+        name = container.name,
+        image=img,
+        command = command,
+        env = env,
+        volumeMounts = volume_mounts,
+        resources = resources,
+    )
+
+def _go_worker_command(config):
+    cmd = [
+        "/bin/workermanager-sidecar",
+        "--sys-namespace=sys.workers",
+        "--einhorn-namespace=einhorn.master",
+        "--stats-host=localhost:8200",
+        "--service-name={}".format(config["service"]),
+        "--container-name={}".format(config["container_name"]),
+        "--mode={}".format(config["mode"]),
+        "--puma-statefile-folder={}".format(config["puma_statefile_dir"]),
+        "--availability-latch-path=/pay/health/min-availability-{}".format(config["service"]),
+        "--availability-latch-threshold={}".format(config["worker_availability_threshold"]),
+    ]
+    if config["hack_kick_interval"]:
+        cmd += ["--hack-kick-interval={}".format(config["hack_kick_interval"])]
+    if config["hack_kick_start_delay"]:
+        cmd += ["--hack-kick-start-delay={}".format(config["hack_kick_start_delay"])]
+    if config["hack_kick_restart_only"]:
+        cmd += ["--hack-kick-restart-only={}".format(config["hack_kick_restart_only"])]
+
+    if config["mode"] == "einhorn":
+        cmd += ["--einhorn-socket-path={}/{}".format(config["einhorn_socket_dir"], config["einhorn_socket_name"])]
+    elif config["mode"] == "puma-cluster":
+        cmd += ["--puma-statefile-name={}".format(config["puma_statefile_name"])]
+    else:
+        fail("Mode must be one of 'einhorn' or 'puma-cluster', got '{}'".format(config["mode"]))
+
+    return cmd
+
+
+def _worker_image(ctx):
+    return sidecar_image(ctx,
+        name = "workermanager-sidecar",
+        fallback = image(ctx,
+            name = "stripe/compute/workermanager-sidecar-image",
+            label = "git-%s" % WORKER_CONTAINER_FALLBACK_SHA,
+            env = WORKER_CONTAINER_FALLBACK_ENV,
+        ),
+    )

@@ -1,0 +1,485 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+_apiregistration = proto.package("k8s.io.kube_aggregator.pkg.apis.apiregistration.v1")
+_apps = proto.package("k8s.io.api.apps.v1")
+_autoscaling = proto.package("k8s.io.api.autoscaling.v2")
+_batch = proto.package("k8s.io.api.batch.v1")
+_batch_beta1 = proto.package("k8s.io.api.batch.v1beta1")
+_core = proto.package("k8s.io.api.core.v1")
+_meta = proto.package("k8s.io.apimachinery.pkg.apis.meta.v1")
+_rbac = proto.package("k8s.io.api.rbac.v1")
+_resource = proto.package("k8s.io.apimachinery.pkg.api.resource")
+_util = proto.package("k8s.io.apimachinery.pkg.util.intstr")
+_admission_registration = proto.package("k8s.io.api.admissionregistration.v1")
+_node = proto.package("k8s.io.api.node.v1beta1")
+_policy = proto.package("k8s.io.api.policy.v1beta1")
+
+### Apiregistration v1
+def APIService(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apiregistration.APIService, apiVersion = "apiregistration.k8s.io/v1", kind = "APIService", marshal = True, **kwargs)
+
+def APIServiceSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apiregistration.APIServiceSpec, **kwargs)
+
+def ServiceReference(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apiregistration.ServiceReference, **kwargs)
+
+### Apps v1
+
+def DaemonSet(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.DaemonSet, apiVersion = "apps/v1", kind = "DaemonSet", marshal = True, **kwargs)
+
+def DaemonSetSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.DaemonSetSpec, **kwargs)
+
+def DaemonSetUpdateStrategy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.DaemonSetUpdateStrategy, **kwargs)
+
+def Deployment(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.Deployment, apiVersion = "apps/v1", kind = "Deployment", marshal = True, **kwargs)
+
+def DeploymentSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.DeploymentSpec, **kwargs)
+
+def DeploymentStrategy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.DeploymentStrategy, **kwargs)
+
+def RollingUpdateDaemonSet(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.RollingUpdateDaemonSet, **kwargs)
+
+def RollingUpdateDeployment(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.RollingUpdateDeployment, **kwargs)
+
+def RollingUpdateStatefulSetStrategy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.RollingUpdateStatefulSetStrategy, **kwargs)
+
+def StatefulSet(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.StatefulSet, apiVersion = "apps/v1", kind = "StatefulSet", marshal = True, **kwargs)
+
+def StatefulSetSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.StatefulSetSpec, **kwargs)
+
+def StatefulSetUpdateStrategy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _apps.StatefulSetUpdateStrategy, **kwargs)
+
+### Autoscaling V2
+
+def CrossVersionObjectReference(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.CrossVersionObjectReference, **kwargs)
+
+def HorizontalPodAutoscaler(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.HorizontalPodAutoscaler, apiVersion = "autoscaling/v2", kind = "HorizontalPodAutoscaler", marshal = True, **kwargs)
+
+def HorizontalPodAutoscalerBehavior(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.HorizontalPodAutoscalerBehavior, **kwargs)
+
+def HorizontalPodAutoscalerSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.HorizontalPodAutoscalerSpec, **kwargs)
+
+def HPAScalingPolicy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.HPAScalingPolicy, **kwargs)
+
+def HPAScalingRules(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.HPAScalingRules, **kwargs)
+
+def MetricSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.MetricSpec, **kwargs)
+
+def MetricTarget(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.MetricTarget, **kwargs)
+
+def ResourceMetricSource(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _autoscaling.ResourceMetricSource, **kwargs)
+
+### Batch v1
+
+def Job(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _batch.Job, apiVersion = "batch/v1", kind = "Job", marshal = True, **kwargs)
+
+def JobSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _batch.JobSpec, **kwargs)
+
+def JobTemplateSpec(ctx, **kwargs):
+    # TODO: deprecate _batch_beta1; the version of protos imported today aren't up to date
+    # and don't have JobTemplateSpec v1.
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _batch_beta1.JobTemplateSpec, **kwargs)
+
+def CronJob(ctx, **kwargs):
+    # TODO: deprecate _batch_beta1; the version of protos imported today aren't up to date
+    # and don't have CronJob v1.
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _batch_beta1.CronJob, apiVersion = "batch/v1", kind = "CronJob", marshal = True, **kwargs)
+
+def CronJobSpec(ctx, **kwargs):
+    # TODO: deprecate _batch_beta1; the version of protos imported today aren't up to date
+    # and don't have CronJobSpec v1.
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _batch_beta1.CronJobSpec, **kwargs)
+
+### Core v1
+
+def Affinity(ctx, podAntiAffinity):
+    if get_render_yaml(ctx):
+        return {
+            "podAntiAffinity": podAntiAffinity
+        }
+
+    return _core.Affinity(
+        podAntiAffinity = podAntiAffinity
+    )
+
+def Capabilities(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Capabilities, **kwargs)
+
+def Container(ctx, **kwargs):
+    if kwargs.get("resources", None) == None:
+        fail("Container resources must be specified, either with real or None values for requests and limits")
+
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Container, **kwargs)
+
+def ContainerPort(ctx, containerPort, hostPort, name):
+    if get_render_yaml(ctx):
+        return {
+            "containerPort": containerPort,
+            "hostPort": hostPort,
+            "name": name
+        }
+
+    return _core.ContainerPort(containerPort = containerPort, hostPort = hostPort, name = name)
+
+def EmptyDirVolumeSource(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        vol = {}
+
+        for key, value in kwargs.items():
+            vol[key] = value
+
+        return vol
+
+    return _core.EmptyDirVolumeSource(**kwargs)
+
+
+def EnvVar(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.EnvVar, **kwargs)
+
+def EnvVarSource(ctx, fieldRef):
+    if get_render_yaml(ctx):
+        return {
+            "fieldRef": fieldRef,
+        }
+
+    return _core.EnvVarSource(fieldRef = fieldRef)
+
+def ExecAction(ctx, command):
+    if get_render_yaml(ctx):
+        return {
+            "command": command
+        }
+
+    return _core.ExecAction(command = command)
+
+def HTTPGetAction(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.HTTPGetAction, **kwargs)
+
+def HTTPHeader(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.HTTPHeader, **kwargs)
+
+
+def Handler(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Handler, **kwargs)
+
+def HostPathVolumeSource(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.HostPathVolumeSource, **kwargs)
+
+def Lifecycle(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        lifecycle = {}
+
+        for key, value in kwargs.items():
+            lifecycle[key] = value
+
+        return lifecycle
+
+    return _core.Lifecycle(**kwargs)
+
+def LifecycleHandler(ctx, **kwargs):
+    # Support for proto rename to support 1.22 -> 1.23 upgrade. Once we are on 1.23
+    # everywhere we can remove this. See
+    # https://github.com/kubernetes/api/commit/cca52a076791d31b1796453ece4b2f4df97406a2
+    if hasattr(_core, "LifecycleHandler"):
+        return _generic_kubernetes_proto_yaml_conditional(ctx, _core.LifecycleHandler, **kwargs)
+    else:
+        return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Handler, **kwargs)
+
+def ObjectFieldSelector(ctx, fieldPath):
+    if get_render_yaml(ctx):
+        return {
+            "fieldPath": fieldPath,
+        }
+
+    return _core.ObjectFieldSelector(fieldPath = fieldPath)
+
+
+def PodAffinityTerm(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        for key, value in kwargs.items():
+            # Get rid of None values.
+            if value != None:
+                kwargs[key] = value
+            else:
+                kwargs.pop(key)
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.PodAffinityTerm, **kwargs)
+
+
+def PodAntiAffinity(ctx, preferredDuringSchedulingIgnoredDuringExecution = [], requiredDuringSchedulingIgnoredDuringExecution = []):
+    if get_render_yaml(ctx):
+        return {
+            "preferredDuringSchedulingIgnoredDuringExecution": preferredDuringSchedulingIgnoredDuringExecution,
+            "requiredDuringSchedulingIgnoredDuringExecution": requiredDuringSchedulingIgnoredDuringExecution
+        }
+
+    return _core.PodAntiAffinity(
+        preferredDuringSchedulingIgnoredDuringExecution = preferredDuringSchedulingIgnoredDuringExecution,
+        requiredDuringSchedulingIgnoredDuringExecution = requiredDuringSchedulingIgnoredDuringExecution,
+    )
+
+def PodSecurityContext(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.PodSecurityContext, **kwargs)
+
+def PodSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.PodSpec, **kwargs)
+
+def PodTemplateSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.PodTemplateSpec, **kwargs)
+
+def Probe(ctx, **kwargs):
+    # Remove nested handler that's required for protos
+    if get_render_yaml(ctx):
+        if kwargs.get("handler", None) != None:
+            for key, value in kwargs["handler"].items():
+                kwargs[key] = value
+
+            kwargs.pop("handler")
+
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Probe, **kwargs)
+
+def ProbeHandler(ctx, **kwargs):
+    # Remove nested handler that's required for protos
+    if get_render_yaml(ctx):
+        if kwargs.get("handler", None) != None:
+            for key, value in kwargs["handler"].items():
+                kwargs[key] = value
+
+            kwargs.pop("handler")
+
+    # Support for proto rename to support 1.22 -> 1.23 upgrade. Once we are on 1.23
+    # everywhere we can remove this. See
+    # https://github.com/kubernetes/api/commit/cca52a076791d31b1796453ece4b2f4df97406a2
+    if hasattr(_core, "ProbeHandler"):
+        return _generic_kubernetes_proto_yaml_conditional(ctx, _core.ProbeHandler, **kwargs)
+    else:
+        return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Handler, **kwargs)
+
+def ResourceRequirements(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.ResourceRequirements, **kwargs)
+
+def SecurityContext(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.SecurityContext, **kwargs)
+
+def SELinuxOptions(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.SELinuxOptions, **kwargs)
+
+def Service(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Service, apiVersion="v1", kind="Service", **kwargs)
+
+def ServicePort(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.ServicePort, **kwargs)
+
+def ServiceSpec(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.ServiceSpec, **kwargs)
+
+def TCPSocketAction(ctx, port):
+    if get_render_yaml(ctx):
+        return {
+            "port": port
+        }
+
+    return _core.TCPSocketAction(port = port)
+
+
+def Toleration(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Toleration, **kwargs)
+
+def TopologySpreadConstraint(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.TopologySpreadConstraint, **kwargs)
+
+def Volume(ctx, **kwargs):
+    # Remove nested volumeSource that's required for protos
+    if get_render_yaml(ctx):
+        if kwargs.get("volumeSource", None) != None:
+            for key, value in kwargs["volumeSource"].items():
+                kwargs[key] = value
+
+            kwargs.pop("volumeSource")
+
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.Volume, **kwargs)
+
+def VolumeMount(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.VolumeMount, **kwargs)
+
+def VolumeSource(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.VolumeSource, **kwargs)
+
+def WeightedPodAffinityTerm(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _core.WeightedPodAffinityTerm, **kwargs)
+
+### Meta v1
+
+def LabelSelector(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _meta.LabelSelector, **kwargs)
+
+def LabelSelectorRequirement(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _meta.LabelSelectorRequirement, **kwargs)
+
+def ObjectMeta(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        # Pop out an empty namespace which shows up as null. This is encountered when users set
+        # namespace=None for clusterrole and clusterrolebindings.
+        if "namespace" in kwargs and not kwargs["namespace"]:
+            kwargs.pop("namespace")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _meta.ObjectMeta, **kwargs)
+
+### AdmissionRegistration v1
+
+def ValidatingWebhookConfiguration(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.ValidatingWebhookConfiguration, apiVersion = "admissionregistration.k8s.io/v1", kind = "ValidatingWebhookConfiguration", marshal = False, **kwargs)
+
+def ValidatingWebhook(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.ValidatingWebhook, **kwargs)
+
+def MutatingWebhookConfiguration(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.MutatingWebhookConfiguration, apiVersion = "admissionregistration.k8s.io/v1", kind = "MutatingWebhookConfiguration", marshal = False, **kwargs)
+
+def MutatingWebhook(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.MutatingWebhook, **kwargs)
+
+def WebhookClientConfig(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.WebhookClientConfig, **kwargs)
+
+def RuleWithOperations(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.RuleWithOperations, **kwargs)
+
+def Rule(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _admission_registration.Rule, **kwargs)
+
+### RBAC v1
+
+def Role(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        if "namespace" in kwargs and not kwargs["namespace"]:
+            kwargs.pop("namespace")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _rbac.Role, apiVersion="rbac.authorization.k8s.io/v1", kind="Role", **kwargs)
+
+def RoleBinding(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        if "namespace" in kwargs and not kwargs["namespace"]:
+            kwargs.pop("namespace")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _rbac.RoleBinding, apiVersion="rbac.authorization.k8s.io/v1", kind="RoleBinding", **kwargs)
+
+def ClusterRole(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        if "namespace" in kwargs and not kwargs["namespace"]:
+            kwargs.pop("namespace")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _rbac.ClusterRole, apiVersion="rbac.authorization.k8s.io/v1", kind="ClusterRole", **kwargs)
+
+def AggregationRule(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _rbac.AggregationRule, **kwargs)
+
+def ClusterRoleBinding(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        if "namespace" in kwargs and not kwargs["namespace"]:
+            kwargs.pop("namespace")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _rbac.ClusterRoleBinding, apiVersion="rbac.authorization.k8s.io/v1", kind="ClusterRoleBinding", **kwargs)
+
+### Node v1beta1
+
+def RuntimeClass(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _node.RuntimeClass, apiVersion="node.k8s.io/v1beta1", kind="RuntimeClass", **kwargs)
+
+def Overhead(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _node.Overhead, apiVersion="node.k8s.io/v1beta1", kind="Overhead", **kwargs)
+
+### Policy v1beta1
+
+def IDRange(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.IDRange, **kwargs)
+
+def PodSecurityPolicy(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.PodSecurityPolicy, apiVersion="policy/v1beta1", kind="PodSecurityPolicy", **kwargs)
+
+def PodSecurityPolicySpec(ctx, **kwargs):
+    if get_render_yaml(ctx):
+        if kwargs.get("hostPorts") != None:
+            if kwargs["hostPorts"] == []:
+                kwargs.pop("hostPorts")
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.PodSecurityPolicySpec, **kwargs)
+
+def RunAsUserStrategyOptions(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.RunAsUserStrategyOptions, **kwargs)
+
+def RunAsGroupStrategyOptions(ctx, **kwargs):
+
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.RunAsGroupStrategyOptions, **kwargs)
+
+def SupplementalGroupsStrategyOptions(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.SupplementalGroupsStrategyOptions, **kwargs)
+
+def FSGroupStrategyOptions(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.FSGroupStrategyOptions, **kwargs)
+
+def SELinuxStrategyOptions(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.SELinuxStrategyOptions, **kwargs)
+
+def AllowedHostPath(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.AllowedHostPath, **kwargs)
+
+def HostPortRange(ctx, **kwargs):
+    return _generic_kubernetes_proto_yaml_conditional(ctx, _policy.HostPortRange, **kwargs)
+
+## Util
+
+def IntOrString(ctx, intVal = None, strVal = None):
+    if get_render_yaml(ctx):
+        if intVal != None:
+            return intVal
+        return strVal
+
+    if intVal != None:
+        return _util.IntOrString(intVal = intVal)
+    else:
+        return _util.IntOrString(type = 1, strVal = strVal)
+
+def Quantity(ctx, string):
+    if get_render_yaml(ctx):
+        return string
+
+    return _resource.Quantity(string = string)
+
+def _generic_kubernetes_proto_yaml_conditional(ctx, proto, apiVersion = None, kind = None, marshal = False, **kwargs):
+    if get_render_yaml(ctx):
+        tmp = {}
+
+        if apiVersion:
+            tmp["apiVersion"] = apiVersion
+
+        if kind:
+            tmp["kind"] = kind
+
+        for key, value in kwargs.items():
+            tmp[key] = value
+
+        if marshal:
+            return yaml.marshal(tmp)
+        else:
+            return tmp
+
+    return proto(**kwargs)

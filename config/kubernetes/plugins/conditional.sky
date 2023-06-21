@@ -1,0 +1,120 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to define plugins that will only be applied when certain conditions are met
+
+Plugins may be defined in terms of other plugins (e.g. with compose_plugins(...)) but you
+may wish to only have a subset of those plugins applied based on variables that are available
+at plugin update time (e.g. shared vs dedicated MSP).
+"""
+
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+
+
+def conditional_plugin(condition, plugin):
+    """
+    Creates a new plugin that will be run iff the provided condition is True
+
+    Args:
+      condition: a boolean function that takes in a context and a resource definition
+      plugin: the base plugin with which to update the resource iff the condition is True
+    Returns:
+      A new plugin that will only apply iff the condition is True of the resource
+    """
+    # Check to see if this is a composite plugin. To avoid recursion we always want
+    # to flatten any composites so the canonical form for nesting should be to have
+    # a top-level composite containing a list of conditional plugins which each
+    # reference a primitive plugin
+    if hasattr(plugin, "is_compose"):
+        new_plugins = []
+        for sub_plugin in plugin.plugins:
+            new_plugins.append(
+                _construct_conditional_plugin(condition, sub_plugin))
+        return compose_plugins(*new_plugins)
+    else:
+        return _construct_conditional_plugin(condition, plugin)
+
+
+def _construct_conditional_plugin(condition, plugin):
+    conditions = [condition]
+    if hasattr(plugin, "conditions"):
+        conditions.extend(plugin.conditions)
+        plugin = plugin.plugin
+
+    container_name_value = getattr(plugin, "container_name", None)
+
+    return struct(
+        update_deployment=_update_deployment,
+        update_cronjob=_update_cronjob,
+        update_daemonset=_update_daemonset,
+        update_job=_update_job,
+        update_statefulset=_update_statefulset,
+        update_pod=_update_pod,
+        # container plugins generally have an "update_container" method, but
+        # composite plugins will also check for and support "update_containers"
+        # so we'll support both
+        update_containers=_update_containers,
+        update_container=_update_container,
+        conditions=conditions,
+        plugin=plugin,
+        container_name=container_name_value,
+    )
+
+
+def _plugin_applies(ctx, arguments, resource_def):
+    return all(
+        [condition(ctx, resource_def) for condition in arguments.conditions])
+
+
+def _update_deployment(ctx, arguments, deployment_def):
+    if (not hasattr(arguments.plugin, "update_deployment")
+            or not _plugin_applies(ctx, arguments, deployment_def)):
+        return
+    arguments.plugin.update_deployment(ctx, arguments.plugin, deployment_def)
+
+
+def _update_cronjob(ctx, arguments, cronjob_def):
+    if (not hasattr(arguments.plugin, "update_cronjob")
+            or not _plugin_applies(ctx, arguments, cronjob_def)):
+        return
+    arguments.plugin.update_cronjob(ctx, arguments.plugin, cronjob_def)
+
+
+def _update_daemonset(ctx, arguments, daemonset_def):
+    if (not hasattr(arguments.plugin, "update_daemonset")
+            or not _plugin_applies(ctx, arguments, daemonset_def)):
+        return
+    arguments.plugin.update_daemonset(ctx, arguments.plugin, daemonset_def)
+
+
+def _update_job(ctx, arguments, job_def):
+    if (not hasattr(arguments.plugin, "update_job")
+            or not _plugin_applies(ctx, arguments, job_def)):
+        return
+    arguments.plugin.update_job(ctx, arguments.plugin, job_def)
+
+
+def _update_statefulset(ctx, arguments, statefulset_def):
+    if (not hasattr(arguments.plugin, "update_statefulset")
+            or not _plugin_applies(ctx, arguments, statefulset_def)):
+        return
+    arguments.plugin.update_statefulset(ctx, arguments.plugin, statefulset_def)
+
+
+def _update_pod(ctx, arguments, pod_def):
+    if (not hasattr(arguments.plugin, "update_pod")
+            or not _plugin_applies(ctx, arguments, pod_def)):
+        return
+    arguments.plugin.update_pod(ctx, arguments.plugin, pod_def)
+
+
+def _update_containers(ctx, arguments, container_def):
+    if (not hasattr(arguments.plugin, "update_containers")
+            or not _plugin_applies(ctx, arguments, container_def)):
+        return
+    arguments.plugin.update_containers(ctx, arguments.plugin, container_def)
+
+def _update_container(ctx, arguments, container_def):
+    if (not hasattr(arguments.plugin, "update_container")
+            or not _plugin_applies(ctx, arguments, container_def)):
+        return
+    arguments.plugin.update_container(ctx, arguments.plugin, container_def)

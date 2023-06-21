@@ -1,0 +1,89 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/security.sky", "use_credentials_proxy", "mount_credentials_proxy", "mount_host_stripe_ca_certs")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/sidecars/variables.sky", "KUBE_CREDS_CONTAINER_DIGEST", "KUBE_CREDS_CONTAINER_ENV")
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+load("config/kubernetes/helpers/quantities.sky", "megabytes")
+load("config/kubernetes/helpers/warning.sky", "warn")
+
+_kubeconfig_path = "/kubeconfig"
+_certs_path = "/certs"
+
+def use_kube_creds(ctx, shard):
+    return compose_plugins(
+        use_credentials_proxy(),
+        mount_host_stripe_ca_certs(),
+        mount_pod_volume(
+            path = _kubeconfig_path,
+            volume_args = { "medium": "Memory", "sizeLimit": megabytes(ctx, 50)},
+        ),
+        mount_pod_volume(
+            path = _certs_path,
+            volume_args = { "medium": "Memory", "sizeLimit": megabytes(ctx, 50)},
+        ),
+        pod_plugin(
+            _update_pod,
+            shard = shard,
+        ),
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "kube_creds_init_container" in pod_def:
+        warn(ctx, "kube-creds plugin already added")
+        return
+
+    container_def = {
+        "render": _kube_creds_container,
+        "name": "kube-creds-init",
+        "kubeconfig_path": _kubeconfig_path,
+        "certs_path": _certs_path,
+        "sidecar_service": "kube-creds",
+        "shard": plugin.shard,
+    }
+    pod_def["kube_creds_init_container"] = container_def
+    pod_def["init_containers"].append(container_def)
+
+def _kube_creds_container(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    command = [
+        "/kube-creds",
+        "--shard",
+        container.shard,
+        "--ca-path",
+        "/etc/ssl/certs/stripe-cas/machine-cas.pem",
+        "--cert-output-path",
+        "%s/service.crt" % _certs_path,
+        "--private-key-output-path",
+        "%s/service.key" % _certs_path,
+        "--kubeconfig-output-path",
+        "%s/kubeconfig" % _kubeconfig_path,
+    ]
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = sidecar_image(
+            ctx,
+            name = "kube-creds",
+            fallback = image(ctx,
+                name = "stripe/orchestration/kube-creds",
+                label = KUBE_CREDS_CONTAINER_DIGEST,
+                env = KUBE_CREDS_CONTAINER_ENV,
+            ),
+        ),
+        command = command,
+        env = default_env_vars(ctx),
+        volumeMounts = [
+            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, volume_mount("/etc/ssl/certs/stripe-cas")),
+            render_volume_mount(ctx, volume_mount(_kubeconfig_path, read_only = False)),
+            render_volume_mount(ctx, volume_mount(_certs_path, read_only = False)),
+        ],
+        resources = resource_requirements(ctx),
+    )

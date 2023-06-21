@@ -1,0 +1,99 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helpers for defining jobs that publish to Artifactory
+"""
+
+load("config/kubernetes/batch/job.sky", "job")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+load("config/kubernetes/helpers/context.sky", "get_henson_git_commit")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/quantities.sky", "cores", "gibibytes")
+load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+
+def artifactory_publish_job(
+    ctx,
+    service_name,
+    package_type,
+    package_image,
+    packages,
+    *extra_plugins
+):
+    """
+    Constructs a job which will publish a collection of packages of the specified type to
+    Artifactory.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        service_name: The henson service name for this publish job.
+        package_type: The kind of package to publish. Currently the following types are
+            supported: ["npm"]
+        package_image: The name of the container image artifact that contains the packages
+            to publish and the publish script.
+        packages: A list of package filenames, relative to the working directory of the
+            container image.
+        *extra_plugins: Any additional plugins beyond the minimal set needed to publish to
+            artifactory.
+
+    Returns:
+        A `job` which will publish the given packages.
+    """
+    job_name = "{}-{}".format(service_name, get_henson_git_commit(ctx))
+    if len(job_name) > 63:
+      # Kubernetes rejects Job resources with names longer than 63 characters.
+      job_name = job_name[:63]
+    return job(
+        ctx,
+        stripe_pod(
+            ctx,
+            name = job_name,
+            host_type = "artifactpublishbox",
+            image = image(ctx, artifact = package_image),
+            command = [
+                "./publish-package.sh",
+                package_type,
+            ] + packages,
+            cpu = cores(ctx, 1),
+            memory = gibibytes(ctx, 3),
+        ),
+        container_env_vars(
+            vars = {
+                "GIT_COMMIT_SHA": get_henson_git_commit(ctx),
+            },
+        ),
+        # The machine cert is needed to connect to Artifactory over mTLS (RUN_DND-5841).
+        mount_host_volume("/etc/ssl/certs", volume_args = {"type": "Directory"}),
+        mount_host_volume("/etc/ssl/private", volume_args = {"type": "Directory"}),
+        run_as_unprivileged(),
+
+        # Delete completed job after 12 hours.
+        ttlSecondsAfterFinished = 60 * 60 * 12,
+
+        *extra_plugins
+    )
+
+def artifactory_npm_publish_job(
+    ctx,
+    service_name,
+    packages,
+):
+    """
+    Constructs a job which will publish a collection of npm packages to Artifactory.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        service_name: The henson service name for this publish job.
+        packages: A list of package filenames, relative to the working directory of the
+            container image.
+
+    Returns:
+        A `job` which will publish the given npm packages.
+    """
+    return artifactory_publish_job(
+        ctx,
+        service_name,
+        "npm",
+        "npm-packages-image",
+        packages,
+    )

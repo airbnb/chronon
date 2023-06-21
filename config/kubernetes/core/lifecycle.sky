@@ -1,0 +1,267 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for controlling the lifecycle of pods.
+"""
+load("config/kubernetes/core/volume.sky", "volume_mount_all_containers", "volume_mount", "mount_host_volume")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin", "all_container_plugin")
+load("config/kubernetes/helpers/constants.sky", "CONFIG_SRV_SIDECAR_NAME", "CONSUL_SIDECAR_CONTAINER_NAME", "ENVOY_SIDECAR_NAME", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "ENVOY_RATELIMIT_SRV_SIDECAR_NAME", "METRICS_SIDECAR_CONTAINER_NAME", "NSQD_SIDECAR_CONTAINER_NAME")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Lifecycle", "LifecycleHandler", "ExecAction")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml", "is_bin_packing_enabled", "get_name")
+
+def pre_stop(action, container_name = None):
+    """
+    Perform an action when the container is about to be terminated.
+
+    Each container can only have one pre-stop action, so using this plugin multiple
+    times for the same container will overwrite previous settings.
+
+    Args:
+        action: The action to perform. See `exec_action`.
+        container_name: Optional name of the container to add action to.
+            Defaults to the main container of the pod.
+
+    Returns:
+        A plugin that sets the pre-stop action for the container.
+    """
+    return container_plugin(
+        _add_handler,
+        container_name = container_name,
+        type = "preStop",
+        action = action,
+    )
+
+def exec_action(ctx, *command):
+    """
+    Create a lifecycle action that executes a command in the container.
+
+    Args:
+        *command: One or more strings forming the command and arguments that the action
+            should run.
+
+    Returns
+        An action that can be added to a container using the `pre_stop` plugin.
+    """
+    return LifecycleHandler(
+        ctx,
+        exec = ExecAction(ctx, command = list(command)),
+    )
+
+# Expected duration that a new pod becomes visible to clients
+# (see: http://go/msp/deploy-traffic-drain)
+DEFAULT_NEW_ENDPOINT_PROPAGATION_SECONDS = 45
+
+# Pod health propagation time used for the drain contract = (1) + (2) + (3) = 20s
+# i.e. after this interval, we do not expect any new client requests to reach the pod
+# because all clients will view the pod as unhealthy via active healthchecks
+#
+# (1) 5s for drain signal to be sent to, received & processed by envoy-config-srv + envoy
+#      - when draining is communicated to Envoy through LDS updates, this depends on a 2s polling loop for LDS in envoy-config-srv
+#      - when draining is communicated to Envoy through its admin API, this depends on a 5s polling loop in envoy-config-srv
+#
+# (2) 2*5s for 2 health checking intervals
+#      - when draining signal is communicated to Envoy through LDS updates, we need 2 health check intervals:
+#         * The 1st health check request/response following drain signal will be handled by the former LDS config and will not fail,
+#           but will force the HTTP/1 connection to close.
+#         * The 2nd health check request/response following drain signal will be handled by the new LDS config and will fail.
+#      - when draining signal is communicated to Envoy through its admin API, we only need one health-checking interval (ie. 5s).
+#
+# (3) 5s extra latency buffer to account for additional processing time across the board
+#      - pre-stop hooks might not all start simultaneously across all containers in the same Pod
+#      - drain signal processing by envoy-config-srv is not instantaneous
+#      - Envoy LDS updates / admin API updates are not instantaneous
+#
+DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME = 20
+
+# Default drain duration: 5 minutes
+DEFAULT_GRACE_PERIOD_SECONDS = 5 * 60
+
+# 5 minutes + Envoy healthcheck propagation time (5 minutes 20 seconds).
+# This allows service teams which run on MSP (such as workflow-engine) to let their users
+# specify an abstracted-away drain time of 5 minutes, excluding the healthcheck propagation delay.
+MAX_GRACE_PERIOD_SECONDS = DEFAULT_GRACE_PERIOD_SECONDS + DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME
+
+# We fail rendering of services which specify a grace period over 7 minutes.
+MAX_ENFORCED_GRACE_PERIOD_SECONDS = 7 * 60
+
+
+def generate_prestop_sleep_action(ctx, sleep_seonds):
+    return exec_action(ctx, "/usr/stripe/bin/kube-prestop", "--sleep-seconds",  str(sleep_seonds))
+
+def prestop_all_containers(action):
+    """
+    Make every non-init container perform an action when the container is about to be terminated (e.g. pre-stop).
+
+    This will not overwrite existing prestop hooks.
+
+    Args:
+        action: The action to perform. See `exec_action`.
+
+    Returns:
+        A plugin that sets the pre-stop action for every container.
+    """
+    return all_container_plugin(
+            _add_handler_no_overwrite,
+            type="preStop",
+            action = action,
+        )
+
+BLESSED_INFRA_SIDECAR_COMMANDS = [
+    '/veneur/veneur',
+    '/veneur/init.sh',
+    '/bin/consul-sidecar',
+    '/bin/envoy-sidecar',
+    '/bin/envoy-stripe.stripped',
+    '/bin/envoy-staging-stripe.stripped',
+    '/bin/envoy-config-srv',
+    '/bin/envoy-ratelimit-srv',
+    '/nsqd',
+    '/pay/deploy/gocode/current/config-srv-sidecar/config-srv-sidecar',
+]
+
+BLESSED_INFRA_SIDECAR_CONTAINER_NAMES = [
+    CONFIG_SRV_SIDECAR_NAME,
+    CONSUL_SIDECAR_CONTAINER_NAME,
+    ENVOY_SIDECAR_NAME,
+    # envoy-config-srv sets its own prestop up
+    # ENVOY_CONFIG_SRV_SIDECAR_NAME,
+    ENVOY_RATELIMIT_SRV_SIDECAR_NAME,
+    METRICS_SIDECAR_CONTAINER_NAME,
+    NSQD_SIDECAR_CONTAINER_NAME,
+]
+
+def generate_infra_sidecar_prestop_command_args(ctx, sidecarName, pod_termination_grace_period_seconds):
+    """
+    Internal function, do not use.
+
+    Infrastructure sidecars have a prestop hook which will block the termination of the infra sidecar
+    until such a time that all non-sidecar processes have exited. This crafts the command for
+    the prestop hook for these sidecars.
+    """
+    args = [
+        '/usr/stripe/bin/kube-prestop',
+        '--infra-sidecar',
+        '--container-name',
+        sidecarName,
+        '--termination-grace-period',
+        str(pod_termination_grace_period_seconds),
+    ]
+
+#   For envoy-config-srv unified sidecar, we are using the ubuntu base image which does
+#   not have /bin/sh -> busybox setup. For this sidecar, we are failing the local healthcheck
+#   from the prestop binary. This is the reason this arg is included for this sidecar.
+    if sidecarName == ENVOY_CONFIG_SRV_SIDECAR_NAME:
+        args.append('--fail-healthcheck')
+
+        if is_bin_packing_enabled(ctx):
+            args.append('--initiate-pod-termination')
+
+    for sidecarCommand in BLESSED_INFRA_SIDECAR_COMMANDS:
+        args.append("--sidecar-command")
+        args.append(sidecarCommand)
+
+    return args
+
+def prestop_all_infra_sidecars(ctx, pod_termination_grace_period_seconds):
+    """
+    Internal function, do not use.
+    """
+    plugins = []
+
+    for sidecarName in BLESSED_INFRA_SIDECAR_CONTAINER_NAMES:
+        action = exec_action(ctx, *generate_infra_sidecar_prestop_command_args(ctx, sidecarName=sidecarName, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds))
+        plugins.extend(
+            [
+                pre_stop(
+                    container_name = sidecarName,
+                    action = action,
+                ),
+                volume_mount(
+                    "/usr/stripe/bin/kube-prestop",
+                    container_name = sidecarName,
+                    read_only=True,
+                ),
+            ]
+        )
+
+    return compose_plugins(
+            *plugins,
+        )
+
+def grace_period(seconds, overwrite = True):
+    """
+    Set the grace period for termination of a pod's containers.
+
+    The grace period is the amount of seconds between when Kubernetes sends containers a
+    termination signal and when it sends them a kill signal. Use if your pod needs a
+    particularly long amount of time to clean up when it needs to be terminated.
+
+    Args:
+        seconds: The number of seconds the pod needs to be able to clean up gracefully.
+        overwrite: Optional, whether to overwrite the grace_period that's already been set. Default true.
+
+    Returns:
+        A plugin that sets the grace period for the pod.
+    """
+    return pod_plugin(
+        _update_grace_period,
+        seconds = seconds,
+        overwrite = overwrite,
+    )
+
+_VALID_RESTART_POLICIES = ["Always", "OnFailure", "Never"]
+
+def restart_policy(policy):
+    """
+    Set the restart policy for a pod.
+
+    These are usually set appropriately already for the type of workload the pod is running in.
+    Deployments, which run long-running services, use the "Always" policy so that containers get
+    restarted when they terminate. Cron jobs use "Never", so once the job's container terminates,
+    it will not be restarted. Think carefully before using this plugin to override the default
+    behavior.
+
+    Args:
+        policy: The restart policy to use. Can be one of "Always", "OnFailure", or "Never".
+
+    Returns:
+        A plugin that sets the restart policy for the pod.
+    """
+    if policy not in _VALID_RESTART_POLICIES:
+        fail("%s is not a valid restart policy, should be one of: %s", policy, ", ".join(_VALID_RESTART_POLICIES))
+
+    return pod_plugin(
+        _update_restart_policy,
+        policy = policy,
+    )
+
+def _add_handler_no_overwrite(ctx, plugin, container_def):
+    if "lifecycle" not in container_def:
+        container_def["lifecycle"] = {}
+
+    if container_def["lifecycle"].get(plugin.type) == None:
+        container_def["lifecycle"][plugin.type] = plugin.action
+
+def _add_handler(ctx, plugin, container_def):
+    if "lifecycle" not in container_def:
+        container_def["lifecycle"] = {}
+
+    container_def["lifecycle"][plugin.type] = plugin.action
+
+def render_lifecycle(ctx, lifecycle):
+    result = Lifecycle(ctx)
+
+    if "preStop" in lifecycle:
+        if get_render_yaml(ctx):
+            result["preStop"] = lifecycle["preStop"]
+        else:
+            result.preStop = lifecycle["preStop"]
+
+    return result
+
+def _update_grace_period(ctx, plugin, pod_def):
+    if pod_def.get("grace_period") == None or plugin.overwrite:
+        pod_def["grace_period"] = plugin.seconds
+
+def _update_restart_policy(ctx, plugin, pod_def):
+    pod_def["restart_policy"] = plugin.policy

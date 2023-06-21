@@ -1,0 +1,413 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins to render secrets from Confidant inside pods.
+"""
+
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/volume.sky", "host_volume", "pod_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/helpers/quantities.sky", "mebibytes")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/variables.sky", "CONFIDANT_CONTAINER_FALLBACK_ENV", "CONFIDANT_CONTAINER_FALLBACK_DIGEST")
+load("config/kubernetes/helpers/security.sky", use_credentials_proxy_plugin = "use_credentials_proxy", "mount_credentials_proxy")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+# TODO(jmillikin): Get some equivalent to `namedtuple` into the Starlark spec, since
+# both Bazel and starlark-go have their own versions of that concept.
+_ConfidantSecret = struct
+
+def secret_options(use_credentials_proxy = None):
+    if use_credentials_proxy == True:
+        return compose_plugins(
+            use_credentials_proxy_plugin(),
+            host_volume("/etc/ssl/certs/stripe-cas", type = "Directory"),
+            pod_plugin(
+                _update_pod_options,
+                use_credentials_proxy = use_credentials_proxy,
+            ),
+        )
+    else:
+        return pod_plugin(
+            _update_pod_options,
+            use_credentials_proxy = use_credentials_proxy,
+        )
+
+def auto_secrets(autoload_dir='/pay/keys', container_names = [None]):
+    """
+    Automatically renders all secrets that are available to the pod.
+
+    Secrets are rendered to `autoload_dir` (default `/pay/keys`), with each credential becoming a YAML file named after the
+    credential. So a credential named `plus-plus-srv` will be rendered to `/pay/keys/plus-plus-srv.yaml`.
+    The YAML file will use symbols for its keys.
+
+    Args:
+        autoload_dir: The directory to autoload secrets to. Defaults to /pay/keys.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that renders all secrets available to the pod.
+    """
+    keys_mounts = [volume_mount(autoload_dir, container_name = name) for name in container_names]
+
+    return compose_plugins(
+        pod_plugin(_update_pod_autoload, autoload_dir=autoload_dir),
+        *keys_mounts
+    )
+
+def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False):
+    """
+    Add a secret to a pod in YAML format.
+
+    Args:
+        prefix: The prefix of the secret in confidant.
+        filename: Optional filename for the secret, relative to `/pay/keys`. Defaults to
+            `{prefix}.yaml`. Please avoid overriding this if possible, as it only exists to support
+            legacy secrets.
+        key_type: The type of the key. Can be "string" or "symbol". Defaults to "symbol" keys.
+        key_types: Optional types of the keys, if keys have different types. Should be a dict of key->type.
+        mode: The permissions that the secret file should have. Defaults to 0640.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+        allow_missing: Optional Whether the secret is allowed to be missing for an environment or a cluster. Defaults to False.
+
+    Returns:
+        A plugin that sets up the pod to render the secret and expose it to the containers.
+    """
+    if not filename:
+        filename = prefix + ".yaml"
+
+    yaml_template_spec = {
+        "path": "/pay/keys/{}".format(filename),
+        "mode": mode,
+        "prefix": prefix,
+        "key_type": key_type,
+        "allow_missing": allow_missing,
+    }
+    if key_types:
+        yaml_template_spec["key_types"] = key_types
+
+    return _make_secret(
+        type = "yaml",
+        template_spec = yaml_template_spec,
+        container_names = container_names,
+    )
+
+def json_secret(*, prefix, filename = None, mode = 0o640, container_names = [None]):
+    """
+    Add a secret to a pod in JSON format.
+
+    Args:
+        prefix: The prefix of the secret in confidant. This will also be the name of the template
+            file.
+        filename: Optional filename for the secret, relative to `/pay/keys`. Defaults to
+            `{prefix}.json`. Please avoid overriding this if possible, as it only exists to support
+            legacy secrets.
+        mode: The permissions that the secret file should have. Defaults to 0640.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that sets up the pod to render the secret and expose it to the containers.
+    """
+    if not filename:
+        filename = prefix + ".json"
+
+    return _make_secret(
+        type = "json",
+        template_spec = {
+            "path": "/pay/keys/{}".format(filename),
+            "mode": mode,
+            "prefix": prefix,
+        },
+        container_names = container_names,
+    )
+
+def raw_secret(*, filename, key, base64 = False, mode = 0o640, container_names = [None]):
+    """
+    Add a secret to a pod, rendered to a raw file.
+
+    Args:
+        filename: Filename for the secret, relative to `/pay/keys`.
+        key: The key where the secret is stored in confidant.
+        base64: Whether the rendered secret contents should be base64 encoded. Defaults to False.
+        mode: The permissions that the secret file should have. Defaults to 0640.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that sets up the pod to render the secret and expose it to the containers.
+    """
+    return _make_secret(
+        type = "raw",
+        template_spec = {
+            "path": "/pay/keys/{}".format(filename),
+            "mode": mode,
+            "key": key,
+            "base64": base64,
+        },
+        container_names = container_names,
+    )
+
+def ssh_secrets(*, name, private_key_mode = 0o400, public_key_mode = 0o600, container_names = [None]):
+    """
+    Add an ssh key pair secret to a pod.
+
+    Args:
+        name: The name for the ssh key stored in confidant. It will match a key in
+            confidant stored at `ssh/{name}/{name}/privkey` and `ssh/{name}/{name}/pubkey`.
+            If your key doesn't follow that pattern, you can use two raw_secrets, one for each key file.
+        private_key_mode: The permissions that the private key file should have. Defaults to 0400.
+        public_key_mode: The permissions that the public key file should have. Defaults to 0600.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that sets up the pod to render the ssh key secrets and expose them to the containers.
+    """
+
+    private_key_filename = "{}".format(name)
+    private_key = "ssh/{}/{}/privkey".format(name, name)
+
+    public_key_filename = "{}.pub".format(name)
+    public_key = "ssh/{}/{}/pubkey".format(name, name)
+
+    return compose_plugins(
+        raw_secret(filename = private_key_filename, key = private_key, mode = private_key_mode, container_names = container_names),
+        raw_secret(filename = public_key_filename, key = public_key, mode = public_key_mode, container_names = container_names),
+    )
+
+def mustache_secret(*, filename, template_content, mode = 0o640, container_names = [None]):
+    """
+    Add a secret to a pod, rendered using a Mustache template.
+
+    This allows the secret file format to be customized to suit the application needs, in case one
+    of the other formats is not workable.
+
+    Args:
+        filename: Filename for the secret.
+        template_content: The Mustache template that will render the secret content.
+        mode: The permissions that the secret file should have. Defaults to 0640.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that sets up the pod to render the secret and expose it to the containers.
+    """
+    return _make_secret(
+        type = "mustache",
+        template_spec = {
+            "path": "/pay/keys/{}".format(filename),
+            "mode": mode,
+            "content": template_content,
+        },
+        container_names = container_names,
+    )
+
+def pgpass_secret(
+        *,
+        db_endpoint,
+        dbname,
+        db_password_confidant_key,
+        port = 5432,
+        username = "root",
+        filename = ".pgpass",
+        mode = 0o600,
+        container_names = [None]):
+    """
+    Add a pgpass secret to a pod.
+
+    Args:
+        db_endpoint: The endpoint to connect to for the database, shown in the RDS console.
+        dbname: The name of the database to use, shown in the RDS console.
+        db_password_confidant_key: The key in confidant where the database password is stored.
+        port: The port to connect to. Defaults to 5432, the default PostgreSQL port.
+        username: The username to use to access the database. Defaults to `root`.
+        filename: Filename for the secret, relative to `/pay/keys`. Defaults to `.pgpass`.
+        mode: The permissions that the secret file should have. Defaults to 0640.
+        container_names: Optional list of names of containers that need to access secrets. Defaults
+            to just the main container.
+
+    Returns:
+        A plugin that sets up the pod to render the secret and expose it to the containers.
+    """
+    return mustache_secret(
+        filename = filename,
+        mode = mode,
+        template_content = ":".join([
+            db_endpoint,
+            str(port),
+            dbname,
+            username,
+            "{{ secrets['%s'] }}" % (db_password_confidant_key,),
+        ]),
+        container_names = container_names,
+    )
+
+def _make_secret(type, template_spec, container_names):
+    if template_spec["path"].startswith("/pay/keys/pay/keys") or template_spec["path"].startswith("/pay/keys//pay/keys"):
+        fail("don't specify /pay/keys in secret file paths, they're already relative to /pay/keys (instead of '/pay/keys/blah.txt', use 'blah.txt')")
+    keys_mounts = [volume_mount("/pay/keys", container_name = name) for name in container_names]
+
+    return compose_plugins(
+        pod_plugin(
+            _update_pod,
+            secret = _ConfidantSecret(type = type, template_spec = template_spec),
+        ),
+        *keys_mounts
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    config = _setup_confidant(ctx, pod_def)
+    config["secrets"].append(plugin.secret)
+
+def _update_pod_autoload(ctx, plugin, pod_def):
+    config = _setup_confidant(ctx, pod_def)
+    config["autoload"] = True
+    config["autoload_dir"] = plugin.autoload_dir
+
+    if plugin.autoload_dir != "/pay/keys":
+        volume = pod_volume(
+            path = plugin.autoload_dir,
+            reason = "Provides in-memory storage for the pod's secrets.",
+            medium = "Memory",
+            sizeLimit = mebibytes(ctx, 100),
+        )
+        volume.update_pod(ctx, volume, pod_def)
+
+def _update_pod_options(ctx, plugin, pod_def):
+    _setup_confidant(ctx, pod_def, use_credentials_proxy = plugin.use_credentials_proxy)
+
+def _setup_confidant(ctx, pod_def, use_credentials_proxy = None):
+    if "confidant_config" in pod_def:
+        if use_credentials_proxy != None:
+            fail("Choosing whether to enable the credentials proxy for secrets must be done before adding any secrets.")
+
+        return pod_def["confidant_config"]
+
+    config = {
+        "secrets": [],
+        "autoload": False,
+        "use_credentials_proxy": use_credentials_proxy == True,
+        "resource": pod_def["resource"],
+    }
+
+    pod_def["confidant_config"] = config
+    pod_def["init_containers"].append({
+        "render": _render_confidant_container,
+        "name": "confidant-init",
+        "config": config,
+        "sidecar_service": "confidant-sidecar",
+    })
+
+    volumes = [
+        pod_volume(
+            path = "/pay/keys",
+            reason = "Provides in-memory storage for the pod's secrets.",
+            medium = "Memory",
+            sizeLimit = mebibytes(ctx, 100),
+        ),
+    ]
+    if config["use_credentials_proxy"]:
+        volumes.extend([
+            host_volume(
+                "/etc/ssl/certs/stripe-cas",
+                type = "Directory",
+                reason = "Provides access to the Stripe root Certificate Authority certs.",
+            ),
+        ])
+    else:
+        volumes.extend([
+            host_volume(
+                "/etc/ssl/certs",
+                type = "Directory",
+                reason = "Provides the host certificate for communicating with Confidant.",
+            ),
+            host_volume(
+                "/etc/ssl/private",
+                type = "Directory",
+                reason = "Provides the host private key for communicating with Confidant.",
+            ),
+        ])
+
+    for volume in volumes:
+        volume.update_pod(ctx, volume, pod_def)
+
+    return config
+
+def _render_confidant_container(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    resource = container.config["resource"]
+
+    secret_templates = [{
+        "type": secret.type,
+        secret.type: secret.template_spec,
+    } for secret in container.config["secrets"]]
+
+    volume_mounts = [
+        volume_mount("/pay/keys", read_only = False),
+    ]
+    if container.config["use_credentials_proxy"]:
+        volume_mounts.extend([
+            mount_credentials_proxy(read_only = is_bin_packing_enabled(ctx) == False),
+            volume_mount("/etc/ssl/certs/stripe-cas"),
+        ])
+    else:
+        volume_mounts.extend([
+            volume_mount("/etc/ssl/certs"),
+            volume_mount("/etc/ssl/private"),
+        ])
+
+    command = [
+        "/bin/confidant-sidecar",
+        "--confidant-service-name=" + resource["iam_role"],
+        "--secret-templates-json=" + json.marshal(secret_templates),
+        "--confidant-config-json=" + json.marshal(_confidant_mtls_config(ctx)),
+    ]
+    if container.config["use_credentials_proxy"]:
+        command.extend([
+            "--experimental-use-service-ca",
+            "--stripe.service-credentials.retry-interval=5s",
+        ])
+
+    if container.config["autoload"]:
+        command.append("--autoload-path={}".format(container.config["autoload_dir"]))
+
+        if container.config["autoload_dir"] != "/pay/keys":
+            volume_mounts.append(volume_mount(container.config["autoload_dir"], read_only = False))
+
+    if is_bin_packing_enabled(ctx) == True:
+        command.append("--vsocket-connection=true")
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = _confidant_image(ctx),
+        command = command,
+        env = default_env_vars(ctx),
+        volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],
+        resources = resource_requirements(ctx),
+    )
+
+def _confidant_mtls_config(ctx):
+    return {
+        # 500 is the port for the confidant-api-frontend, which lets us use only TLS certs for auth
+        "url": "https://confidant.{}.{}.stripe.io:500".format(
+            ctx.vars["stripe.cluster"],
+            ctx.vars["stripe.environment"],
+        ),
+    }
+
+def _confidant_image(ctx):
+	return sidecar_image(ctx,
+        name = "confidant-sidecar",
+        fallback = image(ctx,
+            name = "stripe/compute/confidant-sidecar-image",
+            label = CONFIDANT_CONTAINER_FALLBACK_DIGEST,
+            env = CONFIDANT_CONTAINER_FALLBACK_ENV,
+        ),
+    )

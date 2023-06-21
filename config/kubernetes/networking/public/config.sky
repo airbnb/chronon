@@ -1,0 +1,448 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Set up networking configuration.
+
+For Shared MSP, `networking_config` is a plugin you can use as part of a `deployment`.
+
+For Dedicated MSP, `build_networking_config` can be used to construct a configuration
+for the `networking` plugin.
+"""
+
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin", "statefulset_plugin")
+load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "local_rate_limit")
+load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "mproxy_local_rate_limit")
+load(
+    "config/kubernetes/networking/internal/config/override.sky",
+    "NOT_PROVIDED",
+    "is_network_config_updater",
+    "network_config_updater",
+)
+
+def _override_matching_keys(args):
+    """
+    Syntactic sugar to help construct `network_config_updaters` that map
+    user-provided values directly into the correct fields for an underlying
+    configuration. Useful for separating user-facing values from the fields
+    internal to some sidecar configuration.
+
+    Example:
+    - Public interface signals the internal nature of some arguments
+    - Under the hood we avoid needing to write custom config update functions
+      to pass these configs through
+
+        def sn_breakglass(_sn_some_internal_field, _sn_experts_knob):
+            return networking_config_updater(
+                _update_envoy_config_srv_config = _override_matching_keys
+                enable_local_reachability = _sn_some_internal_field,
+                http2_options = _sn_experts_knob,
+            )
+
+    Args:
+        args: a struct whose fields and values will be used to directly update
+            the underlying config
+    Returns:
+        A `dict` to be consumed by the networking config generation system to
+        update an underlying configuration
+    """
+    overrides = {}
+    for field in dir(args):
+        value = getattr(args, field)
+        if is_network_config_updater(value):
+            fail("".join([
+                "FATAL [%s] " % "envoy_config_srv config",
+                "Cannot slurp '%s' since it points to a `network_config_updater` '%s'. " % (field, value),
+                "Should '%s' be a top-level field in the `network_config` struct?" % field,
+            ]))
+        overrides[field] = value
+    return overrides
+
+def breakglass_settings(
+        enable_local_reachability = NOT_PROVIDED,
+        enable_clusterfe_listener = NOT_PROVIDED,
+        http2_options = NOT_PROVIDED,
+        cluster_healthcheck_opts = NOT_PROVIDED,
+        use_envoy_admin_healthcheck = NOT_PROVIDED,
+        enable_mproxy_listener_modify_only_drain_type = NOT_PROVIDED,
+        nlb_health_check = NOT_PROVIDED,
+        envoy_setup = NOT_PROVIDED,
+        rollout_watcher = NOT_PROVIDED,
+        enable_http1_trailers = NOT_PROVIDED,
+        enable_service_filtering = NOT_PROVIDED,
+        envoy_config_srv_version = NOT_PROVIDED):
+    """
+    [SN-only] Breakglass networking customizations for use by the Service Networking Team.
+    While service owners are generally not expected to need to set these
+    arguments, we expose them via the `breakglass_settings` API to make
+    self-service experimentation and emergency configuration possible.
+
+    Args:
+        These fields correspond to non-MSP configuration that may be scattered
+        throughout `puppet-config` and across multiple repos
+        e.g. go/kube-tools/blob/master/envoy-config-srv/proto/config/config.proto
+        e.g. go/puppet-config/blob/master/modules/envoy/manifests/mesh.pp
+
+    Returns:
+        A dict of `network_config_updater` values to be merged into the config
+        struct we construct in `networking_config`.
+    """
+
+    # NB(xyu): Separate k/v entries here preserves the option for us to
+    # introduce internal groupings of related args, so we can avoid one giant
+    # overly-general `network_config_updater` object where necessary.
+    return {
+        "_sn_breakglass_envoy_config_srv_config": network_config_updater(
+            _update_envoy_config_srv_config = _override_matching_keys,
+            enable_local_reachability = enable_local_reachability,
+            enable_clusterfe_listener = enable_clusterfe_listener,
+            http2_options = http2_options,
+            cluster_healthcheck_opts = cluster_healthcheck_opts,
+            use_envoy_admin_healthcheck = use_envoy_admin_healthcheck,
+            enable_mproxy_listener_modify_only_drain_type = enable_mproxy_listener_modify_only_drain_type,
+            nlb_health_check = nlb_health_check,
+            envoy_setup = envoy_setup,
+            enable_service_filtering = enable_service_filtering,
+            enable_http1_trailers = enable_http1_trailers,
+        ),
+        "_sn_breakglass_envoy_config_srv_version": network_config_updater(
+            _update_envoy_config_srv_version = _override_matching_keys,
+            version = envoy_config_srv_version,
+        ),
+    }
+
+# NOTE: This is the public/user interface for the MSP networking config plugin.
+# - Every argument should be documented.
+# - Every argument should have a default value.
+def networking_config(
+        *,  # we want named arguments.
+        # User-facing API
+        mproxy_tier = NOT_PROVIDED,
+        egress_proxy_tier = NOT_PROVIDED,
+        enable_inbound_websockets = NOT_PROVIDED,
+        enable_global_ratelimit = NOT_PROVIDED,
+        global_ratelimit = NOT_PROVIDED,
+        inbound_ratelimit = NOT_PROVIDED,
+        outbound_mproxy_ratelimit = NOT_PROVIDED,
+        include_upstream_downstream_stats = NOT_PROVIDED,
+        stats_flush_on_admin = NOT_PROVIDED,
+        enable_grpc_web = NOT_PROVIDED,
+        envoy_concurrency = NOT_PROVIDED,
+        envoy_scrape_histogram_metrics = NOT_PROVIDED,
+        allowed_machine_orgs = NOT_PROVIDED,
+        enable_cross_domain_services = NOT_PROVIDED,
+        enable_envoy_config_srv_debug_sidecar = NOT_PROVIDED,
+        max_headers_count = NOT_PROVIDED,
+        # enable_tracing = NOT_PROVIDED, # TODO(xyu): go/jira/SN-1059
+        # Non-public SN knobs to tweak on a per-workload basis
+        _sn_breakglass = breakglass_settings()):
+    """
+    Deployment plugin that injects custom networking features for your pod.
+
+    Use this as a plugin argument to `deployment`.
+
+    Args:
+        mproxy_tier: name of mproxy tier to use for requests to mproxy. See
+            https://confluence.corp.stripe.com/display/STORAGE/MProxy+Deployment+Tiers
+            for options.
+            (Default: "non-bapi", example: "bapi-p5-canary")
+        egress_proxy_tier: name of egress proxy service tier. See
+            https://confluence.corp.stripe.com/display/SEA/Egress+Proxy+Service+Tiers
+            for options. (Default: "", example: "p0")
+        enable_inbound_websockets: configure Envoy to allow inbound websocket connections to
+            this service.
+        enable_global_ratelimit: (Deprecated, use global_ratelimit instead)
+            Boolean value indicating if outbound requests from
+            your service should respect the global rate limits for upstream services
+            (if upstream services are configured accordingly). Defaults to False.
+        global_ratelimit: Configuration struct controlling the Global (Outbound) rate-limier.
+            Disabled by default. See `global_ratelimit` for all default values.
+        inbound_ratelimit: Configuration struct controlling the inbound (local)
+            rate limiter for requests to your service. Disabled by default; see `inbound_ratelimit`
+            for all default values.
+        outbound_mproxy_ratelimit: Configuration struct controlling the rate limiter for requests that
+            go through the mproxy listener. Disabled by default. See the `outbound_mproxy_ratelimit`
+            function below for all default values.
+        enable_grpc_web: Configure whether or not to inject the gRPC-web filter into the
+            inbound filter chain.
+        envoy_concurrency: Integer; sets the concurrency (number of workers) of the envoy sidecar container.
+            By default, if not set, envoy will set concurrency to nproc of underlying host.
+        envoy_scrape_histogram_metrics: Boolean value indicating whether to scrape histogram metrics and
+            render them to the statsd sink using the histogram scraper.
+        allowed_machine_orgs: Allowed Amazon account IDs for ingress into this pod. Client certificates
+            must present a matching org (`O` field) for inbound requests to be authorized. This field
+            should be specified as a list of strings. This sets the --allowed-machine-orgs command line
+            flag for envoy-config-srv.
+        enable_cross_domain_services: The names of services to enable cross domain networking with
+            from this service
+        enable_envoy_config_srv_debug_sidecar: Boolean value indicating whether to use envoy-config-srv-debug-sidecar container
+            which replaces regular envoy-config-srv-sidecar container and uses unstripped Envoy binary.
+        max_headers_count:
+            The maximum number of headers supported by the proxy on listeners and all inbound/outbound clusters
+        _sn_breakglass: these are internal networking customizations for use by the
+            Service Networking Team. While service owners are generally not expected
+            to need to set these arguments, we expose them via the `breakglass_settings` API
+            to make self-service experimentation and emergency configuration possible.
+
+    Returns:
+        A `deployment_plugin` that injects the specified networking config into the deployment.
+    """
+    user_provided = struct(
+        # If rate-limiting is enabled, we need both to change envoy-config-srv-config and
+        # pass in the other arguments from global_ratelimit_config.
+        enable_global_ratelimit = network_config_updater(
+            _update_envoy_config_srv_config = _envoy_config_srv_toggle_global_ratelimit,
+            _update_envoy_bootstrap_config = _envoy_bootstrap_config_toggle_global_ratelimit,
+            enable = _is_global_ratelimit_enabled(enable_global_ratelimit, global_ratelimit),
+        ),
+        global_ratelimit = global_ratelimit,
+
+        enable_cross_domain_services = network_config_updater(
+            _update_envoy_config_srv_config = _envoy_config_srv_set_cross_domain_services,
+            services = enable_cross_domain_services,
+        ),
+        inbound_ratelimit = inbound_ratelimit,
+        outbound_mproxy_ratelimit = outbound_mproxy_ratelimit,
+        include_upstream_downstream_stats = network_config_updater(
+            _update_envoy_bootstrap_config = _envoy_bootstrap_config_toggle_include_downstream_upstream_stats,
+            enable = include_upstream_downstream_stats,
+        ),
+        stats_flush_on_admin = network_config_updater(
+            _update_envoy_bootstrap_config = _envoy_bootstrap_config_toggle_stats_flush_on_admin,
+            enable = stats_flush_on_admin,
+        ),
+        # TODO(xyu): do for envoy bootstrap config
+        # enable_tracing = network_config_updater(
+        #     enable = enable_tracing,
+        #     sampling_probability = 0.0001,
+        #     _update_envoy_bootstrap_config = ...
+        #     _update_envoy_config_srv_config = _toggle_tracing
+        # ),
+        # NB(xyu): This preserves user's ability to toggle options by
+        # setting primitive values (e.g. `mproxy_tier = "p0"`) while still
+        # allowing us to assert the schema of the underlying configs in a
+        # lightweight way.
+        _envoy_config_srv_cli_tiers = network_config_updater(
+            _update_envoy_config_srv_cli_args = _override_matching_keys,
+            mproxy_tier = mproxy_tier,
+            egress_proxy_tier = egress_proxy_tier,
+            enable_inbound_websockets = enable_inbound_websockets,
+            enable_grpc_web = enable_grpc_web,
+            allowed_machine_orgs = allowed_machine_orgs,
+        ),
+        envoy_concurrency = network_config_updater(
+            _update_envoy_sidecar_cli_args = _override_matching_keys,
+            envoy_concurrency = envoy_concurrency,
+        ),
+        envoy_monitor_cli = network_config_updater(
+            _update_envoy_monitor_cli_args = _override_matching_keys,
+            envoy_scrape_histogram_metrics = envoy_scrape_histogram_metrics,
+        ),
+        envoy_config_srv_container_config = network_config_updater(
+            _update_envoy_config_srv_container_config = _override_matching_keys,
+            enable_debug_sidecar_container = enable_envoy_config_srv_debug_sidecar,
+        ),
+        max_headers_count = network_config_updater(
+            _update_envoy_config_srv_config = _envoy_config_srv_set_max_headers_count,
+            max_headers_count = max_headers_count,
+        ),
+        **_sn_breakglass
+    )
+
+    # NB(xyu): splatting duplicate keys into a struct will silently include all
+    # duplicate fields into the struct! Assert that we aren't constructing
+    # something wonky here so we can continue to use convenient syntax.
+    counts = {}
+    for field in dir(user_provided):
+        counts[field] = counts.get(field, 0) + 1
+        if counts[field] > 1:
+            fail(" ".join([
+                "FATAL: `_sn_breakglass` tries to set '%s' which already exists." % field,
+                "Fields set in `breakglass_settings` should not overlap with the",
+                "fields set by the public API args to `networking_config`.",
+            ]))
+
+    return compose_plugins(
+        deployment_plugin(
+            _update_deployment_networking_config,
+            config = user_provided,
+        ),
+        statefulset_plugin(
+            _update_statefulset_networking_config,
+            config = user_provided,
+        ),
+    )
+
+def _update_deployment_networking_config(ctx, plugin, deployment_def):
+    # NOTE: `build_networking_config` depends on how this plugin interacts with the `deployment_def`.
+    # If you make changes to how we interact with the deployment IR, update `build_networking_config`
+    # accordingly.
+    deployment_def["networking_config"] = plugin.config
+
+def _update_statefulset_networking_config(ctx, plugin, statefulset_def):
+    # NOTE: `build_networking_config` depends on how this plugin interacts with the `statefulset_def`.
+    # If you make changes to how we interact with the statefulset IR, update `build_networking_config`
+    # accordingly.
+    statefulset_def["networking_config"] = plugin.config
+
+def build_networking_config(**kwargs):
+    """
+    Like `networking_config`, but returns a struct instead of a deployment plugin.
+
+    Can be used directly with the `networking` plugin.
+    Args:
+        **kwargs: optional arguments to `networking_config`
+    Returns:
+        A struct containing the networking configuration, to be handed off to
+        the `networking` plugin.
+    """
+    deployment_stub = {
+        "networking_config": None,
+    }  # stub the deployment IR to collect the defaults
+    plugin = networking_config(**kwargs)
+    plugin.update_deployment(None, plugin, deployment_stub)
+    return deployment_stub["networking_config"]
+
+def inbound_ratelimit(
+        *,
+        enable = False,
+        max_capacity = 1000,
+        fill_interval_duration = "100ms",
+        tokens_per_interval = 100,
+        unavailable_status_code = False):
+    # When changing the defaults here, also change them in
+    # _service_config_inbound_ratelimit in networking/internal/envoy-config-srv.sky.
+    """
+    Construct inbound rate limiter configuration.
+
+    By default, the inbound rate limiter is disabled.
+    Internally, this maps to the local rate limiter. This is a shim over envoy's local-rate-limiters.
+    See envoy docs: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/local_rate_limit_filter
+    Args:
+        enable: Should the inbound rate-limit be turned on (default: False).
+        max_capacity: Token bucket max capacity (default: 1000).
+        fill_interval_duration: What is the unit of time by which we add tokens to bucket (default = 100ms).
+        tokens_per_interval: How many tokens are added for each fill_interval_duration (default = 100).
+        unavailable_status_code: If true, dropped rate-limited requests will have the status code of Unavailable (503), otherwise 429. (default = False)
+    """
+    return network_config_updater(
+        _update_envoy_config_srv_config = _set_local_ratelimit,
+        enable = enable,
+        max_capacity = max_capacity,
+        fill_interval_duration = fill_interval_duration,
+        tokens_per_interval = tokens_per_interval,
+        unavailable_status_code = unavailable_status_code,
+    )
+
+def _set_local_ratelimit(args):
+    return {
+        "local_rate_limit": (
+            None if args.enable == False else local_rate_limit(
+                max_capacity = args.max_capacity,
+                tokens_per_interval = args.tokens_per_interval,
+                fill_interval_duration = args.fill_interval_duration,
+                unavailable_status_code = args.unavailable_status_code,
+            )
+        ),
+    }
+
+# Notice fields should match fields in the `global_ratelimit` function
+def _set_global_ratelimit(args):
+    return {
+        "enable": args.enable,
+        "namespace_override": args.namespace_override,
+        "force_update_interval": args.force_update_interval,
+        "log_updater_canonical_lines": args.log_updater_canonical_lines
+
+    }
+
+def global_ratelimit(
+    *,
+    enable = False,
+    namespace_override = "",
+    force_update_interval = None,
+    log_updater_canonical_lines = None):
+    """
+    Construct the Global (outbound) rate limiter configuration.
+    Notice `enable_global_ratelimit` is being deprecated in favor of this struct.
+
+    By default, this rate limiter is disabled.
+    Args:
+        enable: Should the global rate-limit be turned on (default: False).
+        namespace_override: (Optional) allows overriding the host-type/k8s-namespace used as client identity.
+        force_update_interval: (Optional) In case of no usage of a token-bucket, how often should we still check
+            with the global storage on utilization to update the bucket.
+            (Default None - while no utilization, no global storage updater-checks)
+        log_updater_canonical_lines - (Optional) Whether the sidecar should log the Token-Bucket dynamic updater
+            canonical-lines. In some cases, this can generate a lot of logs, but it's required for deeper analysis.
+    """
+    return network_config_updater(
+        _global_ratelimit_args = _set_global_ratelimit,
+        enable = enable,
+        namespace_override = namespace_override,
+        force_update_interval = force_update_interval,
+        log_updater_canonical_lines = log_updater_canonical_lines,
+    )
+
+def outbound_mproxy_ratelimit(
+        *,
+        enable = False,
+        max_capacity = 50,
+        fill_interval_duration = "100ms",
+        tokens_per_interval = 100):
+    """
+    Construct mproxy listener local rate limiter configuration.
+
+    By default, this rate limiter is disabled.
+    See envoy docs: https://www.envoyproxy.io/docs/envoy/v1.20.7/configuration/listeners/network_filters/local_rate_limit_filter
+    Args:
+        enable: Should the inbound rate-limit be turned on (default: False).
+        max_capacity: Token bucket max capacity (default: 1000).
+        fill_interval_duration: What is the unit of time by which we add tokens to bucket (default = 100ms).
+        tokens_per_interval: How many tokens are added for each fill_interval_duration (default = 100).
+    """
+    return network_config_updater(
+        _update_envoy_config_srv_config = _set_outbound_mproxy_ratelimit,
+        enable = enable,
+        max_capacity = max_capacity,
+        fill_interval_duration = fill_interval_duration,
+        tokens_per_interval = tokens_per_interval,
+    )
+
+def _set_outbound_mproxy_ratelimit(args):
+    return {
+        "mproxy_local_rate_limit": (
+            None if args.enable == False else mproxy_local_rate_limit(
+                max_capacity = args.max_capacity,
+                tokens_per_interval = args.tokens_per_interval,
+                fill_interval_duration = args.fill_interval_duration,
+            )
+        ),
+    }
+
+def _envoy_config_srv_toggle_global_ratelimit(args):
+    return {"enable_global_ratelimiter": args.enable}
+
+def _envoy_bootstrap_config_toggle_global_ratelimit(args):
+    return {"add_global_ratelimit_cluster": args.enable}
+
+def _envoy_bootstrap_config_toggle_include_downstream_upstream_stats(args):
+    return {"include_upstream_downstream_stats": args.enable}
+
+def _envoy_bootstrap_config_toggle_stats_flush_on_admin(args):
+    return {"stats_flush_on_admin": args.enable}
+
+def _envoy_config_srv_set_cross_domain_services(args):
+    return {"enable_cross_domain_services": args.services}
+
+def _envoy_config_srv_set_max_headers_count(args):
+    return {"max_headers_count": args.max_headers_count}
+
+# A helper function to resolve whether the global rate-limiter should be turned-on
+# based on the old / deprecated value (`enable_global_ratelimit`) and the new struct (`global_ratelimit.enable`)
+def _is_global_ratelimit_enabled(deprecated_val, global_ratelimit):
+    global_ratelimit_enabled = False
+    if deprecated_val != NOT_PROVIDED:
+        global_ratelimit_enabled = deprecated_val
+    if global_ratelimit != NOT_PROVIDED and global_ratelimit != None:
+        global_ratelimit_enabled = global_ratelimit_enabled or global_ratelimit.kwargs.enable
+    return global_ratelimit_enabled

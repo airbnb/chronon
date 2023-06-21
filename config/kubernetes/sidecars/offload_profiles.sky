@@ -1,0 +1,97 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/helpers/security.sky", "mount_credentials_proxy", "use_credentials_proxy")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/core/env_var.sky", "container_env_vars", "default_env_vars")
+load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/pay-server.sky", "default_pay_server_image")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+def use_offload_profiles():
+    """
+    Sidecar process to offload Ruby profile dumps from disk to S3.
+
+    This should be included in your deploy if you are using Opus::ProductionProfiler to generate stackprof profiles.
+
+    Returns:
+        A sidecar process that offloads Ruby profile dumps.
+    """
+    shared_plugins = compose_plugins(
+        # TODO(ORCH-2190) Remove kube-iam-credentials bind mount for Shared MSP
+        mount_host_volume(path = "/pay/aws-config/kube_iam_aws_credentials.ini", container_name = "offload-profiles", volume_args = {"type": "File"}),
+        mount_host_volume(path = "/usr/stripe/bin/kube-iam-credentials", container_name = "offload-profiles", volume_args = {"type": "File"}),
+        pod_plugin(
+            _update_pod,
+            is_shared = True,
+        ),
+    )
+    dedicated_plugins = compose_plugins(
+        pod_plugin(
+            _update_pod,
+            is_shared = False,
+        ),
+    )
+    standard_plugins = compose_plugins(
+        use_credentials_proxy(),
+        mount_pod_volume(
+            "/tmp/profiler-dumps",
+            volume_args = dict(reason = "Provides temporary storage for Ruby profiler dumps."),
+            mount_args = dict(read_only = False),
+        ),
+        mount_host_volume(path = "/pay/cache", container_name = "offload-profiles", volume_args = {"type": "Directory"}),
+    )
+    return compose_plugins(
+        conditional_plugin(condition = is_shared_msp, plugin = shared_plugins),
+        conditional_plugin(condition = is_dedicated_msp, plugin = dedicated_plugins),
+        standard_plugins,
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "offload_profiles_sidecar" in pod_def:
+        return
+
+    container_def = {
+        "render": _offload_profiles_container,
+        "name": "offload-profiles",
+        "sidecar_service": "offload-profiles-sidecar",
+        "is_shared": plugin.is_shared,
+    }
+    pod_def["offload_profiles_sidecar"] = container_def
+    pod_def["containers"].append(container_def)
+
+def _offload_profiles_container(ctx, container_def, pod):
+    container = struct(**container_def)
+    is_shared = container_def["is_shared"]
+    env = default_env_vars(ctx)
+    env.append(EnvVar(ctx, name = "STRIPE_BUNDLE_USE_SORBET_RUBY", value = "true"))
+
+    if is_shared:
+        env.append(EnvVar(ctx, name = "AWS_CONFIG_FILE", value = "/pay/aws-config/kube_iam_aws_credentials.ini"))
+        volume_mounts = [
+            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, volume_mount("/tmp/profiler-dumps", read_only = False)),
+            render_volume_mount(ctx, volume_mount("/pay/aws-config/kube_iam_aws_credentials.ini", read_only = True)),
+            render_volume_mount(ctx, volume_mount("/usr/stripe/bin/kube-iam-credentials", read_only = True)),
+            render_volume_mount(ctx, volume_mount("/pay/cache")),
+        ]
+    else:
+        volume_mounts = [
+            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, volume_mount("/tmp/profiler-dumps", read_only = False)),
+            render_volume_mount(ctx, volume_mount("/pay/cache")),
+        ]
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = image(ctx, default_pay_server_image),
+        command = ["/deploy/pay-server/current/lib/production_profiler/scripts/offload_dumps_sidecar.rb"],
+        env = env,
+        volumeMounts = volume_mounts,
+        resources = resource_requirements(ctx),
+    )

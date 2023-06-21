@@ -1,0 +1,1333 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins and helpers to specifically support running pay-server CronJobs.
+"""
+
+load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "volume_mount")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/container.sky", "init_container")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "get_aws_region", "get_owner", "get_name")
+load("config/kubernetes/helpers/images.sky", "image", "image_defaults")
+load("config/kubernetes/batch/cronjob.sky", "cronjob")
+load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
+load("config/kubernetes/helpers/security.sky", "mount_host_stripe_ca_certs", "run_as_unprivileged")
+load("config/kubernetes/meta/metadata.sky", "labels", "annotations")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "cronjob_plugin", "container_plugin")
+load("config/kubernetes/helpers/msp_shard.sky", "msp_shard")
+load("config/kubernetes/meta/cron_metadata.sky", "cron_metadata")
+load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT", "DEFAULT_FAILED_JOB_HISTORY_LIMIT")
+
+MAX_CRON_NAME_LEN = 52
+DEFAULT_TTL_SECS_AFTER_FINISH = 1209600
+DEFAULT_NAMESPACE = "kubeacronnoegress"
+DEFAULT_IAM_ROLE_PREFIX = "payserver-cron-default-role.kubecron"
+DEFAULT_CONCURRENCY_POLICY = "Forbid"
+DEFAULT_BACKOFF_LIMIT = 6
+DEFAULT_DEPLOY_STAGE = "main"
+DEFAULT_CONTAINER_WORKING_DIR = "/deploy/pay-server/current"
+DEFAULT_CLUSTERS = ["northwest"]
+DEFAULT_PAY_SERVER_IMAGE = image_defaults(
+    # if they try to use defaults, their service yaml should have the artifact specified.
+    # if not, they're not explicitly relying on any images, so defaults doesn't know what to do.
+    # setting None for the name will ensure we don't default to some ECR repo. They can explicitly
+    # pick an image and should specify that image deploy as a prereq, or they can use defaults and
+    # specify the pay-server-image artifact, so we know what to default to.
+    name = None,
+    artifact = "pay-server-image",
+)
+KUBECRON_FAILOVER_SHARD = "kubeapidd"
+DEFAULT_SHARD = "kubemaster"
+LABEL_USER_DISABLED = "stripe.io/disabled-by-user"
+LABEL_BACKUP = "stripe.io/backup"
+
+def pay_server_cronjob_wrapper(*cronjobs):
+    """
+    A wrapper to return a list of cron jobs.
+
+    It can be used with the `pay_server_cronjob` plugin to generate a list of cron jobs for a team.
+
+    Args:
+        *cronjobs: List of pay_server_cronjob() input
+
+    Returns:
+        List of pay-server cronjob protobufs
+    """
+    crons = []
+    for c in cronjobs:
+        if c:
+            crons.extend(c)
+    return crons
+
+def pay_server_cronjob(
+    ctx,
+    name,
+    command,
+    schedule,
+    namespace=DEFAULT_NAMESPACE,
+    image=DEFAULT_PAY_SERVER_IMAGE,
+    clusters=None,
+    working_dir=DEFAULT_CONTAINER_WORKING_DIR,
+    cpu=None,
+    memory=None,
+    secrets=None,
+    environment_variables=None,
+    iam_role_prefix=DEFAULT_IAM_ROLE_PREFIX,
+    concurrency_policy=DEFAULT_CONCURRENCY_POLICY,
+    deploy_stage=DEFAULT_DEPLOY_STAGE,
+    max_retries_on_failure=DEFAULT_BACKOFF_LIMIT,
+    ttl_secs_after_finish=DEFAULT_TTL_SECS_AFTER_FINISH,
+    zamboni_config=None,
+    disable_ruby_preload=True,
+    disabled=False,
+    qa_enabled=False,
+    preprod_enabled=False,
+    prod_enabled=True,
+    cron_mount_pod_volumes=None,
+    shards_by_cluster=None,
+    cron_tier=None,
+    description=None,
+    runbook_url=None,
+):
+    """
+    Define a cron job (a batch job that will run on a schedule) in pay-server.
+
+    This plugin should generally be the first plugin used when defining a new cron job in pay-server. It sets up important
+    metadata and spec values for the cronjob. It also sets some environment variables and mounts
+    several volumes from the host that support pay-server cron jobs functioning correctly.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        name: The name of the cron job.
+        namespace: The `host_type` to run the cronjob on. Defaults to `kubeacronnoegress`.
+        command: An array containing the command and arguments that should run in the main container of the cron job.
+        clusters: A list of AWS clusters in which this CronJob must run. Defaults to ["northwest"]. Acceptable values in list are
+                "northwest", "bom", "cmh", "east".
+        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
+        iam_role_prefix: The `iam.amazonaws.com/role` label to set in the pay-server cronjob. This is required for pay-server cronjobs.
+                Defaults to `payserver-cron-default-role.kubecron`
+        secrets: A dictionary that describes the additional secrets configured for the cron job to function correctly.
+                The optional keys in the secrets dictionary can be one or more of "yaml_secret", "json_secret", "raw_secret".
+                Generally, the format of the secrets dictionary should be similar to:
+                {
+                    "yaml_secrets": []
+                    "json_secrets": []
+                    "raw_secrets": []
+                }
+                - yaml_secrets: An array contains one or multiple the following types to denote yaml secret file(s) .
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.yaml",
+                                "mode": "0640" # default to '0640'
+                                "key_type": "symbol", # default to 'symbol'
+                            }
+                - json_secrets: An array contains one or multiple the following types to denote json secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.json",
+                                "mode": "0640" # default to '0640'
+                            }
+                - raw_secrets: An array contains one or multiple the following types to denote raw secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "key": "key/of/the/secret/file",
+                                "filename": "key_of_the_secret_file.txt",
+                                "mode": "0640" # default to '0640',
+                                "base64": False # default to False
+                            }
+
+        environment_variables: A list of the additional environment variables to set in the container.
+                Each element in the list should be an object in the following format
+                {
+                    "name": "ENV_VAR_NAME",
+                    "value": "SOME_VALUE",
+                }
+        deploy_stage: The `deploy-stage` label to set in the pay-server cron job. This is required for pay-server cronjobs.
+                Accepted values are one of `main` and `canary`.
+                Defaults to the `main` stage.
+        concurrency_policy: The `concurrencyPolicy` to set in the pay-server cron job spec. It should be one of the ["Allow", "Forbid", "Replace"].
+        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
+        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        image: The name of the ECR repository of the container images the pod should run for its main container.
+                Defaults to the default pay-server image.
+        disable_ruby_preload: A flag for disabling ruby preloading. Defaults to True.
+        working_dir: Container's working directory. If not specified, DEFAULT_CONTAINER_WORKING_DIR will be used.
+        max_retries_on_failure: Customize the max number of retry if the cron job fails. This will set the `backoffLimit` field in the k8s jobTemplate spec.
+                Defaults to DEFAULT_BACKOFF_LIMIT.
+        ttl_secs_after_finish: Number of seconds after which to delete the Job related to this Cron.
+                This is set as "ttlSecondsAfterFinished" field in the k8s Cron's Job Spec. Defaults to 14 days.
+        zamboni_config: A dictionary contains the configurations for zamboni cron jobs. The optional fields are
+                {
+                    stripe_cronjob_name: "name--of-cronjob",
+                    stripe_project: "nameOfTheProject",
+                    args: ["some", "arguments"],
+                    zamboni_path: "path/of/zamboni"
+                }
+
+        disabled: A flag to disable the cron job. It sets the the `suspend` field in the k8s cronjob spec
+                Defaults to False
+        qa_enabled: A flag to indicate if the cron job is enabled in qa. Default to False
+        preprod_enabled: A flag to indicate if the cron job is enabled in preprod. Default to False
+        prod_enabled: A flag to indicate if the cron job is enabled in prod. Default to False
+        cron_mount_pod_volumes: A list of dictionary containing the pod volume args as below:
+                [
+                    {
+                        path: path to the volume
+                        container_name: "Optional name of the container to mount the volume into. Defaults
+                                        to the main container of the pod".
+                        volume_args: Optional dictionary of additional keyword arguments for creating the
+                                     volume. See `pod_volume` for possible options.
+                        mount_args: Optional dictionary of additional keyword arguments for mounting the
+                                    volume. See `volume_mount` for possible options.
+                    },
+                ]
+        shards_by_cluster: A dict of shards to which we deploy this CronJob to, based on the region.
+        cron_tier: The tier specification for the cron which shows its business criticality. For more details, see http://go/cron-tiers
+        description: A human-readable description of the purpose of the cron
+        runbook_url: A URL to a runbook for the cron, maintained by the owning team
+
+
+    Returns:
+        A pay-server [CronJob](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjob-v1beta1-batch)
+        Kubernetes protobuf message describing the configuration of the cron job.
+        None if the environment conditions do not match.
+
+    Fails:
+        If the name contains an "_" or if the schedule is not a valid cron schedule
+    """
+    # Deploy to the default primary shard.
+    if shards_by_cluster == None:
+        # Default the values to DEFAULT_SHARD of kubemaster for all regions.
+        shards_by_cluster = {
+            "northwest": [DEFAULT_SHARD],
+            "cmh": [DEFAULT_SHARD],
+            "east": [DEFAULT_SHARD],
+            "bom": [DEFAULT_SHARD],
+        }
+    deploy_shards = shards_by_cluster.get(get_cluster(ctx), [])
+    should_disable_backup = True
+    # Additionally deploy to the kubecron-failover shard for northwest crons.
+    if get_cluster(ctx) == "northwest":
+        if KUBECRON_FAILOVER_SHARD not in deploy_shards:
+            deploy_shards.append(KUBECRON_FAILOVER_SHARD)
+        else:
+            # We dont want to suspend crons in backup for this particular cron as this
+            # cron is specifically being created in backup shard.
+            should_disable_backup = False
+    out_crons = []
+    extra_labels = {}
+    extra_labels[LABEL_USER_DISABLED] = str(disabled).lower()
+    for s in deploy_shards:
+        if s == KUBECRON_FAILOVER_SHARD and should_disable_backup:
+            extra_labels[LABEL_BACKUP] = "true"
+            # We deploy a disabled copy of the cron in backup shard.
+            disabled = True
+        pc = _pay_server_cronjob(
+                ctx,
+                name,
+                command,
+                schedule,
+                namespace=namespace,
+                image=image,
+                clusters=clusters,
+                working_dir=working_dir,
+                cpu=cpu,
+                memory=memory,
+                secrets=secrets,
+                environment_variables=environment_variables,
+                iam_role_prefix=iam_role_prefix,
+                concurrency_policy=concurrency_policy,
+                deploy_stage=deploy_stage,
+                max_retries_on_failure=max_retries_on_failure,
+                ttl_secs_after_finish=ttl_secs_after_finish,
+                zamboni_config=zamboni_config,
+                disable_ruby_preload=disable_ruby_preload,
+                disabled=disabled,
+                qa_enabled=qa_enabled,
+                preprod_enabled=preprod_enabled,
+                prod_enabled=prod_enabled,
+                cron_mount_pod_volumes=cron_mount_pod_volumes,
+                shard=s,
+                extra_labels=extra_labels,
+                cron_tier=cron_tier,
+                description=description,
+                runbook_url=runbook_url,
+            )
+        if pc != None:
+            out_crons.append(pc)
+    return out_crons
+
+def _pay_server_cronjob(
+    ctx,
+    name,
+    command,
+    schedule,
+    namespace=DEFAULT_NAMESPACE,
+    image=DEFAULT_PAY_SERVER_IMAGE,
+    clusters=None,
+    working_dir=DEFAULT_CONTAINER_WORKING_DIR,
+    cpu=None,
+    memory=None,
+    secrets=None,
+    environment_variables=None,
+    iam_role_prefix=DEFAULT_IAM_ROLE_PREFIX,
+    concurrency_policy=DEFAULT_CONCURRENCY_POLICY,
+    deploy_stage=DEFAULT_DEPLOY_STAGE,
+    max_retries_on_failure=DEFAULT_BACKOFF_LIMIT,
+    ttl_secs_after_finish=DEFAULT_TTL_SECS_AFTER_FINISH,
+    zamboni_config=None,
+    disable_ruby_preload=True,
+    disabled=False,
+    qa_enabled=False,
+    preprod_enabled=False,
+    prod_enabled=True,
+    cron_mount_pod_volumes=None,
+    shard=DEFAULT_SHARD,
+    extra_labels=None,
+    cron_tier=None,
+    description=None,
+    runbook_url=None,
+):
+    """
+    Internal function to generate the list of CronJobs in different shards based on user input.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        name: The name of the cron job.
+        namespace: The `host_type` to run the cronjob on. Defaults to `kubeacronnoegress`.
+        command: An array containing the command and arguments that should run in the main container of the cron job.
+        clusters: A list of AWS clusters in which this CronJob must run. Defaults to ["northwest"]. Acceptable values in list are
+                "northwest", "bom", "cmh", "east".
+        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
+        iam_role_prefix: The `iam.amazonaws.com/role` label to set in the pay-server cronjob. This is required for pay-server cronjobs.
+                Defaults to `payserver-cron-default-role.kubecron`
+        secrets: A dictionary that describes the additional secrets configured for the cron job to function correctly.
+                The optional keys in the secrets dictionary can be one or more of "yaml_secret", "json_secret", "raw_secret".
+                Generally, the format of the secrets dictionary should be similar to:
+                {
+                    "yaml_secrets": []
+                    "json_secrets": []
+                    "raw_secrets": []
+                }
+                - yaml_secrets: An array contains one or multiple the following types to denote yaml secret file(s) .
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.yaml",
+                                "mode": "0640" # default to '0640'
+                                "key_type": "symbol", # default to 'symbol'
+                            }
+                - json_secrets: An array contains one or multiple the following types to denote json secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.json",
+                                "mode": "0640" # default to '0640'
+                            }
+                - raw_secrets: An array contains one or multiple the following types to denote raw secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "key": "key/of/the/secret/file",
+                                "filename": "key_of_the_secret_file.txt",
+                                "mode": "0640" # default to '0640',
+                                "base64": False # default to False
+                            }
+
+        environment_variables: A list of the additional environment variables to set in the container.
+                Each element in the list should be an object in the following format
+                {
+                    "name": "ENV_VAR_NAME",
+                    "value": "SOME_VALUE",
+                }
+        deploy_stage: The `deploy-stage` label to set in the pay-server cron job. This is required for pay-server cronjobs.
+                Accepted values are one of `main` and `canary`.
+                Defaults to the `main` stage.
+        concurrency_policy: The `concurrencyPolicy` to set in the pay-server cron job spec. It should be one of the ["Allow", "Forbid", "Replace"].
+        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
+        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        image: The name of the ECR repository of the container images the pod should run for its main container.
+                Defaults to the default pay-server image.
+        disable_ruby_preload: A flag for disabling ruby preloading. Defaults to True.
+        working_dir: Container's working directory. If not specified, DEFAULT_CONTAINER_WORKING_DIR will be used.
+        max_retries_on_failure: Customize the max number of retry if the cron job fails. This will set the `backoffLimit` field in the k8s jobTemplate spec.
+                Defaults to DEFAULT_BACKOFF_LIMIT.
+        ttl_secs_after_finish: Number of seconds after which to delete the Job related to this Cron.
+                This is set as "ttlSecondsAfterFinished" field in the k8s Cron's Job Spec. Defaults to 14 days.
+        zamboni_config: A dictionary contains the configurations for zamboni cron jobs. The optional fields are
+                {
+                    stripe_cronjob_name: "name--of-cronjob",
+                    stripe_project: "nameOfTheProject",
+                    args: ["some", "arguments"],
+                    zamboni_path: "path/of/zamboni"
+                }
+
+        disabled: A flag to disable the cron job. It sets the the `suspend` field in the k8s cronjob spec
+                Defaults to False
+        qa_enabled: A flag to indicate if the cron job is enabled in qa. Default to False
+        preprod_enabled: A flag to indicate if the cron job is enabled in preprod. Default to False
+        prod_enabled: A flag to indicate if the cron job is enabled in prod. Default to False
+        cron_mount_pod_volumes: A list of dictionary containing the pod volume args as below:
+                [
+                    {
+                        path: path to the volume
+                        container_name: "Optional name of the container to mount the volume into. Defaults
+                                        to the main container of the pod".
+                        volume_args: Optional dictionary of additional keyword arguments for creating the
+                                     volume. See `pod_volume` for possible options.
+                        mount_args: Optional dictionary of additional keyword arguments for mounting the
+                                    volume. See `volume_mount` for possible options.
+                    },
+                ]
+        shard: The shard to which we deploy this CronJob to. Defaults to "kubemaster"
+        extra_labels: Extra labels to apply to this CronJob object.
+        cron_tier: The tier specification for the cron which shows its business criticality. For more details, see http://go/cron-tiers
+        description: A human-readable description of the purpose of the cron
+        runbook_url: A URL to a runbook for the cron, maintained by the owning team
+
+
+    Returns:
+        A pay-server [CronJob](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjob-v1beta1-batch)
+        Kubernetes protobuf message describing the configuration of the cron job.
+        None if the environment conditions do not match.
+
+    Fails:
+        If the name contains an "_" or if the schedule is not a valid cron schedule
+    """
+    if cpu == None:
+        cpu = millicores(ctx, 1000)
+
+    if memory == None:
+        memory = mebibytes(ctx, 8192)
+
+    _check_schedule(schedule)
+    _check_schedule_frequency(schedule, name)
+    _check_name(name)
+    _require_cron_tier(cron_tier, name)
+
+    cron_env = get_env(ctx)
+    if cron_env == 'prod' and not prod_enabled:
+        return None
+    if cron_env == 'preprod' and not preprod_enabled:
+        return None
+    if cron_env == 'qa' and not qa_enabled:
+        return None
+
+    if clusters == None:
+        clusters = DEFAULT_CLUSTERS
+    cron_cluster = get_cluster(ctx)
+    if cron_cluster not in clusters:
+        # Cron is not configured to run in this cluster.
+        return None
+
+    # The default CronJobSpec options for pay-sever cronjobs
+    cron_options = {
+        "successfulJobsHistoryLimit": DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT,
+        "failedJobsHistoryLimit": DEFAULT_FAILED_JOB_HISTORY_LIMIT,
+        "concurrencyPolicy": concurrency_policy,
+        "suspend": disabled,
+        "schedule": schedule,
+    }
+
+    # environment variables for the main container
+    cron_env_variables = {
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "KUBE_JOB_NAME_FULL": name,
+        "KUBE_JOB_OWNER": get_owner(ctx),
+        "KUBE_JOB_NAME": _truncate_cron_job_name(name),
+        "KUBE_CLUSTER": get_cluster(ctx),
+        "KUBE_MSP_SHARD": shard,
+        "DISABLE_PRELOAD": str(disable_ruby_preload).upper(),
+        "AWS_CONFIG_FILE": "/deploy/opsonic/current/cron/aws_credentials.ini",
+        "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
+    }
+
+    environment_variables_dict = {}
+    if environment_variables != None and type(environment_variables) == "list":
+        for obj in environment_variables:
+            if type(obj) == "dict" and "name" in obj and "value" in obj:
+                environment_variables_dict[str(obj["name"])] = str(obj["value"])
+
+    cron_env_variables.update(environment_variables_dict)
+
+    # zamboni environment variables
+    if zamboni_config:
+        if "STRIPE_CRONJOB_NAME" not in cron_env_variables:
+            if "stripe_cronjob_name" not in zamboni_config:
+                fail("zamboni config for job %s is not valid, missing key 'stripe_cronjob_name'." % name)
+            cron_env_variables["STRIPE_CRONJOB_NAME"] = zamboni_config['stripe_cronjob_name']
+        if "STRIPE_PROJECT" not in cron_env_variables:
+            if "stripe_project" not in zamboni_config:
+                fail("zamboni config for job %s is not valid, missing key 'stripe_project'." % name)
+            cron_env_variables["STRIPE_PROJECT"] = zamboni_config['stripe_project']
+
+    if namespace == DEFAULT_NAMESPACE:
+        cron_env_variables["STRIPE_USER"] = "kubecron"
+
+    main_container_command = _build_command(command, zamboni_config)
+    cronjob_labels = {
+        _label_prefix("repository"): "pay-server",
+        _label_prefix("deploy-stage"): deploy_stage,
+        _label_prefix("deploy-method"): "skycfg"
+    }
+    if extra_labels:
+        cronjob_labels.update(extra_labels)
+    cron_plugins = [
+        stripe_pod(
+            ctx,
+            name = name,
+            host_type = namespace,
+            command = main_container_command,
+            image = image,
+            cpu=cpu,
+            memory=memory,
+            use_shared_msp_service_account=False,
+        ),
+        _pay_server_cronjob_init_containers(
+            ctx,
+            namespace,
+            iam_role_prefix,
+            secrets,
+        ),
+        _customize_backoff_limit_plugin(max_retries_on_failure),
+        container_env_vars(cron_env_variables),
+        _customize_working_dir_plugin(None, working_dir),
+        _customize_image_pull_policy_plugin(None, "IfNotPresent"),
+        labels(cronjob_labels),
+        cron_metadata(
+            cron_tier = cron_tier,
+            description = description,
+            runbook_url = runbook_url,
+        ),
+        annotations({
+            "owner": get_owner(ctx),
+            "iam.amazonaws.com/role": _pod_iam_role(ctx, iam_role_prefix),
+            _label_prefix("job-full-name"): name,
+        }),
+        # default main container volumes
+        _volume_plugins(ctx),
+        _confidant_volume_plugins(),
+        _iam_volume_plugins(namespace),
+        # mounting ca certs from host to ensure TLS to fleetrepo can be
+        # verified
+        mount_host_stripe_ca_certs(container_name = name),
+        msp_shard(shard),
+    ]
+    if cron_mount_pod_volumes:
+        for pv in cron_mount_pod_volumes:
+            cron_plugins.append(
+                mount_pod_volume(
+                    path = pv.get("path"),
+                    container_name = pv.get("container_name"),
+                    volume_args = pv.get("volume_args", {}),
+                    mount_args = pv.get("mount_args", {}),
+                )
+            )
+
+    if namespace == DEFAULT_NAMESPACE:
+        cron_plugins.append(run_as_unprivileged(3000, 3000))
+
+    cron = cronjob(
+        ctx,
+        compose_plugins(*cron_plugins),
+        ttl_secs_after_finish=ttl_secs_after_finish,
+        **cron_options,
+    )
+
+    return cron
+
+# Takes in a list that contains a combination of objects and strs and join thier string representations together
+# to create a failure message and calls fails with that generated message
+def _fail_with_message(*message_parts):
+    """
+    Fails the currently running program with an error messsage
+
+    Args:
+        message_parts : A list of objects representing the parts (i.e. substrings) of the error message
+
+    Fails:
+        With an error message which is a space seperated string made up of the string representations of all the parts
+    """
+    fail_message = " ".join([str(part) for part in message_parts])
+    fail(fail_message)
+
+def _check_value(unit_part, bounds, allowed_strings = None):
+    """
+        Checks if the passed in str is valid value based on the passed in bounds and the allowed strings
+
+        Args:
+            unit_part: The string that we want to check
+            bounds: A tuple of the form (min_value, max_value) that define the inclusive bounds of the range we want to
+                    check the number against if both the numbers are positive.
+            allowed_strings: An optional parameter representing the list of allowed strings that the part could be, defaults to None
+        Returns:
+            True if the passed in string can be interpreted as an integer within the specified range if both the bound values are positive
+                 if the min_value is negative and the string represents an integer <= max_value
+                 if the max_value is negative and the string represents an integer >= min_value
+                 if both min_value and max_value are negative
+                 if allowed_strings contains the passed in string
+            False otherwise
+    """
+
+    if(str(type(unit_part)) != 'string'):
+        return False
+    if(allowed_strings != None and unit_part in allowed_strings):
+        return True
+    if(not unit_part.isdigit() or len(unit_part) == 0):
+        return False
+    integer_value = int(unit_part)
+    is_greater_than_lower = bounds[0] < 0 or integer_value >= bounds[0]
+    is_smaller_than_upper = bounds[1] < 0 or integer_value <= bounds[1]
+    return (is_greater_than_lower and is_smaller_than_upper)
+
+def _get_numeric_value(numeric_string, allowed_strings):
+    """
+    Gets the integer representation of the passed in string
+
+    Args:
+        numeric_string: The string that we want to parse
+        allowed_strings: The list of strings that we can use to determine the numeric values if the
+        passed in string can't directly be interpreted as a integer
+    Returns:
+        The integer value of the passed in string if the string is an integer or represents a month
+        or day of week string (like "MON" or "SEP")
+        -1 otherwise
+    """
+
+    if(str(type(numeric_string)) != 'string'):
+        return -1
+    if(numeric_string.isdigit()):
+        return int(numeric_string)
+    if(numeric_string not in allowed_strings):
+        return -1
+    return allowed_strings.index(numeric_string)
+
+def _check_range(atomic_element, bounds, allowed_strings = None):
+    """
+    Checks that the passed in string represents a valid bound based range
+
+    Args:
+        atomic_element: The string that we want to check
+        bounds: A tuple of the form (min_value, max_value) representing an inclusive bound on any number in the string
+        allowed_strings: An optional parameter representing the list of allowed strings that the part could be, defaults to None
+        Returns:
+            True if the passed in string has the following format: [valid value]-[valid value] or [valid value] or *
+                where [valid value] is either any integer within the specified bounds or a string in allowed_strings
+            False otherwise
+    """
+    if(str(type(atomic_element)) != 'string'):
+        return False
+    if(atomic_element == '*'):
+        return True
+    if('-' not in atomic_element):
+        return _check_value(atomic_element, bounds, allowed_strings = allowed_strings)
+    range_bounds = atomic_element.split('-')
+    if (len(range_bounds) != 2):
+        return False
+    #Check that both the numbers in the range are within the bounds
+    if(not _check_value(range_bounds[0], bounds, allowed_strings = allowed_strings)):
+        return False
+    if(not _check_value(range_bounds[1], bounds, allowed_strings = allowed_strings)):
+        return False
+    # If the range contains two numbers then make sure the first value is less than the second value
+    lower_value, upper_value = _get_numeric_value(range_bounds[0], allowed_strings), _get_numeric_value(range_bounds[1], allowed_strings)
+    if(lower_value == -1 or upper_value == -1):
+        return False
+    if(range_bounds[0] == "SUN"):
+        lower_value = 0
+    if(range_bounds[1] == "SUN"):
+        upper_value = len(allowed_strings)
+    return lower_value <= upper_value
+
+def _check_atomic_element(element, bounds, allowed_strings = None):
+    """
+        Checks if the passed in string represents a valid range in the cron terminology
+
+        Args:
+            element: The string that we want to check
+            bounds: A tuple of the form (min_value, max_value) representing an inclusive bound on any number in the string
+            allowed_strings: An optional parameter representing the list of allowed strings that the part could be, defaults to None
+        Returns:
+            True if the passed in string has one of the following formats: '*' or [valid range] or [valid value] or [valid range]/[valid int]
+                where [valid range] is an valid bound based range and [valid value] is either any integer
+                within the specified bounds or a string in allowed_strings
+            False otherwise
+    """
+
+    if(str(type(element)) != 'string'):
+        return False
+
+    is_valid = False
+    if('/' in element):
+        exclusion_parts = element.split('/')
+        if(len(exclusion_parts) == 2):
+            is_valid = _check_range(exclusion_parts[0], bounds, allowed_strings = allowed_strings)
+            is_valid = is_valid and _check_value(exclusion_parts[1], (0, -1), allowed_strings = allowed_strings)
+    else:
+        is_valid = _check_range(element, bounds, allowed_strings = allowed_strings)
+    return is_valid
+
+def _check_cron_part(cron_part, bounds, allowed_strings = None):
+    """
+        Checks if the passed in string represents a valid part in the cron-schedule
+
+        Args:
+            cron_part: The string that we want to check
+            bounds: A tuple of the form (min_value, max_value) representing an inclusive bound on any number in the string
+            allowed_strings: An optional parameter representing the list of allowed strings that the part could be, defaults to None
+        Returns:
+            True if the passed in string has one the following formats: [valid element], [valid element], ... where
+            [valid element] is an allowed atomic element, see definition of _check_atomic_element for details
+            False otherwise
+    """
+
+    if(str(type(cron_part)) != 'string'):
+        return False
+
+    atomic_elements = cron_part.split(",")
+    for element in atomic_elements:
+        if(not _check_atomic_element(element, bounds, allowed_strings = allowed_strings)):
+            return False
+    return True
+
+schedule_value_bounds = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)]
+# Allowed months start with a None to deal with the one off issues of january having a value of 1
+# This however requires that we have strong type checking code whenever we are checking if something is in this list
+allowed_month_codes = [None, "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+allowed_day_codes = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+def _check_schedule(schedule):
+    """
+    Checks that the passed in schedule represents a valid cron schedule based on https://cloud.google.com/scheduler/docs/configuring/cron-job-schedules
+
+    Args:
+        schedule: A string represents the schedule that we want to check
+
+    Fails:
+        If the passed in schedule is an invalid cron schedule
+    """
+
+    if(str(type(schedule)) != 'string'):
+        _fail_with_message("Schedule", schedule, "is of type", type(schedule), "but expected schedule to have type string")
+    # Consider only the non empty, non whitespace strings as actual parts
+    schedule_broken_up = schedule.strip().split(" ")
+    schedule_parts = []
+    for schedule_segment in schedule_broken_up:
+        schedule_segment = schedule_segment.strip()
+        if(len(schedule_segment) != 0):
+            schedule_parts.append(schedule_segment)
+    # Ensure that the schedule has exactly 5 seperated parts
+    if(len(schedule_parts) != len(schedule_value_bounds)):
+        _fail_with_message("Found", len(schedule_parts), "part(s) in schedule but was expecting", len(schedule_value_bounds))
+    # Ensure that each part is valid based on the allowed bounds
+    for index in range(len(schedule_parts)):
+        current_value = schedule_parts[index]
+        current_bounds = schedule_value_bounds[index]
+        # If we are processing the month or the day of the week then also pass in a list of allowed string
+        allowed_values = None
+        if (index == (len(schedule_parts) - 2)):
+            allowed_values = allowed_month_codes
+        elif (index == (len(schedule_parts) - 1)):
+            allowed_values = allowed_day_codes
+        # If the current part of the schedule is not valid then indicate failure to the user
+        if(not _check_cron_part(current_value, current_bounds, allowed_strings = allowed_values)):
+            failure_message = "Invalid cron value of " + str(current_value) + " in schedule " + str(schedule)
+            failure_message += ". Allowed values are integers within the inclusive range " + str(current_bounds)
+            if(allowed_values != None):
+                if(index == (len(schedule_parts) - 2)):
+                    allowed_values = allowed_values[1 : ]
+                failure_message += " or one of the following codes: " + str(allowed_values)
+            _fail_with_message(failure_message)
+
+def _check_schedule_frequency(schedule, name):
+    """
+    Checks that the passed in schedule does not result in the cron running more frequently than every 5 minutes, unless it is a specifically allow-listed job.
+
+    Args:
+        schedule: A string represents the schedule we want to check
+        name: The cronjob name
+
+    Fails:
+        If the passed in schedule runs more frequently than every 5 minutes
+    """
+
+    allowed_crons = []
+    invalid_prefixes = [
+        "* ",
+        "*/1 ",
+        "*/2 ",
+        "*/3 ",
+        "*/4 "
+    ]
+
+    if any([schedule.startswith(pfx) for pfx in invalid_prefixes]) and name not in allowed_crons:
+        _fail_with_message("The schedule for cron %s runs too frequently (more than once every 5 minutes): %s" % (name, schedule))
+
+def _check_name(plugin_name):
+    """
+    Checks that the plugin name represents a valid name for a cronjob
+
+    Args:
+        plugin_name: The string that we want to check
+
+    Fails:
+        If the plugin name consists one or more '_' character(s)
+    """
+
+    if(str(type(plugin_name)) != 'string'):
+        _fail_with_message("Plugin Name", plugin_name, "is of type", type(plugin_name), "instead of string")
+    # Since index throws an error if no such index exists, we can check the result by ensuring that replacing _ has no impact
+    replaced_plugin_name = plugin_name.replace("_", "-")
+    if(plugin_name != replaced_plugin_name):
+        _fail_with_message("Plugin name", plugin_name, "contains _ in name. Considering using", replaced_plugin_name, "instead")
+    if len(plugin_name) > MAX_CRON_NAME_LEN:
+        _fail_with_message("Plugin name", plugin_name, "exceeds maximum allowed length (52ch) for a CronJob name. Consider trimming name to less than 52chars")
+    if not plugin_name[0].isalnum() or not plugin_name[-1].isalnum():
+        _fail_with_message("Plugin name", plugin_name, "must start and end with an alphanumeric character")
+
+def _customize_backoff_limit_plugin(backoffLimit):
+    """
+    Define a plugin that can be used to customize the `backoffLimit` option in cronjob jobTemplate specs
+
+    Args:
+        backoffLimit: The customized `backoffLimit` value for the jobTemplate specs
+
+    Returns:
+         A Plugin that customizes the `backoffLimit` option in cronjob jobTemplate specs
+    """
+    return cronjob_plugin(
+        _customize_backoff_limit,
+        backoffLimit=backoffLimit,
+    )
+
+def _customize_backoff_limit(ctx, plugin, cronjob_def):
+    cronjob_def["backoff_limit"] = plugin.backoffLimit
+
+# this fixes: jira.corp.stripe.com/browse/ORCH-1919
+# TODO: disallow the use of `:latest` tag
+# https://git.corp.stripe.com/stripe-internal/puppet-config/blob/afc1bb44a956106f8b11212a0992e039f1b9d275/modules/kubernetes/files/kube-authorizer.rego#L112-L115
+def _customize_image_pull_policy_plugin(name, policy):
+    """
+    Define a plugin that can be used to customize the `imagePullPolicy` option in the container spec
+
+    Args:
+        name: The name of the container to customize `imagePullPolicy`, default to the main container.
+        policy: The customized `imagePullPolicy` for the container.
+            It should be one of ['IfNotPresent', 'Always', 'Never']
+
+    Returns:
+         A Plugin that customizes the `imagePullPolicy` option the specified container spec.
+    """
+    return container_plugin(
+        _customize_image_pull_policy,
+        container_name=name,
+        policy=policy,
+    )
+
+def _customize_image_pull_policy(ctx, plugin, container_def):
+    container_def["image_pull_policy"] = plugin.policy
+
+def _customize_working_dir_plugin(name, working_dir):
+    """
+    Define a plugin that can be used to customize the `workingDir` option in the container spec
+
+    Args:
+        name: The name of the container to customize `workingDir`, default to the main container.
+        working_dir: Container's working directory. If not specified, DEFAULT_CONTAINER_WORKING_DIR will be used.
+
+    Returns:
+         A Plugin that customizes the `workingDir` option the specified container spec.
+    """
+    return container_plugin(
+        _customize_working_dir_policy,
+        container_name=name,
+        working_dir=working_dir,
+    )
+
+def _customize_working_dir_policy(ctx, plugin, container_def):
+    container_def["working_dir"] = plugin.working_dir
+
+
+def _label_prefix(name):
+    return "stripe.io/{}".format(name)
+
+
+def _pod_iam_role(ctx, role_prefix):
+    return "{}.{}.{}".format(role_prefix, get_cluster(ctx), get_env(ctx))
+
+
+def _iam_volume_plugins(namespace):
+    """
+    Return a plugin to mount default iam related volumes for pay-server cronjonbs
+    """
+    plugins = []
+    # A job that doesn't have a dedicated host type (namespace) that declares an IAM role will
+    # need to use a custom AWS config that gets credentials from kube-iam on the worker.
+    if namespace == DEFAULT_NAMESPACE:
+        plugins.extend([
+            mount_host_volume(
+                "/usr/stripe/bin/kube-iam-credentials",
+                volume_args = {"type": "File", "name": "node-usr-stripe-bin-kube-iam-credentials"},
+                mount_args = { "name": "node-usr-stripe-bin-kube-iam-credentials", "read_only": True },
+            ),
+            mount_host_volume(
+                "/run/kube-iam/kube-iam.sock",
+                volume_args = {"type": "Socket", "name": "node-run-kube-iam-kube-iam-sock"},
+                mount_args = { "name": "node-run-kube-iam-kube-iam-sock", "read_only": False },
+            ),
+        ])
+    return compose_plugins(*plugins)
+
+def _confidant_volume_plugins():
+    """
+    Return a plugin to mount default confidant related volumes for pay-server cronjonbs
+    """
+    plugins = [
+        mount_pod_volume(
+            "/pay/keys",
+            volume_args = { "name": "pod-pay-keys"},
+            mount_args = { "name": "pod-pay-keys", "read_only": True },
+        ),
+    ]
+    return compose_plugins(*plugins)
+
+
+def _volume_plugins(ctx):
+    """
+    Return a plugin to mount default volumes for pay-server cronjonbs
+    """
+    plugins = [
+        mount_host_volume(
+            "/pay/log",
+            volume_args = { "name": "node-pay-log"},
+            mount_args = { "name": "node-pay-log", "read_only": False },
+        ),
+        mount_host_volume(
+            "/pay/conf",
+            volume_args = { "name": "node-pay-conf"},
+            mount_args = { "name": "node-pay-conf", "read_only": True },
+        ),
+        mount_host_volume(
+            "/pay/state",
+            volume_args = { "name": "node-pay-state"},
+            mount_args = { "name": "node-pay-state", "read_only": True },
+        ),
+        mount_host_volume(
+            "/etc/ssl",
+            volume_args = { "name": "node-etc-ssl"},
+            mount_args = { "name": "node-etc-ssl", "read_only": True },
+        ),
+        mount_host_volume(
+            "/etc/stripe/ssl",
+            volume_args = { "name": "node-etc-stripe-ssl"},
+            mount_args = { "name": "node-etc-stripe-ssl", "read_only": True },
+        ),
+        mount_host_volume(
+            "/etc/ssh",
+            volume_args = { "name": "node-etc-ssh"},
+            mount_args = { "name": "node-etc-ssh", "read_only": True },
+        ),
+        mount_host_volume(
+            "/etc/lmscache",
+            volume_args = { "name": "node-etc-lmscache"},
+            mount_args = { "name": "node-etc-lmscache", "read_only": True },
+        ),
+        mount_pod_volume(
+            "/pay/tmp",
+            volume_args = {"name": "pod-pay-tmp"},
+            mount_args = { "name": "pod-pay-tmp", "read_only": False},
+        ),
+        mount_pod_volume(
+            "/pay/tmp/ops",
+            volume_args = {"name": "pod-pay-tmp-ops"},
+            mount_args = { "name": "pod-pay-tmp-ops", "read_only": False }
+        ),
+
+        mount_host_volume(
+            "/etc/passwd.cache",
+            volume_args = { "name": "node-etc-passwd-cache"},
+            mount_args = { "name": "node-etc-passwd-cache", "read_only": False},
+        ),
+        mount_host_volume(
+            "/etc/group.cache",
+            volume_args = { "name": "node-etc-group-cache"},
+            mount_args = { "name": "node-etc-group-cache", "read_only": False},
+        ),
+        mount_host_volume(
+            "/etc/shadow.cache",
+            volume_args = { "name": "node-etc-shadow-cache"},
+            mount_args = { "name": "node-etc-shadow-cache", "read_only": False},
+        ),
+        mount_host_volume(
+            "/etc/nsswitch.conf",
+            volume_args = { "name": "node-etc-nsswitch-conf"},
+            mount_args = { "name": "node-etc-nsswitch-conf", "read_only": False},
+        ),
+    ]
+
+    if get_cluster(ctx) == "northwest":
+        plugins.extend([
+            mount_host_volume(
+                "/usr/share/geoip",
+                volume_args = { "name": "node-usr-share-geoip"},
+                mount_args = { "name": "node-usr-share-geoip", "read_only": False },
+            ),
+            mount_host_volume(
+                "/usr/stripe/geoip_automatic",
+                volume_args = { "name": "node-usr-stripe-geoip-automatic"},
+                mount_args = { "name": "node-usr-stripe-geoip-automatic", "read_only": False },
+            ),
+        ])
+
+    return compose_plugins(*plugins)
+
+
+def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets = None):
+    """
+    Return a plugin to setup init containers in pay-server cronjobs.
+    """
+
+    # the confidant init container
+    aws_role_name = _pod_iam_role(ctx, iam_role_prefix)
+
+    confidant_config = {
+        "url": "https://confidant.{}.{}.stripe.io:446".format(get_cluster(ctx), get_env(ctx)),
+        "auth_key": "alias/confidant-auth/{}/{}".format(get_cluster(ctx), get_env(ctx)),
+        "auth_context": {
+            "to": "ConfidantServer",
+            "from": aws_role_name,
+            "user_type": "service",
+        },
+        "region": get_aws_region(ctx),
+    }
+
+    computed_secrets = _calculate_confidant_secrets(ctx, namespace, secrets)
+    DEFAULT_CONFIDANT_INIT_CONTAINER_NAME = "secret-templater"
+    CONFIDANT_CONTAINER_GIT_SHA = "sha256:6a1017b5e140ad23da35fb8846cb77687948df1246551dabbb0f0359f8ffa57d"
+
+    confidant_container_plugins = [
+        volume_mount(
+            "/etc/ssl",
+            name="node-etc-ssl",
+            read_only = True,
+        ),
+        volume_mount(
+            "/pay/keys",
+            name="pod-pay-keys",
+            read_only = False
+        ),
+        _customize_image_pull_policy_plugin(DEFAULT_CONFIDANT_INIT_CONTAINER_NAME, "IfNotPresent"),
+    ]
+    confidant_container_command = [
+        "/bin/confidant-sidecar",
+        "--confidant-config-json={}".format(json.encode(confidant_config)),
+        "--confidant-service-name={}".format(aws_role_name),
+        "--secret-templates-json={}".format(json.encode(computed_secrets)),
+    ]
+
+    # A job that doesn't have a dedicated host type (namespace) that declares an IAM role will
+    # need to use a custom AWS config that gets credentials from kube-iam on the worker.
+    if namespace == DEFAULT_NAMESPACE:
+        confidant_container_plugins.append(
+            volume_mount(
+                "/run/kube-iam/kube-iam.sock",
+                name="node-run-kube-iam-kube-iam-sock",
+                read_only = False
+            ),
+        )
+        confidant_container_command.append("--kube-iam-server-socket=/run/kube-iam/kube-iam.sock")
+
+
+    confidant_container = init_container(
+        name = DEFAULT_CONFIDANT_INIT_CONTAINER_NAME,
+        image = image(
+            ctx,
+            "stripe/compute/confidant-sidecar-image",
+            env="prod",
+            label=CONFIDANT_CONTAINER_GIT_SHA,
+        ),
+        command = confidant_container_command,
+        plugins = confidant_container_plugins,
+    )
+
+    # there's only one init container for now.
+    return confidant_container
+
+def _calculate_confidant_secrets(ctx, namespace, customized_secrets = None):
+    """
+    Generate the confidant secrets by combining the default secrets and the customized secrets.
+    Args:
+        namespace: The `host_type` to run the cronjob on.
+        customized_secrets: A dictionary that describes the additional secrets for confidant.
+                The optional keys in the `customized_secrets` dictionary can be one or more of
+                "yaml_secret", "json_secret", "raw_secret".
+                Generally, the format of the secrets dictionary should be similar to:
+                {
+                    "yaml_secrets": []
+                    "json_secrets": []
+                    "raw_secrets": []
+                }
+                - yaml_secrets: An array contains one or multiple the following types to denote yaml secret file(s) .
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.yaml",
+                                "mode": "0640" # default to '0640'
+                                "key_type": "symbol", # default to 'symbol'
+                            }
+                - json_secrets: An array contains one or multiple the following types to denote json secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "prefix": "prefix/of/the/secret/file",
+                                "filename": "prefix_of_the_secret_file.json",
+                                "mode": "0640" # default to '0640'
+                            }
+                - raw_secrets: An array contains one or multiple the following types to denote raw secret file(s).
+                        - A string which describes the prefix of the secret. Other fields will be auto-generated.
+                        - An object, which has the format described below.
+                            {
+                                "key": "key/of/the/secret/file",
+                                "filename": "key_of_the_secret_file.txt",
+                                "mode": "0640" # default to '0640',
+                                "base64": False # default to False
+                            }
+    Returns: a json blob contains all confidant secrets configurations.
+    """
+    credential_files = {
+        "base_credentials": {
+            "yaml_secrets": [{
+                "filename": "featureflags.yaml",
+                "prefix": "featureflags",
+                "key_type": "string"
+            }, {
+                "filename": "compliance-secrets.yaml",
+                "prefix": "compliance"
+            }, {
+                "filename": "risk-secrets.yaml",
+                "prefix": "risk"
+            }, {
+                "filename": "compliance.yaml",
+                "prefix": "compliance"
+            }, {
+                "filename": "risk.yaml",
+                "prefix": "risk"
+            }]
+        },
+        "bom_credentials": {
+            "yaml_secrets": []
+        },
+        "cmh_credentials": {
+            "yaml_secrets": []
+        },
+        "east_credentials": {
+            "yaml_secrets": []
+        },
+        "northwest_credentials": {
+            "yaml_secrets": [{
+                "filename": "pagerduty.yaml",
+                "prefix": "pagerduty"
+            }, {
+                "filename": "atlas-discourse-secrets.yaml",
+                "prefix": "atlas_discourse",
+                "key_type": "string"
+            }, {
+                "filename": "atlas.yaml",
+                "prefix": "atlas",
+                "key_type": "string"
+            }, {
+                "filename": "docusign.yaml",
+                "prefix": "docusign",
+                "key_type": "string"
+            }, {
+                "filename": "shippo-keys.yaml",
+                "prefix": "shippo",
+                "prod_only": True
+            }, {
+                "filename": "tandem.yaml",
+                "prefix": "tandem",
+                "key_type": "string"
+            }]
+        },
+    }
+
+    cluster = get_cluster(ctx)
+    env = get_env(ctx)
+    name = get_name(ctx)
+
+    secrets_defs = {
+        "json_secrets": [],
+        "raw_secrets": [],
+        "yaml_secrets": [],
+    }
+
+    # get default secrets and user defined secrets
+    cluster_credential_file = cluster + "_credentials"
+    for secret_type in secrets_defs:
+        base_and_cluster_secrets = credential_files["base_credentials"].get(secret_type, []) + credential_files[cluster_credential_file].get(secret_type, [])
+        for obj in base_and_cluster_secrets:
+            if obj.get("prod_only", False) and env != "prod":
+                continue
+            secrets_defs[secret_type].append(obj)
+
+        # combine and parse the secrets defined by the user
+        if customized_secrets != None and type(customized_secrets) == "dict" and secret_type in customized_secrets:
+            if type(customized_secrets[secret_type]) != "list":
+                fail("%s for job %s must be an array" % (secret_type, name))
+            secrets_defs[secret_type].extend(customized_secrets[secret_type])
+
+    # generate secret specs from the above secrets definitions
+    secrets = []
+    default_mode = "0640"
+    if namespace == "cronops":
+        default_mode ="0600"
+
+    # TODO we can potentially create helper function to simply the code, but will make it harder to understand.
+    for s in secrets_defs["json_secrets"]:
+        if type(s) == "string":
+            s = {"prefix": s}
+
+        secrets.append({
+            "type": "json",
+            "json": {
+                "path": "/pay/keys/" + s.get("filename", s["prefix"].replace("/", "_") + ".json"),
+                "mode": int(str(s.get("mode", default_mode)), 8),
+                "prefix": s["prefix"]
+            }
+        })
+
+    for s in secrets_defs["raw_secrets"]:
+        if type(s) == "string":
+            s = {"key": s}
+
+        secrets.append({
+            "type": "raw",
+            "raw": {
+                "path": "/pay/keys/" + s.get("filename", s["key"].replace("/", "_") + ".txt"),
+                "key": s["key"],
+                "base64": s.get("base64", False),
+                "mode": int(str(s.get("mode", default_mode)), 8),
+            }
+        })
+
+    for s in secrets_defs["yaml_secrets"]:
+        if type(s) == "string":
+            s = {"prefix": s}
+        # the unmunged version of yaml secrets
+        template = {
+            "type": "yaml",
+            "yaml": {
+                "path": "/pay/keys/" + s.get("filename", s["prefix"] + ".yaml"),
+                "mode": int(str(s.get("mode", default_mode)), 8),
+                "prefix": s["prefix"],
+                "key_type": s.get("key_type", "symbol"),
+            }
+        }
+        if "key_types" in s:
+            template["yaml"]["key_types"] = s["key_types"]
+        secrets.append(template)
+
+        if "/" in s["prefix"]:
+            # define the munged template of yaml secrets since starlark doesn't support deepcopy
+            template = {
+                "type": "yaml",
+                "yaml": {
+                    "path": "/pay/keys/" + s.get("filename", s["prefix"].replace("/", "_") + ".yaml"),
+                    "mode": int(str(s.get("mode", default_mode)), 8),
+                    "prefix": s["prefix"],
+                    "key_type": s.get("key_type", "symbol"),
+                }
+            }
+            if "key_types" in s:
+                template["yaml"]["key_types"] = s["key_types"]
+            secrets.append(template)
+
+    return secrets
+
+
+def _build_command(command, zamboni_config):
+    """
+    Build the command for the main container of the cron job. It will perform some formating based on
+    the input command and the type of the cron job.
+
+    Args:
+        command: An array of the command of the main container
+        zamboni_config: A dictionary contains the configurations for zamboni cron jobs. The optional fields are
+                {
+                    stripe_cronjob_name: "name--of-cronjob",
+                    stripe_project: "nameOfTheProject",
+                    args: ["some", "arguments"],
+                    zamboni_path: "path/of/zamboni"
+                }
+
+    Returns: An array to represent the commands to run in the main container.
+    """
+    CRONWRAPPER_PATH = "/deploy/opsonic/current/cron/scripts/cronwrapper"
+
+    if zamboni_config:
+        cmd = [CRONWRAPPER_PATH]
+        if "papertrail_type" in zamboni_config:
+            cmd.extend(['/usr/local/bin/papertrail', '-t', zamboni_config['papertrail_type']])
+
+        zamboni_path = zamboni_config.get("zamboni_path", 'ops/bin/zamboni')
+
+        cmd.extend([
+          "--",
+          "/usr/stripe/bin/stripe-bundle",
+          "pay-server",
+          "ruby",
+          "/deploy/pay-server/current/" + zamboni_path,
+          "--real",
+        ])
+
+        cmd.extend(zamboni_config['args'])
+        return cmd
+    else:
+        if len(command) == 0:
+            fail("main container command is empty")
+        if command[0].startswith(CRONWRAPPER_PATH):
+            return command
+        return [CRONWRAPPER_PATH, "--"] + command
+
+
+
+def _truncate_cron_job_name(name):
+    """
+    Truncate the cron job name by limiting the length of the cron job name to less than
+    CRONJOB_NAME_SIZE_LIMIT characters, also removing all tailing `-`(s).
+    """
+    CRONJOB_NAME_SIZE_LIMIT = 63 - 12  # job names are at most 63 characters
+
+    return name[:CRONJOB_NAME_SIZE_LIMIT + 1].rstrip("-")
+
+def _require_cron_tier(cron_tier, name):
+    """
+    For all but specifically allow-listed cron names, require cron_tier to be specified.
+    """
+
+    skip_verify = [
+        # Please DO NOT add items to this list. Specify a cron_tier in metadata instead.
+        'sdp-check-invalid-warehouses',
+        'compliance--hummingbird--update-filing-status',
+        'compliance--watchlist--send-batch-crs',
+        'ppro-fpi--hourly-dispute-cron',
+        'assert-mar-created-on-hit',
+        'revenue-reporting-activation-cron',
+        # Please DO NOT add items to this list. Specify a cron_tier in metadata instead.
+    ]
+
+    if name in skip_verify:
+        return
+
+    if cron_tier == None or cron_tier == "":
+        _fail_with_message("The cron_tier parameter is required for all cronjobs: %s did not specify a cron_tier" % name)
+

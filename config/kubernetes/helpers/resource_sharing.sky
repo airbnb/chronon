@@ -1,0 +1,58 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME")
+load("config/kubernetes/helpers/quantities.sky", "millicores")
+load("config/kubernetes/helpers/warning.sky", "warn")
+
+def share_resources_with_envoy():
+    """
+    Adjusts resources between the main application container and envoy-config-srv (which runs envoy).
+    """
+    return pod_plugin(_share_resources_with_envoy)
+
+def _share_resources_with_envoy(ctx, _, pod_def):
+    if pod_def.get("shared_msp") != True:
+        return
+
+    main_container = pod_def.get("main_container")
+    envoy_container = None
+    for container in pod_def.get("containers"):
+        if container.get("name") == ENVOY_CONFIG_SRV_SIDECAR_NAME:
+            envoy_container = container
+
+    if main_container == None or envoy_container == None:
+        warn(ctx, "Unable to find either the main container or envoy container, skipping resource sharing")
+        return
+
+    # extract the existing cpu setting from the main container
+    cpu = main_container.get("cpu")
+    if cpu == None:
+        warn(ctx, "Main container does not have \"cpu\" set, skipping resource sharing")
+        return
+
+    # unset cpu from the container def, so we can override it with custom requests and limits values
+    main_container["cpu"] = None
+
+    # split the cores evenly between the main container and envoy
+    split_cpu = millicores(ctx, _parse_millicores_from_cores(cpu) // 2)
+
+    # set cpu requests for both the main container and envoy to the split cpu value.
+    # this will cause k8s to configure equal cgroups cpu shares for these two containers.
+    main_container.setdefault("requests", {})
+    main_container["requests"]["cpu"] = split_cpu
+    envoy_container.setdefault("requests", {})
+    envoy_container["requests"]["cpu"] = split_cpu
+
+    # retain the full limits value that the main container would get from the cpu arg.
+    # this will cause k8s to configure the full cpu cfs quota for the main container.
+    main_container.setdefault("limits", {})
+    main_container["limits"]["cpu"] = cpu
+
+def _parse_millicores_from_cores(cores):
+    # extract cores value from either the struct or the rendered yaml content
+    if hasattr(cores, "string"):
+        cores_str = cores.string
+    else:
+        cores_str = cores
+    # cores quantity is 1/1000 of a millicore
+    return int(float(cores_str) * 1000)

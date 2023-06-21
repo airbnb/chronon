@@ -1,0 +1,66 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/availability_tiers.sky", "A400", "A300", "A200", "A100")
+
+AVAILABILITY_TIER_A400_AUTO = "a400-auto"
+AVAILABILITY_TIER_A400 = "a400"
+AVAILABILITY_TIER_A200 = "a200"
+AVAILABILITY_TIER_A100 = "a100"
+
+def get_msp_availability_tier(monster_availability_tier):
+    A200_TIERS = [
+        AVAILABILITY_TIER_A200,
+        # we treat Sigma as A200 since it's responsible for user-facing reporting
+        AVAILABILITY_TIER_A400_AUTO,
+    ]
+    if monster_availability_tier == AVAILABILITY_TIER_A100:
+        return A100
+    elif monster_availability_tier in A200_TIERS:
+        return A200
+    else:
+        return A400
+
+# Unified data structure for both worker and control plane
+def monster_deployment_config(
+    monster_service,
+    monster_isolation_group,
+    monster_availability_tier,
+    aws_instance_size,
+    cpu,
+    memory,
+    raw_memory_mb,
+    replicas,
+    strategy,
+    script=None,
+    einhorn_workers=None,
+    dynamic_replicas=None,
+    failure_threshold=100,
+    extra_env=None, # List of (env_var_name, val_string) pairs to add to each pod's env
+    hack_kick_interval = None,
+    hack_kick_start_delay = None,
+    hack_kick_restart_only = None,
+    graviton_migration_enabled = False,
+    graviton_migration_size = 0,
+    graviton_migration_target_6g = False,
+):
+    return struct(
+        monster_service = monster_service,
+        monster_isolation_group = monster_isolation_group,
+        monster_availability_tier = monster_availability_tier,
+        script = script,
+        einhorn_workers = einhorn_workers,
+        aws_instance_size = aws_instance_size,
+        cpu = cpu,
+        memory = memory, # memory here is a k8s.io.apimachinery.pkg.api.resource.Quantity
+        raw_memory_mb = raw_memory_mb, # raw_memory_mb is an int
+        replicas = replicas,
+        failure_threshold = failure_threshold,
+        strategy = strategy,
+        dynamic_replicas = dynamic_replicas,
+        extra_env = extra_env,
+        hack_kick_interval = hack_kick_interval,
+        hack_kick_start_delay = hack_kick_start_delay,
+        hack_kick_restart_only = hack_kick_restart_only,
+        graviton_migration_enabled = graviton_migration_enabled,
+        graviton_migration_size = graviton_migration_size,
+        graviton_migration_target_6g = graviton_migration_target_6g,
+    )

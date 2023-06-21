@@ -1,0 +1,15 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/rbac/roleref.sky", "role_ref")
+
+def role_ref_helper(name, roleType):
+
+    if roleType != "Role" and roleType != "ClusterRole":
+        fail("roleType must be 'Role' or 'ClusterRole'")
+
+    roleref = {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": roleType,
+        "name": name,
+    }
+
+    return roleref

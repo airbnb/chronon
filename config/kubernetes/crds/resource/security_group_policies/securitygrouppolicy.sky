@@ -1,0 +1,95 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/meta/metadata.sky", "metadata", "render_metadata")
+load("config/kubernetes/helpers/msp_shard.sky", "msp_shard")
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin")
+load("config/kubernetes/helpers/context.sky", "get_env")
+
+_sgp_scheme = {
+    "apiVersion": "vpcresources.k8s.aws/v1beta1",
+    "kind": "SecurityGroupPolicy",
+    "metadata": {},
+    "spec": {
+        "podSelector": {
+            "matchLabels": {},
+        },
+        "securityGroupNames": {},
+    }
+}
+
+_spec_scheme = {
+    "podSelector": {},
+    "securityGroupNames": {},
+}
+
+_match_labels_scheme = {
+    "matchLabels": {}
+}
+
+_default_prod_security_groups = ["cluster", "mspworker", "mproxy-clients"]
+
+def security_group_policy(secgroups = None):
+    secgroups = secgroups or []
+    return any_resource_plugin(
+        _update_resource,
+        secgroups=secgroups,
+    )
+
+def _update_resource(ctx, plugin, resource_def):
+    resource_def["securitygrouppolicy"] = {
+        "render": _render_sgp,
+        "resource": resource_def,
+        "secgroups": plugin.secgroups,
+    }
+
+def _render_sgp(ctx, sgp_mapping):
+    sgp_mapping = struct(**sgp_mapping)
+
+    sgp_obj = dict(_sgp_scheme)
+    spec = dict(_spec_scheme)
+
+    total_sg_count = 0
+    if hasattr(sgp_mapping, "secgroups"):
+        secgroups = list(sgp_mapping.secgroups)
+        secgroups.extend(_default_prod_security_groups)
+
+        env_secgroups = []
+        if get_env(ctx) == "qa":
+            env_secgroups = ['qa-' + secgroup for secgroup in secgroups]
+        elif get_env(ctx) == "preprod":
+             env_secgroups = ['preprod-' + secgroup for secgroup in secgroups]
+
+        spec["securityGroupNames"] = {"groupNames": env_secgroups}
+        total_sg_count = len(env_secgroups)
+
+    sgp_obj["metadata"] = render_metadata(
+        ctx,
+        sgp_mapping.resource["metadata"],
+        extra_annotations = {
+            "wait-till-completion": "true"
+        }
+    )
+
+    if total_sg_count > 8:
+        fail("You can only set a maximum of 8 Security group per ENI (per pod)")
+
+    match_labels = dict(_match_labels_scheme)
+    if sgp_obj["metadata"]["labels"].get("stripe.io/app", ""):
+        match_labels["matchLabels"] = {
+            "stripe.io/henson-service": sgp_obj["metadata"]["labels"]["stripe.io/henson-service"],
+            "stripe.io/henson-git-commit": sgp_obj["metadata"]["labels"]["stripe.io/henson-git-commit"],
+            "stripe.io/app": sgp_obj["metadata"]["labels"]["stripe.io/app"],
+            }
+    else:
+        match_labels["matchLabels"] = {
+            "stripe.io/henson-service": sgp_obj["metadata"]["labels"]["stripe.io/henson-service"],
+            "stripe.io/henson-git-commit": sgp_obj["metadata"]["labels"]["stripe.io/henson-git-commit"]
+            }
+
+    spec["podSelector"] = match_labels
+    sgp_obj["spec"] = spec
+    return sgp_obj
+
+
+
+

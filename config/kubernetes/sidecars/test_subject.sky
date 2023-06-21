@@ -1,0 +1,46 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/core/probe.sky", "http_probe")
+load("config/kubernetes/sidecars/variables.sky", "DEFUALT_CONTAINER_ENV", "TEST_SUBJECT_CONTAINER_FALLBACK_DIGEST")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+def add_test_sidecar(port = 54321):
+    return pod_plugin(
+        _update_pod,
+        port = port,
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "test_sidecar_container" in pod_def:
+        return
+
+    container_def = {
+        "render": _test_sidecar_container,
+        "name": "henson-test-subject-sidecar",
+        "port": plugin.port,
+        "sidecar_service": "henson-test-subject-sidecar",
+    }
+    pod_def["test_sidecar_container"] = container_def
+    pod_def["containers"].append(container_def)
+
+def _test_sidecar_container(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = sidecar_image(ctx, name = "henson-test-subject-sidecar", fallback = image(ctx, name = "stripe/henson-test-subject/sidecar", label = TEST_SUBJECT_CONTAINER_FALLBACK_DIGEST, env = DEFUALT_CONTAINER_ENV)),
+        command = [
+            "/sidecar",
+            "-http-port",
+            "{}".format(container.port),
+        ],
+        readinessProbe = http_probe(
+            ctx,
+            path = "/healthcheck",
+            port = container.port,
+        ),
+        resources = resource_requirements(ctx),
+    )

@@ -1,0 +1,161 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helpers for defining quantities of resources for Kubernetes limits and requests.
+"""
+
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Quantity")
+
+def percents(ctx, val):
+    """
+    Create a quantity for percents of CPU.
+
+    Args:
+        val: An integer for the number of percents to be represented.
+
+    Returns:
+        A quantity that can be passed to the `target` parameter of a `metric target object`.
+    """
+    if type(val) != "int":
+        fail("Called percents with a non-integer")
+
+    return Quantity(ctx, string = "%d" % val)
+
+def cores(ctx, val):
+    """
+    Create a quantity for a whole number of CPU cores.
+
+    Args:
+        val: An integer for the number of cores that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `cpu` parameter of a `container`.
+    """
+    if type(val) != "int":
+        fail("Called cores with a non-integer")
+
+    return Quantity(ctx, string = "%d.0" % val)
+
+def millicores(ctx, val):
+    """
+    Create a quantity for a fractional number of CPU cores.
+
+    Args:
+        val: An integer for the number of millicores (1/1000th of a core) that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `cpu` parameter of a `container`.
+    """
+    if type(val) != "int":
+        fail("Called millicores with a non-integer")
+
+    # Our dialect of skylark doesn't support floats, so we need to generate a float string
+    # manually
+    whole_cores = val // 1000
+    sub_cores = val % 1000
+    sub_cores_str = str(sub_cores)
+
+    # make sure leading zeros are correct in sub_cores
+    for _ in range(len(sub_cores_str), 3):
+        sub_cores_str = "0" + sub_cores_str
+
+    # remove tailing zeros in sub_cores
+    for _ in range(2):
+        if sub_cores_str[-1] != "0":
+            break
+        sub_cores_str = sub_cores_str[:-1]
+
+    return Quantity(ctx, string = "%d.%s" % (whole_cores, sub_cores_str))
+
+def kilo(ctx, val):
+    """
+    Create a quantity for a whole number of kilo.
+
+    Args:
+        val: An integer for the number of kilo that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `packets-per-second` parameter of a HPA pod.
+    """
+    if type(val) != "int":
+        fail("Called kilo with a non-integer")
+
+    return Quantity(ctx, string = "%dk" % val)
+
+def count(ctx, val):
+    """
+    Create a quantity for a whole number of integer value.
+
+    Args:
+        val: An integer for the count that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `packets-per-second` parameter of a HPA pod.
+    """
+    if type(val) != "int":
+        fail("Called count with a non-integer")
+
+    return Quantity(ctx, string = "%d" % val)
+
+def mebibytes(ctx, val):
+    """
+    Create a quantity for a whole number of mebibytes (IEC, base 2).
+
+    Args:
+        val: An integer for the number of mebibytes that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `memory` parameter of a `container`.
+    """
+    if type(val) != "int":
+        fail("Called mebibytes with a non-integer")
+
+    return Quantity(ctx, string = "%dMi" % val)
+
+def megabytes(ctx, val):
+    if type(val) != "int":
+        fail("Called megabytes with a non-integer")
+    """
+    This function is incorrectly named. Prefer using `mebibytes` for new use-cases.
+
+    Create a quantity for a whole number of mebibytes (IEC, base 2).
+
+    Args:
+        val: An integer for the number of mebibytes that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `memory` parameter of a `container`.
+    """
+
+    return Quantity(ctx, string = "%dMi" % val)
+
+def gibibytes(ctx, val):
+    """
+    Create a quantity for a whole number of gibibytes (IEC, base 2).
+
+    Args:
+        val: An integer for the number of gibibytes that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `memory` parameter of a `container`.
+    """
+    if type(val) != "int":
+        fail("Called gibibytes with a non-integer")
+
+    return Quantity(ctx, string = "%dGi" % val)
+
+def gigabytes(ctx, val):
+    """
+    This function is incorrectly named. Prefer using `gibibytes` for new use-cases.
+
+    Create a quantity for a whole number of gibibytes (IEC, base 2).
+
+    Args:
+        val: An integer for the number of gibibytes that should be represented.
+
+    Returns:
+        A quantity that can be passed to the `memory` parameter of a `container`.
+    """
+    if type(val) != "int":
+        fail("Called gigabytes with a non-integer")
+
+    return Quantity(ctx, string = "%dGi" % val)

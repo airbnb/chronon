@@ -1,0 +1,764 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# Append the namespace and name of your cron to this list, along with the justification comment,
+# if your job does not hold financial data (directly or indirectly) and should not
+# fall under SOX controls.
+# See https://confluence.corp.stripe.com/display/ORCH/Runbook%3A+Remove+Cron+from+SOX+control for details.
+#
+# [required] "name" must match your Cron name.
+# [required] "namespace" must match the "K8s Namespace" (host_type) in which the Cron is created.
+#
+# This is an example cron definition:
+#     {
+#         "name": "<cronjob-name>",
+#         "namespace": "<host_type|k8s namespace>",
+#     },
+#
+#
+_CRONS = [
+    {
+        # Link is exempt from SOX
+        "name": "link-instant-debits-risk-tierer",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # Link is exempt from SOX
+        "name": "link-instant-debits-merchant-offboarder",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # Link is exempt from SOX
+        "name": "link-send-instant-debits-daily-slack-summary",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "cronjob-disabling-test-job" is a MSP cron which does not handle any financial data
+        "name": "cronjob-disabling-test-job",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "orchestration-plus-plus-email-summary-job" is a MSP cron which does not handle any financial data
+        "name": "orchestration-plus-plus-email-summary-job",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "orchestration-test-aws-iam" is a MSP cron which does not handle any financial data
+        "name": "orchestration-test-aws-iam",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "orchestration-test-persistent-disk" is a MSP cron which does not handle any financial data
+        "name": "orchestration-test-persistent-disk",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "orchestration-test-kube-heartbeat" cron performs heartbeats for testing and does not handle any financial data
+        "name": "orchestration-test-kube-heartbeat",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "test-generated-secret-templates" is a MSP cron which does not handle any financial data
+        "name": "test-generated-secret-templates",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "test-cron-sox-control-false" cron does not exist. Only used for testing.
+        "name": "test-cron-sox-control-false",
+        "namespace": "test-system",
+    },
+    {
+        # "skycfg-doc-index-doc-pages" cron mainly handles the skycfg docs and does not handle any financial data
+        "name": "skycfg-doc-index-doc-pages",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # "sox-ticket-assigner-cron" only observes Jira ticket state, and does not load or mutate any sensitive financial data
+        "name": "sox-ticket-assigner-cron",
+        "namespace": "cpecronbox",
+    },
+    {
+        "name": "ae-detection-reliability-metric-exfiltration",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-detection-reliability-metric-osx",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-detection-reliability-metric-servers",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-generate-detection-reliability-metric-hubble",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-misp-intel-production",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-misp-sync",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-simulation-technique-metrics",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ae-util-prune-aiq-assessment",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "alert-to-case-enrichment",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-abnormal-s3-get-object-volume",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-anon-access-s3-bucket-mgmt-event",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-anonymous-access-non-public-s3-bucket",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-auth-failure-console",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-brute-force-errors",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-cli-non-bastion-ec2",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-cloudtrail-disabled",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-iam-creation-non-bastion",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-instance-cred-non-host",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-network-discovery",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-open-security-group",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-permissions-discovery",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-public-stripe-ami",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-root-account-mfa-changed",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-root-login",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-acl-bucket-mod",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-bucket-policy-deletion",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-bucket-policy-mod",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-exfil-copy-object",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-exfil-upload-copy-object",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-s3-public-access-block-mod",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-shared-snapshot-ext",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "aws-valid-accounts",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "censys-query-engine",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "con-mon-v2",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "correlation-rule-model-user-level",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "correlation-rule-model-user-level-retraining",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "crowdstrike-query-engine-iocs",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "crowdstrike-query-engine-pdfs",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "curl-to-interpreter",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "disable-gatekeeper-cmdline",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "disable-sip",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "dns-punycode-phishing",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "dropbox-http-upload",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "er-relaxed-anxious-material-analysis",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "exfil-by-curl-wget",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "external-drive-sharing",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "external-email-forwarding-rule",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "flashpoint-community-query-engine",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "historic-threat-intel-feed-dns-high",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "historic-threat-intel-feed-dns-medium",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "hosts-with-all-severities",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "hubble-anomalous-csv-download",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "itd-daily-access-risk-score-v001",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "itd-daily-access-risk-score-v002",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "itd-threatsignal-daily-report-v2",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "itd-weekly-access-risk-score-training-v001",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "itd-weekly-access-risk-score-training-v002",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "jupiterone-daily-pull",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "mitre-attck-hunt-daily",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "ofac-vpn-usage",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "osquery-osx-cpu-daily-report",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "osquery-osx-denylist-daily-report",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "qatesting-threatclients",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "salesforce-ingest-hourly-run",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "servers-uptycs-vt",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "shadow-infra-material-conf-email",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "shared-msp-login",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "shodan-route53-sync",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "stripe-specific-dns-threat-intel",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "suspicious-mounts",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "suspicious-scp",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "telegram-desktop-repeat-usage",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "telegram-desktop-usage",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "thehive-cases-weekly-report",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "thehive-es-dump-srv",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "thehive-four-dump",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threat-actor-sync",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threat-intel-metrics",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threat-intel-signal-daily-report",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threatsignal-daily-report",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threatsignal-daily-report-v2",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "uptycs-alert-delay-metrics",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "uptycs-disabled",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "vt-query-engine",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "yoyo-offboard-failures",
+        "namespace": "threatpapermillbox"
+    },
+    # hadoop-*-decom-hosts-fetcher does not interact with any financial data. It only grabs the status of Hadoop datanodes.
+    {
+		"name": "hadoop-apricot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-blueberry-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-concord-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-indigo-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-plum-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-pluot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-qos-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-sapphire-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-bomsnapshot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-snapshot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-spot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-strawberry-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-test-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-foley-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-currant-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodepri"
+	},
+	{
+		"name": "hadoop-apricot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-blueberry-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-concord-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-indigo-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-plum-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-pluot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-qos-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-sapphire-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-bomsnapshot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-snapshot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-spot-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-strawberry-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-test-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-foley-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-currant-decom-hosts-fetcher",
+		"namespace": "hadoopnamenodesec"
+	},
+	{
+		"name": "hadoop-apricot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-blueberry-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-concord-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-indigo-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-plum-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-pluot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-qos-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-sapphire-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-bomsnapshot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-snapshot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-spot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-strawberry-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-test-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-foley-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-currant-decom-hosts-fetcher",
+		"namespace": "hadoopresourcepri"
+	},
+	{
+		"name": "hadoop-apricot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-blueberry-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-concord-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-indigo-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-plum-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-pluot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-qos-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-sapphire-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-bomsnapshot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-snapshot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-spot-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-strawberry-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-test-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-foley-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+	{
+		"name": "hadoop-currant-decom-hosts-fetcher",
+		"namespace": "hadoopresourcesec"
+	},
+    {
+        #dbricks-infra-monitor is an MSP cron which does not handle any financial data
+        "name": "dbricks-infra-monitor",
+        "namepsace": "dbrickscronbox"
+    },
+    # The following cronjobs only send emails to remind
+    # users to update their KYC data on their accounts.
+	{
+		"name": "send-email-t42--asyncflow--in-orr--onboarding--opus",
+		"namespace": "kubeacronnoegress"
+	},
+	{
+		"name": "send-email-t35--asyncflow--in-orr--onboarding--opus",
+		"namespace": "kubeacronnoegress"
+	},
+	{
+		"name": "send-email-t21--asyncflow--in-orr--onboarding--opus",
+		"namespace": "kubeacronnoegress"
+	},
+	{
+		"name": "send-email-t14--asyncflow--in-orr--onboarding--opus",
+		"namespace": "kubeacronnoegress"
+	},
+	{
+		"name": "send-email-t7--asyncflow--in-orr--onboarding--opus",
+		"namespace": "kubeacronnoegress"
+	},
+    {
+        # this job creates snapshots of emails with sample data and send it to a vendor for translation
+        # it does not handle any financial data
+        "name": "i18n--email-lqa-runner",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # cuts Jiras to teams to make sure they are aware that their emails were dropped due to kill switches
+        # feature flag rules
+        "name": "send-email-kill-switch-notifications",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # cuts Jiras to teams to have them delete unused Letter emails
+        "name": "send-stale-email-notifications",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+        # cuts Jiras to teams to have them archive their Letter email stable IDs
+        "name": "send-stable-id-archival-notifications",
+        "namespace": "kubeacronnoegress",
+    },
+    {
+    	"name": "gtm-ui-automation-p2-opportunity-sales",
+    	"namespace": "gtmspeuibox"
+    },
+    {
+    	"name": "gtm-ui-automation-p1-opportunity",
+    	"namespace": "gtmspeuibox"
+    },
+        # creates Jira RUN tickets linking to new Confluence Questions and does not handle any financial data
+    {
+        "name": "batcom--create-confluence-question-run-tickets",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "dataorch--create-confluence-question-run-tickets",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # bcp-kick-off-subscription-deletion-migration Kicks off another migration to delete testmode subscriptions
+        # it does not handle financial data
+        "name": "bcp-kick-off-subscription-deletion-migration",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # sync-ghe-trailhead-docs-to-mongo syncs internal documentation content from GitHub and
+        # does not handle financial data
+        "name": "sync-ghe-trailhead-docs-to-mongo",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-trailhead-docs indexes Trailhead docs for Home search and does not
+        # handle financial data
+        "name": "home-search-reindex-trailhead-docs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # send-light-notifications is a cron job to send emails to Express users about account requirements
+        "name": "connect-account-experience--send-light-notifications",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # Cron job owned by Search team. Updates Elasticsearch mappings (database schema), does not handle financial data
+        "name": "update-dashboard-mappings",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # cron job to verify merchant logo is updated in s3, does not touch financial data
+        "name": "verify-merchant-logo-update",
+        "namespace": "kubeacronnoegress"
+    }
+]
+
+def cron_in_exceptions(namespace, name):
+    for cron in _CRONS:
+        if cron.get("namespace") == namespace and cron.get("name") == name:
+            return True
+    return False

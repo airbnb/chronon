@@ -1,0 +1,106 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugin for adding additional environment variables to a container.
+"""
+
+load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_cluster", "get_henson_git_commit")
+load("config/kubernetes/plugins/types.sky", "container_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "EnvVarSource", "ObjectFieldSelector")
+
+def container_env_vars(vars = {}, from_fields = {}, container_name = None):
+    """
+    Set additional environment variables in a container.
+
+    Args:
+        vars: A dictionary of environment variables to set in the container.
+        from_fields: A dictionary of environment variables to set from fields set in the pod.
+        container_name: Optional name of the container to add the variables to.
+            Defaults to the main container of the pod.
+
+    Returns:
+        A plugin that adds the new environment variables to the container.
+    """
+    return container_plugin(
+        _add_env_vars,
+        container_name = container_name,
+        vars = vars,
+        from_fields = from_fields,
+    )
+
+def render_env_vars(ctx, container):
+    env_vars = {}
+    env_vars_from_fields = {}
+    if container.include_default_env:
+        env_vars.update(_default_env_vars(ctx, container))
+        env_vars_from_fields.update(_default_env_vars_from_fields(ctx))
+    env_vars.update(container.env)
+    env_vars_from_fields.update(container.env_from_fields)
+
+    env_var_list = []
+    for name, value in env_vars.items():
+        env_var_list.append(
+            EnvVar(ctx, name = name, value = value),
+        )
+
+    for name, field in env_vars_from_fields.items():
+        env_var_list.append(
+            EnvVar(
+                ctx,
+                name = name,
+                valueFrom = EnvVarSource(
+                    ctx,
+                    fieldRef = ObjectFieldSelector(
+                        ctx,
+                        fieldPath = field,
+                    ),
+                ),
+            ),
+        )
+
+    return env_var_list
+
+def default_env_vars(ctx):
+    return render_env_vars(ctx, struct(
+        env = {},
+        env_from_fields = {},
+        include_default_env = True,
+    ))
+
+def _add_env_vars(ctx, plugin, container_def):
+    container_def["env"].update(plugin.vars)
+    container_def["env_from_fields"].update(plugin.from_fields)
+
+def _default_env_vars(ctx, container):
+    env_var_dict = {}
+
+    env_name = get_env(ctx)
+
+    if env_name == "prod":
+        env_name = "production"
+
+    if get_name(ctx).startswith("edge-"):
+        env_var_dict["STRIPE_EDGE"] = "true"
+
+        if env_name == "production":
+            env_name = "edge"
+        elif env_name == "qa":
+            env_name = "qa-edge"
+
+    env_var_dict["STRIPE_ENVIRONMENT"] = env_name
+    env_var_dict["STRIPE_CLUSTER"] = get_cluster(ctx)
+    env_var_dict["STRIPE_SERVICE"] = get_name(ctx)
+    env_var_dict["HENSON_SERVICE"] = get_name(ctx)
+    env_var_dict["STRIPE_DOMAIN"] = "stripe.io"
+    env_var_dict["GIT_COMMIT"] = get_henson_git_commit(ctx)
+    if hasattr(container, 'name'):
+        env_var_dict["STRIPE_CONTAINER_NAME"] = container.name
+    return env_var_dict
+
+def _default_env_vars_from_fields(ctx):
+    return {
+        "STRIPE_NODE_NAME": "spec.nodeName",
+        "STRIPE_POD_NAME": "metadata.name",
+        "STRIPE_POD_NAMESPACE": "metadata.namespace",
+        "STRIPE_HOST_IP": "status.hostIP",
+        "STRIPE_POD_IP": "status.podIP",
+    }

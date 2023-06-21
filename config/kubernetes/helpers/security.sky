@@ -1,0 +1,311 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helper functions for configuring security properties of your service
+"""
+
+
+load("config/kubernetes/plugins/types.sky", "pod_or_container_plugin", "pod_plugin", "container_plugin")
+load("config/kubernetes/core/volume.sky", "host_volume", "volume_mount", "mount_host_volume")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "SecurityContext", "Capabilities", "PodSecurityContext")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
+load("config/kubernetes/crds/resource/security_group_policies/securitygrouppolicy.sky", "security_group_policy")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+
+SECGROUP_KEY = "stripe.io/extra-security-groups"
+UNIQUE_HORIZON_IDENTITY_ANNOTATION_KEY = "horizon.stripe.io/bundle-unique-identity"
+IAM_ROLE_ACCOUNT_AFFINITY_ANNOTATION_KEY = "stripe.io/iam-role-account-affinity"
+
+def run_as_unprivileged(uid = None, gid = None, container_name = None, supplementalGroups = None):
+    """
+    Sets up a pod or container to run as an unprivileged user.
+
+    Normally, pods run as the user and group configured in the container image, or as `root` if
+    not specified. This plugin configure specific containers or an entire pod to run as a specific
+    user/group.
+
+    Args:
+        uid: The user ID to run the pod or container as. Defaults to 3001, which is provisioned on
+            Stripe's Kubernetes workers to be the `stripe-service` user.
+        gid: The group ID to run the pod or container as. Defaults to 3001, which is provisioned on
+            Stripe's Kubernetes workers to be the `stripe-service` group.
+        container_name: The name of a container to run as an unprivileged user. If omitted, the
+            entire pod will run this way, which is usually preferred.
+        supplementalGroups: A list of groups applied to the first process run in each container,
+            in addition to the container's primary GID. Only applied to pod security contexts.
+
+    Returns:
+        A plugin that configures the security settings of a pod or container.
+    """
+    return pod_or_container_plugin(
+        _update_pod,
+        _update_container,
+        container_name = container_name,
+        uid = uid,
+        gid = gid,
+        supplementalGroups = supplementalGroups,
+    )
+
+_credentials_proxy_path = "/run/stripe/credentials-proxy"
+_credentials_proxy_volume_args = {
+        "reason": "Securely provides certificates and other credentials to containers.",
+        "type": "Directory",
+}
+
+def mount_credentials_proxy(container_name = None, read_only = True):
+    return volume_mount(_credentials_proxy_path, container_name = container_name, read_only = read_only)
+
+def use_credentials_proxy():
+    return host_volume(_credentials_proxy_path, **_credentials_proxy_volume_args)
+
+def mount_host_credentials_proxy(container_name = None):
+    """
+    mount_host_credentials_proxy() combines use_credentials_proxy() and mount_credentials_proxy() into one plugin
+    """
+    return mount_host_volume(
+            _credentials_proxy_path,
+            container_name = container_name,
+            volume_args = _credentials_proxy_volume_args)
+
+def mount_host_stripe_ca_certs(container_name = None):
+    return mount_host_volume(
+        "/etc/ssl/certs/stripe-cas",
+        container_name = container_name,
+        volume_args = {
+            "reason": "Stripe CA certificates used for signing mTLS cerficates",
+            "type": "Directory"
+        },
+    )
+
+def render_pod_security_context(ctx, security_def, pod):
+    securityContext = PodSecurityContext(ctx)
+
+    if "uid" in security_def or "gid" in security_def:
+        uid = _uidgid_or_default(security_def["uid"], pod)
+        gid = _uidgid_or_default(security_def["gid"], pod)
+
+        if get_render_yaml(ctx):
+            securityContext["runAsNonRoot"] = True
+            securityContext["runAsUser"] = uid
+            securityContext["runAsGroup"] = gid
+            securityContext["fsGroup"] = gid
+        else:
+            securityContext.runAsNonRoot = True
+            securityContext.runAsUser = uid
+            securityContext.runAsGroup = gid
+            securityContext.fsGroup = gid
+
+
+        if "supplementalGroups" in security_def:
+            if get_render_yaml(ctx):
+                securityContext["supplementalGroups"] = security_def["supplementalGroups"]
+            else:
+                securityContext.supplementalGroups = security_def["supplementalGroups"]
+
+    return securityContext
+
+def render_security_context(ctx, security_def, pod):
+    securityContext = SecurityContext(ctx)
+
+    if "uid" in security_def or "gid" in security_def:
+        if get_render_yaml(ctx):
+            securityContext["runAsNonRoot"] = True
+            securityContext["runAsUser"] = _uidgid_or_default(security_def["uid"], pod)
+            securityContext["runAsGroup"] = _uidgid_or_default(security_def["gid"], pod)
+        else:
+            securityContext.runAsNonRoot = True
+            securityContext.runAsUser = _uidgid_or_default(security_def["uid"], pod)
+            securityContext.runAsGroup = _uidgid_or_default(security_def["gid"], pod)
+
+
+    if "capabilities" in security_def:
+        if get_render_yaml(ctx):
+            securityContext["capabilities"] = _add_to_default_capabilities(ctx, security_def["capabilities"])
+        else:
+            securityContext.capabilities = _add_to_default_capabilities(ctx, security_def["capabilities"])
+
+
+    if "privileged" in security_def:
+        if get_render_yaml(ctx):
+            securityContext["privileged"] = True
+        else:
+            securityContext.privileged = True
+
+    return securityContext
+
+def _update_pod(ctx, plugin, pod_def):
+    if pod_def["security"] == None:
+        pod_def["security"] = {}
+
+    pod_def["security"]["uid"] = plugin.uid
+    pod_def["security"]["gid"] = plugin.gid
+    pod_def["security"]["supplementalGroups"] = plugin.supplementalGroups
+
+def _update_container(ctx, plugin, container_def):
+    if container_def["security"] == None:
+        container_def["security"] = {}
+
+    container_def["security"]["uid"] = plugin.uid
+    container_def["security"]["gid"] = plugin.gid
+
+def _uidgid_or_default(uidgid, pod):
+    if uidgid != None:
+        return uidgid
+
+    if getattr(pod, "shared_msp", False):
+        return 1577241873 # Should match $kubernetes_pod_unix_id: https://go/lg/$kubernetes_pod_unix_id%20=
+    return 3001
+
+def _add_to_default_capabilities(ctx, capabilities):
+    DEFAULT_ADD_CAPABILITIES = []
+    DEFAULT_DROP_CAPABILITIES = []
+
+    if capabilities:
+        if capabilities["add"]:
+            DEFAULT_ADD_CAPABILITIES.extend(capabilities["add"])
+
+        if capabilities["drop"]:
+            DEFAULT_DROP_CAPABILITIES.extend(capabilities["drop"])
+
+    return Capabilities(
+        ctx,
+        add = DEFAULT_ADD_CAPABILITIES,
+        drop = DEFAULT_DROP_CAPABILITIES,
+    )
+
+def add_security_groups(*secgroups):
+    """
+    Add the provided security groups to the list of security groups for the service
+
+    These security groups will be automatically applied to any instance on which the
+    service runs. Be aware that security groups are not container specific but will be
+    applied to all containers running in your service pods. You may use multiple
+    instances of this plugin and the final set of security groups will be the union
+    of the different subsets (e.g. if sidecars need to specify secgroups).
+
+    Args:
+        *secgroups: the security groups to add
+     """
+
+    return compose_plugins(
+        pod_plugin(
+        _add_pod_secgroups,
+        secgroups=secgroups,
+        ),
+        conditional_plugin(
+            condition=is_security_group_policy_enabled,
+            plugin=security_group_policy(secgroups=secgroups),
+        )
+    )
+
+def _add_pod_secgroups(ctx, arguments, pod_def):
+    """
+    Add the secgroups to the pod
+    """
+    if "sec_groups" not in pod_def:
+        # our starlark dialect doesn't support sets so we'll use a hashmap -> True
+        pod_def["sec_groups"] = {}
+    sec_groups = pod_def["sec_groups"]
+    sec_groups.update([(group, True) for group in arguments.secgroups])
+    # update the annotation which will be a JSON encoded sorted list of the sec groups
+    pod_def['resource']["metadata"]["annotations"][SECGROUP_KEY] = json.marshal(sorted(sec_groups))
+
+def allow_ulimit_management(container_name):
+    return container_plugin(
+        _update_container_capabilities,
+        container_name = container_name,
+        add_capabilities = ["SYS_RESOURCE"],
+        drop_capabilities = [],
+    )
+
+def allow_net_admin_capabilities(container_name):
+    return container_plugin(
+        _update_container_capabilities,
+        container_name = container_name,
+        add_capabilities = ["NET_ADMIN"],
+        drop_capabilities = [],
+    )
+
+def _update_container_capabilities(ctx, plugin, container_def):
+    if container_def["security"] == None:
+        container_def["security"] = {}
+
+    container_def["security"]["capabilities"] = {
+        "add": plugin.add_capabilities,
+        "drop": plugin.drop_capabilities,
+    }
+
+def _update_container_privileged(ctx, plugin, container_def):
+    if container_def["security"] == None:
+        container_def["security"] = {}
+
+    container_def["security"]["privileged"] = True
+
+def unique_horizon_identity_annotation(enableUniqueIdentities):
+    """
+        Adds an annotation to the pod that controls whether identities (TLS certs and IAM roles) for Horizon Applications should be provisioned per role.
+
+        Should be False by default for MSP pods. This annotation can only be set on Horizon pods (identified by label `stripe.io/platform=horizon`).
+
+        Args:
+            enableUniqueIdentities: Setting this value to true will provision identities (TLS certs and IAM roles) per role
+
+        Returns:
+            A plugin that adds an annotation (`horizon.stripe.io/bundle-unique-identity`) to a pod
+    """
+    return pod_plugin(
+        _unique_horizon_identity_annotation,
+        enableUniqueIdentities = enableUniqueIdentities
+    )
+
+def _unique_horizon_identity_annotation(ctx, plugin, pod_def):
+    if "stripe.io/platform" in pod_def['resource']["metadata"]["labels"]:
+        if pod_def['resource']["metadata"]["labels"]["stripe.io/platform"] == "horizon":
+            pod_def['resource']["metadata"]["annotations"][UNIQUE_HORIZON_IDENTITY_ANNOTATION_KEY] = str(plugin.enableUniqueIdentities).lower()
+            return
+    fail("Pod isn't a Horizon pod, this plugin expects the label stripe.io/platform=horizon")
+
+def iam_role_account_affinity_annotation(affinity):
+    """
+        Adds an annotation to the pod that is used to determine the AWS Account for the pod's IAM identity
+
+        This plugin should only be used for pods that are in preparation for or ready for account sharded MSP
+
+        Args:
+            affinity: sets a "mode" for the credentials provider to consume. It must be one of:
+            - FROM_WORKER: the AWS Account will be based on the EC2 Instance hosting the pod (e.g. the underlying mspworker node)
+
+        Returns:
+            A plugin that adds an annotation (`stripe.io/iam-role-account-affinity`) to a pod
+    """
+    return pod_plugin(
+        _iam_role_account_affinity_annotation,
+        affinity = affinity
+    )
+
+def _iam_role_account_affinity_annotation(ctx, plugin, pod_def):
+    if plugin.affinity == "FROM_WORKER":
+        pod_def['resource']["metadata"]["annotations"][IAM_ROLE_ACCOUNT_AFFINITY_ANNOTATION_KEY] = plugin.affinity
+        return
+
+    fail("Unsupported affinity for plugin: ", plugin.affinity)
+
+def run_as_privileged(container_name):
+    """
+    Sets up a container to run as a privileged user.
+
+    NOTE: Reach out to #msp slack channel before using this plugin. Use of this plugin
+    is highly restricted for select use cases.
+
+
+    Args:
+        container_name: The name of a container to run as a privileged user.
+
+    Returns:
+        A plugin that configures the security settings of a container.
+    """
+    return container_plugin(
+        _update_container_privileged,
+        container_name = container_name,
+    )

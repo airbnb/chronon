@@ -1,0 +1,151 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Helper function for generating ECR image URIs to reference when defining containers.
+"""
+
+load("config/kubernetes/helpers/context.sky", "get_env", "get_henson_git_commit", "get_container_images", "get_sidecar_container_images", "get_name")
+load("config/kubernetes/helpers/warning.sky", "warn")
+
+def image(ctx, name = None, artifact = None, label = None, env = None, modify_name = True):
+    """
+    Generate image URI for a container built by Stripe's CI.
+
+    See http://go/ecr for more details on configuring image repos and deploying images
+    internally.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        name: The short name of a Stripe container image, like "stripe/pay-server/jenkins" or
+            "third-party/envoy". This can also be a fully qualified image URI, in which case it will
+            be returned unchanged.
+        artifact: The name of the build artifact that is used to deploy the image. This can be used
+            instead of `name` if the image is declared in the `container_images` of the Henson
+            service config.
+        label: If set, use the image tagged with this value. Otherwise, use the one for Git revision
+            being deployed.
+        env: Optional environment override. Defaults to pulling from the same environment that
+            Henson is deploying to.
+        modify_name: Optional argument for determining whether or not to modify the name argument depending on env.
+
+    Returns:
+        A fully qualified container image name suitable for container specs.
+    """
+
+    container_images = get_container_images(ctx)
+
+    # name can also be a struct, see image_defaults below
+    if hasattr(name, "is_image_defaults"):
+        # Handle default images for things like `pay_server_pod` or `gocode_pod`.
+        # Default images provide both a ECR repo name and an artifact name.
+        # If we are here, the user didn't specify an image, so we need to try to figure out what they want.
+
+        # first, see if they have a single container_image defined in the Henson service config.
+        # if so, just use that.
+        if len(container_images) == 1:
+            artifact = container_images.keys()[0]
+            name = None
+
+        # otherwise, if they have some container_images defined in the service, one must be the artifact name
+        # specified in the defaults. if it's not there, the user should specify an explicit artifact name or
+        # add the default artifact to their service config.
+        elif len(container_images) > 1:
+            if name.artifact in container_images:
+                artifact = name.artifact
+                name = None
+            else:
+                fail("""
+
+Could not find default image build artifact \"%s\" in service configuration.
+
+If you wanted to deploy using a different image, specify that artifact name in the image for your pod/container.
+
+If you wanted to deploy the default image, add \"%s\" to the container_images in your service configuration.
+""" % (name.artifact, name.artifact))
+
+        # if there are no container_images in the service config, assume we're using a separately deployed image
+        # as a prerequisite, and that the name of that ECR repo is in the `name` field of the defaults.
+        else:
+            name = name.name
+
+    # Allow passing already rendered ECR image URIs, and just return them
+    if name != None and (name.startswith(ctx.vars["aws.account_id"]) or name.startswith("containers.global.prod.stripe.io")):
+        return name
+
+    if label == None:
+        label = "git-%s" % get_henson_git_commit(ctx)
+
+    if name == None and artifact == None:
+        # if there's only one container image in the service config, we can use that without
+        # having to specify anything.
+        if len(container_images) == 1:
+            artifact = container_images.keys()[0]
+        else:
+            fail("image requires either a name or artifact parameter, but neither was provided")
+    elif name != None and artifact != None:
+        fail("image cannot have both a name and artifact parameter")
+
+    if name != None:
+        if env == None:
+            env = get_env(ctx)
+
+        if name.startswith("stripe/"):
+            if env == "qa" and modify_name:
+                name = name.replace("stripe/", "stripe-qa/", 1)
+        elif name.startswith("third-party/"):
+            if env == "qa" and modify_name:
+                name = name.replace("third-party/", "third-party-qa/", 1)
+        else:
+            fail(
+                "Expected container name to start with \"stripe/\" or \"third-party/\", but got %r" %
+                name,
+            )
+
+        registry = "containers.global.prod.stripe.io"
+        if ctx.vars.get("henson.use_ecr_urls", False):
+            registry = "%s.dkr.ecr.%s.amazonaws.com" % (ctx.vars["aws.account_id"], ctx.vars["aws.region"])
+
+        repo_url = "%s/%s" % (registry, name)
+
+    else:
+        if artifact not in container_images:
+            fail("Could not find container image build artifact \"%s\" in service configuration" % artifact)
+
+        repo_url = container_images[artifact]
+
+    if "@sha256:" in repo_url:
+        return repo_url
+
+    if label.startswith("sha256:"):
+        return repo_url + "@" + label
+
+    return repo_url + ":" + label
+
+def sidecar_image(ctx, name, fallback = None):
+    container_images = get_sidecar_container_images(ctx)
+    if name not in container_images:
+        if fallback == None:
+            fail("Could not find sidecar image \"%s\" in service configuration" % name)
+        elif ctx.vars.get("henson.use_dummy_sidecars_for_tests", False):
+            # This should only be used for testing purposes. Most tests will not
+            # care about the sidecar image, so we return a dummy image so we don't fail.
+            # If a test does care about the sidecar image, it should specify it explicitly.
+            return "containers.global.prod.stripe.io/stripe/%s:fake-sidecar-version-for-automated-testing-only" % name
+        else:
+            # When evaluating skycfg in production, we want to warn if a sidecar image is not found.
+            # In the future we will remove the fallback images and make it a hard error.
+            # See https://jira.corp.stripe.com/browse/SD-6345
+            warn(ctx, "".join([
+                "WARNING: sidecar image \"%s\" not found in service manifest, using fallback image. " % name,
+                "This will soon be a hard error, as fallback images could be outdated and unsafe. ",
+                "This should be fixed in the service configuration. Service being deployed: %s" % get_name(ctx),
+            ]))
+
+        return fallback
+    return container_images[name]
+
+def image_defaults(name, artifact):
+    return struct(
+        is_image_defaults = True,
+        name = name,
+        artifact = artifact,
+    )

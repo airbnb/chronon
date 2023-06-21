@@ -1,0 +1,78 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of RoleBinding message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L132-L144
+"""
+
+load("config/kubernetes/helpers/roleref_name.sky", "role_ref_helper")
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/plugins/types.sky", "rbac_plugin")
+load("config/kubernetes/rbac/subject.sky", "subject")
+load("config/kubernetes/rbac/roleref.sky", "role_ref")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "RoleBinding")
+
+def role_binding(ctx, *plugins, **kwargs):
+    role_binding_mapping = {
+        "render": _render_role_binding,
+        "type": "rbac",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(role_binding_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_rbac(ctx, plugin, role_binding_mapping)
+
+    return role_binding_mapping["render"](ctx, role_binding_mapping)
+
+def role_binding_options(**kwargs):
+    return rbac_plugin(
+        _update_role_binding_options,
+        kwargs = kwargs,
+    )
+
+def _update_role_binding_options(ctx, plugin, role_binding_def):
+    role_binding_def["kwargs"].update(plugin.kwargs)
+
+def _render_role_binding(ctx, role_binding_mapping):
+    role_binding_mapping["metadata"] = struct(**role_binding_mapping["metadata"])
+    role_binding_mapping = struct(**role_binding_mapping)
+    kargs = struct(**role_binding_mapping.kwargs)
+    subject_list = []
+    if hasattr(kargs, "subjects"):
+        if type(kargs.subjects) == type([]):
+
+            for obj_subject in kargs.subjects:
+                role_binding_subject = subject(ctx, obj_subject)
+                subject_list.append(role_binding_subject)
+        else:
+            fail("RoleBinding subjects field called with non list value")
+
+    reftype = None
+    if hasattr(kargs, "roleName"):
+        reftype = "Role"
+
+        if hasattr(kargs, "roleType"):
+            reftype = kargs.roleType
+
+    obj_role_binding = RoleBinding(ctx)
+    if get_render_yaml(ctx):
+        obj_role_binding["metadata"] = render_metadata(ctx, role_binding_mapping.metadata)
+        if len(subject_list) > 0:
+            obj_role_binding["subjects"] = subject_list
+        if reftype:
+            obj_role_binding["roleRef"] = role_ref(ctx, role_ref_helper(kargs.roleName, reftype))
+        return yaml.marshal(obj_role_binding)
+    else:
+        obj_role_binding.metadata = render_metadata(ctx, role_binding_mapping.metadata)
+        if len(subject_list) > 0:
+            obj_role_binding.subjects = subject_list
+        if reftype:
+            obj_role_binding.roleRef = role_ref(ctx, role_ref_helper(kargs.roleName, reftype))
+
+    return obj_role_binding

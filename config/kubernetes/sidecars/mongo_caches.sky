@@ -1,0 +1,16 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# This file is in sidecars because it will eventually be a sidecar when we support host-isolation.
+
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+
+def use_mongo_caches(use_legacy_host_mounts = False):
+    if not use_legacy_host_mounts:
+        fail("Sorry, Mongo caches aren't currently supported in a host-isolated way yet. For now, you should continue to use legacy host mounts.")
+
+    return mount_host_volume(
+        "/pay/cache",
+        volume_args = {
+            "type": "Directory",
+            "reason": "Provides cached feature flag and Mongo sharding data.",
+        },
+    )

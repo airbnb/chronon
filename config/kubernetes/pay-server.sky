@@ -1,0 +1,684 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins and helpers to specifically support running pay-server workloads.
+"""
+
+load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/probe.sky", "probes", "command_probe", "http_probe")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume", "mount_host_volume", "volume_mount")
+load("config/kubernetes/meta/metadata.sky", "labels")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin")
+load("config/kubernetes/sidecars/consul.sky", "consul_container_name", "consul_check", "consul_service", "envoy_consul_tag")
+load("config/kubernetes/sidecars/health.sky", "safely_deployed_service")
+load("config/kubernetes/sidecars/mongo_caches.sky", "use_mongo_caches")
+load("config/kubernetes/sidecars/worker.sky", "add_worker_sidecar")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
+
+
+default_pay_server_image = image_defaults(
+    # if they try to use defaults, their service yaml should have the artifact specified.
+    # if not, they're not explicitly relying on any images, so defaults doesn't know what to do.
+    # setting None for the name will ensure we don't default to some ECR repo. They can explicitly
+    # pick an image and should specify that image deploy as a prereq, or they can use defaults and
+    # specify the pay-server-image artifact, so we know what to default to.
+    name = None,
+    artifact = "pay-server-image",
+)
+
+def _default_ruby_3_1_policy(ctx, **kwargs):
+    # TODO When we're ready to start rolling Ruby 3.1 to the "long-tail" of services we can start
+    # ramping it up here.
+    return False
+
+def _ruby_3_1_plugin(value):
+    if value == True:
+        return _override_ruby_version("sorbet_ruby_3_1")
+    elif value == False:
+        return compose_plugins()
+    elif type(value) == "int":
+        return _1_in_n_override_ruby_version("sorbet_ruby_3_1", value)
+    else:
+        fail("_ruby_3_1_plugin invalid return value, must be integer (1/N frequency) or boolean. (Got %s)" % value)
+
+
+def pay_server_pod(ctx, ruby_3_1_policy=_default_ruby_3_1_policy, **kwargs):
+    """
+    Create a standard pay-server job or service with a main container.
+
+    This plugin should generally be the first plugin used when defining a new workload. It sets up important
+    metadata about the workload and creates a basic pod with a single main container that runs a command.
+
+    In addition to what the basic `stripe_pod` sets up, this also sets some environment variables and mounts
+    several volumes from the host that support pay-server functioning correctly.
+
+    This plugin does not set up secrets or Consul service registration. Other plugins can be added after this one
+    to add those to the pod.
+
+    Args:
+        name: The name of service or job. Generally, this should match the Henson service name.
+        image: The name of the ECR repository of the container images the pod should run for its main container.
+            Defaults to the default pay-server image.
+        command: An array containing the command and arguments that should run in the main container. If you are
+            using Einhorn to run your service, see `einhorn_service` for how to set up the command.
+        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
+        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        host_type: The host type of the machines this pod should be able to
+            schedule on. This will also be the namespace of the pods in Kubernetes.
+            Must be set iff shared_msp=False (the default).
+        namespace: The namespace of the pods in Kubernetes. Must be set iff deploying to shared MSP.
+        ruby_3_1_policy: Iff provided a function(ctx, **kwargs) that must return a boolean or integer >=1
+            kwargs are remaining args to pay_server_pod
+            Return values affect pod environment in the following way:
+                True:   Override Ruby version in this pod to use 3.1
+                False:  Do not override Ruby version (use 2.7)
+                Int(n): 1 in N pods (randomized by STRIPE_POD_NAME) will use Ruby 3.1
+        **kwargs: The same arguments that `stripe_pod` supports.
+
+    Returns:
+        A plugin that can be used with an entrypoint like `deployment` or `cronjob`.
+    """
+    image = kwargs.pop("image", default_pay_server_image)
+
+    standard_plugins = compose_plugins(
+        stripe_pod(
+            ctx,
+            image=image,
+            **kwargs
+        ),
+        container_env_vars({
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
+        }),
+        use_mongo_caches(use_legacy_host_mounts = True),
+        mount_host_volume("/pay/conf", volume_args = {
+            "type": "Directory",
+            "reason": "Provides host-level information about the environment.",
+        }),
+        labels({
+          "stripe.io/platform": "pay-server",
+        }),
+        _ruby_3_1_plugin(ruby_3_1_policy(ctx, **kwargs))
+    )
+    pay_health_mount = compose_plugins()
+    if kwargs.get("opt_out_of_safe_deploys", False):
+        pay_health_mount = mount_host_volume("/pay/health", volume_args = {
+            "type": "Directory",
+            "reason": "Allows service healthchecks to read the state of the host's stripe-health check.",
+        })
+
+    shared_plugins = compose_plugins(
+        mount_pod_volume("/pay/haproxy/status"),
+        mount_pod_volume("/pay/haproxy/down"),
+        mount_host_volume("/pay/state/veneur", volume_args = {"type": "Directory"}),
+    )
+    dedicated_plugins = compose_plugins(
+        mount_host_volume("/pay/state", volume_args = {"type": "Directory"}),
+        mount_host_volume("/pay/haproxy", volume_args = {"type": "Directory"}),
+        mount_host_volume("/etc/stripe/aws-info", volume_args = {
+            "type": "Directory",
+            "reason": "Provides information about the AWS region and instance.",
+        }),
+        mount_host_volume("/etc/stripe/facts", volume_args = {
+            "type": "Directory",
+            "reason": "Provides information from Puppet about the underlying host.",
+        }),
+        pay_health_mount,
+    )
+
+    return compose_plugins(
+        standard_plugins,
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=shared_plugins,
+        ),
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=dedicated_plugins,
+        ),
+    )
+
+def einhorn_service(
+    ctx,
+    port,
+    name,
+    daemoncommon_svcname = None,
+    healthcheck = "/healthcheck",
+    reuse_addr = True,
+    nonblocking = False,
+    tags = [],
+    meta = {},
+    container_name = None,
+    manage_workers = True,
+    worker_availability_threshold = "0.7", # skycfg doesn't support floats
+    startup_failure_threshold = 600,
+    hack_kick_interval = None,
+    hack_kick_start_delay = None,
+    hack_kick_restart_only = None,
+    **kwargs
+):
+    """
+    Sets up a container to run a service using Einhorn and register it with Consul.
+
+    This plugin should be used for most pay-server services. If you're using this plugin,
+    set the command of your `pay_server_pod` to just the entrypoint of your service,
+    relative to the root of the pay-server repo. The plugin will modify the command to wrap
+    that entrypoint with einhorn.
+
+    Args:
+        port: The HTTP port that Einhorn should bind to.
+        healthcheck: The HTTP path to use for healthchecking the service. Defaults to
+            "/healthcheck".
+        name: Name of the Consul service to register.
+        daemoncommon_svcname: Defaults to the value of `name`. If the name of your service in
+            Consul is not equivalent to your Opus::DaemonCommon.svcname, you must manually specify
+            your svcname here.
+        reuse_addr: Whether to reuse socket addresses (pass the `r` option in the Einhorn bind
+            address). Defaults to True.
+        nonblocking: Whether to use non-blocking sockets (pass the `n` option in the Einhorn
+            bind address). Defaults to False.
+        container_name: Optional name of the container running the service. Defaults to the
+            main container of the pod.
+        tags: Additional tags to add to the Consul service.
+        meta: Additional metadata entries to add to the Consul service.
+        manage_workers: Optional whether to add the worker management sidecar. This sidecar
+            provides statistics about worker utilization and restarts all workers hourly.
+        worker_availability_threshold: Optional worker availablity threshold to determine service
+            health. Defaults to 0.7. This threshold is used by worker management sidecar and will
+            create a latch file when at least x% of workers are availble.
+        startup_failure_threshold: Optional number of requests that can fail during startup before
+            the container is killed. Defaults to 600, which gives containers 10 minutes to start
+            up as requests are made every 1 second by default.
+        hack_kick_interval: How often to restart einhorn workers
+        hack_kick_start_delay: Minimum time to wait on server boot before starting to cycle workers
+        hack_kick_restart_only: Do not reload master process before resarting processes
+        **kwargs: Additional arguments to set up Einhorn. See `einhorn` for possible options.
+
+    Returns:
+        A plugin that sets up the pod and container to run using Einhorn and register with Consul.
+    """
+    if daemoncommon_svcname == None:
+        daemoncommon_svcname = name
+
+    einhorn_plugin = _einhorn_service(
+        ctx,
+        port = port,
+        healthcheck = healthcheck,
+        container_name = container_name,
+        failure_threshold = startup_failure_threshold,
+    )
+
+    # signal_timeout is the max time an operation can run before Einhorn SIGKILLs
+    # the child process. We want to wait at least that long to let the pod unwind,
+    # and arbitrarily add a buffer of 5 seconds out of concern for Einhorn/MSP
+    # interplay -- Einhorn child processes may hold locks that, if killed
+    # ungracefully, they can never yield.
+    request_drain_grace_period_seconds = kwargs.get("signal_timeout", None)
+    if request_drain_grace_period_seconds != None:
+        request_drain_grace_period_seconds += 5
+
+    deploy_safety_plugin = safely_deployed_service(
+        ctx,
+        consul_propagation_period_seconds = 60,
+        request_drain_grace_period_seconds = request_drain_grace_period_seconds,
+    )
+    if healthcheck == None or kwargs.get("opt_out_of_safe_deploys", False):
+        deploy_safety_plugin = compose_plugins()
+
+    worker_plugin = compose_plugins()
+    if manage_workers:
+        worker_plugin = add_worker_sidecar(
+            einhorn_socket_dir = _einhorn_socket_dir,
+            einhorn_socket_name = _einhorn_socket_name,
+            puma_statefile_dir = _einhorn_socket_dir,
+            worker_availability_threshold = worker_availability_threshold,
+            service = daemoncommon_svcname,
+            hack_kick_interval = hack_kick_interval,
+            hack_kick_start_delay = hack_kick_start_delay,
+            hack_kick_restart_only = hack_kick_restart_only,
+        )
+
+    consul_tags = []
+    consul_tags.extend(tags)
+    if healthcheck:
+        consul_tags.append(envoy_consul_tag(healthcheck))
+
+    consul_meta = {
+        'einhorn_workers': str(kwargs.get("workers", 2)),
+        # queueing happens inside the pod, so by default route traffic to pods with fewest current requests
+        'lb_policy': 'LEAST_REQUEST',
+    }
+    consul_meta.update(meta)
+
+    networking_plugin = consul_service(
+        name = name,
+        port = port,
+        tags = consul_tags,
+        checks = [consul_check(healthcheck, port)] if healthcheck else [],
+        meta = consul_meta,
+    )
+
+    return compose_plugins(
+        container_plugin(
+            _einhornify_container,
+            container_name = container_name,
+            port = port,
+            reuse_addr = reuse_addr,
+            nonblocking = nonblocking,
+            kwargs = kwargs,
+        ),
+        networking_plugin,
+
+        # always mount the einhorn socket dir as a volume so that if we
+        # change it to something not in the container image it will still work
+        mount_pod_volume(
+            _einhorn_socket_dir,
+            volume_args = {
+                "reason": "Allows other containers in the pod to monitor Einhorn.",
+            },
+            mount_args = {"read_only": False},
+        ),
+        einhorn_plugin,
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=deploy_safety_plugin,
+        ),
+        worker_plugin,
+    )
+
+def einhorn(
+    entrypoint,
+    workers = 2,
+    bind = None,
+    ack_mode = "manual",
+    command_name = None,
+    signal_timeout = None,
+    max_upgrade_additional = None,
+    max_unacked = None,
+    preload = True,
+    preload_or_fail = True,
+    nice = None,
+    gc_before_fork = False,
+    seconds = None,
+    kill_children_on_exit = False,
+):
+    """
+    Create a `command` array for a container that uses Einhorn to run a server.
+
+    Generally, prefer to use the `einhorn_service` plugin to set this up instead,
+    as it will set up healthchecking and Consul service registration too.
+
+    Returns:
+        An array of command and arguments to run Einhorn in the pay-server container.
+    """
+    if type(entrypoint) == "string":
+        entrypoint = [entrypoint]
+
+    if len(entrypoint) == 0:
+        fail("Cannot have empty entrypoint for einhorn command")
+
+    if not entrypoint[0].startswith("/"):
+        entrypoint[0] = "/deploy/pay-server/current/" + entrypoint[0]
+
+    argv = [
+        "/deploy/pay-server/current/deploy-scripts/stripe-bundle-msp",
+        "pay-server",
+        "einhorn",
+        "--number={}".format(workers),
+        "--ack-mode={}".format(ack_mode),
+        "--socket-path={}".format(_einhorn_socket),
+    ]
+
+    if preload:
+        argv.append("--preload={}".format(entrypoint[0]))
+        if preload_or_fail:
+            argv.append("--preload-or-fail")
+
+    if command_name != None:
+        argv.append("--command-name={}".format(command_name))
+
+    if bind != None:
+        argv.append("--bind={}".format(bind))
+
+    if signal_timeout != None:
+        argv.append("--signal-timeout={}".format(signal_timeout))
+
+    if max_upgrade_additional != None:
+        argv.append("--max-upgrade-additional={}".format(max_upgrade_additional))
+
+    if max_unacked != None:
+        argv.append("--max-unacked={}".format(max_unacked))
+
+    if nice != None:
+        argv.append("--nice={}".format(nice))
+
+    if gc_before_fork:
+        argv.append("--gc-before-fork")
+
+    if seconds != None:
+        argv.append("--seconds={}".format(seconds))
+
+    if kill_children_on_exit:
+        argv.append("--kill-children-on-exit")
+
+    argv.append("--")
+    argv.extend(entrypoint)
+    return argv
+
+def einhorn_bind_address(
+    port,
+    host = "0.0.0.0",
+    reuse_addr = True,
+    nonblocking = False,
+):
+    opts = []
+    if reuse_addr:
+        opts.append("r")
+    if nonblocking:
+        opts.append("n")
+
+    addr = "{}:{}".format(host, port)
+    if len(opts) > 0:
+        addr += "," + ",".join(opts)
+
+    return addr
+
+def _einhornify_container(ctx, plugin, container_def):
+    container_def["env"]["PUMA_STATE_DIR"] = _einhorn_socket_dir
+    container_def["env"]["EINHORN_SOCK_PATH"] = _einhorn_socket_name
+
+    existing_command = container_def["command"]
+    container_def["command"] = einhorn(
+        entrypoint = existing_command,
+        bind = einhorn_bind_address(
+            port = plugin.port,
+            reuse_addr = plugin.reuse_addr,
+            nonblocking = plugin.nonblocking,
+        ),
+        **plugin.kwargs
+    )
+
+def _einhorn_service(ctx, port, healthcheck, container_name, failure_threshold):
+    if not healthcheck:
+        return compose_plugins()
+
+    probe = http_probe(
+        ctx,
+        port = port,
+        path = healthcheck,
+    )
+    startup_probe = http_probe(
+        ctx,
+        port = port,
+        path = healthcheck,
+        failureThreshold = failure_threshold,
+        periodSeconds = 1,
+    )
+
+    return probes(
+        readiness = probe,
+        startup = startup_probe,
+        container_name = container_name,
+    )
+
+def puma_cluster_service(
+    ctx,
+    port,
+    name,
+    daemoncommon_svcname = None,
+    healthcheck = "/healthcheck",
+    tags = [],
+    meta = {},
+    container_name = None,
+    manage_workers = True,
+    worker_availability_threshold = "0.7", # skycfg doesn't support floats
+    startup_failure_threshold = 600,
+    **kwargs
+):
+    """
+    Sets up a container to run a service using Puma cluster mode and register it with Consul.
+
+    This plugin is still experimental, but will eventually replace `einhorn_service` for most
+    pay-server services.
+
+    Args:
+        port: The HTTP port that Puma should bind to.
+        healthcheck: The HTTP path to use for healthchecking the service. Defaults to
+            "/healthcheck".
+        name: Name of the Consul service to register.
+        daemoncommon_svcname: Defaults to the value of `name`. If the name of your service in
+            Consul is not equivalent to your Opus::DaemonCommon.svcname, you must manually specify
+            your svcname here.
+        container_name: Optional name of the container running the service. Defaults to the
+            main container of the pod.
+        tags: Additional tags to add to the Consul service.
+        meta: Additional metadata entries to add to the Consul service.
+        manage_workers: Optional whether to add the worker management sidecar. This sidecar
+            provides statistics about worker utilization.
+        worker_availability_threshold: Optional worker availablity threshold to determine service
+            health. Defaults to 0.7. This threshold is used by worker management sidecar and will
+            create a latch file when at least x% of workers are availble.
+        startup_failure_threshold: Optional number of requests that can fail during startup before
+            the container is killed. Defaults to 600, which gives containers 10 minutes to start
+            up as requests are made every 1 second by default.
+        **kwargs: Additional arguments to set up Puma cluster. See `puma_cluster` for possible
+            options.
+
+    Returns:
+        A plugin that sets up the pod and container to run using Puma cluster and register with
+        Consul.
+    """
+    if daemoncommon_svcname == None:
+        daemoncommon_svcname = name
+
+    puma_cluster_plugin = _puma_cluster_service(
+        ctx,
+        port = port,
+        healthcheck = healthcheck,
+        container_name = container_name,
+        failure_threshold = startup_failure_threshold,
+    )
+
+    # worker_shutdown_timeout is the max time an operation can run before Puma SIGKILLs
+    # the child process. We want to wait at least that long to let the pod unwind,
+    # and arbitrarily add a buffer of 5 seconds out of concern for Puma/MSP
+    # interplay -- Puma child processes may hold locks that, if killed
+    # ungracefully, they can never yield.
+    request_drain_grace_period_seconds = kwargs.get("worker_shutdown_timeout", None)
+    if request_drain_grace_period_seconds != None:
+        request_drain_grace_period_seconds += 5
+
+    deploy_safety_plugin = safely_deployed_service(
+        ctx,
+        consul_propagation_period_seconds = 60,
+        request_drain_grace_period_seconds = request_drain_grace_period_seconds,
+    )
+    if healthcheck == None or kwargs.get("opt_out_of_safe_deploys", False):
+        deploy_safety_plugin = compose_plugins()
+
+    worker_plugin = compose_plugins()
+    if manage_workers:
+        worker_plugin = add_worker_sidecar(
+            einhorn_socket_dir = _einhorn_socket_dir,
+            puma_statefile_dir = _einhorn_socket_dir,
+            worker_availability_threshold = worker_availability_threshold,
+            service = daemoncommon_svcname,
+            mode = "puma-cluster",
+            puma_statefile_name = "puma_state_{}.yaml".format(name),
+        )
+
+    consul_tags = []
+    consul_tags.extend(tags)
+    if healthcheck:
+        consul_tags.append(envoy_consul_tag(healthcheck))
+
+    consul_meta = {
+        'einhorn_workers': str(kwargs.get("workers", 2)), # TODO: can we rename this to `puma_cluster_workers`?
+        # queueing happens inside the pod, so by default route traffic to pods with fewest current requests
+        'lb_policy': 'LEAST_REQUEST',
+    }
+    consul_meta.update(meta)
+
+    networking_plugin = consul_service(
+        name = name,
+        port = port,
+        tags = consul_tags,
+        checks = [consul_check(healthcheck, port)] if healthcheck else [],
+        meta = consul_meta,
+    )
+
+    return compose_plugins(
+        container_plugin(
+            _puma_clusterify_container,
+            container_name = container_name,
+            name = name,
+            port = port,
+            manage_workers = manage_workers,
+            kwargs = kwargs,
+        ),
+        networking_plugin,
+
+        # always mount the einhorn socket dir as a volume so that if we
+        # change it to something not in the container image it will still work
+        mount_pod_volume(
+            _einhorn_socket_dir,
+            volume_args = {
+                "reason": "Allows other containers in the pod to monitor Puma.",
+            },
+            mount_args = {"read_only": False},
+        ),
+        puma_cluster_plugin,
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=deploy_safety_plugin,
+        ),
+        worker_plugin,
+    )
+
+def puma_cluster(
+    entrypoint,
+    workers = 2,
+    bind = None,
+    max_additional_workers = None,
+    manage_workers = True,
+    worker_shutdown_timeout = None,
+):
+    """
+    Create a `command` array for a container that uses Puma cluster to run a server.
+
+    Generally, prefer to use the `puma_cluster_service` plugin to set this up instead,
+    as it will set up healthchecking and Consul service registration too.
+
+    Returns:
+        An array of command and arguments to run Puma cluster in the pay-server container.
+    """
+    if type(entrypoint) == "string":
+        entrypoint = [entrypoint]
+
+    if len(entrypoint) == 0:
+        fail("Cannot have empty entrypoint for puma_cluster command")
+
+    if not entrypoint[0].startswith("/"):
+        entrypoint[0] = "/deploy/pay-server/current/" + entrypoint[0]
+
+    argv = [
+        "/deploy/pay-server/current/deploy-scripts/stripe-bundle-msp",
+        "pay-server",
+        "/deploy/pay-server/current/puma_cluster/entrypoint.rb",
+        "--workers={}".format(workers),
+    ]
+
+    if bind != None:
+        argv.append("--bind={}".format(bind))
+
+    if max_additional_workers != None:
+        argv.append("--max-additional-workers={}".format(max_additional_workers))
+    elif manage_workers == False:
+        # When a Ruby service is running under Einhorn, rolling restarts (aka "hack-kicking") are
+        # handled by the workermanager sidecar. This means that disabling the sidecar with
+        # manage_workers=False also disables rolling restarts.
+        # With Puma cluster, rolling restarts are handled by the main Puma process (this is not a
+        # Puma built-in feature but rather something we built, cf. Opus::PumaWorkerRollingRestart).
+        # In order to maintain feature parity with Einhorn, we disable rolling restarts by setting
+        # max_additional_workers to 0 when the workermanager sidecar is disabled.
+        # Long term (once Einhorn is fully out of the picture), we should remove this and have
+        # services that want to disable rolling restarts explicitly set max_additional_workers to
+        # 0 themselves.
+        argv.append("--max-additional-workers=0")
+
+    if worker_shutdown_timeout != None:
+        argv.append("--worker-shutdown-timeout={}".format(worker_shutdown_timeout))
+
+    argv.append("--")
+    argv.extend(entrypoint)
+    return argv
+
+def puma_cluster_bind_address(
+    port,
+    host = "0.0.0.0",
+):
+    return "tcp://{}:{}".format(host, port)
+
+def _puma_clusterify_container(ctx, plugin, container_def):
+    container_def["env"]["PUMA_STATE_DIR"] = _einhorn_socket_dir
+    container_def["env"]["PUMA_STATE_FILENAME"] = "puma_state_{}.yaml".format(plugin.name)
+
+    existing_command = container_def["command"]
+    container_def["command"] = puma_cluster(
+        entrypoint = existing_command,
+        bind = puma_cluster_bind_address(
+            port = plugin.port,
+        ),
+        manage_workers = plugin.manage_workers,
+        **plugin.kwargs
+    )
+
+def _puma_cluster_service(ctx, port, healthcheck, container_name, failure_threshold):
+    if not healthcheck:
+        return compose_plugins()
+
+    probe = http_probe(
+        ctx,
+        port = port,
+        path = healthcheck,
+    )
+    startup_probe = http_probe(
+        ctx,
+        port = port,
+        path = healthcheck,
+        failureThreshold = failure_threshold,
+        periodSeconds = 1,
+    )
+
+    return probes(
+        readiness = probe,
+        startup = startup_probe,
+        container_name = container_name,
+    )
+
+def _override_ruby_version(rbenv_version):
+    return compose_plugins(
+        container_env_vars({
+            "STRIPE_BUNDLE_MSP_OVERRIDE_RBENV_VERSION": rbenv_version,
+        }),
+        labels({
+            "pay-server.stripe.io/override_rbenv_version": rbenv_version,
+        }),
+    )
+
+def _1_in_n_override_ruby_version(rbenv_version, n):
+    if type(n) != "int" or n < 1:
+        fail("_1_in_n_override_ruby_version: n must be an integer > 1. (Got %s)" % n)
+    return container_env_vars({
+        "STRIPE_BUNDLE_USE_SORBET_RANDOM_FREQ": str(n),
+        "STRIPE_BUNDLE_USE_SORBET_RANDOM_RBENV_VERSION": rbenv_version,
+    })
+
+
+_einhorn_socket_dir = "/pay/einhorn_sockets"
+_einhorn_socket_name = "einhorn.sock"
+_einhorn_socket = "{}/{}".format(_einhorn_socket_dir, _einhorn_socket_name)

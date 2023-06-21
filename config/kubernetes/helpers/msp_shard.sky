@@ -1,0 +1,160 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for annotating which shard a pod will be deployed to.
+"""
+
+load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")
+load("config/kubernetes/helpers/context.sky", "get_target_shard", "get_env", "get_cluster")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin")
+
+# TODO(dfradette): remove this annotation once Amp has been changed to use `stripe.io/msp-shard`
+MSP_CLUSTER_ANNOTATION = "stripe.io/msp-cluster"
+
+MSP_SHARD_ANNOTATION = "stripe.io/msp-shard"
+
+def _shard(name, *, shared_msp=True, cron=False):
+    return struct(name=name, shared_msp=shared_msp, cron=cron)
+
+ENV_CLUSTER_SHARDS = {
+    "qa": {
+        "bom": [_shard("kubemaster", cron=True)],
+        "cmh": [_shard("kubemaster", cron=True)],
+        "east": [_shard("kubemaster", cron=True), _shard("kubeapitest")],
+        "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapitest", cron=True), _shard("kubeapisktest")],
+    },
+    "preprod": {
+        "cmh": [_shard("kubemaster", cron=True)]
+    },
+    "prod": {
+        "bom": [_shard("kubemaster", cron=True)],
+        "cmh": [_shard("kubemaster", cron=True)],
+        "east": [_shard("kubemaster", cron=True)],
+        "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapiee"), _shard("kubeapitest", cron=True)],
+    },
+}
+
+
+def all_available_shards(ctx, shared_msp=None):
+    """
+    Returns all available shards based on the current Henson context.
+    Args:
+      ctx: The Henson context.
+      shared_msp: If specified, only return shards that do (True) or don't (False) support Shared MSP.
+    """
+    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    shards = clusters.get(get_cluster(ctx), [])
+    if shared_msp == None:
+        return [s.name for s in shards]
+    return [s.name for s in shards if s.shared_msp == shared_msp]
+
+def all_available_shards_with_cron(ctx):
+    """
+    Returns all available shards based on the current Henson context in which cron is supported.
+    Args:
+      ctx: The Henson context.
+    """
+    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    shards = clusters.get(get_cluster(ctx), [])
+    return [s.name for s in shards if s.cron == True]
+
+def msp_shard(shard):
+    """
+    Specify the MSP shard that the pod will be deployed to. Will error if the specified
+    shard is not supported in the given context.
+    Args:
+        shard: The name of the MSP shard.
+    """
+    return any_resource_plugin(_set_msp_shard, shard = shard)
+
+def _set_msp_shard(ctx, plugin, resource_def):
+    shard = getattr(plugin, "shard")
+
+    if shard not in all_available_shards(ctx):
+        fail(
+            "`{shard}` is not available in {env}-{cluster}".format(
+            shard = shard,
+            env = get_env(ctx),
+            cluster = get_cluster(ctx),
+        ))
+
+    resource_def["metadata"]["annotations"].update(
+            _shard_annotations(shard),
+    )
+
+def prefer_msp_shard(name = "kubeapiaa"):
+  """
+  Selects the shard if it's available within the current Henson context. If you are not
+  on Orchestration, this probably isn't the plugin you are looking for!
+  Args:
+    name: The name of the MSP shard. Defaults to 'kubeapiaa'.
+  """
+  return any_resource_plugin(_prefer_msp_shard, preferred = name)
+
+def _prefer_msp_shard(ctx, plugin, resource_def):
+    preferred = getattr(plugin, "preferred")
+    available_shards = all_available_shards(ctx)
+
+    shard = "kubemaster"
+    if preferred in available_shards:
+        shard = preferred
+
+    resource_def["metadata"]["annotations"].update(
+        _shard_annotations(shard)
+    )
+
+def autoset_shard():
+    """
+    Returns a plugin that will automatically set the MSP
+    target resource's shard to an appropriate selection.
+        IMPORTANT: Shared MSP deployments of Horizon
+    WILL NOT BE PROPERLY IDENTIFIED AS SHARED MSP via is_shared_msp
+    due to a bug where Horizon sets their deployment context for
+    Shared MSP deploys to shared_msp=False.
+    Use autoset_shard_shared_msp instead in this case.
+    """
+    return compose_plugins(
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=autoset_shard_shared_msp(),
+        ),
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            # legacy dedicated MSP services are fixed to run on kubemaster
+            # for the time being
+            plugin=msp_shard("kubemaster"),
+        ),
+    )
+
+def autoset_shard_shared_msp():
+    """
+    Returns a plugin which will automatically set the MSP
+    target resource's shard based on Henson context in
+    Shared MSP only.
+    This should ONLY be called if we are already known to be
+    running in Shared MSP. Otherwise, utilize the
+    autoset_shard() plugin which conditionally checks the
+    Shared vs Dedicated state in the resource context.
+    """
+    return any_resource_plugin(_shard_from_henson)
+
+
+def _shard_from_henson(ctx, plugin, resource_def):
+    """
+    Set the MSP target resource's shard to the shard provided by henson. Henson
+    will factor in the deployment's cluster and env, load balancing
+    considerations, as well as any explicit user overwrites to provide
+    a shard that makes sense.
+    """
+    shard = get_target_shard(ctx)
+    resource_def["metadata"]["annotations"].update(
+        _shard_annotations(shard)
+    )
+
+
+def _shard_annotations(shard):
+    return {
+        MSP_CLUSTER_ANNOTATION: shard,
+        MSP_SHARD_ANNOTATION: shard,
+    }

@@ -1,0 +1,21 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for annotating which shard a pod will be deployed to.
+"""
+
+load("config/kubernetes/helpers/msp_shard.sky", "msp_shard", VIA_ANNOTATION = "MSP_CLUSTER_ANNOTATION")
+
+# TODO(dfradette): remove this whole file once all usage of `msp_cluster` is removed.
+
+MSP_CLUSTER_ANNOTATION = VIA_ANNOTATION
+
+def msp_cluster(name):
+    """
+    Specify the MSP shard that the pod will be deployed to. Will error if the specified
+    shard is not supported in the given context. Deprecate in favour of `msp_cluster`,
+    only remains temporarily for backwards compatibility.
+
+    Args:
+        name: The name of the MSP shard.
+    """
+    return msp_shard(name)

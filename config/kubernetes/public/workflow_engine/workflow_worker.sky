@@ -1,0 +1,470 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for creating and configuring Workflow engine workers to run on MSP.
+"""
+
+load("config/kubernetes/apps/deployment.sky", "deployment")
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/lifecycle.sky", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME", "grace_period")
+load("config/kubernetes/core/probe.sky", "command_probe", "probes")
+load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
+load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
+load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+
+# Can't be overriden because the canary is always one node.
+def deployment_strategy_canary_func(ctx):
+  return rolling_update_strategy(
+    ctx,
+    max_unavailable = 1,
+    max_surge = 1,
+  )
+
+def deployment_strategy_func(ctx):
+  return rolling_update_strategy(
+    ctx,
+    max_unavailable = 1,
+    max_surge = 1,
+  )
+
+def ruby_workflow_worker_shared_msp(
+        *,
+        name,
+        command,
+        namespace,
+        instance_type,
+        availability_tier = A400,
+        deployment_strategy_func = deployment_strategy_func,
+        workers_per_replica = 4,
+        replicas_func,
+        plugins_func = None,
+        startup_timeout,
+        drain_timeout = 300,
+        strict_packaging = True,
+        manage_workers = True,
+        separate_canary_by_name = False,
+        hack_kick_interval = None):
+    """
+    Create deployments for a Ruby Workflow Engine worker that runs on Shared MSP.
+
+    Args:
+        name: The service name for the pods in the deployments.
+        command: The path to your worker start script. Type should be a list of strings.
+        namespace: The Shared MSP namespace that your service uses.
+        instance_type: The instance type that your service should run on.
+        availability_tier: The availability tier of the instance on which the
+            pod should run. This defaults to A400 if not set.
+        deployment_strategy_func: A function which returns an strategy for the deployment.
+        replicas_func: A function which returns the number of replicas
+            (including a canary instance) when passed a deployment context. e.g.
+            if the function returns 3 then you will have 1 canary and 2 regular
+            instances. You must specify at least 2 replicas to ensure there is
+            no downtime when the workers are deployed.
+        plugins_func: A function which returns an array of skycfg plugins to add
+            to the deployment when passed a deployment context.
+        workers_per_replica: The number of Einhorn workers to run per replica of
+            the service. If not set this defaults to 4.
+        startup_timeout: The number of seconds to wait for the service to start
+            up. For rigorously packaged services we recommend 60 seconds and for
+            services which depend on the ball of mud we recommend 600 seconds
+            (10 minutes).
+        drain_timeout: The number of seconds a worker has to gracefully
+            drain work when the host is requested to shutdown. This period must
+            be between 10 seconds <-> 300 seconds (5 minutes). It is recommended
+            to keep this at the default, however you may tune this as required.
+        strict_packaging: Marks this worker as being strictly packaged. If a
+            worker is not strictly packaged then we apply some extra validations
+            to make sure that it's configured safely.
+        manage_workers: Enables periodic cycling of worker processes to protect from out-of-memory issues.
+            Disabling this is strongly discouraged, but may be necessary for activities which run a single execution
+            for a long amount of time (ex. 1h). If possible, try to refactor your activity to have shorter execution times,
+            as this will ensure a more reliable workflow.
+        separate_canary_by_name: This causes the canary pod to have a different
+            container name (e.g. workflow-work-foo-srv-canary) than the rest of
+            the replicas. This means that you can detect issues with ambient
+            health detectors that are specifically target the canary at the cost
+            of needing more complex search query to find all log lines in Splunk.
+        hack_kick_interval: How often to restart einhorn workers
+
+    Returns:
+        A struct with two members, canary and main. These are functions
+        which can be called in your service configuration entrypoints with
+        the deployment context. When called these functions return a
+        single-element array of deployments.
+    """
+
+    def _canary(ctx):
+        plugins = []
+        if plugins_func:
+            plugins = plugins_func(ctx)
+
+        return _service_shared_msp(
+            ctx,
+            plugins,
+            name = name,
+            command = command,
+            namespace = namespace,
+            instance_type = instance_type,
+            availability_tier = availability_tier,
+            deployment_strategy_func = deployment_strategy_canary_func,
+            workers_per_replica = workers_per_replica,
+            startup_timeout = startup_timeout,
+            drain_timeout = drain_timeout,
+            replicas = 1,
+            is_canary = True,
+            manage_workers = manage_workers,
+            separate_canary_by_name = separate_canary_by_name,
+            hack_kick_interval = hack_kick_interval,
+        )
+
+    def _main(ctx):
+        plugins = []
+        if plugins_func:
+            plugins = plugins_func(ctx)
+
+        if not strict_packaging:
+            memory_mib = aws_instance_size(instance_type.name).memory_mib
+            _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib)
+
+        replicas = replicas_func(ctx)
+        _validate_replicas(replicas)
+        _validate_drain_timeout(drain_timeout)
+
+        if availability_tier == A100:
+            fail("Workflow Engine does not currently support A100 workers due to the server currently only being A200. Additionally, the Orchestration team (as of Jan 13th 2022) doesn't recommend Shared MSP for A100 services yet. Both of these things may change in the future, but please come chat with us in #workflow-engine if you're interested in setting up A100 workers.")
+
+        return _service_shared_msp(
+            ctx,
+            plugins,
+            name = name,
+            command = command,
+            namespace = namespace,
+            instance_type = instance_type,
+            availability_tier = availability_tier,
+            deployment_strategy_func = deployment_strategy_func,
+            workers_per_replica = workers_per_replica,
+            startup_timeout = startup_timeout,
+            drain_timeout = drain_timeout,
+            replicas = replicas - 1,  # the canary counts for one
+            is_canary = False,
+            manage_workers = manage_workers,
+            separate_canary_by_name = separate_canary_by_name,
+            hack_kick_interval = hack_kick_interval,
+        )
+
+    return struct(
+        canary = _canary,
+        main = _main,
+    )
+
+def ruby_workflow_worker_dedicated_msp(
+        *,
+        name,
+        command,
+        host_type,
+        cpu,
+        memory,
+        workers_per_replica = 4,
+        deployment_strategy_func = deployment_strategy_func,
+        replicas_func,
+        plugins_func = None,
+        startup_timeout,
+        drain_timeout = 300,
+        separate_canary_by_name = False):
+    """
+    Create deployments for a Ruby Workflow Engine worker that runs on Dedicated MSP.
+
+    Args:
+        name: The service name for the pods in the deployments.
+        command: The path to your worker start script. Type should be a list of strings.
+        host_type: The host type that your service uses.
+        cpu: The number of CPU cores that one replica of your service should be
+            allocated.
+        memory: The amount of memory that one replica of your service should be
+            allocated.
+        deployment_strategy_func: A function which returns an strategy for the deployment.
+        replicas_func: A function which returns the number of replicas
+            (including a canary instance) when passed a deployment context. e.g.
+            if the function returns 3 then you will have 1 canary and 2 regular
+            instances. You must specify at least 2 replicas to ensure there is
+            no downtime when the workers are deployed.
+        plugins_func: A function which returns an array of skycfg plugins to add
+            to the deployment when passed a deployment context.
+        workers_per_replica: The number of Einhorn workers to run per replica of
+            the service. If not set this defaults to 4.
+        startup_timeout: The number of seconds to wait for the service to start
+            up. For rigorously packaged services we recommend 60 seconds and for
+            services which depend on the ball of mud we recommend 600 seconds
+            (10 minutes).
+        drain_timeout: The number of seconds a worker has to gracefully
+            drain work when the host is requested to shutdown. This period must
+            be between 10 seconds <-> 300 seconds (5 minutes). It is recommended
+            to keep this at the default, however you may tune this as required.
+        separate_canary_by_name: This causes the canary pod to have a different
+            container name (e.g. workflow-work-foo-srv-canary) than the rest of
+            the replicas. This means that you can detect issues with ambient
+            health detectors that are specifically target the canary at the cost
+            of needing more complex search query to find all log lines in Splunk.
+
+    Returns:
+        A struct with two members, canary and main. These are functions
+        which can be called in your service configuration entrypoints with
+        the deployment context. When called these functions return a
+        single-element array of deployments.
+    """
+
+    def _canary(ctx):
+        plugins = []
+        if plugins_func:
+            plugins = plugins_func(ctx)
+
+        return _service_dedicated_msp(
+            ctx,
+            plugins,
+            name = name,
+            command = command,
+            host_type = host_type,
+            cpu = cpu,
+            memory = memory,
+            deployment_strategy_func = deployment_strategy_canary_func,
+            workers_per_replica = workers_per_replica,
+            startup_timeout = startup_timeout,
+            drain_timeout = drain_timeout,
+            replicas = 1,
+            is_canary = True,
+            separate_canary_by_name = separate_canary_by_name,
+        )
+
+    def _main(ctx):
+        plugins = []
+        if plugins_func:
+            plugins = plugins_func(ctx)
+
+        replicas = replicas_func(ctx)
+        _validate_replicas(replicas)
+        _validate_drain_timeout(drain_timeout)
+
+        return _service_dedicated_msp(
+            ctx,
+            plugins,
+            name = name,
+            command = command,
+            host_type = host_type,
+            cpu = cpu,
+            memory = memory,
+            deployment_strategy_func = deployment_strategy_func,
+            workers_per_replica = workers_per_replica,
+            startup_timeout = startup_timeout,
+            drain_timeout = drain_timeout,
+            replicas = replicas - 1,  # the canary counts for one
+            is_canary = False,
+            separate_canary_by_name = separate_canary_by_name,
+        )
+
+    return struct(
+        canary = _canary,
+        main = _main,
+    )
+
+def _service_shared_msp(
+        ctx,
+        *plugins,
+        name,
+        command,
+        namespace,
+        instance_type,
+        availability_tier,
+        deployment_strategy_func,
+        workers_per_replica,
+        startup_timeout,
+        drain_timeout,
+        replicas,
+        is_canary,
+        manage_workers,
+        separate_canary_by_name,
+        hack_kick_interval = None):
+    envs = {}
+    file_to_wait_for = "/tmp/workflowworker-alive"
+    consul_name = name
+    container_name = name
+    drain_timeout = _compensate_drain_timeout(drain_timeout)
+
+    if is_canary:
+        name = name + "-canary"
+        if separate_canary_by_name:
+            container_name = name
+
+        envs["WORKER_CANARY"] = "true"
+        file_to_wait_for = "/tmp/workflowworker-canarycheck"
+
+    envs["WORKFLOW_ENGINE_WORKER"] = "true"
+
+    all_plugins = [
+        pay_server_pod(
+            ctx,
+            name = name,
+            container_name = container_name,
+            namespace = namespace,
+            instance_type = instance_type,
+            availability_tier = availability_tier,
+
+            # The --remote flag configures this worker to listen on the deployed
+            # task queue rather than the local one (used on devboxes).
+            command = command + ["--remote"],
+        ),
+        einhorn_service(
+            ctx,
+            # This port isn't actually used (see next comment).
+            port = 8080,
+            name = consul_name,
+            # Worker boxes poll the Temporal server and don't accept inbound
+            # traffic so this healthcheck is not used.
+            healthcheck = None,
+            workers = workers_per_replica,
+            signal_timeout = drain_timeout,
+            manage_workers = manage_workers,
+            hack_kick_interval = hack_kick_interval,
+        ),
+        container_env_vars(envs),
+        probes(
+            # Set up the startup probe to wait for the worker to start (to prevent
+            # claiming availability before a lot of Ruby code has been required) or wait
+            # for the canary to confirm that it is able to round-trip a workflow through
+            # the server back to itself.
+            startup = _startup_command_probe(ctx, startup_timeout = startup_timeout, path = file_to_wait_for),
+        ),
+        auto_secrets(),
+        grace_period(drain_timeout)
+    ]
+    all_plugins.extend(*plugins)
+
+    deploy = deployment(
+        ctx,
+        replicas = replicas,
+        strategy = deployment_strategy_func(ctx),
+        shared_msp = True,
+        *all_plugins
+    )
+    return [deploy]
+
+def _service_dedicated_msp(
+        ctx,
+        *plugins,
+        name,
+        command,
+        host_type,
+        cpu,
+        memory,
+        deployment_strategy_func,
+        workers_per_replica,
+        startup_timeout,
+        drain_timeout,
+        replicas,
+        is_canary,
+        separate_canary_by_name):
+    envs = {}
+    file_to_wait_for = "/tmp/workflowworker-alive"
+    container_name = name
+    consul_name = name
+    drain_timeout = _compensate_drain_timeout(drain_timeout)
+
+    if is_canary:
+        name = name + "-canary"
+        if separate_canary_by_name:
+            container_name = name
+
+        envs["WORKER_CANARY"] = "true"
+        file_to_wait_for = "/tmp/workflowworker-canarycheck"
+
+    all_plugins = [
+        pay_server_pod(
+            ctx,
+            name = name,
+            container_name = container_name,
+            host_type = host_type,
+            cpu = cpu,
+            memory = memory,
+
+            # The --remote flag configures this worker to listen on the deployed
+            # task queue rather than the local one (used on devboxes).
+            command = command + ["--remote"],
+        ),
+        einhorn_service(
+            ctx,
+            # This port isn't actually used (see next comment).
+            port = 8080,
+            name = consul_name,
+            # Worker boxes poll the Temporal server and don't accept inbound
+            # traffic so this healthcheck is not used.
+            healthcheck = None,
+            workers = workers_per_replica,
+            signal_timeout = drain_timeout,
+        ),
+        container_env_vars(envs),
+        probes(
+            # Set up the startup probe to wait for the worker to start (to prevent
+            # claiming availability before a lot of Ruby code has been required) or wait
+            # for the canary to confirm that it is able to round-trip a workflow through
+            # the server back to itself.
+            startup = _startup_command_probe(ctx, startup_timeout = startup_timeout, path = file_to_wait_for),
+        ),
+        auto_secrets(),
+        grace_period(drain_timeout),
+    ]
+    all_plugins.extend(*plugins)
+
+    deploy = deployment(
+        ctx,
+        replicas = replicas,
+        strategy = deployment_strategy_func(ctx),
+        shared_msp = False,
+        *all_plugins
+    )
+    return [deploy]
+
+def _startup_command_probe(ctx, *, startup_timeout, path):
+    # https://skycfg.corp.stripe.com/docs/config/kubernetes/core/probe.sky/probes
+    # https://skycfg.corp.stripe.com/docs/config/kubernetes/core/probe.sky/command_probe
+    # https://v1.23.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core
+    period = 10  # seconds
+    iterations = startup_timeout // period
+
+    return command_probe(
+        ctx,
+        command = ["/bin/bash", "-c", "test -f " + path],
+        # ...after 10 seconds...
+        initialDelaySeconds = period,
+        # ...check every 10 seconds...
+        periodSeconds = period,
+        # ...and give up after this many times. If this happens too many times
+        #   then the deployment will fail.
+        failureThreshold = iterations,
+    )
+
+def _validate_replicas(replicas):
+    if not replicas or replicas <= 1:
+        fail("Workers should be deployed with at least 2 replicas (%s replicas specified), to ensure no downtime when deploying workers." % (replicas))
+
+def _validate_drain_timeout(timeout):
+    if timeout < 10 or timeout > 300:
+       fail("The worker drain timeout (%s specified) must be set between 10 seconds and 300 seconds. If you require these limits to change, please reach out at #workflow-engine." % (timeout))
+
+def _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib):
+    if startup_timeout < 600:
+        fail("The worker service {name} is marked as having unpackaged code (strict_packaging=False) but has a short startup timeout ({startup_timeout}s). We've seen unpackaged code take up to 10 minutes (600 seconds) to start up during a deploy. Please increase your startup_timeout to at least 600 seconds to avoid deployment flakiness.".format(name=name, startup_timeout=startup_timeout))
+
+    UNPACKAGED_PAY_SERVER_MEMORY_MIB = 4096
+    expected_memory_mib = workers_per_replica * UNPACKAGED_PAY_SERVER_MEMORY_MIB
+    if expected_memory_mib > memory_mib:
+        fail("The worker service {name} is marked as having unpackaged code (strict_packaging=False) but the instance size that it's using doesn't have enough memory to run the number of unpackaged workers that are currently configured. An unpackaged pay-server worker uses about {payserver_memory}GB of RAM and you have {workers_per_replica} workers on your host (workers_per_replica) which means that you're estimated to use {expected_memory}GB of RAM but your host only has {memory}GB of RAM. You can either decrease the number of workers per replica or increase the size of your host. An r5.xlarge (instance_type = 'r5_xlarge') often works better.".format(name=name, payserver_memory=(UNPACKAGED_PAY_SERVER_MEMORY_MIB//1024), workers_per_replica=workers_per_replica, expected_memory=(expected_memory_mib//1024), memory=(memory_mib//1024)))
+
+def _compensate_drain_timeout(timeout):
+    # When the drain period starts, the service will not be notified of the drain
+    # until envoy has the opportunity to propagate the shutdown status, which takes
+    # approximately 12s.
+    #
+    # So if we want the worker to have 300s of drain time, we will need to add 12s to
+    # the configured timeout. This gives 12s for the envoy healthcheck to propagate, and
+    # then gives us 300s to drain our service.
+    return timeout + DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME

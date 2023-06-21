@@ -1,0 +1,335 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for applying metadata to Kubernetes resources.
+"""
+
+load("config/kubernetes/helpers/tags.sky", "default_annotations", "default_labels", "service_selectors")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_function_name", "get_henson_git_commit", "get_name", "get_owner")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin", "cronjob_plugin", "daemonset_plugin", "deployment_plugin", "job_plugin", "pod_plugin", "rbac_plugin", "crd_plugin", "statefulset_plugin", "webhook_configuration_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "ObjectMeta", "LabelSelector")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def metadata(namespace, service_name = None, owner = None, selectors_override = None):
+    """
+    Set up standard metadata for a Kubernetes resource.
+
+    This is applied automatically when using the `stripe_pod` plugin or a repo-specific
+    variant like `pay_server_pod`.
+
+    Args:
+        namespace: The Kubernetes namespace to create the resource in. This must match
+            the host type where the workload's pods will schedule.
+        service_name: The name of the Henson service for the workload. Defaults to pulling
+            the name from the Henson context.
+        owner: The team responsible for the service. Defaults to pulling this information
+            from the Henson context.
+        selectors_override: Overrides the default labels used to identify which pods belong
+            to a resource. This is here as an escape hatch: don't set it unless you know
+            what you're doing.
+
+    Returns:
+        A plugin to set the metadata for a resource.
+    """
+    if selectors_override != None:
+        print("The selectors_override param of metadata() is deprecated: use the dedicated selectors_override() plugin instead.")
+    return compose_plugins(
+        deployment_plugin(
+            _update_deployment,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+        cronjob_plugin(
+            _update_cronjob,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = None,  # selectors don't make sense for cronjobs
+        ),
+        daemonset_plugin(
+            _update_daemonset,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+        job_plugin(
+            _update_job,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = None,  # selectors don't make sense for batch jobs
+        ),
+        statefulset_plugin(
+            _update_statefulset,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+        rbac_plugin(
+            _update_rbac,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+        iam_role(prefix = namespace),
+        crd_plugin(
+            _update_crd,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+        webhook_configuration_plugin(
+            _update_webhook,
+            namespace = namespace,
+            service_name = service_name,
+            owner = owner,
+            selectors = selectors_override,
+        ),
+    )
+
+def labels(dict):
+    """
+    Apply additional labels to a Kubernetes resource.
+
+    Args:
+        dict: A dictionary of labels to add.
+
+    Returns:
+        A plugin that adds the labels to a resource.
+    """
+    return any_resource_plugin(
+        _add_labels,
+        labels = dict,
+    )
+
+def annotations(dict):
+    """
+    Apply additional annotations to a Kubernetes resource.
+
+    Args:
+        dict: A dictionary of annotations to add.
+
+    Returns:
+        A plugin that adds the annotations to a resource.
+    """
+    return any_resource_plugin(
+        _add_annotations,
+        annotations = dict,
+    )
+
+def iam_role(prefix, host_credentials = True):
+    """
+    Set the IAM role that pod will use.
+
+    By default, pods will be set up to use the IAM role for the host type that they
+    schedule on.
+
+    This plugin just sets metadata so other plugins and infrastructure reference the
+    right IAM role, but it does not on its own ensure that the pod gets credentials
+    for that role. For this reason, this plugin should not be used directly. Instead,
+    it should be a component of another plugin like `cron_iam` that sets up the pod
+    to actually get the credentials for the desired role.
+
+    Args:
+        prefix: The prefix of the IAM role, excluding the cluster and environment. For
+            example, for the `orchestration.kubecron.northwest.prod` role, the prefix
+            is `orchestration.kubecron`.
+        host_credentials: Whether access to the role is provided by the host EC2
+            instance's AWS credentials. If False, an annotation is added to the pod so
+            other infrastructure can provide credentials for the desired role. Defaults
+            to True.
+
+    Returns:
+        A plugin that sets the IAM role for a resource.
+    """
+    return compose_plugins(
+        any_resource_plugin(
+            _iam_role_resource,
+            prefix = prefix,
+        ),
+        pod_plugin(
+            _iam_role_pod,
+            host_credentials = host_credentials,
+        ),
+    )
+
+def name_prefix(prefix):
+    return any_resource_plugin(
+        _set_name_prefix,
+        prefix = prefix,
+    )
+
+def override_selectors(selector_labels):
+    """
+    Overrides the default labels used to identify which pods belong to a
+    resource. This is here as an escape hatch: don't set it unless you know what
+    you're doing.
+    """
+    return compose_plugins(
+        deployment_plugin(
+            _override_selectors,
+            selector_labels = selector_labels,
+        ),
+        daemonset_plugin(
+            _override_selectors,
+            selector_labels = selector_labels,
+        ),
+        statefulset_plugin(
+            _override_selectors,
+            selector_labels = selector_labels,
+        ),
+    )
+
+def get_availability_tier_from_metadata(metadata):
+    annotations = metadata.get("annotations", None)
+    if annotations != None:
+        return annotations.get("stripe.io/availability-tier", "A400")
+    return "A400"
+
+def _override_selectors(ctx, plugin, resource_def):
+    resource_def["metadata"]["selectors"] = plugin.selector_labels
+
+def _update_deployment(ctx, plugin, deployment_def):
+    _update_resource(ctx, plugin, deployment_def, is_cronjob = False)
+
+def _update_daemonset(ctx, plugin, daemonset_def):
+    _update_resource(ctx, plugin, daemonset_def, is_cronjob = False)
+
+def _update_statefulset(ctx, plugin, statefulset_def):
+    _update_resource(ctx, plugin, statefulset_def, is_cronjob = False)
+
+def _update_job(ctx, plugin, job_def):
+    _update_resource(ctx, plugin, job_def, is_cronjob = False)
+
+def _update_cronjob(ctx, plugin, cronjob_def):
+    _update_resource(ctx, plugin, cronjob_def, is_cronjob = True)
+
+def _update_rbac(ctx, plugin, rbac_def):
+    _update_resource(ctx, plugin, rbac_def, is_cronjob = False)
+
+def _update_crd(ctx, plugin, crd_def):
+    _update_resource(ctx, plugin, crd_def, is_cronjob = False)
+
+def _update_webhook(ctx, plugin, webhook_def):
+    _update_resource(ctx, plugin, webhook_def, is_cronjob = False)
+
+def _update_resource(ctx, plugin, resource_def, is_cronjob):
+    name = plugin.service_name
+    if not name:
+        name = get_name(ctx)
+
+    blue_green_color = get_blue_green_color(ctx)
+    function_name = get_function_name(ctx)
+
+    owner = plugin.owner
+    if not owner:
+        owner = get_owner(ctx)
+
+    if "metadata" in resource_def and len(resource_def["metadata"]) > 0:
+        print("WARNING: multiple calls to metadata(): only the last call will take effect")
+
+    resource_def["metadata"] = dict(
+        name = name,
+        owner = owner,
+        namespace = plugin.namespace,
+        labels = {},
+        annotations = {},
+        function_name = function_name,
+        blue_green_color = blue_green_color,
+        selectors = plugin.selectors,
+        is_cronjob = is_cronjob,
+        henson_git_commit = get_henson_git_commit(ctx),
+        options = {
+            "name_prefix": None,
+        },
+    )
+
+def _add_labels(ctx, plugin, resource_def):
+    resource_def["metadata"]["labels"].update(plugin.labels)
+
+def _add_annotations(ctx, plugin, resource_def):
+    resource_def["metadata"]["annotations"].update(plugin.annotations)
+
+def _set_name_prefix(ctx, plugin, resource_def):
+    resource_def["metadata"]["options"]["name_prefix"] = plugin.prefix
+
+def render_metadata(ctx, metadata, extra_labels = {}, extra_annotations = {}):
+    labels = default_labels(
+        ctx,
+        metadata.name,
+        metadata.owner,
+        function_name = metadata.function_name,
+        blue_green_color = metadata.blue_green_color,
+    )
+    labels.update(metadata.labels)
+    labels.update(extra_labels)
+
+    labels["stripe.io/henson-git-commit"] = metadata.henson_git_commit
+
+    if metadata.is_cronjob:
+        labels["stripe.io/owner"] = metadata.owner  # owner is deprecated according to go/kubernetes-labels, but is used for the ticketmaker cron failure alerting pipeline as of 08/17/2020
+        labels["stripe.io/job"] = metadata.name
+
+    name = metadata.name
+    if metadata.blue_green_color != None:
+        name += "-{}".format(metadata.blue_green_color)
+
+    annotations = default_annotations(ctx, metadata.name, metadata.owner)
+    annotations.update(metadata.annotations)
+    annotations.update(extra_annotations)
+
+    if get_render_yaml(ctx):
+        # add annotation and label to display whether the object was rendered in yaml
+        annotations.update({"stripe.io/render-yaml": "enabled"})
+        labels.update({"stripe.io/render-yaml": "enabled"})
+
+    obj_meta = ObjectMeta(
+        ctx,
+        namespace = metadata.namespace,
+        labels = labels,
+        annotations = annotations,
+    )
+
+    name_prefix = metadata.options["name_prefix"]
+    if name_prefix == None:
+        if get_render_yaml(ctx):
+            obj_meta["name"] = name
+        else:
+            obj_meta.name = name
+    else:
+        if get_render_yaml(ctx):
+            obj_meta["generateName"] = name_prefix
+        else:
+            obj_meta.generateName = name_prefix
+
+    return obj_meta
+
+def _iam_role_resource(ctx, plugin, resource_def):
+    resource_def["iam_role"] = _cluster_iam_role(ctx, plugin.prefix)
+
+def _iam_role_pod(ctx, plugin, pod_def):
+    pod_def["include_iam_annotation"] = not plugin.host_credentials
+
+def _cluster_iam_role(ctx, prefix):
+    return "{}.{}.{}".format(
+        prefix,
+        ctx.vars["stripe.cluster"],
+        ctx.vars["stripe.environment"],
+    )
+
+def render_selector(ctx, metadata):
+    # Use override for selector labels if provided
+    labels = metadata.selectors
+    if labels == None:
+        labels = service_selectors(
+            metadata.name,
+            blue_green_color = metadata.blue_green_color,
+        )
+
+    return LabelSelector(ctx, matchLabels = labels)

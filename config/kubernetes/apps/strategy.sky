@@ -1,0 +1,151 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for controlling the rollout strategy of Kubernetes deployments.
+
+See our [Rollouts](http://go/sky/rollouts) topic page for more information about
+how Kubernetes rollouts work and how to configure them.
+"""
+
+load("config/kubernetes/helpers/proto_or_yaml.sky", "DeploymentStrategy", "DaemonSetUpdateStrategy", "RollingUpdateDeployment", "StatefulSetUpdateStrategy", "RollingUpdateStatefulSetStrategy", "RollingUpdateDaemonSet", "IntOrString")
+
+def deployment_strategy(ctx, strategy_type):
+    return DeploymentStrategy(ctx, type = strategy_type)
+
+def daemonset_strategy(ctx, strategy_type):
+    return DaemonSetUpdateStrategy(ctx, type = strategy_type)
+
+def rolling_update_strategy(
+        ctx,
+        max_unavailable = None,
+        max_surge = None):
+    """
+    Create a strategy for a `deployment` that performs rolling updates of pods.
+
+    A rolling update strategy tries to manage the availability of a service
+    while rolling out new pods when the configuration changes.
+
+    See our [Rollouts](http://go/sky/rollouts) topic page to learn more about
+    how rolling updates work and how to configure them.
+
+    Args:
+        max_unavailable: How many fewer replicas than the desired number there
+            can be while performing a rollout. Can be specified as an integer
+            (for a fixed number of pods) or as a percentage string (e.g. "25%").
+        max_surge: How many more replicas than the desired number there can be
+            while performing a rollout. Can be specified as an integer
+            (for a fixed number of pods) or as a percentage string (e.g. "25%").
+
+    Returns:
+        A [DeploymentStrategy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deploymentstrategy-v1-apps)
+        that can be used as the `strategy` parameter for a `deployment` or the
+        `deployment_options` plugin.
+    """
+    kwargs = {}
+
+    if type(max_unavailable) == "string":
+        kwargs["maxUnavailable"] = IntOrString(ctx, strVal = max_unavailable)
+    elif type(max_unavailable) == "int":
+        kwargs["maxUnavailable"] = IntOrString(ctx, intVal = max_unavailable)
+
+    if type(max_surge) == "string":
+        kwargs["maxSurge"] = IntOrString(ctx, strVal = max_surge)
+    elif type(max_surge) == "int":
+        kwargs["maxSurge"] = IntOrString(ctx, intVal = max_surge)
+
+    return DeploymentStrategy(
+        ctx,
+        type = "RollingUpdate",
+        rollingUpdate = RollingUpdateDeployment(ctx, **kwargs),
+    )
+
+def rolling_update_daemonset_strategy(ctx, max_unavailable = None):
+    """
+    Create a strategy for a `daemonset` that performs rolling updates of pods.
+
+    Args:
+        max_unavailable: The maximum number of DaemonSet pods that can be
+            unavailable during the update. Value can be an absolute number
+            (ex: 5) or a percentage of total number of DaemonSet pods at the
+            start of the update (ex: 10%). Absolute number is calculated from
+            percentage by rounding up. This cannot be 0. Default value is 1.
+
+    Returns:
+        A [DaemonSetUpdateStrategy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#daemonsetupdatestrategy-v1-apps)
+        that can be used as the `updateStrategy` parameter for a `daemonset` or
+        the `daemonset_options` plugin.
+    """
+    kwargs = {}
+
+    if type(max_unavailable) == "string":
+        kwargs["maxUnavailable"] = IntOrString(ctx, strVal = max_unavailable)
+    elif type(max_unavailable) == "int":
+        kwargs["maxUnavailable"] = IntOrString(ctx, intVal = max_unavailable)
+
+    return DaemonSetUpdateStrategy(
+        ctx,
+        type = "RollingUpdate",
+        rollingUpdate = RollingUpdateDaemonSet(ctx, **kwargs),
+    )
+
+def rolling_update_statefulset_strategy(ctx, partition = 0):
+    """
+    Creates an update strategy for a `statefulset` that performs rolling updates of pods.
+
+    When an update occurs, pods are replaced one at a time from highest to lowest ordinal
+    number, stopping after `partition`.
+
+    Args:
+        partition: The lowest (inclusive) numbered pod that will be replaced during an
+            update. Any pods with ordinal number lower than the partition will not be
+            updated.
+
+    Returns:
+        A [StatefulSetUpdateStrategy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#statefulsetupdatestrategy-v1-apps)
+        that can be used as the `updateStrategy` parameter for a `statefulset` or the
+        `statefulset_options` plugin.
+    """
+    return StatefulSetUpdateStrategy(
+        ctx,
+        type = "RollingUpdate",
+        rollingUpdate = RollingUpdateStatefulSetStrategy(
+            ctx,
+            partition = partition,
+        )
+    )
+
+def blue_green_deployment_strategy_shared_msp(ctx):
+    """
+    Creates a default deployment strategy to use for shared msp blue-green deployment.
+
+    This strategy will be used automatically when your service is deployed using blue-green deployments.
+
+    Returns:
+        A [DeploymentStrategy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deploymentstrategy-v1-apps)
+        that can be used as the `strategy` parameter for a `deployment` or the
+        `deployment_options` plugin.
+    """
+    return rolling_update_strategy(
+        ctx,
+        max_unavailable = "0%",
+        max_surge = "100%",
+    )
+
+def blue_green_deployment_strategy_dedicated_msp(ctx):
+    """
+    Creates a default deployment strategy to use for blue-green deployment.
+    Unlike shared msp blue/green deployments, this uses an update strategy that
+    does not assume that there's any extra capacity available for the service
+    to use.
+
+    This strategy will be used automatically when your service is deployed using blue-green deployments.
+
+    Returns:
+        A [DeploymentStrategy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#deploymentstrategy-v1-apps)
+        that can be used as the `strategy` parameter for a `deployment` or the
+        `deployment_options` plugin.
+    """
+    return rolling_update_strategy(
+        ctx,
+        max_unavailable = "100%",
+        max_surge = "100%",
+    )

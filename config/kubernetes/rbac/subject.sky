@@ -1,0 +1,39 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of Subject message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L182-L200
+"""
+
+load("config/kubernetes/rbac/rbacschema.sky", "rbac")
+
+def subject(ctx, subject_mapping):
+    obj_subject = rbac.Subject()
+    subject_mapping = struct(**subject_mapping)
+
+    if hasattr(subject_mapping, "kind"):
+        if type(subject_mapping.kind) == "string":
+            obj_subject.kind = subject_mapping.kind
+        else:
+            fail("Subject kind field called with non string value")
+
+    if hasattr(subject_mapping, "apiGroup"):
+        if type(subject_mapping.apiGroup) == "string":
+            obj_subject.apiGroup = subject_mapping.apiGroup
+        else:
+            fail("Subject apiGroup field called with non string value")
+
+    if hasattr(subject_mapping, "name"):
+        if type(subject_mapping.name) == "string":
+            obj_subject.name = subject_mapping.name
+        else:
+            fail("Subject name field called with non string value")
+
+    if hasattr(subject_mapping, "namespace"):
+        if type(subject_mapping.namespace) == "string":
+            if subject_mapping.namespace and (obj_subject.kind == "User" or obj_subject.kind == "Group"):
+                fail("non-namespace object kind with non-empty namespace value")
+            obj_subject.namespace = subject_mapping.namespace
+        else:
+            fail("Subject namespace field called with non string value")
+
+    return obj_subject

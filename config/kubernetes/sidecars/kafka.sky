@@ -1,0 +1,102 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/volume.sky", "add_volume_mount", "host_volume", "pod_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/helpers/security.sky", "mount_credentials_proxy", "use_credentials_proxy")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+kafka_credentials_container_name = "kafka-init"
+sidecar_main = [
+    "java",
+    "-Dlog4j2.formatMsgNoLookups=true",
+    "-cp", "/pay/kafka-sidecar/kafka-tools-sidecar_deploy.jar",
+    "com.stripe.kafkatools.sidecar.Main",
+]
+
+def kafka_credentials(
+    container_name = None,
+    output_path = "/pay/kafka/client-ssl",
+    output_owner = "kubernetes-pod",
+    output_group = "kubernetes-pod",
+    machine_cas_path = "/etc/ssl/certs/stripe-cas/machine-cas.pem",
+    include_pem = False, # whether to include PEM certificate, for non-JVM services
+):
+    sidecar_args = [
+        "--output-path", output_path,
+        "--output-owner", output_owner,
+        "--output-group", output_group,
+        "--machine-cas-path", machine_cas_path,
+    ]
+    if include_pem:
+        sidecar_args.append('--include-pem')
+    return _kafka_sidecar(
+        container_name = container_name,
+        credentials_volume_path = output_path,
+        machine_cas_path = machine_cas_path,
+        sidecar_args = sidecar_args,
+    )
+
+def _kafka_sidecar(
+    container_name = None,
+    credentials_volume_path = None,
+    machine_cas_path = None,
+    sidecar_args = []
+):
+    def _mount_kafka_credentials(container_name, read_only):
+        return volume_mount(
+            path = credentials_volume_path,
+            container_name = container_name,
+            read_only = read_only,
+        )
+
+    def _render_kafka_credentials(ctx, container_def, pod):
+        container = struct(**container_def)
+        fallback = image(
+            ctx,
+            name = "stripe/zoolander/kafka-sidecar",
+            label = "sha256:886114f1fabf23e3e91f49a67f05cec67157f756a924c3d6d6c14dc6daaf99e7",
+            env = "prod",
+        )
+        volume_mounts = [
+            mount_credentials_proxy(),
+            volume_mount(machine_cas_path),
+            _mount_kafka_credentials(kafka_credentials_container_name, read_only = False),
+        ]
+        return Container(
+            ctx,
+            name = container.name,
+            image = sidecar_image(ctx, name = "kafka-sidecar", fallback = fallback),
+            command = sidecar_main + sidecar_args,
+            env = default_env_vars(ctx),
+            volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],
+            resources = resource_requirements(ctx),
+        )
+
+    def _update_pod(ctx, plugin, pod_def):
+        if kafka_credentials_container_name in pod_def:
+            fail("there should only be one kafka sidecar")
+
+        sidecar = {
+            "render": _render_kafka_credentials,
+            "name": kafka_credentials_container_name,
+            "sidecar_service": "kafka-credentials-sidecar",
+        }
+        add_volume_mount(
+            sidecar,
+            path = credentials_volume_path,
+            read_only = False,
+        )
+        pod_def[kafka_credentials_container_name] = sidecar
+        pod_def["init_containers"].append(sidecar)
+
+
+    return compose_plugins(
+        use_credentials_proxy(),
+        host_volume(machine_cas_path, type = "File"),
+        pod_volume(path = credentials_volume_path, reason = "Destination for kafka credentials."),
+        _mount_kafka_credentials(container_name, read_only = True),
+        pod_plugin(_update_pod, container_name = container_name),
+    )

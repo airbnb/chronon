@@ -1,0 +1,197 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/apps/deployment.sky", "deployment", "deployment_options")
+load("config/kubernetes/core/container.sky", "container_port")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
+load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/sidecars/consul.sky", "consul_service")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+
+load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
+load("config/kubernetes/async-processing/monster/util.sky", "format_isolation_group", "generate_consul_name", "get_jmx_java_options", "get_monster_env_cmd_arguments", "get_worker_envoy_address_from_consul", "monster_deployment_labels")
+load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_sidecar")
+
+
+def generate_workers_per_shard(config):
+    """
+    Tuning this down to reduce database load at the expense of redundancy. Acceptable tradeoff for the
+    latency insensitive host sets, more info:
+    https://confluence.corp.stripe.com/display/STREAMING/Feeder+design
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--workers-per-shard"
+
+    if ig in ["general", "model-ingestion", "sigma", "usersec"]:
+        return [arg_name, "1"]
+    else:
+        return []
+
+
+def generate_max_connection_pool_size(config):
+    """
+    This is the maximum size of the connection pool for Feeder. Default is 1024.
+    Reducing this to prevent a Feeder host from overwhelming Mongo.
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--mongo-connections"
+
+    return [arg_name, "300"]
+
+
+def generate_fqe_lock_preemption_s(config):
+    """
+    This is the time feeder leases an FQE for consumption before assuming consumption failed and trying again.
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--fqe-lock-preemption-s"
+
+    if ig == "general":
+        return [arg_name, "1200"]
+    elif ig in ["high_priority_webhooks", "webhooks"]:
+        # Webhook consumers time out at 45s
+        return [arg_name, "90"]
+    elif ig in ["payouts", "usersec"]:
+        # Max consumer timeout is 300 seconds, adding 60 seconds to account for any delay between acquiring the FQE
+        # and the consumer processing the FQE. Actual value chosen per FQE is jittered between 1-2x this value.
+        return [arg_name, "360"]
+    elif ig == "sigma":
+        return [arg_name, "600"]
+    else:
+        return []
+
+
+def generate_max_poll_sleep_ms(config):
+    """
+    Cap the maximum interval between attempts to poll a shard for work much lower
+    than the default, because we want to optimize for latency at the expense of
+    database load.
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--max-poll-sleep-ms"
+
+    if ig == "high_priority_webhooks":
+        return [arg_name, "100"]
+    elif ig == "usersec":
+        return [arg_name, "500"]
+    else:
+        return []
+
+
+def generate_max_restart_downtime_ms(config):
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--max-restart-downtime-ms"
+
+    if ig == "high_priority_webhooks":
+        # For high priority webhooks, we want to err on the side of allowing "too many"
+        # concurrent requests rather than accepting downtime during restart
+        return [arg_name, "500"]
+    else:
+        return []
+
+
+def generate_feeder_consul_poll_ms(config):
+    """
+    Maximum amount of time we will wait before polling for a new task
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+    arg_name = "--feeder-consul-poll-ms"
+
+    if ig == "sigma":
+        return [arg_name, "30000"]
+    else:
+        return []
+
+
+def monster_feeder_deployment(ctx, config):
+    """Generates a Feeder deployment for a specific host_set (isolation group)
+
+    Args:
+        ctx: The skycfg context variable, see http://go/disky
+        config: shared metadata data structure provided by config.sky
+
+    Returns:
+        A deployment representing a Feeder service with the passed-in
+        configuration applied
+
+    """
+    ig = format_isolation_group(config.monster_isolation_group)
+
+    consul_service_name = generate_consul_name(ig, config.monster_service)
+    host_type = "monsterfeeder"
+    mongo_address = "127.0.0.1:10087"
+    port = 8080
+    jmx_port = 8086
+    jvm_heap_max_mb = int(config.raw_memory_mb * 0.9)
+
+    runtime_args = [
+        ["./src/scala/com/stripe/monster/feeder/main"],
+        ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(ig, "consume-workers"))],
+        ["--consul-service-name", consul_service_name],
+        ["--config-addr", get_worker_envoy_address_from_consul(generate_consul_name(ig, "config-workers"))],
+        ["--mongo-addr", mongo_address],
+        generate_workers_per_shard(config),
+        generate_fqe_lock_preemption_s(config),
+        generate_max_poll_sleep_ms(config),
+        generate_max_restart_downtime_ms(config),
+        generate_feeder_consul_poll_ms(config),
+        generate_max_poll_sleep_ms(config),
+        generate_max_connection_pool_size(config),
+        get_monster_env_cmd_arguments(ctx, config.monster_isolation_group, host_type),
+    ]
+
+    deploy = deployment(
+        ctx,
+        stripe_pod(
+            ctx,
+            name = consul_service_name,
+            instance_type = config.aws_instance_size,
+            availability_tier = get_msp_availability_tier(config.monster_availability_tier),
+            namespace = host_type,
+            container_name = "monster-feeder",
+            image = image(ctx, artifact = "monster-feeder-image"),
+            command = [el for arg in runtime_args for el in arg],
+        ),
+        container_env_vars(
+            vars = {
+                "JAVA_OPTS": " ".join([
+                    "-XX:+ExitOnOutOfMemoryError",
+                    "-XX:+UseParallelGC",
+                    "-Xmx{}m".format(jvm_heap_max_mb),
+                    "-Djava.io.tmpdir=/pay/tmp",
+                    "-Djava.util.logging.config.file=/src/scala/com/stripe/monster/feeder/logging.properties",
+                ] + get_jmx_java_options(jmx_port)),
+            },
+        ),
+        container_port(jmx_port),
+        add_jmxfetch_sidecar(ctx, "monster-feeder", jmx_port),
+        monster_deployment_labels(config),
+        # Generic healthcheck for deployment control
+        healthchecked_service(
+            ctx,
+            port = port,
+            name = "monster-feeder",
+            # Feeder initiates outbound requests rather than receiving inbound requests
+            # The relevant timeout is set in its shutdown setttings at https://git.corp.stripe.com/stripe-internal/zoolander/blob/master/src/scala/com/stripe/monster/feeder/Main.scala#L133
+            # To avoid confusion, this timeout is set to match that one
+            # Context: https://paper.dropbox.com/doc/Investigation-Dropped-FQEs--BmjR2ZtcRz5y8Ti6xV39Dxv6Ag-PMxGFUlHgby3fudTy0pwy
+            request_drain_grace_period_seconds = 360,
+        ),
+        consul_service(port = port, name = consul_service_name),
+        add_security_groups("monsterfeeder"),
+        auto_secrets(),
+        config_srv_sidecar(ctx),
+        networking_config(mproxy_tier = "monster", global_ratelimit = global_ratelimit(enable=True)),
+        # We limit how many previous revisions of ReplicaSet's we keep around to limit
+        # the amount of metadata the k8s control plane has to serve up for Monster
+        # See: https://jira.corp.stripe.com/browse/RUN_ORCH-11446, http://go/ir/gray-fuse, http://go/ir/whim-tangent
+        # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
+        deployment_options(revisionHistoryLimit = 3),
+        replicas = config.replicas,
+        strategy = config.strategy,
+        shared_msp = True,
+    )
+    return deploy

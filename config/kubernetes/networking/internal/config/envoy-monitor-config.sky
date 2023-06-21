@@ -1,0 +1,23 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+[Service Networking Internal] Default schema and config value generation rules
+for `envoy-monitor` sidecar in Shared MSP. Config values are computed from
+deploy-time context of the current workload and covers:
+- commandline arguments for `envoy-monitor`
+
+Service owners may override default values by calling the `networking_config`.
+"""
+
+load(
+    "config/kubernetes/networking/internal/config/override.sky",
+    "populate_config",
+)
+
+def _default_cli_args():
+    return {
+        "envoy_scrape_histogram_metrics": False,
+    }
+
+def generate_monitor_cli_args(user_overrides):
+    cfg = _default_cli_args()
+    return populate_config(cfg, user_overrides, "_update_envoy_monitor_cli_args")

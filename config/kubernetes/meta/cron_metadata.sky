@@ -1,0 +1,62 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugin for applying Stripe-specific metadata to crons.
+"""
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin")
+
+CRON_TIERS = ["critical-latency-sensitive", "critical", "standard", "low"]
+CRITICAL_CRON_TIERS = ["critical-latency-sensitive", "critical"]
+def _check_cron_metadata(name, cron_tier, description, runbook_url):
+    # Existing crons without tiers specified will continue to function without metadata.
+    if not cron_tier:
+        return
+
+    if cron_tier not in CRON_TIERS:
+        fail("Invalid cron_tier for %s: %s (valid options: %s)" % (name, cron_tier, ", ".join(CRON_TIERS)))
+
+    if not description:
+        fail("Description is required for %s with %s cron_tier" % (name, cron_tier))
+
+    if cron_tier in CRITICAL_CRON_TIERS:
+        if not runbook_url:
+            fail("Runbook URL is required for %s with %s cron_tier" % (name, cron_tier))
+
+
+def cron_metadata(*, cron_tier=None, description=None, runbook_url=None):
+    """
+    Configures Stripe cron metadata.
+
+
+    Args:
+        cron_tier: The name of the Stripe Cron tier. See http://go/cron-tiers
+        description: A short description of the cron's purpose.
+        runbook_url: A URL to a runbook for the cron.
+
+    Returns:
+        A plugin to set the Stripe cron metadata as labels and annotations.
+    """
+    return any_resource_plugin(
+        _add_cron_metadata,
+        cron_tier = cron_tier,
+        description = description,
+        runbook_url = runbook_url,
+    )
+
+def _add_cron_metadata(ctx, plugin, resource_def):
+    _check_cron_metadata(resource_def["metadata"]["name"], plugin.cron_tier, plugin.description, plugin.runbook_url)
+
+    if plugin.cron_tier:
+        resource_def["metadata"]["labels"].update({
+            "stripe.io/cron-tier": plugin.cron_tier
+        })
+        resource_def["metadata"]["annotations"].update({
+            "stripe.io/cron-tier": plugin.cron_tier
+        })
+    if plugin.description:
+        resource_def["metadata"]["annotations"].update({
+            "stripe.io/description": plugin.description
+        })
+    if plugin.runbook_url:
+        resource_def["metadata"]["annotations"].update({
+            "stripe.io/runbook-url": plugin.runbook_url
+        })

@@ -1,0 +1,47 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/networking/internal/common.sky", "POD_NETWORKING_HOST_VOLUME_PATH")
+load(
+    "config/kubernetes/core/volume.sky",
+    "mount_host_volume",
+    "mount_pod_volume",
+    "volume_mount",
+)
+
+_stripe_cas_path = "/etc/ssl/certs/stripe-cas"
+def host_mount_stripe_cas(container_name):
+    return mount_host_volume(
+        _stripe_cas_path,
+        container_name = container_name,
+        mount_args = { "read_only": True },
+        volume_args = {
+            "reason": "Used by per-pod SN stack as validation context for mTLS identities over the network.",
+            "type": "Directory"
+        },
+    )
+
+def pod_mount(container_name, path, read_only=False):
+    return mount_pod_volume(path, container_name = container_name, mount_args = {"read_only": read_only})
+
+# NB(xyu): The pod containers run as user `kubernetes-pod`, and since subpaths
+# auto-created for a host volume of type `DirectoryOrCreate` will have the same
+# ownership as kubelet (e.g. root:root and mode=0755), we cannot safely rely on
+# `volume_mount(subPathExpr=POD_NETWORKING_BASEDIR)` to simplify and narrow the
+# volume mount each container requires. Instead, our contract is broad for now:
+# 1) containers mount POD_NETWORKING_HOST_VOLUME_PATH to send extra logs to splunk
+# 2) `networking` plugin adds an init container to create POD_NETWORKING_BASEDIR
+#    (and container-specific subdirs) within the host volume.
+# 3) containers write logs to per-pod subpaths (which are expected to exist)
+#
+# Implication: every container and pod can list and access all access logs that
+# still live in POD_NETWORKING_HOST_VOLUME_PATH
+#   e.g. in single-tenant MSP: past pods that had been scheduled onto the worker
+#   e.g. in multi-tenant MSP: any pods past or currently scheduled to the worker
+#
+# The long-term fix for this is to log-ship to an external service so we are
+# less reliant on punching holes through the filesystem.
+def mount_splunk_forwarded_basedir(container_name):
+    return volume_mount(
+        POD_NETWORKING_HOST_VOLUME_PATH,
+        container_name = container_name,
+        read_only = False,
+    )

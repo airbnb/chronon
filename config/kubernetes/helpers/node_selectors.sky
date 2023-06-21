@@ -1,0 +1,53 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for managing the pod's node selectors.
+"""
+
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+
+SHARED_MSP_HOST_TYPE = "mspworker"
+
+def host_type(name):
+    """
+    Specify the host-type to restrict this deploy to.
+
+    Args:
+        name: The name of the host type this deploy will be limited to.
+    """
+    return node_selectors({
+        "stripe.io/host-type": name,
+    })
+
+def host_set(name):
+    """
+    Specify the host-set to restrict this deploy to.
+
+    Args:
+        name: The name of the host set this deploy will be limited to.
+    """
+    return node_selectors({
+        "stripe.io/host-set": name,
+    })
+
+def node_selectors(selectors):
+    """
+    Add node selectors to the pod to restrict where this deploys to.
+
+    Args:
+        selectors: Dictionary of node labels to value.
+    """
+    return pod_plugin(_update_pod, selectors = selectors)
+
+def host_selector(hostname):
+    """
+    Force a pod to schedule onto a particular node. Only to be used during development by CDS engineers.
+
+    Args:
+        hostname: SRFC39 hostname i.e. kubernetes node name
+    """
+    return node_selectors({
+        "kubernetes.io/hostname": hostname,
+    })
+
+def _update_pod(ctx, plugin, pod_def):
+    pod_def["node_selectors"].update(plugin.selectors)

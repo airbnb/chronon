@@ -1,0 +1,201 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugin for registering a Consul service with healthchecking.
+"""
+
+load("config/kubernetes/core/generic.sky", "is_shared_msp")
+load("config/kubernetes/core/probe.sky", "http_probe", "probes")
+load("config/kubernetes/sidecars/consul.sky", "consul_check")
+load("config/kubernetes/networking/public/consul.sky", "define_registered_service", "consul_tag_envoy_healthcheck")
+load("config/kubernetes/sidecars/health.sky", "safely_deployed_service")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin", "pod_plugin", "statefulset_plugin")
+
+def shared_msp_healthchecked_service(
+        ctx,
+        port,
+        name,
+        healthcheck_port = None,
+        path = "/healthcheck",
+        consul_tags = None,
+        consul_meta = None,
+        include_probes = True,
+        startup_probe_failure_threshold = 300,
+        container_name = None,
+        request_drain_grace_period_seconds = 60,
+        opt_out_of_safe_deploys = False):
+    """
+    Returns a plugin that will add the healthchecked service ot the registered services for the resource
+    so that the networking plugin consumes it automatically
+
+    Args:
+        port: The HTTP port that the service is listening on.
+        name: Name of the Consul service to register.
+        healthcheck_port: The HTTP port to perform healthchecks on. Useful for proxy services.
+            Defaults to the port specified above.
+        path: The HTTP path of the healthcheck endpoint for the service. Defaults to "/healthcheck".
+        consul_tags: An optional list of additional Consul service tags. The envoy healthcheck
+            tag (typically constructed via `consul_tag_envoy_healthcheck`) is added by default.
+        consul_meta: An optional dict of additional consul service metadata.
+        include_probes: Whether to set up probes on the container. Defaults to True.
+        startup_probe_failure_threshold: Number of times that health check must
+            fail before startup probe fails.
+        (DEPRECATED) container_name: This param is unused.
+        request_drain_grace_period_seconds: Optional grace period to allow in-flight requests to
+            drain before shutting down the container. Defaults to 60s. This does not need to account
+            for Consul/Envoy propagation, those happen before this grace period starts.
+        opt_out_of_safe_deploys: Disable extra measures that ensure that traffic transitions smoothly
+            away from the pod when it terminates. Only do this if you're sure your service's own
+            healthchecks are handling all of necessary cases here.
+            [NOTE: This must be set to True for pre-alpha shared MSP]
+    """
+
+    if consul_tags == None:
+        consul_tags = []
+
+    if consul_meta == None:
+        consul_meta = {}
+
+    arguments = dict(
+        port = port,
+        name = name,
+        healthcheck_port = healthcheck_port,
+        path = path,
+        consul_tags = consul_tags,
+        consul_meta = consul_meta,
+        include_probes = include_probes,
+        startup_probe_failure_threshold = startup_probe_failure_threshold,
+        container_name = container_name,
+        request_drain_grace_period_seconds = request_drain_grace_period_seconds,
+        opt_out_of_safe_deploys  = opt_out_of_safe_deploys,
+    )
+
+    return compose_plugins(
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=_deprecate_container_name_plugin(container_name),
+        ),
+        deployment_plugin(
+            _register_service,
+            service=define_registered_healthchecked_service(ctx, **arguments)
+        ),
+        statefulset_plugin(
+            _register_service,
+            service=define_registered_healthchecked_service(ctx, **arguments)
+        ),
+    )
+
+def _register_service(ctx, arguments, resource_def):
+    resource_def['registered_services'].append(arguments.service)
+
+def define_registered_healthchecked_service(
+        ctx,
+        port,
+        name,
+        healthcheck_port = None,
+        path = "/healthcheck",
+        consul_tags = None,
+        consul_meta = None,
+        include_probes = True,
+        startup_probe_failure_threshold = 300,
+        container_name = None,
+        request_drain_grace_period_seconds = 60,
+        opt_out_of_safe_deploys = False):
+    """
+    Passed to the `networking(register_services=[...])` plugin to register a Consul service with
+    an HTTP healthcheck endpoint at `path`, and add health probes that consume the healthcheck
+    endpoint to allow Kubernetes to manage lifecycle of your service.
+
+    Args:
+        port: The HTTP port that the service is listening on.
+        name: Name of the Consul service to register.
+        healthcheck_port: The HTTP port to perform healthchecks on. Useful for proxy services.
+            Defaults to the port specified above.
+        path: The HTTP path of the healthcheck endpoint for the service. Defaults to "/healthcheck".
+        consul_tags: An optional list of additional Consul service tags. The envoy healthcheck
+            tag (typically constructed via `consul_tag_envoy_healthcheck`) is added by default.
+        consul_meta: An optional dict of additional consul service metadata.
+        include_probes: Whether to set up probes on the container. Defaults to True.
+        startup_probe_failure_threshold: Number of times that health check must
+            fail before startup probe fails.
+        (DEPRECATED) container_name: This param is unused.
+        request_drain_grace_period_seconds: Optional grace period to allow in-flight requests to
+            drain before shutting down the container. Defaults to 60s. This does not need to account
+            for Consul/Envoy propagation, those happen before this grace period starts.
+        opt_out_of_safe_deploys: Disable extra measures that ensure that traffic transitions smoothly
+            away from the pod when it terminates. Only do this if you're sure your service's own
+            healthchecks are handling all of necessary cases here.
+            [NOTE: This must be set to True for pre-alpha shared MSP]
+
+    Returns:
+        A dictionary with the following schema:
+        {
+          "service": an opaque representation of a consul service (dictionary)
+          "plugins": a set of opaque plugins to apply
+        }
+    """
+
+    if healthcheck_port == None:
+        healthcheck_port = port
+
+    if consul_tags == None:
+        consul_tags = []
+
+    if consul_meta == None:
+        consul_meta = {}
+
+    probe_plugins = []
+    if include_probes:
+        ready_probe = http_probe(
+            ctx,
+            port = healthcheck_port,
+            path = path,
+        )
+
+        startup_probe = http_probe(
+            ctx,
+            port = healthcheck_port,
+            path = path,
+            failureThreshold = startup_probe_failure_threshold,
+            periodSeconds = 1,
+        )
+
+        deploy_safety_plugin = safely_deployed_service(
+            ctx,
+            request_drain_grace_period_seconds = request_drain_grace_period_seconds,
+            consul_propagation_period_seconds = 60,
+        )
+        if opt_out_of_safe_deploys:
+            deploy_safety_plugin = compose_plugins()
+
+        probe_plugins = [
+            probes(
+                readiness = ready_probe,
+                startup = startup_probe,
+            ),
+            deploy_safety_plugin,
+        ]
+
+    data = define_registered_service(
+        name = name,
+        port = port,
+        tags = consul_tags + [consul_tag_envoy_healthcheck(path)],
+        checks = [consul_check(path, healthcheck_port)],
+        meta = consul_meta,
+    )
+
+    return {
+        'service': data['service'],
+        'plugins': data["plugins"] + probe_plugins,
+    }
+
+def _deprecate_container_name_plugin(container_name):
+    return pod_plugin(
+        _deprecate_container_name,
+        container_name=container_name,
+    )
+
+def _deprecate_container_name(ctx, arguments, resource):
+    if arguments.container_name != None:
+        fail("healthchecked_service: `container_name` argument is deprecated.  Please stop using it")

@@ -1,0 +1,191 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Service-Networking private API for rendering a consul sidecar
+"""
+
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/lifecycle.sky", "render_lifecycle")
+load("config/kubernetes/core/probe.sky", "http_probe", "probes")
+load("config/kubernetes/core/volume.sky", "host_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/config_file.sky", "config_file")
+load("config/kubernetes/sidecars/variables.sky", "CONSUL_CONTAINER_FALLBACK_DIGEST", "CONSUL_CONTAINER_FALLBACK_ENV")
+load("config/kubernetes/helpers/constants.sky", "CONSUL_SIDECAR_CONTAINER_NAME")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+# Name of the sidecar container that registers Consul services for a pod.
+#
+# Use to reference the consul container when adding volume mounts.
+TAG_IGNORED_BY_HOST_ENVOY = "_sn_ignored-by-host-envoy"
+BUILTIN_TAGS = ["namespace:$(STRIPE_POD_NAMESPACE)"]
+BUILTIN_SERVICE_META = {
+    "k8s_namespace": "$(STRIPE_POD_NAMESPACE)",
+    "k8s_pod_id": "$(STRIPE_POD_NAME)",
+    "k8s_node": "$(STRIPE_NODE_NAME)",
+}
+
+def consul_sidecar(use_proxy = None, use_probes = None, services = [], plugins = []):
+    return compose_plugins(
+        pod_plugin(
+            _update_pod,
+            services = services,
+            use_proxy = use_proxy,
+            use_probes = use_probes,
+        ),
+        *plugins
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "consul_sidecar" in pod_def:
+        sidecar = pod_def["consul_sidecar"]
+    else:
+        sidecar = _create_consul_container(
+            ctx,
+            pod_def,
+            use_proxy = plugin.use_proxy,
+            use_probes = plugin.use_probes,
+            write_henson_config_to_disk = (not plugin.use_proxy),
+        )
+
+    services = plugin.services
+    sidecar["services"] = services
+    for service in services:
+        _write_envoy_configs(ctx, sidecar, service, pod_def)
+
+_consul_proxy_dir = "/run/stripe/consul-proxy"
+
+def _add_consul_proxy_volumes(ctx, pod_def):
+    proxy_dir = _consul_proxy_dir
+    socket_volume = host_volume(_consul_proxy_dir, type = "Directory", reason = "Allows accessing host Consul agent from within a network-isolated pod.")
+    socket_volume.update_pod(ctx, socket_volume, pod_def)
+    socket_volume_mount = volume_mount(_consul_proxy_dir, read_only = True)
+    socket_volume_mount.update_container(ctx, socket_volume_mount, pod_def["consul_sidecar"])
+
+_envoy_config_container = "envoy-inbound-configs"
+
+def _create_consul_container(ctx, pod_def, *, use_proxy, use_probes, write_henson_config_to_disk):
+    sidecar = {
+        "render": _render_consul_sidecar,
+        "name": CONSUL_SIDECAR_CONTAINER_NAME,
+        "services": [],
+        "volume_mounts": {},
+        "termination_delay": None,
+        # NB(ir-circle-whisper): We need to add `lifecycle and `probes` to support
+        # prestop hooks and startup probes in consul-sidecar, respectively.
+        # - This `sidecar` intermediate representation is a historical
+        #   carry-over from the dedicated MSP implementation of consul-sidecar
+        #   (see: config/kubernetes/sidecars/consul.sky), where rather than
+        #   using the standard container def IR
+        #   (see: # config/kubernetes/core/container.sky#_update_pod),
+        #   consul-sidecar uses a custom IR with a custom render function
+        # - TODO: We should standardize the container IR instead
+        "lifecycle": {},
+        "probes": {},
+        "use_proxy": use_proxy,
+        "use_probes": use_probes,
+        "sidecar_service": "consul-sidecar",
+    }
+
+    if write_henson_config_to_disk:
+        inbound_config = ctx.vars["henson.service"].inbound_config
+        if inbound_config != None:
+            envoy = host_volume("/etc/envoy", type = "Directory", reason = "Allows setting up inbound Envoy listener configuration.")
+            envoy.update_pod(ctx, envoy, pod_def)
+
+            sidecar["envoy_config"] = json.marshal(inbound_config)
+
+    pod_def["consul_sidecar"] = sidecar
+    pod_def["containers"].append(sidecar)
+
+    if sidecar["use_proxy"]:
+        _add_consul_proxy_volumes(ctx, pod_def)
+
+    return sidecar
+
+_envoy_config_dir = "/etc/envoy"
+
+def _write_envoy_configs(ctx, sidecar, service, pod_def):
+    # don't try to write config files if there's no envoy config to write out
+    if not "envoy_config" in sidecar:
+        return
+
+    path = "%s/%s.json" % (_envoy_config_dir, service["name"])
+    file = config_file(path, sidecar["envoy_config"], _envoy_config_dir)
+    file.update_pod(ctx, file, pod_def)
+
+def finalize_consul_service(srv, envoy_port = None, extra_tags = []):
+    copy = {}
+    copy.update(**srv)
+
+    service_meta = {}
+    service_meta.update(**srv["meta"])
+    service_meta.update(**BUILTIN_SERVICE_META)
+
+    if envoy_port != None:
+        service_meta.update(**{"envoy_inbound_port": str(envoy_port)})
+
+    copy["meta"] = service_meta
+    copy["tags"] = srv["tags"] + extra_tags + BUILTIN_TAGS
+
+    return copy
+
+def _render_consul_sidecar(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    volume_mounts = [render_volume_mount(ctx, mount) for mount in container.volume_mounts.values()]
+
+    command = [
+        "/bin/consul-sidecar",
+        "--services-json=" + json.marshal(container.services),
+    ]
+
+    if container.use_proxy:
+        proxy_file = "consul-proxy-srv.sock"
+        command.append("--service-address=$(STRIPE_POD_IP)")
+        command.append("--consul-address=unix://{}/{}".format(_consul_proxy_dir, proxy_file))
+        command.append("--bind-tcp-shim=127.0.0.1:8500")
+
+    if container.termination_delay != None:
+        command.append("--termination-delay={}".format(container.termination_delay))
+
+    # NB(ir-circle-whisper): bring in bits of container.sky#_render_container for
+    # consul-sidecar. This is currently a consequence of consul-sidecar
+    # implementing its own render function. In the future, we should adapt
+    # consul-sidecar to be less special.
+    probes = container.probes
+    lifecycle = render_lifecycle(ctx, container.lifecycle)
+
+    if container.use_probes:
+        command.append("--bind-msp-probe-responder=0.0.0.0:8599")
+        probes["readinessProbe"] = http_probe(
+            ctx,
+            port = 8599,
+            path = "/msp-infra-ready",
+        )
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = _consul_image(ctx),
+        command = command,
+        env = default_env_vars(ctx),
+        volumeMounts = volume_mounts,
+        lifecycle = lifecycle,
+        resources = resource_requirements(ctx),
+        **probes
+    )
+
+def _consul_image(ctx):
+    return sidecar_image(
+        ctx,
+        name = CONSUL_SIDECAR_CONTAINER_NAME,
+        fallback = image(
+            ctx,
+            name = "stripe/compute/consul-sidecar-image",
+            label = CONSUL_CONTAINER_FALLBACK_DIGEST,
+            env = CONSUL_CONTAINER_FALLBACK_ENV,
+        ),
+    )

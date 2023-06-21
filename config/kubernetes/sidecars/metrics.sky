@@ -1,0 +1,516 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/helpers/context.sky", "get_owner", "get_env", "get_cluster", "get_blue_green_color", "get_availability_tier")
+
+load("config/kubernetes/core/container.sky", "container")
+load("config/kubernetes/core/volume.sky", "pod_volume", "volume_mount", "host_volume")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/probe.sky", "http_probe", "probes")
+
+load("config/kubernetes/sidecars/confidant.sky", "mustache_secret")
+
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/helpers/constants.sky", "METRICS_SIDECAR_CONTAINER_NAME")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin", "statefulset_plugin")
+load("config/kubernetes/helpers/security.sky", use_credentials_proxy_plugin = "use_credentials_proxy", "mount_credentials_proxy")
+
+VENEUR_IMAGE_NAME = "stripe/observability/veneur-shared-msp"
+
+# This is an older version of Veneur from early 2022
+FALLBACK_IMAGE_VERSION = "git-e6204e90501a8db6c438e9c13cd163545474f2d0"
+
+# Defines how to extract the kubernetes namespace value and pass it to veneur-init
+# - `env_var`: defines the environment variable within the pod runtime environment in which to store the value
+# - `tag_key`: defines the key of the tag/dimension that will be added to metrics
+# - `field`: defines what the value of the environment variable will be. It is a reference to fields from the [kubernetes downwards api](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/#use-pod-fields-as-values-for-environment-variables)
+NAMESPACE = struct(
+    env_var = "K8S_NAMESPACE",
+    tag_key = "namespace",
+    field = "metadata.namespace",
+)
+
+# Defines how to extract the stripe.io/service-name label and pass it to veneur-init
+# - `env_var` defines the environment variable within the pod runtime environment in which to store the value
+# - `tag_key` defines the key of the tag/dimension that will be added to metrics
+# - `field` defines what the value of the environment variable will be. It is a reference to fields from the [kubernetes downwards api](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/#use-pod-fields-as-values-for-environment-variables)
+SERVICE_NAME = struct(
+    env_var = "STRIPE_SERVICE_NAME",
+    tag_key = "service_name",
+    field = "metadata.labels['stripe.io/service-name']",
+)
+
+# Defines how to extract the pod ip and pass it to veneur-init
+# - `env_var` defines the environment variable within the pod runtime environment in which to store the value
+# - `tag_key` is unused -- this struct isn't used for tagging
+# - `field` defines what the value of the environment variable will be. It is a reference to fields from the [kubernetes downwards api](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/#use-pod-fields-as-values-for-environment-variables)
+POD_IP = struct(
+    env_var = "K8S_POD_IP",
+    field = "status.podIP",
+)
+
+# Defines how long we attempt to fetch config values for before quitting
+DEFAULT_CONFIG_TIMEOUT="10s"
+
+### constants (don't autodoc these)
+# Directory to which config is rendered. This directory is a volume mount,
+# and will overwrite any contents of the base image. Do not reuse directories
+# that already exist in the base image.
+_CONFIG_DIR = "/config"
+_CONFIG_FILE = _CONFIG_DIR + "/veneur.yaml"
+
+# Path and filenames of the third-party-containers `veneur` image build artifacts
+_VENEUR_INIT_DIR = "/veneur-init"
+_DEFAULTS_FILE = _VENEUR_INIT_DIR + "/defaults.yaml"
+_INIT_SH = _VENEUR_INIT_DIR + "/init.sh"
+
+# Path and filename of the confidant secrets.
+# SECRETS_DIR includes the trailing slash because we use SECRETS_FILENAME as
+# an argument to mustache_secret, while the other constants specify the directory
+# as arguments to things instead of filenames
+_SECRETS_DIR = "/pay/keys/"
+_SECRETS_FILENAME = "veneur-secrets.yaml"
+_SECRETS_FILE = _SECRETS_DIR + _SECRETS_FILENAME
+
+# Path to veneur's unix socket listeners
+_UNIX_SOCKET_DIR = "/veneur-sockets"
+
+# The path to the StatsD Unix socket. Requires the `unix_socket_metric_listeners` plugin
+UNIX_SOCKET_STATSD = "/veneur-sockets/statsd.sock"
+
+# The path to the SSF Unix socket. Requires the `unix_socket_metric_listeners` plugin
+UNIX_SOCKET_SSF = "/veneur-sockets/ssf-trace.sock"
+
+# Name of the volume to which config is rendered
+_VOLUME_NAME = "veneur-config"
+
+
+# Listen port (future: may become variable)
+_VENEUR_HEALTHCHECK_PORT = 8200
+
+_SENTRY_DSNS = {
+    "prod": "https://b86f4dd7d9d346f8a6f50b36480f8713:80788c6e6eb34addacf01f9c848d1578@errors.prod.stripe.io/86",
+    "preprod": "https://9fe6cbf689204b4f862ae4c83a541213:ba8f532e46e44bb7a445b3babcbe6da7@errors.qa.stripe.io/65",
+    "qa": "https://9fe6cbf689204b4f862ae4c83a541213:ba8f532e46e44bb7a445b3babcbe6da7@errors.qa.stripe.io/65",
+}
+
+PROBER_WORKSPACE_URL = {
+    "prod": "http://prom-proxy-srv.northwest.service.envoy:10080/workspaces/ws-06e39406-d45f-4873-a9aa-8ec36fe81faf",
+    # TODO: use PINA workspace ID when preprod-pina exists:
+    "preprod": "http://prom-proxy-srv.northwest.service.envoy:10080/workspaces/ws-69168fe9-225c-4564-8662-c9ed56fe0b78",
+    "qa": "http://prom-proxy-srv.northwest.service.envoy:10080/workspaces/ws-1ea490cb-1574-420c-bd87-8c6a516e8778",
+}
+
+def metrics(
+    ctx,
+    image_env_override=None,
+    image_version_override=None,
+    tags=None,
+    drop_metric_prefixes=[],
+    drop_tag_prefixes=[],
+    flush_interval="10s",
+    aggregates=["min", "max", "count", "sum"],
+    percentiles=["0.5", "0.9", "0.95", "0.99"],
+    attach_routing_rules=False,
+    config_timeout=DEFAULT_CONFIG_TIMEOUT,
+    config=None,
+    enable_prober=False,
+):
+    """
+    Adds a Veneur instance as a sidecar to receive and forward metrics.
+
+    Sidecar Veneur sets up the following listeners:
+    - UDP (statsd): `127.0.0.1:8200`
+    - UDP (ssf): `127.0.0.1:8128`
+    - Unix datagram (statsd): `/veneur-sockets/statsd.sock`
+    - Unix socket (ssf): `/veneur-sockets/ssf-trace.sock`
+
+    Args:
+        ctx: The pod context
+        image_env_override: `string` Veneur container image name prefix; only non-noop value is "qa". Only to be
+            used when testing Veneur, not to deploy Veneur generally
+        image_version_override: `string` SHA corresponding to a test version of Veneur container image. Only to
+            be used when testing Veneur, not to deploy Veneur generally
+        tags: `list(struct(key=string, value=string))` Replace the default implicit tags with this list. Example:
+            `tags=implicit_tags(tags.env, foo="bar")`. Defaults to all available implicit tags.
+            See `implicit_tags` for details. Alternately, you may use `default_tags_plus(foo="bar")`, which will
+            add its kwargs to the default tag list; see `default_tags_plus` for details.
+        drop_metric_prefixes: `list(string)` Exclude metrics beginning with these prefixes
+            from being flushed. Defaults to `[]`
+        drop_tag_prefixes: `list(string)` Exclude tags beginning with these prefixes from
+            flushed metrics. Defaults to `[]`
+        flush_interval: `string` A string-formatted Go duration (e.g. `10s`). Specifies
+            how frequently to flush metrics. Note: global metrics will still be subject to the
+            globalstats instances' flush interval. Defaults to `10s`
+        aggregates: `list(string)` The list of aggregates to calculate for timers/histograms.
+            Valid values are [min, max, median, avg, count, sum, hmean](https://github.com/stripe/veneur/blob/a12281939b817220f78a2de6270a455947b90887/samplers/samplers.go#L75-L83).
+            Defaults to `["min", "max", "count", "sum"]`.
+        percentiles: `list(string)` The list of percentiles to calculate for timers/histograms.
+            Write as fractional strings, e.g. `"0.99"`. Defaults to `["0.5", "0.9", "0.95", "0.99"]`.
+        attach_routing_rules: `bool` enable & attach veneur routing rules. Defaults to False
+        config_timeout: `string` duration (parsable by Go's time.Duration) to wait for a config before timing out
+            Defaults to `10s`
+        enable_prober: `bool` whether to enable the prober (should be used only by veneur-prober-srv); Default: False
+        config: struct of configuration options passed to the deployment, defined in `metrics_config`, these
+            will override args passed to the function
+
+    Returns:
+        A plugin that installs a Veneur sidecar to receive metrics
+    """
+
+    if config != None:
+        image_env_override = config.image_env_override
+        image_version_override = config.image_version_override
+        attach_routing_rules = config.attach_routing_rules
+        config_timeout = config.config_timeout
+        enable_prober = config.enable_prober
+
+    # In order to keep the ordering of the auto-generated documentation clean,
+    # `implicit_tags` is declared below. However, that means we can't reference
+    # it in the function declaration as a default argument. Instead, we use
+    # `None` and set the default here.
+    if tags == None:
+        tags = default_tags_plus()
+
+    responsible_team = get_owner(ctx)
+    extra_tags = _render_tags(ctx, tags)
+    sentry_dsn = _SENTRY_DSNS[get_env(ctx)]
+
+    command = [
+        _INIT_SH,
+
+        # this needs to be the first argument for shell scripting convenience
+        # the entry command passes it to veneur-init as -output <file>, but
+        # it gets passed to veneur as -f <file>
+        _CONFIG_FILE,
+
+        "-sentry-dsn", sentry_dsn,
+
+        # the ip to listen on for health checks
+        "-healthcheck-address", "$(%s):%s" % (POD_IP.env_var, _VENEUR_HEALTHCHECK_PORT),
+
+        # the input data to merge
+        "-defaults", _DEFAULTS_FILE,
+        "-secrets", _SECRETS_FILE,
+
+        # attribution
+        "-responsible-team", responsible_team,
+
+        # other config
+        "-flush-interval", flush_interval,
+        "-aggregates",  ",".join(aggregates),
+        "-percentiles", ",".join(percentiles),
+
+        # used to tag "pod_id" on all Prometheus Shared MSP metrics to satisfy Single Writer principle
+        "-pod-id", "$(STRIPE_POD_NAME)",
+    ]
+
+    if extra_tags:
+        command = command + ["-extra-tags", extra_tags]
+
+    if len(drop_metric_prefixes) > 0:
+        command = command + ["-drop-metric-prefixes", ",".join(drop_metric_prefixes)]
+
+    if len(drop_tag_prefixes) > 0:
+        command = command + ["-drop-tag-prefixes", ",".join(drop_tag_prefixes)]
+
+    if attach_routing_rules:
+        # newer versions of veneur will not include secrets by default
+        # this assures that they'll be printed
+        command = command + ["-print-secrets", "-attach-routing-rules"]
+
+        # this wont't do anything if -attach-routing-rules isn't passed
+        command = command + ["-config-timeout", config_timeout]
+
+    if enable_prober:
+        command = command + [
+            "-enable-prober=true",
+            "-prober-id=$(STRIPE_POD_NAME)",
+            "-prober-emit-interval-s=60",
+            "-prober-fetch-interval-ms=100",
+            "-prober-fetch-timeout-s=45",
+            "-prober-synchronized-server-interval-s=10",
+            "-prober-workspace-url=" + PROBER_WORKSPACE_URL[get_env(ctx)],
+        ]
+
+    if image_version_override == None:
+        sidecar_img = sidecar_image(
+            ctx,
+            name = "veneur-image",
+            fallback = image(
+                ctx,
+                name = VENEUR_IMAGE_NAME,
+                label = FALLBACK_IMAGE_VERSION,
+                modify_name = False,
+            ),
+        )
+    else:
+        additional_opts = {}
+        if image_env_override != None:
+            additional_opts["env"] = image_env_override
+        sidecar_img = image(
+            ctx,
+            name = VENEUR_IMAGE_NAME,
+            label = image_version_override,
+            **additional_opts,
+        )
+
+    if attach_routing_rules == False:
+        # We are always allowing veneur-init to access secret value as of 8/11/2022.
+        # This change is required due to the fact that we are onboarding veneur in shared MSP
+        # to the new sidecar deployment process, which would require us to only have one unified
+        # version of veneur across the shared MSP fleet in a given environment.
+        # This config determines the behavior of the string_secrets.go file within the veneur
+        # codebase: https://github.com/stripe/veneur/blob/master/util/string_secret.go
+        command = command + ["-print-secrets"]
+
+    return compose_plugins(
+        use_credentials_proxy_plugin(),
+        host_volume("/etc/ssl/certs/stripe-cas", type = "Directory"),
+
+        pod_volume(
+            _UNIX_SOCKET_DIR,
+        ),
+
+        pod_volume(
+            _CONFIG_DIR,
+            name = _VOLUME_NAME,
+        ),
+
+        container(
+            name = METRICS_SIDECAR_CONTAINER_NAME,
+            image = sidecar_img,
+            command = command,
+            sidecar_service = "veneur-image",
+            plugins = [
+                volume_mount(
+                    name = _VOLUME_NAME,
+                    path = _CONFIG_DIR,
+                    read_only = False,
+                ),
+                mount_credentials_proxy(),
+                volume_mount("/etc/ssl/certs/stripe-cas"),
+                volume_mount(
+                    container_name = METRICS_SIDECAR_CONTAINER_NAME,
+                    path = _UNIX_SOCKET_DIR,
+                    read_only = False,
+                ),
+                container_env_vars(from_fields = {
+                    NAMESPACE.env_var: NAMESPACE.field,
+                    SERVICE_NAME.env_var: SERVICE_NAME.field,
+                    POD_IP.env_var: POD_IP.field,
+                }),
+                probes(
+                    liveness = http_probe(
+                        ctx,
+                        port = _VENEUR_HEALTHCHECK_PORT,
+                        path = "/healthcheck",
+                    ),
+                    startup = http_probe(
+                        ctx,
+                        port = _VENEUR_HEALTHCHECK_PORT,
+                        path = "/healthcheck",
+                        failureThreshold = 300,
+                        periodSeconds = 1,
+                    ),
+                    container_name = METRICS_SIDECAR_CONTAINER_NAME,
+                ),
+            ],
+        ),
+
+        mustache_secret(
+            container_names = [METRICS_SIDECAR_CONTAINER_NAME],
+            filename = _SECRETS_FILENAME,
+            template_content = '\n'.join([
+                'signalfx_api_key: {{ secrets["veneur/signalfx_api_key"] }}',
+                'per_team_signalfx_api_keys: {{ secrets["veneur/signalfx_per_tag_api_keys"] }}',
+            ]),
+        ),
+    )
+
+def metrics_config(**kwargs):
+    """
+    Allows for overriding metrics configurations from the deployment; modifies the deployment's definition to
+    initialize metrics(...) with a non-None `config` struct. Note that passing in any `config` value is all
+    or nothing. There is no way to override only one value in the config struct, so make sure the defaults in
+    metrics_config(...) match those of metrics(...).
+
+    Args:
+        image_env_override: `string` Veneur container image name prefix; only non-noop value is "qa". Only to be
+            used when testing Veneur, not to deploy Veneur generally
+        image_version_override: `string` SHA corresponding to a test version of Veneur container image. Only to
+            be used when testing Veneur, not to deploy Veneur generally
+        attach_routing_rules: `bool` enable & attach veneur routing rules. Defaults to False
+        config_timeout: `string` duration (parsable by Go's time.Duration) to wait for a config before timing out
+            Defaults to `1m`
+        enable_vnext_metrics: `bool` whether to enable vnext metrics
+        enable_prober: `bool` whether to enable the prober (should be used only by veneur-prober-srv); Default: False
+
+    Returns:
+        deployment plugin containing struct with passed config options
+    """
+    return _metrics_config(deployment_plugin, **kwargs)
+
+def metrics_config_statefulset(**kwargs):
+    """
+    Same as metrics_config, but for a `statefulset` rather than a `deployment`.
+    """
+    return _metrics_config(statefulset_plugin, **kwargs)
+
+def _metrics_config(
+    plugin,
+    config_timeout=DEFAULT_CONFIG_TIMEOUT,
+    attach_routing_rules=False,
+    enable_vnext_metrics=False,
+    enable_prober=False,
+    image_env_override=None,
+    image_version_override=None,
+):
+    if enable_vnext_metrics:
+      attach_routing_rules = True
+
+    return plugin(
+        _update_deployment_metrics_config,
+        config = struct(
+            config_timeout=config_timeout,
+            attach_routing_rules=attach_routing_rules,
+            enable_prober=enable_prober,
+            image_env_override=image_env_override,
+            image_version_override=image_version_override,
+        )
+    )
+
+
+def _update_deployment_metrics_config(ctx, plugin, deployment_def):
+    deployment_def["metrics_config"] = plugin.config
+
+def unix_socket_metric_listeners(container_name=None):
+    """
+    Mounts a volume containing Veneur unix socket listeners into the target container. The file paths are exported as `UNIX_SOCKET_STATSD` and `UNIX_SOCKET_SSF`.
+
+    Args:
+        container_name: `string` The name of the container into which the volume will be mounted. Defaults to `None`
+            (current behavior is that `None` specifies the main container)
+
+    Returns:
+        A plugin that mounts the Veneur unix socket volume into the target container
+    """
+    return volume_mount(
+        container_name = container_name,
+        path = _UNIX_SOCKET_DIR,
+        read_only = True,
+    )
+
+def implicit_tags(*args, **kwargs):
+    """
+    Generates implicit tags (tags added to all metrics by this Veneur instance) for use with the `tags` argument to the `metrics` plugin.
+
+    `implicit_tags` takes two kinds of arguments:
+    - A function (positional args)
+    - A keyword argument
+
+    Keyword arguments are added as implicit tags after normalization, so:
+    `implicit_tags(foo="$bar")` would result in the tag `foo:_bar` being added
+    to *every metric* emitted by this pod.
+
+    Function arguments should be taken from the `tags` export, for example:
+    ```sky
+    load("config/kubernetes/sidecars/metrics.sky", "metrics", "implicit_tags", "tags")
+
+    plugin = metrics(ctx, tags=implicit_tags(tags.env))
+    ```
+
+    Tags with a value of `None` will not be emitted.
+
+    Returns:
+        A list of structs representing the implicit tags with which to configure Veneur
+    """
+    return list(args) + [struct(key=k, value=v) for k, v in kwargs.items()]
+
+def default_tags_plus(**kwargs):
+    """
+    Generates implicit tags from the passed kwargs and _adds_ them to the default set.
+
+    Example:
+    ```sky
+    load("config/kubernetes/sidecars/metrics.sky", "metrics", "default_tags_plus")
+
+    plugin = metrics(ctx, tags=default_tags_plus(foo="bar"))
+    ```
+
+    Returns:
+        A list of structs representing the implicit tags with which to configure Veneur
+    """
+    return implicit_tags(*_default_tags(), **kwargs)
+
+def _tag_blue_green(ctx):
+    return struct(key="deploy_color", value=get_blue_green_color(ctx))
+
+def _tag_owner(ctx):
+    return struct(key="responsible_team", value=get_owner(ctx))
+
+def _tag_env(ctx):
+    return struct(key="host_env", value=get_env(ctx))
+
+def _tag_cluster(ctx):
+    return struct(key="host_cluster", value=get_cluster(ctx))
+
+def _tag_namespace(ctx):
+    return struct(key=NAMESPACE.tag_key, value="$(%s)" % NAMESPACE.env_var)
+
+def _tag_service_name(ctx):
+    return struct(key=SERVICE_NAME.tag_key, value="$(%s)" % SERVICE_NAME.env_var)
+
+def _default_tags():
+    return [getattr(tags, tagfn) for tagfn in dir(tags)]
+
+# A struct of extractor functions that can be passed to `implicit_tags` to add
+# various contextual tags to the implicit metrics emitted by the sidecar.
+#
+# The following functions are defined:
+# - `env`: adds `host_env:$ENV`
+# - `cluster`: adds `host_cluster:$CLUSTER`
+# - `owner`: adds `responsible_team:$TEAM_HANDLE`
+# - `blue_green`: adds `deploy_color:$COLOR`
+# - `namespace`: adds `namespace:$NAMESPACE`
+# - `service_name`: adds `service_name:$STRIPE_POD_NAME`
+#
+# `$FOO` in the above examples is not a literal environment variable, it's
+# just a placeholder for "the value of this thing". Most of the values
+# come from the skycfg context, but some may come from e.g. the k8s api
+# at runtime by way of actual environment variables.
+tags = struct(
+    env = _tag_env,
+    cluster = _tag_cluster,
+    owner = _tag_owner,
+    blue_green = _tag_blue_green,
+    namespace = _tag_namespace,
+    service_name = _tag_service_name,
+)
+
+def _render_tags(ctx, tags=[]):
+    if len(tags) == 0:
+        return None
+
+    tag_dict = {}
+
+    for tag in tags:
+        if type(tag) == "function":
+            # function _tag_namespace got an unexpected keyword argument "ctx" ->
+            #   this function requires a "default" argument, and should be called directly
+            #   when including it in pod tags, e.g. tags=[tags.namespace()]
+            # skycfg does not seem to support error handling, so I can't easily give a different
+            # error message to make this clearer :(
+            tag_struct = tag(ctx=ctx)
+        elif type(tag) == "struct":
+            # we recreate the struct as a means of asserting that `key` and `value` exist on a per-item level
+            tag_struct = struct(key=tag.key, value=tag.value)
+        else:
+            fail("Unsupported tag value: %s" % tag)
+
+        if tag_struct.key in tag_dict:
+            fail("Tag conflict: `%s` specified more than once, refusing to overwrite" % tag_struct.key)
+
+        if tag_struct.value != None:
+            tag_dict[tag_struct.key] = tag_struct.value
+
+    return json.marshal(tag_dict)

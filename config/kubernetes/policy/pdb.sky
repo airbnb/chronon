@@ -1,0 +1,43 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/meta/metadata.sky", "annotations")
+
+PDB_ANNOTATION_KEY = "stripe.io/pdb"
+
+def pod_disruption_budget(disable = False, max_unavailable = None, min_available = None):
+    """
+    Customize Pod Disruption Budgets for your workload.
+
+    Override the default pod disruption budget with a custom annotation on your
+    workload. Only one of `disable`, `min_available` or `max_unavailable` can
+    be used.
+
+    Args:
+        disable: Boolean value to disable the creation of pod disruption
+            budgets for the workload.
+        max_unavailable: An eviction is allowed if at most "max_unavailable"
+            pods are unavailable after the eviction, i.e. even in absence of
+            the evicted pod. For example, one can prevent all voluntary
+            evictions by specifying 0. Value can be an absolute number
+            (ex: 5) or a percentage of desired pods (ex: 10%).
+        min_available: An eviction is allowed if at least "min_available" pods
+            selected by "selector" will still be available after the eviction,
+            i.e. even in the absence of the evicted pod. Value can be an
+            absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
+
+    Returns:
+        A plugin to set custom PDB annotations for the pdb-controller to interpret
+    """
+    if disable:
+        if max_unavailable or min_available:
+            fail("max_unavailable and min_available cannot be specified when disable=True")
+        annotation = "false"
+    else:
+        if max_unavailable and min_available:
+            fail("only one of max_unavailable and min_available can be specified")
+
+        if max_unavailable:
+            annotation = "maxUnavailable=%s" % max_unavailable
+        else:
+            annotation = "minAvailable=%s" % min_available
+
+    return annotations({PDB_ANNOTATION_KEY: annotation})

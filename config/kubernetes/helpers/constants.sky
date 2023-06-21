@@ -1,0 +1,10 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+CONFIG_SRV_SIDECAR_NAME="config-srv-sidecar"
+CONSUL_SIDECAR_CONTAINER_NAME = "consul-sidecar"
+ENVOY_SIDECAR_NAME = "envoy-sidecar"
+ENVOY_CONFIG_SRV_SIDECAR_NAME="envoy-config-srv"
+ENVOY_RATELIMIT_SRV_SIDECAR_NAME = "envoy-ratelimit-srv"
+HOST_HEALTH_AGENT_SIDECAR_NAME="host-health-agent-sidecar"
+METRICS_SIDECAR_CONTAINER_NAME = "metrics-sidecar"
+NSQD_SIDECAR_CONTAINER_NAME = "nsqd"
+VECTOR_SIDECAR_CONTAINER_NAME = "vector-sidecar"

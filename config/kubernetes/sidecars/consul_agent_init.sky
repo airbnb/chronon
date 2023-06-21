@@ -1,0 +1,47 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "init_container")
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/sidecars/variables.sky", "CONSUL_AGENT_INIT_CONTAINER_FALLBACK_DIGEST", "CONSUL_AGENT_INIT_CONTAINER_FALLBACK_ENV")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled")
+
+CONTAINER_NAME = "consul-agent-init"
+SIDECAR_SERVICE_NAME = "consul-agent-init-image"
+
+def consul_agent_init(ctx):
+    cmd = [
+        "/bin/consul-agent-init",
+        "--consul-agent-check-interval=1s",
+    ]
+
+    # Bin packed services will be scheduled as microVMs and the communication with the host
+    # must be done over vSock rather than unix sockets. If that's the case, then this init
+    # container will communicate with consul-proxy-srv through a vSock instead. If not, it will
+    # just use the corresponding unix socket.
+    if is_bin_packing_enabled(ctx):
+        cmd.append("--consul-agent-use-vsock")
+
+    return compose_plugins(
+        init_container(
+            CONTAINER_NAME,
+            command = cmd,
+            sidecar_service = SIDECAR_SERVICE_NAME,
+            image = sidecar_image(
+                ctx,
+                name = SIDECAR_SERVICE_NAME,
+                fallback = image(
+                    ctx,
+                    name = "stripe/gocode/consul-agent-init-image",
+                    label = CONSUL_AGENT_INIT_CONTAINER_FALLBACK_DIGEST,
+                    env = CONSUL_AGENT_INIT_CONTAINER_FALLBACK_ENV,
+                ),
+            ),
+        ),
+        mount_host_volume(
+            "/run/stripe/consul-proxy",
+            container_name = CONTAINER_NAME,
+            mount_args = {"read_only": True},
+            volume_args = {"type": "Directory", "reason": "Allows accessing host Consul agent from within a network-isolated pod."},
+        ),
+    )

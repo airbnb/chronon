@@ -1,0 +1,85 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for making Kubernetes configurations highly available
+"""
+
+load("config/kubernetes/meta/metadata.sky", "render_selector")
+load("config/kubernetes/helpers/context.sky", "get_henson_git_commit")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "TopologySpreadConstraint")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+
+def spread_across_zones(selected_zones=()):
+    """Spread pods across availability zones.
+
+    NOTE: We suspect this plugin has no effect; the kubernetes scheduler by
+    default will try to balance pods across availability zones.
+
+    Args:
+        selected_zones: A tuple of zones in which the pod may be scheduled, for use
+            if you have some locality constraint to meet. If left empty the pods may
+            be scheduled in any zone.
+
+    Returns:
+        A plugin that makes the service highly available in the event of an AZ failure.
+    """
+    return pod_plugin(_add_anti_affinity_to_pod, selected_zones=selected_zones)
+
+def _add_anti_affinity_to_pod(ctx, arguments, pod_def):
+    selected_zones = arguments.selected_zones
+    pod_def["affinity"]["highly_available"] = True
+    pod_def["affinity"]["highly_available_zones"] = selected_zones
+
+def require_zone_balance(max_skew=1):
+    """Require that a workload's pods by balanced across availability zones.
+
+    The scheduler will refuse to assign pods to nodes if sufficient balance cannot be acheived.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew)
+
+def _add_topology_spreading_to_pod(ctx, arguments, pod_def):
+    pod_def["topology_spreading"] = arguments
+
+def render_topology_spreading(ctx, pod):
+    """
+    Produces a list of topology spread constraints for this pod.
+
+    Args:
+        ctx: Henson context.
+        pod: The pod definition struct.
+
+    Returns:
+        A list of TopologySpreadConstraints to apply to the pod.
+    """
+    plugin = getattr(pod, "topology_spreading", None)
+    if plugin == None:
+        return None
+
+    # We're using `render_selector` to get the same selector as the pod
+    # template's parent deployment (or similar workload).
+    selector = render_selector(ctx, pod.resource["metadata"])
+
+    # Include the current henson-git-commit in the selector to address
+    # https://github.com/kubernetes/kubernetes/issues/98215.
+    if hasattr(pod.resource["metadata"], "henson_git_commit"):
+        if get_render_yaml(ctx):
+            if selector.get("matchLabels"):
+                selector["matchLabels"]["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
+        else:
+            selector.matchLabels["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
+
+    return [TopologySpreadConstraint(
+        ctx,
+        labelSelector = selector,
+        maxSkew = plugin.max_skew,
+        topologyKey = "topology.kubernetes.io/zone",
+        whenUnsatisfiable = "DoNotSchedule",
+    )]

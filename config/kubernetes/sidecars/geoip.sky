@@ -1,0 +1,117 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/core/volume.sky", "mount_host_volume", "render_volume_mount", "volume_mount", "mount_pod_volume")
+load("config/kubernetes/helpers/security.sky", "use_credentials_proxy", "mount_credentials_proxy")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/sidecars/variables.sky", "GEOIP_CONTAINER_DIGEST", "GEOIP_CONTAINER_ENV")
+load("config/kubernetes/helpers/context.sky", "get_aws_region", "get_cluster", "is_bin_packing_enabled")
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+_out_path = "/usr/stripe/geoip_automatic"
+_share_path = "/usr/share/geoip"
+
+def use_geoip_databases(use_legacy_host_mounts = False):
+    """
+    Allow the pod to use GeoIP databases to resolve IP addresses to locations.
+
+    Workloads in pay-server that use the `Opus::Geo::IPAddress` APIs, for instance, should
+    include this plugin.
+
+    This plugin has two different modes. By default, it will download the GeoIP databases
+    to `pod_volume`s when the pod starts. This supports isolating the pod from the underlying
+    host machine.
+
+    To support legacy workloads, the plugin can also provide the databases by mounting them
+    in from directories on the host where the pod is running. This requires Puppet
+    configuration to enable a cron job on the host to refresh the databases. New code should
+    not use this mode, and it will eventually be removed.
+
+    Args:
+        use_legacy_host_mounts: If `True`, mount GeoIP database from the host machine instead
+            of downloading them when the pod starts. Defaults to `False`. Do not enable this
+            unless you really know what you're doing.
+
+    Returns:
+        A plugin that ensures that GeoIP databases are available in the pod's main container.
+    """
+    if use_legacy_host_mounts:
+        return compose_plugins(
+            mount_host_volume(_out_path, volume_args = dict(
+                type = "Directory",
+                reason = "Provides cached GeoIP databases from the host.",
+            )),
+            mount_host_volume(_share_path, volume_args = dict(
+                type = "Directory",
+                reason = "Provides cached GeoIP databases from the host.",
+            )),
+        )
+    else:
+        return compose_plugins(
+            use_credentials_proxy(),
+            mount_pod_volume(_out_path, volume_args = dict(
+                reason = "Provides storage for downloaded GeoIP databases.",
+            )),
+            mount_pod_volume(_share_path, volume_args = dict(
+                reason = "Provides storage for downloaded GeoIP databases.",
+            )),
+            pod_plugin(
+                _update_pod,
+            ),
+        )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "geoip_init_container" in pod_def:
+        return
+
+    container_def = {
+        "render": _geoip_container,
+        "name": "geoip-init",
+        "out_path": _out_path,
+        "share_path": _share_path,
+        "sidecar_service": "geoip-init-sidecar",
+    }
+    pod_def["geoip_init_container"] = container_def
+    pod_def["init_containers"].append(container_def)
+
+def _geoip_container(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    command = [
+        "/geoip-refresher",
+        "-out",
+        container.out_path,
+        "-share",
+        container.share_path,
+        "-aws-region",
+        get_aws_region(ctx),
+        "-cluster",
+        get_cluster(ctx),
+    ]
+
+    if is_bin_packing_enabled(ctx) == True:
+        command.append("--vsocket-connection=true")
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = sidecar_image(
+            ctx,
+            name = "geoip-init-sidecar",
+            fallback = image(ctx,
+                name = "stripe/foundation/geoip-refresher",
+                label = GEOIP_CONTAINER_DIGEST,
+                env = GEOIP_CONTAINER_ENV,
+            ),
+        ),
+        command = command,
+        env = default_env_vars(ctx),
+        volumeMounts = [
+            render_volume_mount(ctx, mount_credentials_proxy(read_only = is_bin_packing_enabled(ctx) == False)),
+            render_volume_mount(ctx, volume_mount(_out_path, read_only = False)),
+            render_volume_mount(ctx, volume_mount(_share_path, read_only = False)),
+        ],
+        resources = resource_requirements(ctx),
+    )

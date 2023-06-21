@@ -1,0 +1,124 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/volume.sky","mount_host_volume", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/security.sky", "use_credentials_proxy", "mount_credentials_proxy")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/sidecars/variables.sky", "GO_PROFILER_CONTAINER_FALLBACK_ENV", "GO_PROFILER_CONTAINER_FALLBACK_DIGEST")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+
+SIDECAR_NAME = "go-profiler-sidecar"
+
+def go_profiler_sidecar(srv_addr = "127.0.0.1", http_port = "6060", prof_duration = 30, prof_interval = 600):
+    """
+    Sidecar process to merge and offload Go profile dumps from disk to S3.
+
+    Returns:
+        A plugin that adds the sidecar container to the pod.
+    """
+    shared_plugins = compose_plugins(
+        mount_host_volume(path = "/pay/aws-config/kube_iam_aws_credentials.ini", container_name = SIDECAR_NAME, volume_args = {"type": "File"}),
+        mount_host_volume(path = "/usr/stripe/bin/kube-iam-credentials", container_name = SIDECAR_NAME, volume_args = {"type": "File"}),
+        mount_host_volume(path = "/etc/ssl/certs/stripe-cas",container_name = SIDECAR_NAME, volume_args = {"type": "Directory"}),
+
+        pod_plugin(
+            _update_pod,
+            is_shared = True,
+            srv_addr = srv_addr,
+            http_port = http_port,
+            prof_duration = prof_duration,
+            prof_interval = prof_interval,
+        ),
+    )
+
+    dedicated_plugins = compose_plugins(
+        pod_plugin(
+            _update_pod,
+            is_shared = False,
+            srv_addr = srv_addr,
+            http_port = http_port,
+            prof_duration = prof_duration,
+            prof_interval = prof_interval,
+        ),
+    )
+
+    standard_plugins = compose_plugins(
+        use_credentials_proxy(),
+        mount_host_volume(path = "/pay/cache", container_name = SIDECAR_NAME, volume_args = {"type": "Directory"}),
+    )
+
+    return compose_plugins(
+       conditional_plugin(condition = is_shared_msp, plugin = shared_plugins),
+       conditional_plugin(condition = is_dedicated_msp, plugin = dedicated_plugins),
+       standard_plugins,
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "go_profiler_sidecar_container" in pod_def:
+        return
+
+    container_def = {
+        "render": _go_profiler_sidecar_container,
+        "name": SIDECAR_NAME,
+        "sidecar_service": "go-profiler-sidecar",
+        "is_shared": plugin.is_shared,
+        "srv_addr": plugin.srv_addr,
+        "http_port": plugin.http_port,
+        "prof_duration": plugin.prof_duration,
+        "prof_interval": plugin.prof_interval,
+    }
+    pod_def["go_profiler_sidecar_container"] = container_def
+    pod_def["containers"].append(container_def)
+
+def _go_profiler_sidecar_container(ctx, container_def, pod):
+    container = struct(**container_def)
+    is_shared = container_def["is_shared"]
+    env = default_env_vars(ctx)
+
+    if is_shared:
+        env.append(EnvVar(ctx, name = "AWS_CONFIG_FILE", value = "/pay/aws-config/kube_iam_aws_credentials.ini"))
+        env.append(EnvVar(ctx, name = "AWS_SDK_LOAD_CONFIG", value = "true"))
+        volume_mounts = [
+            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, volume_mount("/usr/stripe/bin/kube-iam-credentials", read_only = True)),
+            render_volume_mount(ctx, volume_mount("/pay/aws-config/kube_iam_aws_credentials.ini", read_only = True)),
+            render_volume_mount(ctx, volume_mount("/etc/ssl/certs/stripe-cas", read_only = True)),
+            render_volume_mount(ctx, volume_mount("/pay/cache")),
+        ]
+    else:
+        volume_mounts = [
+            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, volume_mount("/pay/cache")),
+        ]
+        # TODO: AWS credentials config for dedicated MSP
+
+
+    return Container(
+        ctx,
+        name = container.name,
+        image =  _go_profiler_sidecar_image(ctx),
+        command = [
+            "/bin/go-profiler-sidecar",
+            "--srv-addr=%s" %  container.srv_addr,
+            "--http-port=%s" % container.http_port,
+            "--prof-duration=%s" % container.prof_duration,
+            "--prof-interval=%s" % container.prof_interval,
+        ],
+        env = env,
+        volumeMounts = volume_mounts,
+        resources = resource_requirements(ctx),
+    )
+
+def _go_profiler_sidecar_image(ctx):
+    return sidecar_image(ctx,
+        name = SIDECAR_NAME,
+        fallback = image(ctx,
+            name =  "stripe/compute/go-profiler-sidecar-image",
+            label = GO_PROFILER_CONTAINER_FALLBACK_DIGEST,
+            env = GO_PROFILER_CONTAINER_FALLBACK_ENV,
+        ),
+    )

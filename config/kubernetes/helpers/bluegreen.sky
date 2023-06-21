@@ -1,0 +1,113 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color")
+load("config/kubernetes/helpers/node_selectors.sky", "host_set")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "deployment_plugin", "pod_plugin")
+load("config/kubernetes/sidecars/consul.sky", "consul_container_name")
+load("config/kubernetes/apps/strategy.sky", "blue_green_deployment_strategy_dedicated_msp", "blue_green_deployment_strategy_shared_msp")
+
+def with_blue_green_traffic_shifting():
+    return compose_plugins(
+        add_blue_green_to_env_vars(),
+        add_blue_green_to_consul_services(),
+    )
+
+def add_blue_green_host_set(mapping):
+    """
+    Adds a host set to the pods node selector based on the mapping provided.
+
+    Returns:
+        A plugin that sets the node selector to a host set
+    """
+    return pod_plugin(
+        _add_blue_green_host_set,
+        mapping = mapping,
+    )
+
+def _add_blue_green_host_set(ctx, arguments, pod_def):
+    blue_green_color = get_blue_green_color(ctx)
+    if blue_green_color not in arguments.mapping:
+        return None
+
+    name = arguments.mapping[blue_green_color]
+    plugin = host_set(name)
+    plugin.update_pod(ctx, plugin, pod_def)
+
+def add_blue_green_to_env_vars():
+    """
+    Add's colour env vars to the main container
+
+    Returns:
+        A plugin that appends a STRIPE_BLUE_GREEN_COLOR env var to the main service container
+    """
+    return container_plugin(
+        _add_blue_green_to_env_vars,
+        container_name = None,
+    )
+
+def _add_blue_green_to_env_vars(ctx, arguments, container_def):
+    blue_green_color = get_blue_green_color(ctx)
+    if blue_green_color != None:
+        container_def["env"]["STRIPE_BLUE_GREEN_COLOR"] = blue_green_color
+
+def add_blue_green_to_consul_services():
+    """
+    Add's colour tags to consul services
+
+    Returns:
+        A plugin that appends a consul tag to each services consul tags for the colour
+    """
+    return container_plugin(
+        _add_blue_green_to_consul_services,
+        consul_container_name,
+    )
+
+def _add_blue_green_to_consul_services(ctx, arguments, container_def):
+    # NB: This *only* works for Dedicated MSP. In Shared MSP, the networking
+    # stack auto-detects when we're doing a blue-green and sets up tags on its
+    # own.
+    blue_green_color = get_blue_green_color(ctx)
+    if blue_green_color != None:
+        for service in container_def["services"]:
+            service["tags"].append("color:{}".format(blue_green_color))
+
+def _add_blue_green_metrics_tagging(ctx, arguments, container_def):
+    blue_green_color = get_blue_green_color(ctx)
+    if blue_green_color != None:
+        container_def["env"]["STRIPE_BLUE_GREEN_ENABLE_METRICS_TAGGING"] = "1"
+
+def add_blue_green_metrics_tagging():
+    """
+    Set an environment variable that tells the service code to tag metrics
+    with the deployment set (blue/green).
+
+    Returns:
+        A plugin that appends a STRIPE_BLUE_GREEN_ENABLE_METRICS_TAGGING
+        env var to the main service container.
+    """
+    return container_plugin(
+        _add_blue_green_metrics_tagging,
+        container_name = None,
+    )
+
+def add_blue_green_strategy():
+    return compose_plugins(
+        conditional_plugin(
+            condition=is_dedicated_msp,
+            plugin=deployment_plugin(_add_blue_green_strategy_dedicated_msp),
+        ),
+        conditional_plugin(
+            condition=is_shared_msp,
+            plugin=deployment_plugin(_add_blue_green_strategy_shared_msp),
+        ),
+    )
+
+def _add_blue_green_strategy_dedicated_msp(ctx, arguments, deployment_def):
+    if get_blue_green_color(ctx) != None:
+        deployment_def["kwargs"]["strategy"] = blue_green_deployment_strategy_dedicated_msp(ctx)
+
+def _add_blue_green_strategy_shared_msp(ctx, arguments, deployment_def):
+    if get_blue_green_color(ctx) != None:
+        deployment_def["kwargs"]["strategy"] = blue_green_deployment_strategy_shared_msp(ctx)

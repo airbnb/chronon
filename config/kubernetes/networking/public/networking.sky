@@ -1,0 +1,248 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "init_container")
+load("config/kubernetes/core/lifecycle.sky", "pre_stop", "exec_action", "DEFAULT_NEW_ENDPOINT_PROPAGATION_SECONDS", "generate_infra_sidecar_prestop_command_args")
+load("config/kubernetes/core/probe.sky", "command_probe", "probes")
+load(
+    "config/kubernetes/core/volume.sky",
+    "host_volume",
+    "volume_mount",
+)
+load(
+    "config/kubernetes/helpers/context.sky",
+    "get_env",
+    "get_blue_green_color",
+    "get_cluster",
+    "get_name",
+)
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME")
+load(
+    "config/kubernetes/networking/public/config.sky",
+    "build_networking_config",
+)
+load(
+    "config/kubernetes/networking/internal/common.sky",
+    "POD_NETWORKING_HOST_VOLUME_PATH",
+    "POD_NETWORKING_BASEDIR",
+)
+
+load(
+    "config/kubernetes/networking/internal/consul.sky",
+    "consul_sidecar",
+    "finalize_consul_service",
+    "TAG_IGNORED_BY_HOST_ENVOY",
+)
+
+load("config/kubernetes/networking/internal/envoy-config-srv.sky", "envoy_config_srv_sidecar")
+load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "UNPRIVILEGED_ENVOY_PORT")
+load("config/kubernetes/networking/internal/config/override.sky", "target", "NOT_PROVIDED")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
+
+# This array is responsible for keeping track of a list of Henson service names that can
+# explicitly declare inbound rate limiting configurations directly in their skycfg files
+# (rather than automatic configuration based on values in Service Config).
+DEPRECTED_INBOUND_RATE_LIMITED_SERVICE_ALLOWLIST = [
+    # gocode
+    "consensus-control-srv",
+    "consensus-control-srv-dev",
+    "consensus-health-srv",
+    "consensus-health-srv-dev",
+    "consensus-worker-srv",
+    "consensus-worker-srv-dev",
+    "dcp-control-srv",
+
+    # zoolander
+    "eventbus",
+    "taxengine",
+]
+
+def networking(ctx, namespace, pod_termination_grace_period_seconds, availability_tier = "A400", host_network = True, register_services = [], config = None, consul_deprecated = False):
+    """
+    This plugin is the public API for configuring service-to-service networking for a pod.
+
+    e.g. what services should the pod register?
+    e.g. does the pod use the host network namespace?
+
+    Args:
+        ctx: Deploy-time Henson context
+        namespace: Kubernetes namespace where the target pod is running
+            (On dedicated MSP: this is a host type)
+        availability_tier: The availability tier of the target pod. This is extracted from
+            metadata.annotations.stripe.io/availability-tier of the deployment/statefulset.
+        host_network: Defaults to True (Dedicated MSP).
+            `True`:  pod shares the host networking namespace
+            `False`: pod runs in its own network-isolated networking namespace
+                     with a per-pod service networking stack
+        register_services: list of services for which to perform service registration.
+            e.g. The contents of this list must be constructed using the
+                 `consul_service` primitive
+        config: struct of configuration options, defined in `networking_config` (config/kubernetes/networking/public/config.sky)
+        consul_deprecated: a boolean that defines if we should inject an extra flag into the envoy-config-srv sidecar, to handle
+                starting up without consul-agent safely.
+    Returns:
+        A pod plugin that can be used with an entrypoint like `deployment`.
+    """
+    plugins = []
+    sn_stack_plugins = []
+    use_network_isolation = not host_network
+
+    consul_agent_services = []
+    plugins_for_consul_sidecar = []
+    for srv in register_services:
+        consul_service = srv["service"]
+        port = consul_service["port"]
+        extra_tags = []
+        envoy_port = None # NB(xyu): Setting the port to `None` uses the default envoy port. Should we be more explicit here?
+
+        if use_network_isolation:
+            # For Shared MSP, we require consul services to specify a non-zero port
+            if port == None or port <= 0:
+                fail("Consul service [%s] specifies an invalid port [%s]." % (consul_service["name"], port))
+
+            extra_tags.append(TAG_IGNORED_BY_HOST_ENVOY)
+
+            envoy_port = UNPRIVILEGED_ENVOY_PORT
+
+        # Add blue/green tags automatically.
+        #
+        # In Dedicated MSP, the blue/green plugins reached into the resource
+        # definition for the consul sidecar and added tags to it. In Shared MSP this
+        # doesn't work easily due to plugin ordering issues. Instead, just have the
+        # service networking stack itself (i.e., here) check if we're running in
+        # blue/green mode or not, and attach the appropriate tags if we are.
+        #
+        # TODO: This is a slight change in behavior: before, you in *theory* had to
+        # use the with_blue_green_traffic_shifting() plugin to enable this behavior,
+        # and now we're just doing it implicitly based on the henson context. *But*,
+        # almost all services arranged for this plugin to be called (this was done
+        # for you via the common deployment, etc. entrypoints). So we believe this
+        # is safe.
+        blue_green_color = get_blue_green_color(ctx)
+        if blue_green_color != None:
+            extra_tags.append("color:%s" % blue_green_color)
+
+        consul_agent_services.append(
+            finalize_consul_service(
+                consul_service,
+                envoy_port = envoy_port,
+                extra_tags = extra_tags,
+            ),
+        )
+        plugins_for_consul_sidecar.extend(srv["plugins"])
+
+    _env = get_env(ctx)
+
+    config_target = target(
+        role = namespace,  # XXX(xyu): introduce more granular `//namespace/<get_name(ctx)>` ?
+        region = get_cluster(ctx),
+        env = _env,
+        availability_tier = availability_tier,
+    )
+
+    if use_network_isolation:
+        # Registered services are fed into xDS sidecar to configure envoy ingress
+        xds_static_consul_config = []
+        for srv in consul_agent_services:
+            copy = {}
+            copy.update(**srv)
+            name = copy.pop("name")
+            copy["service"] = name
+            copy["id"] = name
+            copy.pop("checks")
+            xds_static_consul_config.append(copy)
+
+        if config == None:
+            config = build_networking_config()
+
+        # Services should only be able to configure the inbound rate limiter via Service Config unless they have a legacy skycfg setup.
+        if hasattr(config.inbound_ratelimit, "kwargs") and hasattr(config.inbound_ratelimit.kwargs, "enable") and config.inbound_ratelimit.kwargs.enable == True and get_name(ctx) not in DEPRECTED_INBOUND_RATE_LIMITED_SERVICE_ALLOWLIST:
+            fail("The inbound rate limiter must be configured using Service Config instead of skycfg.  See https://trailhead.corp.stripe.com/docs/service-networking/getting-started/service-mesh-configurations/local-rate-limiting#inbound-rate-limiting for more information.")
+
+        # -----------------------------------------
+        # Containers that are part of the SN stack
+        # -----------------------------------------
+        # TODO(xyu): add interfaces to explicitly declare inbound and outbound
+        # network ACLs, so we can experiment with more granular ACLs than the
+        # ones specified in a henson service config
+
+        envoy_config_srv_prestop_call = generate_infra_sidecar_prestop_command_args(ctx, ENVOY_CONFIG_SRV_SIDECAR_NAME, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds) # TODO de-hardcode
+
+        sn_stack_plugins.append(
+            host_volume(
+                POD_NETWORKING_HOST_VOLUME_PATH,
+                type = "Directory",
+                reason = "Each per-pod SN stack has a subpath in this basedir scoped to the pod",
+            )
+        )
+
+        # This is safe to do as the networking_config implementation made sure
+        # this field exists
+        if config.enable_global_ratelimit.kwargs.enable == True:
+            # By default, use the kubernetes namespace of the pod to identify the client
+            rate_limiter_namespace = namespace
+            # Check if a pod's networking config provided a namespace override to use for global rate limiting
+            kwargs = {}
+            if config.global_ratelimit != NOT_PROVIDED and config.global_ratelimit != None:
+                # Translating struct (Only used in SharedMSP) to map of arguments
+                for field in dir(config.global_ratelimit.kwargs):
+                    user_value = getattr(config.global_ratelimit.kwargs, field, None)
+                    if field.startswith("_") == False and (user_value != NOT_PROVIDED) and (user_value != None):
+                        kwargs[field] = user_value
+                if config.global_ratelimit.kwargs.namespace_override != "":
+                    rate_limiter_namespace = config.global_ratelimit.kwargs.namespace_override
+
+            sn_stack_plugins.extend([
+                ratelimit_sidecar(ctx, "latest", rate_limiter_namespace, **kwargs),
+            ])
+
+        if host_network:
+            plugins_for_consul_sidecar.extend([
+                probes(
+                    readiness = None,
+                    liveness = None,
+                    startup = command_probe(
+                        ctx,
+                        # NB: Succeed ~immediately to avoid failure due to timeoutSeconds (default: 1s)
+                        # i.e. we exclusively rely on initialDelaySeconds here
+                        ["/usr/bin/true"],
+                        initialDelaySeconds = DEFAULT_NEW_ENDPOINT_PROPAGATION_SECONDS,  # Delay the initial check from running
+                        periodSeconds = 1,  # check interval
+                        failureThreshold = 2,  # kill the container after failureThreshold*periodSeconds if we don't have a passing result
+                    ),
+                    container_name = "consul-sidecar",
+                ),
+            ])
+
+        sn_stack_plugins.extend([
+            envoy_config_srv_sidecar(ctx, namespace, xds_static_consul_config, config_target, config, consul_agent_services, host_network, consul_deprecated),
+            pre_stop(exec_action(ctx, *envoy_config_srv_prestop_call), container_name = ENVOY_CONFIG_SRV_SIDECAR_NAME),
+        ])
+
+    plugins.append(
+        pod_plugin(
+            _assert_host_network_matches_pod_def,
+            host_network = host_network,
+        )
+    )
+    if host_network:
+        plugins.append(consul_sidecar(
+            use_proxy = use_network_isolation,
+            use_probes = use_network_isolation,
+            services = consul_agent_services,
+            plugins = plugins_for_consul_sidecar,
+        ))
+    else:
+        sn_stack_plugins.extend(plugins_for_consul_sidecar)
+    plugins.extend(sn_stack_plugins)
+    return compose_plugins(*plugins)
+
+def _assert_host_network_matches_pod_def(ctx, networking_args, pod_def):
+    from_pod = pod_def["host_network"]
+    from_networking = networking_args.host_network
+    if from_pod != from_networking:
+        fail(" ".join([
+            "FATAL: conflicting values for `host_network`: `networking(host_network = %r)`" % from_networking,
+            "conflicts with `host_network = %r` set by some other plugin" % from_pod,
+        ]))

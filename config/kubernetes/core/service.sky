@@ -1,0 +1,46 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for building Kubernetes `Service` resources, which allow backends to
+be registered as routable endpoints.
+"""
+
+load("config/kubernetes/helpers/msp_shard.sky", "MSP_SHARD_ANNOTATION", "MSP_CLUSTER_ANNOTATION")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "ObjectMeta", "Service", "ServiceSpec")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def external_name_service(ctx, name, namespace, shard, external_name):
+    """
+
+    Args:
+        ctx: Henson context
+        name: Name of the service
+        namespace: Namespace to deploy the service
+        shard: shard that this service is deployed in
+        externalName: Host name of the service that this service object actually points at
+
+    Returns:
+        A [Service](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#service-v1-core) protobuf message.
+    """
+    service = Service(
+        ctx = ctx,
+        metadata = ObjectMeta(
+            ctx = ctx,
+            name = name,
+            namespace = namespace,
+            annotations = {},
+        ),
+        spec = ServiceSpec(
+            ctx = ctx,
+            type = "ExternalName",
+            externalName = external_name,
+        ),
+    )
+
+    if get_render_yaml(ctx):
+        service["metadata"]["annotations"][MSP_CLUSTER_ANNOTATION] = shard
+        service["metadata"]["annotations"][MSP_SHARD_ANNOTATION] = shard
+    else:
+        service.metadata.annotations[MSP_CLUSTER_ANNOTATION] = shard
+        service.metadata.annotations[MSP_SHARD_ANNOTATION] = shard
+
+    return service

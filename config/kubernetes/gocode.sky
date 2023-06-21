@@ -1,0 +1,62 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/lifecycle.sky", "grace_period")
+load("config/kubernetes/core/probe.sky", "add_initial_delay_seconds")
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/stripe.sky", "stripe_pod")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
+
+def gocode_pod(ctx, **kwargs):
+    """
+    Create a standard gocode job or service with a main container
+
+    Args:
+        name: The name of service or job. Generally, this should match the Henson service name.
+        image: The name of the ECR repository of the container images the pod should run for its main container.
+            Defaults to the default gocode image. See http://go/sky/service-specific-containers for more info
+            about setting up a container image for your service.
+        command: An array containing the command and arguments that should run in the main container.
+        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
+        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        host_type: The host type of the machines this pod should be able to
+            schedule on. This will also be the namespace of the pods in Kubernetes.
+            Must be set iff shared_msp=False (the default).
+        shared_msp: CURRENTLY ONLY FOR EXPERIMENTAL USE. PROCEED AT YOUR OWN
+            RISK. Whether to run on Shared MSP or Dedicated MSP. Defaults to False
+            (Dedicated MSP). See http://go/msp for details.
+        namespace: The namespace of the pods in Kubernetes. Must be set iff shared_msp=True.
+        **kwargs: The same arguments that `stripe_pod` supports.
+
+    Returns:
+        A plugin that can be used with an entrypoint like `deployment` or `cronjob`
+    """
+    image = kwargs.pop("image", _default_gocode_image)
+
+    pay_health_mount = compose_plugins()
+    if kwargs.get("opt_out_of_safe_deploys", False):
+        pay_health_mount = mount_host_volume("/pay/health", volume_args = {
+            "type": "Directory",
+            "reason": "Allows service healthchecks to read the state of the host's stripe-health check.",
+        })
+
+    return compose_plugins(
+        stripe_pod(
+            ctx,
+            image = image,
+            **kwargs
+        ),
+
+        pay_health_mount,
+    )
+
+# The container image repository name for gocode containers.
+#
+# You generally will use `gocode_pod` to create a container with this image, but if
+# you need additional containers in your pod that use the gocode image, you can use
+# this value as the `image` parameter to `container`.
+gocode_image = "stripe/gocode"
+
+_default_gocode_image = image_defaults(
+    name = "stripe/gocode",
+    artifact = "gocode-image",
+)

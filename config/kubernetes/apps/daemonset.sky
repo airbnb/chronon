@@ -1,0 +1,152 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for creating and configuring Kubernetes [DaemonSet][]s
+
+[daemonset]: https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/
+"""
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/apps/strategy.sky", "rolling_update_daemonset_strategy")
+load("config/kubernetes/core/pod.sky", "all_containers", "pod")
+load("config/kubernetes/helpers/node_selectors.sky", "node_selectors", "host_type", "SHARED_MSP_HOST_TYPE")
+load("config/kubernetes/helpers/msp_shard.sky", "msp_shard")
+load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "metadata")
+load("config/kubernetes/plugins/types.sky", "daemonset_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "DaemonSet", "DaemonSetSpec")
+load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def daemonset(ctx, *plugins, **kwargs):
+    """
+    Schedule a service to run a single instance per machine.
+
+    A DaemonSet is designed for workloads that need a single pod per node, either across
+    the whole cluster or on a filtered subset of nodes (e.g. by host type).
+
+    In general, we prefer to use a `deployment` even when we expect to run a single
+    instance per node, as it gives more flexibility to rollouts of the service. A DaemonSet
+    is better suited for infrastructure services that support the proper functioning
+    of hosts in the cluster.
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        *plugins: One or more plugins to configure the service.
+        **kwargs: Options for the [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#daemonsetspec-v1-apps).
+            A shortcut for the `daemonset_options` plugin.
+
+    Returns:
+        A [DaemonSet](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#daemonset-v1-apps)
+        Kubernetes protobuf message describing the configuration of the service.
+    """
+
+    daemonset = {
+        "render": _render_daemonset,
+        "type": "daemonset",
+        "metadata": {},
+        "kwargs": {},
+    }
+
+    all_plugins = []
+    all_plugins.extend(plugins)
+    all_plugins.append(daemonset_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    plugin.update_daemonset(ctx, plugin, daemonset)
+    plugin.update_pod(ctx, plugin, daemonset["pod"])
+
+    for container in all_containers(daemonset["pod"]):
+        plugin.update_containers(ctx, plugin, container)
+
+    return daemonset["render"](ctx, daemonset)
+
+def daemonset_options(**kwargs):
+    """
+    Defines options for a daemonset.
+
+    Args:
+        **kwargs: Options to apply to the daemonset. These map directly to fields on the Kubernetes
+            [DaemonSetSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#daemonsetspec-v1-apps).
+
+    Returns:
+        A plugin that applies the options to a daemonset.
+    """
+    return daemonset_plugin(
+        _update_daemonset_options,
+        kwargs = kwargs,
+    )
+
+def _update_daemonset_options(ctx, plugin, daemonset_def):
+    daemonset_def["kwargs"].update(plugin.kwargs)
+
+def _render_daemonset(ctx, daemonset_def):
+    daemonset_def["metadata"] = struct(**daemonset_def["metadata"])
+    daemonset = struct(**daemonset_def)
+    pod_template = daemonset.pod["render"](ctx, daemonset.pod)
+
+    rendered_daemonset = DaemonSet(
+        ctx,
+        metadata = render_metadata(ctx, daemonset.metadata),
+        spec = DaemonSetSpec(
+            ctx,
+            selector = render_selector(ctx, daemonset.metadata),
+            template = pod_template,
+            **daemonset.kwargs
+        ),
+    )
+    if daemonset_def.get("securitygrouppolicy", "") and is_security_group_policy_enabled(ctx, daemonset_def):
+        sgp_obj = daemonset.securitygrouppolicy["render"](ctx, daemonset.securitygrouppolicy)
+        sgp_yaml = yaml.marshal(sgp_obj)
+        return [
+            sgp_yaml,
+            rendered_daemonset
+        ]
+    return rendered_daemonset
+
+def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = "10%", node_selector_label = None, node_selectors_map = None):
+    """
+    Creates a daemonset to be applied to mspworker nodes
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        name: Name of the daemonset
+        shard: Shard that the daemonset is to be deployed to
+        *plugins: One or more plugins to configure the service.
+        max_unavailable: Percentage (as a string) of pods across the daemonset that will be updated at once. Default is 10%
+        node_selector_label: The node selector to use to determine which nodes to deploy to, will look for the value of "true". Used as part of initial
+            migration from static pods to daemonsets.
+        node_selectors_map: Dictionary of node labels to values to restrict where this deploy can go.
+
+
+    Returns:
+        A [DaemonSet](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.21/#daemonset-v1-apps)
+        Kubernetes protobuf message describing the configuration of the service.
+    """
+
+    all_plugins = []
+
+    common_plugins = [
+        pod(host_network = True),
+        metadata(
+            namespace = SHARED_MSP_HOST_TYPE,
+            service_name = name,
+        ),
+        host_type(SHARED_MSP_HOST_TYPE),
+        msp_shard(shard),
+        add_toleration(key = "stripe.io/pod-evictor", operator = "Exists", effect = "NoExecute")
+    ]
+
+    if node_selectors_map == None:
+        node_selectors_map = {}
+    if node_selector_label != None:
+        node_selectors_map[node_selector_label] = "true"
+    common_plugins.append(node_selectors(node_selectors_map))
+
+    all_plugins.extend(common_plugins)
+    all_plugins.extend(plugins)
+
+    return daemonset(
+        ctx,
+        compose_plugins(*all_plugins),
+        updateStrategy = rolling_update_daemonset_strategy(ctx, max_unavailable),
+    )
+

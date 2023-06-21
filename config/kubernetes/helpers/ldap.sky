@@ -1,0 +1,72 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")
+load("config/kubernetes/core/volume.sky", "host_volume", "mount_host_volume", "volume_mount")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+
+_host_files = [
+    "/etc/group",
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/nsswitch.conf",
+]
+
+LDAP_MOUNT_NAME = "etc-lmscache"
+# There are more legacy ldap mount names
+# This is defined here to test presence of legacy mounts
+LEGACY_LDAP_MOUNT_NAME = "etc-group"
+
+def mount_ldap_host_volumes(container_name = None, legacy_mount = None):
+    """
+    Mounts directories required by LDAP and lmscache into the container.
+
+    In particular, it mounts the host's /etc/lmscache/ in the container. When
+    `legacy_mount = True` it mounts the host's /etc/ to /etc/lmscache/ in the
+    container instead.
+
+    Args:
+        container_name: The container to mount into.
+        legacy_mount: Whether to use legacy style less secure bind mounts.
+
+    Returns:
+        A plugin that mounts LDAP host directories into the pod.
+    """
+
+    if legacy_mount == None:
+        return compose_plugins(
+            conditional_plugin(
+                condition=is_shared_msp,
+                plugin=_mount_ldap_host_volumes(container_name),
+            ),
+            conditional_plugin(
+                condition=is_dedicated_msp,
+                plugin=_legacy_mount_ldap_host_volumes(container_name),
+            ),
+        )
+
+    if not legacy_mount:
+        return _mount_ldap_host_volumes(container_name)
+
+    return _legacy_mount_ldap_host_volumes(container_name)
+
+def _mount_ldap_host_volumes(container_name = None):
+    return mount_host_volume("/etc/lmscache", container_name = container_name, volume_args = {"type" : "Directory", "reason": "For access to LDAP data"})
+
+def _legacy_mount_ldap_host_volumes(container_name = None):
+    # lmscache currently writes to `/etc/{group,passwd,shadow}.cache`. We want
+    # to mount just these files, not the whole host `/etc`, but this isn't
+    # compatible with atomic file writes because a bind mount identifies files
+    # by inode rather than path.
+    #
+    # In the future, lmscache will write to `/etc/lmscache/` and the problem
+    # will be solved. Until then, simulate that layout by mounting the host
+    # `/etc` (sorry) at `/etc/lmscache/` and pretend it doesn't have the whole
+    # world in it.
+
+    mounts = [mount_host_volume(file, container_name = container_name, volume_args = {"type": "File"}) for file in _host_files]
+
+    return compose_plugins(
+        volume_mount("/etc/lmscache", name = LDAP_MOUNT_NAME),
+        host_volume("/etc", name = LDAP_MOUNT_NAME, type = "Directory"),
+        *mounts
+    )

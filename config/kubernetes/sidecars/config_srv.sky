@@ -1,0 +1,83 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "sidecar_container", "resource_requirements")
+load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/generic.sky", "is_shared_msp")
+load("config/kubernetes/core/lifecycle.sky", "render_lifecycle")
+load("config/kubernetes/core/volume.sky", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/helpers/security.sky", "mount_host_stripe_ca_certs")
+load("config/kubernetes/helpers/security.sky", "use_credentials_proxy", "mount_credentials_proxy", "mount_host_credentials_proxy")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/variables.sky", "CONFIG_SRV_CONTAINER_ENV", "CONFIG_SRV_CONTAINER_DIGEST")
+
+sidecar_name = "config-srv-sidecar"
+
+def config_srv_sidecar(ctx, http_port = 10104, grpc_port = 10105):
+    """
+    Sets up a read-through cache in front of config-srv as a sidecar.
+    Used when reading values from config-srv in Ruby with the client library.
+
+    Args:
+        http_port: The port that the local HTTP server should serve on.
+            By default, it uses port 10104, which consumers should already be configured to use.
+        grpc_port: The port that the local GRPC server should serve on.
+            By default, it uses port 10105, which consumers should already be configured to use.
+
+    Returns:
+        A plugin that adds the sidecar container to the pod.
+    """
+
+    return _config_srv_sidecar_unpinned(http_port=http_port, grpc_port=grpc_port)
+
+sidecar_present_key = "config_srv_sidecar_container"
+
+def _if_not_present(ctx, pod_def):
+    if sidecar_present_key in pod_def:
+        return False
+
+    # It's kinda hacky to mutate the pod_def here, but it should be valid,
+    # and it allows us to safely wrap the plugin we care about.
+    pod_def[sidecar_present_key] = True
+    return True
+
+def _config_srv_sidecar_unpinned(*, http_port = 10104, grpc_port = 10105):
+    return compose_plugins(
+        use_credentials_proxy(),
+        # We use certproxy to obtain pod certs in shared MSP, but we still have
+        # to mount the host CA certs, since those are not automatically
+        # included in the sidecar container.
+        conditional_plugin(
+            is_shared_msp,
+            mount_host_stripe_ca_certs(container_name = sidecar_name),
+        ),
+        conditional_plugin(
+            _if_not_present,
+            sidecar_container(
+                name = sidecar_name,
+
+                sidecar_service = "config-srv-sidecar-msp",
+                container_image = "stripe/deploy-and-staging/config-srv-sidecar",
+                fallback_label = CONFIG_SRV_CONTAINER_DIGEST,
+                fallback_env = CONFIG_SRV_CONTAINER_ENV,
+
+                # No ports needed because we're only listening on localhost.
+                # ports = ...
+                plugins = [
+                    mount_credentials_proxy(),
+                    volume_mount("/pay/cache", container_name = "config-srv-sidecar"),
+                ],
+
+                command = [
+                    "/pay/deploy/gocode/current/config-srv-sidecar/config-srv-sidecar",
+                    "--http-port=%s" % http_port,
+                    "--grpc-port=%s" % grpc_port,
+                    # This will communicate with the veneur instance running on the host in Dedicated MSP,
+                    # and the metrics() sidecar on Shared MSP (which is always present)
+                    "--veneur-address=udp://127.0.0.1:8128",
+                ],
+            )
+        )
+    )

@@ -1,0 +1,29 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Provides utilities for identifying containers that belong to sidecars rather than
+the principle application containers in a pod.
+"""
+
+def generate_sidecars_annotation(init_containers, containers):
+    all_containers = init_containers + containers
+    sidecars = _generate_sidecars_dict(all_containers)
+    return {
+        "stripe.io/sidecars": json.marshal(sidecars),
+    }
+
+def _generate_sidecars_dict(containers):
+    # Given a list of container specs from a pod, returns a mapping of sidecar
+    # service -> sidecar containers.
+    #
+    # This method works by inspecting the key "sidecar_service" in a container spec.
+    # If that key doesn't exist, we'll fail to notice the sidecar service.
+
+    sidecars = {}
+
+    for container in containers:
+        sidecar_service = container.get("sidecar_service")
+        if sidecar_service:
+            sidecars.setdefault(sidecar_service, [])
+            sidecars[sidecar_service].append(container['name'])
+
+    return sidecars

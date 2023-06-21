@@ -1,0 +1,25 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to help with service consul services
+"""
+
+load("config/kubernetes/helpers/context.sky", "get_service_consul_services")
+load("config/kubernetes/plugins/types.sky", "container_plugin",
+     "deployment_plugin")
+
+
+def add_service_consul_services():
+    """
+    Add an annotation to the deployment with the list of consul services associated with
+    the henson service being deployed
+    """
+    return deployment_plugin(_add_service_consul_services_to_def)
+
+
+def _add_service_consul_services_to_def(ctx, arguments, deployment_def):
+    consul_services = get_service_consul_services(ctx)
+    if not consul_services:
+        return
+    deployment_def['metadata']['annotations'].update({
+        "stripe.io/consul-services": json.marshal(consul_services),
+    })

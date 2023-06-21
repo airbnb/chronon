@@ -1,0 +1,49 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to enable dynamic replica scaling for a deployment
+"""
+
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/helpers/warning.sky", "warn")
+
+
+def dynamic_replicas(desired_count=1, max_count=1, min_count=1):
+    """
+    Configures the deployment to have a dynamic number of replicas rather than
+    a static one. This allows your deployment to vary its replica count within
+    min/max boundaries during its lifetime and is a pre-requisite to having an
+    autoscaled deployment.
+
+    Args:
+        desired_count: The initial replica count for the first deployment. After
+            your first deployment, if this value changes from one deployment to
+            the next the new value will override the deployment's replica
+            count. Otherwise the current replica count will remain unchanged.
+        min_count: The minimum number of replicas the deployment should have
+            (for autoscaling)
+        max_count: The maximum number of replicas the deployment should have
+            (for autoscaling)
+    """
+    if min_count > max_count:
+        fail("min_count (%d) is greater than max_count (%d)" % (min_count, max_count))
+    if desired_count > max_count:
+        fail("desired_count (%d) is greater than max_count (%d)" % (desired_count, max_count))
+
+    if desired_count < min_count:
+        fail("desired_count (%d) is less than min_count (%d)" % (desired_count, min_count))
+
+    return deployment_plugin(
+        _add_dynamic_replicas,
+        desired_count=str(desired_count),
+        max_count=str(max_count),
+        min_count=str(min_count),
+    )
+
+
+def _add_dynamic_replicas(ctx, arguments, deployment_def):
+    deployment_def['metadata']['annotations'].update({
+        "stripe.io/dynamic-replicas-enabled": "yes",
+        "stripe.io/dynamic-replicas-count-min": arguments.min_count,
+        "stripe.io/dynamic-replicas-count-max": arguments.max_count,
+        "stripe.io/dynamic-replicas-count-desired": arguments.desired_count,
+    })

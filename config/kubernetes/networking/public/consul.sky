@@ -1,0 +1,186 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Public API for constructing Consul service registration.
+Use `consul_service` and helpers therein to construct a list of services to pass
+in to `networking(...)` plugin
+
+For a service to receive traffic from other machines, it must be registered in Consul,
+which allows other services to discover it.
+"""
+
+load("config/kubernetes/core/container.sky", "container_port")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "deployment_plugin", "statefulset_plugin")
+load("config/kubernetes/helpers/constants.sky", "CONSUL_SIDECAR_CONTAINER_NAME")
+
+def consul_meta_envoy_priority_routing(routing_header, routing_assignment, meta = None, receive_non_priority_traffic = None):
+    """
+    Creates consul metadata telling Envoy to priority route to this service.
+
+    Note: Please read https://go/priority-traffic-rollouts#onboarding-with-host-isolation before using priority routing.
+    Note: Priority routing also requires `priority_based_routing` to be set to `true` for the target service;
+    see https://go/envoy-service-flags for details.
+
+    Args:
+        routing_header: The header for Envoy to look up when priority routing to this service.
+        routing_assignment: The assignment for this service; the value of the routing_header will be compared to this assignment
+            and sent to this service if it is equal.
+        meta: Optional dict, existing meta to merge priority routing configuration into.
+        receive_non_priority_traffic: Optional boolean.
+            - If `True`, the service pods labeled with this will be candidates for requests that are missing priority routing headers.
+            - If `False`, the service pods labeled with this will *not* be candidates for requests missing priority routing headers.
+            - If not provided (or is set to None), defaults to True; however, this does not override the value in meta if the meta
+              arg is also provided and has a value for "receive_non_priority_enabled_traffic".
+            - Note: If all pods for a given service are configured with `receive_non_priority_traffic = False`, then requests that are
+              missing priority routing headers will be automatically rejected by the service mesh.
+
+    Returns:
+        A dict that can be used as consul meta.
+    """
+
+    if routing_header == None or routing_header == "":
+        fail("Priority routing header must be provided")
+
+    if routing_assignment == None or routing_assignment == "":
+        fail("Priority routing assignment must be provided")
+
+    if meta == None:
+        meta = {}
+    meta["envoy-lb_subsets-header_name"] = routing_header
+    meta["envoy-lb_subsets-header_value"] = routing_assignment
+
+    if receive_non_priority_traffic == None:
+        meta["receive_non_priority_enabled_traffic"] = meta.get("receive_non_priority_enabled_traffic", "true")
+    else:
+        meta["receive_non_priority_enabled_traffic"] = "true" if receive_non_priority_traffic else "false"
+
+    return meta
+
+def register_service(
+        port,
+        name,
+        tags = [],
+        checks = [],
+        meta = {},
+        container_name = None,
+        port_name = None,
+        **kwargs):
+    """
+    Define a service for the deployment which the networking plugin will include in its
+    registered services
+
+    Args:
+        port: The port the service is running on.
+        name: The name of the service to register in Consul.
+        tags: Optional tags for the Consul service.
+        checks: Optional checks for the Consul service.
+        meta: Optional metadata for the Consul service.
+        (DEPRECATED) container_name: Optional name of the container that is running the service. Defaults to the
+            main container of the pod.
+        port_name: Optional name for the port that can be referred to by services.
+        **kwargs: Optional extra settings for the service, which will be provided directly to the
+            Consul sidecar. Generally, this is not needed.
+
+    """
+    return compose_plugins(
+        deployment_plugin(
+            _register_service,
+            service=define_registered_service(port, name, tags, checks, meta, container_name, port_name, **kwargs),
+        ),
+        statefulset_plugin(
+            _register_service,
+            service=define_registered_service(port, name, tags, checks, meta, container_name, port_name, **kwargs),
+        ),
+    )
+
+def _register_service(ctx, arguments, resource_def):
+    resource_def['registered_services'].append(arguments.service)
+
+def define_registered_service(
+        port,
+        name,
+        tags = [],
+        checks = [],
+        meta = {},
+        container_name = None,
+        port_name = None,
+        **kwargs):
+    """
+    Passed to the `networking(register_services=[...])` plugin to register a
+    Consul service to allow traffic to be routed to the pod.
+
+    This function returns an opaque datastructure meant to be consumed by the
+    `networking()` plugin:
+    - an opaque representation of the consul service data
+    - plugins that provide a hint for the service's port
+
+    NOTE: passing `consul_service` to `networking()` does not automatically set
+    up Kubernetes healthchecking for a pod. Use `healthchecked_service` instead.
+
+    Args:
+        port: The port the service is running on.
+        name: The name of the service to register in Consul.
+        tags: Optional tags for the Consul service.
+        checks: Optional checks for the Consul service.
+        meta: Optional metadata for the Consul service.
+        (DEPRECATED) container_name: Optional name of the container that is running the service. Defaults to the
+            main container of the pod.
+        port_name: Optional name for the port that can be referred to by services.
+        **kwargs: Optional extra settings for the service, which will be provided directly to the
+            Consul sidecar. Generally, this is not needed.
+
+    Returns:
+        A dictionary with the following schema:
+        {
+          "service": an opaque representation of a consul service (dictionary)
+          "plugins": a set of opaque plugins to apply
+        }
+    """
+    # NB(xyu): I couldn't find any livegrep examples of people using this field
+    # in practice. The whole point of setting `container_name` appears to be to
+    # set the k8s containerPort hint on the correct container. Consider
+    # deprecating this if it simplifies the data model
+    if container_name != None:
+        fail("consul_service: `container_name` argument is deprecated. Please stop using it")
+
+    # https://jira.corp.stripe.com/browse/ORCH-1006
+    if len(tags) == 0:
+        tags = []
+
+    service = {
+        "name": name,
+        "port": port,
+        "tags": tags,
+        "checks": checks,
+        "meta": meta,
+    }
+    service.update(kwargs)
+
+    plugins = []
+    if port != 0:
+        plugins.append(container_port(port, container_name = container_name, port_name = port_name))
+
+    return {
+        'service': service,
+        'plugins': plugins
+    }
+
+
+# Backwards compatibility
+def envoy_consul_tag(healthcheck):
+    print("!! [DEPRECATED] `envoy_consul_tag` -- please use `consul_tag_envoy_healthcheck`. This warning will soon become a failure.")
+    return consul_tag_envoy_healthcheck(healthcheck)
+
+def consul_tag_envoy_healthcheck(healthcheck):
+    """
+    Creates a Consul tag telling Envoy how to healthcheck the service.
+
+    Using the `healthchecked_service` plugin will set up this tag for you.
+
+    Args:
+        healthcheck: The HTTP path of the healthcheck endpoint for the service.
+
+    Returns:
+        A tag that can be used with `consul_service`.
+    """
+    return "envoy_health_check?%s" % url.encode_query({"path": healthcheck})

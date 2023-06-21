@@ -1,0 +1,110 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+A plugin to write dynamic configuration files when a pod starts.
+
+In most cases, it's better to include configuration either as command-line arguments to
+a container or as a file included in the container image if the configuration is too
+complex to be represented in arguments.
+
+The main reason to use the `config_file` plugin is when the contents of the configuration
+use information from the Henson deploy context. For instance, if you deploy to multiple
+clusters in different regions, and you need a config file with different values for each
+cluster, you can generate that in Skycfg using `config_file`.
+"""
+
+load("config/kubernetes/core/volume.sky", "render_volume_mount", "volume_mount")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/sidecars/variables.sky", "FILE_WRITER_ALPINE_CONTAINER_SHA")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
+load("config/kubernetes/core/container.sky", "resource_requirements")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def config_file(path, content, volume):
+    """
+    Write a config file to a volume using an init container.
+
+    Avoid using this unless the file contents depend on the deploy context (e.g. the
+    cluster or environment being deployed to). If the file contents are static, consider
+    including the file in the container image and referencing it directly.
+
+    Args:
+        path: The path to the file to write to.
+        content: The string that will be written to the file.
+        volume: The path of the volume the file will be written to.
+
+    Returns:
+        A plugin that will cause the file to be written.
+    """
+    return pod_plugin(
+        _update_pod,
+        path = path,
+        content = content,
+        volume = volume,
+    )
+
+def _update_pod(ctx, plugin, pod_def):
+    if "config_files" in pod_def:
+        config = pod_def["config_files"]
+    else:
+        config = _setup_config_files(ctx, pod_def)
+
+    config["files"].append(plugin)
+
+def _setup_config_files(ctx, pod_def):
+    config = {
+        "files": [],
+    }
+    pod_def["config_files"] = config
+
+    pod_def["init_containers"].append({
+        "render": _render_container,
+        "name": "write-config-files",
+        "config": config,
+        "sidecar_service": "config-files-sidecar",
+    })
+
+    return config
+
+def _render_container(ctx, container_def, pod):
+    container = struct(**container_def)
+
+    commands = []
+    contents = []
+    volumes = {}
+
+    for idx, file in enumerate(container.config["files"]):
+        commands.append("echo \"$%s\" > %s" % (idx + 1, file.path))
+
+        content = file.content
+        if get_render_yaml(ctx):
+            # trim white space from beginning of file so it can be embedded correctly
+            content = content.lstrip()
+
+        contents.append(content)
+        volumes[file.volume] = 1  # using volumes dict as a set
+
+    # Mitigate a race condition between Kubelet and ContainerD, where the pod
+    # may be marked failed if any init container finishes too quickly.
+    #
+    # https://jira.corp.stripe.com/browse/RUN_ORCH-5
+    commands.append("sleep 2")
+
+    command = [
+        "/bin/sh",
+        "-c",
+        "; ".join(commands),
+        "sh",
+    ]
+    command.extend(contents)
+
+    volume_mounts = [volume_mount(volume, read_only = False) for volume in volumes.keys()]
+
+    return Container(
+        ctx,
+        name = container.name,
+        image = image(ctx, "stripe/build/alpine-3.7", label = "git-%s" % FILE_WRITER_ALPINE_CONTAINER_SHA),
+        command = command,
+        volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],
+        resources = resource_requirements(ctx),
+    )

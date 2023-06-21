@@ -1,0 +1,13 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_fail_on_warnings", "get_suppress_warnings")
+
+def warn(ctx, *args):
+    """
+    Depending on the value of `fail_on_warnings` in the ctx, either prints the
+    provided input as a warning or hard-exits the Skycfg rendering with a fail()
+    """
+
+    if get_fail_on_warnings(ctx):
+        fail(*args)
+    elif not get_suppress_warnings(ctx):
+        print(*args)

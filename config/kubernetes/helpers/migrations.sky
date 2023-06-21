@@ -1,0 +1,25 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/helpers/node_selectors.sky", "host_set")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+
+def migrate_from_puppet(env_to_set = {}):
+    """
+    Conditionally adds a host set as a node selector to a pod.
+
+    Args:
+        env_to_set: Dictionary of environment name strings to host set name strings
+
+    Returns:
+        A plugin to conditionally restrict a pod to a host set
+    """
+    return pod_plugin(_migrate_from_puppet, env_to_set = env_to_set)
+
+def _migrate_from_puppet(ctx, plugin, pod_def):
+    env = get_env(ctx)
+    selected_set = plugin.env_to_set[env]
+
+    if selected_set:
+        host_set_plugin = host_set(selected_set)
+        host_set_plugin.update_pod(ctx, host_set_plugin, pod_def)

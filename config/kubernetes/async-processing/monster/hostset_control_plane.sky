@@ -1,0 +1,160 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# This file defines data structures that describe a Monster isolation group
+# control plane
+# See http://go/monster-hostset-decl for detailed documentation.
+
+load("config/kubernetes/async-processing/monster/util.sky", "ALL_CLUSTERS")
+
+DEFAULT_FANOUT_COUNT = 2
+DEFAULT_FANOUT_RETRY_COUNT = 2
+DEFAULT_QA_FANOUT_RETRY_COUNT = 1
+DEFAULT_FEEDER_COUNT = 2
+DEFAULT_SWEEPER_COUNT = 2
+DEFAULT_QA_SWEEPER_COUNT = 1
+
+# These should remain 0 because we only run monster-express and monster-api for some isolation groups
+DEFAULT_API_COUNT = 0
+DEFAULT_EXPRESS_COUNT = 0
+
+# Define a control plane for a Monster isolation group
+#
+# 0 means size is 0. None means it is unset (default value may be used).
+#
+# For more details, see the user guide at http://go/monster-hostset-decl.
+def cluster(
+        fanout_replicas=None,
+        fanout_retry_replicas=None,
+        feeder_replicas=None,
+        express_replicas=None,
+        sweeper_replicas=None,
+        api_replicas=None,
+):
+    return struct(
+        fanout=fanout_replicas,
+        fanout_retry=fanout_retry_replicas,
+        feeder=feeder_replicas,
+        express=express_replicas,
+        sweeper=sweeper_replicas,
+        api=api_replicas,
+    )
+
+
+def no_replicas_cluster():
+    return cluster(0, 0, 0, 0, 0, 0)
+
+# (Private API) Helper function to return the first non-None value from a list
+# of arguments. The typical Skycfg idiom "foo or bar" doesn't work because
+# zero is false-y, so it gets treated the same as None.
+#
+# Returns None if there are no non-None values in vals.
+def _first_set(*vals):
+    for val in vals:
+        if val != None:
+            return val
+
+    return None
+
+# (Private API) Returns a template cluster for defaults based on global constants
+def _global_default_template_cluster():
+    return cluster(
+        fanout_replicas=DEFAULT_FANOUT_COUNT,
+        fanout_retry_replicas=DEFAULT_FANOUT_RETRY_COUNT,
+        feeder_replicas=DEFAULT_FEEDER_COUNT,
+        express_replicas=DEFAULT_EXPRESS_COUNT,
+        sweeper_replicas=DEFAULT_SWEEPER_COUNT,
+        api_replicas=DEFAULT_API_COUNT,
+    )
+
+def _global_default_qa_template_cluster():
+    return cluster(
+        fanout_replicas=DEFAULT_FANOUT_COUNT,
+        fanout_retry_replicas=DEFAULT_QA_FANOUT_RETRY_COUNT,
+        feeder_replicas=DEFAULT_FEEDER_COUNT,
+        express_replicas=DEFAULT_EXPRESS_COUNT,
+        sweeper_replicas=DEFAULT_QA_SWEEPER_COUNT,
+        api_replicas=DEFAULT_API_COUNT,
+    )
+
+# (Test API) Defines defaults to hold default values. Only test
+# code actually calls this, to set stable defaults so assertions don't depend
+# on production defaults. Do not use in production.
+def worker_defs(template_cluster=_global_default_template_cluster()):
+    if template_cluster == None:
+        fail("template_cluster cannot be None in worker_defs")
+
+    if template_cluster.feeder == None \
+            or template_cluster.fanout == None \
+            or template_cluster.fanout_retry == None \
+            or template_cluster.express == None \
+            or template_cluster.sweeper == None \
+            or template_cluster.api == None:
+        fail("template_cluster cannot have any unset fields in worker_defs")
+
+    return struct(
+        template=template_cluster,
+    )
+
+# (Private API) Executes the default cascade given a new template cluster,
+def _merge_templates(new_cluster, old_defs):
+    if new_cluster == None:
+        return old_defs
+
+    template = cluster(
+        feeder_replicas=_first_set(
+            new_cluster.feeder, old_defs.template.feeder),
+        fanout_replicas=_first_set(
+            new_cluster.fanout, old_defs.template.fanout),
+        fanout_retry_replicas=_first_set(
+            new_cluster.fanout_retry, old_defs.template.fanout_retry),
+        express_replicas=_first_set(
+            new_cluster.express, old_defs.template.express),
+        sweeper_replicas=_first_set(
+            new_cluster.sweeper, old_defs.template.sweeper),
+        api_replicas=_first_set(new_cluster.api, old_defs.template.api),
+    )
+
+    return worker_defs(template_cluster=template)
+
+# (Private API) Creates a final JSON document containing, for a given cluster,
+# all of the properties relevant to deployments. Final values are
+# looked up according to the default cascade if necessary.
+def render_cluster(cluster_map, cluster_name, defs):
+    c = cluster_map.get(cluster_name, cluster())
+    return {
+        cluster_name: {
+            "feeder": _first_set(c.feeder, defs.template.feeder),
+            "fanout": _first_set(c.fanout, defs.template.fanout),
+            "fanout-retry": _first_set(c.fanout_retry, defs.template.fanout_retry),
+            "express": _first_set(c.express, defs.template.express),
+            "sweeper": _first_set(c.sweeper, defs.template.sweeper),
+            "api": _first_set(c.api, defs.template.api),
+        }
+    }
+
+# (Private API) Creates a final JSON document containing, for a given
+# environment (prod, qa), all of the properties relevant to
+# deployments. This is the union of the result of `render_cluster`, for each
+# cluster known.
+def render_env(env_map, defs):
+    # short-hand for per-env default
+    if type(env_map) != "dict":
+        env_map = {"default": env_map}
+
+    defs = _merge_templates(env_map.get("default"), defs)
+    json = {}
+    for cluster_name in ALL_CLUSTERS:
+        json.update(render_cluster(env_map, cluster_name, defs))
+
+    return json
+
+# Creates a deployment declaration for an isolation group (aka host-set)
+# shared_msp is on by default.
+# When is_canary set to True, it would be included in the canary stage of a control plane deployment
+def host_set(name, default=None, qa=None, preprod=no_replicas_cluster(), prod=None, is_canary=False, defs=worker_defs()):
+    defs = _merge_templates(default, defs)
+    qa_defs = _merge_templates(default, worker_defs(template_cluster=_global_default_qa_template_cluster()))
+    qa_json = render_env(qa or {}, qa_defs)
+    preprod_json = render_env(preprod or {}, defs)
+    prod_json = render_env(prod or {}, defs)
+
+    return struct(name=name, qa=qa_json, preprod=preprod_json, prod=prod_json, is_canary=is_canary, shared_msp=True)

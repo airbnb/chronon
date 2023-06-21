@@ -1,0 +1,72 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Toleration")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def add_toleration(key = None, operator = None, effect = None, value = None, toleration_seconds = None):
+    """
+    Adds a node taint toleration to a pod.
+
+    Args:
+        key: Key is the taint key that the toleration applies to. Empty means match all taint keys.
+            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+        operator: Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal.
+            Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category.
+        effect: Effect indicates the taint effect to match. Empty means match all taint effects.
+            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+        value: Value is the taint value the toleration matches to. If the operator is Exists, the value
+            should be empty, otherwise just a regular string.
+        toleration_seconds:  TolerationSeconds represents the period of time the toleration (which must be of effect NoExecute,
+            otherwise this field is ignored) tolerates the taint. By default, it is not set, which means tolerate the taint
+            forever (do not evict). Zero and negative values will be treated as 0 (evict immediately) by the system.
+
+    Returns:
+        A plugin that adds a single toleration to a pod
+    """
+
+    return pod_plugin(
+        _update_pod,
+        key = key,
+        operator = operator,
+        effect = effect,
+        value = value,
+        toleration_seconds = toleration_seconds,
+    )
+
+def render_pod_toleration(ctx, toleration_def):
+    toleration = Toleration(ctx)
+
+    if get_render_yaml(ctx):
+        if toleration_def.key:
+            toleration["key"] = toleration_def.key
+        if toleration_def.operator:
+            toleration["operator"] = toleration_def.operator
+        if toleration_def.value:
+            toleration["value"] = toleration_def.value
+        if toleration_def.effect:
+            toleration["effect"] = toleration_def.effect
+        if toleration_def.toleration_seconds:
+            toleration["tolerationSeconds"] = toleration_def.toleration_seconds
+    else:
+        toleration.key = toleration_def.key
+        toleration.operator = toleration_def.operator
+        toleration.value = toleration_def.value
+        toleration.effect = toleration_def.effect
+        toleration.tolerationSeconds = toleration_def.toleration_seconds
+
+    return toleration
+
+def _update_pod(ctx, plugin, pod_def):
+    if pod_def["tolerations"] == None:
+        pod_def["tolerations"] = []
+
+    toleration_def = struct (
+        key = plugin.key,
+        operator = plugin.operator,
+        effect = plugin.effect,
+        value = plugin.value,
+        toleration_seconds = plugin.toleration_seconds,
+    )
+
+    pod_def["tolerations"].append(toleration_def)
+

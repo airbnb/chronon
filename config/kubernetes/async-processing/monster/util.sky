@@ -1,0 +1,168 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
+load(
+    "config/kubernetes/helpers/aws_instance_sizes.sky",
+    "c5_2xlarge", "c5d_4xlarge", "m5_2xlarge", "m5d_xlarge",
+    "aws_instance_size"
+)
+load("config/kubernetes/async-processing/monster/config.sky", "AVAILABILITY_TIER_A100", "AVAILABILITY_TIER_A200", "AVAILABILITY_TIER_A400", "AVAILABILITY_TIER_A400_AUTO")
+load("config/kubernetes/meta/metadata.sky", "labels")
+
+ALL_CLUSTERS = ["northwest", "bom", "east", "cmh"]
+SIDECAR_OVERHEAD_MIB = 6 * 1024
+
+# "High" replica counts are > 4 and can have a max_unavailable rollout strategy of 25%.
+# This ensures we can have at least 1 unavailable pod (25% of 4).
+#
+# "Low" replica counts are 2 or 3 must have a max_unavailable rollout strategy of 50% so they can also
+# allot at least 1 unavailable pod (50% of 2 or 3).
+#
+# We do not allow replica counts < 2
+ROLLING_UPDATE_STRATEGIES = {
+    "canary": {"max_unavailable_percent": 75, "max_surge_percent": 100}, # canary can use main stage surge capacity
+    "sigma": {"max_unavailable_percent": 25, "max_surge_percent": 50},
+    "worker_config_low_replica": {"max_unavailable_percent": 50, "max_surge_percent": 50},
+    "worker_config_high_replica": {"max_unavailable_percent": 25, "max_surge_percent": 50},
+    "qa": {"max_unavailable_percent": 75, "max_surge_percent": 0},
+    "default_low_replica": {"max_unavailable_percent": 50, "max_surge_percent": 25},
+    "default_high_replica": {"max_unavailable_percent": 10, "max_surge_percent": 50},
+    # For services that need higher availability
+    "ha_low_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
+    "ha_high_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100}
+}
+
+def generate_consul_name(monster_isolation_group, monster_service):
+    # Isolation group must not contain underscores for consul name:
+    formatted_isolation_group = format_isolation_group(monster_isolation_group)
+    # Matches our existing Consul names + Einhorn names
+    return {
+        "consume-workers": "monster-workers-http2-{}-msp".format(formatted_isolation_group),
+        "fanout-workers": "monster-fanout-workers-{}-msp".format(formatted_isolation_group),
+        "config-workers": "monster-config-workers-{}-msp".format(formatted_isolation_group),
+        "sweeper": "monster-fqe-sweeper-{}".format(formatted_isolation_group),
+        "feeder": "monster-feeder-{}".format(formatted_isolation_group),
+        "express": "monster-express-{}".format(formatted_isolation_group),
+        "fanout": "monster-fanout-{}".format(formatted_isolation_group),
+        "fanout-retry": "monster-fanout-retry-{}".format(formatted_isolation_group),
+        "api": "monster-api-{}".format(formatted_isolation_group)
+    }[monster_service]
+
+def get_all_tier(instance):
+    return {
+        AVAILABILITY_TIER_A100: instance,
+        AVAILABILITY_TIER_A200: instance,
+        AVAILABILITY_TIER_A400: instance,
+        AVAILABILITY_TIER_A400_AUTO: instance,
+    }
+
+def get_all_cluster(mapping):
+    return {
+        "qa.cmh": mapping,
+        "qa.bom": mapping,
+        "qa.northwest": mapping,
+        "preprod.cmh": mapping,
+        "prod.bom": mapping,
+        "prod.cmh": mapping,
+        "prod.northwest": mapping
+    }
+
+# Maps an (env, availability_tier) to a concrete instance type for placement
+# Only used for control-plane services
+def get_instance_type(ctx, availability_tier, monster_service):
+    mapping = {
+        "sweeper": get_all_cluster(get_all_tier(c5_2xlarge)),
+        "feeder": get_all_cluster({
+            AVAILABILITY_TIER_A100: c5_2xlarge,
+            AVAILABILITY_TIER_A200: c5_2xlarge,
+            AVAILABILITY_TIER_A400: c5d_4xlarge,
+            AVAILABILITY_TIER_A400_AUTO: c5_2xlarge,
+        }),
+        "fanout": get_all_cluster(get_all_tier(c5_2xlarge)),
+        "fanout-retry": get_all_cluster(get_all_tier(c5_2xlarge)),
+        "api": get_all_cluster(get_all_tier(m5d_xlarge)),
+        "express": get_all_cluster(get_all_tier(m5_2xlarge)),
+    }
+
+    key = "%s.%s" % (get_env(ctx), get_cluster(ctx))
+    return mapping[monster_service][key][availability_tier]
+
+def workers_per_pod(description, available_mib, mb_per_worker):
+    if mb_per_worker == 0:
+        fail("on {}: mb_per_worker has illegal zero value".format(description))
+
+    if available_mib < mb_per_worker:
+        fail("on {}: usable memory of {} MiB less than mb_per_worker ({} MiB) -- cannot proceed!".format(
+            description, available_mib, mb_per_worker))
+
+    # if we can, reserve one "dead" worker as a fudge factor for copy-on-write
+    # nonlinearity
+    return max(1, (available_mib // mb_per_worker) - 1)
+
+# struct representing a pod-to-be-created
+# if mb_per_worker is None, workers will be None, for non-einhorn use cases
+def pod(description, instance, mb_per_worker=None):
+    instance_limits = aws_instance_size(instance.name)
+    instance_usable_memory_mib = instance_limits.memory_mib - SIDECAR_OVERHEAD_MIB
+
+    return struct(
+        workers =
+            workers_per_pod(description, instance_usable_memory_mib, mb_per_worker) if mb_per_worker else None,
+        # reservation of "slack" same as in config/kubernetes/stripe.sky
+        cpu_millicores = instance_limits.cpu_millicores - instance.slack_cpu_millicores,
+        memory_mib = instance_usable_memory_mib,
+        aws_instance_size = instance,
+    )
+
+# Standardizes isolation group name
+def format_isolation_group(raw):
+    return raw.replace("_", "-")
+
+# Convert a Consul service name into an Envoy-addressable slug
+def get_worker_envoy_address_from_consul(consul_name):
+    return "{}.service.envoy:10080".format(consul_name)
+
+# These are shared CLI parameters that supply environmental metadata for Monster services
+def get_monster_env_cmd_arguments(ctx, unformatted_host_set, host_type):
+    return [
+        "--cluster",
+        get_cluster(ctx),
+        "--host-set",
+        unformatted_host_set,
+        "--host-type",
+        host_type
+    ]
+
+def dynamic_replicas(desired, max, min):
+    return struct(desired=desired, max=max, min=min)
+
+def get_jmx_java_options(jmx_port):
+    return [
+        "-Dcom.sun.management.jmxremote.port={}".format(jmx_port),
+        "-Dcom.sun.management.jmxremote.authenticate=false",
+        "-Dcom.sun.management.jmxremote.ssl=false"
+    ]
+
+# Create labels that allow queries like:
+# sc kubectl get pods -n monsterworkersbox \
+#     -l monster.stripe.io/tier=a200 \
+#     -l monster.stripe.io/service=workers
+def monster_deployment_labels(config):
+    return labels({
+        "monster.stripe.io/ig": config.monster_isolation_group,
+        "monster.stripe.io/tier": config.monster_availability_tier,
+        "monster.stripe.io/service": worker_type(config.monster_service),
+    })
+
+def replicas_from_factor(replicas, replica_factor_percentage, round_up = True):
+    if not round_up:
+        return int(replicas * replica_factor_percentage / 100)
+
+    return replicas - int(replicas * (100 - replica_factor_percentage) / 100)
+
+def worker_type(monster_service):
+    # map workers, but fall-through/pass-through control plane service names
+    return {
+        "consume-workers": "workers",
+        "fanout-workers": "fanout",
+        "config-workers": "config",
+    }.get(monster_service, monster_service)

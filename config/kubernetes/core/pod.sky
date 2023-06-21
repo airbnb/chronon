@@ -1,0 +1,226 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Low-level plugin for defining a pod for a Kubernetes workload.
+"""
+
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/core/ha.sky", "render_topology_spreading")
+load("config/kubernetes/core/volume.sky", "render_volume", "volume_reason_annotations")
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin", "pod_plugin")
+load("config/kubernetes/helpers/security.sky", "render_pod_security_context")
+load("config/kubernetes/helpers/sidecars.sky", "generate_sidecars_annotation")
+load("config/kubernetes/helpers/tolerations.sky", "render_pod_toleration")
+load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/core/affinity.sky", "empty_affinity", "render_affinity")
+load("config/kubernetes/core/lifecycle.sky", "MAX_GRACE_PERIOD_SECONDS", "MAX_ENFORCED_GRACE_PERIOD_SECONDS")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "PodSpec", "PodTemplateSpec")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+# We validate that services do not set grace period which exceeds 5m20s. However, we make exceptions for
+# certain Henson services that require a longer grace period. The list includes the names of Henson
+# services exempted from this requirement. They must however be within the hard limit of 7m.
+GRACE_PERIOD_EXCLUSION_LIST = [
+    "monster",
+]
+
+def pod(node_selectors = None, host_network = True, share_pid_namespace = False, host_pid = False, runtime_class = None):
+    """
+    Creates the pod for a Kubernetes workload resource.
+
+    The pod starts off as a mostly empty shell. Use plugins to configure the pod as needed for the workload.
+    The `container` plugin can be used to add containers to the pod.
+
+    In most cases, it's better to have a higher-level plugin like `stripe_pod` or `pay_server_pod` create the
+    pod and main container for you.
+
+    You should only use this plugin (or another one that wraps it) once, as it overwrites the pod for the
+    resource it's used in.
+
+    Args:
+        node_selectors: Dictionary of node labels to values to restrict where this deploy can go.
+        host_network: Whether to use the host machine's network namespace rather than an isolated network
+            namespace for the pod. Defaults to true, which for now is the only actually supported configuration.
+        share_pid_namespace: When true, processes in a container are visible to all other containers in the pod.
+            Defaults to false on dedicated MSP, but true for network-isolated MSP in order to monitor the per-pod
+            networking stack.
+        host_pid:
+            Whether to use the host machine's PID namespace. Default is false.
+        runtime_class:
+            The name of the pod RuntimeClass. A node.k8s.io RuntimeClass object of this name must exist in the cluster.
+    Returns:
+        A plugin that set up the pod for a workload.
+    """
+    if node_selectors == None:
+        node_selectors = {}
+
+    return any_resource_plugin(
+        _update_resource,
+        node_selectors = node_selectors,
+        host_network = host_network,
+        share_pid_namespace = share_pid_namespace,
+        host_pid = host_pid,
+        runtime_class = runtime_class,
+    )
+
+def _update_resource(ctx, plugin, resource_def):
+    resource_def["pod"] = {
+        "render": _render_pod,
+        "resource": resource_def,
+        "host_network": plugin.host_network,
+        "share_pid_namespace": plugin.share_pid_namespace,
+        "host_pid": plugin.host_pid,
+        "runtime_class": plugin.runtime_class,
+        "containers": [],
+        "init_containers": [],
+        "volumes": {},
+        "include_iam_annotation": False,
+        "grace_period": None,
+        "restart_policy": "Always",
+        "security": None,
+        "affinity": empty_affinity(),
+        "node_selectors": plugin.node_selectors,
+        "shared_msp": resource_def.get("shared_msp", False), # inherit from the parent resource
+        "host_aliases": None,
+        "tolerations": None,
+    }
+
+def _validate_pod_grace_period_seconds(ctx, pod):
+    if pod.shared_msp and pod.grace_period != None:
+        pod_name = pod.resource["metadata"].name
+        if pod.grace_period > MAX_ENFORCED_GRACE_PERIOD_SECONDS: # 7 minutes
+            fail("The grace period could not be set for Shared MSP deployment %s: %s seconds. This is in violation of the Shared MSP drain contract, wherein pods must drain within a max of 5 minutes and 20 seconds (see http://go/msp/draining)" % (pod_name, pod.grace_period))
+        elif pod.grace_period > MAX_GRACE_PERIOD_SECONDS:
+            for excluded_service in GRACE_PERIOD_EXCLUSION_LIST:
+                if pod_name.startswith(excluded_service):
+                    return
+            warn(ctx, "The grace period is too long for Shared MSP deployment %s: %s seconds. This is in violation of the Shared MSP drain contract, wherein pods must drain within a max of 5 minutes and 20 seconds (see http://go/msp/draining)" % (pod_name, pod.grace_period))
+
+def _render_pod(ctx, pod_def):
+    pod = struct(**pod_def)
+
+    containers = [container["render"](ctx, container, pod) for container in pod.containers]
+    init_containers = [container["render"](ctx, container, pod) for container in pod.init_containers]
+    volumes = [render_volume(ctx, volume) for volume in pod.volumes.values()]
+
+    extra_annotations = {}
+    extra_annotations.update(volume_reason_annotations(pod.volumes.values()))
+    extra_annotations.update(generate_sidecars_annotation(pod.init_containers, pod.containers))
+
+    if pod.include_iam_annotation:
+        extra_annotations["iam.amazonaws.com/role"] = pod.resource["iam_role"]
+
+    pod_template = PodTemplateSpec(
+        ctx,
+        metadata = render_metadata(ctx, pod.resource["metadata"], extra_annotations = extra_annotations),
+        spec = PodSpec(
+            ctx,
+            hostNetwork = pod.host_network,
+            shareProcessNamespace = pod.share_pid_namespace,
+            hostPID = pod.host_pid,
+            dnsPolicy = "Default",
+            nodeSelector = pod.node_selectors,
+            containers = containers,
+            initContainers = init_containers,
+            volumes = volumes,
+            restartPolicy = pod.restart_policy,
+        ),
+    )
+
+    if pod.grace_period != None:
+        _validate_pod_grace_period_seconds(ctx, pod)
+        if get_render_yaml(ctx):
+            pod_template["spec"]["terminationGracePeriodSeconds"] = pod.grace_period
+        else:
+            pod_template.spec.terminationGracePeriodSeconds = pod.grace_period
+
+    if pod.security != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["securityContext"] = render_pod_security_context(ctx, pod.security, pod)
+        else:
+            pod_template.spec.securityContext = render_pod_security_context(ctx, pod.security, pod)
+
+    if hasattr(pod, "service_account_name"):
+        if get_render_yaml(ctx):
+            pod_template["spec"]["serviceAccountName"] = pod.service_account_name
+        else:
+            pod_template.spec.serviceAccountName = pod.service_account_name
+
+    affinity = render_affinity(ctx, pod.affinity)
+    if affinity != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["affinity"] = affinity
+        else:
+            pod_template.spec.affinity = affinity
+
+    topology_spreading = render_topology_spreading(ctx, pod)
+    if topology_spreading != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["topologySpreadConstraints"] = topology_spreading
+        else:
+            pod_template.spec.topologySpreadConstraints = topology_spreading
+
+    if pod.host_aliases != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["hostAliases"] = pod.host_aliases
+        else:
+            pod_template.spec.hostAliases = pod.host_aliases
+
+    if pod.tolerations != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["tolerations"] = [render_pod_toleration(ctx, toleration) for toleration in pod.tolerations]
+        else:
+            pod_template.spec.tolerations = [render_pod_toleration(ctx, toleration) for toleration in pod.tolerations]
+
+    if pod.runtime_class != None:
+        if get_render_yaml(ctx):
+            pod_template["spec"]["runtimeClassName"] = pod.runtime_class
+        else:
+            pod_template.spec.runtimeClassName = pod.runtime_class
+
+
+    return pod_template
+
+def all_containers(pod_def):
+    return pod_def["init_containers"] + pod_def["containers"]
+
+def main_container(pod_def):
+    if "containers" in pod_def and len(pod_def["containers"]) > 0:
+        return pod_def["containers"][0]
+    else:
+        return None
+
+def pod_share_pid_namespace(share = False):
+    return pod_plugin(
+        _share_pid_namespace_on_pod,
+        share_pid_namespace = share,
+    )
+
+def _share_pid_namespace_on_pod(ctx, plugin_supplied, pod_def):
+    pod_def["share_pid_namespace"] = plugin_supplied.share_pid_namespace
+
+def pod_host_network(host_network):
+    return pod_plugin(
+        _set_host_network_on_pod,
+        host_network = host_network,
+    )
+
+def _set_host_network_on_pod(ctx, arguments, pod_def):
+    pod_def["host_network"] = arguments.host_network
+
+def pod_host_pid(host_pid):
+    return pod_plugin(
+        _set_host_pid_on_pod,
+        host_pid = host_pid,
+    )
+
+def _set_host_pid_on_pod(ctx, arguments, pod_def):
+    pod_def["host_pid"] = arguments.host_pid
+
+def pod_runtime_class(runtime_class):
+    return pod_plugin(
+        _set_runtime_class_on_pod,
+        runtime_class = runtime_class,
+    )
+
+def _set_runtime_class_on_pod(ctx, arguments, pod_def):
+    pod_def["runtime_class"] = arguments.runtime_class

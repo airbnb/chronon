@@ -1,0 +1,288 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to create new plugins.
+
+A plugin is a function that returns the result of calling one of these functions
+(or composing several using `compose_plugins`). For example, a plugin named `foo_bar`
+that modifies a pod could be defined like this:
+
+```
+def foo_bar(foo, bar):
+    return pod_plugin(
+        _update_foo_bar,
+        foo = foo,
+        bar = bar,
+    )
+
+def _update_foo_bar(ctx, plugin, pod_def):
+    # Update pod_def as needed
+
+    # Arguments passed to the plugin can be accessed here.
+    print("foo = {}, bar = {}".format(plugin.foo, plugin.bar))
+```
+"""
+
+def deployment_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the deployment being created.
+
+    The plugin will do nothing if a different type of resource is being created.
+
+    Args:
+        updater: A function that will update the deployment definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, deployment_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a deployment.
+    """
+    return struct(
+        update_deployment = updater,
+        **kwargs
+    )
+
+def cronjob_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the cron job being created.
+
+    The plugin will do nothing if a different type of resource is being created.
+
+    Args:
+        updater: A function that will update the cron job definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, cronjob_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a cron job.
+    """
+    return struct(
+        update_cronjob = updater,
+        **kwargs
+    )
+
+def daemonset_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the daemonset being created.
+
+    The plugin will do nothing if a different type of resource is being created.
+
+    Args:
+        updater: A function that will update the daemonset definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, daemonset_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a daemonset.
+    """
+    return struct(
+        update_daemonset = updater,
+        **kwargs
+    )
+
+def job_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the batch job being created.
+
+    The plugin will do nothing if a different type of resource is being created.
+
+    Args:
+        updater: A function that will update the batch job definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, job_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a batch job.
+    """
+    return struct(
+        update_job = updater,
+        **kwargs
+    )
+
+def statefulset_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the statefulset being created.
+
+    The plugin will do nothing if a different type of resource is being created.
+
+    Args:
+        updater: A function that will update the statefulset definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, statefulset_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a statefulset.
+    """
+    return struct(
+        update_statefulset = updater,
+        **kwargs
+    )
+
+def any_resource_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the top-level resource being created.
+
+    Top-level resources include deployments, cron jobs, daemonsets, stateful sets, and RBAC objects, currently.
+
+    Args:
+        updater: A function that will update the resource definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, resource_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a resource.
+    """
+    return struct(
+        # if we add support for more resource types, add their updaters here
+        update_deployment = updater,
+        update_cronjob = updater,
+        update_daemonset = updater,
+        update_job = updater,
+        update_statefulset = updater,
+        update_rbac = updater,
+        update_crd = updater,
+        update_webhook = updater,
+        **kwargs
+    )
+
+def pod_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the pod for the resource being created.
+
+    Args:
+        updater: A function that will update the pod definition when the plugin runs.
+            Example signature: `def updater(ctx, arguments, pod_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a pod.
+    """
+    return struct(
+        update_pod = updater,
+        **kwargs
+    )
+
+def container_plugin(updater, container_name, **kwargs):
+    """
+    Create a new plugin that modifies a particular container in a pod.
+
+    Args:
+        updater: A function that will update the container definition when the plugin
+            runs. Example signature: `def updater(ctx, arguments, container_def)`
+        container_name: The name of the container that the plugin should update. The
+            function that creates the plugin should accept a `container_name`
+            parameter and pass it through. Passing `None` will apply the plugin to
+            the main container in the pod.
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a specific pod container.
+    """
+    return struct(
+        update_container = updater,
+        container_name = container_name,
+        **kwargs
+    )
+
+def all_container_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies every container in a pod.
+
+    Args:
+        updater: A function that will update the container definition when the plugin
+            runs. Example signature: `def updater(ctx, arguments, container_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+    """
+    return struct(
+        update_containers = updater,
+        **kwargs
+    )
+
+def pod_or_container_plugin(pod_updater, container_updater, container_name = None, **kwargs):
+    """
+    Create a new plugin that modifies either the pod for the resource being created or one of its containers.
+
+    This is for special cases where you want a plugin to be able to modify either the whole pod
+    or just a single container, but not both at the same time. An example is the `run_as_unprivileged`
+    plugin, which modifies the security context of the whole pod by default, but can instead do so for
+    a single container by providing a `container_name` parameter or using it in the `plugins` list for
+    the container.
+
+    Args:
+        pod_updater: A function that will update the pod definition when the plugin runs for the whole
+            pod.
+            Example signature: `def updater(ctx, arguments, pod_def)`
+        container_updater: A function that will update the container definition when the plugin runs
+            for a specific container.
+            Example signature: `def updater(ctx, arguments, container_def)`
+        container_name: The name of the container that the plugin should update. The function that
+            creates the plugin should accept a `container_name` parameter and pass it through. Passing
+            `None` will apply the plugin to the pod instead of a container.
+        **kwargs: Arguments to pass to either updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a pod or a container within the pod.
+    """
+    if container_name == None:
+        return struct(
+            update_pod = pod_updater,
+            update_container = container_updater,
+            # don't actually apply to a container unless the plugin is used in the `plugins` param
+            # of a `container` or `init_container`
+            container_name = "__NONE__",
+            **kwargs
+        )
+    else:
+        return container_plugin(
+            container_updater,
+            container_name = container_name,
+            **kwargs
+        )
+
+def rbac_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the RBAC object being created.
+
+    Args:
+        updater: A function that will update the RBAC definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, rbac_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a RBAC object.
+    """
+    return struct(
+        update_rbac = updater,
+        **kwargs
+    )
+
+def webhook_configuration_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the WebhookConfiguration object being created.
+    Args:
+        updater: A function that will update the WebhookConfiguration definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, webhook_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+    Returns:
+        A new plugin that updates a WebhookConfiguration object.
+    """
+    return struct(
+        update_webhook = updater,
+        **kwargs
+    )
+
+def crd_plugin(updater, **kwargs):
+    """
+    Create a new plugin that modifies the CRD object being created.
+
+    Args:
+        updater: A function that will update the CRD definition when the
+            plugin runs. Example signature: `def updater(ctx, arguments, crd_def)`
+        **kwargs: Arguments to pass to the updater function when running the plugin.
+
+    Returns:
+        A new plugin that updates a CRD object.
+    """
+    return struct(
+        update_crd = updater,
+        **kwargs
+    )

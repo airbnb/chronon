@@ -1,0 +1,142 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions for creating and configuring Kubernetes [Job][]s, which support
+running fire-and-forget batch workloads.
+
+[job]: https://kubernetes.io/docs/concepts/workloads/controllers/jobs-run-to-completion/
+"""
+
+load("config/kubernetes/core/lifecycle.sky", "restart_policy", "grace_period", "DEFAULT_GRACE_PERIOD_SECONDS")
+load("config/kubernetes/core/pod.sky", "all_containers")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "get_availability_tier_from_metadata")
+load("config/kubernetes/networking/public/networking.sky", "networking")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "job_plugin")
+load("config/kubernetes/sidecars/metrics.sky", "metrics")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "Job", "JobSpec")
+
+def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **kwargs):
+    """
+    Define a batch job that will run once.
+
+    A [Job][] manages a single execution of a batch workload by creating at least
+    one pod to do the task's work. In the case that the pod fails, the job may
+    create additional pods to retry depending on how it is configured.
+
+    [job]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#job-v1-batch
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        *plugins: One or more plugins to configure the job.
+        shared_msp: boolean which is True iff the job should go to shared MSP (default is False)
+        shared_msp_networking_plugin: boolean which is True iff the job should have networking plugin (default is False). Note: this feature is
+          in alpha, and largely untested by Service Networking. Please test thoroughly, and consult in #service-networking if you have any questions
+          or issues.
+        **kwargs: Options for the [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch).
+            A shortcut for the `job_options` plugin.
+
+    Returns:
+        A [Job](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#job-v1-batch)
+        Kubernetes protobuf message describing the configuration of the batch job.
+    """
+    job = {
+        "render": _render_job,
+        "type": "job",
+        "metadata": {},
+        "kwargs": {},
+        "shared_msp": shared_msp,
+        "registered_services": [],
+        "networking_config": None,
+        "metrics_config": None,
+    }
+
+    all_plugins = [
+        job_options(**_default_job_kwargs),
+        restart_policy("Never"),
+    ]
+    all_plugins.extend(plugins)
+    all_plugins.append(job_options(**kwargs))
+
+    plugin = compose_plugins(*all_plugins)
+    _apply_plugin(ctx, plugin, job)
+
+    if shared_msp:
+        # for shared msp, services get registered at update time, but the plugin needs them
+        # at create time, so we init and update the networking plugin after all the others
+        if shared_msp_networking_plugin:
+            namespace = job['metadata'].get("namespace", None)
+            if namespace == None:
+                fail("Namespace not set for shared MSP job. Perhaps missing a namespace param to your pod?")
+
+            # If no grace period is set, use the default
+            _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), job)
+            pod_termination_grace_period_seconds = job["pod"]["grace_period"]
+
+            networking_plugin = networking(
+                ctx,
+                namespace=namespace,
+                availability_tier=get_availability_tier_from_metadata(job["metadata"]),
+                host_network=False,
+                register_services=job['registered_services'],
+                config=job["networking_config"],
+                pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
+            )
+            _apply_plugin(ctx, networking_plugin, job)
+            # NOTE: Include metrics-sidecar for networking plugin as envoy-config-srv needs it.
+            _apply_plugin(ctx, metrics(ctx, config=job["metrics_config"]), job)
+
+    return job["render"](ctx, job)
+
+def _apply_plugin(ctx, plugin, job):
+    plugin.update_job(ctx, plugin, job)
+    plugin.update_pod(ctx, plugin, job["pod"])
+
+    for container in all_containers(job["pod"]):
+        plugin.update_containers(ctx, plugin, container)
+
+def job_options(**kwargs):
+    """
+    Defines options for a batch job.
+
+    The arguments map directly to fields on the JobSpec in Kubernetes. The `job`
+    entrypoint applies some default options, but these can be overridden with this plugin.
+    One of the arguments in the Job spec is "ttlSecondsAfterFinished", which is set to a
+    default value of 30 days such that completed jobs are deleted in 30 days.
+
+    Args:
+        **kwargs: Options to apply to the batch job. These map directly to fields on the Kubernetes
+            [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch).
+
+    Returns:
+        A plugin that applies the options to a batch job.
+    """
+    if kwargs.get("ttlSecondsAfterFinished") == None:
+        # Set 30 days default value for "ttlSecondsAfterFinished" field such that completed Jobs are deleted.
+        kwargs["ttlSecondsAfterFinished"] = 60 * 60 * 24 * 30
+    return job_plugin(
+        _update_job_options,
+        kwargs = kwargs,
+    )
+
+_default_job_kwargs = {
+}
+
+def _update_job_options(ctx, plugin, job_def):
+    job_def["kwargs"].update(plugin.kwargs)
+
+def _render_job(ctx, job_def):
+    job_def["metadata"] = struct(**job_def["metadata"])
+    job = struct(**job_def)
+
+    pod_template = job.pod["render"](ctx, job.pod)
+    kwargs = job.kwargs
+
+    return Job(
+        ctx,
+        metadata = render_metadata(ctx, job.metadata),
+        spec = JobSpec(
+            ctx,
+            template = pod_template,
+            **kwargs
+        ),
+    )

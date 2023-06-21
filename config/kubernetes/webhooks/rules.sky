@@ -1,0 +1,97 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/proto_or_yaml.sky", "RuleWithOperations", "Rule")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+ALLOWED_OPERATIONS = ["CREATE", "UPDATE", "DELETE", "CONNECT", "*"]
+ALLOWED_SCOPES = ["Cluster", "Namespaced", "*"]
+
+def webhook_rule_with_operations(
+	ctx,
+	operations = [],
+	rule = None,
+):
+	"""
+	Allows you to define a new RuleWithOperation proto structure, which
+	is a shared structure in MutatingWebhookConfiguration, and ValidatingWebhookConfiguration's.
+	Args:
+		ctx: The Skycfg context from the `main` function.
+		operations: Required. Operations is the operations the admission hook cares about.
+		rule: Specifies an actual rule to for this webhook. Use 'webhook_rule' to create this.
+	Returns:
+		A [RuleWithOperations](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#rulewithoperations-v1-admissionregistration-k8s-io)
+		Kubernetes protobuf message describing the rule and operations of the webhook.
+	Example:
+		webhook_rule = webhook_rule_with_operations(
+		   	ctx,
+		   	operations = ["CREATE", "UPDATE"],
+		   	rule = webhook_rule(...),
+		)
+	"""
+	if len(operations) == 0:
+		fail("need atleast one operation to define a webhook rule")
+	for operation in operations:
+		if ALLOWED_OPERATIONS.index(operation) == -1:
+			fail("invalid operation passed: %s" % operation)
+
+	wh_rule = RuleWithOperations(ctx)
+	if get_render_yaml(ctx):
+		wh_rule["operations"] = operations
+		if not rule == None:
+			wh_rule["apiGroups"] = rule["apiGroups"]
+			wh_rule["apiVersions"] = rule["apiVersions"]
+			wh_rule["resources"] = rule["resources"]
+			wh_rule["scope"] = rule["scope"]
+		else:
+			print("No Rule passed into webhook_rule_with_operations, this will be a NOOP webhook configuration!")
+	else:
+		wh_rule.operations = operations
+		if not rule == None:
+			wh_rule.rule = rule
+		else:
+			print("No Rule passed into webhook_rule_with_operations, this will be a NOOP webhook configuration!")
+	return wh_rule
+
+
+def webhook_rule(
+	ctx,
+	apiGroups = [],
+	apiVersions = [],
+	resources = [],
+	scope = "*",
+):
+	"""
+	Allows you to define a new Rule proto structure, which
+	is a shared structure in MutatingWebhookConfiguration, and ValidatingWebhookConfigurations.
+	Args:
+		ctx: The Skycfg context from the main function.
+		apiGroups: Required. APIGroups is the API groups the resources belong to. "*" is all groups. If "*" is present, the length of the slice must be one.
+		apiVersions: Required. APIVersions is the API versions the resources belong to. "*" is all versions. If "*" is present, the length of the slice must be one.
+		resources: Required. Resources is a list of resources this rule applies to.
+		scope: Scope specifies the scope of this rule.
+	Returns:
+		A [Rule](https://github.com/kubernetes/api/blob/v0.24.2/admissionregistration/v1/generated.proto#L204)
+		Kubernetes protobuf message describing the rule of the webhook.
+	Example:
+		rule = webhook_rule(
+		   	ctx,
+		   	apiGroups = ["*"],
+		   	apiVersions = ["*"],
+		   	resources = ["deployments", "deployments/scale"],
+		)
+	"""
+	if len(apiGroups) == 0:
+		fail("need atleast one apiGroup to define a webhook rule")
+	if len(apiVersions) == 0:
+		fail("need atleast one apiVersion to define a webhook rule")
+	if len(resources) == 0:
+		fail("need atleast one resource to define a webhook rule")
+	if ALLOWED_SCOPES.index(scope) == -1:
+		fail("invalid scope passed: %s", scope)
+
+	return Rule(
+		ctx,
+		apiGroups = apiGroups,
+		apiVersions = apiVersions,
+		resources = resources,
+		scope = scope,
+	)

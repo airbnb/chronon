@@ -1,0 +1,290 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for working with volumes in pods.
+"""
+
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin", "all_container_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "VolumeMount", "VolumeSource", "HostPathVolumeSource", "EmptyDirVolumeSource", "Volume")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def mount_host_volume(path, container_name = None, volume_args = {}, mount_args = {}):
+    """
+    Add a host volume to a pod and mount it into a container.
+
+    This combines the `host_volume` and `volume_mount` plugins into one.
+
+    Args:
+        path: The path to the volume on the host. The volume will be mounted to the same
+            path inside the container.
+        container_name: Optional name of the container to mount the volume into. Defaults
+            to the main container of the pod.
+        volume_args: Optional dictionary of additional keyword arguments for creating the
+            volume. See `host_volume` for possible options.
+        mount_args: Optional dictionary of additional keyword arguments for mounting the
+            volume. See `volume_mount` for possible options.
+
+    Returns:
+        A plugin that mounts a host volume into a container.
+    """
+    return compose_plugins(
+        host_volume(path, **volume_args),
+        volume_mount(path, container_name = container_name, **mount_args),
+    )
+
+def mount_pod_volume(path, container_name = None, volume_args = {}, mount_args = {}):
+    """
+    Create a volume inside a pod and mount it into a container.
+
+    A pod volume is a directory that is initially empty and does not exist outside the
+    pod it's created in. It can be used to share data between multiple containers inside
+    a pod.
+
+    This combines the `pod_volume` and `volume_mount` plugins into one.
+
+    Args:
+        path: The path to the volume.
+        container_name: Optional name of the container to mount the volume into. Defaults
+            to the main container of the pod.
+        volume_args: Optional dictionary of additional keyword arguments for creating the
+            volume. See `pod_volume` for possible options.
+        mount_args: Optional dictionary of additional keyword arguments for mounting the
+            volume. See `volume_mount` for possible options.
+
+    Returns:
+        A plugin that mounts a pod volume into a container.
+    """
+    return compose_plugins(
+        pod_volume(path, **volume_args),
+        volume_mount(path, container_name = container_name, **mount_args),
+    )
+
+def volume_mount_all_containers(path, name = None, read_only = True, **kwargs):
+    """
+    Mount a volume into every container. This will not apply to containers with custom render functions.
+
+    The volume must already be defined on the pod using either the `host_volume` or
+    `pod_volume` plugin.
+
+    Args:
+        path: The path where the volume should be mounted.
+        name: Optional name of the volume. It must match the name of the volume. If not
+            provided, it will be generated from the path, which is preferred.
+        read_only: Whether the volume should disallow writes from this container.
+            Defaults to True.
+        **kwargs: Additional parameters for the volume mount. These map directly to fields
+            on the Kubernetes [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#volumemount-v1-core).
+
+    Returns:
+        A plugin that mounts a volume into every already defined container.
+    """
+    if name == None:
+        name = _path_to_name(path)
+
+    return all_container_plugin(
+        _volume_mount_impl,
+        name = name,
+        path = path,
+        read_only = read_only,
+        kwargs = kwargs,
+    )
+
+def volume_mount(path, name = None, read_only = True, container_name = None, **kwargs):
+    """
+    Mount a volume into a container.
+
+    The volume must already be defined on the pod using either the `host_volume` or
+    `pod_volume` plugin.
+
+    Args:
+        path: The path where the volume should be mounted.
+        name: Optional name of the volume. It must match the name of the volume. If not
+            provided, it will be generated from the path, which is preferred.
+        read_only: Whether the volume should disallow writes from this container.
+            Defaults to True.
+        container_name: Optional name of the container to mount the volume into. Defaults
+            to the main container of the pod.
+        **kwargs: Additional parameters for the volume mount. These map directly to fields
+            on the Kubernetes [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#volumemount-v1-core).
+
+    Returns:
+        A plugin that mounts a volume into a container.
+    """
+    if name == None:
+        name = _path_to_name(path)
+
+    return container_plugin(
+        _volume_mount_impl,
+        container_name = container_name,
+        name = name,
+        path = path,
+        read_only = read_only,
+        kwargs = kwargs,
+    )
+
+def _volume_mount_impl(ctx, arguments, container_def):
+    add_volume_mount(container_def, arguments.path, name=getattr(arguments, "name"), read_only=arguments.read_only, **arguments.kwargs)
+
+def add_volume_mount(container_def, path, *, name=None, read_only=True, **kwargs):
+    if "volume_mounts" not in container_def:
+        # Sometimes people create hand-create container_def dicts and only define the properties
+        # that are directly relevant to the logic they are implementing.
+        container_def["volume_mounts"] = {}
+
+    if name == None:
+        name = _path_to_name(path)
+
+    container_def["volume_mounts"][name] = struct(
+        name = name,
+        path = path,
+        read_only = read_only,
+        kwargs = kwargs,
+    )
+
+_VOLUME_TYPES = ["", "DirectoryOrCreate", "Directory", "FileOrCreate", "File", "Socket", "CharDevice", "BlockDevice"]
+
+def host_volume(path, *, reason = None, **kwargs):
+    """
+    Add a host volume to a pod.
+
+    The volume will not be mounted into any containers. Use the `volume_mount` plugin to
+    make the file(s) accessible from a container.
+
+    Args:
+        path: The path to the volume on the host.
+        reason: A string describing why the volume is being included on the pod. This will
+            be displayed in Amp.
+        name: Optional name for the volume. If not provided, it will be generated from the
+            path. Prefer autogenerating the name and using the same path when mounting the
+            volume inside a container to avoid passing volume names around.
+        type: Optional type for the volume. Provides validation for the type of file or
+            directory that is being mounted from the host.
+
+    Returns:
+        A plugin that defines a host volume for a pod.
+    """
+    return pod_plugin(
+        _host_volume_impl,
+        reason = reason,
+        path = path,
+        kwargs = kwargs,
+    )
+
+def _host_volume_impl(ctx, arguments, pod_def):
+    add_host_volume(pod_def, arguments.path, reason=arguments.reason, **arguments.kwargs)
+
+def add_host_volume(pod_def, path, *, reason = None, **kwargs):
+    type_value = kwargs.get("type", "")
+    if type_value not in _VOLUME_TYPES:
+        fail("The `type` provided to hostVolume is not valid: %s\nValid options include: %s" % (type_value, _VOLUME_TYPES[1:].join(", ")))
+
+    name = kwargs.pop("name", _path_to_name(path))
+    pod_def["volumes"][name] = struct(
+        name = name,
+        reason = reason,
+        host_path = path,
+        host_path_kwargs = kwargs,
+    )
+
+
+def pod_volume(path, *, reason = None, **kwargs):
+    """
+    Create a volume inside a pod.
+
+    A pod volume is a directory that is initially empty and does not exist outside the
+    pod it's created in. It can be used to share data between multiple containers inside
+    a pod.
+
+    The volume will not be mounted into any containers. Use the `volume_mount` plugin to
+    make the file(s) accessible from a container.
+
+    Args:
+        path: The path to the volume.
+        reason: A string describing why the volume is being included on the pod. This will
+            be displayed in Amp.
+        **kwargs: Additional parameters for the volume. These map directly to fields on
+            the Kubernetes [EmptyDirVolumeSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#emptydirvolumesource-v1-core).
+
+    Returns:
+        A plugin that defines a pod volume for a pod.
+    """
+
+    return pod_plugin(_pod_volume_impl, path = path, reason = reason, kwargs = kwargs)
+
+def _pod_volume_impl(ctx, arguments, pod_def):
+    add_pod_volume(pod_def, arguments.path, reason=arguments.reason, **arguments.kwargs)
+
+def add_pod_volume(pod_def, path, *, reason = None, **kwargs):
+    name = kwargs.pop("name", _path_to_name(path))
+    pod_def["volumes"][name] = struct(
+        name = name,
+        path = path,
+        reason = reason,
+        empty_dir_kwargs = kwargs,
+    )
+
+def render_volume_mount(ctx, volume_mount):
+    kwargs = volume_mount.kwargs
+    return VolumeMount(
+        ctx,
+        name = volume_mount.name,
+        mountPath = volume_mount.path,
+        readOnly = volume_mount.read_only,
+        **kwargs
+    )
+
+def render_volume(ctx, volume):
+    source = VolumeSource(ctx)
+    if hasattr(volume, "host_path"):
+        kwargs = volume.host_path_kwargs
+
+        if get_render_yaml(ctx):
+            source["hostPath"] = HostPathVolumeSource(
+                ctx,
+                path = volume.host_path,
+                **kwargs
+            )
+        else:
+            source.hostPath = HostPathVolumeSource(
+                ctx,
+                path = volume.host_path,
+                **kwargs
+            )
+
+    elif hasattr(volume, "empty_dir_kwargs"):
+        kwargs = volume.empty_dir_kwargs
+
+        if get_render_yaml(ctx):
+            source["emptyDir"] = EmptyDirVolumeSource(ctx, **kwargs)
+        else:
+            source.emptyDir = EmptyDirVolumeSource(ctx, **kwargs)
+
+    else:
+        fail("Unsupported volume type")
+
+    return Volume(
+        ctx,
+        name = volume.name,
+        volumeSource = source,
+    )
+
+def _path_to_name(path):
+    if not path.startswith("/"):
+        fail("Volume paths must be absolute: %s" % path)
+
+    # remove leading slash and replace remaining / . _ with -
+    return path[1:].replace("/", "-").replace(".", "-").replace("_", "-").lower()
+
+def volume_reason_annotations(volumes):
+    reasons = {}
+
+    for volume in volumes:
+        if volume.reason != None:
+            reasons[volume.name] = volume.reason
+
+    if len(reasons) == 0:
+        return {}
+
+    return {
+        "stripe.io/volume-reasons": json.marshal(reasons),
+    }

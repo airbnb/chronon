@@ -1,0 +1,53 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml")
+"""
+Functions that apply to generic k8s resources instead of any particular type
+"""
+
+
+def set_shared_msp(resource):
+    """
+    Mark the resource to be run on shared MSP
+
+    Args:
+      resource: a resource definition
+    """
+    resource["shared_msp"] = True
+
+
+def is_shared_msp(ctx, resource):
+    """
+    Condition for running the plugin for deployments to shared MSP
+
+    Args:
+      ctx: a skycfg context
+      resource: a resource definition
+    Returns:
+      True iff the resource has been marked to run on shared MSP
+    """
+    return resource.get("shared_msp", False)
+
+
+def is_dedicated_msp(ctx, resource):
+    """
+    Condition for running the plugin for deployments to dedicated MSP
+
+    Args:
+      ctx: a skycfg context
+      resource: a resource definition
+    Returns:
+      True iff the resource has not been marked to run on shared MSP
+    """
+    return not is_shared_msp(ctx, resource)
+
+def is_security_group_policy_enabled(ctx, resource):
+    """
+    Get whether security group policy is enabled. We will only allow this in shared msp
+
+        Args:
+        ctx: The context containing henson and the Centralized service config
+        resource: a resource definition
+    Returns:
+        security group policy enabled or not
+    """
+    return get_render_yaml(ctx) and is_shared_msp(ctx, resource) and ctx.vars.get("msp.use_sgp", False)

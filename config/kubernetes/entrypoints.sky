@@ -1,0 +1,10 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/batch/cronjob.sky", batch_cronjob = "cronjob")
+load("config/kubernetes/apps/deployment.sky", apps_deployment = "deployment")
+load("config/kubernetes/apps/daemonset.sky", apps_daemonset = "daemonset")
+load("config/kubernetes/apps/statefulset.sky", apps_statefulset = "statefulset")
+
+cronjob = batch_cronjob
+deployment = apps_deployment
+daemonset = apps_daemonset
+statefulset = apps_statefulset

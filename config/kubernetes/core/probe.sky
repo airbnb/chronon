@@ -1,0 +1,181 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for applying probes to pod containers.
+
+Probes allow Kubernetes to understand the lifecycle of the processes it's running.
+Knowing when a service is alive and ready to serve traffic is important for rollouts
+when deploying new versions.
+
+If you use `healthchecked_service` or `einhorn_service` to set up healthchecking for
+your service, you may not need to manually add probes, as those plugins will add them
+for you.
+"""
+
+load("config/kubernetes/plugins/types.sky", "container_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "ProbeHandler", "Probe", "ExecAction", "HTTPHeader", "HTTPGetAction", "TCPSocketAction", "IntOrString")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def probes(liveness = None, readiness = None, startup = None, container_name = None):
+    """
+    Add one or more probes to a container.
+
+    Any probes that aren't provided will be left alone. Only one probe of each type can be set
+    on a container, so this plugin will overwrite a probe that was previously set if needed.
+
+    You can create the probes using the `http_probe` or `command_probe` functions.
+
+    Args:
+        liveness: The liveness probe for the container. This probe will be checked regularly,
+            and when it fails, the container will be restarted.
+        readiness: The readiness probe for the container. In our current architecture, this
+            doesn't do anything because we use Envoy for routing traffic instead of Kubernetes.
+        startup: A special liveness probe for the initial startup of the container.
+        container_name: Optional name of the container to add probes to. Defaults to the main
+            container of the pod.
+
+    Returns:
+        A plugin that sets probes for the container.
+    """
+    if liveness == None and readiness == None and startup == None:
+        fail("The probes plugin must be given at least one probe.")
+
+    return container_plugin(
+        _update_container,
+        container_name = container_name,
+        liveness = liveness,
+        readiness = readiness,
+        startup = startup,
+    )
+
+def http_probe(ctx, path, port, headers = {}, scheme = None, **kwargs):
+    """
+    Create a probe that uses HTTP to check the status of a container.
+
+    The probe will make HTTP GET requests to a specific endpoint. The probe will succeed if the server
+    returns a successful response, and will fail if the server returns an error response (4xx-5xx).
+
+    Args:
+        path: The path of the HTTP request to make when checking the probe. This should usually be
+            a health check endpoint.
+        port: The port to send the HTTP request to.
+        headers: An optional dictionary of HTTP headers to send with the probe's requests.
+        scheme: The scheme to use for connecting to the host (defaults to HTTP)
+        **kwargs: Optional additional parameters for the probe. These map directly to fields on the
+            Kubernetes [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core).
+
+    Returns:
+        A [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core)
+        that can be applied to a container using the `probes` plugin.
+    """
+    http_headers = []
+    for name, value in headers.items():
+        http_headers.append(
+            HTTPHeader(ctx, name = name, value = value),
+        )
+
+    return Probe(
+        ctx,
+        handler = ProbeHandler(
+            ctx,
+            httpGet = HTTPGetAction(
+                ctx,
+                path = path,
+                port = IntOrString(ctx, intVal = port),
+                httpHeaders = http_headers,
+                scheme = scheme,
+            ),
+        ),
+        **kwargs
+    )
+
+def tcp_probe(ctx, port, **kwargs):
+    """
+    Create a probe that uses TCP to check the status of a container.
+
+    The probe will attempt to open a TCP socket on a port of your choice. If
+    it can establish a connection, the probe is considered healthy, if it
+    can't it is considered a failure.
+
+    Args:
+        port: The port to open the TCP socket on.
+        **kwargs: Optional additional parameters for the probe. These map directly to fields on the
+            Kubernetes [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core).
+
+    Returns:
+        A [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core)
+        that can be applied to a container using the `probes` plugin.
+    """
+
+    return Probe(
+        ctx,
+        handler = ProbeHandler(
+            ctx,
+            tcpSocket = TCPSocketAction(
+                ctx,
+                port = IntOrString(ctx, intVal = port),
+            )
+        ),
+        **kwargs
+    )
+
+def command_probe(ctx, command, **kwargs):
+    """
+    Create a probe that runs a command inside the container to check its status.
+
+    The probe will succeed if the command returns a zero exit code, and will fail otherwise.
+
+    Args:
+        command: An array of the command and any arguments that the probe should run.
+        **kwargs: Optional additional parameters for the probe. These map directly to fields on the
+            Kubernetes [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core).
+
+    Returns:
+        A [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#probe-v1-core)
+        that can be applied to a container using the `probes` plugin.
+    """
+    return Probe(
+        ctx,
+        handler = ProbeHandler(
+            ctx,
+            exec = ExecAction(
+                ctx,
+                command = command,
+            ),
+        ),
+        **kwargs
+    )
+
+def _update_container(ctx, arguments, container_def):
+    probes = container_def["probes"]
+
+    if arguments.liveness != None:
+        probes["livenessProbe"] = arguments.liveness
+    if arguments.readiness != None:
+        probes["readinessProbe"] = arguments.readiness
+    if arguments.startup != None:
+        probes["startupProbe"] = arguments.startup
+
+def add_initial_delay_seconds(*, probe, delay = 90, container_name = None):
+    """
+    Adds an initial delay to a probe.
+
+    Args:
+        probe: The probe to add the initialDelaySeconds to
+        delay: The duration to delay, in seconds
+
+    Returns:
+        A plugin that adds an initialDelaySeconds to a probe.
+    """
+
+    return container_plugin(
+        _add_initial_delay_seconds,
+        container_name = container_name,
+        probe = probe,
+        delay = delay,
+    )
+
+def _add_initial_delay_seconds(ctx, arguments, container_def):
+    if get_render_yaml(ctx):
+        container_def["probes"][arguments.probe]["initialDelaySeconds"] = arguments.delay
+    else:
+        container_def["probes"][arguments.probe].initialDelaySeconds = arguments.delay

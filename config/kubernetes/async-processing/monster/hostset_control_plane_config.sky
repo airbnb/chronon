@@ -1,0 +1,522 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# This file defines control plane replica sets for Monster isolation groups
+
+load("config/kubernetes/async-processing/monster/config.sky",
+     "AVAILABILITY_TIER_A100", "AVAILABILITY_TIER_A200", "AVAILABILITY_TIER_A400", "AVAILABILITY_TIER_A400_AUTO")
+load("config/kubernetes/async-processing/monster/hostset_control_plane.sky",
+     "cluster", "host_set", "no_replicas_cluster")
+
+A100_HOST_SETS = struct(
+    availability_tier=AVAILABILITY_TIER_A100,
+    hostsets=[
+        host_set(
+            "high_priority_emails",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "high_priority_webhooks",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=6, fanout_retry_replicas=6, feeder_replicas=2, express_replicas=59),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=4),
+            }
+        ),
+        host_set(
+            "checkout",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=0, fanout_retry_replicas=0, feeder_replicas=0, sweeper_replicas=0, express_replicas=0),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=0, fanout_retry_replicas=0, feeder_replicas=0, sweeper_replicas=0, express_replicas=0),
+                "bom":          cluster(fanout_replicas=0, fanout_retry_replicas=0, feeder_replicas=0, sweeper_replicas=0, express_replicas=0),
+                "cmh":          cluster(fanout_replicas=0, fanout_retry_replicas=0, feeder_replicas=0, sweeper_replicas=0, express_replicas=0),
+            }
+        ),
+    ]
+)
+
+A200_HOST_SETS = struct(
+    availability_tier=AVAILABILITY_TIER_A200,
+    hostsets=[
+        host_set(
+            "api-platform",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=16),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=4),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=24, fanout_retry_replicas=24, feeder_replicas=30, express_replicas=16),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=4),
+            }
+        ),
+        host_set(
+            "billing",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "capital",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "cards-authz",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "clearing",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "connect",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "connections",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            }
+        ),
+        host_set(
+            "emails",
+            qa={
+                "northwest":    cluster(api_replicas=2, fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(api_replicas=2, fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(api_replicas=2, fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(api_replicas=2, fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(api_replicas=3, fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(api_replicas=2, fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(api_replicas=2, fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "frontline_experience",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "issuing",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=6, fanout_retry_replicas=6, feeder_replicas=3, express_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            }
+        ),
+        host_set(
+            "latam",
+            qa={
+                "northwest":    no_replicas_cluster(),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            },
+            prod={
+                "northwest":    no_replicas_cluster(),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            }
+        ),
+        host_set(
+            "link",
+            qa={
+                "northwest":    no_replicas_cluster(),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            },
+            preprod={
+                "northwest":    cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=0, express_replicas=0, api_replicas=0),
+                "bom":          no_replicas_cluster(),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=0, express_replicas=0, api_replicas=0),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+                "bom":          no_replicas_cluster(),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+            }
+        ),
+        host_set(
+            "local-payment-methods",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            }
+        ),
+        host_set(
+            "merchant-fraud-ml",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=5, fanout_retry_replicas=5, feeder_replicas=8),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+            }
+        ),
+        host_set(
+            "messaging-federated",
+            qa={
+                "northwest":    no_replicas_cluster(),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            },
+            prod={
+                "northwest":    no_replicas_cluster(),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            }
+        ),
+        host_set(
+            "mobile",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "model-ingestion",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=32, fanout_retry_replicas=32, feeder_replicas=32),
+                "bom":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4),
+                "cmh":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4),
+            }
+        ),
+        host_set(
+            "payment-flows",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            preprod={
+                "northwest":    cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            }
+        ),
+        host_set(
+            "payouts",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=6),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "radar",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=12, fanout_retry_replicas=3, feeder_replicas=3, express_replicas=8),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=4, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=4),
+            }
+        ),
+        host_set(
+            "review-platform",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "revolve-default",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "risk",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=6, fanout_retry_replicas=6, feeder_replicas=7),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3),
+            }
+        ),
+        host_set(
+            "search-desc-connect",
+            qa={
+                "northwest":    cluster(fanout_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+                "bom":          cluster(fanout_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+                "bom":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+                "cmh":          cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, sweeper_replicas=2),
+            }
+        ),
+        host_set(
+            "verifications",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, api_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, api_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, api_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, api_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(api_replicas=2, fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=3),
+                "bom":          cluster(api_replicas=2, fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          cluster(api_replicas=2, fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=2),
+            }
+        ),
+        host_set(
+            "webhooks",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=24, fanout_retry_replicas=24, feeder_replicas=32, express_replicas=56),
+                "bom":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4, express_replicas=4),
+                "cmh":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4, express_replicas=4),
+            }
+        ),
+    ]
+)
+
+A400_HOST_SETS = struct(
+    availability_tier=AVAILABILITY_TIER_A400,
+    hostsets=[
+        host_set(
+            "general",
+            is_canary=True,
+            qa={
+                "northwest":    cluster(api_replicas=2, fanout_replicas=10, feeder_replicas=5, express_replicas=2),
+                "bom":          cluster(api_replicas=2, fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(api_replicas=2, fanout_replicas=3, feeder_replicas=3, express_replicas=2),
+            },
+            preprod={
+                "cmh":          cluster(api_replicas=2, fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=4, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(api_replicas=15, fanout_replicas=48, fanout_retry_replicas=48, feeder_replicas=60, express_replicas=2),
+                # As of 2022-02-08, monster-api in bom has ~1/50th the traffic of northwest
+                # but shows CPU load spikes on more than 2 boxes, so we're slightly overprovisioning
+                # as a starting point
+                "bom":          cluster(api_replicas=3, fanout_replicas=4, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(api_replicas=3, fanout_replicas=4, fanout_retry_replicas=2, feeder_replicas=12, express_replicas=2),
+            }
+        ),
+        host_set(
+            "sigma",
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":          no_replicas_cluster(),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=8, fanout_retry_replicas=8, feeder_replicas=40),
+                "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          no_replicas_cluster(),
+            }
+        ),
+    ]
+)
+
+TEST_HOST_SET = struct(
+    availability_tier=AVAILABILITY_TIER_A400,
+    hostsets=[
+        host_set(
+            "monster-test",
+            is_canary=True,
+            qa={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+            },
+            prod={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
+                "bom":          no_replicas_cluster(),
+                "cmh":          no_replicas_cluster(),
+            }
+        ),
+    ]
+)
+
+HOST_SETS_LIST = [
+    A100_HOST_SETS,
+    A200_HOST_SETS,
+    A400_HOST_SETS,
+    TEST_HOST_SET
+]

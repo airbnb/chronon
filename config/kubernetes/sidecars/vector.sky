@@ -1,0 +1,134 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "sidecar_container")
+load("config/kubernetes/core/probe.sky", "http_probe", "probes")
+load("config/kubernetes/core/volume.sky", "pod_volume", "volume_mount", "mount_host_volume")
+load("config/kubernetes/helpers/constants.sky", "VECTOR_SIDECAR_CONTAINER_NAME")
+load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/helpers/security.sky", "mount_host_stripe_ca_certs", "mount_host_credentials_proxy")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/sidecars/variables.sky", "VECTOR_CONTAINER_FALLBACK_DIGEST", "VECTOR_CONTAINER_FALLBACK_ENV")
+
+
+DEFAULT_IMAGE_NAME = "stripe/gocode/vector-image"
+
+# Writable volume where to generate the full vector config
+_CONFIG_DIR = "/vector-sidecar-config"
+_VOLUME_NAME = "vector-config"
+
+# the Vector sidecar port is 18686, which is unique from the msp-vector-daemonset port (18687)
+# so that the daemonset can run on Dedicated MSP hosts with host networking.
+# Both port numbers are registered in go/ports
+_VECTOR_SIDECAR_HEALTHCHECK_PORT = 18686
+
+
+def vector_sidecar(
+    ctx,
+    sources,
+    inputs,
+    team_token,
+    credentials_mode='credentials-proxy',
+):
+    """
+    Adds a Vector instance as a sidecar to receive and forward metrics.
+
+    Args:
+        ctx: The pod context
+        sources: `string` vector's sources and transforms configuration in yaml format.
+                 This can be generated using build_vector_config() in helpers/vector_config.sky.
+        team_token: `string` team slug to properly attribute these metrics to the right team.
+        inputs: `list of string` names of all the sources or transforms that should be sent to prometheus.
+        credentials_mode: `string` the credentials used by Vector for mTLS, either 'credentials-proxy' or 'host-certificates'.
+
+    Returns:
+        A plugin that installs a Vector sidecar to send metrics to prometheus.
+
+    Examples:
+    Scrape a number of vector_targets with the Vector sidecar:
+        ```
+        load("config/kubernetes/sidecars/vector.sky", "vector_sidecar")
+        load("config/kubernetes/helpers/vector_config.sky", "build_vector_config", "vector_target")
+
+        vector = build_vector_config(ctx, [
+            vector_target(ctx, "my-service", ["http://localhost:1234"]),
+            vector_target(ctx, "my-sidecar", ["http://localhost:5678"])
+        ])
+
+        return deployment(
+            stripe_pod(
+                ...
+            ),
+            healthchecked_service(
+                ...
+            ),
+            vector_sidecar(
+                ctx,
+                sources = vector.sources,
+                inputs = vector.inputs,
+                team_token = TEAM_TOKEN
+            )
+        )
+        ```
+    """
+    if type(inputs) != "list" or len(inputs) == 0:
+        fail("inputs has to be a non empty list of strings")
+
+    host_certificate_plugins = [
+        mount_host_stripe_ca_certs(container_name = VECTOR_SIDECAR_CONTAINER_NAME),
+        mount_host_credentials_proxy(container_name = VECTOR_SIDECAR_CONTAINER_NAME),
+    ]
+    if credentials_mode == 'host-certificates':
+        host_certificate_plugins.append(mount_host_volume("/etc/ssl/certs", volume_args = {"type": "Directory"}))
+        host_certificate_plugins.append(mount_host_volume("/etc/ssl/private", volume_args = {"type": "Directory"}))
+
+    return compose_plugins(
+        pod_volume(
+            _CONFIG_DIR,
+            name = _VOLUME_NAME,
+        ),
+
+        sidecar_container(
+            name = VECTOR_SIDECAR_CONTAINER_NAME,
+            sidecar_service = "vector-sidecar",
+            container_image = DEFAULT_IMAGE_NAME,
+            fallback_label = VECTOR_CONTAINER_FALLBACK_DIGEST,
+            fallback_env = VECTOR_CONTAINER_FALLBACK_ENV,
+            command = [
+                "/pay/bin/vector-init",
+                "--credentials-mode", credentials_mode,
+                "--env", get_env(ctx),
+                "--config-dir", _CONFIG_DIR,
+                "--sources", sources,
+                "--team-token", team_token,
+                "--inputs", ",".join(inputs),
+                "--vector-binary", "/pay/bin/vector",
+                "--vector-healthcheck-port", str(_VECTOR_SIDECAR_HEALTHCHECK_PORT)
+            ],
+            plugins = [
+                volume_mount(
+                    name = _VOLUME_NAME,
+                    path = _CONFIG_DIR,
+                    read_only = False,
+                ),
+                probes(
+                    liveness = http_probe(
+                        ctx,
+                        port = _VECTOR_SIDECAR_HEALTHCHECK_PORT,
+                        path = "/health",
+                    ),
+                    startup = http_probe(
+                        ctx,
+                        port = _VECTOR_SIDECAR_HEALTHCHECK_PORT,
+                        path = "/health",
+                        initialDelaySeconds = 15,
+                        failureThreshold = 300,
+                        periodSeconds = 10,
+                    ),
+                    container_name = VECTOR_SIDECAR_CONTAINER_NAME,
+                ),
+            ],
+            ports = {
+                _VECTOR_SIDECAR_HEALTHCHECK_PORT: "vector-health",
+            },
+        ),
+        *host_certificate_plugins
+    )

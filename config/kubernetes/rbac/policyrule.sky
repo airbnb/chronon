@@ -1,0 +1,44 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+For the structure of PolicyRule message please refer to
+https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L94-L116
+"""
+
+load("config/kubernetes/rbac/rbacschema.sky", "rbac")
+
+def policy_rule(ctx, rule):
+    rule = struct(**rule)
+
+    obj_rule = rbac.PolicyRule()
+
+    if hasattr(rule, "verbs"):
+        if type(rule.verbs) == type([]):
+            obj_rule.verbs = rule.verbs
+        else:
+            fail("PolicyRule verbs field called with non list value")
+
+    if hasattr(rule, "apiGroups"):
+        if type(rule.apiGroups) == type([]):
+            obj_rule.apiGroups = rule.apiGroups
+        else:
+            fail("PolicyRule apiGroups field called with non list value")
+
+    if hasattr(rule, "resources"):
+        if type(rule.resources) == type([]):
+            obj_rule.resources = rule.resources
+        else:
+            fail("PolicyRule resources field called with non list value")
+
+    if hasattr(rule, "resourceNames"):
+        if type(rule.resourceNames) == type([]):
+            obj_rule.resourceNames = rule.resourceNames
+        else:
+            fail("PolicyRule resourceNames field called with non list value")
+
+    if hasattr(rule, "nonResourceURLs"):
+        if type(rule.nonResourceURLs) == type([]):
+            obj_rule.nonResourceURLs = rule.nonResourceURLs
+        else:
+            fail("PolicyRule nonResourceURLs field called with non list value")
+
+    return obj_rule

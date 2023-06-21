@@ -1,0 +1,31 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Functions to control the failure threshold for a deployment
+"""
+
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+
+
+def failure_threshold(failure_threshold):
+    """
+    Configures the deployment to allow a percentage of replicas to fail.
+    This means a deployment that would be considered "failed" from a kubernetes
+    point of view would be considered successful under certain conditions:
+    - Kubernetes considers the deployment as "available".
+    - Above X percent of replicas are ready to serve traffic.
+    - No replicas are serving the previous revision of the deployment.
+
+    Args:
+        failure_threshold - Percentage (0 to 100) of replicas updated needed
+        to consider the deployment as successful.
+    """
+    return deployment_plugin(
+        _add_failure_threshold,
+        failure_threshold=str(failure_threshold),
+    )
+
+
+def _add_failure_threshold(ctx, arguments, deployment_def):
+    deployment_def['metadata']['annotations'].update({
+        "stripe.io/failure-threshold": arguments.failure_threshold,
+    })
