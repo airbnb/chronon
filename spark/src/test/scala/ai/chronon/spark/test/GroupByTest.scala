@@ -282,7 +282,7 @@ class GroupByTest {
     val namespace = "test_analyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val aggregationsMetadata =
+    val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views",
                                source = source,
@@ -319,7 +319,7 @@ class GroupByTest {
                                                          new Window(60, TimeUnit.DAYS))
     )
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val aggregationsMetadata =
+    val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
 
     print(aggregationsMetadata)

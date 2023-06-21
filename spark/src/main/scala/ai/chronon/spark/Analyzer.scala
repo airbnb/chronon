@@ -12,7 +12,9 @@ import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 import ai.chronon.aggregator.row.StatsGenerator
+import org.apache.spark
 
+import scala.collection.Seq
 import scala.collection.mutable.ListBuffer
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
@@ -50,6 +52,7 @@ class Analyzer(tableUtils: TableUtils,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
+               validation: Boolean = false,
                silenceMode: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -167,7 +170,7 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false): Array[AggregationMetadata] = {
+                     enableHitter: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -201,14 +204,18 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    if (groupByConf.aggregations != null) {
+    val aggMetadata = if (groupByConf.aggregations != null) {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     } else {
       groupBy.outputSchema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     }
+    val keySchemaMap = groupBy.keySchema.map {  field =>
+      field.name -> SparkConversions.toChrononType(field.name, field.dataType)}.toMap
+    (aggMetadata, keySchemaMap)
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false)
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false)
       : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
@@ -219,15 +226,26 @@ class Analyzer(tableUtils: TableUtils,
       leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
+    val errorKeys = ListBuffer[String]()
     joinConf.joinParts.toScala.parallel.foreach { part =>
-      val aggMetadata = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
-      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
-        AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
-                            aggMeta.columnType,
-                            aggMeta.operation,
-                            aggMeta.window,
-                            aggMeta.inputColumn,
-                            part.getGroupBy.getMetaData.getName)
+      val (aggMetadata, gbKeySchema) = analyzeGroupBy(part.groupBy,
+        part.fullPrefix,
+        true,
+        enableHitter)
+      synchronized {
+        aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+          AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
+            aggMeta.columnType,
+            aggMeta.operation,
+            aggMeta.window,
+            aggMeta.inputColumn,
+            part.getGroupBy.getMetaData.getName)
+        }
+      }
+      // Run validation checks.
+      // TODO: more validations on the way
+      if(validation) {
+        errorKeys ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
       }
     }
 
@@ -251,8 +269,47 @@ class Analyzer(tableUtils: TableUtils,
            |------ END ------------------
            |""".stripMargin)
     }
+
+    if(validation) {
+      println(s"""----- Validations for join/${joinConf.metaData.cleanName} -----""".stripMargin)
+      if(errorKeys.toSet.isEmpty) {
+        println(s"""----- Schema validation completed. No errors found. -----""".stripMargin)
+      } else {
+        println(
+          s"""----- Schema validation completed. Found ${errorKeys.length} errors for following keys -
+             | [${errorKeys.mkString(", ")}].
+             | Please check VALIDATION ERROR message for details ----- """.stripMargin)
+      }
+      assert(errorKeys.toSet.isEmpty, s"ERROR: Schema validation failed. Please check error message for details.")
+    }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
+  }
+
+  // validate the schema of the left and right side of the join and make sure the types match
+  // return a list of keys that failed validation
+  def runSchemaValidation(left: Map[String, DataType],
+                          right: Map[String, DataType],
+                          keys: Seq[String]): List[String] = {
+    val errorKeys = ListBuffer[String]()
+    keys.foreach { key =>
+      val leftFields = left.keys.toSeq
+      val rightFields = right.keys.toSeq
+      if(!leftFields.contains(key) || !rightFields.contains(key)) {
+        println(s"[VALIDATION ERROR]: Either left or right side of the join doesn't contain the key $key, " +
+          s"available keys are [${leftFields.mkString(", ")}]")
+        errorKeys += key
+      } else {
+        val leftDataType = left(key)
+        val rightDataType = right(key)
+        if (leftDataType != rightDataType) {
+          println(s"[VALIDATION ERROR]: Join key, '$key', has mismatched data types - left type: $leftDataType vs. " +
+            s"right type $rightDataType")
+          errorKeys += key
+        }
+      }
+    }
+    errorKeys.toList
   }
 
   def run(): Unit =

@@ -247,13 +247,23 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
-      val enableHitter: ScallopOption[Boolean] =
+      val enableHitter: ScallopOption[Boolean] = {
         opt[Boolean](
           required = false,
           descr =
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
+      }
+      val validation: ScallopOption[Boolean] = {
+        opt[Boolean](
+          required = false,
+          descr =
+            "enable validation - whether to enable join backfill validation like permission check, schema check, etc.",
+          default = Some(false)
+        )
+      }
+
       override def subcommandName() = "analyzer_util"
     }
 
@@ -265,7 +275,8 @@ object Driver {
                    args.endDate(),
                    args.count(),
                    args.sample(),
-                   args.enableHitter()).run
+                   args.enableHitter(),
+                   args.validation()).run
     }
   }
 

@@ -36,7 +36,7 @@ object MetadataExporter {
     val enrichedData: Map[String, Any] = try {
       if (path.contains(GROUPBY_PATH_SUFFIX)) {
         val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-        configData + {"features" -> analyzer.analyzeGroupBy(groupBy).map(_.asMap)}
+        configData + {"features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap)}
       } else {
         val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
         val joinAnalysis = analyzer.analyzeJoin(join)
