@@ -253,7 +253,7 @@ def dedupe_in_order(seq):
     return [x for x in seq if not (x in seen or seen_add(x))]
 
 
-def requires_streaming_task(group_by: api.GroupBy) -> bool:
+def has_topic(group_by: api.GroupBy) -> bool:
     """Find if there's topic or mutationTopic for a source helps define streaming tasks"""
     return any(
         (source.entities and source.entities.mutationTopic) or (source.events and source.events.topic)
@@ -268,16 +268,8 @@ def get_offline_schedule(conf: ChrononJobTypes) -> Optional[str]:
     return schedule_interval
 
 
-def requires_frontfill(conf: ChrononJobTypes) -> bool:
-    return get_offline_schedule(conf) is not None
-
-
 def requires_log_flattening_task(conf: ChrononJobTypes) -> bool:
     return (conf.metaData.samplePercent or 0) > 0
-
-
-def requires_label_join_task(join: api.Join) -> bool:
-    return join.labelPart is not None
 
 
 def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
@@ -295,12 +287,12 @@ def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
             modes.append("upload")
 
             temporal_accuracy = group_by.accuracy or False
-            streaming = requires_streaming_task(group_by)
+            streaming = has_topic(group_by)
             if temporal_accuracy or streaming:
                 modes.append("streaming")
     elif isinstance(conf, api.Join):
         join = cast(api.Join, conf)
-        if requires_frontfill(join):
+        if get_offline_schedule(conf) is not None:
             modes.append("backfill")
             modes.append("stats-summary")
         if (
@@ -310,7 +302,7 @@ def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
             modes.append("consistency-metrics-compute")
         if requires_log_flattening_task(join):
             modes.append("log-flattener")
-        if requires_label_join_task(join):
+        if join.labelPart is not None:
             modes.append("label-join")
     elif isinstance(conf, api.StagingQuery):
         modes.append("backfill")
