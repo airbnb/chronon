@@ -51,7 +51,6 @@ class Analyzer(tableUtils: TableUtils,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
-               validation: Boolean = false,
                silenceMode: Boolean = false) {
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -243,9 +242,7 @@ class Analyzer(tableUtils: TableUtils,
       }
       // Run validation checks.
       // TODO: more validations on the way
-      if(validation) {
-        errorKeys ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
-      }
+      errorKeys ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
     }
 
     val rightSchema: Map[String, DataType] =
@@ -269,18 +266,17 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    if(validation) {
-      println(s"""----- Validations for join/${joinConf.metaData.cleanName} -----""".stripMargin)
-      if(errorKeys.toSet.isEmpty) {
-        println(s"""----- Schema validation completed. No errors found. -----""".stripMargin)
-      } else {
-        println(
-          s"""----- Schema validation completed. Found ${errorKeys.length} errors for following keys -
-             | [${errorKeys.mkString(", ")}].
-             | Please check VALIDATION ERROR message for details ----- """.stripMargin)
-      }
-      assert(errorKeys.toSet.isEmpty, s"ERROR: Schema validation failed. Please check error message for details.")
+    println(s"""----- Validations for join/${joinConf.metaData.cleanName} -----""".stripMargin)
+    if(errorKeys.toSet.isEmpty) {
+      println(s"""----- Schema validation completed. No errors found. -----""".stripMargin)
+    } else {
+      println(
+        s"""----- Schema validation completed. Found ${errorKeys.length} errors for following keys -
+           | [${errorKeys.mkString(", ")}].
+           | Please check VALIDATION ERROR message for details ----- """.stripMargin)
     }
+    assert(errorKeys.toSet.isEmpty, s"ERROR: Schema validation failed. Please check error message for details.")
+
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
   }

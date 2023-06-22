@@ -47,7 +47,7 @@ class AnalyzerTest {
     )
 
     //run analyzer and validate output schema
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true, validation = true)
+    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
     val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map { case (k, v) => s"${k} => ${v}" }.toList.sorted
     val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
     val computed = join.computeJoin()
@@ -82,7 +82,7 @@ class AnalyzerTest {
     )
 
     //run analyzer and validate output schema
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true, validation = true)
+    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
     analyzer.analyzeJoin(joinConf)
   }
 

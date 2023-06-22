@@ -255,14 +255,6 @@ object Driver {
           default = Some(false)
         )
       }
-      val validation: ScallopOption[Boolean] = {
-        opt[Boolean](
-          required = false,
-          descr =
-            "enable validation - whether to enable join backfill validation like permission check, schema check, etc.",
-          default = Some(false)
-        )
-      }
 
       override def subcommandName() = "analyzer_util"
     }
@@ -275,8 +267,7 @@ object Driver {
                    args.endDate(),
                    args.count(),
                    args.sample(),
-                   args.enableHitter(),
-                   args.validation()).run
+                   args.enableHitter()).run
     }
   }
 
