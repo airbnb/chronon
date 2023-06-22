@@ -179,7 +179,7 @@ def test_get_related_table_names_for_simple_joins():
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
-        print(tables)
+
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
@@ -197,7 +197,7 @@ def test_get_related_table_names_for_label_joins():
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
-        print(tables)
+
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
@@ -216,7 +216,7 @@ def test_get_related_table_names_for_consistency_joins():
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
-        print(tables)
+
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
@@ -235,7 +235,7 @@ def test_get_related_table_names_for_bootstrap_joins():
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
-        print(tables)
+
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
