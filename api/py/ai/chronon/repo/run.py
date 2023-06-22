@@ -49,6 +49,7 @@ MODE_ARGS = {
     "log-flattener": OFFLINE_ARGS,
     "metadata-export": OFFLINE_ARGS,
     "label-join": OFFLINE_ARGS,
+    'streaming-client': ONLINE_WRITE_ARGS,
     "info": "",
 }
 
@@ -61,6 +62,7 @@ ROUTES = {
         "fetch": "fetch",
         "analyze": "analyze",
         "metadata-export": "metadata-export",
+        'streaming-client': 'group-by-streaming',
     },
     "joins": {
         "backfill": "join",
@@ -365,7 +367,7 @@ class Runner:
                 )
             )
         else:
-            if self.mode in ["streaming"]:
+            if self.mode in ['streaming', 'streaming-client']:
                 print(
                     "Checking to see if a streaming job by the name {} already exists".format(
                         self.app_name
@@ -396,12 +398,16 @@ class Runner:
                             "\n".join([str(app) for app in filtered_apps]),
                         )
                     )
-                    assert (
-                        len(filtered_apps) == 1
-                    ), "More than one found, please kill them all"
-                    print("All good. No need to start a new app.")
-                    return
-            command = "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}".format(
+                    if self.mode == 'streaming':
+                        assert (
+                            len(filtered_apps) == 1
+                        ), "More than one found, please kill them all"
+                        print("All good. No need to start a new app.")
+                        return
+                    elif self.mode == 'streaming-client':
+                        print("Killing former streaming job")
+                        check_output(running_app_map[self.app_name]["kill_cmd"])
+            command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
                 subcommand=ROUTES[self.conf_type][self.mode],
