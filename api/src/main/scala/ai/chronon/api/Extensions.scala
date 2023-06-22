@@ -478,6 +478,18 @@ object Extensions {
             .filterNot(groupBy.keyColumns.contains)
             .toArray
         )
+
+    def keys(partitionColumn: String): Seq[String] = {
+      val baseKeys = if (groupBy.isSetKeyColumns) groupBy.keyColumns.toScala else List()
+      val partitionKey = if (baseKeys.contains(partitionColumn)) None else Some(partitionColumn)
+      val timeKey =
+        if (groupBy.inferredAccuracy == Accuracy.TEMPORAL && !baseKeys.contains(Constants.TimeColumn))
+          Some(Constants.TimeColumn)
+        else
+          None
+
+      baseKeys ++ partitionKey ++ timeKey
+    }
   }
 
   implicit class StringOps(string: String) {
@@ -816,19 +828,19 @@ object Extensions {
       Option(join.skewKeys).flatMap { jmap =>
         val result = ScalaVersionSpecificCollectionsConverter
           .convertJavaMapToScala(jmap)
-          .flatMap { case (leftKey, values) =>
-            Option(joinPart.keyMapping)
-              .map(_.toScala.getOrElse(leftKey, leftKey))
-              .orElse(Some(leftKey))
-              .filter(joinPart.groupBy.keyColumns.contains(_))
-              .map(generateSkewFilterSql(_, values.toScala))
+          .flatMap {
+            case (leftKey, values) =>
+              Option(joinPart.keyMapping)
+                .map(_.toScala.getOrElse(leftKey, leftKey))
+                .orElse(Some(leftKey))
+                .filter(joinPart.groupBy.keyColumns.contains(_))
+                .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
 
         if (result.nonEmpty) {
-          println(
-            s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+          println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
           Some(result)
         } else None
       }

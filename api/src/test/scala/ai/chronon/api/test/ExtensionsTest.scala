@@ -1,10 +1,13 @@
 package ai.chronon.api.test
 
-import ai.chronon.api.Builders
+import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy}
 import org.junit.Test
 import ai.chronon.api.Extensions._
 import org.junit.Assert.{assertEquals, assertTrue}
+import org.mockito.Mockito
+import org.mockito.Mockito.{doReturn, mock, spy, when}
 
+import scala.util.ScalaJavaConversions.JListOps
 import java.util.Arrays
 
 class ExtensionsTest {
@@ -102,5 +105,36 @@ class ExtensionsTest {
       skewKeys = Map("a" -> Seq("b"), "c" -> Seq("d")))
 
     assertTrue(join.partSkewFilter(joinPart).isEmpty)
+  }
+
+  @Test
+  def groupByKeysShouldContainPartitionColumn(): Unit = {
+    val groupBy = spy(new GroupBy())
+    val baseKeys = List("a", "b")
+    val partitionColumn = "ds"
+    groupBy.accuracy = Accuracy.SNAPSHOT
+    groupBy.keyColumns = baseKeys.toJava
+    when(groupBy.isSetKeyColumns).thenReturn(true)
+
+    val keys = groupBy.keys(partitionColumn)
+    assertTrue(baseKeys.forall(keys.contains(_)))
+    assertTrue(keys.contains(partitionColumn))
+    assertEquals(3, keys.size)
+  }
+
+  @Test
+  def groupByKeysShouldContainTimeColumnForTemporalAccuracy(): Unit = {
+    val groupBy = spy(new GroupBy())
+    val baseKeys = List("a", "b")
+    val partitionColumn = "ds"
+    groupBy.accuracy = Accuracy.TEMPORAL
+    groupBy.keyColumns = baseKeys.toJava
+    when(groupBy.isSetKeyColumns).thenReturn(true)
+
+    val keys = groupBy.keys(partitionColumn)
+    assertTrue(baseKeys.forall(keys.contains(_)))
+    assertTrue(keys.contains(partitionColumn))
+    assertTrue(keys.contains(Constants.TimeColumn))
+    assertEquals(4, keys.size)
   }
 }

@@ -5,6 +5,7 @@ import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.spark.stats.CompareJob.getJoinKeys
 import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
@@ -48,7 +49,7 @@ class CompareJob(
     )
 
     val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
-      CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf), tableUtils, migrationCheck = true)
+      CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf, tableUtils), tableUtils, migrationCheck = true)
 
     // Save the comparison table
     println("Saving comparison output..")
@@ -75,18 +76,6 @@ class CompareJob(
     (compareDf, metricsDf, metrics)
   }
 
-  def getJoinKeys(joinConf: api.Join): Seq[String] = {
-    if (joinConf.isSetRowIds) {
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
-    } else {
-      var keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
-      if (joinConf.left.dataModel == Events) {
-        keyCols = keyCols ++ Seq(Constants.TimeColumn)
-      }
-      keyCols
-    }
-  }
-
   def validate(): Unit = {
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
@@ -99,21 +88,24 @@ class CompareJob(
     CompareBaseJob.checkConsistency(
       joinSchema,
       stagingQuerySchema,
-      getJoinKeys(joinConf),
+      getJoinKeys(joinConf, tableUtils),
       tableUtils,
       migrationCheck = true)
   }
 }
 
 object CompareJob {
-  /*
-    This will take the DataMetrics object which contains hourly aggregations of compare metrics
-    and this method will extract the metrics like missing records on either side of the comparison
-    and the data mismatches. We then aggregate the individual counts by day and create a map of
-    the partition date and the actual missing counts.
-   */
-  def printAndGetBasicMetrics(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] = {
-    val consolidatedData = metrics.series.groupBy(t => partitionSpec.at(t._1))
+
+  /**
+    * Extract the discrepancy metrics (like missing records, data mismatch) from the hourly compare metrics, consolidate
+    * them into aggregations by day, which format is specified in the `partitionSpec`
+    *
+    * @param metrics contains hourly aggregations of compare metrics of the generated df and expected df
+    * @param partitionSpec is the spec regarding the partition format
+    * @return the consolidated daily data
+    */
+  def getConsolidatedData(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] =
+    metrics.series.groupBy(t => partitionSpec.at(t._1))
       .mapValues(_.map(_._2))
       .map { case (day, values) =>
         val aggValue = values.map { aggMetrics =>
@@ -137,8 +129,11 @@ object CompareJob {
         (day, aggValue)
       }
       .toList
-      .sortBy(_._1)
       .filter(_._2 > 0)
+      .sortBy(_._1)
+
+  def printAndGetBasicMetrics(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] = {
+    val consolidatedData = getConsolidatedData(metrics, partitionSpec)
 
     if (consolidatedData.size == 0) {
       println(s"No discrepancies found for data mismatches and missing counts. " +
@@ -149,5 +144,18 @@ object CompareJob {
       }
     }
     consolidatedData
+  }
+
+  def getJoinKeys(joinConf: api.Join, tableUtils: TableUtils): Seq[String] = {
+    if (joinConf.isSetRowIds) {
+      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
+    } else {
+      val keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
+      if (joinConf.left.dataModel == Events) {
+        keyCols ++ Seq(Constants.TimeColumn)
+      } else {
+        keyCols
+      }
+    }
   }
 }
