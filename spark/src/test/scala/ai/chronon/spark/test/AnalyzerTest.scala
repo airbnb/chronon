@@ -76,8 +76,7 @@ class AnalyzerTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "mismatch"),
-      ),
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "mismatch")),
       metaData =
         Builders.MetaData(name = "test_join_analyzer.item_type_mismatch", namespace = namespace, team = "chronon")
     )
