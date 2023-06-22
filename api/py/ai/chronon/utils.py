@@ -9,7 +9,10 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
-from typing import List, Union
+from typing import List, Union, cast, Optional
+
+
+ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
 
 def edit_distance(str1, str2):
@@ -248,3 +251,87 @@ def dedupe_in_order(seq):
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not (x in seen or seen_add(x))]
+
+
+def has_topic(group_by: api.GroupBy) -> bool:
+    """Find if there's topic or mutationTopic for a source helps define streaming tasks"""
+    return any(
+        (source.entities and source.entities.mutationTopic) or (source.events and source.events.topic)
+        for source in group_by.sources
+    )
+
+
+def get_offline_schedule(conf: ChrononJobTypes) -> Optional[str]:
+    schedule_interval = conf.metaData.offlineSchedule or "@daily"
+    if schedule_interval == "@never":
+        return None
+    return schedule_interval
+
+
+def requires_log_flattening_task(conf: ChrononJobTypes) -> bool:
+    return (conf.metaData.samplePercent or 0) > 0
+
+
+def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
+    """Based on a conf and mode determine if a conf should define a task."""
+    modes = []  # type: List[str]
+
+    if isinstance(conf, api.GroupBy):
+        group_by = cast(api.GroupBy, conf)
+        if group_by.backfillStartDate is not None:
+            modes.append("backfill")
+
+        online = group_by.metaData.online or False
+
+        if online:
+            modes.append("upload")
+
+            temporal_accuracy = group_by.accuracy or False
+            streaming = has_topic(group_by)
+            if temporal_accuracy or streaming:
+                modes.append("streaming")
+    elif isinstance(conf, api.Join):
+        join = cast(api.Join, conf)
+        if get_offline_schedule(conf) is not None:
+            modes.append("backfill")
+            modes.append("stats-summary")
+        if (
+            join.metaData.customJson is not None and
+            json.loads(join.metaData.customJson).get("check_consistency") is True
+        ):
+            modes.append("consistency-metrics-compute")
+        if requires_log_flattening_task(join):
+            modes.append("log-flattener")
+        if join.labelPart is not None:
+            modes.append("label-join")
+    elif isinstance(conf, api.StagingQuery):
+        modes.append("backfill")
+    else:
+        raise ValueError(f"Unsupported job type {type(conf).__name__}")
+
+    return modes
+
+
+def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
+    table_name = output_table_name(conf, full_name=True)
+
+    applicable_modes = set(get_applicable_modes(conf))
+    related_tables = []  # type: List[str]
+
+    if "upload" in applicable_modes:
+        related_tables.append(f"{table_name}_upload")
+    if "stats-summary" in applicable_modes:
+        related_tables.append(f"{table_name}_daily_stats")
+    if "label-join" in applicable_modes:
+        related_tables.append(f"{table_name}_labels")
+        related_tables.append(f"{table_name}_labeled")
+        related_tables.append(f"{table_name}_labeled_latest")
+    if "log-flattener" in applicable_modes:
+        related_tables.append(f"{table_name}_logged")
+    if "consistency-metrics-compute" in applicable_modes:
+        related_tables.append(f"{table_name}_consistency")
+
+    if isinstance(conf, api.Join) and conf.bootstrapParts:
+        related_tables.append(f"{table_name}_bootstrap")
+
+    return related_tables
