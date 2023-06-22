@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{AggregationPart, Constants, DataType, StructType}
+import ai.chronon.api.{AggregationPart, Constants, DataType}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
@@ -12,7 +12,6 @@ import org.apache.spark.sql.{DataFrame, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 import ai.chronon.aggregator.row.StatsGenerator
-import org.apache.spark
 
 import scala.collection.Seq
 import scala.collection.mutable.ListBuffer

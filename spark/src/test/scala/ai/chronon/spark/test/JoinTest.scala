@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, StringType, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Builders, LongType, Operation, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
