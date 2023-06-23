@@ -565,7 +565,7 @@ def is_bin_packing_enabled(ctx):
     Returns:
         Bin packing enabled or not
     """
-    return ctx.vars.get("msp.binpacking", False)
+    return ctx.vars.get("msp.binpacking", False) and get_render_yaml(ctx)
 
 def is_horizontal_pod_autoscaling_enabled(ctx):
     """

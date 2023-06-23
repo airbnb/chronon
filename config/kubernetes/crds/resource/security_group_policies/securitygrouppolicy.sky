@@ -35,12 +35,15 @@ def security_group_policy(secgroups = None):
         secgroups=secgroups,
     )
 
-def _update_resource(ctx, plugin, resource_def):
-    resource_def["securitygrouppolicy"] = {
-        "render": _render_sgp,
-        "resource": resource_def,
-        "secgroups": plugin.secgroups,
-    }
+def _update_resource(ctx, arguments, resource_def):
+    if "securitygrouppolicy" not in resource_def:
+        resource_def["securitygrouppolicy"] = {
+            "render": _render_sgp,
+            "resource": resource_def,
+            "secgroups": {},
+        }
+    sec_groups = resource_def["securitygrouppolicy"]["secgroups"]
+    sec_groups.update([(group, True) for group in arguments.secgroups])
 
 def _render_sgp(ctx, sgp_mapping):
     sgp_mapping = struct(**sgp_mapping)

@@ -357,7 +357,7 @@ A200_HOST_SETS = struct(
                 "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
             },
             prod={
-                "northwest":    cluster(fanout_replicas=12, fanout_retry_replicas=3, feeder_replicas=3, express_replicas=8),
+                "northwest":    cluster(fanout_replicas=12, fanout_retry_replicas=3, feeder_replicas=3, express_replicas=10),
                 "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=2),
                 "cmh":          cluster(fanout_replicas=4, fanout_retry_replicas=2, feeder_replicas=2, express_replicas=4),
             }
@@ -447,7 +447,7 @@ A200_HOST_SETS = struct(
                 "cmh":          cluster(fanout_replicas=2, feeder_replicas=2, express_replicas=2),
             },
             prod={
-                "northwest":    cluster(fanout_replicas=24, fanout_retry_replicas=24, feeder_replicas=32, express_replicas=56),
+                "northwest":    cluster(fanout_replicas=24, fanout_retry_replicas=24, feeder_replicas=32, express_replicas=64),
                 "bom":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4, express_replicas=4),
                 "cmh":          cluster(fanout_replicas=4, fanout_retry_replicas=4, feeder_replicas=4, express_replicas=4),
             }

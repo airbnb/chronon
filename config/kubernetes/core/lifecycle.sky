@@ -5,7 +5,7 @@ Plugins for controlling the lifecycle of pods.
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers", "volume_mount", "mount_host_volume")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin", "all_container_plugin")
-load("config/kubernetes/helpers/constants.sky", "CONFIG_SRV_SIDECAR_NAME", "CONSUL_SIDECAR_CONTAINER_NAME", "ENVOY_SIDECAR_NAME", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "ENVOY_RATELIMIT_SRV_SIDECAR_NAME", "METRICS_SIDECAR_CONTAINER_NAME", "NSQD_SIDECAR_CONTAINER_NAME")
+load("config/kubernetes/helpers/constants.sky", "CONFIG_SRV_SIDECAR_NAME", "CONSUL_SIDECAR_CONTAINER_NAME", "ENVOY_SIDECAR_NAME", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "ENVOY_RATELIMIT_SRV_SIDECAR_NAME", "METRICS_SIDECAR_CONTAINER_NAME", "NSQD_SIDECAR_CONTAINER_NAME", "CRED_PROXY_SHIM_CONTAINER_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Lifecycle", "LifecycleHandler", "ExecAction")
 load("config/kubernetes/helpers/context.sky", "get_render_yaml", "is_bin_packing_enabled", "get_name")
 
@@ -117,6 +117,7 @@ BLESSED_INFRA_SIDECAR_COMMANDS = [
     '/bin/envoy-ratelimit-srv',
     '/nsqd',
     '/pay/deploy/gocode/current/config-srv-sidecar/config-srv-sidecar',
+    '/pay/deploy/gocode/current/credentials-proxy-shim/shim',
 ]
 
 BLESSED_INFRA_SIDECAR_CONTAINER_NAMES = [
@@ -128,6 +129,7 @@ BLESSED_INFRA_SIDECAR_CONTAINER_NAMES = [
     ENVOY_RATELIMIT_SRV_SIDECAR_NAME,
     METRICS_SIDECAR_CONTAINER_NAME,
     NSQD_SIDECAR_CONTAINER_NAME,
+    CRED_PROXY_SHIM_CONTAINER_NAME,
 ]
 
 def generate_infra_sidecar_prestop_command_args(ctx, sidecarName, pod_termination_grace_period_seconds):
