@@ -164,8 +164,8 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Seq(
       "io.netty" % "netty-buffer"
     ),
-    Some("4.1.17.Final"),
-    Some("4.1.51.Final"),
+    None,
+    None,
     Some("4.1.68.Final")
   )
 )
