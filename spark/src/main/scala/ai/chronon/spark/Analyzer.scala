@@ -13,7 +13,7 @@ import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 import ai.chronon.aggregator.row.StatsGenerator
 
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.collection.mutable.ListBuffer
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
@@ -213,7 +213,8 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false)
+                  enableHitter: Boolean = false,
+                  validationAssert: Boolean = false)
       : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
@@ -224,7 +225,7 @@ class Analyzer(tableUtils: TableUtils,
       leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
-    val errorKeys = ListBuffer[String]()
+    val keysWithError = mutable.HashMap[String, String]()
     joinConf.joinParts.toScala.parallel.foreach { part =>
       val (aggMetadata, gbKeySchema) = analyzeGroupBy(part.groupBy,
         part.fullPrefix,
@@ -242,7 +243,7 @@ class Analyzer(tableUtils: TableUtils,
       }
       // Run validation checks.
       // TODO: more validations on the way
-      errorKeys ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
+      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
     }
 
     val rightSchema: Map[String, DataType] =
@@ -267,44 +268,44 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     println(s"""----- Validations for join/${joinConf.metaData.cleanName} -----""".stripMargin)
-    if(errorKeys.toSet.isEmpty) {
+    if(keysWithError.isEmpty) {
       println(s"""----- Schema validation completed. No errors found. -----""".stripMargin)
     } else {
       println(
-        s"""----- Schema validation completed. Found ${errorKeys.length} errors for following keys -
-           | [${errorKeys.mkString(", ")}].
-           | Please check VALIDATION ERROR message for details ----- """.stripMargin)
+        s"""----- Schema validation completed. Found ${keysWithError.keys.size} errors.""")
+      println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
     }
-    assert(errorKeys.toSet.isEmpty, s"ERROR: Schema validation failed. Please check error message for details.")
 
+    if(validationAssert) {
+      assert(keysWithError.isEmpty, s"ERROR: Join validation failed. Please check error message for details.")
+    }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
-  // return a list of keys that failed validation
+  // return a map of keys and corresponding error message that failed validation
   def runSchemaValidation(left: Map[String, DataType],
                           right: Map[String, DataType],
-                          keys: Seq[String]): List[String] = {
-    val errorKeys = ListBuffer[String]()
+                          keys: Seq[String]): Map[String, String] = {
+    val errorKeys = mutable.HashMap[String, String]()
     keys.foreach { key =>
       val leftFields = left.keys.toSeq
       val rightFields = right.keys.toSeq
       if(!leftFields.contains(key) || !rightFields.contains(key)) {
-        println(s"[VALIDATION ERROR]: Either left or right side of the join doesn't contain the key $key, " +
-          s"available keys are [${leftFields.mkString(", ")}]")
-        errorKeys += key
+        errorKeys += (key ->
+          s"""[ERROR]: Either left or right side of the join doesn't contain the key $key,
+              available keys are [${leftFields.mkString(", ")}]""".stripMargin)
       } else {
         val leftDataType = left(key)
         val rightDataType = right(key)
         if (leftDataType != rightDataType) {
-          println(s"[VALIDATION ERROR]: Join key, '$key', has mismatched data types - left type: $leftDataType vs. " +
-            s"right type $rightDataType")
-          errorKeys += key
+          errorKeys += (key -> s"""[ERROR]: Join key, '$key', has mismatched data types -
+                         left type: $leftDataType vs. right type $rightDataType""".stripMargin)
         }
       }
     }
-    errorKeys.toList
+    errorKeys.toMap
   }
 
   def run(): Unit =

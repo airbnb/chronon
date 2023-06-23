@@ -83,7 +83,7 @@ class AnalyzerTest {
 
     //run analyzer and validate output schema
     val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
-    analyzer.analyzeJoin(joinConf)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
   def getTestGBSource(): api.Source = {
