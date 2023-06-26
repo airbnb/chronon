@@ -11,7 +11,6 @@ import org.junit.Assert._
 
 import java.util
 import scala.collection.mutable
-import scala.collection.Seq
 
 class Timer {
 

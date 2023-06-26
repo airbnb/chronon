@@ -2,7 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.timgroup.statsd.{NonBlockingStatsDClient, NonBlockingStatsDClientBuilder}
 
 object Metrics {
   object Environment extends Enumeration {
@@ -61,7 +61,7 @@ object Metrics {
         environment = environment,
         join = join.metaData.cleanName,
         production = join.metaData.isProduction,
-        team = join.metaData.owningTeam
+        team = join.metaData.team
       )
     }
 
@@ -71,7 +71,7 @@ object Metrics {
         groupBy = groupBy.metaData.cleanName,
         production = groupBy.metaData.isProduction,
         accuracy = groupBy.inferredAccuracy,
-        team = groupBy.metaData.owningTeam
+        team = groupBy.metaData.team
       )
     }
 
@@ -86,7 +86,7 @@ object Metrics {
         environment = environment,
         groupBy = stagingQuery.metaData.cleanName,
         production = stagingQuery.metaData.isProduction,
-        team = stagingQuery.metaData.owningTeam
+        team = stagingQuery.metaData.team
       )
     }
 
@@ -95,12 +95,13 @@ object Metrics {
       { ctx =>
         println(s"Building new stats cache for ${ctx.toString}".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
-        new NonBlockingStatsDClient("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""),
-                                    "localhost",
-                                    statsPort,
-                                    ctx.toTags: _*)
+        new NonBlockingStatsDClientBuilder()
+          .prefix("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""))
+          .hostname("localhost")
+          .port(statsPort)
+          .constantTags(ctx.toTags: _*)
+          .build()
       },
-      { ctx => ctx },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
   }
@@ -113,6 +114,7 @@ object Metrics {
                      accuracy: Accuracy = null,
                      team: String = null,
                      joinPartPrefix: String = null,
+                     mode: String = null,
                      suffix: String = null)
       extends Serializable {
 
@@ -134,16 +136,11 @@ object Metrics {
 
     def increment(metric: String): Unit = stats.increment(metric)
     def incrementException(exception: Throwable): Unit = {
-      val stackTrace = exception.getStackTrace
-      val exceptionSignature = if (stackTrace.isEmpty) {
-        exception.getClass.toString
-      } else {
-        val stackRoot = stackTrace.apply(0)
-        val file = stackRoot.getFileName
-        val line = stackRoot.getLineNumber
-        val method = stackRoot.getMethodName
-        s"[$method@$file:$line]${exception.getClass.toString}"
-      }
+      val stackRoot = exception.getStackTrace.apply(0)
+      val file = stackRoot.getFileName
+      val line = stackRoot.getLineNumber
+      val method = stackRoot.getMethodName
+      val exceptionSignature = s"[$method@$file:$line]${exception.getClass.toString}"
       stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
     }
 

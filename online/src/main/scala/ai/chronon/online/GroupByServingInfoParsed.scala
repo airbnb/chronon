@@ -9,12 +9,12 @@ import org.apache.avro.Schema
 import scala.collection.JavaConverters.asScalaBufferConverter
 
 // mixin class - with schema
-class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
+class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo)
     extends GroupByServingInfo(groupByServingInfo)
     with Serializable {
 
   // streaming starts scanning after batchEnd
-  lazy val batchEndTsMillis: Long = partitionSpec.epochMillis(batchEndDate)
+  lazy val batchEndTsMillis: Long = Constants.Partition.epochMillis(batchEndDate)
   private def parser = new Schema.Parser()
 
   val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)

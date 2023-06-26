@@ -129,11 +129,6 @@ object Row {
               .asScala
               .foreach { entry => newMap.put(edit(entry.getKey, keyType), edit(entry.getValue, valueType)) }
             mapper(newMap)
-          case map: collection.immutable.Map[Any, Any] =>
-            val newMap = new util.HashMap[Any, Any](map.size)
-            map
-              .foreach { entry => newMap.put(edit(entry._1, keyType), edit(entry._2, valueType)) }
-            mapper(newMap)
         }
       case BinaryType => binarizer(value.asInstanceOf[Array[Byte]])
       case IntType => value.asInstanceOf[Number].intValue()

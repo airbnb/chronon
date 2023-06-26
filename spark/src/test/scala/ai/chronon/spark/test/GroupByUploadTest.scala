@@ -16,8 +16,8 @@ class GroupByUploadTest {
 
   @Test
   def temporalEventsLastKTest(): Unit = {
-    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val yesterday = tableUtils.partitionSpec.before(today)
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val yesterday = Constants.Partition.before(today)
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     tableUtils.sql(s"USE $namespace")
     val eventsTable = "events_last_k"
@@ -45,8 +45,8 @@ class GroupByUploadTest {
 
   @Test
   def structSupportTest(): Unit = {
-    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val yesterday = tableUtils.partitionSpec.before(today)
+    val today = Constants.Partition.at(System.currentTimeMillis())
+    val yesterday = Constants.Partition.before(today)
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     tableUtils.sql(s"USE $namespace")
     val eventsBase = "events_source"
@@ -61,7 +61,8 @@ class GroupByUploadTest {
     val eventBaseDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
     eventBaseDf.save(s"$namespace.$eventsBase")
 
-    val eventDf = spark.sql(s"""
+    val eventDf = spark.sql(
+      s"""
       SELECT
         user
         , ts

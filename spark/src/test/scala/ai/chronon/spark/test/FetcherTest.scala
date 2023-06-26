@@ -4,11 +4,11 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -22,7 +22,6 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
@@ -32,21 +31,17 @@ import scala.util.ScalaVersionSpecificCollectionsConverter
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
-  private val tableUtils = TableUtils(spark)
   private val topic = "test_topic"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val yesterday = tableUtils.partitionSpec.before(today)
+  private val today = Constants.Partition.at(System.currentTimeMillis())
+  private val yesterday = Constants.Partition.before(today)
 
   def testMetadataStore(): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
 
-    val joinPath = "joins/team/example_join.v1"
-    val confResource = getClass.getResource(s"/$joinPath")
-    val src = Source.fromFile(confResource.getPath)
-
-
+    val src =
+      Source.fromFile("./spark/src/test/scala/ai/chronon/spark/test/resources/joins/team/example_join.v1")
     val expected = {
       try src.mkString
       finally src.close()
@@ -57,9 +52,10 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
+    val singleFilePut = singleFileMetadataStore.putConf(
+      "./spark/src/test/scala/ai/chronon/spark/test/resources/joins/team/example_join.v1")
     Await.result(singleFilePut, Duration.Inf)
-    val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
+    val response = inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
@@ -69,10 +65,10 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
+    val directoryPut = directoryMetadataStore.putConf("./spark/src/test/scala/ai/chronon/spark/test/resources")
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
-      inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
+      inMemoryKvStore.get(GetRequest("joins/team/example_join.v1".getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
     val dirActual = new String(dirRes.values.get.head.bytes)
@@ -162,9 +158,7 @@ class FetcherTest extends TestCase {
 
     sourceData.foreach {
       case (schema, rows) =>
-        spark
-          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
-          .save(s"$namespace.${schema.name}")
+        spark.createDataFrame(rows.asJava, Conversions.fromChrononSchema(schema)).save(s"$namespace.${schema.name}")
 
     }
     println("saved all data hand written for fetcher test")
@@ -333,7 +327,7 @@ class FetcherTest extends TestCase {
         Builders.Source
           .entities(
             query = Builders.Query(
-              startPartition = tableUtils.partitionSpec.before(yesterday)
+              startPartition = Constants.Partition.before(yesterday)
             ),
             snapshotTable = snapshotTable,
             mutationTable = mutationTable,
@@ -368,15 +362,8 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
       ),
-      metaData = Builders.MetaData(name = "test/payments_join",
-                                   namespace = namespace,
-                                   team = "chronon",
-                                   consistencySamplePercent = 30),
-      derivations = Seq(
-        Builders.Derivation("*", "*"),
-        Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
-        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
-      )
+      metaData =
+        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
     )
     joinConf
   }
@@ -484,11 +471,10 @@ class FetcherTest extends TestCase {
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
-      tableUtils.sql(
-        s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${tableUtils.partitionSpec.format}')")
+      tableUtils.sql(s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${Constants.Partition.format}')")
     }
     val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("unit_test")): _*)
-    val keys = joinConf.leftKeyCols
+    val keys = endDsQueries.schema.fieldNames.filterNot(Constants.ReservedColumns.contains)
     val keyIndices = keys.map(endDsQueries.schema.fieldIndex)
     val tsIndex = endDsQueries.schema.fieldIndex(Constants.TimeColumn)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
@@ -518,7 +504,7 @@ class FetcherTest extends TestCase {
         .drop("ts_lagged")
       println("corrected lagged response")
       correctedLaggedResponse.show()
-      correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(tableUtils.partitionColumn, "name"))
+      correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(Constants.PartitionColumn, "name"))
 
       // build flattened log table
       SchemaEvolutionUtils.runLogSchemaGroupBy(mockApi, today, today)
@@ -541,18 +527,17 @@ class FetcherTest extends TestCase {
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++
-            Map(tableUtils.partitionColumn -> today) ++
+            Map(Constants.PartitionColumn -> today) ++
             Map(Constants.TimeColumn -> new lang.Long(res.request.atMillis.get))
         val values: Array[Any] = columns.map(all.get(_).orNull)
-        SparkConversions
-          .toSparkRow(values, StructType.from("record", SparkConversions.toChrononSchema(endDsExpected.schema)))
+        Conversions
+          .toSparkRow(values, StructType.from("record", Conversions.toChrononSchema(endDsExpected.schema)))
           .asInstanceOf[GenericRow]
       }
 
     println(endDsExpected.schema.pretty)
-
-    val keyishColumns = keys.toList ++ List(tableUtils.partitionColumn, Constants.TimeColumn)
-    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows.toSeq)
+    val keyishColumns = keys.toList ++ List(Constants.PartitionColumn, Constants.TimeColumn)
+    val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows)
     var responseDf = tableUtils.sparkSession.createDataFrame(responseRdd, endDsExpected.schema)
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
@@ -588,7 +573,7 @@ class FetcherTest extends TestCase {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
     compareTemporalFetch(joinConf,
-                         tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                         Constants.Partition.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true)
   }
@@ -611,9 +596,7 @@ class FetcherTest extends TestCase {
     val (responses, _) = joinResponses(Array(request), mockApi)
     val responseMap = responses.head.values.get
 
-    println("====== Empty request response map ======")
-    println(responseMap)
-    assertEquals(joinConf.joinParts.size() + joinConf.derivationsWithoutStar.size, responseMap.size)
-    assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
+    assertEquals(joinConf.joinParts.size(), responseMap.size)
+    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }

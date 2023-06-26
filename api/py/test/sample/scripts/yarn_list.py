@@ -59,14 +59,9 @@ def get_active_applications(
             "tracking_url": "{}/proxy/{}/".format(tokens[8], tokens[0]),
             "kill_cmd": '{yarn_executable} --config {hadoop_conf} application -kill {app_id}'.format(**locals())
         }
+        print(job)
         yarn_apps.append(job)
-    result = []
-    for app in yarn_apps:
-        if app["status"] in ACTIVE_APP_STATUS:
-            app_json = json.dumps(app)
-            print(app_json)
-            result.append(app_json)
-    return result
+    return [json.dumps(app) for app in yarn_apps if app["status"] in ACTIVE_APP_STATUS]
 
 
 if __name__ == "__main__":

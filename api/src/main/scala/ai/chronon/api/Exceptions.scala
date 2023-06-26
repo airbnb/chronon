@@ -1,4 +1,5 @@
 package ai.chronon.api
 
-case class KeyMissingException(requestName: String, missingKeys: Seq[String], query: Map[String, Any])
-    extends IllegalArgumentException(s"Missing keys $missingKeys required by $requestName in query: $query")
+case class KeyMissingException(requestName: String, missingKeys: Seq[String])
+    extends IllegalArgumentException(
+      s"Metadata updated to look for keys (${missingKeys.mkString(",")}) but are missing in $requestName request")

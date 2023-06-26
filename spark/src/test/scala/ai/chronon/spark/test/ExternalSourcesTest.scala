@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.spark.LoggingSchema
+import ai.chronon.online.JoinCodec
 import org.junit.Assert._
 import org.junit.Test
 
@@ -70,7 +70,8 @@ class ExternalSourcesTest {
           contextualSource
         )
       ),
-      metaData = Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
     )
 
     // put this join into kv store
@@ -108,8 +109,10 @@ class ExternalSourcesTest {
     assert(numbers == (11 until 22).toSet)
     val logs = mockApi.flushLoggedValues
     val controlEvent = logs.find(_.name == Constants.SchemaPublishEvent).get
-    val schema =
-      LoggingSchema.parseLoggingSchema(new String(Base64.getDecoder.decode(controlEvent.valueBase64), Constants.UTF8))
+    val codec = JoinCodec.fromLoggingSchema(
+      new String(Base64.getDecoder.decode(controlEvent.valueBase64), Constants.UTF8),
+      join
+    )
     assertEquals(
       Set(
         "number",
@@ -117,7 +120,7 @@ class ExternalSourcesTest {
         "context_1",
         "context_2"
       ),
-      schema.keyFields.fields.map(_.name).toSet
+      codec.keys.toSet
     )
     assertEquals(
       Set(
@@ -129,7 +132,7 @@ class ExternalSourcesTest {
         "ext_contextual_context_1",
         "ext_contextual_context_2"
       ),
-      schema.valueFields.fields.map(_.name).toSet
+      codec.values.toSet
     )
     assertEquals(responses.length + 1, logs.length)
 

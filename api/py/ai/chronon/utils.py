@@ -9,10 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
-from typing import List, Union, cast, Optional
-
-
-ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
+from typing import List, Union
 
 
 def edit_distance(str1, str2):
@@ -92,7 +89,7 @@ def get_streaming_sources(group_by: api.GroupBy) -> List[api.Source]:
 def is_streaming(source: api.Source) -> bool:
     """Checks if the source has streaming enabled."""
     return (source.entities and source.entities.mutationTopic is not None) or \
-           (source.events and source.events.topic is not None)
+        (source.events and source.events.topic is not None)
 
 
 def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource]:
@@ -131,35 +128,11 @@ def get_mod_name_from_gc(obj, mod_prefix):
     return mod_name
 
 
-def __set_name(obj, cls, mod_prefix):
-    module = importlib.import_module(get_mod_name_from_gc(obj, mod_prefix))
-    eo.import_module_set_name(module, cls)
-
-
-def output_table_name(obj, full_name: bool):
-    table_name = obj.metaData.name.replace('.', '_')
-    db = obj.metaData.outputNamespace
-    db = db or "{{ db }}"
-    if full_name:
-        return db + "." + table_name
-    else:
-        return table_name
-
-
-def log_table_name(obj, full_name: bool = False):
-    return output_table_name(obj, full_name=full_name) + "_logged"
-
-
-def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_name: bool = False):
+def get_staging_query_output_table_name(staging_query: api.StagingQuery):
     """generate output table name for staging query job"""
-    __set_name(staging_query, api.StagingQuery, "staging_queries")
-    return output_table_name(staging_query, full_name=full_name)
-
-
-def get_join_output_table_name(join: api.Join, full_name: bool):
-    """generate output table name for staging query job"""
-    __set_name(join, api.Join, "joins")
-    return output_table_name(join, full_name=full_name)
+    staging_query_module = importlib.import_module(get_mod_name_from_gc(staging_query, "staging_queries")) # nosemgrep no user-supplied input
+    eo.import_module_set_name(staging_query_module, api.StagingQuery)
+    return staging_query.metaData.name.replace('.', '_')
 
 
 def get_dependencies(
@@ -194,35 +167,6 @@ def get_dependencies(
     return [json.dumps(res) for res in result]
 
 
-def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
-    if bootstrap_parts is None:
-        return []
-
-    dependencies = []
-    for bootstrap_part in bootstrap_parts:
-        table = bootstrap_part.table
-        start = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
-        end = bootstrap_part.query.endPartition if bootstrap_part.query is not None else None
-        dependencies.append(
-            wait_for_simple_schema(table, 0, start, end)
-        )
-    return [json.dumps(dep) for dep in dependencies]
-
-
-def get_label_table_dependencies(label_part) -> List[str]:
-    label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
-    label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
-    label_dependencies = [dep for (source, meta_data) in label_info for dep in
-                          get_dependencies(src=source, meta_data=meta_data)]
-    label_dependencies.append(
-        json.dumps({
-            "name": "wait_for_{{ join_backfill_table }}",
-            "spec": "{{ join_backfill_table }}/ds={{ ds }}"
-        })
-    )
-    return label_dependencies
-
-
 def wait_for_simple_schema(table, lag, start, end):
     if not table:
         return None
@@ -251,87 +195,3 @@ def dedupe_in_order(seq):
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not (x in seen or seen_add(x))]
-
-
-def has_topic(group_by: api.GroupBy) -> bool:
-    """Find if there's topic or mutationTopic for a source helps define streaming tasks"""
-    return any(
-        (source.entities and source.entities.mutationTopic) or (source.events and source.events.topic)
-        for source in group_by.sources
-    )
-
-
-def get_offline_schedule(conf: ChrononJobTypes) -> Optional[str]:
-    schedule_interval = conf.metaData.offlineSchedule or "@daily"
-    if schedule_interval == "@never":
-        return None
-    return schedule_interval
-
-
-def requires_log_flattening_task(conf: ChrononJobTypes) -> bool:
-    return (conf.metaData.samplePercent or 0) > 0
-
-
-def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
-    """Based on a conf and mode determine if a conf should define a task."""
-    modes = []  # type: List[str]
-
-    if isinstance(conf, api.GroupBy):
-        group_by = cast(api.GroupBy, conf)
-        if group_by.backfillStartDate is not None:
-            modes.append("backfill")
-
-        online = group_by.metaData.online or False
-
-        if online:
-            modes.append("upload")
-
-            temporal_accuracy = group_by.accuracy or False
-            streaming = has_topic(group_by)
-            if temporal_accuracy or streaming:
-                modes.append("streaming")
-    elif isinstance(conf, api.Join):
-        join = cast(api.Join, conf)
-        if get_offline_schedule(conf) is not None:
-            modes.append("backfill")
-            modes.append("stats-summary")
-        if (
-            join.metaData.customJson is not None and
-            json.loads(join.metaData.customJson).get("check_consistency") is True
-        ):
-            modes.append("consistency-metrics-compute")
-        if requires_log_flattening_task(join):
-            modes.append("log-flattener")
-        if join.labelPart is not None:
-            modes.append("label-join")
-    elif isinstance(conf, api.StagingQuery):
-        modes.append("backfill")
-    else:
-        raise ValueError(f"Unsupported job type {type(conf).__name__}")
-
-    return modes
-
-
-def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
-    table_name = output_table_name(conf, full_name=True)
-
-    applicable_modes = set(get_applicable_modes(conf))
-    related_tables = []  # type: List[str]
-
-    if "upload" in applicable_modes:
-        related_tables.append(f"{table_name}_upload")
-    if "stats-summary" in applicable_modes:
-        related_tables.append(f"{table_name}_daily_stats")
-    if "label-join" in applicable_modes:
-        related_tables.append(f"{table_name}_labels")
-        related_tables.append(f"{table_name}_labeled")
-        related_tables.append(f"{table_name}_labeled_latest")
-    if "log-flattener" in applicable_modes:
-        related_tables.append(f"{table_name}_logged")
-    if "consistency-metrics-compute" in applicable_modes:
-        related_tables.append(f"{table_name}_consistency")
-
-    if isinstance(conf, api.Join) and conf.bootstrapParts:
-        related_tables.append(f"{table_name}_bootstrap")
-
-    return related_tables

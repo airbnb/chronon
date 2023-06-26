@@ -2,83 +2,73 @@ package ai.chronon.spark
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.{DataType, ThriftJsonCodec}
+import ai.chronon.api.{Constants, ThriftJsonCodec}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
-
 import java.nio.file.Files
 import java.nio.file.Paths
-import scala.collection.immutable.Map
 
 object MetadataExporter {
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
-  val JOIN_PATH_SUFFIX = "/joins"
 
-  val mapper = new ObjectMapper()
-  mapper.registerModule(DefaultScalaModule)
-  val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val yesterday = tableUtils.partitionSpec.before(today)
-
-  def getFilePaths(inputPath: String): Seq[String] = {
+  def getGroupByPaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
-    rootDir.listFiles
+    rootDir
+      .listFiles
       .filter(!_.isFile)
       .flatMap(_.listFiles())
       .map(_.getPath)
   }
 
-  def enrichMetadata(path: String): String = {
-    val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
-    val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true)
-    val enrichedData: Map[String, Any] = try {
-      if (path.contains(GROUPBY_PATH_SUFFIX)) {
-        val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-        configData + {"features" -> analyzer.analyzeGroupBy(groupBy).map(_.asMap)}
-      } else {
-        val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-        val joinAnalysis = analyzer.analyzeJoin(join)
-        val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
-        val statsSchema: Map[String, String] = joinAnalysis._3.map(st => st._1 -> DataType.toString(st._2))
-        configData + {"features" -> featureMetadata} + {"stats" -> statsSchema}
-      }
-    } catch {
-      case exception: Throwable =>
-        println(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
-        configData
+  def getEnrichedGroupByMetadata(groupByPath: String): String = {
+    val mapper = new ObjectMapper()
+    mapper.registerModule(DefaultScalaModule)
+    val configData = mapper.readValue(new File(groupByPath), classOf[Map[String, Any]])
+    val tableUtils = TableUtils(SparkSessionBuilder.build("metadata_exporter"))
+    val analyzer = new Analyzer(tableUtils, groupByPath, silenceMode = true)
+    val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](groupByPath, check = false)
+    val featureMetadata = analyzer.analyzeGroupBy(groupBy).map{ featureCol =>
+      Map(
+        "name" -> featureCol.name,
+        "window" -> featureCol.window,
+        "columnType" -> featureCol.columnType,
+        "inputColumn" -> featureCol.inputColumn,
+        "operation" -> featureCol.operation
+      )
     }
+    val enrichedData = configData + {"features" -> featureMetadata}
     mapper.writeValueAsString(enrichedData)
   }
 
-  def writeOutput(data: String, path: String, outputDirectory: String): Unit = {
+  def writeGroupByOutput(groupByPath: String, outputDirectory: String): Unit = {
+    val data = getEnrichedGroupByMetadata(groupByPath)
+    println(s"${groupByPath} : Metadata generated. Writing to output directory... ")
     Files.createDirectories(Paths.get(outputDirectory))
-    val file = new File(outputDirectory + "/" + path.split("/").last)
+    val file = new File(outputDirectory + "/" + groupByPath.split("/").last)
     file.createNewFile()
     val writer = new BufferedWriter(new FileWriter(file))
     writer.write(data)
     writer.close()
-    println(s"${path} : Wrote to output directory successfully")
+    println(s"${groupByPath} : Wrote to output directory successfully")
   }
 
-  def processEntities(inputPath: String, outputPath: String, suffix: String): Unit = {
-    val processSuccess = getFilePaths(inputPath + suffix).map { path =>
+  def processGroupBys(inputPath: String, outputPath: String): Unit = {
+    val processSuccess = getGroupByPaths(inputPath + GROUPBY_PATH_SUFFIX).map{ path =>
       try {
-        val data = enrichMetadata(path)
-        writeOutput(data, path, outputPath + suffix)
+        writeGroupByOutput(path, outputPath + GROUPBY_PATH_SUFFIX)
         (path, true, None)
       } catch {
         case exception: Throwable => (path, false, ExceptionUtils.getStackTrace(exception))
       }
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
-    println(s"Successfully processed ${processSuccess.filter(_._2).length} from $suffix \n " +
-      s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
+    println(s"Successfully processed ${processSuccess.filter(_._2).length} GroupBys \n " +
+      s"Failed to process ${failuresAndTraces.length} GroupBys: \n ${failuresAndTraces.mkString("\n")}")
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
-    processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
-    processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
+    processGroupBys(inputPath, outputPath)
   }
 }

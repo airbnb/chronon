@@ -1,9 +1,8 @@
 package ai.chronon.spark
 
-import ai.chronon.online.Extensions.StructTypeOps
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
+import org.apache.spark.sql.types.{DoubleType, FloatType, MapType}
 
 import java.util
 
@@ -42,9 +41,6 @@ object Comparison {
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
 
-    println("====== side-by-side comparison ======")
-    println(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
-
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
 
@@ -67,8 +63,7 @@ object Comparison {
         }
     // double columns need to be compared approximately
     val doubleCols = a.schema.fields
-      .filter(field =>
-        field.dataType == DoubleType || field.dataType == FloatType || field.dataType.isInstanceOf[DecimalType])
+      .filter(field => field.dataType == DoubleType || field.dataType == FloatType)
       .map(_.name)
       .toSet
     finalDf = finalDf.select(colOrder: _*)
@@ -83,12 +78,7 @@ object Comparison {
         Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
       }
     println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
-    if (comparisonFilters.nonEmpty) {
-      finalDf.filter(comparisonFilters.mkString(" or "))
-    } else {
-      // all rows are good
-      finalDf.filter("false")
-    }
+    finalDf.filter(comparisonFilters.mkString(" or "))
   }
 
   private def prefixColumnName(df: DataFrame, prefix: String): DataFrame = {

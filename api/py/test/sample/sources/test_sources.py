@@ -37,18 +37,6 @@ entity_source = ttypes.Source(entities=ttypes.EntitySource(
     ),
 ))
 
-batch_entity_source = ttypes.Source(entities=ttypes.EntitySource(
-    snapshotTable="sample_table.sample_entity_snapshot",
-    query=Query(
-        start_partition='2021-03-01',
-        selects=select(
-            group_by_subject='group_by_subject_expr',
-            entity='entity_expr',
-        ),
-        time_column="ts"
-    ),
-))
-
 # Sample Entity Source derived from a staging query.
 staging_entities=ttypes.Source(entities=ttypes.EntitySource(
     snapshotTable="sample_namespace.{}".format(get_staging_query_output_table_name(sample_staging_query.v1)),

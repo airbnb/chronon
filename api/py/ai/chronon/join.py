@@ -14,8 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 def JoinPart(group_by: api.GroupBy,
              key_mapping: Dict[str, str] = None,
-             prefix: str = None,
-             tags: Dict[str, str] = None) -> api.JoinPart:
+             prefix: str = None) -> api.JoinPart:
     """
     Specifies HOW to join the `left` of a Join with GroupBy's.
 
@@ -32,9 +31,6 @@ def JoinPart(group_by: api.GroupBy,
         the same groupBy more than once with `left`. Say on the left you have seller and buyer, on the group you have
         a user's avg_price, and you want to join the left (seller, buyer) with (seller_avg_price, buyer_avg_price) you
         would use key_mapping and prefix parameters.
-    :param tags:
-        Additional metadata about the JoinPart that you wish to track. Does not effect computation.
-    :type tags: Dict[str, str]
     :return:
         JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
         components like GroupBys.
@@ -48,16 +44,9 @@ def JoinPart(group_by: api.GroupBy,
         if '__name__' in ref and ref['__name__'].startswith("group_bys"):
             group_by_module_name = ref['__name__']
             break
-    if group_by_module_name:
-        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-        group_by_module = importlib.import_module(group_by_module_name)
-        __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
-    else:
-        if not group_by.metaData.name:
-            logging.error("No group_by file or custom group_by name found")
-            raise ValueError(
-                "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
-                "You may pass it in via GroupBy.name. \n")
+    logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+    group_by_module = importlib.import_module(group_by_module_name) # nosemgrep no user-supplied input
+    __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
     if key_mapping:
         utils.check_contains(key_mapping.values(),
                              group_by.keyColumns,
@@ -69,7 +58,6 @@ def JoinPart(group_by: api.GroupBy,
         keyMapping=key_mapping,
         prefix=prefix
     )
-    join_part.tags = tags
     # reset before next run
     __builtins__['__import__'] = import_copy
     return join_part
@@ -223,143 +211,6 @@ def ExternalPart(source: api.ExternalSource,
     )
 
 
-def LabelPart(labels: List[api.JoinPart],
-              left_start_offset: int,
-              left_end_offset: int,
-              label_offline_schedule: str = '@daily') -> api.LabelPart:
-    """
-    Used to describe labels in join. Label part can be viewed as regular join part but represent
-    label data instead of regular feature data. Once labels are mature, label join job would join
-    labels with features in the training window user specified using `leftStartOffset` and
-    `leftEndOffset`.
-
-    The offsets are relative days compared to given label landing date `label_ds`. This parameter is required to be
-    passed in for each label join job. For example, given `label_ds = 2023-04-30`, `left_start_offset = 30`, and
-    `left_end_offset = 10`, the left size start date will be computed as 30 days before `label_ds` (inclusive),
-    which is 2023-04-01. Similarly, the left end date will be 2023-04-21. Labels will be refreshed within this window
-    [2023-04-01, 2023-04-21] in this specific label job run.
-
-    Since label join job will run continuously based on the schedule, multiple labels could be generated but with
-    different label_ds or label version. Label join job would have all computed label versions available, as well as
-    a view of latest version for easy label retrieval.
-
-    LabelPart definition can be updated along the way, but label join job can only accommodate these changes going
-    forward unless a backfill is manually triggered.
-
-    Label aggregation is also supported but with conditions applied. Single aggregation with one window is allowed
-    for now. If aggregation is present, we would infer the left_start_offset and left_end_offset same as window size
-    and the param input will be ignored.
-
-    :param labels: List of labels
-    :param left_start_offset: Relative integer to define the earliest date label should be refreshed
-                            compared to label_ds date specified. For labels with aggregations,
-                            this param has to be same as aggregation window size.
-    :param left_end_offset: Relative integer to define the most recent date(inclusive) label should be refreshed.
-                          e.g. left_end_offset = 3 most recent label available will be 3 days
-                          prior to 'label_ds' (including `label_ds`). For labels with aggregations, this param
-                          has to be same as aggregation window size.
-    :param label_offline_schedule: Cron expression for Airflow to schedule a DAG for offline
-                                   label join compute tasks
-    """
-
-    label_metadata = api.MetaData(
-        offlineSchedule=label_offline_schedule
-    )
-
-    for label in labels:
-        if label.groupBy.aggregations is not None:
-            assert len(labels) == 1, "Multiple label joinPart is not supported yet"
-            valid_agg = (len(label.groupBy.aggregations) == 1
-                         and label.groupBy.aggregations[0].windows is not None
-                         and len(label.groupBy.aggregations[0].windows) == 1)
-            assert valid_agg, "Too many aggregations or invalid windows found. " \
-                              "Single aggregation with one window allowed."
-            valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
-            assert valid_time_unit, "Label aggregation window unit must be DAYS"
-            window_size = label.groupBy.aggregations[0].windows[0].length
-            if left_start_offset != window_size or left_start_offset != left_end_offset:
-                assert left_start_offset == window_size and left_end_offset == window_size, \
-                    "left_start_offset and left_end_offset will be inferred to be same as aggregation" \
-                    "window {window_size} and the incorrect values will be ignored. "
-
-    return api.LabelPart(
-        labels=labels,
-        leftStartOffset=left_start_offset,
-        leftEndOffset=left_end_offset,
-        metaData=label_metadata
-    )
-
-
-def Derivation(name: str, expression: str) -> api.Derivation:
-    """
-    Derivation allows arbitrary SQL select clauses to be computed using columns from joinPart and externalParts,
-    and saves the result as derived columns. The results will be available both in online fetching response map,
-    and in offline Hive table.
-
-    joinPart column names are automatically constructed according to the below convention
-    `{join_part_prefix}_{group_by_name}_{input_column_name}_{aggregation_operation}_{window}_{by_bucket}`
-    prefix, window and bucket are optional. You can find the type information of columns using the analyzer tool.
-
-    externalPart column names are automatically constructed according to the below convention
-    `ext_{external_source_name}_{value_column}`.
-    Types are defined along with the schema by users for external sources.
-
-    Note that only values can be used in derivations, not keys. If you want to use a key in the derivation, you must
-    define it as a contextual field. You also must refer to a contextual field with its prefix included, for example:
-    `ext_contextual_request_id`.
-
-    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
-
-    :param name: output column name of the SQL expression
-    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
-    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
-    """
-    return api.Derivation(
-        name=name, expression=expression
-    )
-
-
-def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
-    """
-    Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
-    training data generation phase. Bootstrap can be used for many purposes:
-    - Generating ongoing feature values from logs
-    - Backfilling feature values for external features (in which case Chronon is unable to run backfill)
-    - Initializing a new Join by migrating old data from an older Join and reusing data
-
-    One can bootstrap against any of these:
-    - join part fields:
-        Bootstrap can happen at individual field level within a join part.
-        If all fields within a group by are bootstrapped, then we skip computation for group by. Otherwise, the whole
-        thing will be re-run but only the values for the non-bootstrapped fields will be retained in the final table.
-    - external part fields:
-        Bootstrap can happen at individual field level within an external part.
-        Since there is no backfill logic in chronon for external part, all non-bootstrapped fields in external parts
-        are left as NULLs.
-    - derivation fields:
-        Derived fields can also be bootstrapped. Since derived fields depend on "base" fields (either join part or
-        external part), chronon will try to trigger the least amount of computation possible. For example,
-        if there is a join part where all derived fields that depend on the join part have been bootstrapped,
-        then we skip the computation for this join part.
-    - keys:
-        Keys of both join parts and external parts can be bootstrapped. During offline table generation, we will first
-        try to utilize key's data from left table; if it's not there, then we utilize bootstrap.
-        For contextual features, we also support propagating the key bootstrap to the values.
-
-    Dependencies are auto-generated based on source table and optional start_partition/end_partition.
-    To override, add overriding dependencies to the main one (join.dependencies)
-
-    :param table: Name of hive table that contains feature values where rows are 1:1 mapped to left table
-    :param key_columns: Keys to join bootstrap table to left table
-    :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.
-    """
-    return api.BootstrapPart(
-        table=table,
-        query=query,
-        keyColumns=key_columns
-    )
-
-
 def Join(left: api.Source,
          right_parts: List[api.JoinPart],
          check_consistency: bool = False,
@@ -373,16 +224,9 @@ def Join(left: api.Source,
          env: Dict[str, Dict[str, str]] = None,
          lag: int = 0,
          skew_keys: Dict[str, List[str]] = None,
-         sample_percent: float = 100.0,
-         consistency_sample_percent: float = 5.0,
+         sample_percent: float = None,  # will sample all the requests based on sample percent
          online_external_parts: List[api.ExternalPart] = None,
          offline_schedule: str = '@daily',
-         row_ids: List[str] = None,
-         bootstrap_parts: List[api.BootstrapPart] = None,
-         bootstrap_from_log: bool = False,
-         label_part: api.LabelPart = None,
-         derivations: List[api.Derivation] = None,
-         tags: Dict[str, str] = None,
          **kwargs
          ) -> api.Join:
     """
@@ -446,28 +290,11 @@ def Join(left: api.Source,
         This is used to blacklist crawlers etc
     :param sample_percent:
         Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
-    :param consistency_sample_percent:
-        Online only parameter. What percent of online serving requests to this join should be sampled to compute
-        online offline consistency metrics.
-        if sample_percent=50.0 and consistency_sample_percent=10.0, then basically the consistency job runs on
-        5% of total traffic.
     :param online_external_parts:
         users can register external sources into Api implementation. Chronon fetcher can invoke the implementation.
         This is applicable only for online fetching. Offline this will not be produce any values.
     :param offline_schedule:
         Cron expression for Airflow to schedule a DAG for offline join compute tasks
-    :param row_ids:
-        Columns of the left table that uniquely define a training record. Used as default keys during bootstrap
-    :param bootstrap_parts:
-        A list of BootstrapPart used for the Join. See BootstrapPart doc for more details
-    :param bootstrap_from_log:
-        If set to True, will use logging table to generate training data by default and skip continuous backfill.
-        Logging will be treated as another bootstrap source, but other bootstrap_parts will take precedence.
-    :param label_part:
-        Label part which contains a list of labels and label refresh window boundary used for the Join
-    :param tags:
-        Additional metadata about the Join that you wish to track. Does not effect computation.
-    :type tags: Dict[str, str]
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -501,18 +328,6 @@ def Join(left: api.Source,
     right_dependencies = [dep for (source, meta_data) in right_info for dep in
                           utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
 
-    if label_part:
-        label_dependencies = utils.get_label_table_dependencies(label_part)
-        label_metadata = api.MetaData(
-            dependencies=utils.dedupe_in_order(left_dependencies + label_dependencies),
-            offlineSchedule=label_part.metaData.offlineSchedule
-        )
-        label_part = api.LabelPart(
-            labels=label_part.labels,
-            leftStartOffset=label_part.leftStartOffset,
-            leftEndOffset=label_part.leftEndOffset,
-            metaData=label_metadata)
-
     custom_json = {
         "check_consistency": check_consistency,
         "lag": lag
@@ -525,16 +340,17 @@ def Join(left: api.Source,
         custom_json["additional_env"] = additional_env
     custom_json.update(kwargs)
 
-    custom_json["join_tags"] = tags
-    join_part_tags = {}
-    for join_part in right_parts:
-        if hasattr(join_part, "tags") and join_part.tags:
-            join_part_name = "{}{}".format(
-                join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
-            join_part_tags[join_part_name] = join_part.tags
-    custom_json["join_part_tags"] = join_part_tags
-
-    consistency_sample_percent = consistency_sample_percent if check_consistency else None
+    metadata = api.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(custom_json),
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies),
+        outputNamespace=output_namespace,
+        tableProperties=table_properties,
+        modeToEnvMap=env,
+        samplePercent=sample_percent,
+        offlineSchedule=offline_schedule
+    )
 
     # external parts need to be unique on (prefix, part.source.metaData.name)
     if online_external_parts:
@@ -546,39 +362,10 @@ def Join(left: api.Source,
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
         assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
-    if bootstrap_from_log:
-        has_logging = sample_percent > 0 and online
-        assert has_logging, "Join must be online with sample_percent set in order to use bootstrap_from_log option"
-        bootstrap_parts = (bootstrap_parts or []) + [
-            api.BootstrapPart(
-                # templated values will be replaced when metaData.name is set at the end
-                table="{{ logged_table }}"
-            )
-        ]
-
-    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
-
-    metadata = api.MetaData(
-        online=online,
-        production=production,
-        customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
-        outputNamespace=output_namespace,
-        tableProperties=table_properties,
-        modeToEnvMap=env,
-        samplePercent=sample_percent,
-        offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
-    )
-
     return api.Join(
         left=updated_left,
         joinParts=right_parts,
         metaData=metadata,
         skewKeys=skew_keys,
-        onlineExternalParts=online_external_parts,
-        bootstrapParts=bootstrap_parts,
-        rowIds=row_ids,
-        labelPart=label_part,
-        derivations=derivations
+        onlineExternalParts=online_external_parts
     )

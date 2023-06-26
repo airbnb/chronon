@@ -10,6 +10,8 @@ import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongTyp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
 
+import scala.collection.JavaConversions._
+
 /** Tests for the temporal join of entities.
   * Left is an event source with definite ts.
   * Right is an entity with snapshots and mutation values through the day.
@@ -23,7 +25,7 @@ class MutationsTest {
   private val groupByName = s"group_by_test.v0"
   private val joinName = s"join_test.v0"
 
-  private implicit val tableUtils: TableUtils = TableUtils(spark)
+  private val tableUtils = TableUtils(spark)
 
   // {listing_id (key), ts (timestamp of property), rating (property: rated value), ds (partition ds)}
   private val snapshotSchema = StructType(
@@ -76,7 +78,7 @@ class MutationsTest {
     * @return If the expected rows are in the dataframe.
     */
   def compareResult(computed: DataFrame, expectedRows: Seq[Row]): Boolean = {
-    val df = spark.createDataFrame(spark.sparkContext.parallelize(expectedRows), expectedSchema)
+    val df = spark.createDataFrame(expectedRows, expectedSchema)
     val totalExpectedRows = df.count()
     if (computed.count() != totalExpectedRows) return false
     // Join on keys that should be the same.
@@ -128,13 +130,9 @@ class MutationsTest {
                               operation: Operation = Operation.AVERAGE): DataFrame = {
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
-    spark.createDataFrame(spark.sparkContext.parallelize(eventData), leftSchema).save(s"$testNamespace.$eventTable")
-    spark
-      .createDataFrame(spark.sparkContext.parallelize(snapshotData), snapshotSchema)
-      .save(s"$testNamespace.$snapshotTable")
-    spark
-      .createDataFrame(spark.sparkContext.parallelize(mutationData), mutationSchema)
-      .save(s"$testNamespace.$mutationTable")
+    spark.createDataFrame(eventData, leftSchema).save(s"$testNamespace.$eventTable")
+    spark.createDataFrame(snapshotData, snapshotSchema).save(s"$testNamespace.$snapshotTable")
+    spark.createDataFrame(mutationData, mutationSchema).save(s"$testNamespace.$mutationTable")
     computeJoinFromTables(suffix, startPartition, endPartition, windows, operation)
   }
 
@@ -956,12 +954,12 @@ class MutationsTest {
       Column("event", api.IntType, 6)
     )
     val (snapshotDf, mutationsDf) = DataFrameGen.mutations(spark, reviews, 10000, 20, 0.2, 1, "listing_id")
-    val (_, maxDs) = mutationsDf.range[String](tableUtils.partitionColumn)
-    val (minDs, _) = snapshotDf.range[String](tableUtils.partitionColumn)
+    val (_, maxDs) = mutationsDf.range[String](Constants.PartitionColumn)
+    val (minDs, _) = snapshotDf.range[String](Constants.PartitionColumn)
     val leftDf = DataFrameGen
       .events(spark, events, 100, 15)
       .drop()
-      .withShiftedPartition(tableUtils.partitionColumn, -1)
+      .withShiftedPartition(Constants.PartitionColumn, -1)
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
     snapshotDf.save(s"$testNamespace.$snapshotTable")

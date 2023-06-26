@@ -3,89 +3,95 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+Chronon documentation
+=====================
+
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :hidden:
 
-   Getting_Started
-   Concepts
+   Introduction
    Aggregations
+   Integration_Guide
    Python_API
-   Kaggle_Outbrain
    Online_Offline_Consistency
    Code_Guidelines
 
-What ?
-=====================
-Chronon is a feature engineering framework is being used to power Machine Learning in every 
-organization within Airbnb. Chronon makes developing production-grade, 
-features at scale very easy. 
+Chronon is a feature engineering framework that allows you to compute and store features for offline model training and online feature serving with unified feature definitions.
 
-With Chronon you can generate training data, serve features, monitor feature quality 
-and manage features with a unified feature definition.
+.. grid:: 2
 
-.. image:: ../images/chronon_high_level.png
+    .. grid-item-card::
+        :img-top: ../source/_static/index-images/getting_started.svg
 
-* **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
-* **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.
-* **Real-time or batch accuracy** - You can configure the result to be either *Temporal* or *Snapshot* accurate. Temporal refers to updating feature values in real-time in online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
-* **Backfill training sets from raw data** - without having to wait for months to accumulate feature logs to train your model.
-* **Powerful python API** - data source types, freshness and contexts are API level abstractions that you compose with intuitive SQL primitives like group-by, join, select etc., with powerful enhancements.
-* **Automated feature monitoring** - auto-generate monitoring pipelines to understand training data quality, measure training-serving skew and monitor feature drift.
+        Getting Started
+        ^^^^^^^^^^^^^^^
 
-Being able to flexibly compose these concepts to describe data processing is what makes feature engineering in Chronon productive.
+        New to Chronon? Check out the Absolute Beginner's Guide. It contains an
+        introduction to Chronon's main concepts and links to additional tutorials.
 
-Example
-=====================
-This is what a simple Chronon Group-By looks like. This definition is used to automatically 
-create offline datasets, feature serving end-points and data quality monitoring pipelines.
+        +++
 
-.. code-block:: python
+        .. button-ref:: Introduction
+            :expand:
+            :color: secondary
+            :click-parent:
 
-    # same definition creates offline datasets and online end-points
-    view_features = GroupBy(
-       sources=[
-           EventSource(
-               # apply the transform on offline and streaming data
-               table="user_activity.user_views_table",
-               topic="user_views_stream",
-               query=query.Query(
-                   # specify any spark sql expression fragments
-                   # built-in functions, UDFs, arithmetic operations, inline-lambdas, struct types etc.
-                   selects={
-                       "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
-                   },
-                   wheres=["user != null"]
-               ))
-       ],
-       # composite keys
-       keys=["user", "item"],
-       aggregations=[
-           Aggregation(
-               operation=Operation.COUNT,
-               # automatically explode aggregation list type input columns
-               input_column=view,
-               #multiple windows for the same input
-               windows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
-       ],
-       # toggle between fresh vs daily updated features
-       accuracy=Accuracy.TEMPORAL,
-    )
+            To the introduction
 
-Getting Started
-=====================
-If you wish to work in an existing chronon repo, simply run the command below.
+    .. grid-item-card::
+        :img-top: ../source/_static/index-images/user_guide.svg
 
-.. code-block:: bash
+        User Guide
+        ^^^^^^^^^^
 
-   pip install chronon-ai
+        The user guide provides in-depth information on the
+        key concepts of Chronon with useful background information and explanation.
 
-If you wish to setup a chronon repo, for ease of orchestration, we recommend that you
-run the command below in an airflow repository.
+        +++
 
-.. code-block:: bash
+        .. button-ref:: Integration_Guide
+            :expand:
+            :color: secondary
+            :click-parent:
 
-   source <(curl -s https://chronon.ai/init.sh)
+            To the user guide
 
-Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
-Find more details in the Getting Started section.
+    .. grid-item-card::
+        :img-top: ../source/_static/index-images/api.svg
+
+        API Reference
+        ^^^^^^^^^^^^^
+
+        The reference guide contains a detailed description of the functions,
+        modules, included in Chronon. The reference describes how the
+        methods work and which parameters can be used. It assumes that you have an
+        understanding of the key concepts.
+
+        +++
+
+        .. button-ref:: Python_API
+            :expand:
+            :color: secondary
+            :click-parent:
+
+            To the reference guide
+
+    .. grid-item-card::
+        :img-top: ../source/_static/index-images/contributor.svg
+
+        Contributor's Guide
+        ^^^^^^^^^^^^^^^^^^^
+
+        Want to add to the codebase? Can help add translation or a flowchart to the
+        documentation? The contributing guidelines will guide you through the
+        process of improving Chronon.
+
+        +++
+
+        .. button-ref:: Code_Guidelines
+            :expand:
+            :color: secondary
+            :click-parent:
+
+            To the contributor's guide

@@ -69,7 +69,7 @@ def Aggregations(**agg_dict):
     return agg_dict.values()
 
 
-def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
+def DefaultAggregation(keys, sources, operation=Operation.LAST):
     aggregate_columns = []
     for source in sources:
         query = utils.get_query(source)
@@ -89,8 +89,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
     return [
         Aggregation(
             operation=operation,
-            input_column=column,
-            tags=tags) for column in aggregate_columns
+            input_column=column) for column in aggregate_columns
     ]
 
 
@@ -112,8 +111,7 @@ def op_to_str(operation: OperationType):
 def Aggregation(input_column: str = None,
                 operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
                 windows: List[ttypes.Window] = None,
-                buckets: List[str] = None,
-                tags: Dict[str, str] = None) -> ttypes.Aggregation:
+                buckets: List[str] = None) -> ttypes.Aggregation:
     """
     :param input_column:
         Column on which the aggregation needs to be performed.
@@ -139,9 +137,7 @@ def Aggregation(input_column: str = None,
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
-    agg.tags = tags
-    return agg
+    return ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
 
 
 def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
@@ -197,11 +193,7 @@ Keys {unselected_keys}, are unselected in source
 
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
-        is_events = any([s.events for s in sources])
-        has_mutations = any([(s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
-                             for s in sources])
-        assert not (is_events or has_mutations), \
-            "You can only set aggregations=None in an EntitySource without mutations"
+        assert not any([s.events for s in sources]), "You can only set aggregations=None in an EntitySource"
     else:
         columns = set([c for src in sources for c in utils.get_columns(src)])
         for agg in aggregations:
@@ -248,38 +240,6 @@ Keys {unselected_keys}, are unselected in source
 _ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
 
 
-def _get_op_suffix(operation, argmap):
-    op_str = op_to_str(operation)
-    if (operation in [ttypes.Operation.LAST_K, ttypes.Operation.TOP_K, ttypes.Operation.FIRST_K,
-                      ttypes.Operation.BOTTOM_K]):
-        op_name_suffix = op_str[:-2]
-        arg_suffix = argmap.get("k")
-        return "{}{}".format(op_name_suffix, arg_suffix)
-    else:
-        return op_str
-
-
-def get_output_col_names(aggregation):
-    base_name = f"{aggregation.inputColumn}_{_get_op_suffix(aggregation.operation, aggregation.argMap)}"
-    windowed_names = []
-    if aggregation.windows:
-        for window in aggregation.windows:
-            unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()[0]
-            window_suffix = f"{window.length}{unit}"
-            windowed_names.append(f"{base_name}_{window_suffix}")
-    else:
-        windowed_names = [base_name]
-
-    bucketed_names = []
-    if aggregation.buckets:
-        for bucket in aggregation.buckets:
-            bucketed_names.extend([f"{name}_by_{bucket}" for name in windowed_names])
-    else:
-        bucketed_names = windowed_names
-
-    return bucketed_names
-
-
 def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             keys: List[str],
             aggregations: Optional[List[ttypes.Aggregation]],
@@ -292,9 +252,6 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             output_namespace: str = None,
             accuracy: ttypes.Accuracy = None,
             lag: int = 0,
-            offline_schedule: str = '@daily',
-            name: str = None,
-            tags: Dict[str, str] = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -375,21 +332,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
         This is used by airflow integration to pick an older hive partition to wait on.
     :type lag: int
-    :param offline_schedule:
-         the offline schedule interval for batch jobs. Below is the equivalent of the cron tab commands
-        '@hourly': '0 * * * *',
-        '@daily': '0 0 * * *',
-        '@weekly': '0 0 * * 0',
-        '@monthly': '0 0 1 * *',
-        '@yearly': '0 0 1 1 *',
-    :type offline_schedule: str
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
-    :type kwargs: Dict[str, str]
-    :param tags:
-        Additional metadata that does not directly affect feature computation, but is useful to
-        track for management purposes.
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -440,17 +385,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
-    column_tags = {}
-    if aggregations:
-        for agg in aggregations:
-            if hasattr(agg, "tags") and agg.tags:
-                for output_col in get_output_col_names(agg):
-                    column_tags[output_col] = agg.tags
-    metadata = {"groupby_tags": tags, "column_tags": column_tags}
-    kwargs.update(metadata)
-
     metadata = ttypes.MetaData(
-        name=name,
         online=online,
         production=production,
         outputNamespace=output_namespace,
@@ -458,8 +393,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         dependencies=deps,
         modeToEnvMap=env,
         tableProperties=table_properties,
-        team=team,
-        offlineSchedule=offline_schedule)
+        team=team)
 
     group_by = ttypes.GroupBy(
         sources=sources,

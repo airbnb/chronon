@@ -1,8 +1,8 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{BootstrapPart, Constants}
-import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
+import ai.chronon.api.Constants
+import ai.chronon.online.{AvroCodec, AvroConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -11,7 +11,6 @@ import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
-import scala.collection.Seq
 import scala.reflect.ClassTag
 
 object Extensions {
@@ -32,13 +31,12 @@ object Extensions {
     }
 
     def toChrononSchema(name: String = null): api.StructType =
-      api.StructType.from(name, SparkConversions.toChrononSchema(schema))
+      api.StructType.from(name, Conversions.toChrononSchema(schema))
     def toAvroSchema(name: String = null): Schema = AvroConversions.fromChrononSchema(toChrononSchema(name))
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
   implicit class DataframeOps(df: DataFrame) {
-    private implicit val tableUtils = TableUtils(df.sparkSession)
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
@@ -49,13 +47,13 @@ object Extensions {
     }
 
     def prunePartition(partitionRange: PartitionRange): DataFrame = {
-      val pruneFilter = partitionRange.whereClauses().mkString(" AND ")
+      val pruneFilter = partitionRange.whereClauses.mkString(" AND ")
       println(s"Pruning using $pruneFilter")
       df.filter(pruneFilter)
     }
 
     def partitionRange: PartitionRange = {
-      val (start, end) = df.range[String](tableUtils.partitionColumn)
+      val (start, end) = df.range[String](Constants.PartitionColumn)
       PartitionRange(start, end)
     }
 
@@ -65,7 +63,7 @@ object Extensions {
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
       val minMaxDf: DataFrame = df.sqlContext
-        .sql(s"select min($columnName), max($columnName) from $viewName")
+        .sql(s"select min($columnName), max($columnName) from $viewName") // nosemgrep no user-supplied input
       assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
       val minMaxRow = minMaxDf.collect()(0)
       df.sparkSession.catalog.dropTempView(viewName)
@@ -78,17 +76,21 @@ object Extensions {
 
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
-             partitionColumns: Seq[String] = Seq(tableUtils.partitionColumn),
+             partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
              autoExpand: Boolean = false): Unit = {
-      TableUtils(df.sparkSession).insertPartitions(df,
-                                                   tableName,
-                                                   tableProperties,
-                                                   partitionColumns,
-                                                   autoExpand = autoExpand)
+      TableUtils(df.sparkSession).insertPartitions(df, tableName, tableProperties, partitionColumns,
+        autoExpand = autoExpand)
     }
 
-    def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
-      TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
+    def saveWithTableUtils(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null,
+                           partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                           autoExpand: Boolean = false): Unit = {
+      tableUtils.insertPartitions(df, tableName, tableProperties, partitionColumns,
+        autoExpand = autoExpand)
+    }
+
+    def saveUnPartitioned(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null): Unit = {
+      tableUtils.insertUnPartitioned(df, tableName, tableProperties)
     }
 
     def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
@@ -134,10 +136,6 @@ object Extensions {
                             fpp: Double = 0.03): BloomFilter = {
       val approxCount =
         df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
-      if (approxCount == 0) {
-        println(
-          s"Warning: approxCount for col ${col} from table ${tableName} is 0. Please double check your input data.")
-      }
       println(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
@@ -145,8 +143,7 @@ object Extensions {
       val bloomFilter = df
         .filter(df.col(col).isNotNull)
         .stat
-        .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
-
+        .bloomFilter(col, approxCount, fpp)
       println(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
@@ -182,7 +179,7 @@ object Extensions {
     // convert a millisecond timestamp to string with the specified format
     def withTimeBasedColumn(columnName: String,
                             timeColumn: String = Constants.TimeColumn,
-                            format: String = tableUtils.partitionSpec.format): DataFrame =
+                            format: String = Constants.Partition.format): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
     private def camelToSnake(name: String) = {
@@ -194,12 +191,11 @@ object Extensions {
     def camelToSnake: DataFrame =
       df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))
 
-    def withPartitionBasedTimestamp(colName: String, inputColumn: String = tableUtils.partitionColumn): DataFrame =
-      df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
+    def withPartitionBasedTimestamp(colName: String, inputColumn: String = Constants.PartitionColumn): DataFrame =
+      df.withColumn(colName, unix_timestamp(df.col(inputColumn), Constants.Partition.format) * 1000)
 
     def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(colName,
-                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
+      df.withColumn(colName, date_format(date_add(df.col(Constants.PartitionColumn), days), Constants.Partition.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>
@@ -212,7 +208,7 @@ object Extensions {
     def order(keys: Seq[String]): DataFrame = {
       val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
       val filtered = df.where(filterClause)
-      filtered.orderBy(keys.map(desc).toSeq: _*)
+      filtered.orderBy(keys.map(desc): _*)
     }
   }
 

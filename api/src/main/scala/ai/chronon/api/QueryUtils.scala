@@ -6,7 +6,7 @@ object QueryUtils {
   // to be present in the table that the generated query runs on.
   def build(selects: Map[String, String],
             from: String,
-            wheres: scala.collection.Seq[String],
+            wheres: Seq[String],
             fillIfAbsent: Map[String, String] = null): String = {
 
     def toProjections(m: Map[String, String]) =
@@ -27,10 +27,10 @@ object QueryUtils {
 
     val whereClause = Option(wheres)
       .filter(_.nonEmpty)
-      .map { ws =>
+      .map { w =>
         s"""
            |WHERE
-           |  ${ws.map(w => s"(${w})").mkString(" AND ")}""".stripMargin
+           |  ${w.mkString(" AND ")}""".stripMargin
       }
       .getOrElse("")
 

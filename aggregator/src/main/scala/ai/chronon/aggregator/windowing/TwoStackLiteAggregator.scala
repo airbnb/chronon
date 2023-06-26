@@ -16,8 +16,14 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   case class PerWindowAggregator(window: Window, agg: RowAggregator, indexMapping: Array[Int]) {
     private val windowLength: Long = window.millis
     private val tailHopSize = resolution.calculateTailHop(window)
+
+    // The Dequeue in Hops Two Stack Lite Buffer only needs to be as big as the number of hops since we merge the IRs if they fall into the same hop
+    // In the event that the window is unbounded, use 1000 as a default buffer size
+    private val numOfHops = (windowLength / tailHopSize).toInt
+    private val DefaultBufferSize = 1000
+    private val bufferSize = numOfHops.min(DefaultBufferSize)
     def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
-    def bankersBuffer(inputSize: Int) = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, inputSize)
+    def bankersBuffer() = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, bufferSize, Some(tailHopSize), true)
     def init = new Array[Any](agg.length)
   }
 
@@ -43,14 +49,18 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   // iterator api to reduce memory pressure
   def slidingSawtoothWindow(queries: Iterator[Long], inputs: Iterator[Row], inputSize: Int = 1000, shouldFinalize: Boolean = true): Iterator[Array[Any]] = {
     val inputsBuffered = inputs.buffered
-    val buffers = perWindowAggregators.map(_.bankersBuffer(inputSize))
+    val buffers = perWindowAggregators.map(_.bankersBuffer())
     var unWindowedAgg = if(unWindowedParts.isEmpty) null else new Array[Any](unWindowedParts.length)
 
     new Iterator[Array[Any]] {
+      var currTs: Long = Long.MinValue
+
       override def hasNext: Boolean = queries.hasNext
 
       override def next(): Array[Any] = {
         val queryTs = queries.next()
+        assert(queryTs >= currTs, s"last-seen ts is $currTs, got a query for $queryTs")
+        currTs = queryTs
 
         // remove all unwanted entries before adding new entries - to keep memory low
         var i = 0
@@ -67,7 +77,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
         // add all new inputs
         while(inputsBuffered.hasNext && inputsBuffered.head.ts < queryTs) {
           val row = inputsBuffered.next()
-          
+
           // add to windowed
           i = 0
           while(i < perWindowAggregators.length) { // for each unique window length
@@ -78,7 +88,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
             }
             i += 1
           }
-          
+
           // add to unWindowed
           unWindowedAggregator.foreach{ agg =>
             unWindowedAgg = agg.update(unWindowedAgg, row)
@@ -127,7 +137,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
             i += 1
           }
         }
-        
+
         result
       }
     }
@@ -135,7 +145,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
 }
 
 /**
-    A sliding window is basically a queue. Whenever a new element is added
+A sliding window is basically a queue. Whenever a new element is added
     to its tail, an older element is to be removed from its head.
 
     We don't know an easy O(1) way of maintaining maximum in a queue.

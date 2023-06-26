@@ -68,7 +68,7 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
     val inputVal = inputRow.get(columnIndices.input)
     if (inputVal == null) return null
     val anyIterator = inputVal match {
-      case inputSeq: collection.Seq[Any]  => inputSeq.iterator
+      case inputSeq: Seq[Any]             => inputSeq.iterator
       case inputList: util.ArrayList[Any] => inputList.iterator().asScala
     }
     anyIterator.filter { _ != null }.map { toTypedInput }
@@ -250,8 +250,7 @@ object ColumnAggregator {
           case LongType   => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))))
           case ShortType  => simple(new ApproxDistinctCount[Long](aggregationPart.getInt("k", Some(8))), toLong[Short])
           case DoubleType => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))))
-          case FloatType =>
-            simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
+          case FloatType  => simple(new ApproxDistinctCount[Double](aggregationPart.getInt("k", Some(8))), toDouble[Float])
           case StringType => simple(new ApproxDistinctCount[String](aggregationPart.getInt("k", Some(8))))
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException
@@ -260,8 +259,7 @@ object ColumnAggregator {
       case Operation.APPROX_PERCENTILE =>
         val k = aggregationPart.getInt("k", Some(128))
         val mapper = new ObjectMapper()
-        val percentiles =
-          mapper.readValue(aggregationPart.argMap.getOrDefault("percentiles", "[0.5]"), classOf[Array[Double]])
+        val percentiles = mapper.readValue(aggregationPart.argMap.getOrDefault("percentiles", "[0.5]"), classOf[Array[Double]])
         val agg = new ApproxPercentiles(k, percentiles)
         inputType match {
           case IntType    => simple(agg, toFloat[Int])

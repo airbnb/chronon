@@ -8,15 +8,12 @@ import org.apache.spark.sql.types.{LongType, StructField, StructType}
   * Simple Aggregator class to generate snapshots from mutations based on the
   * latest mutation Ts.
   */
-class SnapshotAggregator(inputSchema: StructType,
-                         mutationColumnName: String,
-                         keyColumnName: String,
-                         partitionColumnName: String)
+class SnapshotAggregator(inputSchema: StructType, mutationColumnName: String, keyColumnName: String)
     extends Serializable {
 
   val mutationTsIdx = inputSchema.fieldIndex(Constants.MutationTimeColumn)
   val mutationColumnIdx = inputSchema.fieldIndex(mutationColumnName)
-  val dsIdx = inputSchema.fieldIndex(partitionColumnName)
+  val dsIdx = inputSchema.fieldIndex(Constants.PartitionColumn)
   val tsIdx = inputSchema.fieldIndex(Constants.TimeColumn)
   val keyIdx = inputSchema.fieldIndex(keyColumnName)
 

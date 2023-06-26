@@ -1,32 +1,14 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.aggregator.base.BottomK
-import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.api.{ThriftJsonCodec, UnknownType}
-import ai.chronon.spark.Driver
-import ai.chronon.spark.Driver.OnlineSubcommand
+import ai.chronon.api.UnknownType
 import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, ListTopicsOptions}
 import ai.chronon.spark.stats.EditDistance
-import org.apache.thrift.TBase
-import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
-
 import java.util
 import java.util.Properties
 import scala.collection.JavaConverters.{asScalaBufferConverter, asScalaIteratorConverter}
-import scala.reflect.ClassTag
-import scala.util.Try
 
 object TopicChecker {
-
-  def getPartitions(topic: String, bootstrap: String): Int = {
-    val props = new Properties()
-    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap)
-    val adminClient = AdminClient.create(props)
-    val topicDescription = adminClient.describeTopics(util.Arrays.asList(topic)).values().get(topic);
-    topicDescription.get().partitions().size()
-  }
-
   def topicShouldExist(topic: String, bootstrap: String): Unit = {
     val props = new Properties()
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap)
@@ -67,30 +49,5 @@ object TopicChecker {
     }
   }
 
-  class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
-    val conf: ScallopOption[String] = opt[String](descr = "Conf to pull topic and bootstrap server information")
-    val bootstrap: ScallopOption[String] = opt[String](descr = "Kafka bootstrap server in host:port format")
-    val topic: ScallopOption[String] = opt[String](descr = "kafka topic to check metadata for")
-    verify()
-  }
-
-  // print out number of partitions and exit
-  def main(argSeq: Array[String]) {
-    val args = new Args(argSeq)
-    val (topic, bootstrap) = if (args.conf.isDefined) {
-      val confPath = args.conf()
-      val groupBy = Driver.parseConf[api.GroupBy](confPath)
-      val source = groupBy.streamingSource.get
-      val topic = source.cleanTopic
-      val tokens = source.topicTokens
-      lazy val host = tokens.get("host")
-      lazy val port = tokens.get("port")
-      lazy val hostPort = s"${host.get}:${port.get}"
-      topic -> args.bootstrap.getOrElse(hostPort)
-    } else {
-      args.topic() -> args.bootstrap()
-    }
-    println(getPartitions(topic, bootstrap))
-    System.exit(0)
-  }
+  def main(args: Array[String]): Unit = topicShouldExist(args(0), args(1))
 }

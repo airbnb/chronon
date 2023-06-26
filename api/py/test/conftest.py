@@ -13,11 +13,6 @@ def teams_json(rootdir):
 
 
 @pytest.fixture
-def repo(rootdir):
-    return os.path.join(rootdir, 'sample/')
-
-
-@pytest.fixture
 def sleepless():
     def justpass(seconds):
         pass

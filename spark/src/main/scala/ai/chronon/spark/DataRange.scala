@@ -8,24 +8,22 @@ import scala.collection.JavaConverters._
 sealed trait DataRange {
   def toTimePoints: Array[Long]
 }
-case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) extends DataRange {
+case class TimeRange(start: Long, end: Long) extends DataRange {
   def toTimePoints: Array[Long] = {
     Stream
-      .iterate(TsUtils.round(start, tableUtils.partitionSpec.spanMillis))(_ + tableUtils.partitionSpec.spanMillis)
+      .iterate(TsUtils.round(start, Constants.Partition.spanMillis))(_ + Constants.Partition.spanMillis)
       .takeWhile(_ <= end)
       .toArray
   }
 
   def toPartitionRange: PartitionRange = {
-    PartitionRange(tableUtils.partitionSpec.at(start), tableUtils.partitionSpec.at(end))
+    PartitionRange(Constants.Partition.at(start), Constants.Partition.at(end))
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
-case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
-    extends DataRange
-    with Ordered[PartitionRange] {
+case class PartitionRange(start: String, end: String) extends DataRange {
 
   def valid: Boolean =
     (Option(start), Option(end)) match {
@@ -48,20 +46,16 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
   override def toTimePoints: Array[Long] = {
     assert(start != null && end != null, "Can't request timePoint conversion when PartitionRange is unbounded")
     Stream
-      .iterate(start)(tableUtils.partitionSpec.after)
+      .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
-      .map(tableUtils.partitionSpec.epochMillis)
+      .map(Constants.Partition.epochMillis)
       .toArray
   }
 
-  def whereClauses(partitionColumn: String = tableUtils.partitionColumn): Seq[String] = {
-    val startClause = Option(start).map(s"${partitionColumn} >= '" + _ + "'")
-    val endClause = Option(end).map(s"${partitionColumn} <= '" + _ + "'")
+  def whereClauses: Seq[String] = {
+    val startClause = Option(start).map(s"${Constants.PartitionColumn} >= '" + _ + "'")
+    val endClause = Option(end).map(s"${Constants.PartitionColumn} <= '" + _ + "'")
     (startClause ++ endClause).toSeq
-  }
-
-  def betweenClauses: String = {
-    s"${tableUtils.partitionColumn} BETWEEN '" + start + "' AND '" + end + "'"
   }
 
   def substituteMacros(template: String): String = {
@@ -72,16 +66,25 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
 
-  def genScanQuery(query: Query, table: String,
-                   fillIfAbsent: Map[String, String] = Map.empty,
-                   partitionColumn: String = tableUtils.partitionColumn): String = {
+  def genScanQuery(query: Query, table: String, fillIfAbsent: Map[String, String] = Map.empty): String = {
     val queryOpt = Option(query)
     val wheres =
-      whereClauses(partitionColumn) ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
+      whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
                      from = table,
                      wheres = wheres,
                      fillIfAbsent = fillIfAbsent)
+  }
+
+  def genScanQueryBasedOnTime(query: Query, table: String, fillIfAbsent: Map[String, String] = Map.empty): String = {
+    val queryOpt = Option(query)
+    val startClause = Option(start).map(start => s"${fillIfAbsent(Constants.TimeColumn)} >= " + Constants.Partition.epochMillis(start))
+    val endClause = Option(end).map(end => s"${fillIfAbsent(Constants.TimeColumn)} < " + Constants.Partition.epochMillis(Constants.Partition.after(end)))
+    val wheres = (startClause ++ endClause).toSeq
+    QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
+      from = table,
+      wheres = wheres,
+      fillIfAbsent = fillIfAbsent)
   }
 
   def steps(days: Int): Seq[PartitionRange] = {
@@ -94,36 +97,10 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
   def partitions: Seq[String] = {
     assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
     Stream
-      .iterate(start)(tableUtils.partitionSpec.after)
+      .iterate(start)(Constants.Partition.after)
       .takeWhile(_ <= end)
   }
 
-  def shift(days: Int): PartitionRange = {
-    if (days == 0) {
-      this
-    } else {
-      PartitionRange(tableUtils.partitionSpec.shift(start, days), tableUtils.partitionSpec.shift(end, days))
-    }
-  }
-
-  override def compare(that: PartitionRange): Int = {
-    def compareDate(left: String, right: String): Int = {
-      if (left == right) {
-        0
-      } else if (left == null) {
-        -1
-      } else if (right == null) {
-        1
-      } else {
-        left compareTo right
-      }
-    }
-
-    val compareStart = compareDate(this.start, that.start)
-    if (compareStart != 0) {
-      compareStart
-    } else {
-      compareDate(this.end, that.end)
-    }
-  }
+  def shift(days: Int): PartitionRange =
+    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
 }
