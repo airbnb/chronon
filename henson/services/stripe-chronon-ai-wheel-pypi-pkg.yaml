@@ -1,0 +1,20 @@
+service_name: stripe-chronon-ai-wheel-pypi-pkg
+description: Stripes version of the Chronon Python Package.
+repo: stripe-private-oss-forks/chronon
+contact:
+  responsible_team: ml-features
+  slack_channel: ml-infra
+deploy:
+  clusters:
+    - northwest
+  autodeploy:
+    enabled: true
+    triggers:
+      merges:
+        commits_have_labels: ["service-stripe-chronon-ai-wheel-pypi-pkg"]
+kubernetes:
+  template: henson/kube/stripe-chronon-ai-wheel-pypi-pkg.sky
+jenkins:
+  job_name: stripe-private-oss-forks-chronon
+container_images:
+- artifact_name: stripe-chronon-ai-wheel-image

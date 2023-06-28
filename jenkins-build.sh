@@ -38,4 +38,5 @@ cd py                                                  # Go to Python module
 pip install -r requirements/dev.txt                    # Install latest requirements
 tox                                                    # Run tests
 python -m build                                        # Build
+cp -rv dist/* /build                                   # Copy build files to /build so they can be accessed by the artifact publish box
 popd

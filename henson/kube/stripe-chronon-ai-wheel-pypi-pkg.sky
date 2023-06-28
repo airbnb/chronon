@@ -1,0 +1,11 @@
+load("config/kubernetes/artifactory.sky", "artifactory_publish_job")
+ 
+def main(ctx): 
+    publish_job = artifactory_publish_job(
+        ctx,
+        service_name = "stripe-chronon-ai-wheel-pypi-pkg",
+        package_type = "pypi",
+        package_image = "stripe-chronon-ai-wheel-image",
+        packages = [],
+    )
+    return [publish_job]

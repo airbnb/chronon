@@ -1,11 +1,22 @@
 network:
   http_proxy_whitelist:
     - artifactory-content.stripe.build
+    - rpm.nodesource.com
+    - vault.centos.org
+    - archives.fedoraproject.org
 jenkins_jobs:
   - name: "stripe-private-oss-forks-chronon"
     henson_tarball:
       docker:
         dockerfile: docker/ci/Dockerfile
+    container_images:
+      - artifact_name: 'stripe-chronon-ai-wheel-image'
+        docker:
+          dockerfile: docker/ci/Dockerfile
+        push:
+          enabled: true
+          repo: stripe/chronon/stripe-chronon-ai-wheel-image
+          responsible_team: ml-features
     network:
       http_proxy_verbose: true
       http_proxy_report_only: true

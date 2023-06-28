@@ -6,11 +6,17 @@ FROM containers.global.prod.stripe.io/stripe/build/ubuntu-20.04:latest
 # Just that we're using Stripe's CI images and also using our Scala versions
 ENV THRIFT_VERSION 0.11.0
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
+ENV PIP_INDEX_URL https://artifactory-content.stripe.build/artifactory/api/pypi/pypi-safe/simple
 
 RUN curl -sSL "https://github.com/sbt/sbt/releases/download/v1.5.0/sbt-1.5.0.tgz" -o sbt-1.5.0.tgz
 RUN tar xzvf sbt-1.5.0.tgz -C /usr/share/
 ENV PATH $JAVA_HOME/bin:/opt/conda/bin:/usr/share/sbt/bin:$PATH
 RUN export JAVA_HOME
+
+RUN : \
+    && groupadd -g 998 ssl-cert \
+    && groupadd -g 3001 stripe-service \
+    && useradd -u 3001 -g 3001 -G 998 stripe-service
 
 # Install prereqs
 RUN apt-get update && apt-get -y -q install \
@@ -66,8 +72,9 @@ RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
 RUN conda create -y -n zipline_py python=3.7
 RUN conda install -y -q -n zipline_py --no-deps virtualenv
 RUN  /opt/conda/envs/zipline_py/bin/pip install \
-   flake8==5.0.4 build flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7 distlib>=0.3.4 filelock>=3.7.0 platformdirs>=2.5.2
+   flake8==5.0.4 build wheel twine flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7 distlib>=0.3.4 filelock>=3.7.0 platformdirs>=2.5.2
 
+COPY / /src
 WORKDIR /src
 ENV PATH $PATH:/src/
 
