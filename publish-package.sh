@@ -16,7 +16,7 @@ echo "Publishing Chronon Python package to $base"
  
 # do not loop if there are no files
 shopt -s nullglob
-for f in /build/*; do
+for f in /src/build/*; do
     echo " - uploading $f"
     "/opt/conda/envs/zipline_py/bin/twine" \
         upload "$f" \

@@ -2,8 +2,6 @@
 
 . /usr/stripe/bin/docker/stripe-init-build
 
-echo "Building Chronon."
-
 # The steps in this file largely follow the commands in .circleci/config.yml
 
 # Build the Scala code
@@ -27,16 +25,3 @@ sbt "++ 2.12.12 test"
 echo "Kicking off Chronon artifactory publish"
 export CHRONON_SNAPSHOT_REPO='https://artifactory-content.stripe.build/artifactory/maven-snapshots-local'
 sbt "++ 2.12.12 publish"
-
-echo "Kicking off Python tests and build"
-
-source /opt/conda/etc/profile.d/conda.sh
-conda activate zipline_py
-pushd api
-thrift --gen py -out py/ai/chronon thrift/api.thrift   # Generate thrift files
-cd py                                                  # Go to Python module
-pip install -r requirements/dev.txt                    # Install latest requirements
-tox                                                    # Run tests
-python -m build                                        # Build
-cp -rv dist/* /build                                   # Copy build files to /build so they can be accessed by the artifact publish box
-popd

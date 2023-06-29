@@ -78,4 +78,5 @@ COPY / /src
 WORKDIR /src
 ENV PATH $PATH:/src/
 
-CMD /src/jenkins-build.sh
+RUN /src/jenkins-build-py.sh
+CMD /src/jenkins-build-sbt.sh
