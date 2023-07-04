@@ -10,10 +10,10 @@ import java.io.File
 
 object LocalDataLoader {
   def writeTableFromFile(file: File, tableName: String, session: SparkSession): Unit = {
-    println(s"Checking table: ${tableName}")
+    println(s"Checking table: $tableName")
     if (session.catalog.tableExists(tableName)) return
-    val extension = file.getName.split("\\.").last
-    if (!Seq("csv", "json", "jsonl").contains(extension)) {
+    val extension = file.getName.split("\\.").last.toLowerCase
+    if (!Seq("csv", "json", "jsonl", "parquet").contains(extension)) {
       println(s"Unable to load file due to invalid extension from file: ${file.getPath}")
       return
     }
@@ -23,19 +23,12 @@ object LocalDataLoader {
       .option("mode", FailFastMode.name)
     var df = if (extension == "csv") {
       reader.option("header", true).csv(file.getPath)
-    } else {
+    } else if (extension == "json" || extension == "jsonl") {
       reader.option("multiLine", extension == "json").option("allowComments", true).json(file.getPath)
+    } else {
+      reader.parquet(file.getPath)
     }
     val schema = df.schema
-
-    // for readability we want to allow timestamp specified as string
-    // in such cases we assume the format is 'yyyy-MM-dd HH:mm:ss'
-    if (schema.fieldNames.contains("ts") && schema(schema.fieldIndex("ts")).dataType == StringType) {
-      df = df
-        .withColumnRenamed("ts", "ts_string")
-        .withColumn("ts", unix_timestamp(col("ts_string")) * 1000)
-        .drop("ts_string")
-    }
 
     println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
     df.show(100)
