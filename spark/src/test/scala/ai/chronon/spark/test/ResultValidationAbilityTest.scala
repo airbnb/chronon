@@ -72,4 +72,22 @@ class ResultValidationAbilityTest {
 
     assertFalse(args.validateResult(leftDf, Seq("keyId", "ds"), mockTableUtils))
   }
+
+  @Test
+  def testFailedValidationWithMismatchSchema(): Unit = {
+    val args = new TestArgs(Seq("--conf-path", confPath, "--expected-result-table", "a_table").toArray)
+
+    val leftColumns = Seq("serial", "value", "rating", "keyId", "ds")
+    val leftData = Seq((1, Some(1), 1.0, "a", "2021-04-10"), (1, Some(2), 2.0, "b", "2021-04-10"))
+    val leftRdd = args.sparkSession.sparkContext.parallelize(leftData)
+    val leftDf = args.sparkSession.createDataFrame(leftRdd).toDF(leftColumns: _*)
+    val rightColumns = Seq("r_serial", "r_value", "r_rating", "keyId", "ds")
+    val rightData = Seq((1, Some(1), "5.0", "a", "2021-04-10"), (2, Some(3), "2.0", "b", "2021-04-10"))
+    val rightRdd = args.sparkSession.sparkContext.parallelize(rightData)
+    val rightDf = args.sparkSession.createDataFrame(rightRdd).toDF(rightColumns: _*)
+
+    when(mockTableUtils.loadEntireTable(any())).thenReturn(rightDf)
+
+    assertFalse(args.validateResult(leftDf, Seq("keyId", "ds"), mockTableUtils))
+  }
 }

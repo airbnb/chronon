@@ -35,6 +35,8 @@ case class TableUtils(sparkSession: SparkSession) {
       .toMap
   }
 
+  def namespaceExists(namespace: String): Boolean = sparkSession.catalog.databaseExists(namespace)
+
   def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
@@ -168,6 +170,17 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       df
     }
+
+    val splits = tableName.split("\\.")
+    assert(splits.nonEmpty && splits.size <= 2, s"Invalid table name $tableName")
+
+    if (splits.size == 2 && !namespaceExists(splits(0))) {
+      sql(s"CREATE DATABASE ${splits(0)}")
+    }
+
+    val (namespace, _) =
+      if (splits.size == 1) "default" -> splits(0)
+      else splits(0) -> splits(1)
 
     if (!tableExists(tableName)) {
       val creationSql = createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat)

@@ -21,14 +21,13 @@ object LocalDataLoader {
     val reader = session.read
       .option("inferSchema", "true")
       .option("mode", FailFastMode.name)
-    var df = if (extension == "csv") {
+    val df = if (extension == "csv") {
       reader.option("header", true).csv(file.getPath)
     } else if (extension == "json" || extension == "jsonl") {
       reader.option("multiLine", extension == "json").option("allowComments", true).json(file.getPath)
     } else {
       reader.parquet(file.getPath)
     }
-    val schema = df.schema
 
     println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
     df.show(100)

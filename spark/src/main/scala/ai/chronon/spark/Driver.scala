@@ -55,7 +55,7 @@ object Driver {
       valueName = "path_to_local_input_file",
       descr = """Use this option to specify a list of table <> local input file mappings for running local
           |Chronon jobs. For example,
-          |`--local-data-list ns_1.table_a=p1/p2/ta.csv ns_2.table_b=p3/tb.csv`
+          |`--local-table-mapping ns_1.table_a=p1/p2/ta.csv ns_2.table_b=p3/tb.csv`
           |will load the two files into the specified tables `table_a` and `table_b` locally.
           |Once this option is used, the `--local-data-path` will be ignored.
           |""".stripMargin
@@ -180,15 +180,21 @@ object Driver {
 
     def validateResult(df: DataFrame, keys: Seq[String], tableUtils: TableUtils): Boolean = {
       val expectedDf = tableUtils.loadEntireTable(expectedResultTable())
-      val (_, _, metrics) = CompareBaseJob.compare(df, expectedDf, keys, tableUtils)
-      val result = CompareJob.getConsolidatedData(metrics, tableUtils.partitionSpec)
+      try {
+        val (_, _, metrics) = CompareBaseJob.compare(df, expectedDf, keys, tableUtils)
+        val result = CompareJob.getConsolidatedData(metrics, tableUtils.partitionSpec)
 
-      if (result.nonEmpty) {
-        println("[Validation] Failed. Please try exporting the result and investigate.")
-        false
-      } else {
-        println("[Validation] Success.")
-        true
+        if (result.nonEmpty) {
+          println("[Validation] Failed. Please try exporting the result and investigate.")
+          false
+        } else {
+          println("[Validation] Success.")
+          true
+        }
+      } catch {
+        case e: Throwable =>
+          println(s"[Validation] Failed. An exception is encountered: ${e.getMessage}.")
+          false
       }
     }
   }
