@@ -14,8 +14,8 @@ class AnalyzerTest {
   private val tableUtils = TableUtils(spark)
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
+  private val oneMonthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+  private val oneYearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
   private val namespace = "analyzer_test_ns"
   spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
@@ -47,9 +47,9 @@ class AnalyzerTest {
     )
 
     //run analyzer and validate output schema
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
     val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map { case (k, v) => s"${k} => ${v}" }.toList.sorted
-    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val join = new Join(joinConf = joinConf, endPartition = oneMonthAgo, tableUtils)
     val computed = join.computeJoin()
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
     println("=== expected schema =====")
@@ -82,7 +82,7 @@ class AnalyzerTest {
     )
 
     //run analyzer and validate output schema
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, enableHitter = true)
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
@@ -97,7 +97,7 @@ class AnalyzerTest {
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo),
       table = viewsTable
     )
   }
@@ -113,7 +113,7 @@ class AnalyzerTest {
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo),
       table = viewsTable
     )
   }

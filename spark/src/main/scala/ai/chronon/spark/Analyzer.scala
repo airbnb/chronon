@@ -15,7 +15,7 @@ import ai.chronon.aggregator.row.StatsGenerator
 
 import scala.collection.{Seq, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
+import scala.util.ScalaJavaConversions.ListOps
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -207,8 +207,9 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       groupBy.outputSchema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     }
-    val keySchemaMap = groupBy.keySchema.map {  field =>
-      field.name -> SparkConversions.toChrononType(field.name, field.dataType)}.toMap
+    val keySchemaMap = groupBy.keySchema.map { field =>
+      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
+    }.toMap
     (aggMetadata, keySchemaMap)
   }
 
@@ -226,20 +227,18 @@ class Analyzer(tableUtils: TableUtils,
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError = mutable.HashMap[String, String]()
-    joinConf.joinParts.toScala.parallel.foreach { part =>
+    joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) = analyzeGroupBy(part.groupBy,
         part.fullPrefix,
         true,
         enableHitter)
-      synchronized {
-        aggregationsMetadata ++= aggMetadata.map { aggMeta =>
-          AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
-            aggMeta.columnType,
-            aggMeta.operation,
-            aggMeta.window,
-            aggMeta.inputColumn,
-            part.getGroupBy.getMetaData.getName)
-        }
+      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+        AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
+          aggMeta.columnType,
+          aggMeta.operation,
+          aggMeta.window,
+          aggMeta.inputColumn,
+          part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
       // TODO: more validations on the way
@@ -267,9 +266,9 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    println(s"""----- Validations for join/${joinConf.metaData.cleanName} -----""".stripMargin)
+    println("----- Validations for join/${joinConf.metaData.cleanName} -----")
     if(keysWithError.isEmpty) {
-      println(s"""----- Schema validation completed. No errors found. -----""".stripMargin)
+      println("----- Schema validation completed. No errors found. -----")
     } else {
       println(
         s"""----- Schema validation completed. Found ${keysWithError.keys.size} errors.""")
@@ -277,7 +276,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     if(validationAssert) {
-      assert(keysWithError.isEmpty, s"ERROR: Join validation failed. Please check error message for details.")
+      assert(keysWithError.isEmpty, "ERROR: Join validation failed. Please check error message for details.")
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
@@ -288,24 +287,15 @@ class Analyzer(tableUtils: TableUtils,
   def runSchemaValidation(left: Map[String, DataType],
                           right: Map[String, DataType],
                           keys: Seq[String]): Map[String, String] = {
-    val errorKeys = mutable.HashMap[String, String]()
-    keys.foreach { key =>
-      val leftFields = left.keys.toSeq
-      val rightFields = right.keys.toSeq
-      if(!leftFields.contains(key) || !rightFields.contains(key)) {
-        errorKeys += (key ->
-          s"""[ERROR]: Either left or right side of the join doesn't contain the key $key,
-              available keys are [${leftFields.mkString(", ")}]""".stripMargin)
-      } else {
-        val leftDataType = left(key)
-        val rightDataType = right(key)
-        if (leftDataType != rightDataType) {
-          errorKeys += (key -> s"""[ERROR]: Join key, '$key', has mismatched data types -
-                         left type: $leftDataType vs. right type $rightDataType""".stripMargin)
-        }
-      }
-    }
-    errorKeys.toMap
+    val errorKeys =
+      keys.flatMap {
+        case key if !left.keys.toSeq.contains(key) => Some(key -> s"""[ERROR]: Left side of the join doesn't contain the key $key""")
+        case key if !right.keys.toSeq.contains(key) => Some(key -> s"""[ERROR]: Right side of the join doesn't contain the key $key""")
+        case key if left(key) != right(key) => Some(key -> s"""[ERROR]: Join key, '$key', has mismatched data types -
+                         left type: ${left(key)} vs. right type ${right(key)}""")
+        case _ => None
+      }.toMap
+    errorKeys
   }
 
   def run(): Unit =
