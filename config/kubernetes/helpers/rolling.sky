@@ -3,7 +3,7 @@
 Functions to help with rolling deployments
 """
 
-load("config/kubernetes/helpers/context.sky", "get_rolling_speed_override")
+load("config/kubernetes/helpers/context.sky", "get_rolling_speed_override", "get_render_yaml")
 load("config/kubernetes/plugins/types.sky", "container_plugin",
      "deployment_plugin")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
@@ -21,8 +21,14 @@ def add_override_to_def(ctx, arguments, deployment_def):
     override = get_rolling_speed_override(ctx)
     if override <= 0:
         return
-    if deployment_def["kwargs"]["strategy"].type != "RollingUpdate":
-        return
+
+    if get_render_yaml(ctx):
+        if deployment_def["kwargs"]["strategy"]["type"] != "RollingUpdate":
+            return
+    else:
+        if deployment_def["kwargs"]["strategy"].type != "RollingUpdate":
+            return
+
     deployment_def["kwargs"]["strategy"] = rolling_update_strategy(
         ctx,
         max_surge="{}%".format(override),

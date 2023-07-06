@@ -3,7 +3,7 @@
 Plugin for adding additional environment variables to a container.
 """
 
-load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_cluster", "get_henson_git_commit")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_cluster", "get_henson_git_commit", "get_availability_tier")
 load("config/kubernetes/plugins/types.sky", "container_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "EnvVarSource", "ObjectFieldSelector")
 
@@ -94,6 +94,7 @@ def _default_env_vars(ctx, container):
     env_var_dict["GIT_COMMIT"] = get_henson_git_commit(ctx)
     if hasattr(container, 'name'):
         env_var_dict["STRIPE_CONTAINER_NAME"] = container.name
+    env_var_dict["STRIPE_AVAILABILITY_TIER"] = get_availability_tier(ctx)
     return env_var_dict
 
 def _default_env_vars_from_fields(ctx):

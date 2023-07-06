@@ -397,19 +397,25 @@ def _render_container(ctx, container_def, pod):
     if not container.is_init_container:
         lifecycle = render_lifecycle(ctx, container.lifecycle)
 
-    rendered = Container(
-        ctx,
-        name = container.name,
-        image = image(ctx, container.image),
-        env = env,
-        resources = resource_requirements(
+    resources_real = None
+    if hasattr(container, "container_resource_spec") and container.container_resource_spec != None:
+        resources_real = container.container_resource_spec
+    else:
+        resources_real = resource_requirements(
             ctx,
             cpu = container.cpu,
             memory = container.memory,
             storage = container.storage,
             requests = container.requests,
             limits = container.limits,
-        ),
+        )
+
+    rendered = Container(
+        ctx,
+        name = container.name,
+        image = image(ctx, container.image),
+        env = env,
+        resources = resources_real,
         lifecycle = lifecycle,
         ports = ports,
         volumeMounts = volume_mounts,
@@ -472,17 +478,19 @@ def _render_container_port(ctx, port, host_network):
         name = port.port_name,
     )
 
-def container_resources(*, cpu, memory, container_name = None):
+def container_resources(*, cpu, memory, container_name = None, container_resource_spec = None):
     return container_plugin(
         _set_container_resources,
         cpu = cpu,
         memory = memory,
         container_name = container_name,
+        container_resource_spec = container_resource_spec,
     )
 
 def _set_container_resources(ctx, arguments, container_def):
     container_def["cpu"] = arguments.cpu
     container_def["memory"] = arguments.memory
+    container_def["container_resource_spec"] = arguments.container_resource_spec
 
 def _set_sidecar_image(ctx, arguments, container_def):
     container_def["image"] = sidecar_image(ctx, name = arguments.container_name, fallback = image(

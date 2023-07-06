@@ -6,7 +6,7 @@ Plugin for creating a pod in the standard way for Stripe.
 load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
-load("config/kubernetes/core/container.sky", "container", "container_resources")
+load("config/kubernetes/core/container.sky", "container", "container_resources", "resource_requirements")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/core/pod.sky", "pod", "pod_host_network")
 load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "host_volume")
@@ -27,6 +27,8 @@ load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
 
+
+TUPLE_TYPE = "tuple"
 
 def stripe_pod(
         ctx,
@@ -61,8 +63,10 @@ def stripe_pod(
         name: The name of service or job. Generally, this should match the Henson service name.
         image: The name of the ECR repository of the container images the pod should run for its main container.
         command: An array containing the command and arguments that should run in the main container
-        cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
-        memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
+        cpu: The amount of CPU the main container needs, provided using a single `cores` or `millicores` if you are setting both request
+            and limits to the same value. Or a tuple (requests, limits) if you are specifying different values. 
+        memory: The amount of memory the main container needs, provided using a single `gigabytes` or `megabytes` if you are setting both
+            request and limits to the same value. Or a tuple (requests, limits) if you are specifying different values.
         storage: The amount of ephemeral storage the main container needs, provided using `gigabytes` or `megabytes`.
         host_type: The host type of the machines this pod should be able to
             schedule on. This will also be the namespace of the pods in Kubernetes.
@@ -94,6 +98,11 @@ def stripe_pod(
     if str(type(command)) != 'list':
         fail("Invalid command specified in stripe_pod " + str(name) + ": was not of type list, was " + str(type(command)))
 
+    # For most of the history of this function, the cpu and memory was of the Quantity type.
+    # However this doesn't allow users to specify both requests & limits, which allows further 
+    # optimized scheduling. We are migrating to this new paradigm, but still supporting this old approach.
+    container_resource_spec = _build_pod_resources(ctx, cpu, memory, storage)
+
     all_args = dict(
         name=name,
         image=image,
@@ -108,6 +117,7 @@ def stripe_pod(
         container_name=container_name,
         instance_type=instance_type,
         availability_tier=availability_tier,
+        container_resource_spec=container_resource_spec,
     )
     defaulted_host_network = True if host_network == None else host_network # default to True for dedicated MSP
     defaulted_availability_tier = A400 if availability_tier == None else availability_tier  # default to A400 for shared_msp
@@ -145,6 +155,7 @@ def stripe_pod(
                     instance_type=instance_type,
                     availability_tier=defaulted_availability_tier,
                     requires_consul=requires_consul,
+                    container_resource_spec=container_resource_spec,
                 ),
             )
         ),
@@ -156,7 +167,7 @@ def stripe_pod(
                     namespace = host_type,
                     service_name = name,
                 ),
-                container_resources(cpu = cpu, memory = memory),
+                container_resources(cpu = cpu, memory = memory, container_resource_spec = container_resource_spec),
                 host_type_plugin(host_type),
                 pod_host_network(defaulted_host_network),
                 labels({'stripe.io/shared-msp': 'false'}),
@@ -172,7 +183,7 @@ def stripe_pod(
     return compose_plugins(*plugins)
 
 
-def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None):
+def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None):
     """
     Plugin for enabling a pod to run on Shared MSP.
     """
@@ -209,7 +220,7 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         labels(bin_packing_label),
         annotations(annotations_map),
 
-        container_resources(cpu = cpu, memory = memory),
+        container_resources(cpu = cpu, memory = memory, container_resource_spec = container_resource_spec),
         node_selectors(node_selectors_map),
 
         pod_host_network(False),
@@ -277,8 +288,6 @@ def _validate_shared_msp_params(ctx, arguments, deployment):
         fail("cannot specify host_type (%r) when shared_msp=True" % arguments.host_type)
     if arguments.host_network != None:
         fail("cannot specify host_network value (%r) when shared_msp=True (host_network is implicitly False for Shared MSP)" % arguments.host_network)
-    if arguments.cpu != None or arguments.memory != None:
-        fail("cannot specify explicit cpu (%s) or memory (%s) requirements when shared_msp=True" % (arguments.cpu, arguments.memory))
     if arguments.instance_type == None:
         fail("must specify an instance_type when shared_msp=True")
 
@@ -363,3 +372,49 @@ def _with_consul_agent_enablement(ctx, requires_consul = None):
         plugins.append(consul_agent_init(ctx))
 
     return compose_plugins(*plugins)
+
+def _build_pod_resources(ctx, cpu, memory, storage):
+    if cpu == None and memory == None and storage == None:
+        return None
+
+    _valid_pod_resource_param(cpu)
+    _valid_pod_resource_param(memory)
+
+    # If both of the values are not the tuple type, we can just do a simple pass into resource_requirements
+    if type(cpu) != TUPLE_TYPE and type(memory) != TUPLE_TYPE:
+        return resource_requirements(
+            ctx,
+            cpu = cpu,
+            memory = memory,
+            storage = storage,
+        )
+
+    # One or both of cpu or memory is a TUPLE_TYPE, meaning the user is specifying both
+    # requests & limits. We need to build this a bit more custom now
+    requests = {}
+    limits = {}
+
+    cpu_real = cpu
+    if type(cpu) == TUPLE_TYPE:
+        requests["cpu"] = cpu[0]
+        limits["cpu"] = cpu[1]
+        cpu_real = None
+
+    memory_real = memory
+    if type(memory) == TUPLE_TYPE:
+        requests["memory"] = memory[0]
+        limits["memory"] = memory[1]
+        memory_real = None
+
+    return resource_requirements(
+        ctx,
+        cpu = cpu_real,
+        memory = memory_real,
+        storage = storage,
+        requests = requests,
+        limits = limits,
+    )
+
+def _valid_pod_resource_param(val):
+    if type(val) == TUPLE_TYPE and len(val) != 2:
+        fail("invalid tuple passed in, received {}, but need 2 fields exactly".format(val))

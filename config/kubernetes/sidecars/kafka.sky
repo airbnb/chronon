@@ -68,7 +68,7 @@ def _kafka_sidecar(
         return Container(
             ctx,
             name = container.name,
-            image = sidecar_image(ctx, name = "kafka-sidecar", fallback = fallback),
+            image = sidecar_image(ctx, name = "kafka-credentials-sidecar", fallback = fallback),
             command = sidecar_main + sidecar_args,
             env = default_env_vars(ctx),
             volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],

@@ -96,6 +96,7 @@ def validating_webhook(
     failurePolicy = "Ignore",
     rules = [],
     timeoutSeconds = 1,
+    objectSelector = None,
 ):
     if len(name) == 0:
         fail("invalid webhook name passed: %s" % name)
@@ -117,4 +118,5 @@ def validating_webhook(
         sideEffects = "None",
         timeoutSeconds = timeoutSeconds,
         admissionReviewVersions = ["v1"],
+        objectSelector = objectSelector,
     )

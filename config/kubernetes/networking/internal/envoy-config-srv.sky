@@ -459,17 +459,17 @@ def _timeunit2_to_duration_suffix(unit):
         string representing the unit
     """
     service_config_pb = proto.package("com.stripe.gocode.service_config")
-    if unit == service_config_pb.TimeUnit2.NANOSECOND:
+    if repr(unit) == repr(service_config_pb.TimeUnit2.NANOSECOND):
         return "ns"
-    elif unit == service_config_pb.TimeUnit2.MILLISECOND:
+    elif repr(unit) == repr(service_config_pb.TimeUnit2.MILLISECOND):
         return "ms"
-    elif unit == service_config_pb.TimeUnit2.SECOND:
+    elif repr(unit) == repr(service_config_pb.TimeUnit2.SECOND):
         return "s"
-    elif unit == service_config_pb.TimeUnit2.MINUTE:
+    elif repr(unit) == repr(service_config_pb.TimeUnit2.MINUTE):
         return "m"
-    elif unit == service_config_pb.TimeUnit2.HOUR:
+    elif repr(unit) == repr(service_config_pb.TimeUnit2.HOUR):
         return "h"
-    elif unit == service_config_pb.TimeUnit2.DAY:
+    elif repr(unit) == repr(service_config_pb.TimeUnit2.DAY):
         return "d"
     else:
         fail("Unknown duration suffix " + repr(unit))
@@ -859,6 +859,7 @@ def envoy_sidecar_config(
                         "transport_api_version": "V3",
                     },
                     "resource_api_version": "V3",
+                    "initial_fetch_timeout": "60s",
                 },
                 "cds_config": {
                     "api_config_source": {
@@ -871,6 +872,7 @@ def envoy_sidecar_config(
                         "transport_api_version": "V3",
                     },
                     "resource_api_version": "V3",
+                    "initial_fetch_timeout": "60s",
                 },
             },
             "stats_sinks": [

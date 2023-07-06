@@ -2,7 +2,7 @@
 load("config/kubernetes/apps/deployment.sky", "deployment_options")
 load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
 load("config/kubernetes/async-processing/monster/secrets.sky", "monster_secrets")
-load("config/kubernetes/async-processing/monster/util.sky", "generate_consul_name", "monster_deployment_labels", "worker_type")
+load("config/kubernetes/async-processing/monster/util.sky", "format_isolation_group", "generate_consul_name", "monster_deployment_labels", "worker_type")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/entrypoints.sky", "deployment")
 load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env", "get_availability_tier")
@@ -21,6 +21,12 @@ load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
 load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
 load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+load("config/kubernetes/sidecars/metrics.sky", "metrics_config")
+
+def enable_vnext_metrics(_ctx, config):
+    ig = format_isolation_group(config.monster_isolation_group)
+    enabled_hostset = ig in ["webhooks","high-priority-webhooks"]
+    return enabled_hostset
 
 def generate_pod_name(prefix, monster_service, monster_isolation_group, suffix):
     name = "monster-{}-{}-{}{}".format(prefix, worker_type(monster_service), monster_isolation_group, suffix)
@@ -266,6 +272,7 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
 
         # https://confluence.corp.stripe.com/display/DEPLOY/Config-srv+sidecar
         config_srv_sidecar(ctx),
+        metrics_config(enable_vnext_metrics=enable_vnext_metrics(ctx, config)),
 
         # Wait 5 seconds after service starts before we begin health checks
         # This configuration catches failures when the service appears healthy briefly but begins crashlooping

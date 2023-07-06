@@ -62,7 +62,12 @@ def ruby_workflow_worker_shared_msp(
             instances. You must specify at least 2 replicas to ensure there is
             no downtime when the workers are deployed.
         plugins_func: A function which returns an array of skycfg plugins to add
-            to the deployment when passed a deployment context.
+            to the deployment when passed a deployment context. The function can
+            either return a list of plugins which will be applied to both main and
+            canary deployments, or a struct with two members, canary and main, which
+            will be each be applied to the respective deployment. The latter behavior
+            should be utilized when applying autoscaling configuration only to the main,
+            non-canary deployment.
         workers_per_replica: The number of Einhorn workers to run per replica of
             the service. If not set this defaults to 4.
         startup_timeout: The number of seconds to wait for the service to start
@@ -99,6 +104,9 @@ def ruby_workflow_worker_shared_msp(
         if plugins_func:
             plugins = plugins_func(ctx)
 
+        if type(plugins) == 'struct':
+            plugins = plugins.canary
+
         return _service_shared_msp(
             ctx,
             plugins,
@@ -122,6 +130,9 @@ def ruby_workflow_worker_shared_msp(
         plugins = []
         if plugins_func:
             plugins = plugins_func(ctx)
+
+        if type(plugins) == 'struct':
+            plugins = plugins.main
 
         if not strict_packaging:
             memory_mib = aws_instance_size(instance_type.name).memory_mib

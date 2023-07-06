@@ -1,0 +1,35 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/proto_or_yaml.sky", "LabelSelector")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+
+def webhook_object_selector(
+    ctx,
+    matchLabels = {},
+    matchExpressions = [],
+):
+    """
+    Allows you to define a new Object selector structure
+
+    Args:
+        ctx: The Skycfg context from the `main` function.
+        matchLabels: Optional. Matching labels for when webhook gets triggered
+        matchExpressions: Optional. Matching expression
+    Returns:
+        A [LabelSelector](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#LabelSelector)
+    Example:
+        object_selector = webhook_object_selector(
+            ctx,
+            matchLabels = {"test": "test},
+        )
+    """
+    label_selector = LabelSelector(ctx)
+
+    if not get_render_yaml(ctx) or (not matchLabels and not matchExpressions):
+        return None
+    if get_render_yaml(ctx):
+        if len(matchLabels) > 0:
+            label_selector["matchLabels"] = matchLabels
+        if len(matchExpressions) > 0:
+            label_selector["matchExpressions"] = matchExpressions
+    return label_selector

@@ -210,14 +210,7 @@ def _default_sidecar_config(target):
                 when(env="qa", role="envoy-shape", value = True)
             ),
             "health_agent_address": "127.0.0.1:12073", # note: setting this field to empty string will disable collection from health-agent (potentially useful in breakglass scenario)
-            "control_envoy_xds_resource_versions": match(
-                target,
-                control_envoy_xds_resource_versions("v0", "v1"),
-                when(env="prod", availability_tier="A300", value = control_envoy_xds_resource_versions("v1", "v0")),
-                when(env="prod", availability_tier="A400", value = control_envoy_xds_resource_versions("v1", "v0")),
-                when(env="preprod", value = control_envoy_xds_resource_versions("v1", "v0")),
-                when(env="qa", value = control_envoy_xds_resource_versions("v1", "v0")),
-            ),
+            "control_envoy_xds_resource_versions": control_envoy_xds_resource_versions("v1", "v0"),
             "mesh_service_config_watcher": {
                 "config_srv_addr": match(
                     target,
