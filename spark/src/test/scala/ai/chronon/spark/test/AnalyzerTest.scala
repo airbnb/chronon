@@ -29,7 +29,7 @@ class AnalyzerTest {
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueriesTable = s"$namespace.item_queries_table"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
@@ -39,8 +39,8 @@ class AnalyzerTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one"),
-        Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two")
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one", keyMapping = Map("item" -> "item_id")),
+        Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two", keyMapping = Map("item" -> "item_id"))
       ),
       metaData =
         Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
@@ -60,13 +60,12 @@ class AnalyzerTest {
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerValidationFailure(): Unit = {
-    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_key_mismatch",
-      Operation.AVERAGE,
-      source = getTestGBSource())
+    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_gb", Operation.AVERAGE, source = getTestGBSource())
+    val usersGroupBy = getUsersGroupBy("join_analyzer_test.user_gb", Operation.AVERAGE, source = getTestGBSource())
 
     // left side
-    val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_with_user_table"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
@@ -76,7 +75,9 @@ class AnalyzerTest {
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "mismatch")),
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "mismatch", keyMapping = Map("item" -> "item_id")),
+        Builders.JoinPart(groupBy = usersGroupBy, prefix = "mismatch", keyMapping = Map("guest" -> "user"))
+      ),
       metaData =
         Builders.MetaData(name = "test_join_analyzer.item_type_mismatch", namespace = namespace, team = "chronon")
     )
@@ -89,15 +90,16 @@ class AnalyzerTest {
   def getTestGBSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
-      Column("item", api.IntType, 100), // type mismatch
-      Column("time_spent_ms", api.LongType, 5000)
+      Column("item_id", api.IntType, 100), // type mismatch
+      Column("time_spent_ms", api.LongType, 5000),
+      Column("user_review", api.LongType, 5000)
     )
 
     val viewsTable = s"$namespace.view_events_gb_table"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo),
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms", "user_review"), startPartition = oneYearAgo),
       table = viewsTable
     )
   }
@@ -105,11 +107,11 @@ class AnalyzerTest {
   def getTestEventSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
-      Column("item", api.StringType, 100),
+      Column("item_id", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events"
+    val viewsTable = s"$namespace.view_events_source_table"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
@@ -121,11 +123,24 @@ class AnalyzerTest {
   def getViewsGroupBy(name: String, operation: Operation, source: api.Source = viewsSource): api.GroupBy = {
     Builders.GroupBy(
       sources = Seq(source),
-      keyColumns = Seq("item"),
+      keyColumns = Seq("item_id"),
       aggregations = Seq(
         Builders.Aggregation(operation = operation, inputColumn = "time_spent_ms")
       ),
       metaData = Builders.MetaData(name = name, namespace = namespace),
-      accuracy = Accuracy.SNAPSHOT)
+      accuracy = Accuracy.SNAPSHOT
+    )
+  }
+
+  def getUsersGroupBy(name: String, operation: Operation, source: api.Source = viewsSource): api.GroupBy = {
+    Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = operation, inputColumn = "user_review")
+      ),
+      metaData = Builders.MetaData(name = name, namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
   }
 }

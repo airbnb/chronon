@@ -213,9 +213,7 @@ class Analyzer(tableUtils: TableUtils,
     (aggMetadata, keySchemaMap)
   }
 
-  def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false,
-                  validationAssert: Boolean = false)
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false, validationAssert: Boolean = false)
       : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
@@ -228,21 +226,19 @@ class Analyzer(tableUtils: TableUtils,
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError = mutable.HashMap[String, String]()
     joinConf.joinParts.toScala.foreach { part =>
-      val (aggMetadata, gbKeySchema) = analyzeGroupBy(part.groupBy,
-        part.fullPrefix,
-        true,
-        enableHitter)
+      val (aggMetadata, gbKeySchema) =
+        analyzeGroupBy(part.groupBy, part.fullPrefix, includeOutputTableName = true, enableHitter = enableHitter)
       aggregationsMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
-          aggMeta.columnType,
-          aggMeta.operation,
-          aggMeta.window,
-          aggMeta.inputColumn,
-          part.getGroupBy.getMetaData.getName)
+                            aggMeta.columnType,
+                            aggMeta.operation,
+                            aggMeta.window,
+                            aggMeta.inputColumn,
+                            part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
       // TODO: more validations on the way
-      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, joinConf.leftKeyCols)
+      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
     }
 
     val rightSchema: Map[String, DataType] =
@@ -267,15 +263,14 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     println("----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if(keysWithError.isEmpty) {
+    if (keysWithError.isEmpty) {
       println("----- Schema validation completed. No errors found. -----")
     } else {
-      println(
-        s"""----- Schema validation completed. Found ${keysWithError.keys.size} errors.""")
+      println(s"""----- Schema validation completed. Found ${keysWithError.keys.size} errors.""")
       println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
     }
 
-    if(validationAssert) {
+    if (validationAssert) {
       assert(keysWithError.isEmpty, "ERROR: Join validation failed. Please check error message for details.")
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
@@ -286,16 +281,27 @@ class Analyzer(tableUtils: TableUtils,
   // return a map of keys and corresponding error message that failed validation
   def runSchemaValidation(left: Map[String, DataType],
                           right: Map[String, DataType],
-                          keys: Seq[String]): Map[String, String] = {
-    val errorKeys =
-      keys.flatMap {
-        case key if !left.keys.toSeq.contains(key) => Some(key -> s"""[ERROR]: Left side of the join doesn't contain the key $key""")
-        case key if !right.keys.toSeq.contains(key) => Some(key -> s"""[ERROR]: Right side of the join doesn't contain the key $key""")
-        case key if left(key) != right(key) => Some(key -> s"""[ERROR]: Join key, '$key', has mismatched data types -
-                         left type: ${left(key)} vs. right type ${right(key)}""")
-        case _ => None
-      }.toMap
-    errorKeys
+                          keyMapping: Map[String, String]): Map[String, String] = {
+    keyMapping.flatMap {
+      case (_, leftKey) if !left.contains(leftKey) =>
+        Some(leftKey ->
+          s"[ERROR]: Left side of the join doesn't contain the key $leftKey. Available keys are [${left.keys.mkString(",")}]")
+      case (rightKey, _) if !right.contains(rightKey) =>
+        Some(
+          rightKey ->
+            s"[ERROR]: Right side of the join doesn't contain the key $rightKey. Available keys are [${
+              right.keys
+                .mkString(",")
+            }]")
+      case (rightKey, leftKey) if left(leftKey) != right(rightKey) =>
+        Some(
+          leftKey ->
+            s"[ERROR]: Join key, '$leftKey', has mismatched data types - left type: ${
+              left(
+                leftKey)
+            } vs. right type ${right(rightKey)}")
+      case _ => None
+    }
   }
 
   def run(): Unit =
