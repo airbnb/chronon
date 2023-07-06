@@ -20,17 +20,49 @@ import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
-case class UnionSortKey(keyWithHash: KeyWithHash, ts: Long, isEvent: Boolean) extends Ordered[UnionSortKey] {
+case class UnionSortKey(keyWithHash: KeyWithHash, ts: Long, isEvent: Boolean)
+    extends Ordered[UnionSortKey]
+    with Serializable {
   override def compare(that: UnionSortKey): Int = {
-    if (keyWithHash.equals(that.keyWithHash)) {
+    val hashCodeResult = compareHashCode(keyWithHash.hash, that.keyWithHash.hash)
+    if (hashCodeResult == 0) {
       if (ts == that.ts) {
-        isEvent.compare(that.isEvent)
+        isEvent.compareTo(that.isEvent)
       } else {
-        ts.compare(that.ts)
+        ts.compareTo(that.ts)
       }
     } else {
-      keyWithHash.hashInt.compare(that.keyWithHash.hashInt)
+      hashCodeResult
     }
+  }
+
+  /*
+   * The hashInt from the `keyWithHash` is 4 bytes. The hash itself is 16 bytes. The risk of conflict with using hashInt
+   * is quite high. One possible issue with hashInt:
+   * Consider 3 entries, A('hash_1', hashInt_1, ts_1), B('hash_2', hashInt_1, ts_2), C('hash_2', hashInt_1, ts_3).
+   * The hashes of B & C are the same. A is different, but its hashInt conflicts with B & C. All three entries has the
+   * same hashInt. If hashInt is used for comparison, A == B == C. However, B > C because ts_2 > ts_3. As a result,
+   * A == B == C conflicts with B > C. Without a proper comparison logic, the sorting will run into "Comparison method
+   * violates its general contract" issue.
+   */
+  private def compareHashCode(a: Array[Byte], b: Array[Byte]): Int = {
+    assert(a != null && b != null, "hash code must not bue null")
+    assert(a.length == b.length, "hash codes should have the same length")
+    if (a eq b) {
+      // same array
+      return 0
+    }
+
+    var i = 0
+    while (i < a.length) {
+      val res = a(i).compareTo(b(i))
+      if (res != 0) {
+        return res
+      }
+      i += 1
+    }
+
+    0
   }
 }
 
@@ -345,17 +377,19 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
   // A partitioner that only looks at the keyWithHash for repartitioning.
   private class UnionSortPartitioner(partitions: Int) extends HashPartitioner(partitions) {
-    override def getPartition(key: Any): Int = key match {
-      case UnionSortKey(keyWithHash, _, _) => super.getPartition(keyWithHash)
-      case a: Any => super.getPartition(a)
-    }
+    override def getPartition(key: Any): Int =
+      key match {
+        case UnionSortKey(keyWithHash, _, _) => super.getPartition(keyWithHash)
+        case a: Any                          => super.getPartition(a)
+      }
 
-    override def equals(other: Any): Boolean = other match {
-      case h: UnionSortPartitioner =>
-        h.numPartitions == numPartitions
-      case _ =>
-        false
-    }
+    override def equals(other: Any): Boolean =
+      other match {
+        case h: UnionSortPartitioner =>
+          h.numPartitions == numPartitions
+        case _ =>
+          false
+      }
   }
 
   def twoStackHopTemporalEvents(queriesUnfilteredDf: DataFrame,
@@ -371,12 +405,15 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
 
     val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
-    val keyedQueries = queriesDf.rdd.keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex), isEvent = false))
+    val keyedQueries =
+      queriesDf.rdd.keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex), isEvent = false))
 
     val eventsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
     val keyedEvents = inputDf.rdd.keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex), isEvent = true))
 
-    val repartitionNum = keyedQueries.getNumPartitions.max(keyedEvents.getNumPartitions)
+    // TODO: maybe a better repartition size
+    val repartitionNum =
+      keyedQueries.getNumPartitions.max(keyedEvents.getNumPartitions).max(tableUtils.defaultParallelism)
     val partitionIndex = queriesDf.schema.fieldIndex(tableUtils.partitionColumn)
     val inputChrononSchema: api.StructType = inputDf.schema.toChrononSchema("TwoStack")
     val shouldFinalize = finalize
@@ -392,7 +429,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
      */
     val outputRdd = keyedEvents
       .union(keyedQueries)
-      .repartitionAndSortWithinPartitions(new UnionSortPartitioner(repartitionNum)) // TODO: maybe a better repartition size
+      .repartitionAndSortWithinPartitions(new UnionSortPartitioner(repartitionNum))
       .mapPartitions { keyedRows =>
         var currentKeyWithHash: KeyWithHash = null
         var agg: TwoStackLiteHopAggregator = null
@@ -633,8 +670,7 @@ object GroupBy {
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
-    println(
-      s"""
+    println(s"""
          |Time Mapping: $timeMapping
          |""".stripMargin)
     metaColumns ++= timeMapping

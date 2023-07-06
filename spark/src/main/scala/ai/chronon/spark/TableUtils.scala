@@ -2,6 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import ai.chronon.spark.SparkConstants.ChrononUseTwoStackAlgorithm
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -18,11 +19,15 @@ case class TableUtils(sparkSession: SparkSession) {
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
+  val useTwoStackForTemporalEvents: Boolean =
+    sparkSession.sparkContext.getConf.getBoolean(ChrononUseTwoStackAlgorithm, defaultValue = false)
   val partitionColumn: String =
     sparkSession.conf.get("spark.chronon.partition.column", "ds")
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
+  val defaultParallelism: Int =
+    sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -208,10 +213,9 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def sql(query: String): DataFrame = {
-    val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
     println(
-      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query).coalesce(partitionCount)
+      s"\n----[Running query coalesced into at most $defaultParallelism partitions]----\n$query\n----[End of Query]----\n")
+    val df = sparkSession.sql(query).coalesce(defaultParallelism)
     df
   }
 
