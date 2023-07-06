@@ -3,27 +3,14 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  ThriftJsonCodec,
-  TimeUnit,
-  Window
-}
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -122,76 +109,15 @@ class GroupByTest {
 
   @Test
   def temporalEventsLastKTest(): Unit = {
-    val eventSchema = List(
-      Column("user", StringType, 10),
-      Column("listing_view", StringType, 100)
-    )
-    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10000, partitions = 180)
-    eventDf.createOrReplaceTempView("events_last_k")
-
-    val querySchema = List(Column("user", StringType, 10))
-    val queryDf = DataFrameGen.events(spark, querySchema, count = 1000, partitions = 180)
-    queryDf.createOrReplaceTempView("queries_last_k")
-
-    val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(Operation.LAST_K, "listing_view", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
-      Builders.Aggregation(Operation.COUNT, "listing_view", Seq(WindowUtils.Unbounded))
-    )
-    val keys = Seq("user").toArray
-    val groupBy =
-      new GroupBy(aggregations,
-                  keys,
-                  eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
-    val resultDf = groupBy.temporalEvents(queryDf)
-    val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
-    computed.show()
-
-    val expected = eventDf.sqlContext.sql(s"""
-         |SELECT
-         |      events_last_k.user as user,
-         |      queries_last_k.ts as ts,
-         |      COLLECT_LIST(concat(CAST(events_last_k.ts AS STRING), " ", events_last_k.listing_view)) as listing_view_last30,
-         |      SUM(case when events_last_k.listing_view <=> NULL then 0 else 1 end) as listing_view_count
-         |FROM events_last_k CROSS JOIN queries_last_k
-         |ON events_last_k.user = queries_last_k.user
-         |WHERE events_last_k.ts < queries_last_k.ts
-         |GROUP BY events_last_k.user, queries_last_k.ts
-         |""".stripMargin)
-
-    expected.show()
-
-    val diff = Comparison.sideBySide(computed, expected, List("user", "ts"))
-    if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows last_k_test")
-      diff.show()
-      diff.rdd.foreach { row =>
-        val gson = new Gson()
-        val computed =
-          Option(row(4)).map(_.asInstanceOf[mutable.WrappedArray[String]].toArray).getOrElse(Array.empty[String])
-        val expected =
-          Option(row(5))
-            .map(_.asInstanceOf[mutable.WrappedArray[String]].toArray.sorted.reverse.take(30))
-            .getOrElse(Array.empty[String])
-        val computedCount = Option(row(2)).map(_.asInstanceOf[Long]).getOrElse(0)
-        val expectedCount = Option(row(3)).map(_.asInstanceOf[Long]).getOrElse(0)
-        val computedStr = gson.toJson(computed)
-        val expectedStr = gson.toJson(expected)
-        if (computedStr != expectedStr) {
-          println(s"""
-                     |computed [$computedCount]: ${gson.toJson(computed)}
-                     |expected [$expectedCount]: ${gson.toJson(expected)}
-                     |""".stripMargin)
-        }
-        assertEquals(gson.toJson(computed), gson.toJson(expected))
-      }
-    }
+    runTemporalEventsLastKTest((gb, df) => gb.temporalEvents(df))
   }
 
   @Test
-  def temporalEventsTwoStackLastKTest(): Unit = {
+  def twoStackTemporalEventsLastKTest(): Unit = {
+    runTemporalEventsLastKTest((gb, df) => gb.twoStackHopTemporalEvents(df))
+  }
+
+  def runTemporalEventsLastKTest(buildTemporalEvents: (GroupBy, DataFrame) => DataFrame): Unit = {
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("listing_view", StringType, 100)
@@ -212,7 +138,7 @@ class GroupByTest {
       new GroupBy(aggregations,
         keys,
         eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
-    val resultDf = groupBy.twoStackHopTemporalEvents(queryDf)
+    val resultDf = buildTemporalEvents(groupBy, queryDf)
     val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
     computed.show()
 
@@ -284,7 +210,7 @@ class GroupByTest {
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
     val resultDf = groupBy.temporalEvents(queryDf)
-    val anotherResultDf = groupBy.twoStackHopTemporalEvents(queryDf)
+    val twoStackResultDf = groupBy.twoStackHopTemporalEvents(queryDf)
 
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
@@ -326,12 +252,12 @@ class GroupByTest {
     }
     assertEquals(0, diff.count())
 
-    val diff1 = Comparison.sideBySide(naiveDf, anotherResultDf, List("user", Constants.TimeColumn))
-    if (diff1.count() > 0) {
-      diff1.show()
-      println("diff1 result rows")
+    val twoStackDiff = Comparison.sideBySide(naiveDf, twoStackResultDf, List("user", Constants.TimeColumn))
+    if (twoStackDiff.count() > 0) {
+      twoStackDiff.show()
+      println("twoStackDiff result rows")
     }
-    assertEquals(0, diff1.count())
+    assertEquals(0, twoStackDiff.count())
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)

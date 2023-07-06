@@ -2,7 +2,7 @@ package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.{Sum, TopK}
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.chronon.aggregator.windowing.{TwoStackLiteAggregator, TwoStackLiteAggregationBuffer, FiveMinuteResolution, SawtoothAggregator}
+import ai.chronon.aggregator.windowing.{FiveMinuteResolution, SawtoothAggregator, TwoStackLiteAggregationBuffer, TwoStackLiteAggregator, TwoStackLiteHopAggregator}
 import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, StructField, StructType, TimeUnit, Window}
 import junit.framework.TestCase
 import org.junit.Assert._
@@ -82,13 +82,30 @@ class TwoStackLiteAggregatorTest extends TestCase{
       StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
       aggregations)
 
+    val sortedQueries = queries.sorted
+    val sortedEvents = events.sortBy(_.ts)
+
     // will finalize by default
-    val bankersIrs = bankersAggregator.slidingSawtoothWindow(queries.sorted.iterator, events.sortBy(_.ts).iterator, events.length).toArray
+    val bankersIrs = bankersAggregator.slidingSawtoothWindow(sortedQueries.iterator, sortedEvents.iterator, sortedEvents.length).toArray
     timer.publish("sorting + banker")
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
       .map(sawtoothAggregator.windowedAggregator.finalize)
     timer.publish("sawtooth")
+
+    val twoStackLiteHopAggregator = new TwoStackLiteHopAggregator(
+      StructType("", columns.map(c => StructField(c.name, c.`type`)).toArray),
+      aggregations)
+
+    val eventIter = sortedEvents.iterator.buffered
+    val twoStackHopResultIrs = sortedQueries.map { queryTs =>
+      while (eventIter.hasNext && eventIter.head.ts < queryTs) {
+        twoStackLiteHopAggregator.update(eventIter.next())
+      }
+      twoStackLiteHopAggregator.query(queryTs)
+    }
+
+    timer.publish("two stack + hops")
 
     // rough timings below will vary by processor - but at 100k
     // naive                     256011 ms
@@ -99,6 +116,9 @@ class TwoStackLiteAggregatorTest extends TestCase{
     bankersIrs.zip(sawtoothIrs).foreach{case (bankers, sawtooth) =>
       assertEquals(gson.toJson(sawtooth), gson.toJson(bankers))
     }
-  }
 
+    twoStackHopResultIrs.zip(sawtoothIrs).foreach { case (bankers, sawtooth) =>
+      assertEquals(gson.toJson(sawtooth), gson.toJson(bankers))
+    }
+  }
 }
