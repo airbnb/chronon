@@ -224,7 +224,7 @@ class Analyzer(tableUtils: TableUtils,
       leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
-    val keysWithError = mutable.HashMap[String, String]()
+    val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
         analyzeGroupBy(part.groupBy, part.fullPrefix, includeOutputTableName = true, enableHitter = enableHitter)
@@ -262,11 +262,11 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    println("----- Validations for join/${joinConf.metaData.cleanName} -----")
+    println(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
     if (keysWithError.isEmpty) {
       println("----- Schema validation completed. No errors found. -----")
     } else {
-      println(s"""----- Schema validation completed. Found ${keysWithError.keys.size} errors.""")
+      println(s"----- Schema validation completed. Found ${keysWithError.size} errors.")
       println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
     }
 
@@ -289,17 +289,13 @@ class Analyzer(tableUtils: TableUtils,
       case (rightKey, _) if !right.contains(rightKey) =>
         Some(
           rightKey ->
-            s"[ERROR]: Right side of the join doesn't contain the key $rightKey. Available keys are [${
-              right.keys
-                .mkString(",")
-            }]")
+            s"[ERROR]: Right side of the join doesn't contain the key $rightKey. Available keys are [${right.keys
+              .mkString(",")}]")
       case (rightKey, leftKey) if left(leftKey) != right(rightKey) =>
         Some(
           leftKey ->
-            s"[ERROR]: Join key, '$leftKey', has mismatched data types - left type: ${
-              left(
-                leftKey)
-            } vs. right type ${right(rightKey)}")
+            s"[ERROR]: Join key, '$leftKey', has mismatched data types - left type: ${left(
+              leftKey)} vs. right type ${right(rightKey)}")
       case _ => None
     }
   }
