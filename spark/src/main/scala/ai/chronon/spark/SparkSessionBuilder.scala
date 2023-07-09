@@ -11,7 +11,7 @@ import scala.util.Properties
 object SparkSessionBuilder {
 
   val wareHousePathPrefix = "spark-warehouse"
-  
+
   def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None, additionalConfig: Option[Map[String, String]] = None): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test

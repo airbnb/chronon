@@ -16,7 +16,7 @@ import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
-abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
+abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean, sparkUtils: Option[SparkUtils] = None) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -113,7 +113,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
             inputToOutputShift = shiftDays,
             // never skip hole during partTable's range determination logic because we don't want partTable
             // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
-            skipFirstHole = false
+            skipFirstHole = false,
+            Some(joinConf)
           )
           .getOrElse(Seq())
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
@@ -126,7 +127,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps)
+                filledDf.get.saveWithTableUtils(tableUtils, partTable, tableProps)
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -238,8 +239,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       case (Events, Events, Accuracy.SNAPSHOT) =>
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
       case (Events, Events, Accuracy.TEMPORAL) =>
-        genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
-
+        val groupBy = genGroupBy(unfilledTimeRange.toPartitionRange)
+        if (useTwoStack) groupBy.temporalEventsTwoStack(renamedLeftDf, Some(unfilledTimeRange), sparkUtils = sparkUtils)
+        else groupBy.temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) => {
@@ -277,7 +279,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
-      .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
+      .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole, Some(joinConf))
       .getOrElse(Seq.empty)
 
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -302,7 +304,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         println(s"Computing join for range: $range  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
+          computeRange(leftDfInRange, range, bootstrapInfo).saveWithTableUtils(tableUtils, outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

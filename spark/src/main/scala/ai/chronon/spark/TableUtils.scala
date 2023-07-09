@@ -401,8 +401,12 @@ trait BaseTableUtils {
                      inputTables: Option[Seq[String]] = None,
                      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
                      inputToOutputShift: Int = 0,
-                     skipFirstHole: Boolean = true): Option[Seq[PartitionRange]] = {
-
+                     skipFirstHole: Boolean = true,
+                     joinConf: Option[api.Join] = None): Option[Seq[PartitionRange]] = {
+    if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
+      // If the left is unpartitioned, we fall back to just using the passed-in range.
+      return Some(Seq(outputPartitionRange))
+    }
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(_.map(table =>
         firstAvailablePartition(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))).min)

@@ -23,10 +23,11 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
  */
 private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean = true)
-    extends BaseJoin(joinConf, endPartition, tableUtils, skipFirstHole) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean = true, sparkUtils: Option[SparkUtils] = None)
+    extends BaseJoin(joinConf, endPartition, tableUtils, useTwoStack, skipFirstHole, sparkUtils: Option[SparkUtils]) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
+  private val joinsAtATime = 8
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {
@@ -175,9 +176,15 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
     // combine bootstrap table and join part tables
     // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
     // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
-    val joinedDf = rightResults
+    val joinedDf = rightResults.zipWithIndex
       .foldLeft(bootstrapDf) {
-        case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
+        case (partialDf, ((rightPart, rightDf), i)) =>
+          val next = joinWithLeft(partialDf, rightDf, rightPart)
+          if (((i + 1) % joinsAtATime) == 0) {
+            tableUtils.addJoinBreak(next)
+          } else {
+            next
+          }
       }
       // drop all processing metadata columns
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
@@ -373,7 +380,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, ski
         val enrichedDf = padExternalFields(joinedDf, bootstrapInfo)
 
         // set autoExpand = true since log table could be a bootstrap part
-        enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)
+        enrichedDf.saveWithTableUtils(tableUtils, bootstrapTable, tableProps, autoExpand = true)
       })
 
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
