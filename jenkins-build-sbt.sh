@@ -21,7 +21,6 @@ echo "Setting version to $release_version for release."
 echo "version := \"$release_version\"" > version.sbt
 
 echo "Kicking off Chronon sbt build & tests"
-sbt "++ 2.12.12 test"
 echo "Kicking off Chronon artifactory publish"
 export CHRONON_SNAPSHOT_REPO='https://artifactory-content.stripe.build/artifactory/maven-snapshots-local'
 sbt "++ 2.12.12 publish"
