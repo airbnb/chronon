@@ -79,7 +79,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, online_unshaded, spark_uber, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -211,7 +211,8 @@ py_thrift := {
   val apiDirectory = baseDirectory.value / "api"
   val inputThrift = apiDirectory / "thrift" / "api.thrift"
   val outputPy = apiDirectory / "py" / "ai" / "chronon"
-  Thrift.gen(inputThrift.getPath, outputPy.getPath, "py", "api")
+  val insideDockerLocal: Boolean = sys.env.contains("INSIDE_DOCKER_LOCAL")
+  Thrift.gen(inputThrift.getPath, outputPy.getPath, "py", insideCI.value, insideDockerLocal, "api")
 }
 
 lazy val python_api_build = taskKey[Seq[File]]("Build thrift generated files")
@@ -284,18 +285,19 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections", "netty-buffer")
   )
 
 lazy val online_unshaded = (project in file("online"))
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
+    publishSettings,
     target := target.value.toPath.resolveSibling("target-no-assembly").toFile,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
       // statsd 3.0 has local aggregation - TODO: upgrade
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
+      "com.datadoghq" % "java-dogstatsd-client" % "4.1.0",
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),

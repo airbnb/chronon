@@ -296,7 +296,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       val (qs1, qs2) = if (sortIterators) sort(queries, queryTsIndex).duplicate else queries.duplicate
       val queryTimestampsAndPartitionsSorted: Iterator[(Long, String)] = qs1.map(r => (r.getLong(queryTsIndex), r.getString(partitionIndex)))
       val queryTimestampsSorted: Iterator[Long] = qs2.map(r => r.getLong(queryTsIndex))
-      val inputChrononRowsSorted = if(sortIterators) sort(inputs, tsIndex).map(Conversions.toChrononRow(_, tsIndex)) else inputs.map(Conversions.toChrononRow(_, tsIndex))
+      val inputChrononRowsSorted = if(sortIterators) sort(inputs, tsIndex).map(SparkConversions.toChrononRow(_, tsIndex)) else inputs.map(SparkConversions.toChrononRow(_, tsIndex))
       val result = twoStackAgg.slidingSawtoothWindow(queryTimestampsSorted, inputChrononRowsSorted).zip(queryTimestampsAndPartitionsSorted).map {
         case (finalized: Array[Any], (ts: Long, partition: String)) =>
           val timeTuple = TimeTuple.make(ts, partition)
@@ -555,7 +555,7 @@ object GroupBy {
 
   def getIntersectedRange(source: api.Source,
                           queryRange: PartitionRange,
-                          tableUtils: TableUtils,
+                          tableUtils: BaseTableUtils,
                           window: Option[api.Window]): PartitionRange = {
     val PartitionRange(queryStart, queryEnd) = queryRange
     val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))

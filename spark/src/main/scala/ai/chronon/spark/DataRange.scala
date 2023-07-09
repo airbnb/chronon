@@ -8,7 +8,7 @@ import scala.collection.JavaConverters._
 sealed trait DataRange {
   def toTimePoints: Array[Long]
 }
-case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) extends DataRange {
+case class TimeRange(start: Long, end: Long)(implicit tableUtils: BaseTableUtils) extends DataRange {
   def toTimePoints: Array[Long] = {
     Stream
       .iterate(TsUtils.round(start, tableUtils.partitionSpec.spanMillis))(_ + tableUtils.partitionSpec.spanMillis)
@@ -23,7 +23,7 @@ case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) ex
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
-case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
+case class PartitionRange(start: String, end: String)(implicit tableUtils: BaseTableUtils)
     extends DataRange
     with Ordered[PartitionRange] {
 

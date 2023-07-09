@@ -54,7 +54,7 @@ case class BootstrapInfo(
 object BootstrapInfo {
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
-  def from(joinConf: api.Join, range: PartitionRange, tableUtils: TableUtils): BootstrapInfo = {
+  def from(joinConf: api.Join, range: PartitionRange, tableUtils: BaseTableUtils): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
     println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")

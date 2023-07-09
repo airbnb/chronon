@@ -45,7 +45,7 @@ object JoinUtils {
     } else {
       range.genScanQuery(joinConf.left.query,
         joinConf.left.table,
-        fillIfAbsent = Map(Constants.partitionColumn -> null) ++ timeProjection)
+        fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection)
     }
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()
@@ -65,9 +65,9 @@ object JoinUtils {
       // For unpartitioned left entities, one day's snapshot of data is used and
       // so the partition column is set to the end of the range (and for unpartitioned left entities, only
       // a single output partition is computed per job run and so start partition = end partition).
-      Some(result.withColumn(Constants.partitionColumn, lit(range.end)))
+      Some(result.withColumn(tableUtils.partitionColumn, lit(range.end)))
     } else if (result.schema.names.contains(Constants.TimeColumn) && isLeftUnpartitionedTable) {
-      Some(result.withTimeBasedColumn(Constants.partitionColumn))
+      Some(result.withTimeBasedColumn(tableUtils.partitionColumn))
     } else {
       Some(result)
     }
@@ -149,7 +149,7 @@ object JoinUtils {
                           leftTable: String,
                           rightTable: String,
                           joinKeys: Array[String],
-                          tableUtils: TableUtils,
+                          tableUtils: BaseTableUtils,
                           viewProperties: Map[String, String] = null,
                           labelColumnPrefix: String = Constants.LabelColumnPrefix): Unit = {
     val fieldDefinitions = joinKeys.map(field => s"l.${field}") ++
@@ -194,7 +194,7 @@ object JoinUtils {
     */
   def createLatestLabelView(viewName: String,
                             baseView: String,
-                            tableUtils: TableUtils,
+                            tableUtils: BaseTableUtils,
                             propertiesOverride: Map[String, String] = null): Unit = {
     val baseViewProperties = tableUtils.getTableProperties(baseView).getOrElse(Map.empty)
     val labelTableName = baseViewProperties.get(Constants.LabelViewPropertyKeyLabelTable).getOrElse("")
@@ -244,7 +244,7 @@ object JoinUtils {
     *
     * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
     */
-  def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {
+  def getLatestLabelMapping(tableName: String, tableUtils: BaseTableUtils): Map[String, Seq[PartitionRange]] = {
     val partitions = tableUtils.allPartitions(tableName)
     assert(
       partitions(0).keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
@@ -274,7 +274,7 @@ object JoinUtils {
     df.drop(columnsToDrop: _*)
   }
 
-  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Seq[String] = {
+  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: BaseTableUtils): Seq[String] = {
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);

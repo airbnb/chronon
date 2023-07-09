@@ -158,7 +158,7 @@ trait BaseTableUtils {
   }
 
   def getSchemaFromTable(tableName: String): StructType = {
-    sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
+    sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
   def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
@@ -201,7 +201,7 @@ trait BaseTableUtils {
       }
     }
 
-    val finalizedDf = if (autoExpand) {
+    val finalizedDf = if (tableExists(tableName) && autoExpand) {
       // reselect the columns so that an deprecated columns will be selected as NULL before write
       val updatedSchema = getSchemaFromTable(tableName)
       val finalColumns = updatedSchema.fieldNames.map(fieldName => {
@@ -257,8 +257,6 @@ trait BaseTableUtils {
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true,
                                   tableProperties: Map[String, String] = null): Unit = {
-    val rowCount = df.count()
-
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {

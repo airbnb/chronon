@@ -16,8 +16,9 @@ __branch__ = "master"
 def get_version():
     version_str = os.environ.get("CHRONON_VERSION_STR", __version__)
     branch_str = os.environ.get("CHRONON_BRANCH_STR", __branch__)
-    # Replace "-SNAPSHOT" with ".dev"
-    version_str = version_str.replace("-SNAPSHOT", ".dev")
+    # Will will later append ".dev" if the version ended with "-SNAPSHOT"
+    is_dev = version_str.endswith("-SNAPSHOT")
+    version_str = version_str.replace("-SNAPSHOT", "")
     # If the prefix is the branch name, then convert it as suffix after '+' to make it Python PEP440 complaint
     if version_str.startswith(branch_str + "-"):
         version_str = "{}+{}".format(
@@ -27,9 +28,10 @@ def get_version():
 
     # Replace multiple continuous '-' or '_' with a single period '.'.
     # In python version string, the label identifier that comes after '+', is all separated by periods '.'
-    version_str = re.sub(r'[-_]+', '.', version_str)
+    split_s = version_str.split('.')
+    version_str = '.'.join(split_s[:3]) if len(split_s) > 3 else version_str
 
-    return version_str
+    return version_str + ".dev" if is_dev else version_str
 
 setup(
     classifiers=[

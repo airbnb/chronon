@@ -76,7 +76,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
 object StagingQuery {
 
-  def substitute(tu: TableUtils, query: String, start: String, end: String, latest: String): String = {
+  def substitute(tu: BaseTableUtils, query: String, start: String, end: String, latest: String): String = {
     val macros: Array[ParametricMacro] = Array(
       ParametricMacro("start_date", _ => start),
       ParametricMacro("end_date", _ => end),

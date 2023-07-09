@@ -221,7 +221,7 @@ object Driver {
         args.endDate(),
         tableUtils,
         useTwoStack = args.useTwoStack(),
-        !args.runFirstHole()
+        skipFirstHole = !args.runFirstHole()
       )
       val df = join.computeJoin(args.stepDays.toOption)
 

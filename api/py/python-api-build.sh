@@ -16,7 +16,7 @@ if [[ -z "${ACTION}" ]] || [[ "${ACTION}" == "build" ]]; then
   echo "Running build..."
   cd $SCRIPT_DIR
   set -e
-  python3 -m build
+  /opt/conda/envs/zipline_py/bin/python3.7 -m build
 elif [[ "${ACTION}" == "release" ]]; then
   PYPI_REPOSITORY="chronon-pypi"
   # Sanity checks, git state, Run Tests, Build, Release
@@ -34,9 +34,9 @@ elif [[ "${ACTION}" == "release" ]]; then
     if [[ $? -eq 0 ]]; then
       set -e
       echo "Building"
-      python -m build
+      /opt/conda/envs/zipline_py/bin/python3.7 -m build
       echo "Releasing to PyPi repository: ${PYPI_REPOSITORY}"
-      python -m twine upload --repository ${PYPI_REPOSITORY} dist/*
+      /opt/conda/envs/zipline_py/bin/python3.7 -m twine upload --repository ${PYPI_REPOSITORY} dist/*
     else
       echo "Found straggling git files. Run git status for details."
       exit 1
