@@ -25,3 +25,5 @@ sbt "++ 2.12.12 test"
 echo "Kicking off Chronon artifactory publish"
 export CHRONON_SNAPSHOT_REPO='https://artifactory-content.stripe.build/artifactory/maven-snapshots-local'
 sbt "++ 2.12.12 publish"
+mkdir -p /src/build                                  # Create build directory
+cp -rv api/py/dist/* /src/build
