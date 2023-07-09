@@ -2,25 +2,28 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
 import ai.chronon.api
+import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.api._
-import ai.chronon.online.Metrics
+import ai.chronon.online.{Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
+import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
+import org.apache.spark.sql.functions.{col, lit, not}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession}
 
+import scala.collection.Seq
+
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
-
+  implicit private val tableUtils = TableUtils(sparkSession)
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
     KvRdd(rdd.map { case (keyAndDs, values) => keyAndDs.init -> values }, groupBy.keySchema, groupBy.postAggSchema)
   }
   def snapshotEntities: KvRdd = {
     if (groupBy.aggregations == null || groupBy.aggregations.isEmpty) {
       // pre-agg to PairRdd
-      val keysAndPartition = (groupBy.keyColumns :+ Constants.PartitionColumn).toArray
+      val keysAndPartition = (groupBy.keyColumns :+ tableUtils.partitionColumn).toArray
       val keyBuilder = FastHashing.generateKeyBuilder(keysAndPartition, groupBy.inputDf.schema)
       val values = groupBy.inputDf.schema.map(_.name).filterNot(keysAndPartition.contains)
       val valuesIndices = values.map(groupBy.inputDf.schema.fieldIndex).toArray
@@ -39,19 +42,24 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 
   // Shared between events and mutations (temporal entities).
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
-    val endTs = Constants.Partition.epochMillis(endPartition)
+    val endTs = tableUtils.partitionSpec.epochMillis(endPartition)
     println(s"TemporalEvents upload end ts: $endTs")
-    val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(endTs,
-                                                                groupBy.aggregations,
-                                                                Conversions.toChrononSchema(groupBy.inputDf.schema),
-                                                                resolution)
-    val irSchema = Conversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
+    val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(
+      endTs,
+      groupBy.aggregations,
+      SparkConversions.toChrononSchema(groupBy.inputDf.schema),
+      resolution)
+    val irSchema = SparkConversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
+    println(
+      s"""
+        |BatchIR Element Size: ${SparkEnv.get.serializer.newInstance().serialize(sawtoothOnlineAggregator.init).capacity()}
+        |""".stripMargin)
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
-      .mapValues(Conversions.toChrononRow(_, groupBy.tsIndex))
-      .aggregateByKey(sawtoothOnlineAggregator.init)(
+      .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
+      .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
         seqOp = sawtoothOnlineAggregator.update,
         combOp = sawtoothOnlineAggregator.merge
       )
@@ -72,14 +80,14 @@ object GroupByUpload {
   def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[BaseTableUtils] = None): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
-    val tableUtils =
+    implicit val tableUtils =
       tableUtilsOpt.getOrElse(
         TableUtils(
           SparkSessionBuilder
             .build(s"groupBy_${groupByConf.metaData.name}_upload")))
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
-    val batchEndDate = Constants.Partition.after(endDs)
+    val batchEndDate = tableUtils.partitionSpec.after(endDs)
     // for snapshot accuracy
     lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
@@ -129,15 +137,19 @@ object GroupByUpload {
         Constants.GroupByServingInfoKey,
         ThriftJsonCodec.toJsonStr(groupByServingInfo)
       ))
-    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows)
+    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows.toSeq)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     kvDf
       .union(metaDf)
       .withColumn("ds", lit(endDs))
       .saveUnPartitioned(tableUtils, groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
 
+    val kvDfReloaded = tableUtils.sparkSession
+      .table(groupByConf.metaData.uploadTable)
+      .where(not(col("key_json").eqNullSafe(Constants.GroupByServingInfoKey)))
+
     val metricRow =
-      kvDf.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
+      kvDfReloaded.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
     context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
     context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
     context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))

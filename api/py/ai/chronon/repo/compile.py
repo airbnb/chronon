@@ -2,10 +2,14 @@
 # tool to materialize feature_sources and feature_sets into thrift configurations
 # that chronon jobs can consume
 
-import ai.chronon.repo.extract_objects as eo
-import click
 import logging
 import os
+
+import click
+
+import ai.chronon.api.ttypes as api
+import ai.chronon.repo.extract_objects as eo
+import ai.chronon.utils as utils
 from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
@@ -82,6 +86,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
+        _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
@@ -95,7 +100,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
                 extra_online_group_bys.update(online_group_bys)
-                assert not offline_gbs,\
+                assert not offline_gbs, \
                     "You must make all dependent GroupBys `online` if you want to make your join `online`." \
                     " You can do this by passing the `online=True` argument to the GroupBy constructor." \
                     " Fix the following: {}".format(offline_gbs)
@@ -120,6 +125,26 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
     obj.metaData.team = team_name
+
+
+def __fill_template(table, obj, namespace):
+    if table:
+        table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
+        table = table.replace('{{ db }}', namespace)
+    return table
+
+
+def _set_templated_values(obj, cls, teams_path, team_name):
+    namespace = teams.get_team_conf(teams_path, team_name, "namespace")
+    if cls == api.Join and obj.bootstrapParts:
+        for bootstrap in obj.bootstrapParts:
+            bootstrap.table = __fill_template(bootstrap.table, obj, namespace)
+        if obj.metaData.dependencies:
+            obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
+    if cls == api.Join and obj.labelPart:
+        obj.labelPart.metaData.dependencies = [label_dep.replace('{{ join_backfill_table }}',
+                                                                 utils.output_table_name(obj, full_name=True))
+                                               for label_dep in obj.labelPart.metaData.dependencies]
 
 
 def _write_obj(full_output_root: str,

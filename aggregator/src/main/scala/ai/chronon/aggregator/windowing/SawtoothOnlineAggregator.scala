@@ -1,5 +1,6 @@
 package ai.chronon.aggregator.windowing
 
+import scala.collection.Seq
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
 
@@ -35,7 +36,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
   }
 
-  def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row)
+  def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row, batchTailTs)
 
   def normalizeBatchIr(batchIr: BatchIr): FinalBatchIr =
     FinalBatchIr(

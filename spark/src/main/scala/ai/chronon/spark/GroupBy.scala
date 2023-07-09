@@ -7,6 +7,7 @@ import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.col
@@ -18,6 +19,8 @@ import org.slf4j.{Logger, LoggerFactory}
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -30,8 +33,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   import GroupBy.logger
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
-  protected val selectedSchema: Array[(String, api.DataType)] = Conversions.toChrononSchema(inputDf.schema)
-
+  protected val selectedSchema: Array[(String, api.DataType)] = SparkConversions.toChrononSchema(inputDf.schema)
+  implicit private val tableUtils = TableUtils(inputDf.sparkSession)
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
   implicit val sparkSession: SparkSession = inputDf.sparkSession
   // distinct inputs to aggregations - post projection types that needs to match with
@@ -41,13 +44,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       aggregations
         .flatMap(agg =>
           Option(agg.buckets)
-            .map(_.asScala)
+            .map(_.toScala)
             .getOrElse(Seq.empty[String]) :+
             agg.inputColumn)
         .distinct
-        .map(inputDf.schema.apply))
+        .map(inputDf.schema.apply)
+        .toSeq)
   } else {
-    val values = inputDf.schema.map(_.name).filterNot((keyColumns ++ Constants.ReservedColumns).contains)
+    val values = inputDf.schema
+      .map(_.name)
+      .filterNot((keyColumns ++ Constants.ReservedColumns(tableUtils.partitionColumn)).contains)
     val valuesIndices = values.map(inputDf.schema.fieldIndex).toArray
     StructType(valuesIndices.map(inputDf.schema))
   }
@@ -56,7 +62,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val columns = if (aggregations != null) {
       windowAggregator.outputSchema
     } else {
-      Conversions.toChrononSchema(preAggSchema)
+      SparkConversions.toChrononSchema(preAggSchema)
     }
     api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
   }
@@ -70,7 +76,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
   lazy val postAggSchema: StructType = {
     val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
-    Conversions.fromChrononSchema(valueChrononSchema)
+    SparkConversions.fromChrononSchema(valueChrononSchema)
   }
 
   @transient
@@ -78,7 +84,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
-    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ Constants.PartitionColumn).toArray, inputDf.schema)
+    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ tableUtils.partitionColumn).toArray, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
@@ -86,14 +92,15 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       val updateFunc = (ir: Array[Any], row: Row) => {
         // update when ts < tsOf(ds + 1)
         windowAggregator.updateWindowed(ir,
-                                        Conversions.toChrononRow(row, tsIndex),
-                                        row.getLong(partitionTsIndex) + Constants.Partition.spanMillis)
+                                        SparkConversions.toChrononRow(row, tsIndex),
+                                        row.getLong(partitionTsIndex) + tableUtils.partitionSpec.spanMillis)
+
         ir
       }
       inputWithPartitionTs -> updateFunc
     } else {
       val updateFunc = (ir: Array[Any], row: Row) => {
-        windowAggregator.update(ir, Conversions.toChrononRow(row, tsIndex))
+        windowAggregator.update(ir, SparkConversions.toChrononRow(row, tsIndex))
         ir
       }
       inputDf -> updateFunc
@@ -112,23 +119,22 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     if (aggregations == null || aggregations.isEmpty) {
       inputDf
     } else {
-      toDf(snapshotEntitiesBase, Seq(Constants.PartitionColumn -> StringType))
+      toDf(snapshotEntitiesBase, Seq(tableUtils.partitionColumn -> StringType))
     }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
     // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
-    val shiftedEndTimes = endTimes.map(_ + Constants.Partition.spanMillis)
+    val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
-    val partitionSpec = Constants.Partition
     hops
       .flatMap {
         case (keys, hopsArrays) =>
           val irs = sawtoothAggregator.computeWindows(hopsArrays, shiftedEndTimes)
           irs.indices.map { i =>
-            (keys.data :+ partitionSpec.at(endTimes(i)), normalizeOrFinalize(irs(i)))
+            (keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), normalizeOrFinalize(irs(i)))
           }
       }
   }
@@ -136,7 +142,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   // At this time, we hardcode the resolution to Daily, but it is straight forward to support
   // hourly resolution.
   def snapshotEvents(partitionRange: PartitionRange): DataFrame =
-    toDf(snapshotEventsBase(partitionRange), Seq((Constants.PartitionColumn, StringType)))
+    toDf(snapshotEventsBase(partitionRange), Seq((tableUtils.partitionColumn, StringType)))
 
   /**
     * Support for entities with mutations.
@@ -156,7 +162,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val queriesKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesWithTimeBasedPartition.schema)
     val timeBasedPartitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(timeBasedPartitionColumn)
     val timeIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.TimeColumn)
-    val partitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(Constants.PartitionColumn)
+    val partitionIndex = queriesWithTimeBasedPartition.schema.fieldIndex(tableUtils.partitionColumn)
 
     // queries by key & ds_of_ts
     val queriesByKeys = queriesWithTimeBasedPartition.rdd
@@ -183,9 +189,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val shiftedColumnIndexTs = expandedInputDf.schema.fieldIndex(shiftedColumnNameTs)
     val snapshotKeyHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, expandedInputDf.schema)
     val sawtoothAggregator =
-      new SawtoothMutationAggregator(aggregations, Conversions.toChrononSchema(expandedInputDf.schema), resolution)
+      new SawtoothMutationAggregator(aggregations, SparkConversions.toChrononSchema(expandedInputDf.schema), resolution)
     val updateFunc = (ir: BatchIr, row: Row) => {
-      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, Conversions.toChrononRow(row, tsIndex))
+      sawtoothAggregator.update(row.getLong(shiftedColumnIndexTs), ir, SparkConversions.toChrononRow(row, tsIndex))
       ir
     }
 
@@ -200,7 +206,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
     val mutationsHashFx = FastHashing.generateKeyBuilder(keyColumns.toArray, mutationDf.schema)
-    val mutationPartitionIndex = mutationDf.schema.fieldIndex(Constants.PartitionColumn)
+    val mutationPartitionIndex = mutationDf.schema.fieldIndex(tableUtils.partitionColumn)
 
     //mutations by ds, sorted
     val mutationsByKeys: RDD[((KeyWithHash, String), Array[api.Row])] = mutationDf.rdd
@@ -211,7 +217,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         )
       }
       .groupByKey()
-      .mapValues(_.map(Conversions.toChrononRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
+      .mapValues(_.map(SparkConversions.toChrononRow(_, mTsIndex, mutationsReversalIndex, mutationsTsIndex)).toBuffer
         .sortWith(_.mutationTs < _.mutationTs)
         .toArray)
 
@@ -224,7 +230,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
           val sortedQueries = timeQueries.map { TimeTuple.getTs }
           val finalizedEodIr = eodIr.orNull
 
-          val irs = sawtoothAggregator.lambdaAggregateIrMany(Constants.Partition.epochMillis(ds),
+          val irs = sawtoothAggregator.lambdaAggregateIrMany(tableUtils.partitionSpec.epochMillis(ds),
                                                              finalizedEodIr,
                                                              dayMutations.orNull,
                                                              sortedQueries)
@@ -239,7 +245,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             (keyHasher.data ++ queriesTimeTuple(idx).toArray, finalizedAggregations(idx))
           }
       }
-    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
+    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
   /**
@@ -353,7 +359,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
     val queryTsType = queriesDf.schema(queryTsIndex).dataType
     assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
-    val partitionIndex = queriesDf.schema.fieldIndex(Constants.PartitionColumn)
+    val partitionIndex = queriesDf.schema.fieldIndex(tableUtils.partitionColumn)
 
     // group the data to collect all the timestamps by key and headStart
     // key, headStart -> timestamps in [headStart, nextHeadStart)
@@ -404,7 +410,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               ((queriesWithPartition: Array[TimeTuple.typ], headStartIrOpt: Option[Array[Any]]),
                eventsOpt: Option[Iterable[Row]])) =>
           val inputsIt: Iterator[RowWrapper] = {
-            eventsOpt.map(_.map(Conversions.toChrononRow(_, tsIndex)).toIterator).orNull
+            eventsOpt.map(_.map(SparkConversions.toChrononRow(_, tsIndex)).iterator).orNull
           }
           val queries = queriesWithPartition.map { TimeTuple.getTs }
           val irs = sawtoothAggregator.cumulate(inputsIt, queries, headStartIrOpt.orNull)
@@ -413,7 +419,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
           }
       }
 
-    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, Constants.PartitionColumn -> StringType))
+    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -429,7 +435,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     inputDf.rdd
       .keyBy(keyBuilder)
-      .mapValues(Conversions.toChrononRow(_, tsIndex))
+      .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
         seqOp = hopsAggregator.update,
         combOp = hopsAggregator.merge
@@ -456,6 +462,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 object GroupBy {
 
   @transient private val logger: Logger = LoggerFactory.getLogger(this.getClass)
+  // Need to use a case class here to allow null matching
+  case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
@@ -471,14 +479,14 @@ object GroupBy {
             groupByConf.getKeyColumns.asScala,
             groupByConf.inferredAccuracy)
         } else {
-          renderDataSourceQuery(source,
+          renderDataSourceQuery(groupByConf,
+            source,
             groupByConf.getKeyColumns.asScala,
             queryRange,
             tableUtils,
             groupByConf.maxWindow,
             groupByConf.inferredAccuracy)
         }
-
       }
       .map { tableUtils.sql }
       .reduce { (df1, df2) =>
@@ -487,7 +495,7 @@ object GroupBy {
         df1.union(df2.selectExpr(columns1: _*))
       }
 
-    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.asScala.needsTimestamp)
+    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
     def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
     assert(
       doesNotNeedTime || hasValidTimeColumn,
@@ -496,7 +504,7 @@ object GroupBy {
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
-    val keyColumns = groupByConf.getKeyColumns.asScala
+    val keyColumns = groupByConf.getKeyColumns.toScala
     val skewFilteredDf = skewFilter
       .map { sf =>
         logger.info(s"$logPrefix filtering using skew filter:\n    $sf")
@@ -508,18 +516,19 @@ object GroupBy {
     val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
-    val nullFilterClause = groupByConf.keyColumns.asScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
+    val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
-    val mutationSources = groupByConf.sources.asScala.filter { _.isSetEntities }
+    val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
       if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
           .map {
-            renderDataSourceQuery(_,
-                                  groupByConf.getKeyColumns.asScala,
+            renderDataSourceQuery(groupByConf,
+                                  _,
+                                  groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
@@ -537,50 +546,72 @@ object GroupBy {
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
 
-    new GroupBy(Option(groupByConf.getAggregations).map(_.asScala).orNull,
+    new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
                 Option(mutationDf).orNull,
                 finalize = finalize)
   }
 
-  def renderDataSourceQuery(source: api.Source,
+  def getIntersectedRange(source: api.Source,
+                          queryRange: PartitionRange,
+                          tableUtils: TableUtils,
+                          window: Option[api.Window]): PartitionRange = {
+    val PartitionRange(queryStart, queryEnd) = queryRange
+    val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
+      .reduceLeftOption(Ordering[String].min)
+      .orNull
+    val dataProfile: SourceDataProfile = source.dataModel match {
+      case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
+      case Events =>
+        if (Option(source.getEvents.isCumulative).getOrElse(false)) {
+          lazy val latestAvailable: Option[String] =
+            tableUtils.lastAvailablePartition(source.table, source.subPartitionFilters)
+          val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
+          SourceDataProfile(latestValid, latestValid, latestValid)
+        } else {
+          val minQuery = tableUtils.partitionSpec.before(queryStart)
+          val windowStart: String = window.map(tableUtils.partitionSpec.minus(minQuery, _)).orNull
+          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters)
+          val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
+          SourceDataProfile(windowStart, sourceStart, effectiveEnd)
+        }
+    }
+
+    val sourceRange = PartitionRange(dataProfile.earliestPresent, dataProfile.latestAllowed)(tableUtils)
+    val queryableDataRange =
+      PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)(tableUtils)
+    val intersectedRange = sourceRange.intersect(queryableDataRange)
+    println(s"""
+               |Computing intersected range as:
+               |   query range: $queryRange
+               |   query window: $window
+               |   source table: ${source.table}
+               |   source data range: $sourceRange
+               |   source start/end: ${source.query.startPartition}/${source.query.endPartition}
+               |   source data model: ${source.dataModel}
+               |   queryable data range: $queryableDataRange
+               |   intersected range: $intersectedRange
+               |""".stripMargin)
+    intersectedRange
+  }
+
+  def renderDataSourceQuery(groupByConf: api.GroupBy,
+                            source: api.Source,
                             keys: Seq[String],
                             queryRange: PartitionRange,
                             tableUtils: BaseTableUtils,
                             window: Option[api.Window],
                             accuracy: api.Accuracy,
                             mutations: Boolean = false): String = {
-    val PartitionRange(queryStart, queryEnd) = queryRange
 
-    val effectiveEnd = (Option(queryRange.end) ++ Option(source.query.endPartition))
-      .reduceLeftOption(Ordering[String].min)
-      .orNull
+    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
 
-    // Need to use a case class here to allow null matching
-    case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
+    val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
+      Some(getIntersectedRange(source, queryRange, tableUtils, window))
+    } else None
 
-    val dataProfile: SourceDataProfile = source.dataModel match {
-      case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
-      case Events =>
-        if (Option(source.getEvents.isCumulative).getOrElse(false)) {
-          lazy val latestAvailable: Option[String] = tableUtils.lastAvailablePartition(source.table)
-          val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
-          SourceDataProfile(latestValid, latestValid, latestValid)
-        } else {
-          val minQuery = Constants.Partition.before(queryStart)
-          val windowStart: String = window.map(Constants.Partition.minus(minQuery, _)).orNull
-          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table)
-          val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
-          SourceDataProfile(windowStart, sourceStart, effectiveEnd)
-        }
-    }
-
-    val sourceRange = PartitionRange(dataProfile.earliestPresent, dataProfile.latestAllowed)
-    val queryableDataRange = PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)
-    val intersectedRange = sourceRange.intersect(queryableDataRange)
-    // CumulativeEvent => (latestValid, queryEnd) , when endPartition is null
-    var metaColumns: Map[String, String] = Map(Constants.PartitionColumn -> null)
+    var metaColumns: Map[String, String] = Map(tableUtils.partitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(
         Constants.ReversalColumn -> source.query.reversalColumn,
@@ -594,29 +625,34 @@ object GroupBy {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
         val dsBasedTimestamp = // 1 millisecond before ds + 1
-          s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
+          s"(((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
+
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
+    println(
+      s"""
+         |Time Mapping: $timeMapping
+         |""".stripMargin)
     metaColumns ++= timeMapping
+
+    val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
 
     logger.info(s"""
          |Rendering source query:
-         |   query range: $queryRange
-         |   query window: $window
-         |   source table: ${source.table}
-         |   source data range: $sourceRange
-         |   source start/end: ${source.query.startPartition}/${source.query.endPartition}
-         |   source data model: ${source.dataModel}
-         |   queryable data range: $queryableDataRange
          |   intersected/effective scan range: $intersectedRange
+         |   partitionConditions: $partitionConditions
          |   metaColumns: $metaColumns
          |""".stripMargin)
 
+    if (mutations && !source.getEntities.isSetMutationTable) {
+      throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
+    }
+
     val query = api.QueryUtils.build(
-      Option(source.query.selects).map(_.asScala.toMap).orNull,
+      Option(source.query.selects).map(_.toScala).orNull,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
-      Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]) ++ intersectedRange.whereClauses,
+      Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
     )
     query
@@ -656,11 +692,13 @@ object GroupBy {
     groupByConf.setups.foreach(tableUtils.sql)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
-      .map(_.asScala.toMap)
+      .map(_.toScala)
       .orNull
-    val inputTables = groupByConf.getSources.asScala.map(_.table)
+    val inputTables = groupByConf.getSources.toScala.map(_.table)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(groupByConf.backfillStartDate, endPartition), Some(inputTables))
+      tableUtils.unfilledRanges(outputTable,
+                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
+                                Some(inputTables))
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
@@ -690,24 +728,17 @@ object GroupBy {
           logger.info(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
         } catch {
           case err: Throwable =>
-            exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}"
+            exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"
         }
     }
     if (exceptions.nonEmpty) {
-      throw new RuntimeException(exceptions.mkString("\n"))
+      val length = exceptions.length
+      val fullMessage = exceptions.zipWithIndex
+        .map {
+          case (message, index) => s"[${index + 1}/${length} exceptions]\n${message}"
+        }
+        .mkString("\n")
+      throw new Exception(fullMessage)
     }
-  }
-
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new Args(args)
-    parsedArgs.verify()
-    println(s"Parsed Args: $parsedArgs")
-    val groupByConf = parsedArgs.parseConf[api.GroupBy]
-    computeBackfill(
-      groupByConf,
-      parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"groupBy_${groupByConf.metaData.name}_backfill")),
-      parsedArgs.stepDays.toOption
-    )
   }
 }

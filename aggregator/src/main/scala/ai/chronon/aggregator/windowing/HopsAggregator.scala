@@ -5,6 +5,7 @@ import ai.chronon.aggregator.windowing.HopsAggregator._
 import ai.chronon.api.Extensions.{AggregationOps, AggregationsOps, WindowOps, WindowUtils}
 import ai.chronon.api.{Aggregation, DataType, Row}
 
+import scala.collection.Seq
 import java.util
 
 // generate hops per spec, (NOT per window) for the given hop sizes in the resolution

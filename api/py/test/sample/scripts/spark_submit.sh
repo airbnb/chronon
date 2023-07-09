@@ -2,6 +2,12 @@
 
 ### ******************* NOTE ***************************
 ### This is just a template, you will most likely need to modify this file to get things to work
+
+### Consider adding the following arguments to spark submit in your prod env. We do not include them by default, because it can cause issues on local runs on M1 Macbooks.
+###--conf spark.io.compression.codec=zstd \
+###--conf spark.io.compression.zstd.level=2 \
+###--conf spark.io.compression.zstd.bufferSize=1M \
+
 ### ******************* END ****************************
 
 set -euxo pipefail
@@ -14,6 +20,9 @@ log4j.appender.stdout=org.apache.log4j.ConsoleAppender
 log4j.appender.stdout.Target=System.out
 log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
 log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n
+
+log4j.logger.org.apache.spark=WARN
+log4j.logger.org.apache.spark.util=ERROR
 EOF
 
 export TEST_NAME="${APP_NAME}_${USER}_test"
@@ -21,8 +30,7 @@ unset PYSPARK_DRIVER_PYTHON
 unset PYSPARK_PYTHON
 unset SPARK_HOME
 unset SPARK_CONF_DIR
-# You will need to point your spark submit to the correct yarn cluster if you happen 
-spark-submit \
+$SPARK_SUBMIT_PATH \
 --driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
 --conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
 --conf spark.reducer.maxReqsInFlight=1024 \
@@ -42,9 +50,6 @@ spark-submit \
 --conf spark.rdd.compress=true \
 --conf spark.shuffle.compress=true \
 --conf spark.shuffle.spill.compress=true \
---conf spark.io.compression.codec=zstd \
---conf spark.io.compression.zstd.level=2 \
---conf spark.io.compression.zstd.bufferSize=1M \
 --conf spark.dynamicAllocation.enabled=true \
 --conf spark.dynamicAllocation.minExecutors=2 \
 --conf spark.dynamicAllocation.maxExecutors=${MAX_EXECUTORS:-1000} \
@@ -60,21 +65,28 @@ spark-submit \
 --conf spark.executor.cores=${EXECUTOR_CORES:-1} \
 --conf spark.sql.files.maxPartitionBytes=1073741824 \
 --conf spark.debug.maxToStringFields=1000 \
---conf spark.driver.maxResultSize=32G \
+--conf spark.driver.maxResultSize=4G \
+--conf spark.chronon.partition.column="${PARTITION_COLUMN:-ds}" \
+--conf spark.chronon.partition.format="${PARTITION_FORMAT:-yyyy-MM-dd}" \
 --deploy-mode client \
---master yarn \
+--master "${JOB_MODE:-yarn}" \
 --executor-memory "${EXECUTOR_MEMORY:-8G}" \
 --driver-memory "${DRIVER_MEMORY:-8G}" \
 --conf spark.executor.memoryOverhead=2G \
 --conf spark.app.name=${APP_NAME} \
+--conf spark.chronon.outputParallelismOverride=${OUTPUT_PARALLELISM:--1} \
+--conf spark.chronon.rowCountPerPartition=${ROW_COUNT_PER_PARTITION:--1} \
 --jars "${CHRONON_ONLINE_JAR:-}" \
-"$@" 2>&1                                  |
-grep -v "YarnScheduler:70"                 |
-grep -v "TransportResponseHandler:144"     |
-grep -v "TransportClient:331"              |
-grep -v "io.netty.channel.AbstractChannel" |
-grep -v "ClosedChannelException"           |
-grep -v "TransportResponseHandler:154"     |
-grep -v "TransportRequestHandler:293"      |
-grep -v "TransportResponseHandler:144"     |
+"$@" 2>&1                                                  |
+grep --line-buffered -v "YarnScheduler:70"                 |
+grep --line-buffered -v "TransportResponseHandler:144"     |
+grep --line-buffered -v "TransportClient:331"              |
+grep --line-buffered -v "io.netty.channel.AbstractChannel" |
+grep --line-buffered -v "ClosedChannelException"           |
+grep --line-buffered -v "TransportResponseHandler:154"     |
+grep --line-buffered -v "TransportRequestHandler:293"      |
+grep --line-buffered -v "TransportResponseHandler:144"     |
 tee ${CHRONON_WORKING_DIR}/${APP_NAME}_spark.log
+
+
+

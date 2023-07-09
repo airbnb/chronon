@@ -47,32 +47,32 @@ object DataType {
     val typeParams = tDataType.params
     tDataType.kind match {
       // non parametric types
-      case DataKind.BOOLEAN => BooleanType
-      case DataKind.BYTE =>ByteType
-      case DataKind.SHORT =>ShortType
-      case DataKind.INT =>IntType
-      case DataKind.LONG =>LongType
-      case DataKind.FLOAT =>FloatType
-      case DataKind.DOUBLE =>DoubleType
-      case DataKind.STRING =>StringType
-      case DataKind.BINARY =>BinaryType
-      case DataKind.DATE =>DateType
+      case DataKind.BOOLEAN   => BooleanType
+      case DataKind.BYTE      => ByteType
+      case DataKind.SHORT     => ShortType
+      case DataKind.INT       => IntType
+      case DataKind.LONG      => LongType
+      case DataKind.FLOAT     => FloatType
+      case DataKind.DOUBLE    => DoubleType
+      case DataKind.STRING    => StringType
+      case DataKind.BINARY    => BinaryType
+      case DataKind.DATE      => DateType
       case DataKind.TIMESTAMP => TimestampType
 
       // parametric types
-      case DataKind.MAP =>{
+      case DataKind.MAP => {
         assert(typeParams != null && typeParams.size() == 2,
-          s"TDataType needs non null `params` with length 2 when kind == MAP. Given: $typeParams")
+               s"TDataType needs non null `params` with length 2 when kind == MAP. Given: $typeParams")
         MapType(fromTDataType(typeParams.get(0).dataType), fromTDataType(typeParams.get(1).dataType))
       }
       case DataKind.LIST => {
         assert(typeParams != null && typeParams.size() == 1,
-          s"TDataType needs non null `params` with length 1 when kind == LIST. Given: $typeParams")
+               s"TDataType needs non null `params` with length 1 when kind == LIST. Given: $typeParams")
         ListType(fromTDataType(typeParams.get(0).dataType))
       }
       case DataKind.STRUCT => {
         assert(typeParams != null && !typeParams.isEmpty,
-          s"TDataType needs non null `params` with non-zero length when kind == Struct. Given: $typeParams")
+               s"TDataType needs non null `params` with non-zero length when kind == Struct. Given: $typeParams")
         val fields = ScalaVersionSpecificCollectionsConverter
           .convertJavaListToScala(typeParams)
           .map(param => StructField(param.name, fromTDataType(param.dataType)))
@@ -83,24 +83,28 @@ object DataType {
 
   def toTDataType(dataType: DataType): TDataType = {
     def toParams(params: (String, DataType)*): util.List[DataField] = {
-      val fields = params.map{case (name, dType) => new DataField().setName(name).setDataType(toTDataType(dType))}.toList
+      val fields = params.map {
+        case (name, dType) => new DataField().setName(name).setDataType(toTDataType(dType))
+      }.toList
       ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(fields)
     }
     dataType match {
-      case IntType => new TDataType(DataKind.INT)
-      case LongType => new TDataType(DataKind.LONG)
-      case DoubleType => new TDataType(DataKind.DOUBLE)
-      case FloatType => new TDataType(DataKind.FLOAT)
-      case ShortType => new TDataType(DataKind.SHORT)
-      case BooleanType => new TDataType(DataKind.BOOLEAN)
-      case ByteType => new TDataType(DataKind.BYTE)
-      case StringType => new TDataType(DataKind.STRING)
-      case BinaryType => new TDataType(DataKind.BINARY)
-      case ListType(elementType) => new TDataType(DataKind.LIST).setParams(toParams("elem"-> elementType))
-      case MapType(keyType, valueType) => new TDataType(DataKind.MAP).setParams(toParams("key"-> keyType, "value" -> valueType))
-      case DateType => new TDataType(DataKind.DATE)
+      case IntType               => new TDataType(DataKind.INT)
+      case LongType              => new TDataType(DataKind.LONG)
+      case DoubleType            => new TDataType(DataKind.DOUBLE)
+      case FloatType             => new TDataType(DataKind.FLOAT)
+      case ShortType             => new TDataType(DataKind.SHORT)
+      case BooleanType           => new TDataType(DataKind.BOOLEAN)
+      case ByteType              => new TDataType(DataKind.BYTE)
+      case StringType            => new TDataType(DataKind.STRING)
+      case BinaryType            => new TDataType(DataKind.BINARY)
+      case ListType(elementType) => new TDataType(DataKind.LIST).setParams(toParams("elem" -> elementType))
+      case MapType(keyType, valueType) =>
+        new TDataType(DataKind.MAP).setParams(toParams("key" -> keyType, "value" -> valueType))
+      case DateType      => new TDataType(DataKind.DATE)
       case TimestampType => new TDataType(DataKind.TIMESTAMP)
-      case StructType(name, fields) => new TDataType(DataKind.STRUCT).setName(name).setParams(toParams(fields.map(f=> f.name -> f.fieldType):_*))
+      case StructType(name, fields) =>
+        new TDataType(DataKind.STRUCT).setName(name).setParams(toParams(fields.map(f => f.name -> f.fieldType): _*))
       case UnknownType(any) => throw new RuntimeException("Cannot convert unknown type")
     }
   }
@@ -150,6 +154,7 @@ case class StructType(name: String, fields: Array[StructField])
 
   override def iterator: Iterator[StructField] = fields.iterator
   override def stringPrefix: String = this.getClass.getSimpleName
+  def typeOf(name: String): Option[DataType] = fields.find(_.name == name).map(_.fieldType)
 }
 
 object StructType {

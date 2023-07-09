@@ -1,9 +1,10 @@
 package ai.chronon.spark
 
+import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api
-import ai.chronon.api.DataType.toString
-import ai.chronon.api.{AggregationPart, Constants, DataType}
+import ai.chronon.api.{AggregationPart, Constants, DataType, StructType}
 import ai.chronon.api.Extensions._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
@@ -14,7 +15,7 @@ import org.apache.spark.sql.types.StringType
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable.ListBuffer
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -45,8 +46,8 @@ class ItemSketchSerializable extends Serializable {
 
 class Analyzer(tableUtils: BaseTableUtils,
                conf: Any,
-               startDate: String = Constants.Partition.at(System.currentTimeMillis()),
-               endDate: String = Constants.Partition.at(System.currentTimeMillis()),
+               startDate: String,
+               endDate: String,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
@@ -122,7 +123,7 @@ class Analyzer(tableUtils: BaseTableUtils,
     frequentItemKeys.zip(freqMaps)
   }
 
-  private val range = PartitionRange(startDate, endDate)
+  private val range = PartitionRange(startDate, endDate)(tableUtils)
   // returns with heavy hitter analysis for the specified keys
   def analyze(df: DataFrame, keys: Array[String], sourceTable: String): String = {
     val result = heavyHittersWithTsAndCount(df, keys, count, sample)
@@ -136,20 +137,35 @@ class Analyzer(tableUtils: BaseTableUtils,
 
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
-                           columnType: String,
-                           operation: String = null,
-                           window: String = null,
-                           inputColumn: String = null)
+                                 columnType: DataType,
+                                 operation: String = null,
+                                 window: String = null,
+                                 inputColumn: String = null,
+                                 groupByName: String = null) {
 
-  def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType) : AggregationMetadata = {
-    AggregationMetadata(aggPart.outputColumnName, columnType.toString,
-      aggPart.operation.toString.toLowerCase,
-      aggPart.window.str.toLowerCase,
-      aggPart.inputColumn.toLowerCase)
+    def asMap: Map[String, String] = {
+      Map(
+        "name" -> name,
+        "window" -> window,
+        "columnType" -> DataType.toString(columnType),
+        "inputColumn" -> inputColumn,
+        "operation" -> operation,
+        "groupBy" -> groupByName
+      )
+    }
+
   }
 
-  def toAggregationMetadata(columnName: String, columnType: DataType) : AggregationMetadata = {
-    AggregationMetadata(columnName, columnType.toString)
+  def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
+    AggregationMetadata(aggPart.outputColumnName,
+                        columnType,
+                        aggPart.operation.toString.toLowerCase,
+                        aggPart.window.str.toLowerCase,
+                        aggPart.inputColumn.toLowerCase)
+  }
+
+  def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
+    AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
   }
 
   def analyzeGroupBy(groupByConf: api.GroupBy,
@@ -160,27 +176,27 @@ class Analyzer(tableUtils: BaseTableUtils,
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
-    val analysis = if(enableHitter) analyze(groupBy.inputDf,
-                           groupByConf.keyColumns.asScala.toArray,
-                           groupByConf.sources.asScala.map(_.table).mkString(",")) else ""
+    val analysis =
+      if (enableHitter)
+        analyze(groupBy.inputDf,
+                groupByConf.keyColumns.toScala.toArray,
+                groupByConf.sources.toScala.map(_.table).mkString(","))
+      else ""
     val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
     val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
-      logger.info(
-        s"""
+      logger.info(s"""
            |ANALYSIS for $name:
            |$analysis
                """.stripMargin)
       if (includeOutputTableName)
-        logger.info(
-          s"""
+        logger.info(s"""
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      logger.info(
-        s"""
+      logger.info(s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
            |----- OUTPUT SCHEMA -----
@@ -196,30 +212,36 @@ class Analyzer(tableUtils: BaseTableUtils,
     }
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false): (Array[String], ListBuffer[AggregationMetadata]) = {
+  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false)
+      : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     joinConf.setups.foreach(tableUtils.sql)
-    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils).get
-    val analysis = if(enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema = leftDf.schema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
+    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
+    val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
+    val leftSchema: Map[String, DataType] =
+      leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
-    joinConf.joinParts.asScala.par.foreach { part =>
+    joinConf.joinParts.toScala.parallel.foreach { part =>
       val aggMetadata = analyzeGroupBy(part.groupBy, part.fullPrefix, true, enableHitter)
-      aggregationsMetadata ++= aggMetadata.map { aggMeta => AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
-        aggMeta.columnType,
-        aggMeta.operation,
-        aggMeta.window,
-        aggMeta.inputColumn)}
+      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+        AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
+                            aggMeta.columnType,
+                            aggMeta.operation,
+                            aggMeta.window,
+                            aggMeta.inputColumn,
+                            part.getGroupBy.getMetaData.getName)
+      }
     }
 
-    val rightSchema = aggregationsMetadata.map {aggregation => s"  ${aggregation.name} => ${aggregation.columnType}"}
+    val rightSchema: Map[String, DataType] =
+      aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+    val statsSchema = StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray))
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
-      logger.info(
-        s"""
+      logger.info(s"""
            |ANALYSIS for join/${joinConf.metaData.cleanName}:
            |$analysis
            |----- OUTPUT TABLE NAME -----
@@ -228,11 +250,13 @@ class Analyzer(tableUtils: BaseTableUtils,
            |${leftSchema.mkString("\n")}
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
+           |------ STATS SCHEMA ---------
+           |${statsSchema.unpack.toMap.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
     }
-    // (cli print output, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggregationsMetadata)
+    // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
+    (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
   }
 
   def run(): Unit =

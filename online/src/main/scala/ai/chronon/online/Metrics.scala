@@ -61,7 +61,7 @@ object Metrics {
         environment = environment,
         join = join.metaData.cleanName,
         production = join.metaData.isProduction,
-        team = join.metaData.team
+        team = join.metaData.owningTeam
       )
     }
 
@@ -71,7 +71,7 @@ object Metrics {
         groupBy = groupBy.metaData.cleanName,
         production = groupBy.metaData.isProduction,
         accuracy = groupBy.inferredAccuracy,
-        team = groupBy.metaData.team
+        team = groupBy.metaData.owningTeam
       )
     }
 
@@ -86,7 +86,7 @@ object Metrics {
         environment = environment,
         groupBy = stagingQuery.metaData.cleanName,
         production = stagingQuery.metaData.isProduction,
-        team = stagingQuery.metaData.team
+        team = stagingQuery.metaData.owningTeam
       )
     }
 
@@ -102,6 +102,7 @@ object Metrics {
           .constantTags(ctx.toTags: _*)
           .build()
       },
+      { ctx => ctx },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
   }
@@ -114,7 +115,6 @@ object Metrics {
                      accuracy: Accuracy = null,
                      team: String = null,
                      joinPartPrefix: String = null,
-                     mode: String = null,
                      suffix: String = null)
       extends Serializable {
 
@@ -136,11 +136,16 @@ object Metrics {
 
     def increment(metric: String): Unit = stats.increment(metric)
     def incrementException(exception: Throwable): Unit = {
-      val stackRoot = exception.getStackTrace.apply(0)
-      val file = stackRoot.getFileName
-      val line = stackRoot.getLineNumber
-      val method = stackRoot.getMethodName
-      val exceptionSignature = s"[$method@$file:$line]${exception.getClass.toString}"
+      val stackTrace = exception.getStackTrace
+      val exceptionSignature = if (stackTrace.isEmpty) {
+        exception.getClass.toString
+      } else {
+        val stackRoot = stackTrace.apply(0)
+        val file = stackRoot.getFileName
+        val line = stackRoot.getLineNumber
+        val method = stackRoot.getMethodName
+        s"[$method@$file:$line]${exception.getClass.toString}"
+      }
       stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
     }
 

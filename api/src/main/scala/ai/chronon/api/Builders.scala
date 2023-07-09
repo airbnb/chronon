@@ -4,6 +4,8 @@ import ai.chronon.api.DataType.toTDataType
 import ai.chronon.api.Extensions.WindowUtils
 
 import scala.collection.JavaConverters._
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions._
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 // mostly used by tests to define confs easily
@@ -141,7 +143,11 @@ object Builders {
               left: Source = null,
               joinParts: Seq[JoinPart] = null,
               externalParts: Seq[ExternalPart] = null,
-              labelJoin: LabelJoin = null): Join = {
+              labelPart: LabelPart = null,
+              bootstrapParts: Seq[BootstrapPart] = null,
+              rowIds: Seq[String] = null,
+              derivations: Seq[Derivation] = null,
+              skewKeys: Map[String, Seq[String]] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
@@ -149,8 +155,16 @@ object Builders {
         result.setJoinParts(joinParts.asJava)
       if (externalParts != null)
         result.setOnlineExternalParts(externalParts.asJava)
-      if (labelJoin != null)
-        result.setLabelJoin(labelJoin)
+      if (labelPart != null)
+        result.setLabelPart(labelPart)
+      if (bootstrapParts != null)
+        result.setBootstrapParts(bootstrapParts.asJava)
+      if (rowIds != null)
+        result.setRowIds(rowIds.asJava)
+      if (derivations != null)
+        result.setDerivations(derivations.asJava)
+      if (skewKeys != null)
+        result.setSkewKeys(skewKeys.mapValues(_.asJava).toMap.asJava)
       result
     }
   }
@@ -189,16 +203,13 @@ object Builders {
     }
   }
 
-  object LabelJoin {
-    def apply(labelParts: Seq[JoinPart] = null,
-              leftStartOffset: Int = 0,
-              leftEndOffset: Int = 0
-             ): LabelJoin = {
-      val result = new LabelJoin()
+  object LabelPart {
+    def apply(labels: Seq[JoinPart] = null, leftStartOffset: Int = 0, leftEndOffset: Int = 0): LabelPart = {
+      val result = new LabelPart()
       result.setLeftStartOffset(leftStartOffset)
       result.setLeftEndOffset(leftEndOffset)
-      if (labelParts != null)
-        result.setLabelParts(labelParts.asJava)
+      if (labels != null)
+        result.setLabels(labels.asJava)
       result
     }
   }
@@ -207,16 +218,12 @@ object Builders {
     def apply(
         groupBy: GroupBy = null,
         keyMapping: Map[String, String] = null,
-        selectors: Seq[AggregationSelector] = null,
         prefix: String = null
     ): JoinPart = {
       val result = new JoinPart()
       result.setGroupBy(groupBy)
       if (keyMapping != null)
         result.setKeyMapping(keyMapping.asJava)
-
-      if (selectors != null) // TODO: selectors are unused right now - we select everything
-        result.setSelectors(selectors.asJava)
       result.setPrefix(prefix)
       result
     }
@@ -231,7 +238,8 @@ object Builders {
         dependencies: Seq[String] = null,
         namespace: String = null,
         team: String = null,
-        samplePercent: Double = 0,
+        samplePercent: Double = 100,
+        consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
@@ -242,9 +250,11 @@ object Builders {
       result.setOutputNamespace(namespace)
       result.setTeam(Option(team).getOrElse("chronon"))
       if (dependencies != null)
-        result.setDependencies(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(dependencies))
+        result.setDependencies(dependencies.toSeq.toJava)
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
+      if (consistencySamplePercent > 0)
+        result.setConsistencySamplePercent(consistencySamplePercent)
       if (tableProperties.nonEmpty)
         result.setTableProperties(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(tableProperties))
       result
@@ -266,4 +276,39 @@ object Builders {
       stagingQuery
     }
   }
+
+  object BootstrapPart {
+    def apply(
+        query: Query = null,
+        table: String = null,
+        keyColumns: Seq[String] = null,
+        metaData: MetaData = null
+    ): BootstrapPart = {
+      val bootstrapPart = new BootstrapPart()
+      bootstrapPart.setQuery(query)
+      bootstrapPart.setTable(table)
+      Option(keyColumns)
+        .map(_.toSeq.toJava)
+        .foreach(bootstrapPart.setKeyColumns)
+      bootstrapPart.setMetaData(metaData)
+      bootstrapPart
+    }
+  }
+
+  object Derivation {
+    def apply(
+        name: String = null,
+        expression: String = null
+    ): Derivation = {
+      val derivation = new Derivation()
+      if (name != null) {
+        derivation.setName(name)
+      }
+      if (derivation != null) {
+        derivation.setExpression(expression)
+      }
+      derivation
+    }
+  }
+
 }

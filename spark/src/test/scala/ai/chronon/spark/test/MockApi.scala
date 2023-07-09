@@ -1,6 +1,6 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api.{Builders, Constants, StructType}
+import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
@@ -14,10 +14,11 @@ import java.io.{ByteArrayInputStream, InputStream}
 import java.util
 import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
-import scala.collection.JavaConverters.asScalaIteratorConverter
+
+import scala.collection.Seq
 import scala.concurrent.Future
-import scala.jdk.CollectionConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
-import scala.util.{Failure, Success}
+import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
+import scala.util.{ScalaVersionSpecificCollectionsConverter, Success}
 
 class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
 
@@ -48,15 +49,30 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
 
 class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   class PlusOneExternalHandler extends ExternalSourceHandler {
-    override def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]] = {
-      Future(requests.map(req =>
-        Response(req, Success(req.keys.mapValues(_.asInstanceOf[Integer] + 1).mapValues(_.asInstanceOf[AnyRef])))))
+    override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
+      Future(
+        requests.map(req =>
+          Response(req,
+                   Success(req.keys.mapValues(_.asInstanceOf[Integer] + 1).mapValues(_.asInstanceOf[AnyRef]).toMap))))
     }
   }
 
-  class AlwaysFailsHandler extends ExternalSourceHandler {
-    override def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]] = {
-      Future(requests.map(req => Response(req, Failure(new RuntimeException("This handler always fails things")))))
+  class AlwaysFailsHandler extends JavaExternalSourceHandler {
+    override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
+      CompletableFuture.completedFuture[util.List[JavaResponse]](
+        ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(
+          requests
+            .iterator()
+            .toScala
+            .map(req =>
+              new JavaResponse(
+                req,
+                JTry.failure(
+                  new RuntimeException("This handler always fails things")
+                )
+              ))
+            .toList
+        ))
     }
   }
 
@@ -65,21 +81,21 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
       CompletableFuture.completedFuture(
         requests
           .iterator()
-          .asScala
+          .toScala
           .map { req =>
             new JavaResponse(req,
                              JTry.success(
                                req.keys
                                  .entrySet()
                                  .iterator()
-                                 .asScala
+                                 .toScala
                                  .map(e => e.getKey -> (e.getValue.asInstanceOf[Integer] + 1).asInstanceOf[AnyRef])
                                  .toMap
-                                 .asJava
+                                 .toJava
                              ))
           }
           .toSeq
-          .asJava)
+          .toJava)
     }
   }
 
@@ -111,13 +127,13 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   val schemaTable: String = s"$namespace.mock_schema_table"
 
   def flushLoggedValues: Seq[LoggableResponseBase64] = {
-    val loggedValues = loggedResponseList.iterator().asScala.toArray
+    val loggedValues = loggedResponseList.iterator().toScala.toArray
     loggedResponseList.clear()
     loggedValues
   }
 
   def loggedValuesToDf(loggedValues: Seq[LoggableResponseBase64], session: SparkSession): DataFrame = {
-    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues))
+    val df = session.sqlContext.createDataFrame(session.sparkContext.parallelize(loggedValues.toSeq))
     df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
   }
 

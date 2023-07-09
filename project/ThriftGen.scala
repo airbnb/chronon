@@ -3,9 +3,9 @@ import sbt._
 import sys.process._
 
 object Thrift {
-  def gen(inputPath: String, outputPath: String, language: String, insideCI: Boolean, insideDockerLocal: Boolean,  extension: String = null): Seq[File] = {
+  def gen(inputPath: String, outputPath: String, language: String, cleanupSuffixPath: String = "", insideCI: Boolean, insideDockerLocal: Boolean,  extension: String = null): Seq[File] = {
     s"""echo "Generating files from thrift file: $inputPath \ninto folder $outputPath; This build is running in CI: $insideCI; This build is running using the Docker Local Image: $insideDockerLocal;" """ !;
-    s"rm -rf $outputPath" !;
+    s"rm -rf $outputPath/$cleanupSuffixPath" !;
     s"mkdir -p $outputPath" !;
     if (insideCI || insideDockerLocal) {
       s"thrift --gen $language -out $outputPath $inputPath" !
