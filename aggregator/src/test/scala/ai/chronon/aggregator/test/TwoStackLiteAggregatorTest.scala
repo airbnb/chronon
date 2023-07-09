@@ -99,8 +99,9 @@ class TwoStackLiteAggregatorTest extends TestCase{
 
     val eventIter = sortedEvents.iterator.buffered
     val twoStackHopResultIrs = sortedQueries.map { queryTs =>
+      twoStackLiteHopAggregator.evictStaleEntry(queryTs)
       while (eventIter.hasNext && eventIter.head.ts < queryTs) {
-        twoStackLiteHopAggregator.update(eventIter.next())
+        twoStackLiteHopAggregator.update(eventIter.next(), queryTs)
       }
       twoStackLiteHopAggregator.query(queryTs)
     }

@@ -29,28 +29,30 @@ class TwoStackLiteHopAggregator(inputSchema: StructType,
   private val buffers = perWindowAggregators.map(_.bankersBuffer(inputSize))
   private val currentHops = new Array[BankersEntry[Array[Any]]](perWindowAggregators.length)
 
-  def update(row: Row): Unit = {
+  def update(row: Row, currentQueryTs: Long): Unit = {
     var i = 0
 
     // remove all unwanted entries before adding new entries - to keep memory low
     while (i < perWindowAggregators.length) {
-      evictStaleEntry(i, row.ts)
       val perWindowAggregator = perWindowAggregators(i)
-      val buffer = buffers(i)
-      val hopStart = perWindowAggregator.hopStart(row.ts)
+      if (row.ts >= perWindowAggregator.tailTs(currentQueryTs)) {
+        val buffer = buffers(i)
+        val hopStart = perWindowAggregator.hopStart(row.ts)
 
-      if (currentHops(i) == null) {
-        // Nothing buffered in the hop yet
-        currentHops(i) = BankersEntry(perWindowAggregator.agg.prepare(row), hopStart)
-      } else if (hopStart == currentHops(i).ts) {
-        // The new row shares the same hop as the current buffered hop
-        perWindowAggregator.agg.update(currentHops(i).value, row)
-      } else {
-        // The new row is not in the current buffered hop, push the current buffer into the two-stack and start a new
-        // buffer
-        buffer.extend(currentHops(i).value, currentHops(i).ts)
-        currentHops(i) = BankersEntry(perWindowAggregator.agg.prepare(row), hopStart)
+        if (currentHops(i) == null) {
+          // Nothing buffered in the hop yet
+          currentHops(i) = BankersEntry(perWindowAggregator.agg.prepare(row), hopStart)
+        } else if (hopStart == currentHops(i).ts) {
+          // The new row shares the same hop as the current buffered hop
+          perWindowAggregator.agg.update(currentHops(i).value, row)
+        } else {
+          // The new row is not in the current buffered hop, push the current buffer into the two-stack and start a new
+          // buffer
+          buffer.extend(currentHops(i).value, currentHops(i).ts)
+          currentHops(i) = BankersEntry(perWindowAggregator.agg.prepare(row), hopStart)
+        }
       }
+
       i += 1
     }
   }
@@ -60,9 +62,6 @@ class TwoStackLiteHopAggregator(inputSchema: StructType,
     val result = new Array[Any](allParts.length)
     var i = 0
     while (i < perWindowAggregators.length) {
-      // remove all unwanted entries before adding new entries - to keep memory low
-      evictStaleEntry(i, queryTs)
-
       val perWindowOutput = aggregate(i)
 
       // arrange the perWindowOutput into the indices expected by final output
@@ -81,16 +80,21 @@ class TwoStackLiteHopAggregator(inputSchema: StructType,
     result
   }
 
-  private def evictStaleEntry(idx: Int, queryTs: Long): Unit = {
-    val perWindowAggregator = perWindowAggregators(idx)
-    val buffer = buffers(idx)
-    val queryTail = perWindowAggregator.tailTs(queryTs)
-    while (buffer.peekBack() != null && buffer.peekBack().ts < queryTail) {
-      buffer.pop()
-    }
+  def evictStaleEntry(queryTs: Long): Unit = {
+    var i = 0
+    while (i < perWindowAggregators.length) {
+      val perWindowAggregator = perWindowAggregators(i)
+      val buffer = buffers(i)
+      val queryTail = perWindowAggregator.tailTs(queryTs)
+      while (buffer.peekBack() != null && buffer.peekBack().ts < queryTail) {
+        buffer.pop()
+      }
 
-    if (currentHops(idx) != null && queryTail > currentHops(idx).ts) {
-      currentHops(idx) = null
+      if (currentHops(i) != null && queryTail > currentHops(i).ts) {
+        currentHops(i) = null
+      }
+
+      i += 1
     }
   }
 

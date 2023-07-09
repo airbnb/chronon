@@ -20,20 +20,12 @@ import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
-case class UnionSortKey(keyWithHash: KeyWithHash, ts: Long, isEvent: Boolean)
+case class UnionSortKey(keyWithHash: KeyWithHash, ts: Long)
     extends Ordered[UnionSortKey]
     with Serializable {
   override def compare(that: UnionSortKey): Int = {
     val hashCodeResult = compareHashCode(keyWithHash.hash, that.keyWithHash.hash)
-    if (hashCodeResult == 0) {
-      if (ts == that.ts) {
-        isEvent.compareTo(that.isEvent)
-      } else {
-        ts.compareTo(that.ts)
-      }
-    } else {
-      hashCodeResult
-    }
+    if (hashCodeResult == 0) ts.compareTo(that.ts) else hashCodeResult
   }
 
   /*
@@ -379,7 +371,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   private class UnionSortPartitioner(partitions: Int) extends HashPartitioner(partitions) {
     override def getPartition(key: Any): Int =
       key match {
-        case UnionSortKey(keyWithHash, _, _) => super.getPartition(keyWithHash)
+        case UnionSortKey(keyWithHash, _) => super.getPartition(keyWithHash)
         case a: Any                          => super.getPartition(a)
       }
 
@@ -404,16 +396,21 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val queryTsType = queriesDf.schema(queryTsIndex).dataType
     assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
 
-    val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
-    val keyedQueries =
-      queriesDf.rdd.keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex), isEvent = false))
-
-    val eventsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
-    val keyedEvents = inputDf.rdd.keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex), isEvent = true))
-
     // TODO: maybe a better repartition size
     val repartitionNum =
-      keyedQueries.getNumPartitions.max(keyedEvents.getNumPartitions).max(tableUtils.defaultParallelism)
+      queriesDf.rdd.getNumPartitions.max(inputDf.rdd.getNumPartitions).max(tableUtils.defaultParallelism)
+    val partitioner = new UnionSortPartitioner(repartitionNum)
+
+    val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
+    val partiallyOrderedQueriesRdd = queriesDf.rdd
+      .keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex)))
+      .repartitionAndSortWithinPartitions(partitioner)
+
+    val eventsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
+    val partiallyOrderedEventsRdd = inputDf.rdd
+      .keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex)))
+      .repartitionAndSortWithinPartitions(partitioner)
+
     val partitionIndex = queriesDf.schema.fieldIndex(tableUtils.partitionColumn)
     val inputChrononSchema: api.StructType = inputDf.schema.toChrononSchema("TwoStack")
     val shouldFinalize = finalize
@@ -427,44 +424,39 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
      *    events happened at the same time as the query will not be included in that aggregation.
      * 4. iterate through the data in the partition using two stack + hop algorithm.
      */
-    val outputRdd = keyedEvents
-      .union(keyedQueries)
-      .repartitionAndSortWithinPartitions(new UnionSortPartitioner(repartitionNum))
-      .mapPartitions { keyedRows =>
+    val outputRdd = partiallyOrderedQueriesRdd.zipPartitions(partiallyOrderedEventsRdd, preservesPartitioning = true) {
+      case (orderedQueries, orderedEvents) =>
         var currentKeyWithHash: KeyWithHash = null
         var agg: TwoStackLiteHopAggregator = null
-        val bufferedKeyedRows = keyedRows.buffered
+        val bufferedEvents = orderedEvents.buffered
 
         new Iterator[(Array[Any], Array[Any])] {
-          override def hasNext: Boolean = {
-            var pendingQuery = false
-            while (bufferedKeyedRows.hasNext && !pendingQuery) {
-              val (key, row) = bufferedKeyedRows.head
-
-              // If the aggregation is not initialized or the key has changed, update to a new aggregation
-              if (currentKeyWithHash == null || !key.keyWithHash.equals(currentKeyWithHash)) {
-                currentKeyWithHash = key.keyWithHash
-                agg = new TwoStackLiteHopAggregator(inputChrononSchema, aggregations, resolution, shouldFinalize)
-              }
-
-              if (key.isEvent) {
-                agg.update(SparkConversions.toChrononRow(row, tsIndex))
-                bufferedKeyedRows.next()
-              }
-
-              // A query is found, stop accumulating and move on to generate the aggregated result.
-              pendingQuery = !key.isEvent
-            }
-
-            bufferedKeyedRows.hasNext
-          }
+          override def hasNext: Boolean = orderedQueries.hasNext
 
           override def next(): (Array[Any], Array[Any]) = {
-            val (key, query) = bufferedKeyedRows.next()
-            (key.keyWithHash.data :+ key.ts :+ query(partitionIndex), agg.query(key.ts))
+            val (queryKey, query) = orderedQueries.next()
+            if (currentKeyWithHash == null || !queryKey.keyWithHash.equals(currentKeyWithHash)) {
+              currentKeyWithHash = queryKey.keyWithHash
+              agg = new TwoStackLiteHopAggregator(inputChrononSchema, aggregations, resolution, shouldFinalize)
+            }
+
+            // remove all unwanted entries before adding new entries - to keep memory low
+            agg.evictStaleEntry(queryKey.ts)
+
+            while (bufferedEvents.hasNext && bufferedEvents.head._1 < queryKey) {
+              val (eventKey, event) = bufferedEvents.next()
+
+              if (eventKey.keyWithHash.equals(queryKey.keyWithHash)) {
+                // Push the event row into the buffer, the update function will filter out rows that are already
+                // outside of the query's ts windows
+                agg.update(SparkConversions.toChrononRow(event, tsIndex), queryKey.ts)
+              }
+            }
+
+            (queryKey.keyWithHash.data :+ queryKey.ts :+ query(partitionIndex), agg.query(queryKey.ts))
           }
-        }
       }
+    }
 
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
