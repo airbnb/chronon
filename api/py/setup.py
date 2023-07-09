@@ -28,6 +28,9 @@ def get_version():
 
     # Replace multiple continuous '-' or '_' with a single period '.'.
     # In python version string, the label identifier that comes after '+', is all separated by periods '.'
+    version_str = re.sub(r'[-_]+', '.', version_str)
+
+    # Add back the .dev post-fix if it was in the original version_str.
     split_s = version_str.split('.')
     version_str = '.'.join(split_s[:3]) if len(split_s) > 3 else version_str
 
