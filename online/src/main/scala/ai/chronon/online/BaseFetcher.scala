@@ -4,7 +4,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api._
+import ai.chronon.api.{TiledIr, _}
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
@@ -25,7 +25,9 @@ import scala.util.{Failure, Success, Try}
 class BaseFetcher(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = false,
+                  isTiled: Boolean = false,
+                 )
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
@@ -66,33 +68,44 @@ class BaseFetcher(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      val selectedCodec = servingInfo.groupByOps.dataModel match {
-        case DataModel.Events   => servingInfo.valueAvroCodec
-        case DataModel.Entities => servingInfo.mutationValueAvroCodec
-      }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) println("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Array[Row] = streamingResponses.iterator
-          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-          .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-          .toArray
         reportKvResponse(context.withSuffix("streaming"),
-                         streamingResponses,
-                         queryTimeMs,
-                         overallLatency,
-                         totalResponseValueBytes)
+          streamingResponses,
+          queryTimeMs,
+          overallLatency,
+          totalResponseValueBytes)
+
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
-        if (debug) {
-          val gson = new Gson()
-          println(s"""
-                     |batch ir: ${gson.toJson(batchIr)}
-                     |streamingRows: ${gson.toJson(streamingRows)}
-                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                     |queryTime in millis: $queryTimeMs
-                     |""".stripMargin)
+
+        val output = if (isTiled) {
+          val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map { tVal =>
+              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+              TiledIr(tVal.millis, tile)
+            }
+
+          aggregator.lambdaAggregateFinalized(batchIr, streamingIrs, queryTimeMs, mutations)
+        } else {
+          val streamingRows: Array[Row] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map(tVal => servingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+            .toArray
+
+          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+
+          if (debug) {
+            val gson = new Gson()
+            println(
+              s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingRows: ${gson.toJson(streamingRows)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
         }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }

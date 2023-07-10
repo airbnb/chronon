@@ -52,6 +52,14 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partition
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
 
+
+  // Start pre-aggregated tile codec
+
+  lazy val tiledRowAggregator = TileCodec.buildRowAggregator(groupBy, valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
+  lazy val tiledCodec = new TileCodec(tiledRowAggregator, groupBy)
+
+  // End pre-aggregated tile codec
+
   def outputChrononSchema: StructType = {
     StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)
   }

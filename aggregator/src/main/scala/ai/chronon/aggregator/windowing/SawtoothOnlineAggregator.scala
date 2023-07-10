@@ -89,11 +89,47 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     resultIr
   }
 
+  def lambdaAggregateIr(finalBatchIr: FinalBatchIr,
+                        streamingTiledIrs: Iterator[TiledIr],
+                        queryTs: Long,
+                        hasReversal: Boolean = false): Array[Any] = {
+    // null handling
+    if (finalBatchIr == null && streamingTiledIrs == null) return null
+    val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
+    val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Array.empty[TiledIr].iterator)
+
+    if (batchEndTs > queryTs) {
+      throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
+    }
+
+    // initialize with collapsed
+    val resultIr = windowedAggregator.clone(batchIr.collapsed)
+
+    // add head events
+    while (headStreamingTiledIrs.hasNext) {
+      val streamingTiledIr = headStreamingTiledIrs.next()
+      val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
+      if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
+        if (!hasReversal)
+          updateIr(resultIr, streamingTiledIr, queryTs, hasReversal)
+      }
+    }
+    mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
+    resultIr
+  }
+
   def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
                                streamingRows: Iterator[Row],
                                ts: Long,
                                hasReversal: Boolean = false): Array[Any] = {
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
+  }
+
+  def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
+                               streamingTiledIrs: Iterator[TiledIr],
+                               ts: Long,
+                               hasReversal: Boolean = false): Array[Any] = {
+    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingTiledIrs, ts, hasReversal = hasReversal))
   }
 
 }
