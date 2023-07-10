@@ -2,6 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator.IrMapType
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.Constants
@@ -9,6 +10,7 @@ import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
+import org.apache.spark.HashPartitioner
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -18,6 +20,44 @@ import java.util
 import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+
+case class UnionSortKey(keyWithHash: KeyWithHash, ts: Long)
+    extends Ordered[UnionSortKey]
+    with Serializable {
+  override def compare(that: UnionSortKey): Int = {
+    val hashCodeResult = compareHashCode(keyWithHash.hash, that.keyWithHash.hash)
+    if (hashCodeResult == 0) ts.compareTo(that.ts) else hashCodeResult
+  }
+
+  /*
+   * The hashInt from the `keyWithHash` is 4 bytes. The hash itself is 16 bytes. The risk of conflict with using hashInt
+   * is quite high. One possible issue with hashInt:
+   * Consider 3 entries, A('hash_1', hashInt_1, ts_1), B('hash_2', hashInt_1, ts_2), C('hash_2', hashInt_1, ts_3).
+   * The hashes of B & C are the same. A is different, but its hashInt conflicts with B & C. All three entries has the
+   * same hashInt. If hashInt is used for comparison, A == B == C. However, B > C because ts_2 > ts_3. As a result,
+   * A == B == C conflicts with B > C. Without a proper comparison logic, the sorting will run into "Comparison method
+   * violates its general contract" issue.
+   */
+  private def compareHashCode(a: Array[Byte], b: Array[Byte]): Int = {
+    assert(a != null && b != null, "hash code must not bue null")
+    assert(a.length == b.length, "hash codes should have the same length")
+    if (a eq b) {
+      // same array
+      return 0
+    }
+
+    var i = 0
+    while (i < a.length) {
+      val res = a(i).compareTo(b(i))
+      if (res != 0) {
+        return res
+      }
+      i += 1
+    }
+
+    0
+  }
+}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -250,13 +290,20 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
-
     val queriesDf = skewFilter
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
-
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, _) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
+    temporalEventsInternal(queriesDf, inputDf, hopsRdd, queryTimeRange, resolution)
+  }
+
+  def temporalEventsInternal(queriesDf: DataFrame,
+                             eventDf: DataFrame,
+                             hopsRdd: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
+                             queryTimeRange: Option[TimeRange],
+                             resolution: Resolution): DataFrame = {
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
     queriesDf.validateJoinKeys(inputDf, keyColumns)
@@ -299,9 +346,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
 
     // this can be fused into hop generation
-    val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
+    val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, eventDf.schema)
     val minHeadStart = headStart(minQueryTs)
-    val eventsByHeadStart = inputDf
+    val eventsByHeadStart = eventDf
       .filter(s"${Constants.TimeColumn} between $minHeadStart and $maxQueryTs")
       .rdd
       .groupBy { (row: Row) => inputKeyGen(row) -> headStart(row.getLong(tsIndex)) }
@@ -326,6 +373,159 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
 
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
+  }
+
+  // A partitioner that only looks at the keyWithHash for repartitioning.
+  private class UnionSortPartitioner(partitions: Int) extends HashPartitioner(partitions) {
+    override def getPartition(key: Any): Int =
+      key match {
+        case UnionSortKey(keyWithHash, _) => super.getPartition(keyWithHash)
+        case a: Any                          => super.getPartition(a)
+      }
+
+    override def equals(other: Any): Boolean =
+      other match {
+        case h: UnionSortPartitioner =>
+          h.numPartitions == numPartitions
+        case _ =>
+          false
+      }
+  }
+
+  def hybridTemporalEvents(queriesUnfilteredDf: DataFrame,
+                           queryTimeRange: Option[TimeRange] = None,
+                           resolution: Resolution = FiveMinuteResolution): DataFrame = {
+
+    val queriesDf = skewFilter
+      .map(queriesUnfilteredDf.filter)
+      .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
+    queriesDf.validateJoinKeys(inputDf, keyColumns)
+
+    val queryTsIndex = queriesDf.schema.fieldIndex(Constants.TimeColumn)
+    val queryTsType = queriesDf.schema(queryTsIndex).dataType
+    assert(queryTsType == LongType, s"ts column needs to be long type, but found $queryTsType")
+
+    // TODO: maybe a better repartition size
+    val repartitionNum =
+      queriesDf.rdd.getNumPartitions.max(inputDf.rdd.getNumPartitions).max(tableUtils.defaultParallelism)
+    val partitioner = new UnionSortPartitioner(repartitionNum)
+
+    val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
+    val eventsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
+
+    val partitionIndex = queriesDf.schema.fieldIndex(tableUtils.partitionColumn)
+    val inputChrononSchema: api.StructType = inputDf.schema.toChrononSchema("TwoStack")
+    val shouldFinalize = finalize
+
+    val partitionedQueries = queriesDf.rdd
+      .keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex)))
+      .partitionBy(partitioner)
+
+    val partitionedEvents = inputDf.rdd
+      .keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex)))
+      .partitionBy(partitioner)
+
+    val eventSizes = partitionedEvents
+      .mapPartitionsWithIndex { case (idx, events) => Seq(idx -> events.size).iterator }
+      .collect()
+      .toMap
+
+    // From experiment, memory spill start showing up around 900K record. A small amount of memory spill is better
+    // than a full blown shuffle. Ballpark about 1.25M records here.
+    val threshold = (1024 + 256) * 1024
+
+    val twoStackQueries = partitionedQueries
+      .mapPartitionsWithIndex(
+        { case (idx, queries) => if (eventSizes(idx) > threshold) Seq().iterator else queries },
+        preservesPartitioning = true
+      )
+      .repartitionAndSortWithinPartitions(partitioner)
+
+    val twoStackEvents = partitionedEvents
+      .mapPartitionsWithIndex(
+        { case (idx, events) => if (eventSizes(idx) > threshold) Seq().iterator else events },
+        preservesPartitioning = true
+      )
+      .repartitionAndSortWithinPartitions(partitioner) // this should not cause a shuffle since the partitioner is the same
+
+    /*
+     * Union-sort + two stack + hops:
+     * 1. union the transformed queries and events into one RDD
+     * 2. repartition the RDD based on the key of the row
+     * 3. within each partition, sort the data based on the key, ts and type of data, so that all of the data of the
+     *    key will be put together and ordered based on the ts. In case of tie, queries will be ordered first, so that
+     *    events happened at the same time as the query will not be included in that aggregation.
+     * 4. iterate through the data in the partition using two stack + hop algorithm.
+     */
+    val twoStackOutputRdd = twoStackQueries.zipPartitions(twoStackEvents, preservesPartitioning = true) {
+      case (orderedQueries, orderedEvents) =>
+        var currentKeyWithHash: KeyWithHash = null
+        var agg: TwoStackLiteHopAggregator = null
+        val bufferedEvents = orderedEvents.buffered
+
+        new Iterator[(Array[Any], Array[Any])] {
+          override def hasNext: Boolean = orderedQueries.hasNext
+
+          override def next(): (Array[Any], Array[Any]) = {
+            val (queryKey, query) = orderedQueries.next()
+            if (currentKeyWithHash == null || !queryKey.keyWithHash.equals(currentKeyWithHash)) {
+              currentKeyWithHash = queryKey.keyWithHash
+              agg = new TwoStackLiteHopAggregator(inputChrononSchema, aggregations, resolution, shouldFinalize)
+            }
+
+            // remove all unwanted entries before adding new entries - to keep memory low
+            agg.evictStaleEntry(queryKey.ts)
+
+            while (bufferedEvents.hasNext && bufferedEvents.head._1 < queryKey) {
+              val (eventKey, event) = bufferedEvents.next()
+
+              if (eventKey.keyWithHash.equals(queryKey.keyWithHash)) {
+                // Push the event row into the buffer, the update function will filter out rows that are already
+                // outside of the query's ts windows
+                agg.update(SparkConversions.toChrononRow(event, tsIndex), queryKey.ts)
+              }
+            }
+
+            (queryKey.keyWithHash.data :+ queryKey.ts :+ query(partitionIndex), agg.query(queryKey.ts))
+          }
+      }
+    }
+
+    val twoStackDf = toDf(twoStackOutputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
+
+    val sawtoothQueriesRdd = partitionedQueries
+      .mapPartitionsWithIndex { case (idx, queries) =>
+        if (eventSizes(idx) <= threshold) Seq().iterator else queries.map(_._2)
+      }
+
+    // convert the skewed partitions back to DF
+    val sawtoothQueries = tableUtils.sparkSession.createDataFrame(sawtoothQueriesRdd, queriesDf.schema)
+    val sawtoothEventsRdd = partitionedEvents
+      .mapPartitionsWithIndex { case (idx, events) =>
+        if (eventSizes(idx) <= threshold) Seq().iterator else events
+      }
+
+    val TimeRange(minQueryTs, _) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    // Now that we already have the data by the hash key, let just calculate the hops, as they are hashed the same way
+    val hopsRdd = sawtoothEventsRdd.mapPartitions {
+      events =>
+        val agg = new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
+        events
+          .foldLeft(new mutable.HashMap[KeyWithHash, IrMapType]) { case (map, (key, event)) =>
+            val irMap = map.getOrElseUpdate(key.keyWithHash, agg.init())
+            agg.update(irMap, SparkConversions.toChrononRow(event, tsIndex))
+            map
+          }
+          .mapValues(agg.toTimeSortedArray)
+          .toSeq
+          .iterator
+    }
+
+    // convert the skewed partitions back to DF
+    val sawtoothEvents = tableUtils.sparkSession.createDataFrame(sawtoothEventsRdd.map(_._2), inputDf.schema)
+    val sawtoothDf = temporalEventsInternal(sawtoothQueries, sawtoothEvents, hopsRdd, queryTimeRange, resolution)
+
+    twoStackDf.union(sawtoothDf)
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -529,8 +729,7 @@ object GroupBy {
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
-    println(
-      s"""
+    println(s"""
          |Time Mapping: $timeMapping
          |""".stripMargin)
     metaColumns ++= timeMapping

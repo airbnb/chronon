@@ -58,6 +58,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.execution.streaming.sources.ForeachWriterCommitMessage$",
       "org.apache.spark.sql.types.Metadata",
       "ai.chronon.api.Row",
+      "ai.chronon.spark.UnionSortKey",
       "ai.chronon.spark.KeyWithHash",
       "ai.chronon.aggregator.windowing.BatchIr",
       "ai.chronon.online.RowWrapper",

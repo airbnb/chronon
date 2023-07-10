@@ -1,7 +1,7 @@
 package ai.chronon.aggregator.windowing
 
 import ai.chronon.aggregator.row.RowAggregator
-import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps, WindowOps}
+import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps}
 import ai.chronon.api._
 import scala.collection.Seq
 
@@ -13,13 +13,6 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
   private val outputColumnNames = allParts.map(_.outputColumnName)
   // create row aggregator per window - we will loop over data as many times as there are unique windows
   // we will use different row aggregators to do so
-  case class PerWindowAggregator(window: Window, agg: RowAggregator, indexMapping: Array[Int]) {
-    private val windowLength: Long = window.millis
-    private val tailHopSize = resolution.calculateTailHop(window)
-    def tailTs(queryTs: Long): Long = ((queryTs - windowLength)/tailHopSize) * tailHopSize
-    def bankersBuffer(inputSize: Int) = new TwoStackLiteAggregationBuffer[Row, Array[Any], Array[Any]](agg, inputSize)
-    def init = new Array[Any](agg.length)
-  }
 
   val inputSchemaTuples: Array[(String, DataType)] = inputSchema.fields.map(f => f.name -> f.fieldType)
   val perWindowAggregators : Array[PerWindowAggregator] = allParts.iterator.zipWithIndex.toArray
@@ -29,7 +22,7 @@ class TwoStackLiteAggregator(inputSchema: StructType, aggregations: Seq[Aggregat
       case (w, ps) =>
         val parts = ps.map(_._1)
         val idxs = ps.map(_._2)
-        PerWindowAggregator(w, new RowAggregator(inputSchemaTuples, parts), idxs)
+        PerWindowAggregator(w, resolution, new RowAggregator(inputSchemaTuples, parts), idxs)
     }.toArray
 
   // lifetime aggregations don't need bankers buffer, simple unWindowed sum is good enough

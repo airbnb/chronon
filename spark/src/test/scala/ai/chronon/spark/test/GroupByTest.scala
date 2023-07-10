@@ -3,27 +3,14 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  ThriftJsonCodec,
-  TimeUnit,
-  Window
-}
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, ThriftJsonCodec, TimeUnit, Window}
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -122,6 +109,15 @@ class GroupByTest {
 
   @Test
   def temporalEventsLastKTest(): Unit = {
+    runTemporalEventsLastKTest((gb, df) => gb.temporalEvents(df))
+  }
+
+  @Test
+  def twoStackTemporalEventsLastKTest(): Unit = {
+    runTemporalEventsLastKTest((gb, df) => gb.hybridTemporalEvents(df))
+  }
+
+  def runTemporalEventsLastKTest(buildTemporalEvents: (GroupBy, DataFrame) => DataFrame): Unit = {
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("listing_view", StringType, 100)
@@ -140,13 +136,14 @@ class GroupByTest {
     val keys = Seq("user").toArray
     val groupBy =
       new GroupBy(aggregations,
-                  keys,
-                  eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
-    val resultDf = groupBy.temporalEvents(queryDf)
+        keys,
+        eventDf.selectExpr("user", "ts", "concat(ts, \" \", listing_view) as listing_view"))
+    val resultDf = buildTemporalEvents(groupBy, queryDf)
     val computed = resultDf.select("user", "ts", "listing_view_last30", "listing_view_count")
     computed.show()
 
-    val expected = eventDf.sqlContext.sql(s"""
+    val expected = eventDf.sqlContext.sql(
+      s"""
          |SELECT
          |      events_last_k.user as user,
          |      queries_last_k.ts as ts,
@@ -180,15 +177,17 @@ class GroupByTest {
         val computedStr = gson.toJson(computed)
         val expectedStr = gson.toJson(expected)
         if (computedStr != expectedStr) {
-          println(s"""
-                     |computed [$computedCount]: ${gson.toJson(computed)}
-                     |expected [$expectedCount]: ${gson.toJson(expected)}
-                     |""".stripMargin)
+          println(
+            s"""
+               |computed [$computedCount]: ${gson.toJson(computed)}
+               |expected [$expectedCount]: ${gson.toJson(expected)}
+               |""".stripMargin)
         }
         assertEquals(gson.toJson(computed), gson.toJson(expected))
       }
     }
   }
+
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
@@ -211,6 +210,7 @@ class GroupByTest {
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
     val resultDf = groupBy.temporalEvents(queryDf)
+    val hybridResultDf = groupBy.hybridTemporalEvents(queryDf)
 
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
@@ -251,6 +251,13 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+
+    val hybridDiff = Comparison.sideBySide(naiveDf, hybridResultDf, List("user", Constants.TimeColumn))
+    if (hybridDiff.count() > 0) {
+      hybridDiff.show()
+      println("hybridDiff result rows")
+    }
+    assertEquals(0, hybridDiff.count())
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
