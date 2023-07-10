@@ -315,6 +315,7 @@ object Driver {
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
+
       override def subcommandName() = "analyzer_util"
     }
 
