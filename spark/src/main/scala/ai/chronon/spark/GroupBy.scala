@@ -497,6 +497,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .mapPartitionsWithIndex { case (idx, queries) =>
         if (eventSizes(idx) <= threshold) Seq().iterator else queries.map(_._2)
       }
+
+    // convert the skewed partitions back to DF
     val sawtoothQueries = tableUtils.sparkSession.createDataFrame(sawtoothQueriesRdd, queriesDf.schema)
     val sawtoothEventsRdd = partitionedEvents
       .mapPartitionsWithIndex { case (idx, events) =>
@@ -504,7 +506,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
 
     val TimeRange(minQueryTs, _) = queryTimeRange.getOrElse(queriesDf.timeRange)
-    // Now that we already have the data by the hash key, let just calculate the hops
+    // Now that we already have the data by the hash key, let just calculate the hops, as they are hashed the same way
     val hopsRdd = sawtoothEventsRdd.mapPartitions {
       events =>
         val agg = new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
@@ -518,6 +520,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
           .toSeq
           .iterator
     }
+
+    // convert the skewed partitions back to DF
     val sawtoothEvents = tableUtils.sparkSession.createDataFrame(sawtoothEventsRdd.map(_._2), inputDf.schema)
     val sawtoothDf = temporalEventsInternal(sawtoothQueries, sawtoothEvents, hopsRdd, queryTimeRange, resolution)
 
