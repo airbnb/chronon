@@ -45,8 +45,8 @@ class GroupByUploadTest {
 
   @Test
   def multipleAvgCountersTest(): Unit = {
-    val today = Constants.Partition.at(System.currentTimeMillis())
-    val yesterday = Constants.Partition.before(today)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     tableUtils.sql(s"USE $namespace")
     val eventsTable = "my_events"
