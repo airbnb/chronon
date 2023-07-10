@@ -2,6 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator.IrMapType
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.Constants
@@ -289,13 +290,20 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   def temporalEvents(queriesUnfilteredDf: DataFrame,
                      queryTimeRange: Option[TimeRange] = None,
                      resolution: Resolution = FiveMinuteResolution): DataFrame = {
-
     val queriesDf = skewFilter
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
-
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, _) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
+    temporalEventsInternal(queriesDf, inputDf, hopsRdd, queryTimeRange, resolution)
+  }
+
+  def temporalEventsInternal(queriesDf: DataFrame,
+                             eventDf: DataFrame,
+                             hopsRdd: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
+                             queryTimeRange: Option[TimeRange],
+                             resolution: Resolution): DataFrame = {
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
     queriesDf.validateJoinKeys(inputDf, keyColumns)
@@ -338,9 +346,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
 
     // this can be fused into hop generation
-    val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
+    val inputKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, eventDf.schema)
     val minHeadStart = headStart(minQueryTs)
-    val eventsByHeadStart = inputDf
+    val eventsByHeadStart = eventDf
       .filter(s"${Constants.TimeColumn} between $minHeadStart and $maxQueryTs")
       .rdd
       .groupBy { (row: Row) => inputKeyGen(row) -> headStart(row.getLong(tsIndex)) }
@@ -384,8 +392,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
   }
 
-  def twoStackHopTemporalEvents(queriesUnfilteredDf: DataFrame,
-                                resolution: Resolution = FiveMinuteResolution): DataFrame = {
+  def hybridTemporalEvents(queriesUnfilteredDf: DataFrame,
+                           queryTimeRange: Option[TimeRange] = None,
+                           resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
     val queriesDf = skewFilter
       .map(queriesUnfilteredDf.filter)
@@ -402,18 +411,42 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val partitioner = new UnionSortPartitioner(repartitionNum)
 
     val queriesKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, queriesDf.schema)
-    val partiallyOrderedQueriesRdd = queriesDf.rdd
-      .keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex)))
-      .repartitionAndSortWithinPartitions(partitioner)
-
     val eventsKeyGen = FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
-    val partiallyOrderedEventsRdd = inputDf.rdd
-      .keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex)))
-      .repartitionAndSortWithinPartitions(partitioner)
 
     val partitionIndex = queriesDf.schema.fieldIndex(tableUtils.partitionColumn)
     val inputChrononSchema: api.StructType = inputDf.schema.toChrononSchema("TwoStack")
     val shouldFinalize = finalize
+
+    val partitionedQueries = queriesDf.rdd
+      .keyBy(r => UnionSortKey(queriesKeyGen(r), r.getLong(queryTsIndex)))
+      .partitionBy(partitioner)
+
+    val partitionedEvents = inputDf.rdd
+      .keyBy(r => UnionSortKey(eventsKeyGen(r), r.getLong(tsIndex)))
+      .partitionBy(partitioner)
+
+    val eventSizes = partitionedEvents
+      .mapPartitionsWithIndex { case (idx, events) => Seq(idx -> events.size).iterator }
+      .collect()
+      .toMap
+
+    // From experiment, memory spill start showing up around 900K record. A small amount of memory spill is better
+    // than a full blown shuffle. Ballpark about 1.25M records here.
+    val threshold = (1024 + 256) * 1024
+
+    val twoStackQueries = partitionedQueries
+      .mapPartitionsWithIndex(
+        { case (idx, queries) => if (eventSizes(idx) > threshold) Seq().iterator else queries },
+        preservesPartitioning = true
+      )
+      .repartitionAndSortWithinPartitions(partitioner)
+
+    val twoStackEvents = partitionedEvents
+      .mapPartitionsWithIndex(
+        { case (idx, events) => if (eventSizes(idx) > threshold) Seq().iterator else events },
+        preservesPartitioning = true
+      )
+      .repartitionAndSortWithinPartitions(partitioner) // this should not cause a shuffle since the partitioner is the same
 
     /*
      * Union-sort + two stack + hops:
@@ -424,7 +457,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
      *    events happened at the same time as the query will not be included in that aggregation.
      * 4. iterate through the data in the partition using two stack + hop algorithm.
      */
-    val outputRdd = partiallyOrderedQueriesRdd.zipPartitions(partiallyOrderedEventsRdd, preservesPartitioning = true) {
+    val twoStackOutputRdd = twoStackQueries.zipPartitions(twoStackEvents, preservesPartitioning = true) {
       case (orderedQueries, orderedEvents) =>
         var currentKeyWithHash: KeyWithHash = null
         var agg: TwoStackLiteHopAggregator = null
@@ -458,7 +491,37 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
     }
 
-    toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
+    val twoStackDf = toDf(twoStackOutputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
+
+    val sawtoothQueriesRdd = partitionedQueries
+      .mapPartitionsWithIndex { case (idx, queries) =>
+        if (eventSizes(idx) <= threshold) Seq().iterator else queries.map(_._2)
+      }
+    val sawtoothQueries = tableUtils.sparkSession.createDataFrame(sawtoothQueriesRdd, queriesDf.schema)
+    val sawtoothEventsRdd = partitionedEvents
+      .mapPartitionsWithIndex { case (idx, events) =>
+        if (eventSizes(idx) <= threshold) Seq().iterator else events
+      }
+
+    val TimeRange(minQueryTs, _) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    // Now that we already have the data by the hash key, let just calculate the hops
+    val hopsRdd = sawtoothEventsRdd.mapPartitions {
+      events =>
+        val agg = new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
+        events
+          .foldLeft(new mutable.HashMap[KeyWithHash, IrMapType]) { case (map, (key, event)) =>
+            val irMap = map.getOrElseUpdate(key.keyWithHash, agg.init())
+            agg.update(irMap, SparkConversions.toChrononRow(event, tsIndex))
+            map
+          }
+          .mapValues(agg.toTimeSortedArray)
+          .toSeq
+          .iterator
+    }
+    val sawtoothEvents = tableUtils.sparkSession.createDataFrame(sawtoothEventsRdd.map(_._2), inputDf.schema)
+    val sawtoothDf = temporalEventsInternal(sawtoothQueries, sawtoothEvents, hopsRdd, queryTimeRange, resolution)
+
+    twoStackDf.union(sawtoothDf)
   }
 
   // convert raw data into IRs, collected by hopSizes

@@ -114,7 +114,7 @@ class GroupByTest {
 
   @Test
   def twoStackTemporalEventsLastKTest(): Unit = {
-    runTemporalEventsLastKTest((gb, df) => gb.twoStackHopTemporalEvents(df))
+    runTemporalEventsLastKTest((gb, df) => gb.hybridTemporalEvents(df))
   }
 
   def runTemporalEventsLastKTest(buildTemporalEvents: (GroupBy, DataFrame) => DataFrame): Unit = {
@@ -210,7 +210,7 @@ class GroupByTest {
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
     val resultDf = groupBy.temporalEvents(queryDf)
-    val twoStackResultDf = groupBy.twoStackHopTemporalEvents(queryDf)
+    val hybridResultDf = groupBy.hybridTemporalEvents(queryDf)
 
     val keyBuilder = FastHashing.generateKeyBuilder(keys, eventDf.schema)
     // naive aggregation for equivalence testing
@@ -252,12 +252,12 @@ class GroupByTest {
     }
     assertEquals(0, diff.count())
 
-    val twoStackDiff = Comparison.sideBySide(naiveDf, twoStackResultDf, List("user", Constants.TimeColumn))
-    if (twoStackDiff.count() > 0) {
-      twoStackDiff.show()
-      println("twoStackDiff result rows")
+    val hybridDiff = Comparison.sideBySide(naiveDf, hybridResultDf, List("user", Constants.TimeColumn))
+    if (hybridDiff.count() > 0) {
+      hybridDiff.show()
+      println("hybridDiff result rows")
     }
-    assertEquals(0, twoStackDiff.count())
+    assertEquals(0, hybridDiff.count())
   }
 
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)

@@ -239,8 +239,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
       case (Events, Events, Accuracy.TEMPORAL) =>
         if (tableUtils.useTwoStackForTemporalEvents) {
-          println("Using two stack v2 for temporal events")
-          genGroupBy(unfilledTimeRange.toPartitionRange).twoStackHopTemporalEvents(renamedLeftDf)
+          println("Using two stack hybrid for temporal events")
+          genGroupBy(unfilledTimeRange.toPartitionRange).hybridTemporalEvents(renamedLeftDf, Some(unfilledTimeRange))
         } else {
           println("Using sawtooth for temporal events")
           genGroupBy(unfilledTimeRange.toPartitionRange).temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
