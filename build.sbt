@@ -36,8 +36,6 @@ ThisBuild / developers := List(
 )
 ThisBuild / assembly / test := {}
 
-test in assembly := {}
-
 def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
   publishTo := {
