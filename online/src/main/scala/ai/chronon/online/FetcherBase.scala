@@ -17,9 +17,9 @@
 package ai.chronon.online
 
 import org.slf4j.LoggerFactory
-import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
+import ai.chronon.aggregator.row.ColumnAggregator
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
@@ -30,7 +30,6 @@ import com.google.gson.Gson
 
 import java.util
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
@@ -84,33 +83,58 @@ class FetcherBase(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      val selectedCodec = servingInfo.groupByOps.dataModel match {
-        case DataModel.Events   => servingInfo.valueAvroCodec
-        case DataModel.Entities => servingInfo.mutationValueAvroCodec
-      }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Array[Row] = streamingResponses.iterator
-          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-          .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-          .toArray
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
                          queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
+
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
-        if (debug) {
-          val gson = new Gson()
-          logger.info(s"""
-                     |batch ir: ${gson.toJson(batchIr)}
-                     |streamingRows: ${gson.toJson(streamingRows)}
-                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                     |queryTime in millis: $queryTimeMs
-                     |""".stripMargin)
+        val output: Array[Any] = if (servingInfo.isTilingEnabled) {
+          val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map { tVal =>
+              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+              TiledIr(tVal.millis, tile)
+            }
+
+          if (debug) {
+            val gson = new Gson()
+            println(s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingIrs: ${gson.toJson(streamingIrs)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
+          }
+
+          aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        } else {
+          val selectedCodec = servingInfo.groupByOps.dataModel match {
+            case DataModel.Events   => servingInfo.valueAvroCodec
+            case DataModel.Entities => servingInfo.mutationValueAvroCodec
+          }
+
+          val streamingRows: Array[Row] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+            .toArray
+
+          if (debug) {
+            val gson = new Gson()
+            println(s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingRows: ${gson.toJson(streamingRows)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
+          }
+
+          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
         }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }

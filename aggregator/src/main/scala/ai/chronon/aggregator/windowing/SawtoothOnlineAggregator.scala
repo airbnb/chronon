@@ -21,6 +21,9 @@ import scala.collection.Seq
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
 
+// Wrapper class for handling Irs in the tiled chronon use case
+case class TiledIr(ts: Long, ir: Array[Any])
+
 // batchEndTs = upload time of the batch data as derived from GroupByServingInfo & Cached
 // cache = Jul-22 / latest = Jul-23, streaming data = 22 - now (filter < jul 23)
 class SawtoothOnlineAggregator(val batchEndTs: Long,
@@ -119,11 +122,45 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     resultIr
   }
 
+  def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
+                        streamingTiledIrs: Iterator[TiledIr],
+                        queryTs: Long): Array[Any] = {
+    // null handling
+    if (finalBatchIr == null && streamingTiledIrs == null) return null
+    val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
+    val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Array.empty[TiledIr].iterator)
+
+    if (batchEndTs > queryTs) {
+      throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
+    }
+
+    // initialize with collapsed
+    val resultIr = windowedAggregator.clone(batchIr.collapsed)
+
+    // add head events
+    while (headStreamingTiledIrs.hasNext) {
+      val streamingTiledIr = headStreamingTiledIrs.next()
+      val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
+      if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
+        updateIrTiled(resultIr, streamingTiledIr, queryTs)
+      }
+    }
+    mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
+    resultIr
+  }
+
   def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
                                streamingRows: Iterator[Row],
                                ts: Long,
                                hasReversal: Boolean = false): Array[Any] = {
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
+  }
+
+  def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
+                               streamingTiledIrs: Iterator[TiledIr],
+                               ts: Long): Array[Any] = {
+    // TODO: Add support for mutations / hasReversal to the tiled implementation
+    windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
   }
 
 }

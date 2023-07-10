@@ -399,6 +399,205 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
+  def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
+
+    val listingEventData = Seq(
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10")
+    )
+    val ratingEventData = Seq(
+        // 1L listing id event data
+        Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+        Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+
+        // 2L listing id event data
+        Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+        Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+        Row(2L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+        Row(2L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+        Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+        Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+    )
+    // Schemas
+    // {..., event (generic event column), ...}
+    val listingsSchema = StructType("listing_events_fetcher",
+      Array(
+        StructField("listing_id", LongType),
+        StructField("ts", LongType),
+        StructField("ds", StringType)
+      ))
+
+    val ratingsSchema = StructType(
+      "listing_ratings_fetcher",
+      Array(StructField("listing_id", LongType),
+        StructField("ts", LongType),
+        StructField("rating", IntType),
+        StructField("ds", StringType))
+    )
+
+    val sourceData: Map[StructType, Seq[Row]] = Map(
+      listingsSchema -> listingEventData,
+      ratingsSchema -> ratingEventData
+    )
+
+    sourceData.foreach {
+      case (schema, rows) =>
+        val tableName = s"$namespace.${schema.name}"
+
+        spark.sql(s"DROP TABLE IF EXISTS $tableName")
+
+        spark
+          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
+          .save(tableName)
+    }
+    println("saved all data hand written for fetcher test")
+
+    val startPartition = "2021-04-07"
+    val endPartition = "2021-04-10"
+
+    val leftSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${listingsSchema.name}"
+      )
+
+    val rightSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts", "rating"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${ratingsSchema.name}",
+        topic = "fake_topic2"
+      )
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(rightSource),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "rating",
+          windows = null
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        )
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_gb", namespace = namespace, team = "chronon", customJson = groupByCustomJson.orNull)
+    )
+
+    val joinConf = Builders.Join(
+      left = leftSource,
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_join", namespace = namespace, team = "chronon")
+    )
+    joinConf
+  }
+
+  def joinResponses(requests: Array[Request],
+                    mockApi: MockApi,
+                    useJavaFetcher: Boolean = false,
+                    runCount: Int = 1,
+                    samplePercent: Double = -1,
+                    logToHive: Boolean = false,
+                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
+    val chunkSize = 100
+    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
+
+    def fetchOnce = {
+      var latencySum: Long = 0
+      var latencyCount = 0
+      val blockStart = System.currentTimeMillis()
+      val result = requests.iterator
+        .grouped(chunkSize)
+        .map { r =>
+          val responses = if (useJavaFetcher) {
+            // Converting to java request and using the toScalaRequest functionality to test conversion
+            val convertedJavaRequests = r.map(new JavaRequest(_)).toJava
+            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
+            FutureConverters
+              .toScala(javaResponse)
+              .map(_.toScala.map(jres =>
+                Response(
+                  Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
+                  jres.values.toScala.map(_.toScala)
+                )))
+          } else {
+            fetcher.fetchJoin(r)
+          }
+          System.currentTimeMillis() -> responses
+        }
+        .flatMap {
+          case (start, future) =>
+            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
+            val latency = System.currentTimeMillis() - start
+            latencySum += latency
+            latencyCount += 1
+            result
+        }
+        .toList
+      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
+      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
+      (latencyMillis, qps, result)
+    }
+
+    // to overwhelm the profiler with fetching code path
+    // so as to make it prominent in the flamegraph & collect enough stats
+
+    var latencySum = 0.0
+    var qpsSum = 0.0
+    var loggedValues: Seq[LoggableResponseBase64] = null
+    var result: List[Response] = null
+    (0 until runCount).foreach { _ =>
+      val (latency, qps, resultVal) = fetchOnce
+      result = resultVal
+      loggedValues = mockApi.flushLoggedValues
+      latencySum += latency
+      qpsSum += qps
+    }
+    val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
+
+    println(s"""
+               |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
+               |with batch size: $chunkSize
+               |average qps: ${qpsSum / runCount}
+               |average latency: ${latencySum / runCount}
+               |""".stripMargin)
+    val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
+    if (logToHive) {
+      TableUtils(spark).insertPartitions(
+        loggedDf,
+        mockApi.logTable,
+        partitionColumns = Seq("ds", "name")
+      )
+    }
+    if (samplePercent > 0) {
+      println(s"logged count: ${loggedDf.count()}")
+      loggedDf.show()
+    }
+    result -> loggedDf
+  }
+
   // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
   def compareTemporalFetch(joinConf: api.Join,
                            endDs: String,
@@ -547,6 +746,12 @@ class FetcherTest extends TestCase {
                          namespace,
                          consistencyCheck = true,
                          dropDsOnWrite = false)
+  }
+
+  def testTemporalTiledFetchJoinDeterministic(): Unit = {
+    val namespace = "deterministic_tiled_fetch"
+    val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
   }
 
   // test soft-fail on missing keys

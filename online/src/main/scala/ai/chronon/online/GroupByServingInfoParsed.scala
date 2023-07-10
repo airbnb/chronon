@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing.SawtoothOnlineAggregator
 import ai.chronon.api.Constants.{ReversalField, TimeField}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
@@ -68,6 +69,15 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   lazy val irAvroSchema: String = AvroConversions.fromChrononSchema(irChrononSchema).toString()
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
+
+
+  // Start tiling specific variables
+
+  lazy val tiledRowAggregator: RowAggregator = TileCodec.buildRowAggregator(groupBy, valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
+  lazy val tiledCodec: TileCodec = new TileCodec(tiledRowAggregator, groupBy)
+  lazy val isTilingEnabled: Boolean = TileCodec.isTilingEnabled(groupBy)
+
+  // End tiling specific variables
 
   def outputChrononSchema: StructType = {
     StructType.from(s"${groupBy.metaData.cleanName}_OUTPUT", aggregator.windowedAggregator.outputSchema)

@@ -23,7 +23,7 @@ import ai.chronon.api.Extensions.{AggregationOps, MetadataOps, WindowUtils}
 
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.Try
 
 object TileCodec {
   def buildRowAggregator(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]): RowAggregator = {
@@ -43,6 +43,16 @@ object TileCodec {
     val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unpack)
     new RowAggregator(inputSchema, unpackedAggs)
   }
+
+  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set. */
+  def isTilingEnabled(groupBy: GroupBy): Boolean =
+  // Default to false if 'enable_tiling' isn't set
+    Try(groupBy.getMetaData.customJsonLookUp("enable_tiling")).toOption.exists {
+      case s: Boolean => s
+      case null => false
+      case _ =>
+        throw new RuntimeException(f"Error converting value of 'enable_tiling' to boolean.")
+    }
 }
 
 /**
