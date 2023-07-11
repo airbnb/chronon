@@ -15,10 +15,12 @@ import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
+import scala.collection.IterableOnce.iterableOnceExtensionMethods
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
+import scala.util.{Failure, Success}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -62,6 +64,7 @@ class GroupBy(inputStream: DataFrame,
     buildDataStream(local).start()
   }
 
+  val fetchTimeoutMs: Long = session.conf.get("spark.chronon.streaming.enrichment.timeout.millis", "10000").toLong
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val fetcher = onlineImpl.buildFetcher(local)
@@ -71,10 +74,35 @@ class GroupBy(inputStream: DataFrame,
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
-
-    // first fetch the join
-    if(streamingSource.isSetJoin) {
-
+    val sourceIsJoin = streamingSource.isSetJoin
+    val tsIndex = inputStream.schema.fieldIndex(Constants.TimeColumn)
+    // func to take rows of left and create rows of output by batch fetching
+    // we build all necessary information prior to function creation for performance
+    @transient lazy val enrichFunc: Seq[Row] => Seq[Row] = {
+      assert(sourceIsJoin, s"Cannot call enrich function on a non-join source: $streamingSource")
+      val join = streamingSource.getJoin
+      val joinKeys = streamingSource.getJoin.leftKeyCols
+      val joinName = join.metaData.cleanName
+      val valueSchema = onlineImpl.buildFetcher().getJoinCodecs(joinName).get.valueSchema
+      val valueFields = valueSchema.fields.map(_.name)
+      println(s"Enriching join: $joinName with keys: $joinKeys and value fields $valueFields")
+      val func = { rows: Seq[Row] =>
+        val requests = rows.map { row =>
+          val keyMap = row.getValuesMap(joinKeys)
+          Request(joinName, keyMap, Some(row.getLong(tsIndex)))
+        }
+        val responses = Await.result(fetcher.fetchJoin(requests), Duration(fetchTimeoutMs, MILLISECONDS))
+        rows.zip(responses).map { case (row, response) =>
+          val enriched = row.toSeq ++ (response.values match {
+            case Success(responseMap) => valueFields.map(col => responseMap.getOrElse(col, null))
+            case Failure(exception) =>
+              exception.printStackTrace(System.err)
+              valueFields.map(_ => null)
+          })
+          Row.fromSeq(enriched)
+        }
+      }
+      func
     }
 
     val streamingQuery = buildStreamingQuery()
@@ -173,26 +201,5 @@ class GroupBy(inputStream: DataFrame,
       .outputMode("append")
       .trigger(Trigger.Continuous(2.minute))
       .foreach(dataWriter)
-  }
-}
-
-// designed to be used on online and streaming contexts
-class ChainedEnricher(fetcher: Fetcher, leafJoin: Join) {
-  implicit val ec: ExecutionContext = fetcher.executionContext
-  // In a streaming environment, we need to synchronously fetch for micro batches
-  // Recommendation is to have multiple micro-batches in flight to achieve maximum throughput
-
-  // this is an internal method to fetch for a given branch join until we reach the root
-  def multiFetchImpl(join: Join, requests: Seq[Request]): Future[Seq[Response]] = {
-    // we need to first find the root and fetch from there downwards - using recursion
-    if(join.left.isSetJoin) { // not a root join
-      val innerJoin = join.left.getJoin
-      val innerRequestFuture = fetcher.fetchJoin(requests).map{
-        responses: Seq[Response] => responses.map { response => 
-
-        }
-      }
-      multiFetch(join.left.getJoin, )
-    }
   }
 }

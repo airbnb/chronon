@@ -317,7 +317,13 @@ object Extensions {
     }
 
     def topic: String = {
-      if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
+      if (source.isSetEntities) {
+        source.getEntities.getMutationTopic
+      } else if (source.isSetEvents) {
+        source.getEvents.getTopic
+      } else {
+        source.getJoin.getLeft.topic
+      }
     }
 
     /**
