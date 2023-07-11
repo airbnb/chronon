@@ -103,7 +103,7 @@ class GroupByUploadTest {
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
-      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS)))
     )
     val keys = Seq("user").toArray
     val groupByConf =
