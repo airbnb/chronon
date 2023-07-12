@@ -201,9 +201,11 @@ class TableUtilsTest {
   @Test
   def ChunkTest(): Unit = {
     val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
-    val expected = Seq(PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
-                       PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
-                       PartitionRange("2021-01-07", "2021-01-07")(tableUtils))
+    val expected = Seq(
+      PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
+      PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
+      PartitionRange("2021-01-07", "2021-01-07")(tableUtils)
+    )
     assertEquals(expected, actual)
   }
 
@@ -291,7 +293,8 @@ class TableUtilsTest {
     // verify the latest label version
     val labels = JoinUtils.getLatestLabelMapping(tableName, tableUtils)
     assertEquals(labels.get("2022-11-09").get,
-                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils), PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
+                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils),
+                      PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
   private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
@@ -364,5 +367,12 @@ class TableUtilsTest {
       104L,
       tableUtils.columnSizeEstimator(sparkType)
     )
+  }
+
+  @Test
+  def testCheckTablePermission(): Unit = {
+    val tableName = "db.test_check_table_permission"
+    prepareTestDataWithSubPartitions(tableName)
+    assertTrue(tableUtils.checkTablePermission(tableName))
   }
 }

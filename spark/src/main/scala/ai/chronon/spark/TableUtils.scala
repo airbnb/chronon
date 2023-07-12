@@ -151,7 +151,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
   // method to check if a user has access to a table
   def checkTablePermission(tableName: String,
-                           fallbackPartition: String = partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
+                           fallbackPartition: String =
+                           partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
     println(s"checking permission for table $tableName...")
     try {
       // retrieve one row from the table

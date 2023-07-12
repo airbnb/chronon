@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{AggregationPart, Constants, DataType}
+import ai.chronon.api.{AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
@@ -310,8 +310,10 @@ class Analyzer(tableUtils: TableUtils,
   // return a list of tables that the user doesn't have access to
   def runTablePermissionValidation(sources: Set[String]): Set[String] = {
     println(s"Validating ${sources.size} tables permissions ...")
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
-      !tableUtils.checkTablePermission(sourceTable)
+      !tableUtils.checkTablePermission(sourceTable, partitionFilter)
     }
   }
 
