@@ -26,7 +26,7 @@ executors:
         resource_class: xlarge
         working_directory: /zipline
         docker:
-            - image: patyoon/zipline-ci:base--${CIRCLE_BRANCH}
+            - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
 
 jobs:
     "Docker Base Build":
@@ -41,21 +41,21 @@ jobs:
                 name: Pull existing docker image
                 command: |
                     set +o pipefail
-                    docker pull patyoon/zipline-ci:base || true
+                    docker pull houpy0829/chronon-ci:base || true
             - run:
                 name: Build docker image
                 command: |
                     set +o pipefail
-                    docker build -t patyoon/zipline-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
+                    docker build -t houpy0829/chronon-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
             - deploy:
                 name: Push docker image
                 command: |
                     set +o pipefail
                     docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
-                    docker push patyoon/zipline-ci:base--${CIRCLE_BRANCH}
+                    docker push houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
                     if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                        docker tag patyoon/zipline-ci:base--${CIRCLE_BRANCH} patyoon/zipline-ci:base
-                        docker push patyoon/zipline-ci:base
+                        docker tag houpy0829/chronon-ci:base--${CIRCLE_BRANCH} houpy0829/chronon-ci:base
+                        docker push houpy0829/chronon-ci:base
                     fi
 
     "Scala 11 -- Spark 2 Tests":
@@ -66,9 +66,10 @@ jobs:
                   name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt test
+                      sbt "++ 2.11.12 test"
             - store_test_results:
                   path: /zipline/spark/target/test-reports
             - store_test_results:
@@ -82,6 +83,7 @@ jobs:
                   name: Run Spark 3.1.1 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.12.12 test"
@@ -98,6 +100,7 @@ jobs:
                   name: Run Scala 13 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
+                      conda activate zipline_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.13.6 test"

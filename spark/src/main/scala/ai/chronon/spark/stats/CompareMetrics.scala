@@ -3,30 +3,29 @@ package ai.chronon.spark.stats
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
-import ai.chronon.online.DataMetrics
-import ai.chronon.spark.{Comparison, Conversions}
+import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.spark.Comparison
+import ai.chronon.spark.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.{Column, DataFrame, functions, types, Row => SparkRow}
 
-import java.util
 import scala.collection.immutable.SortedMap
-import collection.JavaConversions._
+import scala.util.ScalaJavaConversions.JMapOps
 
 object CompareMetrics {
   val leftSuffix = "_left"
   val rightSuffix = "_right"
   val comparisonViewNameSuffix = "_comparison"
   val bins = 41
-  val percentilesArgMap: util.Map[String,String] = Map(
-    "k" -> "128",
-    "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
+  val percentilesArgMap: Map[String, String] =
+    Map("k" -> "128", "percentiles" -> s"[${(0 to bins).map(i => i * 1.0 / bins).mkString(",")}]")
 
   case class MetricTransform(name: String,
                              expr: Column,
                              operation: Operation,
-                             argMap: util.Map[String, String] = null,
+                             argMap: Map[String, String] = null,
                              additionalExprs: Seq[(String, String)] = null)
 
   private def edit_distance: UserDefinedFunction =
@@ -76,15 +75,14 @@ object CompareMetrics {
         MetricTransform("left_length", functions.size(left), Operation.APPROX_PERCENTILE, percentilesArgMap),
         MetricTransform("right_length", functions.size(right), Operation.APPROX_PERCENTILE, percentilesArgMap),
         MetricTransform("mismatch_length",
-          left.isNotNull.and(right.isNotNull).and(functions.size(left).notEqual(functions.size(right))), Operation.SUM)
+                        left.isNotNull.and(right.isNotNull).and(functions.size(left).notEqual(functions.size(right))),
+                        Operation.SUM)
       )
 
       val equalityMetric =
         if (!DataType.isMap(field.fieldType))
           Some(
-            MetricTransform("mismatch",
-                            left.isNotNull.and(right.isNotNull).and(left.notEqual(right)),
-                            Operation.SUM))
+            MetricTransform("mismatch", left.isNotNull.and(right.isNotNull).and(left.notEqual(right)), Operation.SUM))
         else None
 
       val typeSpecificMetrics = if (DataType.isNumeric(field.fieldType)) {
@@ -95,29 +93,32 @@ object CompareMetrics {
         Seq.empty[MetricTransform]
       }
 
-      val allMetrics = (universalMetrics ++ typeSpecificMetrics ++ equalityMetric :+ MetricTransform("total", functions.lit(true), Operation.COUNT))
-        .map { m =>
-          val fullName = field.name + "_" + m.name
-          m.copy(
-            name = fullName,
-            expr = m.expr.as(fullName),
-            additionalExprs = Option(m.additionalExprs)
-              .map(_.map { case (name, expr) => (fullName + "_" + name, fullName + expr) })
-              .orNull
-          )
-        }
+      val allMetrics =
+        (universalMetrics ++ typeSpecificMetrics ++ equalityMetric :+ MetricTransform("total",
+                                                                                      functions.lit(true),
+                                                                                      Operation.COUNT))
+          .map { m =>
+            val fullName = field.name + "_" + m.name
+            m.copy(
+              name = fullName,
+              expr = m.expr.as(fullName),
+              additionalExprs = Option(m.additionalExprs)
+                .map(_.map { case (name, expr) => (fullName + "_" + name, fullName + expr) })
+                .orNull
+            )
+          }
       allMetrics
     }
 
   def buildRowAggregator(metrics: Seq[MetricTransform], inputDf: DataFrame): RowAggregator = {
-    val schema = Conversions.toChrononSchema(inputDf.schema)
+    val schema = SparkConversions.toChrononSchema(inputDf.schema)
     val aggParts = metrics.flatMap { m =>
       def buildAggPart(name: String): AggregationPart = {
         val aggPart = new AggregationPart()
         aggPart.setInputColumn(name)
         aggPart.setOperation(m.operation)
         if (m.argMap != null)
-          aggPart.setArgMap(m.argMap)
+          aggPart.setArgMap(m.argMap.toJava)
         aggPart.setWindow(WindowUtils.Unbounded)
         aggPart
       }
@@ -135,6 +136,7 @@ object CompareMetrics {
               keys: Seq[String],
               mapping: Map[String, String] = Map.empty,
               timeBucketMinutes: Long = 60): (DataFrame, DataMetrics) = {
+    val tableUtils = TableUtils(inputDf.sparkSession)
     // spark maps cannot be directly compared, for now we compare the string representation
     // TODO 1: For Maps, we should find missing keys, extra keys and mismatched keys
     // TODO 2: Values should have type specific comparison
@@ -146,8 +148,8 @@ object CompareMetrics {
     val metrics = buildMetrics(valueSchema, mapping)
     val timeColumn: String = if (keys.contains(Constants.TimeColumn)) {
       Constants.TimeColumn
-    } else if (keys.contains(Constants.PartitionColumn)) {
-      Constants.PartitionColumn
+    } else if (keys.contains(tableUtils.partitionColumn)) {
+      tableUtils.partitionColumn
     } else {
       throw new IllegalArgumentException("Keys doesn't contain the time column")
     }
@@ -170,8 +172,15 @@ object CompareMetrics {
     val outputColumns = rowAggregator.aggregationParts.map(_.outputColumnName).toArray
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
-      .keyBy(row => (row.getLong(timeIndex) / bucketMs) * bucketMs) // bin
-      .mapValues(Conversions.toChrononRow(_, -1))
+      .keyBy(row => {
+        val timeValue = if (timeColumn == tableUtils.partitionColumn) {
+          tableUtils.partitionSpec.epochMillis(row.getString(timeIndex))
+        } else {
+          row.getLong(timeIndex)
+        }
+        (timeValue / bucketMs) * bucketMs
+      }) // bin
+      .mapValues(SparkConversions.toChrononRow(_, -1))
       .aggregateByKey(rowAggregator.init)(rowAggregator.updateWithReturn, rowAggregator.merge) // aggregate
       .mapValues(rowAggregator.finalize)
 
@@ -179,7 +188,7 @@ object CompareMetrics {
       case (bucketStart, metrics) => new GenericRow(bucketStart +: metrics)
     }
     val resultChrononSchema = StructType.from("ooc_metrics", ("ts", LongType) +: rowAggregator.outputSchema)
-    val resultSparkSchema = Conversions.fromChrononSchema(resultChrononSchema)
+    val resultSparkSchema = SparkConversions.fromChrononSchema(resultChrononSchema)
     val resultDf = inputDf.sparkSession.createDataFrame(resultRowRdd, resultSparkSchema)
 
     val result = resultRdd

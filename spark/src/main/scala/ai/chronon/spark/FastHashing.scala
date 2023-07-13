@@ -5,6 +5,8 @@ import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 
+import java.nio.charset.Charset
+
 // TODO: drop data and hashInt, iff we see OOMs on executors for small IRs and large keys
 // That is the only case where key size would be a problem
 case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extends Serializable {
@@ -48,7 +50,9 @@ object FastHashing {
           }
           case StringType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putUnencodedChars(row.getAs[String](index))
+              // putString has changed between guava versions and makes Chronon less friendly when
+              // dealing with build conflicts, so we instead use putBytes
+              hasher.putBytes(row.getAs[String](index).getBytes(Utf8))
           }
           case BinaryType => {
             case (hasher: Hasher, row: Row) =>
@@ -95,4 +99,6 @@ object FastHashing {
       KeyWithHash(keyIndices.map(row.get), hashCode.asBytes(), hashCode.asInt())
     }
   }
+
+  private val Utf8 = Charset.forName("UTF-8")
 }

@@ -1,12 +1,14 @@
 package ai.chronon.spark.test
 
+import ai.chronon.api._
+import ai.chronon.spark._
+import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
-import ai.chronon.spark.{Conversions, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
-import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.SparkSession
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
 import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
@@ -30,7 +32,6 @@ class TableUtilsTest {
         |""".stripMargin
 
     val columns = tableUtils.getColumnsFromQuery(sampleSql)
-    println(columns)
     val expected = Seq("column_a",
                        "column_b",
                        "column_c",
@@ -38,7 +39,7 @@ class TableUtilsTest {
                        "column_e",
                        "column_f",
                        "column_g",
-                       "`column_nested.first.second`").sorted
+                       "column_nested.first.second").sorted
     assertEquals(expected, columns.sorted)
   }
 
@@ -89,13 +90,6 @@ class TableUtilsTest {
     })
   }
 
-  private def makeDf(schema: StructType, rows: List[Row]): DataFrame = {
-    spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
-    )
-  }
-
   @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
@@ -106,6 +100,7 @@ class TableUtilsTest {
       StructField("string_field", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1 :+ StructField("ds", StringType)
@@ -116,6 +111,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -140,6 +136,7 @@ class TableUtilsTest {
       StructField("string_field", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -152,6 +149,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1 :+ StructField("ds", StringType)
@@ -172,6 +170,7 @@ class TableUtilsTest {
       StructField("int_field", IntType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -184,6 +183,7 @@ class TableUtilsTest {
     )
 
     val df2 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -201,13 +201,13 @@ class TableUtilsTest {
   @Test
   def ChunkTest(): Unit = {
     val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
-    val expected = Seq(
-      PartitionRange("2021-01-01", "2021-01-02"),
-      PartitionRange("2021-01-05", "2021-01-05"),
-      PartitionRange("2021-01-07", "2021-01-07"))
+    val expected = Seq(PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
+                       PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
+                       PartitionRange("2021-01-07", "2021-01-07")(tableUtils))
     assertEquals(expected, actual)
   }
 
+  @Test
   def testDropPartitions(): Unit = {
     val tableName = "db.test_drop_partitions_table"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
@@ -218,6 +218,7 @@ class TableUtilsTest {
       StructField("label_ds", StringType)
     )
     val df1 = makeDf(
+      spark,
       StructType(
         tableName,
         columns1
@@ -228,16 +229,140 @@ class TableUtilsTest {
         Row(3L, 8, "2022-10-05", "2022-11-03")
       )
     )
-    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq(Constants.PartitionColumn, Constants.LabelPartitionColumn))
-    tableUtils.dropPartitions(tableName, Seq("2022-10-01", "2022-10-02"), labelPartition = Option("2022-11-02"))
-    val updated = tableUtils.sql(
-      s"""
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+    tableUtils.dropPartitions(tableName,
+                              Seq("2022-10-01", "2022-10-02"),
+                              subPartitionFilters = Map(Constants.LabelPartitionColumn -> "2022-11-02"))
+
+    val updated = tableUtils.sql(s"""
          |SELECT * from ${tableName}
          |""".stripMargin)
     assertEquals(updated.count(), 2)
-    assertTrue(updated.collect().sameElements(List(
-      Row(1L, 2, "2022-10-01", "2022-11-01"),
-      Row(3L, 8, "2022-10-05", "2022-11-03")
-    )))
+    assertTrue(
+      updated
+        .collect()
+        .sameElements(
+          List(
+            Row(1L, 2, "2022-10-01", "2022-11-01"),
+            Row(3L, 8, "2022-10-05", "2022-11-03")
+          )))
+  }
+
+  @Test
+  def testAllPartitionsAndGetLatestLabelMapping(): Unit = {
+    val tableName = "db.test_show_partitions"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("ds", StringType),
+      StructField("label_ds", StringType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+      ),
+      List(
+        Row(1L, 2, "2022-10-01", "2022-11-01"),
+        Row(2L, 2, "2022-10-02", "2022-11-02"),
+        Row(3L, 8, "2022-10-05", "2022-11-05"),
+        Row(1L, 2, "2022-10-01", "2022-11-09"),
+        Row(2L, 2, "2022-10-02", "2022-11-09"),
+        Row(3L, 8, "2022-10-05", "2022-11-09")
+      )
+    )
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+    val par = tableUtils.allPartitions(tableName)
+    assertTrue(par.size == 6)
+    assertEquals(par(0).keys, Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+
+    // filter subset of partitions
+    val filtered = tableUtils.allPartitions(tableName, Seq(Constants.LabelPartitionColumn))
+    assertTrue(filtered.size == 6)
+    assertEquals(filtered(0).keys, Set(Constants.LabelPartitionColumn))
+
+    // verify the latest label version
+    val labels = JoinUtils.getLatestLabelMapping(tableName, tableUtils)
+    assertEquals(labels.get("2022-11-09").get,
+                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils), PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
+  }
+
+  private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("ds", StringType),
+      StructField("label_ds", StringType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+      ),
+      List(
+        Row(1L, "2022-11-01", "2022-11-01"),
+        Row(1L, "2022-11-01", "2022-11-02"),
+        Row(2L, "2022-11-02", "2022-11-02"),
+        Row(1L, "2022-11-01", "2022-11-03"),
+        Row(2L, "2022-11-02", "2022-11-03"),
+        Row(3L, "2022-11-03", "2022-11-03")
+      )
+    )
+    tableUtils.insertPartitions(df1,
+                                tableName,
+                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+
+  }
+
+  @Test
+  def testLastAvailablePartition(): Unit = {
+    val tableName = "db.test_last_available_partition"
+    prepareTestDataWithSubPartitions(tableName)
+    Seq("2022-11-01", "2022-11-02", "2022-11-03").foreach { ds =>
+      val firstDs = tableUtils.lastAvailablePartition(tableName, Map(Constants.LabelPartitionColumn -> ds))
+      assertTrue(firstDs.contains(ds))
+    }
+  }
+
+  @Test
+  def testFirstAvailablePartition(): Unit = {
+    val tableName = "db.test_first_available_partition"
+    prepareTestDataWithSubPartitions(tableName)
+    Seq("2022-11-01", "2022-11-02", "2022-11-03").foreach { ds =>
+      val firstDs = tableUtils.firstAvailablePartition(tableName, Map(Constants.LabelPartitionColumn -> ds))
+      assertTrue(firstDs.contains("2022-11-01"))
+    }
+  }
+
+  @Test
+  def testColumnSizeEstimator(): Unit = {
+    val chrononType = StructType(
+      "table_schema",
+      Array(
+        StructField("key", LongType),
+        StructField("ts", LongType),
+        StructField("int_field", IntType),
+        StructField("array_field", ListType(IntType)),
+        StructField("struct_field",
+                    StructType(name = "",
+                               fields = Array(
+                                 StructField("double_field", DoubleType),
+                                 StructField("array_field", ListType(StringType))
+                               )))
+      )
+    )
+    val sparkType = SparkConversions.fromChrononType(chrononType)
+    assertEquals(
+      104L,
+      tableUtils.columnSizeEstimator(sparkType)
+    )
   }
 }

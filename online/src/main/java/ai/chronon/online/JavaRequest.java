@@ -43,7 +43,7 @@ public class JavaRequest {
         this.name,
         scalaKeys,
         Option.apply(this.atMillis),
-        Option.empty());
+        Option.apply(null));
   }
 }
 

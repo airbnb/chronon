@@ -1,306 +1,416 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
-import ai.chronon.online.Metrics
+import ai.chronon.api._
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
-import com.google.gson.Gson
+import ai.chronon.spark.JoinUtils._
+import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.util.sketch.BloomFilter
+import org.apache.spark.sql.functions._
 
-import java.time.Instant
-import scala.collection.JavaConverters._
-import scala.collection.convert.ImplicitConversions._
-import scala.collection.parallel.ParMap
-import scala.util.Try
+import scala.collection.Seq
+import scala.collection.mutable
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, sparkUtils: Option[SparkUtils] = None) {
-  assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
-  private val outputTable = joinConf.metaData.outputTable
+/*
+ * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
+ *         during the bootstrap join
+ * rowCount: number of records with this particular combination of hashes. for logging purpose only
+ * isCovering: whether this combination of hashes fully covers the required fields of a join_part. the join_part
+ *             reference itself is omitted here. but essentially each CoveringSet is pertinent to a specific join_part
+ */
+private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
+
+class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean = true, sparkUtils: Option[SparkUtils] = None)
+    extends BaseJoin(joinConf, endPartition, tableUtils, useTwoStack, skipFirstHole, sparkUtils: Option[SparkUtils]) {
+
+  private val bootstrapTable = joinConf.metaData.bootstrapTable
   private val joinsAtATime = 8
 
-  // Get table properties from config
-  private val confTableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
-    .getOrElse(Map.empty[String, String])
+  private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
+    structType.foldLeft(df) {
+      case (df, field) =>
+        if (df.columns.contains(field.name)) {
+          df
+        } else {
+          df.withColumn(field.name, lit(null).cast(field.dataType))
+        }
+    }
+  }
 
-  private val gson = new Gson()
-  // Combine tableProperties set on conf with encoded Join
-  private val tableProps = confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
+  private def toSparkSchema(fields: Seq[StructField]): sql.types.StructType =
+    SparkConversions.fromChrononSchema(StructType("", fields.toArray))
 
-  private def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
-    val partLeftKeys = joinPart.rightToLeft.values.toArray
+  /*
+   * For all external fields that are not already populated during the bootstrap step, fill in NULL.
+   * This is so that if any derivations depend on the these external fields, they will still pass and not complain
+   * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
+   */
+  private def padExternalFields(bootstrapDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
 
-    // besides the ones specified in the group-by
-    val additionalKeys: Seq[String] = {
-      if (joinConf.left.dataModel == Entities) {
-        Seq(Constants.PartitionColumn)
-      } else if (joinPart.groupBy.inferredAccuracy == Accuracy.TEMPORAL) {
-        Seq(Constants.TimeColumn, Constants.PartitionColumn)
-      } else { // left-events + snapshot => join-key = ds_of_left_ts
-        Seq(Constants.TimePartitionColumn)
+    val nonContextualFields = toSparkSchema(
+      bootstrapInfo.externalParts
+        .filter(!_.externalPart.isContextual)
+        .flatMap(part => part.keySchema ++ part.valueSchema))
+    val contextualFields = toSparkSchema(
+      bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema))
+
+    def withNonContextualFields(df: DataFrame): DataFrame = padFields(df, nonContextualFields)
+
+    // Ensure keys and values for contextual fields are consistent even if only one of them is explicitly bootstrapped
+    def withContextualFields(df: DataFrame): DataFrame =
+      contextualFields.foldLeft(df) {
+        case (df, field) => {
+          var newDf = df
+          if (!newDf.columns.contains(field.name)) {
+            newDf = newDf.withColumn(field.name, lit(null).cast(field.dataType))
+          }
+          val prefixedName = s"${Constants.ContextualPrefix}_${field.name}"
+          if (!newDf.columns.contains(prefixedName)) {
+            newDf = newDf.withColumn(prefixedName, lit(null).cast(field.dataType))
+          }
+          newDf
+            .withColumn(field.name, coalesce(col(field.name), col(prefixedName)))
+            .withColumn(prefixedName, coalesce(col(field.name), col(prefixedName)))
+        }
       }
+
+    withContextualFields(withNonContextualFields(bootstrapDf))
+  }
+
+  /*
+   * For all external fields that are not already populated during the group by backfill step, fill in NULL.
+   * This is so that if any derivations depend on the these group by fields, they will still pass and not complain
+   * about missing columns. This is necessary when we directly bootstrap a derived column and skip the base columns.
+   */
+  private def padGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
+    val groupByFields = toSparkSchema(bootstrapInfo.joinParts.flatMap(_.valueSchema))
+    padFields(baseJoinDf, groupByFields)
+  }
+
+  private def findBootstrapSetCoverings(bootstrapDf: DataFrame,
+                                        bootstrapInfo: BootstrapInfo,
+                                        leftRange: PartitionRange): Seq[(JoinPartMetadata, Seq[CoveringSet])] = {
+
+    val distinctBootstrapSets: Seq[(Seq[String], Long)] =
+      if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+        Seq()
+      } else {
+        val collected = bootstrapDf
+          .groupBy(Constants.MatchedHashes)
+          .agg(count(lit(1)).as("row_count"))
+          .collect()
+
+        collected.map { row =>
+          val hashes = if (row.isNullAt(0)) {
+            Seq()
+          } else {
+            row.getAs[mutable.WrappedArray[String]](0).toSeq
+          }
+          (hashes, row.getAs[Long](1))
+        }.toSeq
+      }
+
+    val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts.map {
+      joinPartMetadata =>
+        val coveringSets = distinctBootstrapSets.map {
+          case (hashes, rowCount) =>
+            val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+            val isCovering = joinPartMetadata.derivationDependencies
+              .map {
+                case (derivedField, baseFields) =>
+                  schema.contains(derivedField) || baseFields.forall(schema.contains)
+              }
+              .forall(identity)
+
+            CoveringSet(hashes, rowCount, isCovering)
+        }
+        (joinPartMetadata, coveringSets)
     }
-
-    // apply key-renaming to key columns
-    val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
-      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
-    }
-
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     Constants.PartitionColumn,
-                                                                     Constants.TimePartitionColumn)
-    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
-
-    // compute join keys, besides the groupBy keys -  like ds, ts etc.,
-    val keys = partLeftKeys ++ additionalKeys
-
-    val partName = joinPart.groupBy.metaData.name
 
     println(
-      s"""Join keys for $partName: ${keys.mkString(", ")}
-         |Left Schema:
-         |${leftDf.schema.pretty}
-         |
-         |Right Schema:
-         |${prefixedRight.schema.pretty}
-         |
-         |""".stripMargin)
-
-    import org.apache.spark.sql.functions.{col, to_date, date_add, date_format}
-    val joinableRight = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-      // increment one day to align with left side ts_ds
-      // because one day was decremented from the partition range for snapshot accuracy
-      prefixedRight
-        .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(to_date(col(Constants.PartitionColumn), Constants.Partition.format), 1), Constants.Partition.format))
-        .drop(Constants.PartitionColumn)
-    } else {
-      prefixedRight
+      s"\n======= CoveringSet for JoinPart ${joinConf.metaData.name} for PartitionRange(${leftRange.start}, ${leftRange.end}) =======\n")
+    coveringSetsPerJoinPart.foreach {
+      case (joinPartMetadata, coveringSets) =>
+        println(s"Bootstrap sets for join part ${joinPartMetadata.joinPart.groupBy.metaData.name}")
+        coveringSets.foreach { coveringSet =>
+          println(
+            s"CoveringSet(hash=${coveringSet.hashes.prettyInline}, rowCount=${coveringSet.rowCount}, isCovering=${coveringSet.isCovering})")
+        }
+        println()
     }
 
-    leftDf.validateJoinKeys(joinableRight, keys)
-    leftDf.join(joinableRight, keys, "left")
+    coveringSetsPerJoinPart
   }
 
-  private def computeJoinPart(leftDf: DataFrame,
-                              joinPart: JoinPart,
-                              unfilledRange: PartitionRange,
-                              leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
-    val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_))
-    val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-    println(s"""
-         |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metaData.name}, 
-         |  left type : ${joinConf.left.dataModel}, 
-         |  right type: ${joinPart.groupBy.dataModel}, 
-         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
-         |  part unfilled range: $unfilledRange,
-         |  bloom sizes: $bloomSizes
-         |  groupBy: ${joinPart.groupBy.toString}
-         |""".stripMargin)
-
-    // all lazy vals - so evaluated only when needed by each case.
-    lazy val partitionRangeGroupBy =
-      GroupBy.from(joinPart.groupBy, unfilledRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
-
-    lazy val unfilledTimeRange = {
-      val timeRange = leftDf.timeRange
-      println(s"left unfilled time range: $timeRange")
-      timeRange
-    }
-
-    def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
-
-    val leftSkewFilter = joinConf.skewFilter(Some(joinPart.rightToLeft.values.toSeq))
-    // this is the second time we apply skew filter - but this filters only on the keys
-    // relevant for this join part.
-    lazy val skewFilteredLeft = leftSkewFilter
-      .map { sf =>
-        val filtered = leftDf.filter(sf)
-        println(s"""Skew filtering left-df for
-           |GroupBy: ${joinPart.groupBy.metaData.name}
-           |filterClause: $sf
-           |""".stripMargin)
-        filtered
-      }
-      .getOrElse(leftDf)
-
-    lazy val renamedLeftDf = Option(joinPart.keyMapping)
-      .map(_.asScala)
-      .getOrElse(Map.empty)
-      .foldLeft(skewFilteredLeft) {
-        case (left, (leftKey, rightKey)) =>
-          val result = if (left.schema.fieldNames.contains(rightKey)) left.drop(rightKey) else left
-          result.withColumnRenamed(leftKey, rightKey)
-      }
-
-    lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
-    (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
-      case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
-      case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
-      case (Events, Events, Accuracy.SNAPSHOT) =>
-        genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
-      case (Events, Events, Accuracy.TEMPORAL) =>
-        val groupBy = genGroupBy(unfilledTimeRange.toPartitionRange)
-        if (useTwoStack) groupBy.temporalEventsTwoStack(renamedLeftDf, Some(unfilledTimeRange), sparkUtils = sparkUtils)
-        else groupBy.temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
-      case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
-
-      case (Events, Entities, Accuracy.TEMPORAL) => {
-        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
-        genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
-      }
-    }
-  }
-
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange): DataFrame = {
+  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
       leftDf
     }
-    val leftDfCount = leftTaggedDf.count()
-    val leftBlooms = joinConf.leftKeyCols.par.map { key =>
-      key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
-    }.toMap
 
-    // compute joinParts in parallel
-    val rightDfs = joinConf.joinParts.asScala.par.map { joinPart =>
-      val partMetrics = Metrics.Context(metrics, joinPart)
-      if (joinPart.groupBy.aggregations == null) {
-        // no need to generate join part cache if there are no aggregations
-        computeJoinPart(leftTaggedDf, joinPart, leftRange, leftBlooms)
-      } else {
-        // compute only the missing piece
-        val joinPartTableName = joinConf.partOutputTable(joinPart)
-        val rightUnfilledRange = tableUtils.unfilledRange(joinPartTableName, leftRange, joinConf, Some(joinConf.left.table))
-        println(s"Right unfilled range for $joinPartTableName is $rightUnfilledRange with leftRange of $leftRange")
+    // compute bootstrap table - a left outer join between left source and various bootstrap source table
+    // this becomes the "new" left for the following GB backfills
+    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
 
-        if (rightUnfilledRange.isDefined) {
-          try {
-            val start = System.currentTimeMillis()
-            println(s"Writing to join part table: $joinPartTableName")
-            val rightDf = computeJoinPart(leftTaggedDf, joinPart, rightUnfilledRange.get, leftBlooms)
-            // cache the join-part output into table partitions
-            rightDf.saveWithTableUtils(tableUtils, joinPartTableName, tableProps)
-            val elapsedMins = (System.currentTimeMillis() - start) / 60000
-            partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-            partMetrics.gauge(Metrics.Name.PartitionCount, rightUnfilledRange.get.partitions.length)
-            println(s"Wrote to join part table: $joinPartTableName in $elapsedMins minutes")
-          } catch {
-            case e: Exception =>
-              println(
-                s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
-              throw e
-          }
-        }
-        val scanRange =
-          if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-            // the events of a ds will join with
-            leftDf.timeRange.toPartitionRange.shift(-1)
+    // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
+    // info to filter records that need backfills vs can be waived from backfills
+    val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
+
+    // compute join parts (GB) backfills
+    // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
+    // we do this by utilizing the per-record metadata computed during the bootstrap process.
+    // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
+    // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
+    val rightResults = bootstrapCoveringSets
+      .flatMap {
+        case (partMetadata, coveringSets) =>
+          val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
+          val joinPart = partMetadata.joinPart
+          computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
+      }
+
+    // combine bootstrap table and join part tables
+    // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
+    // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
+    val joinedDf = rightResults.zipWithIndex
+      .foldLeft(bootstrapDf) {
+        case (partialDf, ((rightPart, rightDf), i)) =>
+          val next = joinWithLeft(partialDf, rightDf, rightPart)
+          if (((i + 1) % joinsAtATime) == 0) {
+            tableUtils.addJoinBreak(next)
           } else {
-            leftRange
+            next
           }
-        tableUtils.sql(scanRange.genScanQuery(query = null, joinPartTableName))
       }
+      // drop all processing metadata columns
+      .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
+
+    val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
+    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
+    val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo, leftDf.columns),
+                                          bootstrapInfo,
+                                          leftDf.columns)
+    finalDf.explain()
+    finalDf
+  }
+
+  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
+    if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
+      return baseDf
     }
 
-    val joined = rightDfs.zip(joinConf.joinParts.asScala).zipWithIndex.foldLeft(leftTaggedDf) {
-      case (partialDf, ((rightDf, joinPart), i)) => {
-        val next = joinWithLeft(partialDf, rightDf, joinPart)
-        if (((i + 1) % joinsAtATime) == 0) {
-          tableUtils.addJoinBreak(next)
+    val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
+    val projectionsMap = projections.toMap
+    val baseOutputColumns = baseDf.columns.toSet
+
+    val finalOutputColumns =
+      /*
+       * Loop through all columns in the base join output:
+       * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
+       *    derived columns again - derivation is a projection from all value columns to desired derived columns
+       * 2.  (see case 2 below) If it is matching one of the projected output columns, then there are 2 sub-cases
+       *     a. matching with a left column, then we handle the coalesce here to make sure left columns show on top
+       *     b. a bootstrapped derivation case, the skip it here and it will be handled later as
+       *        loop through derivations to perform coalescing
+       * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
+       *    arbitrary columns selected from left.
+       */
+      baseDf.columns.flatMap { c =>
+        if (bootstrapInfo.baseValueNames.contains(c)) {
+          None
+        } else if (projectionsMap.contains(c)) {
+          if (leftColumns.contains(c)) {
+            Some(coalesce(col(c), expr(projectionsMap(c))).as(c))
+          } else {
+            None
+          }
         } else {
-          next
+          Some(col(c))
+        }
+      } ++
+        /*
+         * Loop through all clauses in derivation projections:
+         * 1. (see case 2 above) If it is matching one of the projected output columns, then there are 2 sub-cases
+         *     a. matching with a left column, then we skip since it is handled above
+         *     b. a bootstrapped derivation case (see case 2 below), then we do the coalescing to achieve the bootstrap
+         *        behavior.
+         * 2. Else, we do the standard projection.
+         */
+        projections
+          .flatMap {
+            case (name, expression) =>
+              if (baseOutputColumns.contains(name)) {
+                if (leftColumns.contains(name)) {
+                  None
+                } else {
+                  Some(coalesce(col(name), expr(expression)).as(name))
+                }
+              } else {
+                Some(expr(expression).as(name))
+              }
+          }
+
+    baseDf.select(finalOutputColumns: _*)
+  }
+
+  /*
+   * Remove extra contextual keys unless it is a result of derivations or it is a column from left
+   */
+  def cleanUpContextualFields(finalDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
+
+    val contextualNames =
+      bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema).map(_.name)
+    val projections = if (joinConf.isSetDerivations) {
+      joinConf.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
+    } else {
+      Seq()
+    }
+    contextualNames.foldLeft(finalDf) {
+      case (df, name) => {
+        if (leftColumns.contains(name) || projections.contains(name)) {
+          df
+        } else {
+          df.drop(name)
         }
       }
     }
-
-    joined.explain()
-    joined.drop(Constants.TimePartitionColumn)
   }
 
-  def tablesToRecompute(): Option[Seq[String]] = {
-    for (
-      props <- tableUtils.getTableProperties(outputTable);
-      oldSemanticJson <- props.get(Constants.SemanticHashKey);
-      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
-    ) yield {
-      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash");
-      joinConf.tablesToDrop(oldSemanticHash)
-    }
-  }
+  /*
+   * The purpose of Bootstrap is to leverage input tables which contain pre-computed values, such that we can
+   * skip the computation for these record during the join-part computation step.
+   *
+   * The main goal here to join together the various bootstrap source to the left table, and in the process maintain
+   * relevant metadata such that we can easily tell which record needs computation or not in the following step.
+   */
+  private def computeBootstrapTable(leftDf: DataFrame,
+                                    range: PartitionRange,
+                                    bootstrapInfo: BootstrapInfo): DataFrame = {
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+    // For consistency comparison join, we also need to materialize the left table as bootstrap table in order to
+    // make random OOC sampling deterministic.
+    val isConsistencyJoin =
+      joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
 
-    assert(Option(joinConf.metaData.team).nonEmpty,
-           s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
-
-    joinConf.joinParts.asScala.foreach { jp =>
-      assert(Option(jp.groupBy.metaData.team).nonEmpty,
-             s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
-    }
-
-    // First run command to archive tables that have changed semantically since the last run
-    val jobRunTimestamp = Instant.now()
-    tablesToRecompute().foreach(_.foreach(tableName => {
-      val archiveTry = Try(tableUtils.archiveTableIfExists(tableName, jobRunTimestamp))
-      if (archiveTry.isFailure) {
-        println(
-          s"""Fail to archive table ${tableName}
-             |${archiveTry.failed.get.getMessage}
-             |Proceed to dropping the table instead.
-             |""".stripMargin)
-        tableUtils.dropTableIfExists(tableName)
-      }
-    }))
-
-    joinConf.setups.foreach(tableUtils.sql)
-    val leftStart = Option(joinConf.left.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table).get)
-    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
-    val rangeToFill = PartitionRange(leftStart, leftEnd)
-    println(s"Join range to fill $rangeToFill")
-    def finalResult = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    val earliestHoleOpt = tableUtils.dropPartitionsAfterHole(joinConf.left.table, outputTable, rangeToFill, joinConf=Some(joinConf))
-    if (earliestHoleOpt.forall(_ > rangeToFill.end)) {
-      println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
-      return finalResult
-    }
-    val leftUnfilledRange = PartitionRange(earliestHoleOpt.getOrElse(rangeToFill.start), leftEnd)
-    if (leftUnfilledRange.start != null && leftUnfilledRange.end != null) {
-      metrics.gauge(Metrics.Name.PartitionCount, leftUnfilledRange.partitions.length)
-    }
-    joinConf.joinParts.asScala.foreach { joinPart =>
-      val partTable = joinConf.partOutputTable(joinPart)
-      println(s"Dropping left unfilled range $leftUnfilledRange from join part table $partTable")
-      tableUtils.dropPartitionsAfterHole(joinConf.left.table, partTable, rangeToFill, joinConf=Some(joinConf))
+    if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
+      return padExternalFields(leftDf, bootstrapInfo)
     }
 
-    stepDays.foreach(metrics.gauge("step_days", _))
-    val stepRanges = stepDays.map(leftUnfilledRange.steps).getOrElse(Seq(leftUnfilledRange))
-    println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
-    stepRanges.zipWithIndex.foreach {
-      case (range, index) =>
-        val startMillis = System.currentTimeMillis()
-        val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing join for range: $range  $progress")
-        JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
-          computeRange(leftDfInRange, range).saveWithTableUtils(tableUtils, outputTable, tableProps)
-          val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
-          metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-          metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          println(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
+    def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
+      val reservedColumnsContained = columns.filter(df.schema.fieldNames.contains)
+      assert(
+        reservedColumnsContained.isEmpty,
+        s"Table $table contains columns ${reservedColumnsContained.prettyInline} which are reserved by Chronon."
+      )
+    }
+
+    val startMillis = System.currentTimeMillis()
+
+    // verify left table does not have reserved columns
+    validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
+
+    tableUtils
+      .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole)
+      .getOrElse(Seq())
+      .foreach(unfilledRange => {
+        val parts = Option(joinConf.bootstrapParts)
+          .map(_.toScala)
+          .getOrElse(Seq())
+
+        val initDf = leftDf
+          .prunePartition(unfilledRange)
+          // initialize an empty matched_hashes column for the purpose of later processing
+          .withColumn(Constants.MatchedHashes, typedLit[Array[String]](null))
+
+        val joinedDf = parts.foldLeft(initDf) {
+          case (partialDf, part) => {
+
+            println(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
+
+            val bootstrapRange = if (part.isSetQuery) {
+              unfilledRange.intersect(PartitionRange(part.startPartition, part.endPartition)(tableUtils))
+            } else {
+              unfilledRange
+            }
+            if (!bootstrapRange.valid) {
+              println(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
+              partialDf
+            } else {
+              var bootstrapDf = tableUtils.sql(
+                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
+              )
+
+              // attach semantic_hash for either log or regular table bootstrap
+              validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
+              if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
+                bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, col(Constants.SchemaHash))
+              } else {
+                bootstrapDf = bootstrapDf.withColumn(Constants.BootstrapHash, lit(part.semanticHash))
+              }
+
+              // include only necessary columns. in particular,
+              // this excludes columns that are NOT part of Join's output (either from GB or external source)
+              val includedColumns = bootstrapDf.columns
+                .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf, tableUtils.partitionColumn)
+                        ++ Seq(Constants.BootstrapHash,
+                        tableUtils.partitionColumn))
+                .sorted
+
+              bootstrapDf = bootstrapDf
+                .select(includedColumns.map(col): _*)
+                // TODO: allow customization of deduplication logic
+                .dropDuplicates(part.keys(joinConf, tableUtils.partitionColumn).toArray)
+
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf, tableUtils.partitionColumn))
+              // as part of the left outer join process, we update and maintain matched_hashes for each record
+              // that summarizes whether there is a join-match for each bootstrap source.
+              // later on we use this information to decide whether we still need to re-run the backfill logic
+                .withColumn(Constants.MatchedHashes,
+                            set_add(col(Constants.MatchedHashes), col(Constants.BootstrapHash)))
+                .drop(Constants.BootstrapHash)
+            }
+          }
         }
+
+        // include all external fields if not already bootstrapped
+        val enrichedDf = padExternalFields(joinedDf, bootstrapInfo)
+
+        // set autoExpand = true since log table could be a bootstrap part
+        enrichedDf.saveWithTableUtils(tableUtils, bootstrapTable, tableProps, autoExpand = true)
+      })
+
+    val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
+    println(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
+
+    tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
+  }
+
+  /*
+   * We leverage metadata information created from the bootstrap step to tell which record was already joined to a
+   * bootstrap source, and therefore had certain columns pre-populated. for these records and these columns, we do not
+   * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
+   * full schema information.
+   */
+  private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSet: Seq[CoveringSet]): DataFrame = {
+
+    if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+      // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
+      return bootstrapDf
     }
-    println(s"Wrote to table $outputTable, into partitions: $leftUnfilledRange")
-    finalResult
+
+    // Unfilled records are those that do NOT have a covering set, and thus require backfill
+    bootstrapDf.filter { row =>
+      val matchedHashes = if (row.isNullAt(row.fieldIndex(Constants.MatchedHashes))) {
+        Seq()
+      } else {
+        row.getAs[mutable.WrappedArray[String]](Constants.MatchedHashes).toSeq
+      }
+      val isCovering = coveringSet.map(_.hashes).contains(matchedHashes)
+      !isCovering
+    }
   }
 }

@@ -2,11 +2,14 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.chronon.api.{Constants, LongType, StringType}
-import ai.chronon.spark.Conversions
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+import scala.collection.Seq
 
 // This class generates dataframes given certain dataTypes, cardinalities and rowCounts of data
 // Nulls are injected for all types
@@ -14,18 +17,20 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 object DataFrameGen {
   //  The main api: that generates dataframes given certain properties of data
   def gen(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
-    val RowsWithSchema(rows, schema) = CStream.gen(columns, count)
+    val tableUtils = TableUtils(spark)
+    val RowsWithSchema(rows, schema) = CStream.gen(columns, count, tableUtils.partitionColumn, tableUtils.partitionSpec)
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
-    val sparkSchema = Conversions.fromChrononSchema(schema)
+    val sparkSchema = SparkConversions.fromChrononSchema(schema)
     spark.createDataFrame(data, sparkSchema)
   }
 
   //  The main api: that generates dataframes given certain properties of data
   def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
-    generated.withColumn(Constants.PartitionColumn,
-                         from_unixtime(generated.col(Constants.TimeColumn) / 1000, Constants.Partition.format))
+    generated.withColumn(
+      TableUtils(spark).partitionColumn,
+      from_unixtime(generated.col(Constants.TimeColumn) / 1000, TableUtils(spark).partitionSpec.format))
   }
 
   def unpartitionedEvents(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
@@ -35,7 +40,7 @@ object DataFrameGen {
 
   //  Generates Entity data
   def entities(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
-    gen(spark, columns :+ Column(Constants.PartitionColumn, StringType, partitions), count)
+    gen(spark, columns :+ Column(TableUtils(spark).partitionColumn, StringType, partitions), count)
   }
 
   def unpartitionedEntities(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
@@ -59,6 +64,7 @@ object DataFrameGen {
                 mutationProbability: Double,
                 mutationColumnIdx: Int,
                 keyColumnName: String): (DataFrame, DataFrame) = {
+    val tableUtils = TableUtils(spark)
     val mutationColumn = columns(mutationColumnIdx)
     // Randomly generated some entity data, store them as inserts w/ mutation_ts = ts and partition = dsOf[ts].
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
@@ -67,8 +73,8 @@ object DataFrameGen {
     val withInserts = generated
       .withColumn(Constants.ReversalColumn, lit(false))
       .withColumn(Constants.MutationTimeColumn, col(Constants.TimeColumn))
-      .withColumn(Constants.PartitionColumn,
-                  from_unixtime((generated.col(Constants.TimeColumn) / 1000), Constants.Partition.format))
+      .withColumn(tableUtils.partitionColumn,
+                  from_unixtime((generated.col(Constants.TimeColumn) / 1000), tableUtils.partitionSpec.format))
       .drop()
 
     // Sample some of the inserted data and add a mutation time.
@@ -78,8 +84,9 @@ object DataFrameGen {
       .withColumn(Constants.ReversalColumn, lit(true))
       .withColumn(
         Constants.MutationTimeColumn,
-        randomLerp(col(Constants.MutationTimeColumn),
-                   unix_timestamp(col(Constants.PartitionColumn), Constants.Partition.format) * 1000 + 86400 * 1000)
+        randomLerp(
+          col(Constants.MutationTimeColumn),
+          unix_timestamp(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format) * 1000 + 86400 * 1000)
       )
     val realizedData = spark.sparkContext.parallelize(mutatedFromDf.rdd.collect())
     val realizedFrom = spark.createDataFrame(realizedData, mutatedFromDf.schema)
@@ -104,15 +111,16 @@ object DataFrameGen {
       .as("sd")
       .join(
         mutationsDf.filter(s"${Constants.ReversalColumn} = false").as("mt"),
-        col(s"${Constants.PartitionColumn}") <= col(s"${Constants.PartitionColumn}_s")
+        col(s"${tableUtils.partitionColumn}") <= col(s"${tableUtils.partitionColumn}_s")
       )
-      .select("mt.*", s"sd.${Constants.PartitionColumn}_s")
-      .drop(Constants.PartitionColumn, Constants.ReversalColumn)
-      .withColumnRenamed(s"${Constants.PartitionColumn}_s", Constants.PartitionColumn)
+      .select("mt.*", s"sd.${tableUtils.partitionColumn}_s")
+      .drop(tableUtils.partitionColumn, Constants.ReversalColumn)
+      .withColumnRenamed(s"${tableUtils.partitionColumn}_s", tableUtils.partitionColumn)
       .dropDuplicates()
 
     // Given expanded events aggregate data such that the snapshot data is consistent with the mutations from the day.
-    val aggregator = new SnapshotAggregator(expandedEventsDf.schema, mutationColumn.name, keyColumnName)
+    val aggregator =
+      new SnapshotAggregator(expandedEventsDf.schema, mutationColumn.name, keyColumnName, tableUtils.partitionColumn)
     val snapshotRdd = expandedEventsDf.rdd
       .keyBy(aggregator.aggregatorKey(_))
       .aggregateByKey(aggregator.init)(aggregator.update, aggregator.merge)

@@ -4,12 +4,13 @@ import ai.chronon.api
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
-import org.apache.spark.sql.functions.{col, lit, rand, round}
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import scala.collection.mutable
+import scala.collection.{Seq, mutable}
 import scala.util.{Success, Try}
 
 trait BaseTableUtils {
@@ -19,7 +20,11 @@ trait BaseTableUtils {
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
-
+  val partitionColumn: String =
+    sparkSession.conf.get("spark.chronon.partition.column", "ds")
+  private val partitionFormat: String =
+    sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
+  val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -40,8 +45,37 @@ trait BaseTableUtils {
     dataFrame
   }
 
-  def tableExists(tableName: String): Boolean = {
-    sparkSession.catalog.tableExists(tableName)
+  def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
+
+  def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
+
+  def isPartitioned(tableName: String): Boolean = {
+    // TODO: use proper way to detect if a table is partitioned or not
+    val schema = getSchemaFromTable(tableName)
+    schema.fieldNames.contains(partitionColumn)
+  }
+
+  // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
+  def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
+    if (!tableExists(tableName)) return Seq.empty[Map[String, String]]
+    if (isIcebergTable(tableName)) {
+      throw new NotImplementedError(
+        "Multi-partitions retrieval is not supported on Iceberg tables yet." +
+          "For single partition retrieval, please use 'partition' method.")
+    }
+    sparkSession.sqlContext
+      .sql(s"SHOW PARTITIONS $tableName")
+      .collect()
+      .map { row =>
+        {
+          val partitionMap = parsePartition(row.getString(0))
+          if (partitionColumnsFilter.isEmpty) {
+            partitionMap
+          } else {
+            partitionMap.filterKeys(key => partitionColumnsFilter.contains(key)).toMap
+          }
+        }
+      }
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
@@ -63,7 +97,7 @@ trait BaseTableUtils {
               case (k, v) => partitionMap.get(k).contains(v)
             }
           ) {
-            partitionMap.get(Constants.PartitionColumn)
+            partitionMap.get(partitionColumn)
           } else {
             None
           }
@@ -118,23 +152,25 @@ trait BaseTableUtils {
         case f: Filter => f.condition.references.map(attr => attr.name)
       }
       .flatten
+      .map(_.replace("`", ""))
       .distinct
+      .sorted
   }
 
   def getSchemaFromTable(tableName: String): StructType = {
-    sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
+    sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
   def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].max)
+    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
 
   def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption(Ordering[String].min)
+    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,
-                       partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
+                       partitionColumns: Seq[String] = Seq(partitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
                        autoExpand: Boolean = false): Unit = {
@@ -165,7 +201,7 @@ trait BaseTableUtils {
       }
     }
 
-    val finalizedDf = if (autoExpand) {
+    val finalizedDf = if (tableExists(tableName) && autoExpand) {
       // reselect the columns so that an deprecated columns will be selected as NULL before write
       val updatedSchema = getSchemaFromTable(tableName)
       val finalColumns = updatedSchema.fieldNames.map(fieldName => {
@@ -209,23 +245,71 @@ trait BaseTableUtils {
     repartitionAndWrite(df, tableName, saveMode, partition = false, tableProperties)
   }
 
+  def columnSizeEstimator(dataType: DataType): Long = {
+    dataType match {
+      // TODO: improve upon this very basic estimate approach
+      case ArrayType(elementType, _) => 50 * columnSizeEstimator(elementType)
+      case StructType(fields) => fields.map(_.dataType).map(columnSizeEstimator).sum
+      case MapType(keyType, valueType, _) => 10 * (columnSizeEstimator(keyType) + columnSizeEstimator(valueType))
+      case _ => 1
+    }
+  }
+
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true,
                                   tableProperties: Map[String, String] = null): Unit = {
-    val rowCount = df.count()
+    // get row count and table partition count statistics
+    val (rowCount: Long, tablePartitionCount: Int) =
+      if (df.schema.fieldNames.contains(partitionColumn)) {
+        val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
+        (result.getAs[Long](0), result.getAs[Long](1).toInt)
+      } else {
+        (df.count(), 1)
+      }
+
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
-      // at-least a million rows per partition - or there will be too many files.
-      val rddPartitionCount = math.min(800, math.ceil(rowCount / 1000000.0).toInt)
-      println(s"repartitioning data for table $tableName into $rddPartitionCount rdd partitions")
+      val columnSizeEstimate = columnSizeEstimator(df.schema)
 
+      // check if spark is running in local mode or cluster mode
+      val isLocal = sparkSession.conf.get("spark.master").startsWith("local")
+
+      // roughly 1 partition count per 1m rows x 100 columns
+      val rowCountPerPartition = df.sparkSession.conf
+        .getOption(SparkConstants.ChrononRowCountPerPartition)
+        .map(_.toDouble)
+        .flatMap(value => if (value > 0) Some(value) else None)
+        .getOrElse(1e8)
+
+      val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
+      val dailyFileCountUpperBound = 2000
+      val dailyFileCountLowerBound = if (isLocal) 1 else 10
+      val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
+      val dailyFileCountBounded =
+        math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
+
+      val outputParallelism = df.sparkSession.conf
+        .getOption(SparkConstants.ChrononOutputParallelismOverride)
+        .map(_.toInt)
+        .flatMap(value => if (value > 0) Some(value) else None)
+
+      if (outputParallelism.isDefined) {
+        println(s"Using custom outputParallelism ${outputParallelism.get}")
+      }
+      val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
+
+      // finalized shuffle parallelism
+      val shuffleParallelism = dailyFileCount * tablePartitionCount
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * 100))
+      val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
+
+      println(
+        s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
       val repartitionCols =
-        if (df.schema.fieldNames.contains(Constants.PartitionColumn)) {
-          Seq(Constants.PartitionColumn, saltCol)
+        if (df.schema.fieldNames.contains(partitionColumn)) {
+          Seq(partitionColumn, saltCol)
         } else { Seq(saltCol) }
       val partitionedDf = saltedDf
-        .repartition(rddPartitionCount, repartitionCols.map(saltedDf.col): _*)
+        .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
         .drop(saltCol)
       writeDf(partitionedDf, tableName, saveMode, partition, tableProperties) // side-effecting- this actually writes the table
       println(s"Finished writing to $tableName")
@@ -284,10 +368,10 @@ trait BaseTableUtils {
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
     sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
-      if (ranges.isEmpty || Constants.Partition.after(ranges.last.end) != nextDate) {
-        ranges :+ PartitionRange(nextDate, nextDate)
+      if (ranges.isEmpty || partitionSpec.after(ranges.last.end) != nextDate) {
+        ranges :+ PartitionRange(nextDate, nextDate)(this)
       } else {
-        val newRange = PartitionRange(ranges.last.start, nextDate)
+        val newRange = PartitionRange(ranges.last.start, nextDate)(this)
         ranges.dropRight(1) :+ newRange
       }
     }
@@ -310,81 +394,54 @@ trait BaseTableUtils {
       .map(_.getString(0))
       .contains(Constants.PartitionColumn)
   }
-
-  @deprecated
-  def unfilledRange(outputTable: String,
-                    partitionRange: PartitionRange,
-                    joinConf: api.Join,
-                    inputTable: Option[String] = None,
-                    inputSubPartitionFilters: Map[String, String] = Map.empty): Option[PartitionRange] = {
-    if (isUnpartitionedTable(joinConf.left)) {
+  def unfilledRanges(outputTable: String,
+                     outputPartitionRange: PartitionRange,
+                     inputTables: Option[Seq[String]] = None,
+                     inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
+                     inputToOutputShift: Int = 0,
+                     skipFirstHole: Boolean = true,
+                     joinConf: Option[api.Join] = None): Option[Seq[PartitionRange]] = {
+    if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
       // If the left is unpartitioned, we fall back to just using the passed-in range.
-      return Some(partitionRange)
+      return Some(Seq(outputPartitionRange))
     }
-    // TODO: delete this after feature stiching PR
-    val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTable.flatMap(firstAvailablePartition(_, inputSubPartitionFilters))
-      assert(
-        inputStart.isDefined,
-        s"""Either partition range needs to have a valid start or
-           |an input table with valid data needs to be present
-           |inputTable: ${inputTable}, partitionRange: ${partitionRange}
-           |""".stripMargin
-      )
-      partitionRange.copy(start = inputStart.get)
-    } else {
-      partitionRange
-    }
-    val fillablePartitions = validPartitionRange.partitions.toSet
-    val outputMissing = fillablePartitions -- partitions(outputTable)
-    val inputMissing = inputTable.toSeq.flatMap(fillablePartitions -- partitions(_, inputSubPartitionFilters))
-    val missingPartitions = outputMissing -- inputMissing
-    println(s"""
-               |Unfilled range computation:
-               |   Output table: $outputTable
-               |   Missing output partitions: $outputMissing
-               |   Missing input partitions: $inputMissing
-               |   Unfilled Partitions: $missingPartitions
-               |""".stripMargin)
-    if (missingPartitions.isEmpty) return None
-    Some(PartitionRange(missingPartitions.min, missingPartitions.max))
-  }
-
-  def unfilledRanges(
-      outputTable: String,
-      partitionRange: PartitionRange,
-      inputTables: Option[Seq[String]] = None,
-      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty): Option[Seq[PartitionRange]] = {
-    val validPartitionRange = if (partitionRange.start == null) { // determine partition range automatically
+    val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(_.map(table =>
         firstAvailablePartition(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
            |an input table with valid data needs to be present
-           |inputTables: ${inputTables}, partitionRange: ${partitionRange}
+           |inputTables: ${inputTables}, partitionRange: ${outputPartitionRange}
            |""".stripMargin
       )
-      partitionRange.copy(start = inputStart.get)
+      outputPartitionRange.copy(start = partitionSpec.shift(inputStart.get, inputToOutputShift))(this)
     } else {
-      partitionRange
+      outputPartitionRange
     }
     val outputExisting = partitions(outputTable)
     // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
     // If a user fills a new partition in the newer end of the range, then we will never fill any partitions before that range.
     // We instead log a message saying why we won't fill the earliest hole.
     val cutoffPartition = if (outputExisting.nonEmpty) {
-      Seq[String](outputExisting.min, partitionRange.start).filter(_ != null).max
+      Seq[String](outputExisting.min, outputPartitionRange.start).filter(_ != null).max
     } else {
       validPartitionRange.start
     }
-    val fillablePartitions = validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
+    val fillablePartitions =
+      if (skipFirstHole) {
+        validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
+      } else {
+        validPartitionRange.partitions.toSet
+      }
     val outputMissing = fillablePartitions -- outputExisting
     val allInputExisting = inputTables
       .map { tables =>
-        tables.flatMap { table =>
-          partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
-        }
+        tables
+          .flatMap { table =>
+            partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+          }
+          .map(partitionSpec.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
 
@@ -394,10 +451,11 @@ trait BaseTableUtils {
     println(s"""
                |Unfilled range computation:
                |   Output table: $outputTable
-               |   Missing output partitions: $outputMissing
-               |   Missing input partitions: $inputMissing
-               |   Unfilled Partitions: $missingPartitions
-               |   Unfilled ranges: $missingChunks
+               |   Missing output partitions: ${outputMissing.toSeq.sorted.prettyInline}
+               |   Input tables: ${inputTables.getOrElse(Seq("None")).mkString(", ")}
+               |   Missing input partitions: ${inputMissing.toSeq.sorted.prettyInline}
+               |   Unfilled Partitions: ${missingPartitions.toSeq.sorted.prettyInline}
+               |   Unfilled ranges: ${missingChunks.sorted}
                |""".stripMargin)
     if (missingPartitions.isEmpty) return None
     Some(missingChunks)
@@ -418,9 +476,20 @@ trait BaseTableUtils {
     sql(command)
   }
 
-  def archiveTableIfExists(tableName: String, timestamp: Instant): Unit = {
+  def archiveOrDropTableIfExists(tableName: String, timestamp: Option[Instant]): Unit = {
+    val archiveTry = Try(archiveTableIfExists(tableName, timestamp))
+    archiveTry.failed.foreach { e =>
+      println(s"""Fail to archive table ${tableName}
+           |${e.getMessage}
+           |Proceed to dropping the table instead.
+           |""".stripMargin)
+      dropTableIfExists(tableName)
+    }
+  }
+
+  def archiveTableIfExists(tableName: String, timestamp: Option[Instant]): Unit = {
     if (tableExists(tableName)) {
-      val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp)
+      val humanReadableTimestamp = archiveTimestampFormatter.format(timestamp.getOrElse(Instant.now()))
       val finalArchiveTableName = s"${tableName}_${humanReadableTimestamp}"
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
       println(s"Archiving table with command: $command")
@@ -432,7 +501,7 @@ trait BaseTableUtils {
   def dropPartitionsAfterHole(inputTable: String,
                               outputTable: String,
                               partitionRange: PartitionRange,
-                              labelPartition: Map[String, String] = Map.empty,
+                              subPartitionFilters: Map[String, String] = Map.empty,
                               joinConf: Option[api.Join] = None): Option[String] = {
     if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
       // If the left is unpartitioned, we return the start of the range and drop the entire range.
@@ -446,20 +515,18 @@ trait BaseTableUtils {
     }
 
     val inputPartitions = partitionsInRange(inputTable)
-    val outputPartitions = partitionsInRange(outputTable, labelPartition)
+    val outputPartitions = partitionsInRange(outputTable, subPartitionFilters)
     val earliestHoleOpt = (inputPartitions -- outputPartitions).reduceLeftOption(Ordering[String].min)
     earliestHoleOpt.foreach { hole =>
       val toDrop = outputPartitions.filter(_ > hole)
       println(s"""
-                   |Earliest hole at $hole in output table $outputTable, relative to $inputTable
-                   |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
-                   |Label Partition: ${labelPartition.toArray.mkString("Array(", ", ",")")}
+                 |Earliest hole at $hole in output table $outputTable, relative to $inputTable
+                 |Input Parts   : ${inputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Output Parts  : ${outputPartitions.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Dropping Parts: ${toDrop.toArray.sorted.mkString("Array(", ", ", ")")}
+                 |Sub Partitions: ${subPartitionFilters.map(kv => s"${kv._1}=${kv._2}").mkString("Array(", ", ", ")")}
           """.stripMargin)
-      // only single label ds is valid
-      val labelPartitionOption = if(labelPartition.isEmpty) Option.empty else Option(labelPartition.values.toArray.head)
-      dropPartitions(outputTable, toDrop.toArray.sorted, labelPartition = labelPartitionOption)
+      dropPartitions(outputTable, toDrop.toArray.sorted, partitionColumn, subPartitionFilters)
     }
     earliestHoleOpt
   }
@@ -467,14 +534,17 @@ trait BaseTableUtils {
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
                      partitionColumn: String = Constants.PartitionColumn,
-                     labelPartition: Option[String] = None): Unit = {
+                     subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (partitions.nonEmpty && tableExists(tableName)) {
-      val partitionSpecs = if (labelPartition.isEmpty) {
-        partitions.map(partition => s"PARTITION ($partitionColumn='$partition')").mkString(", ".stripMargin)
-      } else {
-        partitions.map(partition => s"PARTITION ($partitionColumn='$partition', " +
-          s"${Constants.LabelPartitionColumn}='${labelPartition.get}')").mkString(", ".stripMargin)
-      }
+      val partitionSpecs = partitions
+        .map { partition =>
+          val mainSpec = s"$partitionColumn='$partition'"
+          val specs = mainSpec +: subPartitionFilters.map {
+            case (key, value) => s"${key}='${value}'"
+          }.toSeq
+          specs.mkString("PARTITION (", ",", ")")
+        }
+        .mkString(",")
       val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
       sql(dropSql)
     } else {
@@ -482,13 +552,13 @@ trait BaseTableUtils {
     }
   }
 
-  def dropPartitionRange(tableName: String, startDate: String, endDate: String): Unit = {
+  def dropPartitionRange(tableName: String,
+                         startDate: String,
+                         endDate: String,
+                         subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (tableExists(tableName)) {
-      val toDrop = Stream.iterate(startDate)(Constants.Partition.after).takeWhile(_ <= endDate)
-      val partitionSpecs =
-        toDrop.map(ds => s"PARTITION (${Constants.PartitionColumn}='$ds')").mkString(", ".stripMargin)
-      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
-      sql(dropSql)
+      val toDrop = Stream.iterate(startDate)(partitionSpec.after).takeWhile(_ <= endDate)
+      dropPartitions(tableName, toDrop, partitionColumn, subPartitionFilters)
     } else {
       println(s"$tableName doesn't exist, please double check before drop partitions")
     }
@@ -527,7 +597,7 @@ trait BaseTableUtils {
     })
 
     if (inconsistentFields.nonEmpty) {
-      throw IncompatibleSchemaException(inconsistentFields)
+      throw IncompatibleSchemaException(inconsistentFields.toSeq)
     }
 
     val newFieldDefinitions = newFields.map(newField => s"${newField.name} ${newField.dataType.catalogString}")
