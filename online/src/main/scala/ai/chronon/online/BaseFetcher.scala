@@ -80,7 +80,7 @@ class BaseFetcher(kvStore: KVStore,
 
         val batchIr = toBatchIr(batchBytes, servingInfo)
 
-        val output = if (isTiled) {
+        val output: Array[Any] = if (isTiled) {
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map { tVal =>
@@ -88,14 +88,12 @@ class BaseFetcher(kvStore: KVStore,
               TiledIr(tVal.millis, tile)
             }
 
-          aggregator.lambdaAggregateFinalized(batchIr, streamingIrs, queryTimeMs, mutations)
+          aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
         } else {
           val streamingRows: Array[Row] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map(tVal => servingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
             .toArray
-
-          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
 
           if (debug) {
             val gson = new Gson()
@@ -106,6 +104,9 @@ class BaseFetcher(kvStore: KVStore,
                  |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                  |queryTime in millis: $queryTimeMs
                  |""".stripMargin)
+          }
+
+          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
         }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }

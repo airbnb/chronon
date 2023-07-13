@@ -167,7 +167,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 timeoutMillis = timeoutMillis)
 
   final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry, false)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {

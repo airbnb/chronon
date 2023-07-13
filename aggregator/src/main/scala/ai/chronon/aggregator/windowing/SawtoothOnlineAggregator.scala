@@ -89,10 +89,9 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     resultIr
   }
 
-  def lambdaAggregateIr(finalBatchIr: FinalBatchIr,
+  def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
                         streamingTiledIrs: Iterator[TiledIr],
-                        queryTs: Long,
-                        hasReversal: Boolean = false): Array[Any] = {
+                        queryTs: Long): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingTiledIrs == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
@@ -110,8 +109,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       val streamingTiledIr = headStreamingTiledIrs.next()
       val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
       if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
-        if (!hasReversal)
-          updateIr(resultIr, streamingTiledIr, queryTs, hasReversal)
+        updateIrTiled(resultIr, streamingTiledIr, queryTs)
       }
     }
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
@@ -125,11 +123,10 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
   }
 
-  def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
+  def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
                                streamingTiledIrs: Iterator[TiledIr],
-                               ts: Long,
-                               hasReversal: Boolean = false): Array[Any] = {
-    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingTiledIrs, ts, hasReversal = hasReversal))
+                               ts: Long): Array[Any] = {
+    windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
   }
 
 }

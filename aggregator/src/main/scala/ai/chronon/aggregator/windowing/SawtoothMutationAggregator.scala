@@ -110,7 +110,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     }
   }
 
-  def updateIr(ir: Array[Any], otherIr: TiledIr, queryTs: Long, hasReversal: Boolean = false) = {
+  def updateIrTiled(ir: Array[Any], otherIr: TiledIr, queryTs: Long) = {
     var i: Int = 0
     while (i < windowedAggregator.length) {
       val window = windowMappings(i).aggregationPart.window
