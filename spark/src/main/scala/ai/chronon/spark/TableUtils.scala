@@ -23,6 +23,7 @@ case class TableUtils(sparkSession: SparkSession) {
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
+
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -146,6 +147,32 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def getSchemaFromTable(tableName: String): StructType = {
     sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
+  }
+
+  // method to check if a user has access to a table
+  def checkTablePermission(tableName: String,
+                           fallbackPartition: String =
+                           partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
+    println(s"checking permission for table $tableName...")
+    try {
+      // retrieve one row from the table
+      val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
+      sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
+      true
+    } catch {
+      case e: RuntimeException =>
+        if (e.getMessage.contains("ACCESS DENIED"))
+          println(s"[Error] No access to table: $tableName ")
+        else {
+          println(s"[Error] Encountered exception when reading table: $tableName.")
+          e.printStackTrace()
+        }
+        false
+      case ex: Exception =>
+        println(s"[Error] Encountered exception when reading table: $tableName.")
+        ex.printStackTrace()
+        false
+    }
   }
 
   def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =

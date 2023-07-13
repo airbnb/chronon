@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{AggregationPart, Constants, DataType}
+import ai.chronon.api.{AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
@@ -225,6 +225,8 @@ class Analyzer(tableUtils: TableUtils,
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
+    val gbTables = ListBuffer[String]()
+
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
         analyzeGroupBy(part.groupBy, part.fullPrefix, includeOutputTableName = true, enableHitter = enableHitter)
@@ -239,7 +241,9 @@ class Analyzer(tableUtils: TableUtils,
       // Run validation checks.
       // TODO: more validations on the way
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
+      gbTables ++= part.groupBy.sources.toScala.map(_.table)
     }
+    val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
 
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
@@ -263,11 +267,13 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     println(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (keysWithError.isEmpty) {
-      println("----- Schema validation completed. No errors found. -----")
+    if (keysWithError.isEmpty && noAccessTables.isEmpty) {
+      println("----- Backfill validation completed. No errors found. -----")
     } else {
-      println(s"----- Schema validation completed. Found ${keysWithError.size} errors.")
+      println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
       println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
+      println(s"---- No permissions to access following ${noAccessTables.size} tables ----")
+      println(noAccessTables.mkString("\n"))
     }
 
     if (validationAssert) {
@@ -297,6 +303,17 @@ class Analyzer(tableUtils: TableUtils,
             s"[ERROR]: Join key, '$leftKey', has mismatched data types - left type: ${left(
               leftKey)} vs. right type ${right(rightKey)}")
       case _ => None
+    }
+  }
+
+  // validate the table permissions for the sources of the group by
+  // return a list of tables that the user doesn't have access to
+  def runTablePermissionValidation(sources: Set[String]): Set[String] = {
+    println(s"Validating ${sources.size} tables permissions ...")
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
+    sources.filter { sourceTable =>
+      !tableUtils.checkTablePermission(sourceTable, partitionFilter)
     }
   }
 
