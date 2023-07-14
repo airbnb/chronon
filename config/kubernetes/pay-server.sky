@@ -678,6 +678,38 @@ def _1_in_n_override_ruby_version(rbenv_version, n):
         "STRIPE_BUNDLE_USE_SORBET_RANDOM_RBENV_VERSION": rbenv_version,
     })
 
+# Shared env-vars between bapi and baplings to control GC settings
+# based on bapi experimentation
+def bapi_gc_config():
+    return {
+        # INIT_SLOTS should be close to the number of available slots
+        # in steady state but not much higher. Check the number of available
+        # slots after 100 requests:
+        #   GC-STAT-LINE sourcetype=mono-bapi-srv-* request_count=100 | stats min(before_heap_available_slots) by sourcetype
+        "RUBY_GC_HEAP_INIT_SLOTS": "19000000",
+        # If there are fewer than max(FREE_SLOTS, FREE_SLOTS_MIN_RATIO * total slots)
+        # free slots after minor GC, major GC is triggered. If that's the case after
+        # major GC, heap is expanded. Set the ratio low so that the absolute limit is used.
+        "RUBY_GC_HEAP_FREE_SLOTS": "2000000",
+        "RUBY_GC_HEAP_FREE_SLOTS_MIN_RATIO": "0.05",
+        # Limit heap growth to 1M slots. Set the growth factor relatively high
+        # so that the aboslute limit is used.
+        "RUBY_GC_HEAP_GROWTH_MAX_SLOTS": "1000000",
+        "RUBY_GC_HEAP_GROWTH_FACTOR": "1.25",
+        # Grow old object limit by 1.3x. Note that we don't set the initial limit or max
+        "RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR": "1.3",
+        # Most common GC trigger is malloc/oldmalloc. Minor GC is triggered if the size
+        # of new objects allocated since last GC is >MALLOC_LIMIT
+        "RUBY_GC_MALLOC_LIMIT": "135000000",
+        "RUBY_GC_MALLOC_LIMIT_MAX": "135000000",
+        # Oldmalloc GCs are unpredicatable - GC is upgraded to major if the size of live objects
+        # allocated since last major GC was >OLDMALLOC_LIMIT during the last minor GC.
+        # We trigger GC based on oldmalloc_increase_bytes in OOB GC earlier,
+        # so setting this threshold high (>2x malloc limit) so that it is almost never used
+        "RUBY_GC_OLDMALLOC_LIMIT": "300000000",
+        "RUBY_GC_OLDMALLOC_LIMIT_MAX": "300000000",
+    }
+
 
 _einhorn_socket_dir = "/pay/einhorn_sockets"
 _einhorn_socket_name = "einhorn.sock"

@@ -859,7 +859,8 @@ def envoy_sidecar_config(
                         "transport_api_version": "V3",
                     },
                     "resource_api_version": "V3",
-                    "initial_fetch_timeout": "60s",
+                    # 0 means never timeout
+                    "initial_fetch_timeout": "0s",
                 },
                 "cds_config": {
                     "api_config_source": {
@@ -872,7 +873,8 @@ def envoy_sidecar_config(
                         "transport_api_version": "V3",
                     },
                     "resource_api_version": "V3",
-                    "initial_fetch_timeout": "60s",
+                    # 0 means never timeout
+                    "initial_fetch_timeout": "0s",
                 },
             },
             "stats_sinks": [
