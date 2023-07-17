@@ -69,7 +69,10 @@ class JoinTest {
     val rupeeSource =
       Builders.Source.entities(
         query = Builders.Query(
-          selects = Map("ts" -> "ts", "amount_dollars" -> "CAST(amount_rupees/70 as long)", "user_name" -> "user_name", "user" -> "user"),
+          selects = Map("ts" -> "ts",
+                        "amount_dollars" -> "CAST(amount_rupees/70 as long)",
+                        "user_name" -> "user_name",
+                        "user" -> "user"),
           startPartition = monthAgo,
           setups = Seq(
             "create temporary function temp_replace_right_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'",
@@ -85,8 +88,8 @@ class JoinTest {
       keyColumns = Seq("user", "user_name"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM,
-          inputColumn = "amount_dollars",
-          windows = Seq(new Window(30, TimeUnit.DAYS)))),
+                             inputColumn = "amount_dollars",
+                             windows = Seq(new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test.user_transactions", namespace = namespace, team = "chronon")
     )
     val queriesSchema = List(
@@ -112,7 +115,8 @@ class JoinTest {
         ),
         table = queryTable
       ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user", "user" -> "user_name"))),
+      joinParts =
+        Seq(Builders.JoinPart(groupBy = groupBy, keyMapping = Map("user_name" -> "user", "user" -> "user_name"))),
       metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
     )
 
@@ -245,8 +249,8 @@ class JoinTest {
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
-        startPartition = yearAgo,
-        endPartition = dayAndMonthBefore),
+                             startPartition = yearAgo,
+                             endPartition = dayAndMonthBefore),
       snapshotTable = weightTable
     )
 
@@ -494,7 +498,7 @@ class JoinTest {
       println(s"diff result rows")
       diff
         .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
-          dropOriginal = true)
+                                 dropOriginal = true)
         .show()
     }
     assertEquals(diff.count(), 0)
@@ -669,7 +673,7 @@ class JoinTest {
     val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
-        snapshotTable = usersTable),
+                                      snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
     )
@@ -733,7 +737,7 @@ class JoinTest {
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,
-      Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
+                 Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -957,7 +961,7 @@ class JoinTest {
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"),
-        startPartition = tableUtils.partitionSpec.minus(ds, new Window(200, TimeUnit.DAYS)))
+                             startPartition = tableUtils.partitionSpec.minus(ds, new Window(200, TimeUnit.DAYS)))
     )
     val groupBy = Builders.GroupBy(
       sources = Seq(viewsSource),
@@ -991,5 +995,56 @@ class JoinTest {
       "test_namespace_jointest.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
     assertEquals(0, join.tablesToDrop(productionHashV2).length)
+  }
+
+  @Test
+  def testKeyMappingOverlappingFields(): Unit = {
+    // test the scenario when a key_mapping is a -> b, (right key b is mapped to left key a) and
+    // a happens to be another field in the same group by
+
+    val namesSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("attribute", api.StringType, 500)
+    )
+    val namesTable = s"$namespace.names"
+    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
+
+    val namesSource = Builders.Source.entities(
+      query =
+        Builders.Query(selects =
+                         Builders.Selects.exprs("user" -> "user", "user_id" -> "user", "attribute" -> "attribute"),
+                       startPartition = yearAgo,
+                       endPartition = dayAndMonthBefore),
+      snapshotTable = namesTable
+    )
+
+    val namesGroupBy = Builders.GroupBy(
+      sources = Seq(namesSource),
+      keyColumns = Seq("user"),
+      aggregations = null,
+      metaData = Builders.MetaData(name = "unit_test.user_names", team = "chronon")
+    )
+
+    // left side
+    val userSchema = List(Column("user_id", api.StringType, 100))
+    val usersTable = s"$namespace.users"
+    DataFrameGen.events(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(selects = Map("user_id" -> "user_id"), startPartition = start),
+                                      snapshotTable = usersTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = namesGroupBy,
+                          keyMapping = Map(
+                            "user_id" -> "user"
+                          ))),
+      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
+    )
+
+    val runner = new Join(joinConf, end, tableUtils)
+    val computed = runner.computeJoin(Some(7))
+    assertFalse(computed.isEmpty)
   }
 }
