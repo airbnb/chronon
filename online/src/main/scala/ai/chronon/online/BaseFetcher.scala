@@ -25,8 +25,7 @@ import scala.util.{Failure, Success, Try}
 class BaseFetcher(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false
-                 )
+                  debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
