@@ -42,10 +42,9 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null,
-              val isTiled: Boolean = false,
+              val externalSourceRegistry: ExternalSourceRegistry = null
              )
-    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug, isTiled) {
+    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
 
   // key and value schemas
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>

@@ -593,6 +593,21 @@ class FetcherTest extends TestCase {
                          consistencyCheck = true)
   }
 
+  def testTemporalTiledFetchJoinDeterministic(): Unit = {
+    val namespace = "deterministic_tiled_fetch"
+    val joinConf = generateMutationData(namespace)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
+  }
+
+  def testTemporalTiledFetchJoinGenerated(): Unit = {
+    val namespace = "generated_tiled_fetch"
+    val joinConf = generateRandomData(namespace)
+    compareTemporalFetch(joinConf,
+      tableUtils.partitionSpec.at(System.currentTimeMillis()),
+      namespace,
+      consistencyCheck = true)
+  }
+
   // test soft-fail on missing keys
   def testEmptyRequest(): Unit = {
     val namespace = "empty_request"

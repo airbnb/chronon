@@ -25,8 +25,7 @@ import scala.util.{Failure, Success, Try}
 class BaseFetcher(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false,
-                  isTiled: Boolean = false,
+                  debug: Boolean = false
                  )
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
@@ -80,7 +79,7 @@ class BaseFetcher(kvStore: KVStore,
 
         val batchIr = toBatchIr(batchBytes, servingInfo)
 
-        val output: Array[Any] = if (isTiled) {
+        val output: Array[Any] = if (TileCodec.isTilingEnabled(servingInfo.groupBy)) {
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map { tVal =>
@@ -90,9 +89,14 @@ class BaseFetcher(kvStore: KVStore,
 
           aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
         } else {
+          val selectedCodec = servingInfo.groupByOps.dataModel match {
+            case DataModel.Events => servingInfo.valueAvroCodec
+            case DataModel.Entities => servingInfo.mutationValueAvroCodec
+          }
+
           val streamingRows: Array[Row] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-            .map(tVal => servingInfo.selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+            .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
             .toArray
 
           if (debug) {

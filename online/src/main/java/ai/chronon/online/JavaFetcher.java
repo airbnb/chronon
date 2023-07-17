@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
 public class JavaFetcher {
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean isTiled) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, isTiled);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

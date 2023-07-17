@@ -6,6 +6,7 @@ import org.apache.avro.generic.GenericData
 import ai.chronon.api.Extensions.{MetadataOps, UnpackedAggregations}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 object TileCodec {
   def buildRowAggregator(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]): RowAggregator = {
@@ -16,6 +17,15 @@ object TileCodec {
     val aggregationParts = unpackedAggs.perWindow.map(_.aggregationPart)
     new RowAggregator(inputSchema, aggregationParts)
   }
+
+  def isTilingEnabled(groupBy: GroupBy) =
+  // Default to false if 'enable_tiling' isn't set
+    Try(groupBy.getMetaData.customJsonLookUp("enable_tiling")).toOption.exists {
+      case s: Boolean => s
+      case null => false
+      case _ =>
+        throw new RuntimeException(f"Error converting value of 'enable_tiling' to boolean.")
+    }
 }
 
 /**
