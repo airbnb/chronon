@@ -368,6 +368,7 @@ class Runner:
             )
         else:
             if self.mode in ['streaming', 'streaming-client']:
+                self.app_name = self.app_name.replace('_streaming-client_', '_streaming_')   # If the job is running cluster mode we want to kill it.
                 print(
                     "Checking to see if a streaming job by the name {} already exists".format(
                         self.app_name
@@ -405,8 +406,9 @@ class Runner:
                         print("All good. No need to start a new app.")
                         return
                     elif self.mode == 'streaming-client':
-                        print("Killing former streaming job")
-                        check_output(filtered_apps["kill_cmd"])
+                        print("Killing former streaming jobs")
+                        for app in filtered_apps:
+                            check_output(app["kill_cmd"])
             command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
