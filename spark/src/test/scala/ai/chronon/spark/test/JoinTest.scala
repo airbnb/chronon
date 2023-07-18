@@ -1006,7 +1006,7 @@ class JoinTest {
       Column("user", api.StringType, 1000),
       Column("attribute", api.StringType, 500)
     )
-    val namesTable = s"$namespace.names"
+    val namesTable = s"$namespace.key_overlap_names"
     DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400).save(namesTable)
 
     val namesSource = Builders.Source.entities(
@@ -1022,12 +1022,12 @@ class JoinTest {
       sources = Seq(namesSource),
       keyColumns = Seq("user"),
       aggregations = null,
-      metaData = Builders.MetaData(name = "unit_test.user_names", team = "chronon")
+      metaData = Builders.MetaData(name = "unit_test.key_overlap.user_names", team = "chronon")
     )
 
     // left side
     val userSchema = List(Column("user_id", api.StringType, 100))
-    val usersTable = s"$namespace.users"
+    val usersTable = s"$namespace.key_overlap_users"
     DataFrameGen.events(spark, userSchema, 1000, partitions = 400).dropDuplicates().save(usersTable)
 
     val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
@@ -1040,7 +1040,7 @@ class JoinTest {
                           keyMapping = Map(
                             "user_id" -> "user"
                           ))),
-      metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = "unit_test.key_overlap.user_features", namespace = namespace, team = "chronon")
     )
 
     val runner = new Join(joinConf, end, tableUtils)
