@@ -4,6 +4,7 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.{BooleanType, DataType, GroupBy, StructType}
 import org.apache.avro.generic.GenericData
 import ai.chronon.api.Extensions.{MetadataOps, UnpackedAggregations}
+import ai.chronon.online.{AvroCodec, AvroConversions}
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -29,11 +30,11 @@ object TileCodec {
 }
 
 /**
-  * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
-  * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
-  * with batch pre-aggregates produced by GroupByUploads.
-  * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
-  */
+ * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
+ * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
+ * with batch pre-aggregates produced by GroupByUploads.
+ * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
+ */
 class TileCodec(rowAggregator: RowAggregator, groupBy: GroupBy) {
   val windowedIrSchema: StructType = StructType.from("WindowedIr", rowAggregator.irSchema)
   val fields: Array[(String, DataType)] = Array(

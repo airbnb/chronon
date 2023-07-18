@@ -88,7 +88,7 @@ class FetcherTest extends TestCase {
   /**
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
-  def generateMutationData(namespace: String): api.Join = {
+  def generateMutationData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
@@ -209,7 +209,7 @@ class FetcherTest extends TestCase {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon", customJson = groupByCustomJson.orNull)
     )
 
     val joinConf = Builders.Join(
@@ -220,7 +220,7 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000): api.Join = {
+  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000, groupByCustomJson: Option[String] = None): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
@@ -247,7 +247,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
         Builders.Aggregation(operation = Operation.LAST, inputColumn = tsColString)
       ),
-      metaData = Builders.MetaData(name = "unit_test/user_payments", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/user_payments", namespace = namespace, customJson = groupByCustomJson.orNull)
     )
 
     // snapshot events
@@ -278,7 +278,7 @@ class FetcherTest extends TestCase {
                              inputColumn = "user",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
       ),
-      metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
+      metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace, customJson = groupByCustomJson.orNull),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -293,7 +293,7 @@ class FetcherTest extends TestCase {
     val userBalanceGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = balanceTable)),
       keyColumns = Seq("user"),
-      metaData = Builders.MetaData(name = "unit_test/user_balance", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/user_balance", namespace = namespace, customJson = groupByCustomJson.orNull)
     )
 
     // snapshot-entities
@@ -314,7 +314,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "credit",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
+      metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace, customJson = groupByCustomJson.orNull)
     )
 
     // temporal-entities
@@ -344,7 +344,7 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.SUM,
                              inputColumn = "review",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test/vendor_review", namespace = namespace),
+      metaData = Builders.MetaData(name = "unit_test/vendor_review", namespace = namespace, customJson = groupByCustomJson.orNull),
       accuracy = Accuracy.TEMPORAL
     )
 
@@ -377,6 +377,115 @@ class FetcherTest extends TestCase {
         Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
         Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
       )
+    )
+    joinConf
+  }
+
+  def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
+
+    val listingEventData = Seq(
+      Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
+      Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
+      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10"), // Query for mutated event
+      Row(1L, toTs("2021-04-10 00:10:00"), "2021-04-10"), // query for added event
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event
+    )
+    val ratingEventData = Seq(
+      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-08"),
+      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-08"),
+      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-08"),
+      // {listing_id, ts, rating, ds}
+      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-09"),
+      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09")
+    )
+    // Schemas
+    // {..., event (generic event column), ...}
+    val listingsSchema = StructType("listing_events_fetcher",
+      Array(
+        StructField("listing_id", LongType),
+        StructField("ts", LongType),
+        StructField("ds", StringType)
+      ))
+
+    val ratingsSchema = StructType(
+      "listing_ratings_fetcher",
+      Array(StructField("listing_id", LongType),
+        StructField("ts", LongType),
+        StructField("rating", IntType),
+        StructField("ds", StringType))
+    )
+
+    val sourceData: Map[StructType, Seq[Row]] = Map(
+      listingsSchema -> listingEventData,
+      ratingsSchema -> ratingEventData
+    )
+
+    sourceData.foreach {
+      case (schema, rows) =>
+        spark
+          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
+          .save(s"$namespace.${schema.name}")
+
+    }
+    println("saved all data hand written for fetcher test")
+
+    val startPartition = "2021-04-08"
+    val endPartition = "2021-04-10"
+
+    val leftSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${listingsSchema.name}"
+      )
+
+    val rightSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts", "rating"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${ratingsSchema.name}"
+      )
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(rightSource),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "rating",
+          windows = null
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        )
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_gb", namespace = namespace, team = "chronon", customJson = groupByCustomJson.orNull)
+    )
+
+    val joinConf = Builders.Join(
+      left = leftSource,
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_join", namespace = namespace, team = "chronon")
     )
     joinConf
   }
@@ -595,17 +704,8 @@ class FetcherTest extends TestCase {
 
   def testTemporalTiledFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_tiled_fetch"
-    val joinConf = generateMutationData(namespace)
+    val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
-  }
-
-  def testTemporalTiledFetchJoinGenerated(): Unit = {
-    val namespace = "generated_tiled_fetch"
-    val joinConf = generateRandomData(namespace)
-    compareTemporalFetch(joinConf,
-      tableUtils.partitionSpec.at(System.currentTimeMillis()),
-      namespace,
-      consistencyCheck = true)
   }
 
   // test soft-fail on missing keys

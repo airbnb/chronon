@@ -2,12 +2,12 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
-import ai.chronon.online.{SparkConversions, KVStore}
+import ai.chronon.online.{KVStore, SparkConversions, TileCodec}
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, JoinOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, SourceOps}
 import org.apache.spark.sql.SparkSession
 
 object OnlineUtils {
@@ -19,6 +19,10 @@ object OnlineUtils {
                    namespace: String): Unit = {
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
+        if (TileCodec.isTilingEnabled(groupByConf)) {
+          throw new RuntimeException("Tiling is not supported for Entity type data models. Tiling can only be used if the streaming data is Events only.")
+        }
+
         val entity = groupByConf.streamingSource.get
         val df = tableUtils.sql(s"SELECT * FROM ${entity.getEntities.mutationTable} WHERE ds = '$ds'")
         df.withColumnRenamed(entity.query.reversalColumn, Constants.ReversalColumn)
@@ -30,8 +34,14 @@ object OnlineUtils {
     val inputStream = new InMemoryStream
     val mockApi = new MockApi(kvStore, namespace)
     mockApi.streamSchema = StructType.from("Stream", SparkConversions.toChrononSchema(inputStreamDf.schema))
-    val groupByStreaming =
-      new GroupBy(inputStream.getInMemoryStreamDF(session, inputStreamDf), session, groupByConf, mockApi)
+
+    val memoryStreamDF = if (TileCodec.isTilingEnabled(groupByConf)) {
+      inputStream.getInMemoryTiledStreamDF(session, inputStreamDf, groupByConf)
+    } else {
+      inputStream.getInMemoryStreamDF(session, inputStreamDf)
+    }
+
+    val groupByStreaming = new GroupBy(memoryStreamDF, session, groupByConf, mockApi)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
     val dataStream = groupByStreaming.buildDataStream()
     val query = dataStream.trigger(Trigger.Once()).start()

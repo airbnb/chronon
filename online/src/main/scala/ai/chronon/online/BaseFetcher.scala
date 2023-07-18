@@ -1,7 +1,7 @@
 package ai.chronon.online
 
-import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
+import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.{TiledIr, _}
