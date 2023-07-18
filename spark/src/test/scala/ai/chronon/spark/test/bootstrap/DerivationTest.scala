@@ -8,6 +8,7 @@ import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import ai.chronon.spark._
+import ai.chronon.spark.stats.ConsistencyJob
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
@@ -449,6 +450,9 @@ class DerivationTest {
     }
 
     assertEquals(0, diff.count())
+
+    val consistencyJob = new ConsistencyJob(spark, bootstrapJoin, endDs)
+    val metrics = consistencyJob.buildConsistencyMetrics()
   }
 
   @Test
@@ -510,7 +514,6 @@ class DerivationTest {
     assertFalse(schema1.contains("context_2"))
     assertTrue(schema1.contains("ext_contextual_context_2"))
 
-
     /*
      * In order to keep the `key` format, use explicit rename derivation
      * Otherwise, in a * derivation, we keep only the values and discard the keys
@@ -554,7 +557,6 @@ class DerivationTest {
     assertFalse(schema3.contains("ext_contextual_context_1"))
     assertFalse(schema3.contains("context_2"))
     assertFalse(schema3.contains("ext_contextual_context_2"))
-
 
     /*
      * If we want to keep both format, select both format explicitly
