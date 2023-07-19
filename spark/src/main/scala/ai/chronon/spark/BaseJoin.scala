@@ -45,43 +45,43 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     }
     val keys = partLeftKeys ++ additionalKeys
 
+    // apply prefix to value columns
+    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
+                                                                     tableUtils.partitionColumn,
+                                                                     Constants.TimePartitionColumn)
+    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
+    val prefixedRightDf = rightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+
     // apply key-renaming to key columns
-    val newColumns = rightDf.columns.map { column =>
+    val newColumns = prefixedRightDf.columns.map { column =>
       if (joinPart.rightToLeft.contains(column)) {
         col(column).as(joinPart.rightToLeft(column))
       } else {
         col(column)
       }
     }
-    val keyRenamedRightDf =  rightDf.select(newColumns: _*)
-
-    // apply prefix to value columns
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     tableUtils.partitionColumn,
-                                                                     Constants.TimePartitionColumn)
-    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val prefixedRightDf = keyRenamedRightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+    val keyRenamedRightDf = prefixedRightDf.select(newColumns: _*)
 
     // adjust join keys
     val joinableRightDf = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
-      prefixedRightDf
+      keyRenamedRightDf
         .withColumn(Constants.TimePartitionColumn,
                     date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1), tableUtils.partitionSpec.format))
         .drop(tableUtils.partitionColumn)
     } else {
-      prefixedRightDf
+      keyRenamedRightDf
     }
 
-    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
-    println(s"""
+     println(s"""
                |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                |Left Schema:
                |${leftDf.schema.pretty}
                |Right Schema:
-               |${prefixedRightDf.schema.pretty}
-               |Final Schema:
+               |${joinableRightDf.schema.pretty}""".stripMargin)
+    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
+    println(s"""Final Schema:
                |${joinedDf.schema.pretty}
                |""".stripMargin)
 
