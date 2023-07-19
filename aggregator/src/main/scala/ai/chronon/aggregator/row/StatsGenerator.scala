@@ -167,4 +167,19 @@ object StatsGenerator {
       .sortBy(_.name)
     metrics :+ MetricTransform(totalColumn, InputTransform.One, api.Operation.COUNT)
   }
+
+  def driftCompare(value1: AnyRef, value2: AnyRef, bins: Int = 128): AnyRef = {
+    if (value1 == null || value2 == null) return None
+    val sketch1 = KllFloatsSketch.heapify(Memory.wrap(value1.asInstanceOf[Array[Byte]]))
+    val sketch2 = KllFloatsSketch.heapify(Memory.wrap(value2.asInstanceOf[Array[Byte]]))
+    val keySet = sketch1.getQuantiles(bins).union(sketch2.getQuantiles(bins))
+    var linfSimple = 0.0
+    keySet.foreach { key =>
+      val cdf1 = sketch1.getRank(key)
+      val cdf2 = sketch2.getRank(key)
+      val cdfDiff = Math.abs(cdf1 - cdf2)
+      linfSimple = Math.max(linfSimple, cdfDiff)
+    }
+    linfSimple.asInstanceOf[AnyRef]
+  }
 }
