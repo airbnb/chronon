@@ -408,7 +408,7 @@ class Runner:
                     elif self.mode == 'streaming-client':
                         print("Killing former streaming jobs")
                         for app in filtered_apps:
-                            check_output(app["kill_cmd"])
+                            check_call(app["kill_cmd"])
             command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,

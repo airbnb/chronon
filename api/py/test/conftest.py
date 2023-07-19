@@ -18,6 +18,11 @@ def repo(rootdir):
 
 
 @pytest.fixture
+def test_online_group_by(repo):
+    return os.path.join(repo, 'production/group_bys/sample_team/event_sample_group_by.v1')
+
+
+@pytest.fixture
 def sleepless():
     def justpass(seconds):
         pass

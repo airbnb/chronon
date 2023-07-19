@@ -4,6 +4,7 @@ Basic tests for namespace and breaking changes in run.py
 from ai.chronon.repo import run
 import argparse
 import pytest
+import json
 import time
 import os
 
@@ -79,6 +80,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
         '--mode', 'backfill',
         '--conf', test_conf_location,
         '--repo', repo,
+        '--online-jar', test_conf_location,
     ]))
     # from team env.
     assert os.environ['EXECUTOR_CORES'] == '4'
@@ -207,3 +209,60 @@ def test_render_info(repo, parser, test_conf_location, monkeypatch):
     runner.run()
 
     assert run.RENDER_INFO_DEFAULT_SCRIPT in actual_cmd
+
+
+def test_streaming_client(repo, parser, test_online_group_by, monkeypatch):
+    """ Test mode compiles properly and uses the same app name by default, killing if necessary. """
+    calls = []
+    def mock_check_call(cmd):
+        nonlocal calls
+        calls += [cmd]
+        return cmd
+    def mock_check_output(cmd):
+        print(cmd)
+        return "[]".encode('utf8')
+    monkeypatch.setattr(run, 'check_output', mock_check_output)
+    monkeypatch.setattr(run, 'check_call', mock_check_call)
+    run.set_defaults(parser)
+    # Follow the same flow as __main__: Do a first pass (no env), do a second pass and run.
+    pre_parse_args, _ = parser.parse_known_args(args=[
+        '--mode', 'streaming',
+        '--conf', test_online_group_by,
+        '--repo', repo
+    ])
+    run.set_runtime_env(pre_parse_args)
+    run.set_defaults(parser)
+    parse_args, _ = parser.parse_known_args(args=[
+        '--mode', 'streaming',
+        '--conf', test_online_group_by,
+        '--repo', repo
+    ])
+    parse_args.args = ''
+    runner = run.Runner(parse_args, 'some.jar')
+    runner.run()
+    streaming_app_name = runner.app_name
+    # Repeat for streaming-client
+    pre_parse_args, _ = parser.parse_known_args(args=[
+        '--mode', 'streaming-client',
+        '--conf', test_online_group_by,
+        '--repo', repo
+    ])
+    run.set_runtime_env(pre_parse_args)
+    run.set_defaults(parser)
+    parse_args, _ = parser.parse_known_args(args=[
+        '--mode', 'streaming-client',
+        '--conf', test_online_group_by,
+        '--repo', repo
+    ])
+    parse_args.args = ''
+    runner = run.Runner(parse_args, 'some.jar')
+    runner.run()
+    assert streaming_app_name == runner.app_name
+    # Check job its killed if found.
+    def mock_check_output_with_app(cmd):
+        return json.dumps({"app_name": streaming_app_name, "kill_cmd": "<kill app cmd>"}).encode('utf8')
+    monkeypatch.setattr(run, 'check_output', mock_check_output_with_app)
+    assert "<kill app cmd>" not in calls
+    runner = run.Runner(parse_args, 'some.jar')
+    runner.run()
+    assert "<kill app cmd>" in calls
