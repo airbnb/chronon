@@ -67,6 +67,8 @@ struct EventSource {
     * If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
     **/
     4: optional bool isCumulative
+
+    5: optional MetaData metadata
 }
 
 
@@ -97,6 +99,8 @@ struct EntitySource {
     If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
     */
     4: optional Query query
+
+    5: optional MetaData metadata
 }
 
 struct ExternalSource {
