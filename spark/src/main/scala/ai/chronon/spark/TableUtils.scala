@@ -377,23 +377,6 @@ trait BaseTableUtils {
     }
   }
 
-  def isUnpartitionedTable(table: api.Source): Boolean = {
-    // Consider the table to be unpartitioned if it does not contain the partition column.
-    if (isIcebergTable(table.table)) {
-      val partitionDf = sparkSession.read.format("iceberg").load(s"${table.table}.partitions")
-      return !partitionDf.schema
-        .filter(_.name == "partition")
-        .flatMap(_.dataType.asInstanceOf[StructType].fields)
-        .map(_.name)
-        .contains(Constants.PartitionColumn)
-    }
-    !sparkSession.catalog.listColumns(table.table)
-      .filter(col("isPartition") === true)
-      .select(col("name"))
-      .collect
-      .map(_.getString(0))
-      .contains(Constants.PartitionColumn)
-  }
   def unfilledRanges(outputTable: String,
                      outputPartitionRange: PartitionRange,
                      inputTables: Option[Seq[String]] = None,
@@ -401,7 +384,7 @@ trait BaseTableUtils {
                      inputToOutputShift: Int = 0,
                      skipFirstHole: Boolean = true,
                      joinConf: Option[api.Join] = None): Option[Seq[PartitionRange]] = {
-    if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
+    if (joinConf.map(j => !isPartitioned(j.left.table)).getOrElse(false)) {
       // If the left is unpartitioned, we fall back to just using the passed-in range.
       return Some(Seq(outputPartitionRange))
     }
@@ -503,7 +486,7 @@ trait BaseTableUtils {
                               partitionRange: PartitionRange,
                               subPartitionFilters: Map[String, String] = Map.empty,
                               joinConf: Option[api.Join] = None): Option[String] = {
-    if (joinConf.map(j => isUnpartitionedTable(j.left)).getOrElse(false)) {
+    if (joinConf.map(j => !isPartitioned(j.left.table)).getOrElse(false)) {
       // If the left is unpartitioned, we return the start of the range and drop the entire range.
       dropPartitionRange(outputTable, partitionRange.start, partitionRange.end)
       return Some(partitionRange.start)

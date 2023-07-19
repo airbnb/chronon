@@ -474,7 +474,7 @@ object GroupBy {
     logger.info(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
     val inputDf = groupByConf.sources.asScala
       .map { source =>
-        if (tableUtils.isUnpartitionedTable(source)) {
+        if (!tableUtils.isPartitioned(source.table)) {
           renderUnpartitionedDataSourceQuery(source,
             groupByConf.getKeyColumns.asScala,
             groupByConf.inferredAccuracy)

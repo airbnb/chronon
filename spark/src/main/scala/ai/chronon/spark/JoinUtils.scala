@@ -30,7 +30,7 @@ object JoinUtils {
     } else {
       Seq()
     }
-    val isLeftUnpartitionedTable = tableUtils.isUnpartitionedTable(joinConf.left)
+    val isLeftUnpartitionedTable = !tableUtils.isPartitioned(joinConf.left.table)
     val scanQuery = if (isLeftUnpartitionedTable) {
       if (joinConf.left.isSetEvents) {
         range.genScanQueryBasedOnTime(joinConf.left.query,
