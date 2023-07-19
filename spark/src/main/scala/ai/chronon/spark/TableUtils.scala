@@ -153,7 +153,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def checkTablePermission(tableName: String,
                            fallbackPartition: String =
                            partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
-    println(s"checking permission for table $tableName...")
+    println(s"Checking permission for table $tableName...")
     try {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
@@ -181,6 +181,9 @@ case class TableUtils(sparkSession: SparkSession) {
   def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
     partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
 
+  def ifPartitionExistsInTable(tableName: String, partition: String): Boolean =
+    partitions(tableName).contains(partition)
+  
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,

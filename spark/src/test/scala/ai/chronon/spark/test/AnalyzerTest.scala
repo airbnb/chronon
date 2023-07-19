@@ -87,6 +87,42 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testJoinAnalyzerValidationDataAvailabilityFailure(): Unit = {
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_with_user_table"
+    DataFrameGen
+      .events(spark, itemQueries, 500, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item_id"),
+      aggregations = Seq(
+        Builders.Aggregation(windows = Seq(new Window(600, TimeUnit.DAYS)), // greater than one year
+          operation = Operation.AVERAGE,
+          inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+    
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "validation", keyMapping = Map("item" -> "item_id"))
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.item_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer and validate output schema
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
   def getTestGBSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),

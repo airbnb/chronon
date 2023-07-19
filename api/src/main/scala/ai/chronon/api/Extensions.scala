@@ -312,6 +312,10 @@ object Extensions {
       }
     }
 
+    def isCumulative: Boolean = {
+      if (source.isSetEntities) false else source.getEvents.isCumulative
+    }
+
     def topic: String = {
       if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
     }
