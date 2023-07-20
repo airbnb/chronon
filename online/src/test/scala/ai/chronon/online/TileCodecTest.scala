@@ -1,8 +1,10 @@
 package ai.chronon.online
 
-import ai.chronon.api.{Aggregation, Builders, FloatType, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import ai.chronon.api.{Aggregation, Builders, FloatType, GroupBy, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
+import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.rules.ExpectedException
+import org.junit.{Rule, Test}
+
 import scala.collection.JavaConverters._
 
 class TileCodecTest {
@@ -85,5 +87,38 @@ class TileCodecTest {
       "hist_input" -> histInput
     )
     new ArrayRow(values.map(_._2), ts)
+  }
+
+
+  val thrown: ExpectedException = ExpectedException.none
+  @Rule
+  def exception: ExpectedException = thrown
+  @Test
+  def correctlyDeterminesTilingIsEnabled(): Unit = {
+    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
+      Builders.GroupBy(
+        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
+      )
+
+    // customJson not set defaults to false
+    assertTrue(!TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
+    assertTrue(!TileCodec.isTilingEnabled(buildGroupByWithCustomJson("")))
+
+    assertTrue(
+      TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
+    )
+
+    assertTrue(
+      !TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
+    )
+
+    exception.expect(classOf[RuntimeException])
+    exception.expectMessage("Error converting value")
+    TileCodec
+      .isTilingEnabled(
+        buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
+      )
   }
 }
