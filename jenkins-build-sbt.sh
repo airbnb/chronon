@@ -8,6 +8,9 @@
 # Increase if we see OOMs
 export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
 
+# Set inside CI 
+export INSIDE_CI=true
+
 # Grab current project version (stripping out the -SNAPSHOT)
 # We manually override the version.sbt instead of using the sbt-release plugin for
 # our Stripe customizations to continue using the upstream versioning as a base

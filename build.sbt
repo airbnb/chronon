@@ -188,7 +188,7 @@ lazy val api = project
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
       val insideDockerLocal: Boolean = sys.env.contains("INSIDE_DOCKER_LOCAL")
-      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java", insideCI.value, insideDockerLocal)
+      Thrift.gen(inputThrift.getPath, outputJava.getPath, "java", insideCI.value || sys.env.contains("INSIDE_CI"), insideDockerLocal)
     }.taskValue,
     sourceGenerators in Compile += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
@@ -212,7 +212,7 @@ py_thrift := {
   val inputThrift = apiDirectory / "thrift" / "api.thrift"
   val outputPy = apiDirectory / "py" / "ai" / "chronon"
   val insideDockerLocal: Boolean = sys.env.contains("INSIDE_DOCKER_LOCAL")
-  Thrift.gen(inputThrift.getPath, outputPy.getPath, "py", insideCI.value, insideDockerLocal, "api")
+  Thrift.gen(inputThrift.getPath, outputPy.getPath, "py", insideCI.value || sys.env.contains("INSIDE_CI"), insideDockerLocal, "api")
 }
 
 lazy val python_api_build = taskKey[Seq[File]]("Build thrift generated files")
