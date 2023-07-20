@@ -168,15 +168,15 @@ object StatsGenerator {
     metrics :+ MetricTransform(totalColumn, InputTransform.One, api.Operation.COUNT)
   }
 
-  def driftCompare(value1: AnyRef, value2: AnyRef, bins: Int = 128): AnyRef = {
-    if (value1 == null || value2 == null) return None
-    val sketch1 = KllFloatsSketch.heapify(Memory.wrap(value1.asInstanceOf[Array[Byte]]))
-    val sketch2 = KllFloatsSketch.heapify(Memory.wrap(value2.asInstanceOf[Array[Byte]]))
-    val keySet = sketch1.getQuantiles(bins).union(sketch2.getQuantiles(bins))
+  def lInfKllSketch(sketch1: AnyRef, sketch2: AnyRef, bins: Int = 128): AnyRef = {
+    if (sketch1 == null || sketch2 == null) return None
+    val sketchIr1 = KllFloatsSketch.heapify(Memory.wrap(sketch1.asInstanceOf[Array[Byte]]))
+    val sketchIr2 = KllFloatsSketch.heapify(Memory.wrap(sketch2.asInstanceOf[Array[Byte]]))
+    val keySet = sketchIr1.getQuantiles(bins).union(sketchIr2.getQuantiles(bins))
     var linfSimple = 0.0
     keySet.foreach { key =>
-      val cdf1 = sketch1.getRank(key)
-      val cdf2 = sketch2.getRank(key)
+      val cdf1 = sketchIr1.getRank(key)
+      val cdf2 = sketchIr2.getRank(key)
       val cdfDiff = Math.abs(cdf1 - cdf2)
       linfSimple = Math.max(linfSimple, cdfDiff)
     }

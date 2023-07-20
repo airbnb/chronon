@@ -406,7 +406,7 @@ class Fetcher(val kvStore: KVStore,
                 val currentValue = curr.values.get(key)
                 s"${key}_drift" -> Map(
                   "millis" -> curr.millis.asInstanceOf[AnyRef],
-                  "value" -> StatsGenerator.driftCompare(previousValue, currentValue)
+                  "value" -> StatsGenerator.lInfKllSketch(previousValue, currentValue)
                 ).asJava
               }.filter(_._2.get("value") != None).toMap
           }.toSeq
