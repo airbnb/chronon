@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.{BooleanType, DataType, GroupBy, StructType}
 import org.apache.avro.generic.GenericData
-import ai.chronon.api.Extensions.{MetadataOps, UnpackedAggregations}
+import ai.chronon.api.Extensions.{AggregationOps, MetadataOps}
 
 import scala.collection.JavaConverters._
 
@@ -11,10 +11,8 @@ object TileCodec {
   def buildRowAggregator(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]): RowAggregator = {
     // a set of Chronon groupBy aggregations needs to be flatted out to get the
     // full cross-product of all the feature column aggregations to be computed
-    // UnpackedAggregations is a helper class that does this
-    val unpackedAggs = UnpackedAggregations.from(groupBy.aggregations.asScala)
-    val aggregationParts = unpackedAggs.perWindow.map(_.aggregationPart)
-    new RowAggregator(inputSchema, aggregationParts)
+    val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unpack)
+    new RowAggregator(inputSchema, unpackedAggs)
   }
 }
 
