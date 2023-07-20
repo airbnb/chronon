@@ -79,10 +79,22 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     while (headRows.hasNext) {
       val row = headRows.next()
       val rowTs = row.ts // unbox long only once
-      if (queryTs > rowTs && rowTs >= batchEndTs) {
-        // When a request with afterTsMillis is passed, we don't consider mutations with mutationTs past the tsMillis
-        if ((hasReversal && queryTs >= row.mutationTs) || !hasReversal)
-          updateIr(resultIr, row, queryTs, hasReversal)
+
+      val shouldSelect = if(hasReversal) {
+        // mutation case
+        val mutationTs = row.mutationTs
+        val rowBeforeQuery = queryTs > rowTs && queryTs > mutationTs
+        val rowAfterBatchEnd = mutationTs >= batchEndTs
+        rowBeforeQuery && rowAfterBatchEnd
+      } else {
+        // event case
+        val rowBeforeQuery = queryTs > rowTs
+        val rowAfterBatchEnd = rowTs >= batchEndTs
+        rowBeforeQuery && rowAfterBatchEnd
+      }
+
+      if(shouldSelect) {
+        updateIr(resultIr, row, queryTs, hasReversal)
       }
     }
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
