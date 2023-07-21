@@ -80,7 +80,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
       val row = headRows.next()
       val rowTs = row.ts // unbox long only once
 
-      val shouldSelect = if(hasReversal) {
+      val shouldSelect = if (hasReversal) {
         // mutation case
         val mutationTs = row.mutationTs
         val rowBeforeQuery = queryTs > rowTs && queryTs > mutationTs
@@ -93,7 +93,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
         rowBeforeQuery && rowAfterBatchEnd
       }
 
-      if(shouldSelect) {
+      if (shouldSelect) {
         updateIr(resultIr, row, queryTs, hasReversal)
       }
     }
