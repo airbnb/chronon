@@ -321,8 +321,10 @@ object Extensions {
         source.getEntities.getMutationTopic
       } else if (source.isSetEvents) {
         source.getEvents.getTopic
+      } else if (source.isSetJoinSource){
+        source.getJoinSource.getJoin.getLeft.topic
       } else {
-        source.getJoin.getLeft.topic
+        null
       }
     }
 

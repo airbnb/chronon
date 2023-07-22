@@ -15,7 +15,6 @@ import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
-import scala.collection.IterableOnce.iterableOnceExtensionMethods
 import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -74,37 +73,6 @@ class GroupBy(inputStream: DataFrame,
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
-    val sourceIsJoin = streamingSource.isSetJoin
-    val tsIndex = inputStream.schema.fieldIndex(Constants.TimeColumn)
-    // func to take rows of left and create rows of output by batch fetching
-    // we build all necessary information prior to function creation for performance
-    @transient lazy val enrichFunc: Seq[Row] => Seq[Row] = {
-      assert(sourceIsJoin, s"Cannot call enrich function on a non-join source: $streamingSource")
-      val join = streamingSource.getJoin
-      val joinKeys = streamingSource.getJoin.leftKeyCols
-      val joinName = join.metaData.cleanName
-      val valueSchema = onlineImpl.buildFetcher().getJoinCodecs(joinName).get.valueSchema
-      val valueFields = valueSchema.fields.map(_.name)
-      println(s"Enriching join: $joinName with keys: $joinKeys and value fields $valueFields")
-      val func = { rows: Seq[Row] =>
-        val requests = rows.map { row =>
-          val keyMap = row.getValuesMap(joinKeys)
-          Request(joinName, keyMap, Some(row.getLong(tsIndex)))
-        }
-        val responses = Await.result(fetcher.fetchJoin(requests), Duration(fetchTimeoutMs, MILLISECONDS))
-        rows.zip(responses).map { case (row, response) =>
-          val enriched = row.toSeq ++ (response.values match {
-            case Success(responseMap) => valueFields.map(col => responseMap.getOrElse(col, null))
-            case Failure(exception) =>
-              exception.printStackTrace(System.err)
-              valueFields.map(_ => null)
-          })
-          Row.fromSeq(enriched)
-        }
-      }
-      func
-    }
-
     val streamingQuery = buildStreamingQuery()
 
     val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
