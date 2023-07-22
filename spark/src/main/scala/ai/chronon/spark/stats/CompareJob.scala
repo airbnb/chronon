@@ -75,7 +75,7 @@ class CompareJob(
     println("Finished compare stats.")
     (compareDf, metricsDf, metrics)
   }
-  
+
   def validate(): Unit = {
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
@@ -148,7 +148,7 @@ object CompareJob {
 
   def getJoinKeys(joinConf: api.Join, tableUtils: TableUtils): Seq[String] = {
     if (joinConf.isSetRowIds) {
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
+      joinConf.rowIds.toScala
     } else {
       val keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
       if (joinConf.left.dataModel == Events) {
