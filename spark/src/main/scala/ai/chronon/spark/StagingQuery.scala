@@ -1,29 +1,27 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{Constants, ParametricMacro}
+import ai.chronon.api.ParametricMacro
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions._
 
 class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
+    .map(_.toScala.toMap)
     .orNull
 
   private val partitionCols: Seq[String] = Seq(tableUtils.partitionColumn) ++
-    ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(
-      Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
-        .getOrElse(new java.util.ArrayList[String]())
-        .asInstanceOf[java.util.ArrayList[String]])
+    Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
+      .getOrElse(new java.util.ArrayList[String]())
+      .asInstanceOf[java.util.ArrayList[String]].toScala
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
-    Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
+    Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
       tableUtils.sql(stagingQueryConf.query).save(outputTable)

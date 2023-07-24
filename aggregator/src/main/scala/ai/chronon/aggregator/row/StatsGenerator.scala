@@ -5,9 +5,9 @@ import ai.chronon.api.Extensions._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 
-import scala.collection.Seq
-import scala.util.ScalaVersionSpecificCollectionsConverter
 import java.util
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.JMapOps
 
 /**
   * Module managing FeatureStats Schema, Aggregations to be used by type and aggregator construction.
@@ -145,8 +145,7 @@ object StatsGenerator {
         column,
         InputTransform.Raw,
         operation = api.Operation.APPROX_PERCENTILE,
-        argMap = ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
-          Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]"))
+        argMap = Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]").toJava
       ))
 
   /** For the schema of the data define metrics to be aggregated */

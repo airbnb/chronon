@@ -11,7 +11,7 @@ import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
-import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
+import scala.util.Try
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)

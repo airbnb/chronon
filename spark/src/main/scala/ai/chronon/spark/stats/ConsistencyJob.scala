@@ -9,13 +9,12 @@ import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
 
 import java.util
-import scala.collection.JavaConverters._
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
+    .map(_.toScala)
     .getOrElse(Map.empty[String, String])
   implicit val tableUtils: TableUtils = TableUtils(session)
 
@@ -33,14 +32,12 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     query.setTimeColumn(Constants.TimeColumn)
     query.setStartPartition(joinConf.left.query.startPartition)
     // apply sampling logic to reduce OOC offline compute overhead
-    val wheres = ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-      if (joinConf.metaData.consistencySamplePercent < 100) {
-        Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
-      } else {
-        Seq()
-      }
-    )
-    query.setWheres(wheres)
+    val wheres = if (joinConf.metaData.consistencySamplePercent < 100) {
+      Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
+    } else {
+      Seq()
+    }
+    query.setWheres(wheres.toJava)
     loggedEvents.setQuery(query)
     loggedEvents.setTable(joinConf.metaData.loggedTable)
     loggedSource.setEvents(loggedEvents)
@@ -97,7 +94,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       val loggedDfNoExternalCols = loggedDf.select(comparisonDf.columns.map(org.apache.spark.sql.functions.col): _*)
       println("Starting compare job for stats")
       val joinKeys = if (joinConf.isSetRowIds) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
+        joinConf.rowIds.toScala
       } else {
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }

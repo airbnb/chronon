@@ -9,7 +9,7 @@ import java.util
 import java.util.Base64
 import scala.io.Source._
 import scala.reflect.ClassTag
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 object ThriftJsonCodec {
 
@@ -21,9 +21,7 @@ object ThriftJsonCodec {
 
   def toJsonList[T <: TBase[_, _]: Manifest](obj: util.List[T]): String = {
     if (obj == null) return ""
-
-    ScalaVersionSpecificCollectionsConverter
-      .convertJavaListToScala(obj)
+    obj.toScala
       .map(o => new String(serializer.serialize(o)))
       .prettyInline
   }

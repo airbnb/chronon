@@ -18,7 +18,7 @@ import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
 import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
-import scala.util.{ScalaVersionSpecificCollectionsConverter, Success}
+import scala.util.Success
 
 class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
 
@@ -60,19 +60,19 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   class AlwaysFailsHandler extends JavaExternalSourceHandler {
     override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
       CompletableFuture.completedFuture[util.List[JavaResponse]](
-        ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(
-          requests
-            .iterator()
-            .toScala
-            .map(req =>
-              new JavaResponse(
-                req,
-                JTry.failure(
-                  new RuntimeException("This handler always fails things")
-                )
-              ))
-            .toList
-        ))
+        requests
+          .iterator()
+          .toScala
+          .map(req =>
+            new JavaResponse(
+              req,
+              JTry.failure(
+                new RuntimeException("This handler always fails things")
+              )
+            ))
+          .toList
+          .toJava
+      )
     }
   }
 

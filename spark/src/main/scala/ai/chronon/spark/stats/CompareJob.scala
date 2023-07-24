@@ -9,7 +9,7 @@ import ai.chronon.spark.stats.CompareJob.getJoinKeys
 import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 /**
   * Compare Job for comparing data between joins, staging queries and raw queries.
@@ -23,7 +23,7 @@ class CompareJob(
                   endDate: String
                 ) extends Serializable {
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
+    .map(_.toScala)
     .orNull
   val namespace = joinConf.metaData.outputNamespace
   val joinName = joinConf.metaData.cleanName
@@ -148,7 +148,7 @@ object CompareJob {
 
   def getJoinKeys(joinConf: api.Join, tableUtils: TableUtils): Seq[String] = {
     if (joinConf.isSetRowIds) {
-      ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
+      joinConf.rowIds.toScala
     } else {
       val keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
       if (joinConf.left.dataModel == Events) {

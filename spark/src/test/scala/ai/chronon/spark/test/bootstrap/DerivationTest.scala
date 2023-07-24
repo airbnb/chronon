@@ -16,7 +16,6 @@ import org.junit.Test
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions.JListOps
-import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class DerivationTest {
 
@@ -192,12 +191,11 @@ class DerivationTest {
     bootstrapJoin.getMetaData.setName("test.derivations_join_w_bootstrap")
     bootstrapJoin
       .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(
-            diffBootstrapPart,
-            externalBootstrapPart,
-            contextualBootstrapPart
-          ))
+        Seq(
+          diffBootstrapPart,
+          externalBootstrapPart,
+          contextualBootstrapPart
+        ).toJava
       )
 
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
