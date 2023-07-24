@@ -6,7 +6,7 @@ import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.stats.CompareJob.getJoinKeys
-import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
@@ -48,7 +48,7 @@ class CompareJob(
       StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
     )
 
-    val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
+    val (compareDf: DataFrame, metricsTimedKvRdd: TimedKvRdd, metrics: DataMetrics) =
       CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf, tableUtils), tableUtils, migrationCheck = true)
 
     // Save the comparison table
@@ -58,6 +58,7 @@ class CompareJob(
 
     // Save the metrics table
     println("Saving metrics output..")
+    val metricsDf = metricsTimedKvRdd.toFlatDf
     println(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
     tableUtils.insertUnPartitioned(metricsDf, metricsTableName, tableProps, saveMode = SaveMode.Overwrite)
 

@@ -123,6 +123,13 @@ object OnlineUtils {
     inMemoryKvStore.bulkPut(joinConf.metaData.dailyStatsUploadTable, Constants.StatsBatchDataset, null)
   }
 
+  def serveConsistency(tableUtils: TableUtils,
+                       inMemoryKvStore: InMemoryKvStore,
+                       endDs: String,
+                       joinConf: api.Join): Unit = {
+    inMemoryKvStore.bulkPut(joinConf.metaData.consistencyUploadTable, Constants.ConsistencyMetricsDataset, null)
+  }
+
   def buildInMemoryKVStore(sessionName: String): InMemoryKvStore = {
     InMemoryKvStore.build(sessionName, { () => TableUtils(SparkSessionBuilder.build(sessionName, local = true)) })
   }

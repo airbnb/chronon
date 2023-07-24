@@ -26,12 +26,15 @@ object Constants {
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
   val StatsBatchDataset = "CHRONON_STATS_BATCH"
+  val ConsistencyMetricsDataset = "CHRONON_CONSISTENCY_METRICS"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)
   val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
   val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
+  val TimedKvRDDKeySchemaKey: String = "__keySchema"
+  val TimedKvRDDValueSchemaKey: String = "__valueSchema"
   val StatsKeySchema: StructType = StructType("keySchema", Array(StructField("JoinPath", StringType)))
   val ExternalPrefix: String = "ext"
   val ContextualSourceName: String = "contextual"

@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.online.DataMetrics
 import ai.chronon.spark.stats.CompareBaseJob
-import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{SparkSessionBuilder, TableUtils, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Test
 
@@ -34,16 +34,17 @@ class CompareTest {
   @Test
   def basicTest(): Unit = {
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(leftColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(leftColumns: _*)
 
     leftDf.show()
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val (compareDf, metricsDf, result): (DataFrame, DataFrame, DataMetrics) =
+    val (compareDf, metricsKvRdd, result): (DataFrame, TimedKvRdd, DataMetrics) =
       CompareBaseJob.compare(leftDf, rightDf, keys, tableUtils)
+    val metricsDf = metricsKvRdd.toFlatDf
     metricsDf.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
@@ -65,21 +66,22 @@ class CompareTest {
   @Test
   def mappingTest(): Unit = {
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns: _*)
 
     leftDf.show()
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val (compareDf, metricsDf, result) = CompareBaseJob.compare(
-        leftDf,
-        rightDf,
-        keys,
-        tableUtils,
-        Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
+    val (compareDf, metricsKvRdd, result) = CompareBaseJob.compare(
+      leftDf,
+      rightDf,
+      keys,
+      tableUtils,
+      mapping = Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
     )
+    val metricsDf = metricsKvRdd.toFlatDf
     metricsDf.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
@@ -101,9 +103,9 @@ class CompareTest {
   @Test
   def checkKeysTest(): Unit = {
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns: _*)
 
     val keys1 = Seq("keyId", "ts", "ds", "nonexistantKey")
     val mapping1 = Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
@@ -128,9 +130,9 @@ class CompareTest {
     val rightColumns = Seq("rev_serial", "rev_value", "rev_rating", "keyId", "ts", "ds")
 
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns: _*)
 
     val keys = Seq("keyId", "ds")
     val mapping = Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
@@ -151,9 +153,9 @@ class CompareTest {
     val rightColumns = Seq("rev_serial", "rev_value", "rev_rating", "keyId", "ts", "ds")
 
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns: _*)
 
     val keys = Seq("keyId", "ds")
     val mapping = Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
@@ -174,9 +176,9 @@ class CompareTest {
     val rightColumns = Seq("rev_serial", "rev_value", "rev_rating", "keyId", "ts", "ds")
 
     val leftRdd = spark.sparkContext.parallelize(leftData)
-    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns:_*)
+    val leftDf = spark.createDataFrame(leftRdd).toDF(leftColumns: _*)
     val rightRdd = spark.sparkContext.parallelize(rightData)
-    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns:_*)
+    val rightDf = spark.createDataFrame(rightRdd).toDF(rightColumns: _*)
 
     val keys = Seq("keyId", "ds")
     val wrongMapping1 = Map("non_existant_key" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
@@ -186,11 +188,10 @@ class CompareTest {
     runFailureScenario(leftDf, rightDf, keys, wrongMapping2)
   }
 
-  def runFailureScenario(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
-      keys: Seq[String],
-      mapping: Map[String, String]): Unit = {
+  def runFailureScenario(leftDf: DataFrame,
+                         rightDf: DataFrame,
+                         keys: Seq[String],
+                         mapping: Map[String, String]): Unit = {
     leftDf.show()
     rightDf.show()
     try {
@@ -199,12 +200,12 @@ class CompareTest {
         rightDf,
         keys,
         tableUtils,
-        mapping
+        mapping = mapping
       )
       throw new AssertionError("Expecting an error")
     } catch {
       case e: AssertionError => true
-      case ex: Throwable => throw ex
+      case ex: Throwable     => throw ex
     }
   }
 }

@@ -6,12 +6,13 @@ import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request, Response}
+import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
+import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
@@ -455,6 +456,17 @@ class FetcherTest extends TestCase {
       val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
       println(s"ooc metrics: $metrics".stripMargin)
+      OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
+      val fetcher = mockApi.buildFetcher()
+      val consistencyFetch =
+        fetcher.fetchConsistencyMetricsTimeseries(StatsRequest(joinConf.metaData.nameToFilePath, None, None))
+      val response = Await.result(consistencyFetch, Duration.Inf)
+      val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
+      println(s"""
+          |
+          | Fetched Consistency Metrics
+          | ${gson.toJson(response.values.get)}
+          |""".stripMargin)
     }
     // benchmark
     FetcherTestUtil.joinResponses(spark, requests, mockApi, runCount = 10, useJavaFetcher = true)
