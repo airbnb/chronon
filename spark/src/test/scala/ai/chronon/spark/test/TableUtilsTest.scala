@@ -8,7 +8,7 @@ import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
 import scala.util.Try
@@ -375,4 +375,13 @@ class TableUtilsTest {
     prepareTestDataWithSubPartitions(tableName)
     assertTrue(tableUtils.checkTablePermission(tableName))
   }
+
+  @Test
+  def testIfPartitionExistsInTable(): Unit = {
+    val tableName = "db.test_if_partition_exists"
+    prepareTestDataWithSubPartitions(tableName)
+    assertTrue(tableUtils.ifPartitionExistsInTable(tableName, "2022-11-03"))
+    assertFalse(tableUtils.ifPartitionExistsInTable(tableName, "2023-01-01"))
+  }
+
 }

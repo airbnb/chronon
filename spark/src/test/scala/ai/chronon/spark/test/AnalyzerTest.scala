@@ -87,6 +87,46 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
+  @Test
+  def testJoinAnalyzerValidationDataAvailability(): Unit = {
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_with_user_table"
+    DataFrameGen
+      .events(spark, itemQueries, 500, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item_id"),
+      aggregations = Seq(
+        Builders.Aggregation( windows = Seq(new Window(365, TimeUnit.DAYS)), // greater than one year
+          operation = Operation.AVERAGE,
+          inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "validation", keyMapping = Map("item" -> "item_id"))
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.item_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer and validate data availability
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+
+    val result = analyzer.runDataAvailabilityCheck(viewsGroupBy, joinConf.left)
+    println(result)
+    assertTrue(result.size == 1)
+  }
+
   def getTestGBSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -95,7 +135,7 @@ class AnalyzerTest {
       Column("user_review", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events_gb_table"
+    val viewsTable = s"$namespace.view_events_gb_table_2"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
@@ -111,7 +151,7 @@ class AnalyzerTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events_source_table"
+    val viewsTable = s"$namespace.view_events_gb_table"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(

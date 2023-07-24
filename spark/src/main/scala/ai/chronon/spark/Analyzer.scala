@@ -226,6 +226,8 @@ class Analyzer(tableUtils: TableUtils,
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
+    // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
+    val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
@@ -239,9 +241,9 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
-      // TODO: more validations on the way
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
       gbTables ++= part.groupBy.sources.toScala.map(_.table)
+      dataAvailabilityErrors ++= runDataAvailabilityCheck(part.groupBy, joinConf.left)
     }
     val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
 
@@ -272,12 +274,18 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
       println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
-      println(s"---- No permissions to access following ${noAccessTables.size} tables ----")
+      println(s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
       println(noAccessTables.mkString("\n"))
+      println(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
+      dataAvailabilityErrors.foreach(error =>
+        println(s" Table ${error._1} : Group_By ${error._2}. Expected start ${error._3}"))
     }
 
     if (validationAssert) {
-      assert(keysWithError.isEmpty, "ERROR: Join validation failed. Please check error message for details.")
+      assert(
+        keysWithError.isEmpty && noAccessTables.isEmpty,
+        "ERROR: Join validation failed. Please check error message for details."
+      )
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
@@ -306,7 +314,7 @@ class Analyzer(tableUtils: TableUtils,
     }
   }
 
-  // validate the table permissions for the sources of the group by
+  // validate the table permissions for given list of tables
   // return a list of tables that the user doesn't have access to
   def runTablePermissionValidation(sources: Set[String]): Set[String] = {
     println(s"Validating ${sources.size} tables permissions ...")
@@ -314,6 +322,33 @@ class Analyzer(tableUtils: TableUtils,
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
       !tableUtils.checkTablePermission(sourceTable, partitionFilter)
+    }
+  }
+
+  // validate that data is available for the group by
+  // - For aggregation case, gb table earliest partition should go back to (left_start_partition - max_window) date
+  // - For none aggregation case or unbounded window, no earliest partition is required
+  // return a list of (table, gb_name, expected_start) that don't have data available
+  def runDataAvailabilityCheck(groupBy: api.GroupBy, leftSource: api.Source): List[(String, String, String)] = {
+    val leftStart = Option(leftSource.query.startPartition)
+      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
+    lazy val groupByOps = new GroupByOps(groupBy)
+    val maxWindow = groupByOps.maxWindow
+    maxWindow match {
+      case Some(window) =>
+        val expectedStart = tableUtils.partitionSpec.minus(leftStart, window)
+        groupBy.sources.toScala.flatMap { source =>
+          val table = source.table
+          println(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
+          //check if partition available or table is cumulative
+          if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
+            Some((table, groupBy.getMetaData.getName, expectedStart))
+          } else {
+            None
+          }
+        }
+      case None =>
+        List.empty
     }
   }
 
