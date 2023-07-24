@@ -9,6 +9,7 @@ import org.apache.avro.specific.SpecificDatumWriter
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.spark.sql.execution.streaming.MemoryStream
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import scala.collection.JavaConverters._
 
 class InMemoryStream {
 
@@ -39,32 +40,47 @@ class InMemoryStream {
     input.toDF
   }
 
-  def getInMemoryTiledStreamDF(spark: SparkSession, inputDf: Dataset[Row], groupBy: GroupBy): DataFrame = {
+  /**
+   *
+   * @param spark SparkSession
+   * @param inputDf Input dataframe of raw event rows
+   * @param groupBy GroupBy
+   * @return Array[(Array[Any], Array[Byte]) where Array[Any] is the list of keys and Array[Byte]
+   *         a pre-aggregated tile of events. So the overall returned value is an array
+   *         of pre-aggregated tiles and their respective keys.
+   */
+  def getInMemoryTiledStreamArray(spark: SparkSession, inputDf: Dataset[Row], groupBy: GroupBy): Array[(Array[Any], Array[Byte])] = {
     val chrononSchema: StructType = StructType.from("input", SparkConversions.toChrononSchema(inputDf.schema))
     val avroSchema = AvroConversions.fromChrononSchema(chrononSchema)
 
-    import spark.implicits._
-    val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](MemoryStreamID, spark.sqlContext)
-
     // Split inputDf into 4 tiles to allow for tile aggregations to be tested
-    inputDf.collect().grouped((inputDf.count() / 4).floor.toInt).map { rowSet: Array[Row] =>
-      val rowAggregator = TileCodec.buildRowAggregator(groupBy, chrononSchema.iterator.map { field => (field.name, field.fieldType) }.toSeq)
-      val aggIr = rowAggregator.init
+    val keyCols = groupBy.keyColumns.asScala.toArray
+    val keyIndices = keyCols.map(inputDf.schema.fieldIndex)
+    val tsIndex = 1
 
-      rowSet.map { row =>
-        val gr: GenericRecord = new GenericData.Record(avroSchema)
-        row.schema.fieldNames.foreach(name => gr.put(name, row.getAs(name)))
-        val chrononRow = AvroConversions.toChrononRow(gr, chrononSchema).asInstanceOf[ai.chronon.api.Row]
-        rowAggregator.update(aggIr, chrononRow)
+    val groupedRows = inputDf.collect().groupBy(row => {
+      row.get(0)
+    })
+    groupedRows.toArray.flatMap { keyedRow =>
+      val rowsKeys = Array(keyedRow._1)
+      val rows = keyedRow._2
+
+      val rowsPreAggBytes: Array[Array[Byte]] = rows.grouped((rows.length / 4).floor.toInt).toArray.map { rowSet =>
+        val rowAggregator = TileCodec.buildRowAggregator(groupBy, chrononSchema.iterator.map { field => (field.name, field.fieldType) }.toSeq)
+        val aggIr = rowAggregator.init
+
+        rowSet.map { row =>
+          val chrononRow = SparkConversions.toChrononRow(row, tsIndex).asInstanceOf[ai.chronon.api.Row]
+          rowAggregator.update(aggIr, chrononRow)
+        }
+
+        val tileCodec = new TileCodec(rowAggregator, groupBy)
+        tileCodec.makeTileIr(aggIr, true)
       }
 
-      val finalAggIr = rowAggregator.finalize(aggIr)
-      val tileCodec = new TileCodec(rowAggregator, groupBy)
-      val bytesTile = tileCodec.makeTileIr(finalAggIr, true)
-
-      input.addData(bytesTile)
+      rowsPreAggBytes.map { rowPreAgg =>
+        (rowsKeys, rowPreAgg)
+      }
     }
-
-    input.toDF()
   }
 }

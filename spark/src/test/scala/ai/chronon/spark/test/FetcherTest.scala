@@ -387,29 +387,15 @@ class FetcherTest extends TestCase {
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 
     val listingEventData = Seq(
-      Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
-      Row(595125622443733822L, toTs("2021-04-10 23:00:00"), "2021-04-10"), // Query for added event
-      Row(595125622443733822L, toTs("2021-04-10 23:45:00"), "2021-04-10"), // Query for mutated event
-      Row(1L, toTs("2021-04-10 00:10:00"), "2021-04-10"), // query for added event
-      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10") // query for mutated event
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10")
     )
     val ratingEventData = Seq(
-      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-08"),
-      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-08"),
-      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-08"),
-      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-08"),
-      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-08"),
-      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-08"),
-      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-08"),
-      // {listing_id, ts, rating, ds}
-      Row(1L, toTs("2021-04-04 00:30:00"), 4, "2021-04-09"),
-      Row(1L, toTs("2021-04-04 12:30:00"), 4, "2021-04-09"),
-      Row(1L, toTs("2021-04-05 00:30:00"), 4, "2021-04-09"),
-      Row(1L, toTs("2021-04-08 02:30:00"), 4, "2021-04-09"),
-      Row(595125622443733822L, toTs("2021-04-04 01:40:00"), 3, "2021-04-09"),
-      Row(595125622443733822L, toTs("2021-04-05 03:40:00"), 3, "2021-04-09"),
-      Row(595125622443733822L, toTs("2021-04-06 03:45:00"), 4, "2021-04-09"),
-      Row(595125622443733822L, toTs("2021-04-09 05:45:00"), 5, "2021-04-09")
+        Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+        Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
     )
     // Schemas
     // {..., event (generic event column), ...}
@@ -435,10 +421,13 @@ class FetcherTest extends TestCase {
 
     sourceData.foreach {
       case (schema, rows) =>
+        val tableName = s"$namespace.${schema.name}"
+
+        spark.sql(s"DROP TABLE IF EXISTS $tableName")
+
         spark
           .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
-          .save(s"$namespace.${schema.name}")
-
+          .save(tableName)
     }
     println("saved all data hand written for fetcher test")
 
@@ -460,7 +449,8 @@ class FetcherTest extends TestCase {
           selects = Builders.Selects("listing_id", "ts", "rating"),
           startPartition = startPartition
         ),
-        table = s"$namespace.${ratingsSchema.name}"
+        table = s"$namespace.${ratingsSchema.name}",
+        topic = "fake_topic2"
       )
 
     val groupBy = Builders.GroupBy(
