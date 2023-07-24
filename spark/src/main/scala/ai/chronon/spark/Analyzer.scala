@@ -226,7 +226,7 @@ class Analyzer(tableUtils: TableUtils,
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
-    // Pair of (table name, group_by name) which indicate that the table no not have data available for the required group_by
+    // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
     joinConf.joinParts.toScala.foreach { part =>
@@ -326,8 +326,8 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   // validate that data is available for the group by
-  // - For none aggregation case, gb table should have partition goes back to left_start_partition
   // - For aggregation case, gb table earliest partition should go back to (left_start_partition - max_window) date
+  // - For none aggregation case or unbounded window, no earliest partition is required
   // return a list of (table, gb_name, expected_start) that don't have data available
   def runDataAvailabilityCheck(groupBy: api.GroupBy, leftSource: api.Source): List[(String, String, String)] = {
     val leftStart = Option(leftSource.query.startPartition)
