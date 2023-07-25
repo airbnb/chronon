@@ -258,10 +258,22 @@ def test_streaming_client(repo, parser, test_online_group_by, monkeypatch):
     runner = run.Runner(parse_args, 'some.jar')
     runner.run()
     assert streaming_app_name == runner.app_name
-    # Check job its killed if found.
-    def mock_check_output_with_app(cmd):
-        return json.dumps({"app_name": streaming_app_name, "kill_cmd": "<kill app cmd>"}).encode('utf8')
-    monkeypatch.setattr(run, 'check_output', mock_check_output_with_app)
+    # Check job its not killed if found and submitted by a different user.
+    def mock_check_output_with_app_other_user(cmd):
+        return json.dumps(
+            {"app_name": streaming_app_name, "kill_cmd": "<kill app cmd>", "user": "notcurrent"}
+        ).encode('utf8')
+    monkeypatch.setattr(run, 'check_output', mock_check_output_with_app_other_user)
+    assert "<kill app cmd>" not in calls
+    runner = run.Runner(parse_args, 'some.jar')
+    with pytest.raises(AssertionError):
+        runner.run()
+    def mock_check_output_with_app_current_user(cmd):
+        current = os.getlogin()
+        return json.dumps(
+            {"app_name": streaming_app_name, "kill_cmd": "<kill app cmd>", "user": current}
+        ).encode('utf8')
+    monkeypatch.setattr(run, 'check_output', mock_check_output_with_app_current_user)
     assert "<kill app cmd>" not in calls
     runner = run.Runner(parse_args, 'some.jar')
     runner.run()
