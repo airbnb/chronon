@@ -217,7 +217,9 @@ class Analyzer(tableUtils: TableUtils,
       : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
+    // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
+
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
     val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema: Map[String, DataType] =

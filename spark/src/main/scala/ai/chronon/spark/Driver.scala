@@ -206,6 +206,10 @@ object Driver {
         opt[Boolean](required = false,
                      default = Some(false),
                      descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+      val forceRun: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          default = Some(false),
+          descr = "Force backfill job to run even regardless of validation failure.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -218,7 +222,7 @@ object Driver {
         args.buildTableUtils(),
         !args.runFirstHole()
       )
-      val df = join.computeJoin(args.stepDays.toOption)
+      val df = join.computeJoin(args.stepDays.toOption, args.forceRun())
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.joinConf.metaData.outputTable, tableUtils)

@@ -51,6 +51,8 @@ object Metrics {
     val ValueBytes = "value.bytes"
 
     val Exception = "exception"
+    val validationFailure = "validation.failure"
+    val validationSuccess = "validation.success"
   }
 
   object Context {

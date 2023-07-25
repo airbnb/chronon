@@ -67,14 +67,17 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
       keyRenamedRightDf
-        .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1), tableUtils.partitionSpec.format))
+        .withColumn(
+          Constants.TimePartitionColumn,
+          date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1),
+                      tableUtils.partitionSpec.format)
+        )
         .drop(tableUtils.partitionColumn)
     } else {
       keyRenamedRightDf
     }
 
-     println(s"""
+    println(s"""
                |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                |Left Schema:
                |${leftDf.schema.pretty}
@@ -217,7 +220,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       For the corner case when the values of the key mapping also exist in the keys, for example:
       Map(user -> user_name, user_name -> user)
       the below logic will first rename the conflicted column with some random suffix and update the rename map
-    */
+     */
     lazy val renamedLeftDf = {
       val columns = skewFilteredLeft.columns.flatMap { column =>
         if (joinPart.leftToRight.contains(column)) {
@@ -252,7 +255,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None, forceRun: Boolean = false): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -262,13 +265,26 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }
 
+    // Run validations before starting the job
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
+    try {
+      analyzer.analyzeJoin(joinConf, validationAssert = true)
+      metrics.gauge(Metrics.Name.validationSuccess, 1)
+      println("Join conf validation succeeded. No error found.")
+    } catch {
+      case ex: AssertionError =>
+        metrics.gauge(Metrics.Name.validationFailure, 1)
+        println(s"Validation failed. Please check the validation error in log.")
+        if (!forceRun) throw ex
+      case _: Throwable =>
+        println("An unexpected error occurred during validation.")
+    }
+
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
-
-    // run SQL environment setups such as UDFs and JARs
-    joinConf.setups.foreach(tableUtils.sql)
 
     // detect holes and chunks to fill
     val leftStart = Option(joinConf.left.query.startPartition)
