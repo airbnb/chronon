@@ -395,7 +395,7 @@ class Fetcher(val kvStore: KVStore,
   def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
     if (joinRequest.name.endsWith("__drift")) {
       // In the case of drift we only find the percentile keys and do a shifted distance.
-      val rawResponses = fetchStats(StatsRequest(joinRequest.name.split("__").head, joinRequest.startTs, joinRequest.endTs))
+      val rawResponses = fetchStats(StatsRequest(joinRequest.name.dropRight("__drift".length), joinRequest.startTs, joinRequest.endTs))
       return rawResponses.map {
         response =>
           val driftMap = response.sortBy(_.millis).sliding(2).collect {
