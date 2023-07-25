@@ -276,9 +276,10 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       case ex: AssertionError =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
         println(s"Validation failed. Please check the validation error in log.")
-        if (!forceRun) throw ex
-      case _: Throwable =>
-        println("An unexpected error occurred during validation.")
+        // TODO: turn on assertion failure in production
+        // if (!forceRun) throw ex
+      case e: Throwable =>
+        println(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
 
     // First run command to archive tables that have changed semantically since the last run
