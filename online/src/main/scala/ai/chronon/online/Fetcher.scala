@@ -393,6 +393,27 @@ class Fetcher(val kvStore: KVStore,
     * Main endpoint for fetching statistics over time available.
     */
   def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
+    if (joinRequest.name.endsWith("__drift")) {
+      // In the case of drift we only find the percentile keys and do a shifted distance.
+      val rawResponses = fetchStats(StatsRequest(joinRequest.name.dropRight("__drift".length), joinRequest.startTs, joinRequest.endTs))
+      return rawResponses.map {
+        response =>
+          val driftMap = response.sortBy(_.millis).sliding(2).collect {
+            case Seq(prev, curr) =>
+              val commonKeys = prev.values.get.keySet.intersect(curr.values.get.keySet.filter(_.endsWith("percentile")))
+              commonKeys.map { key =>
+                val previousValue = prev.values.get(key)
+                val currentValue = curr.values.get(key)
+                s"${key}_drift" -> Map(
+                  "millis" -> curr.millis.asInstanceOf[AnyRef],
+                  "value" -> StatsGenerator.lInfKllSketch(previousValue, currentValue)
+                ).asJava
+              }.filter(_._2.get("value") != None).toMap
+          }.toSeq
+          .flatMap(_.toSeq).groupBy(_._1).mapValues(_.map(_._2).toList.asJava).toMap
+          SeriesStatsResponse(joinRequest, Try(driftMap))
+      }
+    }
     val rawResponses = fetchStats(joinRequest)
     rawResponses.map {
       responseFuture =>

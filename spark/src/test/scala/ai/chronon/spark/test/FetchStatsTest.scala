@@ -109,16 +109,21 @@ class FetchStatsTest extends TestCase {
     val request = StatsRequest(joinConf.metaData.nameToFilePath, None, None)
     val mockApi = new MockApi(kvStoreFunc, namespace)
     val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
-    val javaFetchedSeries = fetchStatsSeries(request, mockApi, false)
-    val fetchedSeries = fetchStatsSeries(request, mockApi, true)
+    val javaFetchedSeries = fetchStatsSeries(request, mockApi, true)
+    val fetchedSeries = fetchStatsSeries(request, mockApi)
     println(gson.toJson(fetchedSeries.values.get))
 
     // Appendix: Incremental run to check incremental updates for summary job.
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, today, joinConf)
 
     // Appendix: Test Analyzer output.
-    val analyzer = new Analyzer(tableUtils,joinConf, yesterday, today)
+    val analyzer = new Analyzer(tableUtils, joinConf, yesterday, today)
     analyzer.analyzeJoin(joinConf)
+
+    // Request drifts
+    val driftRequest = StatsRequest(joinConf.metaData.nameToFilePath + "__drift", None, None)
+    val fetchedDriftSeries = fetchStatsSeries(driftRequest, mockApi)
+    println(gson.toJson(fetchedDriftSeries.values.get))
   }
 
   def fetchStatsSeries(request: StatsRequest,
