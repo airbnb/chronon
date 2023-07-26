@@ -111,6 +111,7 @@ class InMemoryStream {
                                   groupBy: GroupBy): Array[(Array[Any], Long, Array[Byte])] = {
     val chrononSchema: StructType = StructType.from("input", SparkConversions.toChrononSchema(inputDf.schema))
 
+    val entityIndex = 0
     val tsIndex = 1
 
     // Split inputDf into tiles to allow for pre-aggregations to be tested.
@@ -119,7 +120,7 @@ class InMemoryStream {
     val entityTimestampGroupedRows = inputDf
       .collect()
       .groupBy(row => {
-        (row.get(0), row.get(1))
+        (row.get(entityIndex), row.get(tsIndex))
       })
     entityTimestampGroupedRows.toArray.map { keyedRow =>
       val rowsKeys = Array(keyedRow._1._1) // first entry of grouping tuple is entity id
