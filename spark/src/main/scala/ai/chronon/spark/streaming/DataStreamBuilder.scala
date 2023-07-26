@@ -4,10 +4,46 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 
-case class Stream(df: DataFrame, partitions: Int, topicInfo: TopicInfo)
+import scala.collection.Seq
 
-trait StreamBuilder {
-  def from(topic: String, conf: Map[String, String])(implicit session: SparkSession): Stream
+case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
+  def apply(query: Query): DataStream = {
+    val dfWithQuery = null
+      val streamingSource = groupByConf.streamingSource.get
+    val query = streamingSource.query
+    val selects = Option(query.selects).map(_.asScala.toMap).orNull
+    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+    val fillIfAbsent = groupByConf.dataModel match {
+      case DataModel.Entities =>
+        Map(Constants.TimeColumn -> timeColumn, Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
+      case chronon.api.DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+    }
+    val keys = groupByConf.getKeyColumns.asScala
+
+    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+    val selectMap = Option(selects).getOrElse(Map.empty[String, String])
+    val keyWhereOption = keys
+      .map { key =>
+        s"${selectMap.getOrElse(key, key)} IS NOT NULL"
+      }
+      .mkString(" OR ")
+    val timeWheres = groupByConf.dataModel match {
+      case chronon.api.DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
+      case chronon.api.DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
+    }
+    QueryUtils.build(
+      selects,
+      Constants.StreamingInputTable,
+      baseWheres ++ timeWheres :+ s"($keyWhereOption)",
+      fillIfAbsent = if (selects == null) null else fillIfAbsent
+    )
+
+    DataStream(dfWithQuery, partitions, topicInfo)
+  }
+}
+
+trait DataStreamBuilder {
+  def from(topic: String, conf: Map[String, String])(implicit session: SparkSession): DataStream
 }
 
 case class TopicInfo(name: String, topicType: String, params: Map[String, String])
@@ -44,16 +80,16 @@ object TopicInfo {
   }
 }
 
-object StreamBuilder {
-  val registry: Map[String, StreamBuilder] = Map(
+object DataStreamBuilder {
+  val registry: Map[String, DataStreamBuilder] = Map(
     "kafka" -> new KafkaStreamBuilder()
     // TODO add kinesis support
     // TODO make this part of online api
   )
 }
 
-class KafkaStreamBuilder extends StreamBuilder {
-  override def from(session: SparkSession, topic: String, conf: Map[String, String]): Stream = {
+class KafkaStreamBuilder extends DataStreamBuilder {
+  override def from(session: SparkSession, topic: String, conf: Map[String, String]): DataStream = {
     val bootstrap = conf.getOrElse("bootstrap", conf("host") + conf.get("port").map(":" + _).getOrElse(""))
     val topicInfo = TopicInfo.parse(topic)
     TopicChecker.topicShouldExist(topic, bootstrap)
@@ -75,6 +111,6 @@ class KafkaStreamBuilder extends StreamBuilder {
       .option("enable.auto.commit", "true")
       .load()
       .selectExpr("value")
-    Stream(df, partitions = TopicChecker.getPartitions(topic, bootstrap = bootstrap), topicInfo)
+    DataStream(df, partitions = TopicChecker.getPartitions(topic, bootstrap = bootstrap), topicInfo)
   }
 }
