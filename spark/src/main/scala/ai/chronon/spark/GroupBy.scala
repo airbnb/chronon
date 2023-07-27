@@ -529,8 +529,7 @@ object GroupBy {
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
-    println(
-      s"""
+    println(s"""
          |Time Mapping: $timeMapping
          |""".stripMargin)
     metaColumns ++= timeMapping
@@ -570,11 +569,12 @@ object GroupBy {
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
-    val isAnySourceCumulative = groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
+    val isAnySourceCumulative =
+      groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
-                                if(isAnySourceCumulative) None else Some(inputTables))
+      tableUtils.unfilledRages(outputTable,
+                               PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
+                               if (isAnySourceCumulative) None else Some(inputTables))
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       println(s"""Nothing to backfill for $outputTable - given
