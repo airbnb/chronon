@@ -135,4 +135,12 @@ public class JavaFetcher {
     // Convert responses to CompletableFuture
     return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
   }
+
+  /**
+   * Set the partition meta format for the fetcher.
+   * @param format - The date format to use for parsing. (i.e. "yyyy-MM-dd")
+   */
+  public void setPartitionMeta(String format) {
+    this.fetcher.setPartitionMeta(format);
+  }
 }
