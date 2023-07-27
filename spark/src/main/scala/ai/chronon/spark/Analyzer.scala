@@ -275,7 +275,8 @@ class Analyzer(tableUtils: TableUtils,
       println("----- Backfill validation completed. No errors found. -----")
     } else {
       println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
-      println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
+      val keyErrorSet: Set[(String, String)] = keysWithError.toSet
+      println(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
       println(s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
       println(noAccessTables.mkString("\n"))
       println(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")

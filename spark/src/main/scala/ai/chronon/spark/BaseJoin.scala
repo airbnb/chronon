@@ -255,7 +255,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
-  def computeJoin(stepDays: Option[Int] = None, forceRun: Boolean = false): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -276,12 +276,11 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       case ex: AssertionError =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
         println(s"Validation failed. Please check the validation error in log.")
-        // TODO: turn on assertion failure in production
-        // if (!forceRun) throw ex
+        if (tableUtils.backfillValidationEnforced) throw ex
       case e: Throwable =>
         println(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
-
+    
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
