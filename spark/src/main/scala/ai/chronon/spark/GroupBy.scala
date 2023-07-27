@@ -572,9 +572,9 @@ object GroupBy {
     val isAnySourceCumulative =
       groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRages(outputTable,
-                               PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
-                               if (isAnySourceCumulative) None else Some(inputTables))
+      tableUtils.unfilledRanges(outputTable,
+                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
+                                if (isAnySourceCumulative) None else Some(inputTables))
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       println(s"""Nothing to backfill for $outputTable - given
