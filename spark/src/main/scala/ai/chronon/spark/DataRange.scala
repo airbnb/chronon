@@ -8,22 +8,24 @@ import scala.collection.JavaConverters._
 sealed trait DataRange {
   def toTimePoints: Array[Long]
 }
-case class TimeRange(start: Long, end: Long) extends DataRange {
+case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) extends DataRange {
   def toTimePoints: Array[Long] = {
     Stream
-      .iterate(TsUtils.round(start, Constants.Partition.spanMillis))(_ + Constants.Partition.spanMillis)
+      .iterate(TsUtils.round(start, tableUtils.partitionSpec.spanMillis))(_ + tableUtils.partitionSpec.spanMillis)
       .takeWhile(_ <= end)
       .toArray
   }
 
   def toPartitionRange: PartitionRange = {
-    PartitionRange(Constants.Partition.at(start), Constants.Partition.at(end))
+    PartitionRange(tableUtils.partitionSpec.at(start), tableUtils.partitionSpec.at(end))
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
-case class PartitionRange(start: String, end: String) extends DataRange {
+case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
+    extends DataRange
+    with Ordered[PartitionRange] {
 
   def valid: Boolean =
     (Option(start), Option(end)) match {
@@ -46,16 +48,20 @@ case class PartitionRange(start: String, end: String) extends DataRange {
   override def toTimePoints: Array[Long] = {
     assert(start != null && end != null, "Can't request timePoint conversion when PartitionRange is unbounded")
     Stream
-      .iterate(start)(Constants.Partition.after)
+      .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)
-      .map(Constants.Partition.epochMillis)
+      .map(tableUtils.partitionSpec.epochMillis)
       .toArray
   }
 
-  def whereClauses: Seq[String] = {
-    val startClause = Option(start).map(s"${Constants.PartitionColumn} >= '" + _ + "'")
-    val endClause = Option(end).map(s"${Constants.PartitionColumn} <= '" + _ + "'")
+  def whereClauses(partitionColumn: String = tableUtils.partitionColumn): Seq[String] = {
+    val startClause = Option(start).map(s"${partitionColumn} >= '" + _ + "'")
+    val endClause = Option(end).map(s"${partitionColumn} <= '" + _ + "'")
     (startClause ++ endClause).toSeq
+  }
+
+  def betweenClauses: String = {
+    s"${tableUtils.partitionColumn} BETWEEN '" + start + "' AND '" + end + "'"
   }
 
   def substituteMacros(template: String): String = {
@@ -66,10 +72,12 @@ case class PartitionRange(start: String, end: String) extends DataRange {
     }
   }
 
-  def genScanQuery(query: Query, table: String, fillIfAbsent: Map[String, String] = Map.empty): String = {
+  def genScanQuery(query: Query, table: String,
+                   fillIfAbsent: Map[String, String] = Map.empty,
+                   partitionColumn: String = tableUtils.partitionColumn): String = {
     val queryOpt = Option(query)
     val wheres =
-      whereClauses ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
+      whereClauses(partitionColumn) ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
                      from = table,
                      wheres = wheres,
@@ -86,10 +94,36 @@ case class PartitionRange(start: String, end: String) extends DataRange {
   def partitions: Seq[String] = {
     assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
     Stream
-      .iterate(start)(Constants.Partition.after)
+      .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)
   }
 
-  def shift(days: Int): PartitionRange =
-    PartitionRange(Constants.Partition.shift(start, days), Constants.Partition.shift(end, days))
+  def shift(days: Int): PartitionRange = {
+    if (days == 0) {
+      this
+    } else {
+      PartitionRange(tableUtils.partitionSpec.shift(start, days), tableUtils.partitionSpec.shift(end, days))
+    }
+  }
+
+  override def compare(that: PartitionRange): Int = {
+    def compareDate(left: String, right: String): Int = {
+      if (left == right) {
+        0
+      } else if (left == null) {
+        -1
+      } else if (right == null) {
+        1
+      } else {
+        left compareTo right
+      }
+    }
+
+    val compareStart = compareDate(this.start, that.start)
+    if (compareStart != 0) {
+      compareStart
+    } else {
+      compareDate(this.end, that.end)
+    }
+  }
 }

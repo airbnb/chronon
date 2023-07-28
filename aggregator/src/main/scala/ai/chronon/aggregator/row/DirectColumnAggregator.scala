@@ -3,7 +3,7 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.{DataType, Row}
 
-class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
+class DirectColumnAggregator[Input, IR, Output] (agg: BaseAggregator[Input, IR, Output],
                                                 columnIndices: ColumnIndices,
                                                 dispatcher: Dispatcher[Input, Any])
     extends ColumnAggregator {
@@ -47,7 +47,7 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
     ir.update(columnIndices.output, deleted)
   }
 
-  override def finalize(ir: Any): Any = guardedApply(agg.finalize, ir)
+  override def finalize(ir: Any): Any = numberSanityCheck(guardedApply(agg.finalize, ir))
   override def normalize(ir: Any): Any = guardedApply(agg.normalize, ir)
   override def denormalize(ir: Any): Any = if (ir == null) null else agg.denormalize(ir)
   override def clone(ir: Any): Any = guardedApply(agg.clone, ir)
@@ -56,4 +56,12 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
   }
 
   override def isDeletable: Boolean = agg.isDeletable
+
+  def numberSanityCheck(value: Any): Any = {
+    value match {
+      case i: java.lang.Float   => if (i.isNaN || i.isInfinite) null else i
+      case i: java.lang.Double    => if (i.isNaN || i.isInfinite) null else i
+      case _                    => value
+    }
+  }
 }

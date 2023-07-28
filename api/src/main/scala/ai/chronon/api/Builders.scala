@@ -3,8 +3,8 @@ package ai.chronon.api
 import ai.chronon.api.DataType.toTDataType
 import ai.chronon.api.Extensions.WindowUtils
 
-import scala.collection.JavaConverters._
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions._
 
 // mostly used by tests to define confs easily
 object Builders {
@@ -32,14 +32,14 @@ object Builders {
               reversalColumn: String = null): Query = {
       val result = new Query()
       if (selects != null)
-        result.setSelects(selects.asJava)
+        result.setSelects(selects.toJava)
       if (wheres != null)
-        result.setWheres(wheres.asJava)
+        result.setWheres(wheres.toJava)
       result.setStartPartition(startPartition)
       result.setEndPartition(endPartition)
       result.setTimeColumn(timeColumn)
       if (setups != null)
-        result.setSetups(setups.asJava)
+        result.setSetups(setups.toJava)
       result.setMutationTimeColumn(mutationTimeColumn)
       result.setReversalColumn(reversalColumn)
       result
@@ -57,7 +57,7 @@ object Builders {
       result.setInputColumn(inputColumn)
       result.setWindow(window)
       if (argMap != null)
-        result.setArgMap(argMap.asJava)
+        result.setArgMap(argMap.toJava)
       if (bucket != null) {
         result.setBucket(bucket)
       }
@@ -75,11 +75,11 @@ object Builders {
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
       if (argMap != null)
-        result.setArgMap(argMap.asJava)
+        result.setArgMap(argMap.toJava)
       if (windows != null)
-        result.setWindows(windows.asJava)
+        result.setWindows(windows.toJava)
       if (buckets != null)
-        result.setBuckets(buckets.asJava)
+        result.setBuckets(buckets.toJava)
       result
     }
   }
@@ -123,11 +123,11 @@ object Builders {
       val result = new GroupBy()
       result.setMetaData(metaData)
       if (sources != null)
-        result.setSources(sources.asJava)
+        result.setSources(sources.toJava)
       if (keyColumns != null)
-        result.setKeyColumns(keyColumns.asJava)
+        result.setKeyColumns(keyColumns.toJava)
       if (aggregations != null)
-        result.setAggregations(aggregations.asJava)
+        result.setAggregations(aggregations.toJava)
       if (accuracy != null)
         result.setAccuracy(accuracy)
       if (backfillStartDate != null)
@@ -140,14 +140,29 @@ object Builders {
     def apply(metaData: MetaData = null,
               left: Source = null,
               joinParts: Seq[JoinPart] = null,
-              externalParts: Seq[ExternalPart] = null): Join = {
+              externalParts: Seq[ExternalPart] = null,
+              labelPart: LabelPart = null,
+              bootstrapParts: Seq[BootstrapPart] = null,
+              rowIds: Seq[String] = null,
+              derivations: Seq[Derivation] = null,
+              skewKeys: Map[String, Seq[String]] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
       result.setLeft(left)
       if (joinParts != null)
-        result.setJoinParts(joinParts.asJava)
+        result.setJoinParts(joinParts.toJava)
       if (externalParts != null)
-        result.setOnlineExternalParts(externalParts.asJava)
+        result.setOnlineExternalParts(externalParts.toJava)
+      if (labelPart != null)
+        result.setLabelPart(labelPart)
+      if (bootstrapParts != null)
+        result.setBootstrapParts(bootstrapParts.toJava)
+      if (rowIds != null)
+        result.setRowIds(rowIds.toJava)
+      if (derivations != null)
+        result.setDerivations(derivations.toJava)
+      if (skewKeys != null)
+        result.setSkewKeys(skewKeys.mapValues(_.toJava).toMap.toJava)
       result
     }
   }
@@ -162,6 +177,15 @@ object Builders {
     }
   }
 
+  object ContextualSource {
+    def apply(fields: Array[StructField]): ExternalSource = {
+      val result = new ExternalSource
+      result.setMetadata(MetaData(name = Constants.ContextualSourceName))
+      result.setKeySchema(toTDataType(StructType(Constants.ContextualSourceKeys, fields)))
+      result.setValueSchema(toTDataType(StructType(Constants.ContextualSourceValues, fields)))
+    }
+  }
+
   object ExternalPart {
     def apply(
         externalSource: ExternalSource,
@@ -171,8 +195,19 @@ object Builders {
       val result = new ExternalPart()
       result.setSource(externalSource)
       if (keyMapping != null)
-        result.setKeyMapping(keyMapping.asJava)
+        result.setKeyMapping(keyMapping.toJava)
       result.setPrefix(prefix)
+      result
+    }
+  }
+
+  object LabelPart {
+    def apply(labels: Seq[JoinPart] = null, leftStartOffset: Int = 0, leftEndOffset: Int = 0): LabelPart = {
+      val result = new LabelPart()
+      result.setLeftStartOffset(leftStartOffset)
+      result.setLeftEndOffset(leftEndOffset)
+      if (labels != null)
+        result.setLabels(labels.toJava)
       result
     }
   }
@@ -181,16 +216,12 @@ object Builders {
     def apply(
         groupBy: GroupBy = null,
         keyMapping: Map[String, String] = null,
-        selectors: Seq[AggregationSelector] = null,
         prefix: String = null
     ): JoinPart = {
       val result = new JoinPart()
       result.setGroupBy(groupBy)
       if (keyMapping != null)
-        result.setKeyMapping(keyMapping.asJava)
-
-      if (selectors != null) // TODO: selectors are unused right now - we select everything
-        result.setSelectors(selectors.asJava)
+        result.setKeyMapping(keyMapping.toJava)
       result.setPrefix(prefix)
       result
     }
@@ -205,7 +236,8 @@ object Builders {
         dependencies: Seq[String] = null,
         namespace: String = null,
         team: String = null,
-        samplePercent: Double = 0,
+        samplePercent: Double = 100,
+        consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
@@ -216,11 +248,13 @@ object Builders {
       result.setOutputNamespace(namespace)
       result.setTeam(Option(team).getOrElse("chronon"))
       if (dependencies != null)
-        result.setDependencies(ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(dependencies))
+        result.setDependencies(dependencies.toSeq.toJava)
       if (samplePercent > 0)
         result.setSamplePercent(samplePercent)
+      if (consistencySamplePercent > 0)
+        result.setConsistencySamplePercent(consistencySamplePercent)
       if (tableProperties.nonEmpty)
-        result.setTableProperties(ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(tableProperties))
+        result.setTableProperties(tableProperties.toJava)
       result
     }
   }
@@ -236,8 +270,43 @@ object Builders {
       stagingQuery.setQuery(query)
       stagingQuery.setMetaData(metaData)
       stagingQuery.setStartPartition(startPartition)
-      if (setups != null) stagingQuery.setSetups(setups.asJava)
+      if (setups != null) stagingQuery.setSetups(setups.toJava)
       stagingQuery
     }
   }
+
+  object BootstrapPart {
+    def apply(
+        query: Query = null,
+        table: String = null,
+        keyColumns: Seq[String] = null,
+        metaData: MetaData = null
+    ): BootstrapPart = {
+      val bootstrapPart = new BootstrapPart()
+      bootstrapPart.setQuery(query)
+      bootstrapPart.setTable(table)
+      Option(keyColumns)
+        .map(_.toSeq.toJava)
+        .foreach(bootstrapPart.setKeyColumns)
+      bootstrapPart.setMetaData(metaData)
+      bootstrapPart
+    }
+  }
+
+  object Derivation {
+    def apply(
+        name: String = null,
+        expression: String = null
+    ): Derivation = {
+      val derivation = new Derivation()
+      if (name != null) {
+        derivation.setName(name)
+      }
+      if (derivation != null) {
+        derivation.setExpression(expression)
+      }
+      derivation
+    }
+  }
+
 }

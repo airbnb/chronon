@@ -42,10 +42,7 @@ export SPARK_EXTERNAL="$HADOOP_DIR/spark/external/lib"
 export STREAMING_JARS="$SPARK_EXTERNAL/spark-sql-kafka-0-10_2.11-2.4.0.jar,$SPARK_EXTERNAL/spark-streaming-kafka-0-10-assembly_2.11-2.4.0.jar"
 # TODO: You might need to also add jersey-core-1.9.jar if it isn't bundled in already
 export SPARK_JARS="$HADOOP_DIR/hadoop/hadoop-aws.jar,$HADOOP_DIR/java/Hive-JSON-Serde/hive-openx-serde.jar"
-/usr/bin/spark-submit \
---spark-version ${SPARK_VERSION:-2.4.0} \
---emr-cluster ${EMR_CLUSTER:-streaming-infra-shared-prod} \
---hive-cluster ${EMR_HIVE_CLUSTER:-silver} \
+$SPARK_SUBMIT_PATH \
 --deploy-mode cluster \
 --queue ${EMR_QUEUE:-zipline-prod} \
 --master ${JOB_MODE:-yarn} \

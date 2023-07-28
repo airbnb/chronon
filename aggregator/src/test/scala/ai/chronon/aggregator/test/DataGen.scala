@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import scala.reflect.ClassTag
+import scala.collection.Seq
 import scala.util.Random
 
 // utility classes to generate random data
@@ -53,18 +54,18 @@ object CStream {
                     maxTs: Long = System.currentTimeMillis()): Array[Long] =
     new CStream.TimeStream(window, roundMillis, maxTs).gen(count).toArray.sorted
 
-  def genPartitions(count: Int): Array[String] = {
-    val today = Constants.Partition.at(System.currentTimeMillis())
+  def genPartitions(count: Int, partitionSpec: PartitionSpec): Array[String] = {
+    val today = partitionSpec.at(System.currentTimeMillis())
     Stream
       .iterate(today) {
-        Constants.Partition.before
+        partitionSpec.before
       }
       .take(count)
       .toArray
   }
 
-  class PartitionStream(count: Int) extends CStream[String] {
-    val keys: Array[String] = genPartitions(count)
+  class PartitionStream(count: Int, partitionSpec: PartitionSpec) extends CStream[String] {
+    val keys: Array[String] = genPartitions(count, partitionSpec)
     override def next(): String = Option(roll(keys.length, nullRate = 0)).map(dice => keys(dice.toInt)).get
   }
 
@@ -110,21 +111,24 @@ object CStream {
   }
 
   //  The main api: that generates dataframes given certain properties of data
-  def gen(columns: Seq[Column], count: Int): RowsWithSchema = {
+  def gen(columns: Seq[Column],
+          count: Int,
+          partitionColumn: String = null,
+          partitionSpec: PartitionSpec = null): RowsWithSchema = {
     val schema = columns.map(_.schema)
-    val generators = columns.map(_.gen)
-    val zippedStream = new ZippedStream(generators: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
+    val generators = columns.map(_.gen(partitionColumn, partitionSpec))
+    val zippedStream = new ZippedStream(generators.toSeq: _*)(schema.indexWhere(_._1 == Constants.TimeColumn))
     RowsWithSchema(Seq.fill(count) { zippedStream.next() }.toArray, schema)
   }
 }
 
 case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10) {
-  def genImpl(dtype: DataType): CStream[Any] =
+  def genImpl(dtype: DataType, partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =
     dtype match {
       case StringType =>
         name match {
-          case Constants.PartitionColumn => new PartitionStream(cardinality)
-          case _                         => new StringStream(cardinality, name)
+          case col if col == partitionColumn => new PartitionStream(cardinality, partitionSpec)
+          case _                             => new StringStream(cardinality, name)
         }
       case IntType    => new IntStream(cardinality)
       case DoubleType => new DoubleStream(cardinality)
@@ -133,11 +137,12 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
           case _                    => new LongStream(cardinality)
         }
-      case ListType(elementType) => genImpl(elementType).chunk(chunkSize)
+      case ListType(elementType) => genImpl(elementType, partitionColumn, partitionSpec).chunk(chunkSize)
       case otherType             => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
     }
 
-  def gen: CStream[Any] = genImpl(`type`)
+  def gen(partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =
+    genImpl(`type`, partitionColumn, partitionSpec)
   def schema: (String, DataType) = name -> `type`
 }
 case class RowsWithSchema(rows: Array[TestRow], schema: Seq[(String, DataType)])

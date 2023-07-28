@@ -61,8 +61,12 @@ def json2thrift(json_str, thrift_class):
 
 
 def file2thrift(path, thrift_class):
-    with open(path, 'r') as file:
-        return json2thrift(file.read(), thrift_class)
+    try:
+        with open(path, 'r') as file:
+            return json2thrift(file.read(), thrift_class)
+    except json.decoder.JSONDecodeError as e:
+        raise Exception(f"Error decoding file into a {thrift_class.__name__}:  {path}. " +
+                        f"Please double check that {path} represents a valid {thrift_class.__name__}.") from e
 
 
 def thrift_json(obj):

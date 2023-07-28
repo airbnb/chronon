@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions.{UnpackedAggregations, WindowMapping, WindowOps
 import ai.chronon.api.{Aggregation, AggregationPart, DataType, Row}
 
 import java.util
+import scala.collection.Seq
 
 // Head Sliding, Tail Hopping Window - effective window size when plotted against query timestamp
 // will look the edge of sawtooth - instead of like a straight line.

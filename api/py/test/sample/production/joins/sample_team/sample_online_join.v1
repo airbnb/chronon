@@ -3,7 +3,7 @@
     "name": "sample_team.sample_online_join.v1",
     "online": 1,
     "production": 0,
-    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}}",
+    "customJson": "{\"check_consistency\": true, \"lag\": 0, \"additional_args\": {\"custom_arg\": \"custom_value\"}, \"additional_env\": {\"custom_env\": \"custom_env_value\"}, \"join_tags\": null, \"join_part_tags\": {}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
       "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
@@ -12,10 +12,13 @@
       "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
     "tableProperties": {
-      "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+      "source": "chronon"
     },
-    "outputNamespace": "sample_team_namespace",
-    "team": "sample_team"
+    "outputNamespace": "chronon_db",
+    "team": "sample_team",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily",
+    "consistencySamplePercent": 5.0
   },
   "left": {
     "events": {
@@ -38,15 +41,16 @@
         "metaData": {
           "name": "sample_team.event_sample_group_by.v1",
           "online": 1,
-          "customJson": "{\"lag\": 0}",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": {\"TO_DEPRECATE\": true}, \"column_tags\": {\"event_sum_7d\": {\"DETAILED_TYPE\": \"CONTINUOUS\"}}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
           "tableProperties": {
-            "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+            "source": "chronon"
           },
           "outputNamespace": "sample_namespace",
-          "team": "sample_team"
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
@@ -103,16 +107,17 @@
         "metaData": {
           "name": "sample_team.entity_sample_group_by_from_module.v1",
           "online": 1,
-          "customJson": "{\"lag\": 0}",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
             "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
           "tableProperties": {
-            "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+            "source": "chronon"
           },
-          "outputNamespace": "sample_team_namespace",
-          "team": "sample_team"
+          "outputNamespace": "chronon_db",
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {
@@ -163,16 +168,17 @@
         "metaData": {
           "name": "sample_team.group_by_with_kwargs.v1",
           "online": 1,
-          "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0}",
+          "customJson": "{\"additional_argument\": \"To be placed in customJson\", \"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
             "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
           "tableProperties": {
-            "sample_field_json": "{\"policy\": \"sample_policy\", \"days\": -1}"
+            "source": "chronon"
           },
-          "outputNamespace": "sample_team_namespace",
-          "team": "sample_team"
+          "outputNamespace": "chronon_db",
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
         },
         "sources": [
           {

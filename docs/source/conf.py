@@ -9,7 +9,7 @@
 project = 'Chronon'
 copyright = '2022, Airbnb'
 author = 'Airbnb'
-release = '0.0.10'
+release = '0.0.22'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -32,21 +32,28 @@ source_suffix = {
     '.md': 'markdown',
 }
 
-templates_path = ['_templates']
-exclude_patterns = []
-
-
-
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'pydata_sphinx_theme'
 html_theme_options = {
-    "github_url": "https://github.com/airbnb/chronon",
     "collapse_navigation": True,
+    "github_url": "https://github.com/airbnb/chronon",
+    "logo": {
+      "image_light": "logo.png",
+      "image_dark": "logo.png",  # TODO: add different dark version
+    },
+    "favicons": [
+        {
+            "rel": "icon",
+            "sizes": "64x64",
+            "href": "favicon_64_light_bg.png",
+        }
+    ],
+    "navbar_align": "right"
 }
 
-html_title = "Airbnb Chronon Manual"
+html_title = "Feature Framework"
 html_static_path = ['_static']
 html_css_files = ["chronon.css"]
 html_context = {"default_mode": "light"}

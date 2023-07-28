@@ -1,8 +1,7 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api.StructType
-import ai.chronon.online.AvroConversions
-import ai.chronon.spark.Conversions
+import ai.chronon.online.{AvroConversions, SparkConversions}
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
 import org.apache.avro.specific.SpecificDatumWriter
@@ -29,7 +28,7 @@ class InMemoryStream {
 
   // encode input as avro byte array and insert into memory stream.
   def getInMemoryStreamDF(spark: SparkSession, inputDf: Dataset[Row]): DataFrame = {
-    val schema: StructType = StructType.from("input", Conversions.toChrononSchema(inputDf.schema))
+    val schema: StructType = StructType.from("input", SparkConversions.toChrononSchema(inputDf.schema))
     val avroSchema = AvroConversions.fromChrononSchema(schema)
     import spark.implicits._
     val input: MemoryStream[Array[Byte]] = new MemoryStream[Array[Byte]](MemoryStreamID, spark.sqlContext)

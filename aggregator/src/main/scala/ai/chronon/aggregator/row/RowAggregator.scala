@@ -1,12 +1,15 @@
 package ai.chronon.aggregator.row
 
+import ai.chronon.aggregator.base.SimpleAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
+
+import scala.collection.Seq
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
 class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
-    extends Serializable {
+    extends Serializable with SimpleAggregator[Row, Array[Any], Array[Any]] {
 
   val length: Int = aggregationParts.size
   val indices: Range = 0 until length
@@ -51,12 +54,14 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
 
   val isNotDeletable: Boolean = columnAggregators.forall(!_.isDeletable)
 
-  def update(ir: Array[Any], inputRow: Row): Unit = {
+  // this will mutate in place
+  def update(ir: Array[Any], inputRow: Row): Array[Any] = {
     var i = 0
     while (i < columnAggregators.length) {
       columnAggregators(i).update(ir, inputRow)
       i += 1
     }
+    ir
   }
 
   def updateWithReturn(ir: Array[Any], inputRow: Row): Array[Any] = {
@@ -88,14 +93,17 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
 
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)
 
-  def delete(ir: Array[Any], inputRow: Row): Unit =
-    if (!isNotDeletable)
+  override def delete(ir: Array[Any], inputRow: Row): Array[Any] = {
+    if (!isNotDeletable) {
       columnAggregators.foreach(_.delete(ir, inputRow))
+    }
+    ir
+  }
 
   // convert arbitrary java types into types that
   // parquet/spark or any other external storage format understands
   // CPCSketch is the primary use-case now. We will need it for quantile estimation too I think
-  def normalize(ir: Array[Any]): Array[Any] = map(ir, _.normalize)
+  override def normalize(ir: Array[Any]): Array[Any] = map(ir, _.normalize)
   // used by hops aggregator, hops have a timestamp in the end - which we want to preserve
   def normalizeInPlace(ir: Array[Any]): Array[Any] = {
     var idx = 0
@@ -129,4 +137,13 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     }
     result
   }
+
+  override def prepare(input: Row): Array[Any] = {
+    val ir = new Array[Any](columnAggregators.length)
+    update(ir, input)
+  }
+
+  override def outputType: DataType = outputType
+
+  override def irType: DataType = irType
 }

@@ -4,9 +4,9 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{Fetcher, JoinCodec, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online._
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{Conversions, LogFlattenerJob, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -14,9 +14,10 @@ import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 
 import java.nio.charset.StandardCharsets
 import java.util.{Base64, TimeZone}
+import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 case class GroupByTestSuite(
     name: String,
@@ -36,10 +37,7 @@ object JoinTestSuite {
     val suite = JoinTestSuite(joinConf, groupBys)
     assert(
       groupBys.map(_.groupByConf.metaData.name) ==
-        ScalaVersionSpecificCollectionsConverter
-          .convertJavaListToScala(
-            joinConf.joinParts
-          )
+        joinConf.joinParts.toScala
           .map(_.groupBy.metaData.name)
     )
     suite
@@ -102,8 +100,8 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      rows.toJava,
+      SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
       name,
@@ -147,8 +145,8 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
-      Conversions.fromChrononSchema(schema)
+      rows.toJava,
+      SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
       name,
@@ -162,8 +160,7 @@ class SchemaEvolutionTest extends TestCase {
     val joinConf = Builders.Join(
       left = viewsGroupBy.groupByConf.sources.get(0),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy.groupByConf)),
-      metaData =
-        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
+      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
     )
 
     JoinTestSuite(
@@ -188,8 +185,7 @@ class SchemaEvolutionTest extends TestCase {
         Builders.JoinPart(groupBy = viewsGroupBy.groupByConf),
         Builders.JoinPart(groupBy = attributesGroupBy.groupByConf)
       ),
-      metaData =
-        Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon", samplePercent = 1.0)
+      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
     )
     JoinTestSuite(
       joinConf,
@@ -278,12 +274,12 @@ class SchemaEvolutionTest extends TestCase {
     flattenerJob.buildLogTable()
     val flattenedDf = spark
       .table(joinConf.metaData.loggedTable)
-      .where(col(Constants.PartitionColumn) === offlineDs)
+      .where(col(tableUtils.partitionColumn) === offlineDs)
     assertEquals(2, flattenedDf.count())
     assertTrue(
       LogFlattenerJob
-        .readSchemaTableProperties(tableUtils, joinConf)
-        .mapValues(JoinCodec.fromLoggingSchema(_, joinConf))
+        .readSchemaTableProperties(tableUtils, joinConf.metaData.loggedTable)
+        .mapValues(LoggingSchema.parseLoggingSchema)
         .values
         .nonEmpty)
     flattenedDf
@@ -320,8 +316,8 @@ class SchemaEvolutionTest extends TestCase {
     val logs2 = mockApi.flushLoggedValues
     val (dataEvent2, controlEvent2) = extractDataEventAndControlEvent(logs2)
     val schema2 = new String(Base64.getDecoder.decode(controlEvent2.valueBase64), StandardCharsets.UTF_8)
-    val joinV1Codec = JoinCodec.fromLoggingSchema(schema2, joinSuiteV1.joinConf)
-    assertEquals(dataEvent2.schemaHash, joinV1Codec.loggingSchemaHash)
+    val recoveredSchemaHash2 = LoggingSchema.parseLoggingSchema(schema2).hash(joinSuiteV1.joinConf.metaData.name)
+    assertEquals(dataEvent2.schemaHash, recoveredSchemaHash2)
 
     val flattenedDf12 = verifyOfflineTables(
       logs1 ++ logs2, // combine logs from stage 1 and stage 2 into offline DS = 2022-10-03
@@ -391,8 +387,8 @@ class SchemaEvolutionTest extends TestCase {
       assertEquals(dataEvent3.schemaHash, dataEvent4.schemaHash)
     }
     val schema4 = new String(Base64.getDecoder.decode(controlEvent4.valueBase64), StandardCharsets.UTF_8)
-    val joinV2Codec = JoinCodec.fromLoggingSchema(schema4, joinSuiteV2.joinConf)
-    assertEquals(dataEvent4.schemaHash, joinV2Codec.loggingSchemaHash)
+    val recoveredSchemaHash4 = LoggingSchema.parseLoggingSchema(schema4).hash(joinSuiteV2.joinConf.metaData.name)
+    assertEquals(dataEvent4.schemaHash, recoveredSchemaHash4)
 
     val flattenedDf34 = verifyOfflineTables(
       logs3 ++ logs4, // combine logs from stage 3 and stage 4 into offline DS = 2022-10-04

@@ -1,5 +1,6 @@
 package ai.chronon.aggregator.windowing
 
+import scala.collection.Seq
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
 
@@ -35,7 +36,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
   }
 
-  def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row)
+  def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row, batchTailTs)
 
   def normalizeBatchIr(batchIr: BatchIr): FinalBatchIr =
     FinalBatchIr(
@@ -78,10 +79,22 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     while (headRows.hasNext) {
       val row = headRows.next()
       val rowTs = row.ts // unbox long only once
-      if (queryTs > rowTs && rowTs >= batchEndTs) {
-        // When a request with afterTsMillis is passed, we don't consider mutations with mutationTs past the tsMillis
-        if ((hasReversal && queryTs >= row.mutationTs) || !hasReversal)
-          updateIr(resultIr, row, queryTs, hasReversal)
+
+      val shouldSelect = if (hasReversal) {
+        // mutation case
+        val mutationTs = row.mutationTs
+        val rowBeforeQuery = queryTs > rowTs && queryTs > mutationTs
+        val rowAfterBatchEnd = mutationTs >= batchEndTs
+        rowBeforeQuery && rowAfterBatchEnd
+      } else {
+        // event case
+        val rowBeforeQuery = queryTs > rowTs
+        val rowAfterBatchEnd = rowTs >= batchEndTs
+        rowBeforeQuery && rowAfterBatchEnd
+      }
+
+      if (shouldSelect) {
+        updateIr(resultIr, row, queryTs, hasReversal)
       }
     }
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)

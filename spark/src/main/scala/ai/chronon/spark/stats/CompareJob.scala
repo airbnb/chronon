@@ -1,109 +1,161 @@
 package ai.chronon.spark.stats
 
-import ai.chronon.api._
-import ai.chronon.online._
-import ai.chronon.spark.Conversions
-import ai.chronon.spark.Extensions._
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.DataType
+import ai.chronon.api
+import ai.chronon.api.{Constants, PartitionSpec}
+import ai.chronon.api.DataModel.Events
+import ai.chronon.api.Extensions._
+import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.spark.stats.CompareJob.getJoinKeys
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils}
+import org.apache.spark.sql.{DataFrame, SaveMode}
 
-object CompareJob {
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
-  def checkConsistency(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
-      keys: Seq[String],
-      mapping: Map[String, String] = Map.empty
-  ): Unit = {
-    val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
-    val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
-    // Make sure the number of fields are the same on either side
-    assert(leftFields.size == rightFields.size,
-      s"Inconsistent number of fields; left side: ${leftFields.size}, right side: ${rightFields.size}")
-
-    // Verify that the mapping and the datatypes match
-    leftFields.foreach { leftField =>
-      val rightFieldName = if (mapping.contains(leftField._1)) mapping.get(leftField._1).get else leftField._1
-      assert(rightFields.contains(rightFieldName),
-        s"Mapping column on the right table is not present; column name: ${rightFieldName}")
-
-      // Make sure the data types match for proper comparison
-      val rightFieldType = rightFields.get(rightFieldName).get
-      assert(leftField._2 == rightFieldType,
-        s"Comparison data types do not match; left side: ${leftField._2}, right side: ${rightFieldType}")
-    }
-
-    // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
-    assert(mapping.keySet.subsetOf(leftFields.keySet),
-        s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
-        s" expected to be subset of: ${leftFields.keySet}")
-    assert(mapping.values.toSet.subsetOf(rightFields.keySet),
-        s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
-        s" expected to be subset of: ${rightFields.keySet}")
-
-    // Make sure the passed keys has one of the time elements in it
-    assert(keys.intersect(Constants.ReservedColumns).length != 0, "Ensure that one of the key columns is a time column")
-  }
-
-  /*
-  * Navigate the dataframes and compare them and fetch statistics.
+/**
+  * Compare Job for comparing data between joins, staging queries and raw queries.
+  * Leverage the compare module for computation between sources.
   */
-  def compare(
-      leftDf: DataFrame,
-      rightDf: DataFrame,
-      keys: Seq[String],
-      mapping: Map[String, String] = Map.empty
-  ): DataMetrics = {
-    // 1. Check for schema consistency issues
-    checkConsistency(leftDf, rightDf, keys, mapping)
+class CompareJob(
+                  tableUtils: TableUtils,
+                  joinConf: api.Join,
+                  stagingQueryConf: api.StagingQuery,
+                  startDate: String,
+                  endDate: String
+                ) extends Serializable {
+  val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
+    .map(_.toScala)
+    .orNull
+  val namespace = joinConf.metaData.outputNamespace
+  val joinName = joinConf.metaData.cleanName
+  val stagingQueryName = stagingQueryConf.metaData.cleanName
+  val comparisonTableName = s"${namespace}.compare_join_query_${joinName}_${stagingQueryName}"
+  val metricsTableName = s"${namespace}.compare_stats_join_query_${joinName}_${stagingQueryName}"
 
-    // 2. Build comparison dataframe
-    println(s"""Join keys: ${keys.mkString(", ")}
-        |Left Schema:
-        |${leftDf.schema.pretty}
-        |
-        |Right Schema:
-        |${rightDf.schema.pretty}
-        |
+  def run(): (DataFrame, DataFrame, DataMetrics) = {
+    assert(endDate != null, "End date for the comparison should not be null")
+    // Check for schema consistency issues
+    validate()
+
+    val partitionRange = PartitionRange(startDate, endDate)(tableUtils)
+    val leftDf = tableUtils.sql(s"""
+        |SELECT *
+        |FROM ${joinConf.metaData.outputTable}
+        |WHERE ${partitionRange.betweenClauses}
         |""".stripMargin)
 
-    // Rename the left data source columns with a suffix (except the keys) to reduce the ambiguity
-    val renamedLeftDf = leftDf.schema.fieldNames.foldLeft(leftDf)((df, field) => {
-      if (!keys.contains(field)) {
-        df.withColumnRenamed(field, s"${field}${CompareMetrics.leftSuffix}")
-      } else {
-        df
-      }
-    })
+    // Run the staging query sql directly
+    val rightDf = tableUtils.sql(
+      StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
+    )
 
-    // 3. Join both the dataframes based on the keys and the partition column
-    renamedLeftDf.validateJoinKeys(rightDf, keys)
-    val joinedDf = renamedLeftDf.join(rightDf, keys, "full")
+    val (compareDf: DataFrame, metricsDf: DataFrame, metrics: DataMetrics) =
+      CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf, tableUtils), tableUtils, migrationCheck = true)
 
-    // Rename the right data source columns with a suffix (except the keys) to reduce the ambiguity
-    val compareDf = rightDf.schema.fieldNames.foldLeft(joinedDf)((df, field) => {
-      if (!keys.contains(field)) {
-        df.withColumnRenamed(field, s"${field}${CompareMetrics.rightSuffix}")
-      } else {
-        df
-      }
-    })
+    // Save the comparison table
+    println("Saving comparison output..")
+    println(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    tableUtils.insertUnPartitioned(compareDf,
+                                   comparisonTableName,
+                                   tableProps,
+                                   saveMode = SaveMode.Overwrite)
 
-    val leftChrononSchema = StructType(
-      "input",
-      Conversions.toChrononSchema(leftDf.schema)
-        .filterNot(tup => keys.contains(tup._1))
-        .map(tup => StructField(tup._1, tup._2)))
+    // Save the metrics table
+    println("Saving metrics output..")
+    println(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    tableUtils.insertUnPartitioned(metricsDf,
+                                   metricsTableName,
+                                   tableProps,
+                                   saveMode = SaveMode.Overwrite)
 
-    // 4. Run the consistency check
-    val (df, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
 
-    // 5. Optionally save the compare results to a table
-    // TODO Save the results to a table
-    // df.withTimeBasedColumn("ds").save(joinConf.metaData.consistencyTable, tableProperties = tblProperties)
+    println("Printing basic comparison results..")
+    println("(Note: This is just an estimation and not a detailed analysis of results)")
+    CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
 
-    metrics
+    println("Finished compare stats.")
+    (compareDf, metricsDf, metrics)
+  }
+
+  def validate(): Unit = {
+    // Extract the schema of the Join, StagingQuery and the keys before calling this.
+    val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
+    val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
+    val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
+    val finalStagingQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
+    val stagingQuerySchema = tableUtils.sql(
+      s"${finalStagingQuery} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+
+    CompareBaseJob.checkConsistency(
+      joinSchema,
+      stagingQuerySchema,
+      getJoinKeys(joinConf, tableUtils),
+      tableUtils,
+      migrationCheck = true)
   }
 }
 
+object CompareJob {
 
+  /**
+    * Extract the discrepancy metrics (like missing records, data mismatch) from the hourly compare metrics, consolidate
+    * them into aggregations by day, which format is specified in the `partitionSpec`
+    *
+    * @param metrics contains hourly aggregations of compare metrics of the generated df and expected df
+    * @param partitionSpec is the spec regarding the partition format
+    * @return the consolidated daily data
+    */
+  def getConsolidatedData(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] =
+    metrics.series.groupBy(t => partitionSpec.at(t._1))
+      .mapValues(_.map(_._2))
+      .map { case (day, values) =>
+        val aggValue = values.map { aggMetrics =>
+          val leftNullSum: Long = aggMetrics.filterKeys(_.endsWith("left_null_sum"))
+            .values
+            .map(_.asInstanceOf[Long])
+            .reduceOption(_ max _)
+            .getOrElse(0)
+          val rightNullSum: Long = aggMetrics.filterKeys(_.endsWith("right_null_sum"))
+            .values
+            .map(_.asInstanceOf[Long])
+            .reduceOption(_ max _)
+            .getOrElse(0)
+          val mismatchSum: Long = aggMetrics.filterKeys(_.endsWith("mismatch_sum"))
+            .values
+            .map(_.asInstanceOf[Long])
+            .reduceOption(_ max _)
+            .getOrElse(0)
+          leftNullSum + rightNullSum + mismatchSum
+        }.sum
+        (day, aggValue)
+      }
+      .toList
+      .filter(_._2 > 0)
+      .sortBy(_._1)
+
+  def printAndGetBasicMetrics(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] = {
+    val consolidatedData = getConsolidatedData(metrics, partitionSpec)
+
+    if (consolidatedData.size == 0) {
+      println(s"No discrepancies found for data mismatches and missing counts. " +
+        s"It is highly recommended to explore the full metrics.")
+    } else {
+      consolidatedData.foreach { case (date, mismatchCount) =>
+        println(s"Found ${mismatchCount} mismatches on date '${date}'")
+      }
+    }
+    consolidatedData
+  }
+
+  def getJoinKeys(joinConf: api.Join, tableUtils: TableUtils): Seq[String] = {
+    if (joinConf.isSetRowIds) {
+      joinConf.rowIds.toScala
+    } else {
+      val keyCols = joinConf.leftKeyCols ++ Seq(tableUtils.partitionColumn)
+      if (joinConf.left.dataModel == Events) {
+        keyCols ++ Seq(Constants.TimeColumn)
+      } else {
+        keyCols
+      }
+    }
+  }
+}

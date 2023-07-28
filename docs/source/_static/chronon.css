@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');
 
 .navbar-brand img {
-   height: 75px;
+   height: 60px;
 }
 .navbar-brand {
-   height: 75px;
+   height: 60px;
 }
 
 body {
@@ -84,6 +84,11 @@ Nat Methods 8, 441 (2011). https://doi.org/10.1038/nmeth.1618
   width: 52px;
   margin-left: auto;
   margin-right: auto;
+}
+
+.bd-content {
+  flex-grow: 1;
+  max-width: 100%;
 }
 
 .sd-card .sd-card-header {

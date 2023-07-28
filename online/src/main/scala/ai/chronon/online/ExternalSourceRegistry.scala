@@ -5,11 +5,12 @@ import ai.chronon.online.Fetcher.{Request, Response}
 
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
 // keys and values need to match schema in ExternalSource - chronon will validate automatically
-class ExternalSourceRegistry {
+class ExternalSourceRegistry extends Serializable {
   class ContextualHandler extends ExternalSourceHandler {
     override def fetch(requests: Seq[Request]): Future[Seq[Response]] = {
       Future(requests.map { request =>
@@ -38,20 +39,20 @@ class ExternalSourceRegistry {
       ec: ExecutionContext): Future[Seq[Response]] = {
     val startTime = System.currentTimeMillis()
     // we make issue one batch request per external source and flatten out it later
-    val responsesByNameF: Iterable[Future[Seq[Response]]] = requests
+    val responsesByNameF: List[Future[Seq[Response]]] = requests
       .groupBy(_.name)
       .map {
         case (name, requests) =>
           if (handlerMap.contains(name)) {
-            val ctx = context.copy(groupBy = s"ext_$name")
+            val ctx = context.copy(groupBy = s"${Constants.ExternalPrefix}_$name")
             val responses = handlerMap(name).fetch(requests)
-            responses.foreach { responses =>
+            responses.map { responses =>
               val failures = responses.count(_.values.isFailure)
               ctx.histogram("response.latency", System.currentTimeMillis() - startTime)
               ctx.histogram("response.failures", failures)
               ctx.histogram("response.successes", responses.size - failures)
-            } // issue batch request to endpoint
-            responses
+              responses
+            }
           } else {
             val failure = Failure(
               new IllegalArgumentException(
@@ -59,6 +60,7 @@ class ExternalSourceRegistry {
             Future(requests.map(request => Response(request, failure)))
           }
       }
+      .toList
 
     Future.sequence(responsesByNameF).map { responsesByName =>
       val allResponses = responsesByName.flatten

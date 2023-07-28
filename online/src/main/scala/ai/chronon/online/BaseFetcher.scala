@@ -4,16 +4,18 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.{Accuracy, DataModel, Row, StructField}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
+import ai.chronon.api.Extensions.ThrowableOps
+import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
-import scala.collection.{Seq, mutable}
-import scala.concurrent.Future
 import scala.collection.JavaConverters._
+import scala.collection.Seq
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -69,18 +71,29 @@ class BaseFetcher(kvStore: KVStore,
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+        if (debug) println("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Iterator[Row] = streamingResponses.iterator
+        val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+          .toArray
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
                          queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows, queryTimeMs, mutations)
+        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        if (debug) {
+          val gson = new Gson()
+          println(s"""
+                     |batch ir: ${gson.toJson(batchIr)}
+                     |streamingRows: ${gson.toJson(streamingRows)}
+                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                     |queryTime in millis: $queryTimeMs
+                     |""".stripMargin)
+        }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
@@ -133,6 +146,7 @@ class BaseFetcher(kvStore: KVStore,
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+    val requestTimeMillis = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
@@ -215,6 +229,10 @@ class BaseFetcher(kvStore: KVStore,
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
+                if (debug)
+                  println(
+                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                      s"for keys: ${request.keys}")
                 constructGroupByResponse(batchResponseTryAll,
                                          streamingResponsesOpt,
                                          groupByServingInfo,
@@ -266,7 +284,7 @@ class BaseFetcher(kvStore: KVStore,
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
 
-    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[PrefixedRequest]])] =
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
         val joinTry = getJoinConf(request.name)
         var joinContext: Option[Metrics.Context] = None
@@ -275,10 +293,16 @@ class BaseFetcher(kvStore: KVStore,
           joinContext.get.increment("join_request.count")
           join.joinPartOps.map { part =>
             val joinContextInner = Metrics.Context(joinContext.get, part)
-            val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-            PrefixedRequest(
-              part.fullPrefix,
-              Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner)))
+            val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
+            if (missingKeys.nonEmpty) {
+              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
+            } else {
+              val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+              Left(
+                PrefixedRequest(
+                  part.fullPrefix,
+                  Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+            }
           }
         }
         request.copy(context = joinContext) -> decomposedTry
@@ -288,7 +312,7 @@ class BaseFetcher(kvStore: KVStore,
       case (_, gbTry) =>
         gbTry match {
           case Failure(_)        => Iterator.empty
-          case Success(requests) => requests.iterator.map(_.request)
+          case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
         }
     }
 
@@ -302,7 +326,10 @@ class BaseFetcher(kvStore: KVStore,
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
-                case PrefixedRequest(prefix, groupByRequest) =>
+                case Right(keyMissingException) => {
+                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.getMessage)
+                }
+                case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap
                     .getOrElse(groupByRequest,
                                Failure(new IllegalStateException(
@@ -317,16 +344,13 @@ class BaseFetcher(kvStore: KVStore,
                     // prefix feature names
                     .recover { // capture exception as a key
                       case ex: Throwable =>
-                        val stringWriter = new StringWriter()
-                        val printWriter = new PrintWriter(stringWriter)
-                        ex.printStackTrace(printWriter)
-                        val trace = stringWriter.toString
                         if (debug || Math.random() < 0.001) {
-                          println(s"Failed to fetch $groupByRequest with \n$trace")
+                          println(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
                         }
-                        Map(groupByRequest.name + "_exception" -> trace)
+                        Map(groupByRequest.name + "_exception" -> ex.traceString)
                     }
                     .get
+                }
               }.toMap
             }
             joinValuesTry match {
@@ -337,8 +361,8 @@ class BaseFetcher(kvStore: KVStore,
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("overall.latency.millis", System.currentTimeMillis() - startTimeMs)
-              ctx.increment("overall.request.count")
+              ctx.histogram("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)
         }.toSeq

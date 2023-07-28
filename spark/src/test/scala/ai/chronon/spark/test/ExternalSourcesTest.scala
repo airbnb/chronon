@@ -1,8 +1,8 @@
 package ai.chronon.spark.test
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.{Builders, Constants, IntType, StringType, StructField, StructType}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.JoinCodec
+import ai.chronon.spark.LoggingSchema
 import org.junit.Assert._
 import org.junit.Test
 
@@ -40,14 +40,8 @@ class ExternalSourcesTest {
         StructType("values_java_plus_one", Array(StructField("number", IntType), StructField("number_mapped", IntType)))
     )
 
-    val contextualSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(
-        name = Constants.ContextualSourceName
-      ),
-      keySchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType))),
-      valueSchema =
-        StructType("keys_contextual", Array(StructField("context_1", IntType), StructField("context_2", IntType)))
+    val contextualSource = Builders.ContextualSource(
+      fields = Array(StructField("context_1", IntType), StructField("context_2", IntType))
     )
 
     val namespace = "external_source_test"
@@ -76,8 +70,7 @@ class ExternalSourcesTest {
           contextualSource
         )
       ),
-      metaData =
-        Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon", samplePercent = 30)
+      metaData = Builders.MetaData(name = "test/payments_join", namespace = namespace, team = "chronon")
     )
 
     // put this join into kv store
@@ -115,10 +108,8 @@ class ExternalSourcesTest {
     assert(numbers == (11 until 22).toSet)
     val logs = mockApi.flushLoggedValues
     val controlEvent = logs.find(_.name == Constants.SchemaPublishEvent).get
-    val codec = JoinCodec.fromLoggingSchema(
-      new String(Base64.getDecoder.decode(controlEvent.valueBase64), Constants.UTF8),
-      join
-    )
+    val schema =
+      LoggingSchema.parseLoggingSchema(new String(Base64.getDecoder.decode(controlEvent.valueBase64), Constants.UTF8))
     assertEquals(
       Set(
         "number",
@@ -126,7 +117,7 @@ class ExternalSourcesTest {
         "context_1",
         "context_2"
       ),
-      codec.keys.toSet
+      schema.keyFields.fields.map(_.name).toSet
     )
     assertEquals(
       Set(
@@ -138,8 +129,24 @@ class ExternalSourcesTest {
         "ext_contextual_context_1",
         "ext_contextual_context_2"
       ),
-      codec.values.toSet
+      schema.valueFields.fields.map(_.name).toSet
     )
     assertEquals(responses.length + 1, logs.length)
+
+    // test soft-fail on missing keys
+    val emptyResponseF = fetcher.fetchJoin(Seq(Request(join.metaData.name, Map.empty)))
+    val emptyResponseMap = Await.result(emptyResponseF, Duration(10, SECONDS)).head.values.get
+
+    val expectedKeys = Set(
+      "ext_p1_plus_one_exception",
+      "ext_p2_plus_one_exception",
+      "ext_p3_java_plus_one_exception",
+      "ext_always_fails_exception",
+      "ext_contextual_context_1",
+      "ext_contextual_context_2"
+    )
+    assertEquals(expectedKeys, emptyResponseMap.keySet)
+    assertEquals(null, emptyResponseMap("ext_contextual_context_1"))
+    assertEquals(null, emptyResponseMap("ext_contextual_context_2"))
   }
 }

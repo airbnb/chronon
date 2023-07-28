@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.online.DataMetrics
-import ai.chronon.spark.stats.CompareJob
+import ai.chronon.spark.stats.CompareBaseJob
 import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Test
@@ -42,7 +42,9 @@ class CompareTest {
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val result: DataMetrics = CompareJob.compare(leftDf, rightDf, keys)
+    val (compareDf, metricsDf, result): (DataFrame, DataFrame, DataMetrics) =
+      CompareBaseJob.compare(leftDf, rightDf, keys, tableUtils)
+    metricsDf.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {
@@ -71,12 +73,14 @@ class CompareTest {
     rightDf.show()
 
     val keys = Seq("keyId", "ts", "ds")
-    val result = CompareJob.compare(
+    val (compareDf, metricsDf, result) = CompareBaseJob.compare(
         leftDf,
         rightDf,
         keys,
+        tableUtils,
         Map("serial" -> "rev_serial", "value" -> "rev_value", "rating" -> "rev_rating")
     )
+    metricsDf.show()
     println(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {
@@ -190,10 +194,11 @@ class CompareTest {
     leftDf.show()
     rightDf.show()
     try {
-      CompareJob.compare(
+      CompareBaseJob.compare(
         leftDf,
         rightDf,
         keys,
+        tableUtils,
         mapping
       )
       throw new AssertionError("Expecting an error")

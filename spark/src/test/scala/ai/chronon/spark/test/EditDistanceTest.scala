@@ -1,8 +1,8 @@
 package ai.chronon.spark.test
 
-import ai.chronon.spark.consistency.EditDistance
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import ai.chronon.spark.stats.EditDistance
 
 class EditDistanceTest {
 
