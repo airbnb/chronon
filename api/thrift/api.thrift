@@ -32,7 +32,7 @@ struct StagingQuery {
     *      - `{{ start_date }}` will be set to this user provided start date, future incremental runs will set it to the latest existing partition + 1 day.
     *      - `{{ end_date }}` is the end partition of the computing range.
     *      - `{{ latest_date }}` is the end partition independent of the computing range (meant for cumulative sources).
-    *      - `{{ max_date:table=namespace.my_table }}` is the max partition available for a given table.
+    *      - `{{ max_date(table=namespace.my_table) }}` is the max partition available for a given table.
     **/
     2: optional string query
 
