@@ -19,6 +19,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
       .getOrElse(new java.util.ArrayList[String]())
       .asInstanceOf[java.util.ArrayList[String]].toScala
+  private def replacementRegexFor(literal: String): String = s"\\{\\{\\s*$literal\\s*\\}\\}"
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
@@ -37,12 +38,22 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
            |""".stripMargin)
       return
     }
+
+    // given {{ ds }}, the job will run overwrite the stepDay to 1
+    val updatedStepDay = if (stagingQueryConf.query.contains(replacementRegexFor(tableUtils.partitionColumn))
+      && (!stagingQueryConf.query.contains(replacementRegexFor("start_date")))
+      && (!stagingQueryConf.query.contains(replacementRegexFor("end_date")))) {
+      Some(1)
+    } else {
+      stepDays
+    }
+
     val stagingQueryUnfilledRanges = unfilledRanges.get
     println(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]
     stagingQueryUnfilledRanges.foreach { stagingQueryUnfilledRange =>
       try {
-        val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
+        val stepRanges = updatedStepDay.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
         println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
         stepRanges.zipWithIndex.foreach {
           case (range, index) =>

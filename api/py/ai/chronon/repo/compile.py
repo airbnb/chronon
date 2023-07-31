@@ -195,6 +195,9 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
     assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
     assert (hasattr(obj, "name") or hasattr(obj, "metaData")), \
         f"Can't serialize objects without the name attribute for object {name}"
+    if class_name == 'StagingQuery':
+        assert any(pattern in obj.query for pattern in ['{{ start_date }}', '{{ end_date }}']) and '{{ ds }}' not in obj.query,\
+            "ds should not be used along with start_date and end_date"
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         f.write(thrift_simple_json_protected(obj, obj_class))
