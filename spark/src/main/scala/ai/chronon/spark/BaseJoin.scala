@@ -278,6 +278,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         println(s"Validation failed. Please check the validation error in log.")
         if (tableUtils.backfillValidationEnforced) throw ex
       case e: Throwable =>
+        metrics.gauge(Metrics.Name.validationFailure, 1)
         println(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
     

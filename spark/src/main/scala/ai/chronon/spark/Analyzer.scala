@@ -228,8 +228,17 @@ class Analyzer(tableUtils: TableUtils,
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
+    val gbStartPartitions = mutable.Map[String, List[String]]()
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
+    val leftStart = Option(joinConf.left.query.startPartition)
+      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
+    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endDate)
+    val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
+    println(s"[Analyzer] Join range to fill $rangeToFill")
+    val unfilledRanges = tableUtils
+      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
+      .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
@@ -245,7 +254,12 @@ class Analyzer(tableUtils: TableUtils,
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
       gbTables ++= part.groupBy.sources.toScala.map(_.table)
-      dataAvailabilityErrors ++= runDataAvailabilityCheck(part.groupBy, joinConf.left)
+      dataAvailabilityErrors ++= runDataAvailabilityCheck(part.groupBy, unfilledRanges)
+      // list any startPartition dates for conflict checks
+      val gbStartPartition = part.groupBy.sources.toScala
+        .map(_.query.startPartition)
+        .filter(_ != null)
+      gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
     val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
 
@@ -271,7 +285,15 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     println(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (keysWithError.isEmpty && noAccessTables.isEmpty) {
+    if (!gbStartPartitions.isEmpty) {
+      println(
+        "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
+      gbStartPartitions.foreach {
+        case (gbName, startPartitions) =>
+          println(s"$gbName : [$startPartitions]")
+      }
+    }
+    if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
       println("----- Backfill validation completed. No errors found. -----")
     } else {
       println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
@@ -281,12 +303,12 @@ class Analyzer(tableUtils: TableUtils,
       println(noAccessTables.mkString("\n"))
       println(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
       dataAvailabilityErrors.foreach(error =>
-        println(s" Table ${error._1} : Group_By ${error._2}. Expected start ${error._3}"))
+        println(s"Table ${error._1} : Group_By ${error._2} : Expected start ${error._3}"))
     }
 
     if (validationAssert) {
       assert(
-        keysWithError.isEmpty && noAccessTables.isEmpty,
+        keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
         "ERROR: Join validation failed. Please check error message for details."
       )
     }
@@ -329,29 +351,34 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   // validate that data is available for the group by
-  // - For aggregation case, gb table earliest partition should go back to (left_start_partition - max_window) date
+  // - For aggregation case, gb table earliest partition should go back to (first_unfilled_partition - max_window) date
   // - For none aggregation case or unbounded window, no earliest partition is required
   // return a list of (table, gb_name, expected_start) that don't have data available
-  def runDataAvailabilityCheck(groupBy: api.GroupBy, leftSource: api.Source): List[(String, String, String)] = {
-    val leftStart = Option(leftSource.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
-    lazy val groupByOps = new GroupByOps(groupBy)
-    val maxWindow = groupByOps.maxWindow
-    maxWindow match {
-      case Some(window) =>
-        val expectedStart = tableUtils.partitionSpec.minus(leftStart, window)
-        groupBy.sources.toScala.flatMap { source =>
-          val table = source.table
-          println(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
-          //check if partition available or table is cumulative
-          if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
-            Some((table, groupBy.getMetaData.getName, expectedStart))
-          } else {
-            None
+  def runDataAvailabilityCheck(groupBy: api.GroupBy,
+                               unfilledRanges: Seq[PartitionRange]): List[(String, String, String)] = {
+    if (unfilledRanges.isEmpty) {
+      println("No unfilled ranges found.")
+      List.empty
+    } else {
+      val firstUnfilledPartition = unfilledRanges.sorted.head.start
+      lazy val groupByOps = new GroupByOps(groupBy)
+      val maxWindow = groupByOps.maxWindow
+      maxWindow match {
+        case Some(window) =>
+          val expectedStart = tableUtils.partitionSpec.minus(firstUnfilledPartition, window)
+          groupBy.sources.toScala.flatMap { source =>
+            val table = source.table
+            println(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
+            //check if partition available or table is cumulative
+            if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
+              Some((table, groupBy.getMetaData.getName, expectedStart))
+            } else {
+              None
+            }
           }
-        }
-      case None =>
-        List.empty
+        case None =>
+          List.empty
+      }
     }
   }
 
