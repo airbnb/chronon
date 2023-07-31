@@ -217,7 +217,9 @@ class Analyzer(tableUtils: TableUtils,
       : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
     val name = "joins/" + joinConf.metaData.name
     println(s"""|Running join analysis for $name ...""".stripMargin)
+    // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
+
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
     val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
     val leftSchema: Map[String, DataType] =
@@ -273,7 +275,8 @@ class Analyzer(tableUtils: TableUtils,
       println("----- Backfill validation completed. No errors found. -----")
     } else {
       println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
-      println(keysWithError.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
+      val keyErrorSet: Set[(String, String)] = keysWithError.toSet
+      println(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
       println(s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
       println(noAccessTables.mkString("\n"))
       println(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
