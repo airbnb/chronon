@@ -288,10 +288,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // detect holes and chunks to fill
-    val leftStart = Option(joinConf.left.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
-    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
-    val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf, tableUtils, endPartition)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
@@ -307,7 +304,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
 
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (stepRanges.isEmpty) {
-      println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
+      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
       return finalResult
     }
 

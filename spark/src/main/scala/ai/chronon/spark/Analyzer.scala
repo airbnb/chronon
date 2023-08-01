@@ -231,10 +231,8 @@ class Analyzer(tableUtils: TableUtils,
     val gbStartPartitions = mutable.Map[String, List[String]]()
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
-    val leftStart = Option(joinConf.left.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
-    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endDate)
-    val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
+
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf, tableUtils, endDate)
     println(s"[Analyzer] Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
@@ -291,7 +289,7 @@ class Analyzer(tableUtils: TableUtils,
         "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
       gbStartPartitions.foreach {
         case (gbName, startPartitions) =>
-          println(s"$gbName : $startPartitions")
+          println(s"$gbName : ${startPartitions.mkString(",")}")
       }
     }
     if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
