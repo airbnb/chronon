@@ -106,66 +106,6 @@ class TileCodecTest {
   def testTileCodecIrSerRoundTrip(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val (aggregations, expectedVals) = aggregationsAndExpected.unzip
-    val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
-    val rowAggregator = TileCodec.buildRowAggregator(groupBy, schema)
-    val rowIR = rowAggregator.init
-    val tileCodec = new TileCodec(groupBy, schema)
-
-    val originalIsComplete = true
-    val rows = Seq(
-      createRow(1519862399984L, 4, 4.0f, "A", Seq("D", "A", "B", "A")),
-      createRow(1519862399984L, 40, 5.0f, "B", Seq()),
-      createRow(1519862399988L, 4, 3.0f, "C", Seq("A", "B", "C"))
-    )
-    rows.foreach(row => rowAggregator.update(rowIR, row))
-    val bytes = tileCodec.makeTileIr(rowIR, originalIsComplete)
-    assert(bytes.length > 0)
-
-    val (deserPayload, isComplete) = tileCodec.decodeTileIr(bytes)
-    assert(isComplete == originalIsComplete)
-
-    // lets finalize the payload intermediate results and verify things
-    val finalResults = rowAggregator.finalize(deserPayload)
-    expectedVals.zip(finalResults).zip(rowAggregator.outputSchema.map(_._1)).foreach {
-      case ((expected, actual), name) =>
-        println(s"Checking: $name")
-        assertEquals(expected, actual)
-    }
-  }
-
-  @Test
-  def correctlyDeterminesTilingIsEnabled(): Unit = {
-    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
-      Builders.GroupBy(
-        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
-      )
-
-    // customJson not set defaults to false
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
-
-    assertTrue(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
-    )
-
-    assertFalse(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
-    )
-
-    assertFalse(
-      TileCodec
-        .isTilingEnabled(
-          buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
-        )
-    )
-  }
-
-  @Test
-  def testTileCodecIrSerRoundTrip(): Unit = {
-    val groupByMetadata = Builders.MetaData(name = "my_group_by")
-    val (aggregations, expectedVals) = aggregationsAndExpected.unzip
     val expectedFlattenedVals = expectedVals.flatten
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
     val tileCodec = new TileCodec(groupBy, schema)
@@ -228,5 +168,34 @@ class TileCodecTest {
         logger.info(s"Checking: $name")
         assertEquals(expected, actual)
     }
+  }
+
+  @Test
+  def correctlyDeterminesTilingIsEnabled(): Unit = {
+    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
+      Builders.GroupBy(
+        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
+      )
+
+    // customJson not set defaults to false
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
+
+    assertTrue(
+      TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
+    )
+
+    assertFalse(
+      TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
+    )
+
+    assertFalse(
+      TileCodec
+        .isTilingEnabled(
+          buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
+        )
+    )
   }
 }
