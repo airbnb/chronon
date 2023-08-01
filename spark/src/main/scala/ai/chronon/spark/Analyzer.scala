@@ -259,7 +259,8 @@ class Analyzer(tableUtils: TableUtils,
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
         .filter(_ != null)
-      gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
+      if(!gbStartPartition.isEmpty)
+        gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
     val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
 
@@ -290,7 +291,7 @@ class Analyzer(tableUtils: TableUtils,
         "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
       gbStartPartitions.foreach {
         case (gbName, startPartitions) =>
-          println(s"$gbName : [$startPartitions]")
+          println(s"$gbName : $startPartitions")
       }
     }
     if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
