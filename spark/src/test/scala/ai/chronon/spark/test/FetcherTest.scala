@@ -459,7 +459,7 @@ class FetcherTest extends TestCase {
         spark.sql(s"DROP TABLE IF EXISTS $tableName")
 
         spark
-          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
+          .createDataFrame(rows.toJava, SparkConversions.fromChrononSchema(schema))
           .save(tableName)
     }
     println("saved all data hand written for fetcher test")
