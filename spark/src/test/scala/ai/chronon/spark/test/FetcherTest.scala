@@ -428,7 +428,7 @@ class FetcherTest extends TestCase {
         Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
         Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
         Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
     )
     // Schemas
     // {..., event (generic event column), ...}
