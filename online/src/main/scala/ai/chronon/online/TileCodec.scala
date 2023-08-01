@@ -43,9 +43,8 @@ object TileCodec {
     new RowAggregator(inputSchema, unpackedAggs)
   }
 
-  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set. */
+  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
   def isTilingEnabled(groupBy: GroupBy): Boolean =
-  // Default to false if 'enable_tiling' isn't set
     groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
       case s: Boolean => s
       case _ => false
