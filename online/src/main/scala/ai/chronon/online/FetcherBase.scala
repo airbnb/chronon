@@ -202,7 +202,7 @@ class FetcherBase(kvStore: KVStore,
             throw ex
           }
           try {
-            keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
+            keyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo)
           } catch {
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
@@ -211,7 +211,7 @@ class FetcherBase(kvStore: KVStore,
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
               }.toMap
               try {
-                keyBytes = groupByServingInfo.keyCodec.encode(castedKeys)
+                keyBytes = kvStore.createKeyBytes(castedKeys, groupByServingInfo)
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
