@@ -1,13 +1,14 @@
 package ai.chronon.spark.test
 
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
-import ai.chronon.online.{SparkConversions, KVStore}
-import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
+import ai.chronon.online.{AvroConversions, KVStore, SparkConversions, TileCodec}
+import ai.chronon.spark.{GenericRowHandler, GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.GroupBy
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, JoinOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, SourceOps}
 import org.apache.spark.sql.SparkSession
 
 object OnlineUtils {
@@ -17,8 +18,11 @@ object OnlineUtils {
                    tableUtils: TableUtils,
                    ds: String,
                    namespace: String): Unit = {
+    val isTiled = TileCodec.isTilingEnabled(groupByConf)
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
+        assert(!isTiled, "Tiling is not supported for Entity groupBy's yet (Only Event groupBy are supported)")
+
         val entity = groupByConf.streamingSource.get
         val df = tableUtils.sql(s"SELECT * FROM ${entity.getEntities.mutationTable} WHERE ds = '$ds'")
         df.withColumnRenamed(entity.query.reversalColumn, Constants.ReversalColumn)
@@ -30,12 +34,36 @@ object OnlineUtils {
     val inputStream = new InMemoryStream
     val mockApi = new MockApi(kvStore, namespace)
     mockApi.streamSchema = StructType.from("Stream", SparkConversions.toChrononSchema(inputStreamDf.schema))
-    val groupByStreaming =
-      new GroupBy(inputStream.getInMemoryStreamDF(session, inputStreamDf), session, groupByConf, mockApi)
-    // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
-    val dataStream = groupByStreaming.buildDataStream()
-    val query = dataStream.trigger(Trigger.Once()).start()
-    query.awaitTermination()
+
+    if (isTiled) {
+      val memoryStream: Array[(Array[Any], Long, Array[Byte])] = inputStream.getInMemoryTiledStreamArray(session, inputStreamDf, groupByConf)
+      val inMemoryKvStore: KVStore = kvStore()
+
+      val fetcher = mockApi.buildFetcher(false)
+      val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
+
+      val keyZSchema: api.StructType = groupByServingInfo.keyChrononSchema
+      val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+
+      val putRequests = memoryStream.map { entry =>
+        val keys = entry._1
+        val timestamp = entry._2
+        val tileBytes = entry._3
+
+        val keyBytes = keyToBytes(keys)
+
+        KVStore.PutRequest(keyBytes, tileBytes, groupByConf.streamingDataset, Some(timestamp))
+      }
+
+      inMemoryKvStore.multiPut(putRequests)
+    } else {
+      val memoryStreamDF =  inputStream.getInMemoryStreamDF(session, inputStreamDf)
+      val groupByStreaming = new GroupBy(memoryStreamDF, session, groupByConf, mockApi)
+      // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
+      val dataStream = groupByStreaming.buildDataStream()
+      val query = dataStream.trigger(Trigger.Once()).start()
+      query.awaitTermination()
+    }
   }
 
   def serve(tableUtils: TableUtils,
@@ -47,6 +75,7 @@ object OnlineUtils {
     val prevDs = tableUtils.partitionSpec.before(endDs)
     GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
+
     if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
       inMemoryKvStore.create(groupByConf.streamingDataset)
       OnlineUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)

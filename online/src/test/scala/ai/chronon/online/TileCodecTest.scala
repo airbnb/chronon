@@ -1,9 +1,8 @@
 package ai.chronon.online
 
 import ai.chronon.api.{Aggregation, Builders, FloatType, GroupBy, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
-import org.junit.Assert.{assertEquals, assertTrue}
-import org.junit.rules.ExpectedException
-import org.junit.{Rule, Test}
+import org.junit.Assert.{assertEquals, assertTrue, assertFalse}
+import org.junit.Test
 
 import scala.collection.JavaConverters._
 
@@ -36,7 +35,7 @@ class TileCodecTest {
     Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(7, TimeUnit.DAYS))) -> 3L,
 
     Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> histogram,
-    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> histogram,
+    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> histogram
   )
 
   private val schema = List(
@@ -46,6 +45,17 @@ class TileCodecTest {
     "title" -> StringType,
     "hist_input" -> ListType(StringType)
   )
+
+  def createRow(ts: Long, views: Int, rating: Float, title: String, histInput: Seq[String]): Row = {
+    val values: Array[(String, Any)] = Array(
+      "created" -> ts,
+      "views" -> views,
+      "rating" -> rating,
+      "title" -> title,
+      "hist_input" -> histInput
+    )
+    new ArrayRow(values.map(_._2), ts)
+  }
 
   @Test
   def testTileCodecIrSerRoundTrip(): Unit = {
@@ -78,21 +88,6 @@ class TileCodecTest {
     }
   }
 
-  def createRow(ts: Long, views: Int, rating: Float, title: String, histInput: Seq[String]): Row = {
-    val values: Array[(String, Any)] = Array(
-      "created" -> ts,
-      "views" -> views,
-      "rating" -> rating,
-      "title" -> title,
-      "hist_input" -> histInput
-    )
-    new ArrayRow(values.map(_._2), ts)
-  }
-
-
-  val thrown: ExpectedException = ExpectedException.none
-  @Rule
-  def exception: ExpectedException = thrown
   @Test
   def correctlyDeterminesTilingIsEnabled(): Unit = {
     def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
@@ -101,24 +96,24 @@ class TileCodecTest {
       )
 
     // customJson not set defaults to false
-    assertTrue(!TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
-    assertTrue(!TileCodec.isTilingEnabled(buildGroupByWithCustomJson("")))
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
 
     assertTrue(
       TileCodec
         .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
     )
 
-    assertTrue(
-      !TileCodec
+    assertFalse(
+      TileCodec
         .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
     )
 
-    exception.expect(classOf[RuntimeException])
-    exception.expectMessage("Error converting value")
-    TileCodec
+    assertFalse(
+      TileCodec
       .isTilingEnabled(
         buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
       )
+    )
   }
 }

@@ -3,7 +3,8 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.{BooleanType, DataType, GroupBy, StructType}
 import org.apache.avro.generic.GenericData
-import ai.chronon.api.Extensions.{MetadataOps, UnpackedAggregations}
+import ai.chronon.api.Extensions.{AggregationOps, MetadataOps, UnpackedAggregations}
+import ai.chronon.online.{AvroCodec, AvroConversions}
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -18,22 +19,20 @@ object TileCodec {
     new RowAggregator(inputSchema, aggregationParts)
   }
 
-  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set. */
+  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
   def isTilingEnabled(groupBy: GroupBy): Boolean =
-    Try(groupBy.getMetaData.customJsonLookUp("enable_tiling")).toOption.exists {
+    groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
       case s: Boolean => s
-      case null => false
-      case _ =>
-        throw new RuntimeException(f"Error converting value of 'enable_tiling' to boolean.")
+      case _ => false
     }
 }
 
 /**
-  * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
-  * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
-  * with batch pre-aggregates produced by GroupByUploads.
-  * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
-  */
+ * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
+ * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
+ * with batch pre-aggregates produced by GroupByUploads.
+ * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
+ */
 class TileCodec(rowAggregator: RowAggregator, groupBy: GroupBy) {
   val windowedIrSchema: StructType = StructType.from("WindowedIr", rowAggregator.irSchema)
   val fields: Array[(String, DataType)] = Array(
