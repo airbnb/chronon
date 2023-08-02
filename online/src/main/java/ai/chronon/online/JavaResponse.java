@@ -18,7 +18,12 @@ public class JavaResponse {
         this.request = new JavaRequest(scalaResponse.request());
         this.values = JTry
                 .fromScala(scalaResponse.values())
-                .map(ScalaVersionSpecificCollectionsConverter::convertScalaMapToJava);
+                .map(v -> {
+                    if (v != null)
+                        return ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(v);
+                    else
+                        return null;
+                });
     }
 
     public Fetcher.Response toScala() {

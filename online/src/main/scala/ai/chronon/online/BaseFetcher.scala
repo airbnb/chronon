@@ -210,7 +210,7 @@ class BaseFetcher(kvStore: KVStore,
           response.request -> response.values
         }.toMap
         val totalResponseValueBytes =
-          responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(_.bytes.length)).sum
+          responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>

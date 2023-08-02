@@ -15,7 +15,6 @@ public abstract class JTry<V> {
     }
 
     public static <V> JTry<V> success(V value) {
-        Objects.requireNonNull(value);
         return new Success<>(value);
     }
 

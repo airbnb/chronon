@@ -3,16 +3,15 @@ package ai.chronon.spark.test;
 import ai.chronon.online.JavaFetcher;
 import ai.chronon.online.JavaRequest;
 import ai.chronon.online.JavaResponse;
+import ai.chronon.online.Fetcher;
 import ai.chronon.spark.TableUtils;
 import ai.chronon.spark.SparkSessionBuilder;
 import com.google.gson.Gson;
-import java.util.Collections;
-import java.util.Map;
 import org.apache.spark.sql.SparkSession;
 import org.junit.Test;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -44,5 +43,25 @@ public class JavaFetcherTest {
         String responseValues = gson.toJson(responses.get(0).values);
         System.out.println(responseValues);
         assertFalse(responses.get(0).values.isSuccess());
+    }
+
+    @Test
+    public void testNullMapConversion() throws InterruptedException, ExecutionException, TimeoutException {
+        List<JavaRequest> requests = new ArrayList<>();
+        requests.add(new JavaRequest("non_existent", null));
+
+        // can end up with a null result response if the GroupBy is not found
+        List<JavaResponse> nullResultResponses = new ArrayList<>();
+        Fetcher.Response nullScalaResponse = new Fetcher.Response(
+                requests.get(0).toScalaRequest(),
+                new scala.util.Success<>(null));
+        nullResultResponses.add(new JavaResponse(nullScalaResponse));
+
+        CompletableFuture<List<JavaResponse>> responsesF = CompletableFuture.completedFuture(nullResultResponses);
+        List<JavaResponse> responses = responsesF.get(10000, TimeUnit.MILLISECONDS);
+        Gson gson = new Gson();
+        String responseValues = gson.toJson(responses.get(0).values);
+        System.out.println(responseValues);
+        assertTrue(responses.get(0).values.isSuccess());
     }
 }
