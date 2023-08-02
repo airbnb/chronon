@@ -8,33 +8,25 @@ import scala.collection.JavaConverters._
 class TileCodecTest {
   private val histogram = Map[String, Int]("A" -> 3, "B" -> 2).asJava
 
-  private val aggregationsAndExpected: Array[(Aggregation, Any)] = Array(
-    Builders.Aggregation(Operation.AVERAGE, "views", Seq(new Window(1, TimeUnit.DAYS))) -> 16.0,
-    Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(1, TimeUnit.DAYS))) -> 4.0,
+  private val aggregationsAndExpected: Array[(Aggregation, Seq[Any])] = Array(
+    Builders.Aggregation(Operation.AVERAGE, "views", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(16.0),
+    Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(4.0),
 
-    Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(1, TimeUnit.DAYS))) -> 12.0f,
-    Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(7, TimeUnit.DAYS))) -> 12.0f,
+    Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(12.0f, 12.0f),
 
-    Builders.Aggregation(Operation.UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS))) -> 3L,
-    Builders.Aggregation(Operation.UNIQUE_COUNT, "title", Seq(new Window(7, TimeUnit.DAYS))) -> 3L,
+    Builders.Aggregation(Operation.UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
 
-    Builders.Aggregation(Operation.LAST, "title", Seq(new Window(1, TimeUnit.DAYS))) -> "C",
-    Builders.Aggregation(Operation.LAST, "title", Seq(new Window(7, TimeUnit.DAYS))) -> "C",
+    Builders.Aggregation(Operation.LAST, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("C", "C"),
 
-    Builders.Aggregation(Operation.LAST_K, "title", Seq(new Window(1, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> List("C", "B").asJava,
-    Builders.Aggregation(Operation.LAST_K, "title", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> List("C", "B").asJava,
+    Builders.Aggregation(Operation.LAST_K, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(List("C", "B").asJava, List("C", "B").asJava),
 
-    Builders.Aggregation(Operation.TOP_K, "title", Seq(new Window(1, TimeUnit.DAYS)), argMap = Map("k" -> "1")) -> List("C").asJava,
-    Builders.Aggregation(Operation.TOP_K, "title", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "1")) -> List("C").asJava,
+    Builders.Aggregation(Operation.TOP_K, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "1")) -> Seq(List("C").asJava, List("C").asJava),
 
-    Builders.Aggregation(Operation.MIN, "title", Seq(new Window(1, TimeUnit.DAYS))) -> "A",
-    Builders.Aggregation(Operation.MIN, "title", Seq(new Window(7, TimeUnit.DAYS))) -> "A",
+    Builders.Aggregation(Operation.MIN, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("A", "A"),
 
-    Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS))) -> 3L,
-    Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(7, TimeUnit.DAYS))) -> 3L,
+    Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
 
-    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> histogram,
-    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> histogram
+    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(histogram, histogram),
   )
 
   private val schema = List(
@@ -49,6 +41,7 @@ class TileCodecTest {
   def testTileCodecIrSerRoundTrip(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val (aggregations, expectedVals) = aggregationsAndExpected.unzip
+    val expectedFlattenedVals = expectedVals.flatten
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
     val rowAggregator = TileCodec.buildRowAggregator(groupBy, schema)
     val rowIR = rowAggregator.init
@@ -69,7 +62,7 @@ class TileCodecTest {
 
     // lets finalize the payload intermediate results and verify things
     val finalResults = rowAggregator.finalize(deserPayload)
-    expectedVals.zip(finalResults).zip(rowAggregator.outputSchema.map(_._1)).foreach {
+    expectedFlattenedVals.zip(finalResults).zip(rowAggregator.outputSchema.map(_._1)).foreach {
       case ((expected, actual), name) =>
         println(s"Checking: $name")
         assertEquals(expected, actual)
