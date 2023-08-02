@@ -232,7 +232,7 @@ class Analyzer(tableUtils: TableUtils,
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf, tableUtils, endDate)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate)
     println(s"[Analyzer] Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
@@ -343,6 +343,7 @@ class Analyzer(tableUtils: TableUtils,
   def runTablePermissionValidation(sources: Set[String]): Set[String] = {
     println(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    //todo: handle offset-by-1 depending on temporal vs snapshot accuracy 
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
       !tableUtils.checkTablePermission(sourceTable, partitionFilter)

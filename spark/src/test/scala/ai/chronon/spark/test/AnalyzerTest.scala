@@ -2,7 +2,6 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.Extensions._

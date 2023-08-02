@@ -288,7 +288,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // detect holes and chunks to fill
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf, tableUtils, endPartition)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
