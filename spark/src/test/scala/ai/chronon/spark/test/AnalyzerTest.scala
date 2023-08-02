@@ -87,7 +87,7 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
-  @Test
+  @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerValidationDataAvailability(): Unit = {
     // left side
     val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
@@ -121,10 +121,6 @@ class AnalyzerTest {
     //run analyzer and validate data availability
     val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
     analyzer.analyzeJoin(joinConf, validationAssert = true)
-
-    val result = analyzer.runDataAvailabilityCheck(viewsGroupBy, joinConf.left)
-    println(result)
-    assertTrue(result.size == 1)
   }
 
   def getTestGBSource(): api.Source = {

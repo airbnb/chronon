@@ -74,7 +74,19 @@ object JoinUtils {
       }
     })
 
-  /*
+  /***
+   * Compute partition range to be filled for given join conf
+   */
+  def getRangesToFill(leftSource: ai.chronon.api.Source,
+                      tableUtils: TableUtils,
+                      endPartition: String): PartitionRange = {
+    val leftStart = Option(leftSource.query.startPartition)
+      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
+    val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)
+    PartitionRange(leftStart, leftEnd)(tableUtils)
+  }
+  
+  /***
    * join left and right dataframes, merging any shared columns if exists by the coalesce rule.
    * fails if there is any data type mismatch between shared columns.
    *
