@@ -43,9 +43,8 @@ class TileCodecTest {
     val (aggregations, expectedVals) = aggregationsAndExpected.unzip
     val expectedFlattenedVals = expectedVals.flatten
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
-    val rowAggregator = TileCodec.buildRowAggregator(groupBy, schema)
-    val rowIR = rowAggregator.init
-    val tileCodec = new TileCodec(rowAggregator, groupBy)
+    val tileCodec = new TileCodec(groupBy, schema)
+    val rowIR = tileCodec.rowAggregator.init
 
     val originalIsComplete = true
     val rows = Seq(
@@ -53,7 +52,7 @@ class TileCodecTest {
       createRow(1519862399984L, 40, 5.0f, "B", Seq()),
       createRow(1519862399988L, 4, 3.0f, "C", Seq("A", "B", "C"))
     )
-    rows.foreach(row => rowAggregator.update(rowIR, row))
+    rows.foreach(row => tileCodec.rowAggregator.update(rowIR, row))
     val bytes = tileCodec.makeTileIr(rowIR, originalIsComplete)
     assert(bytes.length > 0)
 
@@ -61,8 +60,12 @@ class TileCodecTest {
     assert(isComplete == originalIsComplete)
 
     // lets finalize the payload intermediate results and verify things
-    val finalResults = rowAggregator.finalize(deserPayload)
-    expectedFlattenedVals.zip(finalResults).zip(rowAggregator.outputSchema.map(_._1)).foreach {
+    val finalResults = tileCodec.windowedRowAggregator.finalize(deserPayload)
+    assertEquals(expectedFlattenedVals.length, finalResults.length)
+
+    // we use a windowed row aggregator for the final results as we want the final flattened results
+    val windowedRowAggregator = TileCodec.buildWindowedRowAggregator(groupBy, schema)
+    expectedFlattenedVals.zip(finalResults).zip(windowedRowAggregator.outputSchema.map(_._1)).foreach {
       case ((expected, actual), name) =>
         println(s"Checking: $name")
         assertEquals(expected, actual)
