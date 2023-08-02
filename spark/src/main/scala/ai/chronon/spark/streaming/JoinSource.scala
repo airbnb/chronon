@@ -1,44 +1,33 @@
-package ai.chronon.spark
+package ai.chronon.spark.streaming
 
 import ai.chronon.api
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.StreamDecoder
-import ai.chronon.spark.streaming.{StreamBuilder, TopicChecker}
-import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
-
-import scala.collection.{Seq, mutable}
-import scala.concurrent.Await
-import scala.concurrent.duration.{Duration, MILLISECONDS}
-import scala.util.{Failure, Success}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-import scala.collection.immutable.HashMap
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
-
-
 class JoinSource(joinSource: api.JoinSource) {
-  def getStreamingDataframe(streamBuilder: StreamBuilder, streamDecoder: StreamDecoder, conf: Map[String, String])(implicit session: SparkSession): DataFrame = {
-    val left = joinSource.getJoin.getLeft
-    assert(left.isSetEvents && left.getEvents.isSetTopic,
-      s"Need a JoinSource whose left side is events with the topic set\n${ThriftJsonCodec.toJsonStr(joinSource)}")
-    val events = left.getEvents
-    val stream = streamBuilder.from(events.getTopic, conf)
-    var df = stream.df
-    // pre-join query
-    if (events.isSetQuery) {
-      val query = events.query
-      if(query.isSetSelects) {
-        df = df.selectExpr(query.getSelects.toScala.map{case (name, expr) => s"($expr) as `$name`"}.toSeq : _*)
-      }
-      if(query.isSetWheres) {
-        df = df.where(query.getWheres.toScala.map{cl => s"($cl)"}.mkString(" AND "))
-      }
-    }
-
-    //
-    null
-  }
+//  def getDataStream(streamBuilder: DataStreamBuilder, streamDecoder: StreamDecoder, conf: Map[String, String])(implicit
+//      session: SparkSession): DataStream = {
+//    val left = joinSource.getJoin.getLeft
+//    // for left entities, we won't be able to look back at the prior value online to join
+//    assert(
+//      !left.isSetEvents && left.getEvents.isSetTopic,
+//      s"Need a JoinSource whose left side is events with the topic set\n${ThriftJsonCodec.toJsonStr(joinSource)}"
+//    )
+//    // get base stream
+//    val stream = if (left.isSetEvents) {
+//      val events = left.getEvents
+//      val stream = streamBuilder.from(events.getTopic, conf)
+//      stream.apply(events.query)
+//    } else if (left.isSetJoinSource) { // recursively walk underlying joins
+//      val joinSource = left.getJoinSource
+//      val stream = new JoinSource(joinSource).getDataStream(streamBuilder, streamDecoder, conf)
+//      stream.apply(joinSource.query)
+//    }
+//
+//    // get
+//    null
+//  }
 //  val sourceIsJoin = streamingSource.isSetJoin
   // func to take rows of left and create rows of output by batch fetching
   // we build all necessary information prior to function creation for performance

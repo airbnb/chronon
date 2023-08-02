@@ -2,8 +2,7 @@ package ai.chronon.api
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
-import scala.collection.mutable
-
+import scala.collection.{Seq, mutable}
 
 trait Row {
   def get(index: Int): Any
@@ -86,8 +85,7 @@ object Row {
                                                     binarizer: Array[Byte] => BinaryType,
                                                     collector: (Iterator[Any], Int) => ListType,
                                                     mapper: (util.Map[Any, Any] => MapType),
-                                                    extraneousRecord: Any => Array[Any] = null
-                                                   ): Any = {
+                                                    extraneousRecord: Any => Array[Any] = null): Any = {
 
     if (value == null) return null
     def edit(value: Any, dataType: DataType): Any =
@@ -107,14 +105,16 @@ object Row {
                      dataType)
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
-            composer(extraneousRecord(value).iterator.zipWithIndex.map { case (value, idx) => edit(value, fields(idx).fieldType) },
-            dataType)
+            composer(extraneousRecord(value).iterator.zipWithIndex.map {
+                       case (value, idx) => edit(value, fields(idx).fieldType)
+                     },
+                     dataType)
         }
       case ListType(elemType) =>
         value match {
           case list: util.ArrayList[Any] =>
             collector(list.iterator().asScala.map(edit(_, elemType)), list.size())
-          case arr: Array[_]  => // avro only recognizes arrayList for its ArrayType/ListType
+          case arr: Array[_] => // avro only recognizes arrayList for its ArrayType/ListType
             collector(arr.iterator.map(edit(_, elemType)), arr.length)
           case arr: mutable.WrappedArray[Any] => // handles the wrapped array type from transform function in spark sql
             collector(arr.iterator.map(edit(_, elemType)), arr.length)
@@ -135,16 +135,32 @@ object Row {
               .foreach { entry => newMap.put(edit(entry._1, keyType), edit(entry._2, valueType)) }
             mapper(newMap)
         }
-      case BinaryType => binarizer(value.asInstanceOf[Array[Byte]])
-      case IntType => value.asInstanceOf[Number].intValue()
-      case LongType => value.asInstanceOf[Number].longValue()
-      case DoubleType => value.asInstanceOf[Number].doubleValue()
-      case FloatType => value.asInstanceOf[Number].floatValue()
-      case ShortType => value.asInstanceOf[Number].shortValue()
-      case ByteType => value.asInstanceOf[Number].byteValue()
+      case BinaryType  => binarizer(value.asInstanceOf[Array[Byte]])
+      case IntType     => value.asInstanceOf[Number].intValue()
+      case LongType    => value.asInstanceOf[Number].longValue()
+      case DoubleType  => value.asInstanceOf[Number].doubleValue()
+      case FloatType   => value.asInstanceOf[Number].floatValue()
+      case ShortType   => value.asInstanceOf[Number].shortValue()
+      case ByteType    => value.asInstanceOf[Number].byteValue()
       case BooleanType => value.asInstanceOf[Boolean]
-      case StringType => value.toString
-      case _ => value
+      case StringType  => value.toString
+      case _           => value
     }
+  }
+}
+
+object Worksheet {
+  def main(args: Array[String]): Unit = {
+    // testing selects
+    val selectsA: Map[String, String] = Map("a" -> "b", "key1" -> "key1+expr")
+    val keysA: Seq[String] = null // Seq("key1", "key2")
+    val timesA = Map(Constants.TimeColumn -> "ts")
+
+    val result = for {
+      selects <- Option(selectsA)
+      keys = Option(keysA).map(_.map(k => k -> k).toMap).getOrElse(Map.empty)
+    } yield keys ++ selects ++ timesA
+
+    println(result)
   }
 }

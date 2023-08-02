@@ -143,6 +143,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
+  def streamBuilder(streamType: String):
+
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
     *     key_bytes, value_bytes, ts_millis, join_name, schema_hash and ds (date string)

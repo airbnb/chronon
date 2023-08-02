@@ -96,7 +96,7 @@ object AvroConversions {
     }
   }
 
-  def fromChrononRow(value: Any, dataType: DataType,  extraneousRecord: Any => Array[Any] = null): Any = {
+  def fromChrononRow(value: Any, dataType: DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
@@ -124,7 +124,7 @@ object AvroConversions {
     Row.from[GenericRecord, ByteBuffer, GenericData.Array[Any], Utf8](
       value,
       dataType,
-      { (record: GenericRecord, fields: Seq[StructField]) =>
+      { (record: GenericRecord, fields: collection.Seq[StructField]) =>
         new AbstractIterator[Any]() {
           var idx = 0
           override def next(): Any = {
