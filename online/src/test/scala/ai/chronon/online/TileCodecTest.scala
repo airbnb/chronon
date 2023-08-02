@@ -29,6 +29,17 @@ class TileCodecTest {
     Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(histogram, histogram),
   )
 
+  private val bucketedAggregations: Array[Aggregation] = Array(
+    Builders.Aggregation(
+      operation = Operation.AVERAGE,
+      inputColumn = "views",
+      buckets = Seq("title"),
+      windows = Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
+    )
+  )
+  private val expectedBucketResult = Map("A" -> 4.0, "B" -> 40.0, "C" -> 4.0).asJava
+  private val expectedBucketedResults = Seq(expectedBucketResult, expectedBucketResult)
+
   private val schema = List(
     "created" -> LongType,
     "views" -> IntType,
@@ -36,6 +47,17 @@ class TileCodecTest {
     "title" -> StringType,
     "hist_input" -> ListType(StringType)
   )
+
+  def createRow(ts: Long, views: Int, rating: Float, title: String, histInput: Seq[String]): Row = {
+    val values: Array[(String, Any)] = Array(
+      "created" -> ts,
+      "views" -> views,
+      "rating" -> rating,
+      "title" -> title,
+      "hist_input" -> histInput
+    )
+    new ArrayRow(values.map(_._2), ts)
+  }
 
   @Test
   def testTileCodecIrSerRoundTrip(): Unit = {
@@ -72,13 +94,65 @@ class TileCodecTest {
     }
   }
 
-  def createRow(ts: Long, views: Int, rating: Float, title: String, histInput: Seq[String]): Row = {
-    val values: Array[(String, Any)] = Array(
-      "created" -> ts,
-      "views" -> views,
-      "rating" -> rating,
-      "title" -> title,
-      "hist_input" -> histInput
+  @Test
+  def testTileCodecIrSerRoundTrip_WithBuckets(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "my_group_by")
+    val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = bucketedAggregations)
+    val tileCodec = new TileCodec(groupBy, schema)
+    val rowIR = tileCodec.rowAggregator.init
+
+    val originalIsComplete = true
+    val rows = Seq(
+      createRow(1519862399984L, 4, 4.0f, "A", Seq("D", "A", "B", "A")),
+      createRow(1519862399984L, 40, 5.0f, "B", Seq()),
+      createRow(1519862399988L, 4, 3.0f, "C", Seq("A", "B", "C"))
+    )
+    rows.foreach(row => tileCodec.rowAggregator.update(rowIR, row))
+    val bytes = tileCodec.makeTileIr(rowIR, originalIsComplete)
+    assert(bytes.length > 0)
+
+    val (deserPayload, isComplete) = tileCodec.decodeTileIr(bytes)
+    assert(isComplete == originalIsComplete)
+
+    // lets finalize the payload intermediate results and verify things
+    val finalResults = tileCodec.windowedRowAggregator.finalize(deserPayload)
+    assertEquals(expectedBucketedResults.size, finalResults.length)
+
+    // we use a windowed row aggregator for the final results as we want the final flattened results
+    val windowedRowAggregator = TileCodec.buildWindowedRowAggregator(groupBy, schema)
+    expectedBucketedResults.zip(finalResults).zip(windowedRowAggregator.outputSchema.map(_._1)).foreach {
+      case ((expected, actual), name) =>
+        println(s"Checking: $name")
+        assertEquals(expected, actual)
+    }
+  }
+
+  @Test
+  def correctlyDeterminesTilingIsEnabled(): Unit = {
+    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
+      Builders.GroupBy(
+        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
+      )
+
+    // customJson not set defaults to false
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
+    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
+
+    assertTrue(
+      TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
+    )
+
+    assertFalse(
+      TileCodec
+        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
+    )
+
+    assertFalse(
+      TileCodec
+      .isTilingEnabled(
+        buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
+      )
     )
     new ArrayRow(values.map(_._2), ts)
   }
