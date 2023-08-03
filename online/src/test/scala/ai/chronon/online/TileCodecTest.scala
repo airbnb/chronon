@@ -26,7 +26,7 @@ class TileCodecTest {
 
     Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
 
-    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(histogram, histogram),
+    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(histogram, histogram)
   )
 
   private val bucketedAggregations: Array[Aggregation] = Array(
