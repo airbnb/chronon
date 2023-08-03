@@ -126,34 +126,4 @@ class TileCodecTest {
         assertEquals(expected, actual)
     }
   }
-
-  @Test
-  def correctlyDeterminesTilingIsEnabled(): Unit = {
-    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
-      Builders.GroupBy(
-        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
-      )
-
-    // customJson not set defaults to false
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
-
-    assertTrue(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
-    )
-
-    assertFalse(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
-    )
-
-    assertFalse(
-      TileCodec
-      .isTilingEnabled(
-        buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
-      )
-    )
-    new ArrayRow(values.map(_._2), ts)
-  }
 }
