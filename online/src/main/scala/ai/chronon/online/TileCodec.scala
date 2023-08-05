@@ -6,6 +6,7 @@ import org.apache.avro.generic.GenericData
 import ai.chronon.api.Extensions.{AggregationOps, MetadataOps, WindowUtils}
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.ListOps
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object TileCodec {
@@ -82,10 +83,10 @@ class TileCodec(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]) {
     groupBy.aggregations.asScala.foreach {
       aggr =>
         val buckets = Option(aggr.buckets)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(null))
         val windows = Option(aggr.windows)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(WindowUtils.Unbounded))
         // for each aggregation we have 1/more buckets and 1/more windows
         // we need to iterate over the baseIr and clone a given counter's values n times where
