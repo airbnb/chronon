@@ -80,7 +80,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded, flink)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -343,6 +343,19 @@ lazy val spark_embedded = (project in file("spark"))
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
+  )
+
+lazy val flink = (project in file("flink"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
+  .settings(
+    publishSettings,
+    crossScalaVersions := supportedVersions,
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "avro",
+      "spark-all/provided",
+      "scala-parallel-collections"),
+    libraryDependencies ++= Seq(
+      "org.apache.flink" %% "flink-streaming-scala" % "1.16.1",
+    ),
   )
 
 // Build Sphinx documentation
