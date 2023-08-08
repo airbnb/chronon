@@ -5,10 +5,11 @@ import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
+import ai.chronon.api
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.ThrowableOps
+import ai.chronon.api.Extensions.{JoinOps, ThrowableOps}
 import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
@@ -280,13 +281,21 @@ class BaseFetcher(kvStore: KVStore,
 
   private case class PrefixedRequest(prefix: String, request: Request)
 
-  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  // prioritize passed in joinOverrides over the ones in metadata store
+  // used in stream-enrichment and in staging testing
+  def fetchJoin(requests: scala.collection.Seq[Request],
+                joinOverrides: Map[String, api.Join] = Map.empty): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
-        val joinTry = getJoinConf(request.name)
+        // prioritize joins passed in join overrides
+        val localJoinOpt = joinOverrides.get(request.name)
+        val joinTry: Try[JoinOps] = if (localJoinOpt.isDefined) {
+          Success(new JoinOps(localJoinOpt.get))
+        } else {
+          getJoinConf(request.name)
+        }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))

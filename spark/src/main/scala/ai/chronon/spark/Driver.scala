@@ -11,7 +11,11 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -171,8 +175,7 @@ object Driver {
       opt[String](
         required = false,
         default = None,
-        descr =
-          """The name of the table containing expected result of a job.
+        descr = """The name of the table containing expected result of a job.
             |The table should have the exact schema of the output of the job""".stripMargin
       )
 
@@ -194,10 +197,11 @@ object Driver {
   }
 
   object JoinBackfill {
-    class Args extends Subcommand("join")
-      with OfflineSubcommand
-      with LocalExportTableAbility
-      with ResultValidationAbility {
+    class Args
+        extends Subcommand("join")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -232,10 +236,11 @@ object Driver {
   }
 
   object GroupByBackfill {
-    class Args extends Subcommand("group-by-backfill")
-      with OfflineSubcommand
-      with LocalExportTableAbility
-      with ResultValidationAbility {
+    class Args
+        extends Subcommand("group-by-backfill")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -265,9 +270,7 @@ object Driver {
   }
 
   object LabelJoin {
-    class Args extends Subcommand("label-join")
-      with OfflineSubcommand
-      with LocalExportTableAbility {
+    class Args extends Subcommand("label-join") with OfflineSubcommand with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs label join in steps, step-days at a time. Default is 30 days",
@@ -346,9 +349,7 @@ object Driver {
   }
 
   object StagingQueryBackfill {
-    class Args extends Subcommand("staging-query-backfill")
-      with OfflineSubcommand
-      with LocalExportTableAbility {
+    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -453,6 +454,11 @@ object Driver {
     val onlineClass: ScallopOption[String] =
       opt[String](required = true,
                   descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
+    val localConf: ScallopOption[Boolean] = opt[Boolean](
+      required = false,
+      descr = "flag - use local files for conf",
+      default = Some(false)
+    )
 
     // hashmap implements serializable
     def serializableProps: Map[String, String] = {
@@ -461,8 +467,17 @@ object Driver {
       map.toMap
     }
 
-    def metaDataStore =
-      new MetadataStore(impl(serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
+    def metaDataStore = {
+      val overrideMap: Option[Map[String, Any]] = if (localConf.getOrElse(false)) {
+        None
+      } else {
+        Some(Map("*" -> "*"))
+      }
+      new MetadataStore(impl(serializableProps).genKvStore,
+                        localOverrides = overrideMap,
+                        "ZIPLINE_METADATA",
+                        timeoutMillis = 10000)
+    }
 
     def impl(props: Map[String, String]): Api = {
       val urls = Array(new File(onlineJar()).toURI.toURL)

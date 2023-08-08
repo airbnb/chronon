@@ -45,7 +45,6 @@ class FetcherTest extends TestCase {
     val confResource = getClass.getResource(s"/$joinPath")
     val src = Source.fromFile(confResource.getPath)
 
-
     val expected = {
       try src.mkString
       finally src.close()
@@ -404,11 +403,12 @@ class FetcherTest extends TestCase {
             val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
             FutureConverters
               .toScala(javaResponse)
-              .map(_.toScala.map(jres =>
-                Response(
-                  Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
-                  jres.values.toScala.map(_.toScala)
-                )))
+              .map(
+                _.toScala.map(jres =>
+                  Response(
+                    Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
+                    jres.values.toScala.map(_.toScala)
+                  )))
           } else {
             fetcher.fetchJoin(r)
           }

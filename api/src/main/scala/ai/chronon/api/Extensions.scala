@@ -321,7 +321,7 @@ object Extensions {
         source.getEntities.getMutationTopic
       } else if (source.isSetEvents) {
         source.getEvents.getTopic
-      } else if (source.isSetJoinSource){
+      } else if (source.isSetJoinSource) {
         source.getJoinSource.getJoin.getLeft.topic
       } else {
         null
@@ -426,9 +426,7 @@ object Extensions {
              s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
       val query = streamingSource.get.query
       val selects = Option(query.selects)
-        .map(
-          _.toScala
-            .toMap)
+        .map(_.toScala.toMap)
         .orNull
       val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
       val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
@@ -585,16 +583,12 @@ object Extensions {
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
     def rightToLeft: Map[String, String] = {
-      val rightToRight = joinPart.groupBy.keyColumns.toScala
-        .map { key => key -> key }
-        .toMap
+      val rightToRight = joinPart.groupBy.keyColumns.toScala.map { key => key -> key }.toMap
       Option(joinPart.keyMapping)
         .map { leftToRight =>
-          val rToL = leftToRight.toScala
-            .map {
-              case (left, right) => right -> left
-            }
-            .toMap
+          val rToL = leftToRight.toScala.map {
+            case (left, right) => right -> left
+          }.toMap
           rightToRight ++ rToL
         }
         .getOrElse(rightToRight)
@@ -676,7 +670,7 @@ object Extensions {
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
-    // all keys on left
+    // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
       join.joinParts.toScala
         .flatMap {
@@ -700,9 +694,7 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
-      val partHashes = join.joinParts.toScala
-        .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
-        .toMap
+      val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -720,18 +712,17 @@ object Extensions {
      */
     def getExternalFeatureCols: Seq[String] = {
       Option(join.onlineExternalParts)
-        .map(
-          _.toScala
-            .map { part =>
-              {
-                val keys = part.source.getKeySchema.params.toScala
-                  .map(_.name)
-                val values = part.source.getValueSchema.params.toScala
-                  .map(_.name)
-                keys ++ values
-              }
+        .map(_.toScala
+          .map { part =>
+            {
+              val keys = part.source.getKeySchema.params.toScala
+                .map(_.name)
+              val values = part.source.getValueSchema.params.toScala
+                .map(_.name)
+              keys ++ values
             }
-            .flatMap(_.toSet))
+          }
+          .flatMap(_.toSet))
         .getOrElse(Seq.empty)
     }
 
@@ -745,9 +736,7 @@ object Extensions {
         return Map.empty[String, String]
       }
 
-      val externalPartHashes = join.onlineExternalParts.toScala
-        .map { part => part.fullName -> part.semanticHash }
-        .toMap
+      val externalPartHashes = join.onlineExternalParts.toScala.map { part => part.fullName -> part.semanticHash }.toMap
 
       externalPartHashes ++ semanticHash
     }
@@ -809,8 +798,7 @@ object Extensions {
                 s"specified skew filter for $leftKey is not used as a key in any join part. " +
                   s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
-              generateSkewFilterSql(leftKey,
-                                    values.toScala.toSeq)
+              generateSkewFilterSql(leftKey, values.toScala.toSeq)
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -822,12 +810,13 @@ object Extensions {
     def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).flatMap { jmap =>
         val result = jmap.toScala
-          .flatMap { case (leftKey, values) =>
-            Option(joinPart.keyMapping)
-              .map(_.toScala.getOrElse(leftKey, leftKey))
-              .orElse(Some(leftKey))
-              .filter(joinPart.groupBy.keyColumns.contains(_))
-              .map(generateSkewFilterSql(_, values.toScala))
+          .flatMap {
+            case (leftKey, values) =>
+              Option(joinPart.keyMapping)
+                .map(_.toScala.getOrElse(leftKey, leftKey))
+                .orElse(Some(leftKey))
+                .filter(joinPart.groupBy.keyColumns.contains(_))
+                .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
@@ -856,7 +845,9 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()).toScala
+      Option(join.joinParts)
+        .getOrElse(new util.ArrayList[JoinPart]())
+        .toScala
         .toSeq
         .map(new JoinPartOps(_))
 
