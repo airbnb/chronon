@@ -465,6 +465,8 @@ object GroupBy {
   // Need to use a case class here to allow null matching
   case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
+  def needsTime(groupByConf: api.GroupBy) = Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
+
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: BaseTableUtils,
@@ -495,7 +497,7 @@ object GroupBy {
         df1.union(df2.selectExpr(columns1: _*))
       }
 
-    def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
+    def doesNotNeedTime = !needsTime(groupByConf)
     def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
     assert(
       doesNotNeedTime || hasValidTimeColumn,
