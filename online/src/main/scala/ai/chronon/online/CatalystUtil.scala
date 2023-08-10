@@ -105,11 +105,11 @@ class CatalystUtil(
       s"${w.mkString(" AND ")}"
     }
 
-  private val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
+  val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
   @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
   private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
-  private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
+  val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 

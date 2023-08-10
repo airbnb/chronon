@@ -29,8 +29,10 @@ object Constants {
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)
-  val StatsKeySchema: StructType = StructType("keySchema", Array(StructField("JoinPath", StringType)))
+  val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
+  val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
   val MutationFields: Seq[StructField] = Seq(MutationTimeField, ReversalField)
+  val StatsKeySchema: StructType = StructType("keySchema", Array(StructField("JoinPath", StringType)))
   val ExternalPrefix: String = "ext"
   val ContextualSourceName: String = "contextual"
   val ContextualPrefix: String = s"${ExternalPrefix}_${ContextualSourceName}"

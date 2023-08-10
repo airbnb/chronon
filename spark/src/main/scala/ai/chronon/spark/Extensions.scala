@@ -4,7 +4,8 @@ import ai.chronon.api
 import ai.chronon.api.{BootstrapPart, Constants}
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
@@ -230,6 +231,22 @@ object Extensions {
         idx += 1
       }
       result
+    }
+  }
+
+  implicit class InternalRowOps(internalRow: InternalRow){
+    def toRow(schema: StructType): Row = {
+      new Row() {
+        override def length: Int = {
+          internalRow.numFields
+        }
+
+        override def get(i: Int): Any = {
+          internalRow.get(i, schema.fields(i).dataType)
+        }
+
+        override def copy(): Row = internalRow.copy().toRow(schema)
+      }
     }
   }
 }

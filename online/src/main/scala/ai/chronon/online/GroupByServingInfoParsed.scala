@@ -17,9 +17,6 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partition
   lazy val batchEndTsMillis: Long = partitionSpec.epochMillis(batchEndDate)
   private def parser = new Schema.Parser()
 
-  val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
-  val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
-
   lazy val aggregator: SawtoothOnlineAggregator = {
     new SawtoothOnlineAggregator(batchEndTsMillis,
                                  groupByServingInfo.groupBy.aggregations.asScala.toSeq,
@@ -72,7 +69,7 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partition
   lazy val mutationValueAvroSchema: String = {
     AvroConversions
       .fromChrononSchema(
-        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueChrononSchema ++ MutationAvroFields).toArray))
+        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueChrononSchema ++ Constants.MutationAvroFields).toArray))
       .toString
   }
 
