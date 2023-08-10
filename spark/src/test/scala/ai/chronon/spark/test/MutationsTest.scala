@@ -17,7 +17,10 @@ import org.junit.Test
   */
 class MutationsTest {
 
-  lazy val spark: SparkSession = SparkSessionBuilder.build("MutationsTest", local = true)
+  lazy val spark: SparkSession = SparkSessionBuilder.build(
+    "MutationsTest",
+    local = true,
+    additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
 
   private def namespace(suffix: String) = s"test_mutations_$suffix"
   private val groupByName = s"group_by_test.v0"
