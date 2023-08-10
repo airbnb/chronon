@@ -743,19 +743,4 @@ object GroupBy {
       throw new Exception(fullMessage)
     }
   }
-
-  /**
-    * Adds support to create a GroupBy using Array Lists instead of Seqs for PySpark users
-    *
-    * @return GroupBy
-    */
-  def usingArrayList(aggregations: java.util.ArrayList[api.Aggregation],
-                     keyColumns: java.util.ArrayList[String],
-                     inputDataFrame: DataFrame,
-                     mutationDataFrame: DataFrame = null,
-                     filterForSkew: Option[String] = None,
-                     shouldFinalize: Boolean = true): GroupBy = {
-    new GroupBy(aggregations.asScala.toSeq, keyColumns.asScala.toSeq, inputDataFrame, mutationDataFrame, filterForSkew, shouldFinalize)
-  }
-  
 }
