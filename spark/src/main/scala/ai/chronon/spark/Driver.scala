@@ -454,11 +454,6 @@ object Driver {
     val onlineClass: ScallopOption[String] =
       opt[String](required = true,
                   descr = "Fully qualified Online.Api based class. We expect the jar to be on the class path")
-    val localConf: ScallopOption[Boolean] = opt[Boolean](
-      required = false,
-      descr = "flag - use local files for conf",
-      default = Some(false)
-    )
 
     // hashmap implements serializable
     def serializableProps: Map[String, String] = {
@@ -467,17 +462,8 @@ object Driver {
       map.toMap
     }
 
-    def metaDataStore = {
-      val overrideMap: Option[Map[String, Any]] = if (localConf.getOrElse(false)) {
-        None
-      } else {
-        Some(Map("*" -> "*"))
-      }
-      new MetadataStore(impl(serializableProps).genKvStore,
-                        localOverrides = overrideMap,
-                        "ZIPLINE_METADATA",
-                        timeoutMillis = 10000)
-    }
+    def metaDataStore =
+      new MetadataStore(impl(serializableProps).genKvStore, "ZIPLINE_METADATA", timeoutMillis = 10000)
 
     def impl(props: Map[String, String]): Api = {
       val urls = Array(new File(onlineJar()).toURI.toURL)
@@ -500,6 +486,10 @@ object Driver {
         required = false,
         descr = "file path to json of the keys to fetch",
         short = 'f'
+      )
+      val localJoinConfs: ScallopOption[String] = opt[String](
+        required = false,
+        descr = "local files to use for fetching joins - rather than using metadata upload"
       )
       val interval: ScallopOption[Int] = opt[Int](
         required = false,
@@ -524,8 +514,8 @@ object Driver {
       val series = stats.values.get
       val toPrint =
         if (
-          keyMap.get("statsKey").isDefined
-          && series.contains(keyMap.get("statsKey").map(_.asInstanceOf[String]).getOrElse(""))
+          keyMap.contains("statsKey")
+          && series.contains(keyMap("statsKey").asInstanceOf[String])
         )
           series.get(keyMap("statsKey").asInstanceOf[String])
         else series
@@ -570,7 +560,14 @@ object Driver {
             val startNs = System.nanoTime
             val requests = Seq(Fetcher.Request(args.name(), keyMap))
             val resultFuture = if (args.`type`() == "join") {
-              fetcher.fetchJoin(requests)
+              if (args.localJoinConfs.isDefined) {
+                val overridePaths = args.localJoinConfs().split(',')
+                val overrideMap =
+                  overridePaths.map(p => fetcher.pathToKey(p) -> ThriftJsonCodec.fromJsonFile[api.Join](p, false)).toMap
+                fetcher.fetchJoin(requests, overrideMap)
+              } else {
+                fetcher.fetchJoin(requests)
+              }
             } else {
               fetcher.fetchGroupBys(requests)
             }

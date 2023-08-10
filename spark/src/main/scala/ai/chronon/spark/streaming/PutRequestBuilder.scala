@@ -9,7 +9,7 @@ import ai.chronon.online.SparkConversions.toChrononType
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed, KVStore, SparkConversions}
 import ai.chronon.spark.{GenericRowHandler, GroupBy, PartitionRange, TableUtils}
 import com.google.gson.Gson
-import org.apache.spark.sql.types.{StructType, StructType => SparkStruct}
+import org.apache.spark.sql.types.{StructType => SparkStruct}
 import org.apache.spark.sql.{Row, SparkSession}
 
 import java.time.format.DateTimeFormatter
@@ -56,7 +56,7 @@ object PutRequestBuilder {
     val keys: Array[String] = groupByConf.keyColumns.toScala.toArray
     implicit val tableUtils: TableUtils = TableUtils(session)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val groupBy = GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
+    val groupBy = ai.chronon.spark.GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
     val selectedSchema: SparkStruct = groupBy.preAggSchema
 
     def selectedFieldIndex(s: String): Int = selectedSchema.fieldIndex(s)
@@ -97,7 +97,7 @@ object PutRequestBuilder {
     val groupByServingInfo = new GroupByServingInfo()
     implicit val tableUtils: TableUtils = TableUtils(session)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val groupBy = GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
+    val groupBy = ai.chronon.spark.GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
     groupByServingInfo.setBatchEndDate(today)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
@@ -106,11 +106,11 @@ object PutRequestBuilder {
       val streamingSource = groupByConf.streamingSource.get
       val fullInputSchema = tableUtils.getSchemaFromTable(streamingSource.table)
       val streamingQuery = groupByConf.buildStreamingQuery
-      val inputSchema =
+      val inputSchema: SparkStruct =
         if (Option(streamingSource.query.selects).isEmpty) fullInputSchema
         else {
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
-          StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+          SparkStruct(fullInputSchema.filter(col => reqColumns.contains(col.name)))
         }
       groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
     } else {
