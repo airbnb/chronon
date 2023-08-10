@@ -182,9 +182,13 @@ class BaseFetcher(kvStore: KVStore,
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
-          var keyBytes: Array[Byte] = null
+          var batchKeyBytes: Array[Byte] = null
+          var streamingKeyBytes: Array[Byte] = null
           try {
-            keyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo)
+            // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
+            // on the KVStore implementation, so we encode each distinctly.
+            batchKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+            streamingKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
           } catch {
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
@@ -193,19 +197,20 @@ class BaseFetcher(kvStore: KVStore,
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
               }.toMap
               try {
-                keyBytes = kvStore.createKeyBytes(castedKeys, groupByServingInfo)
+                batchKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+                streamingKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
                   throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
               }
           }
-          val batchRequest = GetRequest(keyBytes, groupByServingInfo.groupByOps.batchDataset)
+          val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
           val streamingRequestOpt = groupByServingInfo.groupByOps.inferredAccuracy match {
             // fetch batch(ir) and streaming(input) and aggregate
             case Accuracy.TEMPORAL =>
               Some(
-                GetRequest(keyBytes,
+                GetRequest(streamingKeyBytes,
                            groupByServingInfo.groupByOps.streamingDataset,
                            Some(groupByServingInfo.batchEndTsMillis)))
             // no further aggregation is required - the value in KvStore is good as is
