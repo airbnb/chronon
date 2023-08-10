@@ -76,11 +76,11 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
     // In theory timeColumn for entities is only necessary when windows are specified.
     // TODO: Explore whether timeColumn for entities can be dropped in life-time aggregate cases
-    val timeSelects = Map(Constants.TimeColumn -> timeColumn) ++ dataModel match {
+    val timeSelects: Map[String, String] = Map(Constants.TimeColumn -> timeColumn) ++ (dataModel match {
       // these are derived from Mutation class for streaming case - we ignore what is set in conf
       case DataModel.Entities => Map(Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
-      case DataModel.Events   => None
-    }
+      case DataModel.Events   => Map.empty
+    })
     val selectsOption: Option[Map[String, String]] = for {
       selectMap <- Option(query.selects).map(_.toScala.toMap)
       keyMap = Option(keys).map(_.map(k => k -> k).toMap).getOrElse(Map.empty)
