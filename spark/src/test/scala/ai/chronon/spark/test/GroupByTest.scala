@@ -189,6 +189,40 @@ class GroupByTest {
       }
     }
   }
+
+  @Test
+  def testBuildGroupByWithArrayList(): Unit = {
+    val eventSchema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 10000)
+    )
+
+    val eventDf = DataFrameGen.events(spark, eventSchema, count = 10, partitions = 180)
+
+    val querySchema = List(Column("user", StringType, 10))
+
+    val queryDf = DataFrameGen.events(spark, querySchema, count = 10, partitions = 180)
+
+    val aggregations: java.util.ArrayList[Aggregation] = new java.util.ArrayList()
+
+    aggregations.add(
+      Builders.Aggregation(
+        Operation.AVERAGE,
+        "session_length",
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))
+      )
+    )
+
+    val keys: java.util.ArrayList[String] = new java.util.ArrayList()
+    keys.add("user")
+
+    val groupBy = GroupBy.usingArrayList(aggregations, keys, eventDf)
+
+    assert(groupBy.temporalEvents(queryDf).count() != 0)
+
+  }
+
+
   @Test
   def testTemporalEvents(): Unit = {
     val eventSchema = List(
