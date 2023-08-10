@@ -6,7 +6,7 @@ import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, 
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.api
-import ai.chronon.online.Fetcher.{Request, Response}
+import ai.chronon.online.Fetcher.{PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{JoinOps, ThrowableOps}
@@ -283,8 +283,6 @@ class FetcherBase(kvStore: KVStore,
     windowing.FinalBatchIr(collapsed, tailHops)
   }
 
-  private case class PrefixedRequest(prefix: String, request: Request)
-
   // prioritize passed in joinOverrides over the ones in metadata store
   // used in stream-enrichment and in staging testing
   def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
@@ -392,7 +390,10 @@ class FetcherBase(kvStore: KVStore,
    * @param queryMap – map of (prefix, column) to fetch with key subset
    * @return Future map of query to GroupBy response
    */
-  def fetchColumnGroup(keyMap: Map[String, AnyRef], queryMap: Map[(String, String), Set[String]]): Future[Map[(String, String), Response]] = {
+  def fetchColumnGroup(
+    keyMap: Map[String, AnyRef],
+    queryMap: Map[(String, String), Set[String]]
+  ): Future[Map[(String, String), Response]] = {
     val startTimeMs = System.currentTimeMillis()
 
     // Generate a mapping from query --> GroupBy request
@@ -420,7 +421,7 @@ class FetcherBase(kvStore: KVStore,
                 s"Couldn't find a groupBy response for $request in response map"))
             ).map { valueMap =>
               if (valueMap != null) {
-                valueMap.map { case (aggName, aggValue) => column + "_" + aggName -> aggValue }
+                valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
               } else {
                 Map.empty[String, AnyRef]
               }

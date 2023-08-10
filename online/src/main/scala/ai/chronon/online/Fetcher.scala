@@ -24,6 +24,7 @@ object Fetcher {
                      atMillis: Option[Long] = None,
                      context: Option[Metrics.Context] = None)
 
+  case class PrefixedRequest(prefix: String, request: Request)
   case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
