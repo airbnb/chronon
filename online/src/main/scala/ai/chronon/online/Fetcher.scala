@@ -35,6 +35,7 @@ object Fetcher {
                                  baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
+  case class ColumnSpec(groupByName: String, columnName: String, prefix: Option[String], keyMapping: Option[Map[String, String]])
 }
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)

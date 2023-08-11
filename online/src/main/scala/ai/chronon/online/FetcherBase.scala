@@ -5,8 +5,7 @@ import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
-import ai.chronon.api
-import ai.chronon.online.Fetcher.{PrefixedRequest, Request, Response}
+import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{JoinOps, ThrowableOps}
@@ -377,64 +376,56 @@ class FetcherBase(kvStore: KVStore,
   /**
    * Fetch method to simulate a random access interface for Chronon
    * by distributing requests to relevant GroupBys. This is a batch
-   * API which allows teams to provide a dictionary of primary keys
-   * and a map of (prefix, column) queries to subset of keys needed.
-   *
-   * Pre-condition: subset of keys provided in queryMap must exist
-   * as keys in keyMap. If not, we'll return a KeyMissingException
-   * in the response.
+   * API which allows the caller to provide a sequence of ColumnSpec
+   * queries and receive a mapping of results.
    *
    * TODO: Metrics
    *
-   * @param keyMap   – map of provided entity keys
-   * @param queryMap – map of (prefix, column) to fetch with key subset
+   * @param columnSpecs – batch of ColumnSpec queries
    * @return Future map of query to GroupBy response
    */
-  def fetchColumnGroup(
-    keyMap: Map[String, AnyRef],
-    queryMap: Map[(String, String), Set[String]]
-  ): Future[Map[(String, String), Response]] = {
+  def fetchColumns(
+    columnSpecs: Seq[ColumnSpec]
+  ): Future[Map[ColumnSpec, Response]] = {
     val startTimeMs = System.currentTimeMillis()
 
-    // Generate a mapping from query --> GroupBy request
-    val groupByRequestsByQuery: Map[(String, String), (Set[String], Request)] =
-      queryMap.map { case ((prefix, column), keySet) =>
-        val filteredKeyMap = keyMap.filter(k => keySet.contains(k._1))
-        val missingKeys = keySet.filter(!keyMap.contains(_))
-        // Pass along whether keys are missing to generate an exceptional response later
-        (prefix, column) -> (missingKeys, PrefixedRequest(prefix, Request(column, filteredKeyMap, Some(startTimeMs), None)).request)
-      }
+    // Generate a mapping from ColumnSpec query --> GroupBy request
+    val groupByRequestsByQuery: Map[ColumnSpec, Request] =
+      columnSpecs.map { case query =>
+        val prefix = query.prefix.getOrElse("")
+        val requestName = query.groupByName + "." + query.columnName
+        val keyMap = query.keyMapping.getOrElse(Map())
+        query -> PrefixedRequest(prefix, Request(requestName, keyMap, Some(startTimeMs), None)).request
+      }.toMap
 
     // Start I/O and generate a mapping from query --> GroupBy response
-    val groupByResponsesFuture = fetchGroupBys(groupByRequestsByQuery.values.filter(_._1.isEmpty).map(_._2).toList)
+    val groupByResponsesFuture = fetchGroupBys(groupByRequestsByQuery.values.toList)
     groupByResponsesFuture.map { groupByResponses =>
       val resultsByRequest = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
       val responseByQuery = groupByRequestsByQuery.map {
-        case ((prefix, column), (missingKeys, request)) =>
-          val results = if (missingKeys.nonEmpty) {
-            Failure(KeyMissingException(prefix + "_" + column, missingKeys.toSeq, request.keys))
-          } else {
-            // TODO: DRY duplicate logic
-            resultsByRequest.getOrElse(
-              request,
-              Failure(new IllegalStateException(
-                s"Couldn't find a groupBy response for $request in response map"))
-            ).map { valueMap =>
-              if (valueMap != null) {
-                valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
-              } else {
-                Map.empty[String, AnyRef]
+        case (query, request) =>
+          val results = resultsByRequest.getOrElse(
+            request,
+            Failure(new IllegalStateException(
+              s"Couldn't find a groupBy response for $request in response map"))
+          ).map { valueMap =>
+            if (valueMap != null) {
+              valueMap.map { case (aggName, aggValue) =>
+                val resultKey = query.prefix.map(_ + "_" + aggName).getOrElse(aggName)
+                resultKey -> aggValue
               }
-            }.recover { // capture exception as a key
-              case ex: Throwable =>
-                if (debug || Math.random() < 0.001) {
-                  println(s"Failed to fetch $request with \n${ex.traceString}")
-                }
-                Map(request.name + "_exception" -> ex.traceString)
+            } else {
+              Map.empty[String, AnyRef]
             }
+          }.recoverWith { // capture exception as a key
+            case ex: Throwable =>
+              if (debug || Math.random() < 0.001) {
+                println(s"Failed to fetch $request with \n${ex.traceString}")
+              }
+              Failure(ex)
           }
           val response = Response(request, results)
-          (prefix, column) -> response
+          query -> response
       }
 
       responseByQuery

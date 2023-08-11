@@ -1,7 +1,6 @@
 package ai.chronon.online
 
-import ai.chronon.api.KeyMissingException
-import ai.chronon.online.Fetcher.{Request, Response}
+import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -14,7 +13,8 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 class BaseFetcherTest extends MockitoSugar with Matchers {
-  val TestColumn = "relevance.short_term_user_features.pdp_view_count_14d"
+  val GroupBy = "relevance.short_term_user_features"
+  val Column = "pdp_view_count_14d"
   val GuestKey = "guest"
   val HostKey = "host"
   val GuestId = "123"
@@ -36,9 +36,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
   def testFetchColumnGroup_SingleQuery(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
-    val query = ("prefix", TestColumn)
-    val keySet = Set(GuestKey)
-    val queryMap = Map(query -> keySet)
+    val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
 
     doAnswer(invocation => {
       val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
@@ -48,31 +46,26 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     }).when(baseFetcher).fetchGroupBys(any())
 
     // Map should contain query with valid response
-    val queryResults = Await.result(baseFetcher.fetchColumnGroup(keyMap, queryMap), 1.second)
+    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(query)), 1.second)
     queryResults.contains(query) shouldBe true
-    queryResults.get(query).map(_.values) shouldBe Some(Success(Map(query._1 + "_" + query._2 -> "100")))
+    queryResults.get(query).map(_.values) shouldBe Some(Success(Map(s"$GroupBy.$Column" -> "100")))
 
     // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
     verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
     val actualRequest = requestsCaptor.getValue.asInstanceOf[Seq[Request]].headOption
     actualRequest shouldNot be(None)
-    actualRequest.get.name shouldBe query._2
-    actualRequest.get.keys shouldBe keyMap
+    actualRequest.get.name shouldBe s"${query.groupByName}.${query.columnName}"
+    actualRequest.get.keys shouldBe query.keyMapping.get
   }
 
   @Test
   def testFetchColumnGroup_Batch(): Unit = {
-    // Fetch host and guest query with all keys present
-    val keyMap = Map(GuestKey -> GuestId, HostKey -> HostId)
-    val guestQuery = (GuestKey, TestColumn)
-    val guestKeySet = Set(GuestKey)
-    val hostQuery = (HostKey, TestColumn)
-    val hostKeySet = Set(HostKey)
-    val queryMap = Map(
-      guestQuery -> guestKeySet,
-      hostQuery -> hostKeySet,
-    )
+    // Fetch a batch of queries
+    val guestKeyMap = Map(GuestKey -> GuestId)
+    val guestQuery = ColumnSpec(GroupBy, Column, Some(GuestKey), Some(guestKeyMap))
+    val hostKeyMap = Map(HostKey -> HostId)
+    val hostQuery = ColumnSpec(GroupBy, Column, Some(HostKey), Some(hostKeyMap))
 
     doAnswer(invocation => {
       val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
@@ -80,56 +73,48 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
       Future.successful(responses)
     }).when(baseFetcher).fetchGroupBys(any())
 
-    // Result map should contain all queries with results
-    val queryResults = Await.result(baseFetcher.fetchColumnGroup(keyMap, queryMap), 1.second)
+    // Map should contain query with valid response
+    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(guestQuery, hostQuery)), 1.second)
     queryResults.contains(guestQuery) shouldBe true
-    queryResults.get(guestQuery).map(_.values) shouldBe Some(Success(Map(guestQuery._1 + "_" + guestQuery._2 -> "100")))
+    queryResults.get(guestQuery).map(_.values) shouldBe Some(Success(Map(s"${GuestKey}_$GroupBy.$Column" -> "100")))
     queryResults.contains(hostQuery) shouldBe true
-    queryResults.get(hostQuery).map(_.values) shouldBe Some(Success(Map(hostQuery._1 + "_" + hostQuery._2 -> "100")))
+    queryResults.get(hostQuery).map(_.values) shouldBe Some(Success(Map(s"${HostKey}_$GroupBy.$Column" -> "100")))
 
-    // Both queries sent to KV store for GroupBy fetch
+    // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
     verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
     val actualRequests = requestsCaptor.getValue.asInstanceOf[Seq[Request]]
     actualRequests.length shouldBe 2
-    actualRequests.head.name shouldBe guestQuery._2
-    actualRequests.head.keys shouldBe Map(GuestKey -> GuestId)
-    actualRequests(1).name shouldBe hostQuery._2
-    actualRequests(1).keys shouldBe Map(HostKey -> HostId)
+    actualRequests.head.name shouldBe s"${guestQuery.groupByName}.${guestQuery.columnName}"
+    actualRequests.head.keys shouldBe guestQuery.keyMapping.get
+    actualRequests(1).name shouldBe s"${hostQuery.groupByName}.${hostQuery.columnName}"
+    actualRequests(1).keys shouldBe hostQuery.keyMapping.get
   }
 
   @Test
-  def testFetchColumnGroup_MissingKey(): Unit = {
-    // Host key requested but not provided
+  def testFetchColumnGroup_MissingResponse(): Unit = {
+    // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
-    val guestQuery = (GuestKey, TestColumn)
-    val guestKeySet = Set(GuestKey)
-    val hostQuery = (HostKey, TestColumn)
-    val hostKeySet = Set(HostKey)
-    val queryMap = Map(
-      guestQuery -> guestKeySet,
-      hostQuery -> hostKeySet,
-    )
+    val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
 
-    doAnswer(invocation => {
-      val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
-      val responses = requests.map(r => Response(r, Success(Map(r.name -> "100"))))
-      Future.successful(responses)
+    doAnswer(_ => {
+      Future.successful(Seq())
     }).when(baseFetcher).fetchGroupBys(any())
 
-    // Result map should contain all queries, but host query fails with missing key
-    val queryResults = Await.result(baseFetcher.fetchColumnGroup(keyMap, queryMap), 1.second)
-    queryResults.contains(guestQuery) shouldBe true
-    queryResults.get(guestQuery).map(_.values) shouldBe Some(Success(Map(guestQuery._1 + "_" + guestQuery._2 -> "100")))
-    queryResults.contains(hostQuery) shouldBe true
-    queryResults.get(hostQuery).map(_.values) shouldBe Some(Failure(KeyMissingException(hostQuery._1 + "_" + hostQuery._2, Set(HostKey).toSeq, Map())))
+    // Map should contain query with Failure response
+    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(query)), 1.second)
+    queryResults.contains(query) shouldBe true
+    queryResults.get(query).map(_.values) match {
+      case Some(Failure(ex: IllegalStateException)) => succeed
+      case _ => fail()
+    }
 
-    // Only the guest query is sent to KV store for GroupBy fetch
+    // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
     verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
-    val actualRequests = requestsCaptor.getValue.asInstanceOf[Seq[Request]]
-    actualRequests.length shouldBe 1
-    actualRequests.head.name shouldBe guestQuery._2
-    actualRequests.head.keys shouldBe Map(GuestKey -> GuestId)
+    val actualRequest = requestsCaptor.getValue.asInstanceOf[Seq[Request]].headOption
+    actualRequest shouldNot be(None)
+    actualRequest.get.name shouldBe query.groupByName + "." + query.columnName
+    actualRequest.get.keys shouldBe query.keyMapping.get
   }
 }
