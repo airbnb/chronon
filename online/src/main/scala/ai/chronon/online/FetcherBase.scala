@@ -393,7 +393,7 @@ class FetcherBase(kvStore: KVStore,
     val groupByRequestsByQuery: Map[ColumnSpec, Request] =
       columnSpecs.map { case query =>
         val prefix = query.prefix.getOrElse("")
-        val requestName = query.groupByName + "." + query.columnName
+        val requestName = s"${query.groupByName}.${query.columnName}"
         val keyMap = query.keyMapping.getOrElse(Map())
         query -> PrefixedRequest(prefix, Request(requestName, keyMap, Some(startTimeMs), None)).request
       }.toMap
@@ -411,7 +411,7 @@ class FetcherBase(kvStore: KVStore,
           ).map { valueMap =>
             if (valueMap != null) {
               valueMap.map { case (aggName, aggValue) =>
-                val resultKey = query.prefix.map(_ + "_" + aggName).getOrElse(aggName)
+                val resultKey = query.prefix.map(p => s"${p}_${aggName}").getOrElse(aggName)
                 resultKey -> aggValue
               }
             } else {
