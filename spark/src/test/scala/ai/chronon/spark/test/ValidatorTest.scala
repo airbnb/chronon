@@ -2,7 +2,8 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.spark._
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types.{IntegerType, LongType, StructField, StructType}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
@@ -24,18 +25,6 @@ class ValidatorTest {
     ).toDF("a", "ds")
     val result = Validator.validatePartitionColumn(df, "leftDf")
     assertTrue(result.isEmpty)
-  }
-
-  @Test
-  def testValidatePartitionColumn_missingPartitionColumn(): Unit = {
-    val df = Seq(
-      (2, "foo"),
-      (4, "bar"),
-      (4, "foobar")
-    ).toDF("a", "not_a_ds")
-    val result = Validator.validatePartitionColumn(df, "leftDf")
-    assertEquals(result.size, 1)
-    assertEquals(result(0), "df for leftDf does not contain PartitionColumn ds")
   }
 
   @Test
@@ -74,11 +63,20 @@ class ValidatorTest {
 
   @Test
   def testValidateTimeColumn_passes(): Unit = {
-    val df = Seq(
-      (2, 1691369564000L),
-      (4, 1691369563000L),
-      (4, 1691369562000L)
-    ).toDF("a", "ts")
+    val inputSchema = List(
+      StructField("a", IntegerType, false),
+      StructField("ts", LongType, true)
+    )
+    val values = Seq(
+      Row(2, 1691369564000L),
+      Row(4, 1691369563000L),
+      Row(4, 1691369562000L),
+      Row(5, null)  // Will be skipped and not checked.
+    )
+    val df = spark.createDataFrame(
+      spark.sparkContext.parallelize(values),
+      StructType(inputSchema)
+    )
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertTrue(result.isEmpty)
   }
@@ -128,7 +126,7 @@ class ValidatorTest {
     ).toDF("a", "ts")
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertEquals(result.size, 1)
-    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Ex. invalid ts: 1691369")
+    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Example invalid ts: 1691369")
   }
 
   @Test
@@ -138,6 +136,6 @@ class ValidatorTest {
     ).toDF("a", "ts")
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertEquals(result.size, 1)
-    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Ex. invalid ts: 1691369564000000")
+    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Example invalid ts: 1691369564000000")
   }
 }

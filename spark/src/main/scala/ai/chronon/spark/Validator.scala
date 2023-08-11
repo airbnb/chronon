@@ -28,11 +28,11 @@ class Validator(tableUtils: BaseTableUtils,
 
   def validateJoin(joinConf: api.Join)
       : List[String] = {
-    joinConf.joinParts.toScala.parallel.foreach { part =>
-      val _ = validateGroupBy(part.groupBy)
-    }
+    val errors = joinConf.joinParts.toScala.parallel.map { part =>
+      validateGroupBy(part.groupBy)
+    }.reduce(_ ++ _)
     val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
-    Validator.validatePartitionColumn(leftDf, "leftDf")
+    errors ++ Validator.validatePartitionColumn(leftDf, "leftDf")
   }
 
   def run(): Unit = {
@@ -57,10 +57,14 @@ class Validator(tableUtils: BaseTableUtils,
 }
 
 object Validator {
+
+  @transient private[this] val logger: Logger = LoggerFactory.getLogger(this.getClass)
   def validatePartitionColumn(df: DataFrame, dfName: String): List[String] = {
     val schema = df.schema
     if (!schema.names.contains(Constants.PartitionColumn)) {
-      return List(s"df for ${dfName} does not contain PartitionColumn " + Constants.PartitionColumn)
+      // A datasource can be unpartitioned and not contain the partition column.
+      logger.info(s"df for ${dfName} does not have a PartitionColumn ${Constants.PartitionColumn} so will be treated as unpartitioned")
+      return List.empty
     }
     if (schema(Constants.PartitionColumn).dataType != StringType) {
       return List(s"df for ${dfName} has wrong type for PartitionColumn ${Constants.PartitionColumn}, should be StringType")
@@ -89,15 +93,17 @@ object Validator {
     if (schema(Constants.TimeColumn).dataType != LongType) {
       return List(s"df for groupBy ${groupByConf.metaData.name} has wrong type for TimeColumn ${Constants.TimeColumn}, should be LongType")
     }
-    val timeColumnSample = df.select(col(Constants.TimeColumn)).take(100).map(_.getLong(0))
+    val timeColumnSample = df.select(col(Constants.TimeColumn)).where(col(Constants.TimeColumn).isNotNull).take(100).map(_.getLong(0))
     val formatter = DateTimeFormatter.ofPattern("yyyyMMdd")
     // Assume timestamps are in some bounded range. We may need to tweak this logic if there are use cases for running
-    // on data before year 2000 (there shouldn't be for Stripe).
+    // on data before year 2000 (there shouldn't be for Stripe). This is mainly checking for timestamps that are
+    // in the wrong unit (ex. seconds instead of milliseconds since Unix epoch) so we only need to check a small
+    // number of timestamps.
     val lowerBound = LocalDate.parse("20001010", formatter).atStartOfDay(ZoneId.of("UTC")).toInstant.toEpochMilli
     val upperBound = LocalDate.parse("25000101", formatter).atStartOfDay(ZoneId.of("UTC")).toInstant.toEpochMilli
     timeColumnSample.map { ts =>
       if (ts <= lowerBound || ts >= upperBound) {
-        return List(s"df for groupBy ${groupByConf.metaData.name} should have TimeColumn ${Constants.TimeColumn} that is milliseconds since Unix epoch. Ex. invalid ts: $ts")
+        return List(s"df for groupBy ${groupByConf.metaData.name} should have TimeColumn ${Constants.TimeColumn} that is milliseconds since Unix epoch. Example invalid ts: $ts")
       }
     }
     List.empty
