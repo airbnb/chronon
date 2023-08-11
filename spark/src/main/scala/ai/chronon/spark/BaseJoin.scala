@@ -191,7 +191,12 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
          |""".stripMargin)
 
     def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+      GroupBy.from(joinPart.groupBy,
+                   partitionRange,
+                   tableUtils,
+                   computeDependency = true,
+                   Option(rightBloomMap),
+                   rightSkewFilter)
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)

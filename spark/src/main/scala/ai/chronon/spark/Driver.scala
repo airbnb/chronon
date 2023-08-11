@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
-import ai.chronon.spark.streaming.TopicChecker
+import ai.chronon.spark.streaming.{GroupByRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
@@ -718,19 +718,25 @@ object Driver {
       val onlineJar = findFile(args.onlineJar())
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
-      val streamingSource = groupByConf.streamingSource
-      assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-      lazy val host = streamingSource.get.topicTokens.get("host")
-      lazy val port = streamingSource.get.topicTokens.get("port")
-      if (!args.kafkaBootstrap.isDefined)
-        assert(
-          host.isDefined && port.isDefined,
-          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
-      val inputStream: DataFrame =
-        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-      val streamingRunner =
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      val query = streamingRunner.run(args.debug())
+//      val streamingSource = groupByConf.streamingSource
+//      assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
+//      lazy val host = streamingSource.get.topicTokens.get("host")
+//      lazy val port = streamingSource.get.topicTokens.get("port")
+//      if (!args.kafkaBootstrap.isDefined)
+//        assert(
+//          host.isDefined && port.isDefined,
+//          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+//      val inputStream: DataFrame =
+//        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+      // val query =
+      //   new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).start
+      // val query = streamingRunner.run(args.debug())
+      val query =
+       new GroupByRunner(groupByConf,
+        session,
+        args.serializableProps,
+        args.impl(args.serializableProps),
+        args.debug()).startWriting
       query.awaitTermination()
     }
   }

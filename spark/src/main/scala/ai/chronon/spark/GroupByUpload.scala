@@ -52,17 +52,17 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     val irSchema = SparkConversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
-    println(
-      s"""
-        |BatchIR Element Size: ${SparkEnv.get.serializer.newInstance().serialize(sawtoothOnlineAggregator.init).capacity()}
+    println(s"""
+        |BatchIR Element Size: ${SparkEnv.get.serializer
+      .newInstance()
+      .serialize(sawtoothOnlineAggregator.init)
+      .capacity()}
         |""".stripMargin)
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update,
-        combOp = sawtoothOnlineAggregator.merge
-      )
+        seqOp = sawtoothOnlineAggregator.update, combOp = sawtoothOnlineAggregator.merge)
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
@@ -89,10 +89,11 @@ object GroupByUpload {
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
     // for snapshot accuracy
-    lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
+    lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils, computeDependency = true)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy
-    lazy val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
+    lazy val shiftedGroupBy =
+      GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils, computeDependency = true)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)

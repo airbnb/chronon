@@ -56,7 +56,8 @@ object PutRequestBuilder {
     val keys: Array[String] = groupByConf.keyColumns.toScala.toArray
     implicit val tableUtils: TableUtils = TableUtils(session)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val groupBy = ai.chronon.spark.GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
+    val groupBy = ai.chronon.spark.GroupBy
+      .from(groupByConf, PartitionRange(today, today), TableUtils(session), computeDependency = false)
     val selectedSchema: SparkStruct = groupBy.preAggSchema
 
     def selectedFieldIndex(s: String): Int = selectedSchema.fieldIndex(s)
@@ -97,7 +98,8 @@ object PutRequestBuilder {
     val groupByServingInfo = new GroupByServingInfo()
     implicit val tableUtils: TableUtils = TableUtils(session)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val groupBy = ai.chronon.spark.GroupBy.from(groupByConf, PartitionRange(today, today), TableUtils(session))
+    val groupBy = ai.chronon.spark.GroupBy
+      .from(groupByConf, PartitionRange(today, today), TableUtils(session), computeDependency = false)
     groupByServingInfo.setBatchEndDate(today)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))

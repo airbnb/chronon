@@ -285,11 +285,20 @@ object Extensions {
     }
 
     def query: Query = {
-      if (source.isSetEntities) source.getEntities.query else source.getEvents.query
+      if (source.isSetEntities) {
+        source.getEntities.query
+      } else if (source.isSetEvents) {
+        source.getEvents.query
+      } else {
+        source.getJoinSource.query
+      }
     }
 
-    lazy val rawTable: String =
-      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+    lazy val rawTable: String = {
+      if (source.isSetEntities) { source.getEntities.getSnapshotTable }
+      else if (source.isSetEvents) { source.getEvents.getTable }
+      else { source.getJoinSource.getJoin.metaData.outputTable }
+    }
 
     def table: String = rawTable.cleanSpec
 

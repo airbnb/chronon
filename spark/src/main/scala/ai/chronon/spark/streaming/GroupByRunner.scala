@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online._
 import ai.chronon.spark.GenericRowHandler
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.streaming.Trigger
+import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql._
 
 import scala.concurrent.duration.DurationInt
@@ -14,8 +14,9 @@ class GroupByRunner(groupByConf: api.GroupBy,
                     session: SparkSession,
                     conf: Map[String, String],
                     apiImpl: Api,
-                    context: Metrics.Context,
                     debug: Boolean) {
+
+  @transient lazy val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
   // input data stream needs to be a dataframe - Array[Byte]
   private def decode(dataStream: DataStream): DataStream = {
     val servingInfoProxy = PutRequestBuilder.buildProxyServingInfo(groupByConf, session)
@@ -83,7 +84,7 @@ class GroupByRunner(groupByConf: api.GroupBy,
 
   @transient lazy val fetcher = apiImpl.buildFetcher(debug)
 
-  def startWriting(groupByConf: api.GroupBy): Unit = {
+  def startWriting: StreamingQuery = {
     assert(groupByConf.streamingSource.isDefined, s"No streaming source in groupBy: ${groupByConf.metaData.cleanName}")
     val source = groupByConf.streamingSource.get
     val putRequestBuilder = PutRequestBuilder.from(groupByConf, session)
@@ -104,6 +105,8 @@ class GroupByRunner(groupByConf: api.GroupBy,
         .trigger(Trigger.Continuous(2.minute))
         .foreach(joinWriter)
         .start()
+    } else {
+      throw new IllegalStateException("Either events or entities or joinSource needs to be set in streaming source")
     }
   }
 }

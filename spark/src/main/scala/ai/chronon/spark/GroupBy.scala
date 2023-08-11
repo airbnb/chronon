@@ -17,7 +17,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.util
 import scala.collection.mutable
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -370,13 +370,55 @@ object GroupBy {
   // Need to use a case class here to allow null matching
   case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
-  def from(groupByConf: api.GroupBy,
+  // if the source is a join - we are going to materialize the underlying table
+  // and replace the joinSource with Event or Entity Source
+  def replaceJoinSource(groupByConf: api.GroupBy,
+                        queryRange: PartitionRange,
+                        tableUtils: TableUtils,
+                        compute: Boolean = true): api.GroupBy = {
+    val result = groupByConf.deepCopy()
+    val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
+      if (source.isSetJoinSource) {
+        val joinSource = source.getJoinSource
+        val joinConf = joinSource.join
+        // materialize the table
+        val join = new Join(joinConf, queryRange.end, tableUtils)
+        if (compute) {
+          join.computeJoin()
+        }
+        val joinOutputTable = joinConf.metaData.outputTable
+        val topic = joinConf.left.topic
+        val newSource = joinConf.left.deepCopy()
+        if (newSource.isSetEvents) {
+          val events = newSource.getEvents
+          events.setQuery(joinSource.query)
+          events.setTable(joinConf.metaData.outputTable)
+          // set invalid topic to make sure inferAccuracy works as expected
+          events.setTopic(joinConf.left.topic)
+        } else if (newSource.isSetEntities) {
+          val entities = newSource.getEntities
+          entities.setQuery(joinSource.query)
+          entities.setSnapshotTable(joinConf.metaData.outputTable)
+          entities.setMutationTable(null)
+          entities.setMutationTopic(null)
+        }
+        newSource
+      } else {
+        source
+      }
+    }.toJava
+    result.setSources(newSources)
+  }
+
+  def from(groupByConfOld: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
+           computeDependency: Boolean,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true): GroupBy = {
-    println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
+    println(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
+    val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(groupByConf,
@@ -594,7 +636,7 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils)
+              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
               (groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities

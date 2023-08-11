@@ -170,7 +170,7 @@ class Analyzer(tableUtils: TableUtils,
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
-    val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
+    val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     println(s"""|Running GroupBy analysis for $name ...""".stripMargin)
     val analysis =

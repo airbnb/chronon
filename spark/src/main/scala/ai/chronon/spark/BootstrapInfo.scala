@@ -61,7 +61,7 @@ object BootstrapInfo {
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
-        val gb = GroupBy.from(part.groupBy, range, tableUtils)
+        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))

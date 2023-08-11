@@ -211,6 +211,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     val groupBy = GroupBy.from(joinPart.groupBy,
                                PartitionRange(labelDS, labelDS)(tableUtils),
                                tableUtils,
+                               computeDependency = true,
                                Option(rightBloomMap),
                                rightSkewFilter)
 
