@@ -29,33 +29,6 @@ object TopicInfo {
     }.toMap
     TopicInfo(topicName, topicType, params)
   }
-
-  // TODO move this to tests
-  def main(args: Array[String]): Unit = {
-    def check(a: TopicInfo, b: TopicInfo): Boolean = {
-      if (a != b) {
-        print(a)
-        print(b)
-      }
-      a == b
-    }
-    check(parse("kafka://topic_name/host=X/port=Y"),
-          TopicInfo("topic_name", "kafka", Map("host" -> "X", "port" -> "Y")))
-    check(parse("topic_name/host=X/port=Y"), TopicInfo("topic_name", "kafka", Map("host" -> "X", "port" -> "Y")))
-    check(parse("topic_name"), TopicInfo("topic_name", "kafka", Map.empty))
-
-    // testing selects
-    val selectsA: Map[String, String] = Map("a" -> "b", "key1" -> "key1+expr")
-    val keysA: Seq[String] = null // Seq("key1", "key2")
-    val timesA = Map(Constants.TimeColumn -> "ts")
-
-    val result = for {
-      selects <- Option(selectsA)
-      keys = Option(keysA).map(_.map(k => k -> k).toMap).getOrElse(Map.empty)
-    } yield keys ++ selects ++ timesA
-
-    println(result)
-  }
 }
 
 case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {

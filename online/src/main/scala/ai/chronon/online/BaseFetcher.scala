@@ -12,7 +12,6 @@ import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.{JoinOps, ThrowableOps}
 import com.google.gson.Gson
 
-import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq

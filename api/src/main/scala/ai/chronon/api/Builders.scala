@@ -109,6 +109,15 @@ object Builders {
       source.setEvents(result)
       source
     }
+
+    def joinSource(join: Join, query: Query): Source = {
+        val result = new JoinSource()
+        result.setJoin(join)
+        result.setQuery(query)
+        val source = new Source()
+        source.setJoinSource(result)
+        source
+    }
   }
 
   object GroupBy {

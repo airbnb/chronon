@@ -148,19 +148,3 @@ object Row {
     }
   }
 }
-
-object Worksheet {
-  def main(args: Array[String]): Unit = {
-    // testing selects
-    val selectsA: Map[String, String] = Map("a" -> "b", "key1" -> "key1+expr")
-    val keysA: Seq[String] = null // Seq("key1", "key2")
-    val timesA = Map(Constants.TimeColumn -> "ts")
-
-    val result = for {
-      selects <- Option(selectsA)
-      keys = Option(keysA).map(_.map(k => k -> k).toMap).getOrElse(Map.empty)
-    } yield keys ++ selects ++ timesA
-
-    println(result)
-  }
-}

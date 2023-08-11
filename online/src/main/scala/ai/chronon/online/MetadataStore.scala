@@ -8,7 +8,7 @@ import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
 import java.io.File
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
 import scala.collection.immutable.SortedMap
 import scala.collection.Seq

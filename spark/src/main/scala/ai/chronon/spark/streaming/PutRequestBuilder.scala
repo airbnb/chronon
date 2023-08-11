@@ -58,7 +58,7 @@ object PutRequestBuilder {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val groupBy = ai.chronon.spark.GroupBy
       .from(groupByConf, PartitionRange(today, today), TableUtils(session), computeDependency = false)
-    val selectedSchema: SparkStruct = groupBy.preAggSchema
+    val selectedSchema: SparkStruct = groupBy.inputDf.schema //groupBy.preAggSchema
 
     def selectedFieldIndex(s: String): Int = selectedSchema.fieldIndex(s)
 
