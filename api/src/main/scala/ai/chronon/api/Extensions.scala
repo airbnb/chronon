@@ -280,8 +280,13 @@ object Extensions {
 
   implicit class SourceOps(source: Source) {
     def dataModel: DataModel = {
-      assert(source.isSetEntities || source.isSetEvents, "Source type is not specified")
-      if (source.isSetEntities) Entities else Events
+      assert(source.isSetEntities || source.isSetEvents || source.isSetJoinSource, "Source type is not specified")
+      if (source.isSetEntities) Entities
+      else if (source.isSetEvents) Events
+      // get parent data model
+      else {
+        source.getJoinSource.getJoin.left.dataModel
+      }
     }
 
     def query: Query = {

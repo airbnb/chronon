@@ -375,7 +375,8 @@ object GroupBy {
   def replaceJoinSource(groupByConf: api.GroupBy,
                         queryRange: PartitionRange,
                         tableUtils: TableUtils,
-                        compute: Boolean = true): api.GroupBy = {
+                        computeDependency: Boolean = true): api.GroupBy = {
+    println("Join source detected. Materializing the join.")
     val result = groupByConf.deepCopy()
     val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
       if (source.isSetJoinSource) {
@@ -383,7 +384,7 @@ object GroupBy {
         val joinConf = joinSource.join
         // materialize the table
         val join = new Join(joinConf, queryRange.end, tableUtils)
-        if (compute) {
+        if (computeDependency) {
           join.computeJoin()
         }
         val joinOutputTable = joinConf.metaData.outputTable
@@ -392,9 +393,9 @@ object GroupBy {
         if (newSource.isSetEvents) {
           val events = newSource.getEvents
           events.setQuery(joinSource.query)
-          events.setTable(joinConf.metaData.outputTable)
+          events.setTable(joinOutputTable)
           // set invalid topic to make sure inferAccuracy works as expected
-          events.setTopic(joinConf.left.topic)
+          events.setTopic(topic)
         } else if (newSource.isSetEntities) {
           val entities = newSource.getEntities
           entities.setQuery(joinSource.query)
@@ -407,6 +408,7 @@ object GroupBy {
         source
       }
     }.toJava
+    println(s"Join source materialized. Compute join output table : $computeDependency")
     result.setSources(newSources)
   }
 

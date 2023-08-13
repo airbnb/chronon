@@ -20,7 +20,7 @@ case class JoinWriterComponents(kvStore: KVStore,
 object JoinWriterComponents {
   def from(joinSource: api.JoinSource, joinSchema: StructType, debug: Boolean)(implicit apiImpl: Api): JoinWriterComponents = {
     val catalystUtil = new CatalystUtil(
-      expressions = joinSource.getQuery.selects.toScala.toSeq,
+      expressions = Option(joinSource.getQuery.selects).map(_.toScala.toSeq).getOrElse(Seq.empty),
       inputSchema = joinSchema,
       filters = Option(joinSource.getQuery.getWheres).map(_.toScala.toSeq).getOrElse(Seq.empty)
     )
@@ -33,8 +33,8 @@ object JoinWriterComponents {
 object JoinWriter {
   def from(groupBy: api.GroupBy, debug: Boolean)(implicit session: SparkSession, apiImpl: Api): JoinWriter = {
     val source = groupBy.streamingSource
-    assert(source.isDefined)
-    assert(source.get.isSetJoinSource)
+    assert(source.get.isSetJoinSource, s"No JoinSource found in the groupBy: ${groupBy.metaData.name}")
+    assert(source.isDefined, s"No streaming source present in the groupBy: ${groupBy.metaData.name}")
     val joinSource = source.get.getJoinSource
     val joinCodec = apiImpl.buildFetcher(debug).buildJoinCodec(joinSource.getJoin)
     val joinFields: Array[StructField] = joinCodec.keySchema.fields ++ joinCodec.valueSchema.fields
@@ -71,6 +71,8 @@ class JoinWriter(joinSource: api.JoinSource,
   }
 
   override def process(row: Row): Unit = {
+    localStats.get().increment(putRequestBuilder.from(row, debug = true))
+
     val keyMap = row.getValuesMap[AnyRef](leftColumns)
     // name matches putJoinConf/getJoinConf logic in MetadataStore.scala
     val responsesFuture =

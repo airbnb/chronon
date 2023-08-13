@@ -10,6 +10,10 @@ import org.apache.spark.sql._
 
 import scala.concurrent.duration.DurationInt
 
+/*
+Specific class for group by streaming which has a joinSource as left source in the
+GroupBy configuration.
+ */
 class GroupByRunner(groupByConf: api.GroupBy,
                     session: SparkSession,
                     conf: Map[String, String],
@@ -45,6 +49,12 @@ class GroupByRunner(groupByConf: api.GroupBy,
         mutation != null && (!beforeAndAfterAreNull || !beforeAndAfterAreSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
+    println(
+      s"""
+         | Streaming source: ${groupByConf.streamingSource.get}
+         | streaming dataset: ${groupByConf.streamingDataset}
+         | stream schema: $streamSchema
+         |""".stripMargin)
     val des = deserialized
       .flatMap { mutation =>
         Seq(mutation.after, mutation.before)
@@ -86,6 +96,7 @@ class GroupByRunner(groupByConf: api.GroupBy,
 
   def startWriting: StreamingQuery = {
     assert(groupByConf.streamingSource.isDefined, s"No streaming source in groupBy: ${groupByConf.metaData.cleanName}")
+
     val source = groupByConf.streamingSource.get
     val putRequestBuilder = PutRequestBuilder.from(groupByConf, session)
     if (source.isSetEvents || source.isSetEntities) {

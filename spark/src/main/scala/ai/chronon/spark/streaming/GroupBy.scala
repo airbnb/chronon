@@ -63,7 +63,6 @@ class GroupBy(inputStream: DataFrame,
     buildDataStream(local).start()
   }
 
-  val fetchTimeoutMs: Long = session.conf.get("spark.chronon.streaming.enrichment.timeout.millis", "10000").toLong
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val fetcher = onlineImpl.buildFetcher(local)
