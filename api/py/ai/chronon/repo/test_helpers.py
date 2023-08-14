@@ -95,7 +95,7 @@ def run_with_inputs(gb: GroupBy, input_df: DataFrame, query_df: DataFrame, spark
             jvm.ai.chronon.spark.PySparkUtils.getFiveMinuteResolution(),
         )
 
-        result_df = temporal_events_result_jdf.toDF()
+        result_df = DataFrame(temporal_events_result_jdf.toDF(), spark._wrapped)
 
         return result_df
 
