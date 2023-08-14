@@ -14,7 +14,7 @@ class JoinWriterTest {
   private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
-  @Test
+//  @Test
   @Ignore
   def testJoinWriter(): Unit = {
     val joinName = "parent_join_table"

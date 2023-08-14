@@ -512,8 +512,11 @@ class GroupByTest {
          |WHERE A.ds = '$today' and A.user is not null
          |""".stripMargin
     val expectedInputDf = spark.sql(expectedSQL)
-    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user"))
+    println("Expected input DF: ")
+    expectedInputDf.show()
+    println("Computed input DF: ")
     newGroupBy.inputDf.show()
+    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user"))
     if (diff.count() > 0) {
       println(s"Actual count: ${newGroupBy.inputDf.count()}")
       println(s"Expected count: ${expectedInputDf.count()}")

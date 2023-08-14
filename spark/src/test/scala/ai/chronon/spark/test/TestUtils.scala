@@ -376,7 +376,7 @@ object TestUtils {
     // price for listing
     val priceCols = Seq(listingCol, Column("price", IntType, 100), Column("notes", StringType, 10))
     val priceTable = s"$namespace.price_table"
-    val priceDf = DataFrameGen.events(spark, priceCols, 50, 60)
+    val priceDf = DataFrameGen.events(spark, priceCols, 50, 30).filter(col("listing").isNotNull)
     val tsColString = "ts_string"
 
     priceDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(priceTable)
@@ -395,7 +395,7 @@ object TestUtils {
     val viewsCols = Seq(listingCol, userCol)
     val viewsTable = s"$namespace.views_table"
     val viewsDf = DataFrameGen
-      .events(spark, viewsCols, 50, 4)
+      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull)
     viewsDf.show()
     viewsDf.save(viewsTable)
 
@@ -425,7 +425,7 @@ object TestUtils {
       keyColumns = Seq("user"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.LAST_K,
-                             argMap = Map("k" -> "14"),
+                             argMap = Map("k" -> "7"),
                              inputColumn = "parent_gb_price_last",
                              windows = Seq(new Window(7, TimeUnit.DAYS)))
       ),
