@@ -1,5 +1,8 @@
 package ai.chronon.online;
 
+import ai.chronon.api.DataType;
+import ai.chronon.api.GroupByServingInfo;
+import ai.chronon.api.StructField;
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import scala.collection.Iterator;
@@ -7,12 +10,19 @@ import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
+import scala.concurrent.JavaConversions;
+import scala.collection.JavaConverters;
+
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import static java.util.Map.*;
 
 public class JavaFetcher {
   Fetcher fetcher;
@@ -134,6 +144,14 @@ public class JavaFetcher {
     Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchStatsTimeseries(request.toScalaRequest());
     // Convert responses to CompletableFuture
     return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
+  }
+
+  public Map<String, DataType> retrieveJoinSchema(String joinName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveJoinSchema(joinName));
+  }
+
+  public Map<String, DataType> retrieveGroupBySchema(String groupByName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveGroupBySchema(groupByName));
   }
 
   /**

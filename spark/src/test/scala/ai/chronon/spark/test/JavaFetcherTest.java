@@ -1,5 +1,14 @@
 package ai.chronon.spark.test;
 
+import ai.chronon.api.DataType;
+import ai.chronon.api.DoubleType$;
+import ai.chronon.api.IntType$;
+import ai.chronon.api.Join;
+import ai.chronon.api.ListType;
+import ai.chronon.api.LongType$;
+import ai.chronon.api.MapType;
+import ai.chronon.api.StringType$;
+import ai.chronon.online.Api;
 import ai.chronon.online.JavaFetcher;
 import ai.chronon.online.JavaRequest;
 import ai.chronon.online.JavaResponse;
@@ -9,14 +18,19 @@ import ai.chronon.spark.SparkSessionBuilder;
 import com.google.gson.Gson;
 import org.apache.spark.sql.SparkSession;
 import org.junit.Test;
+import scala.collection.JavaConverters;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static scala.compat.java8.JFunction.func;
@@ -44,6 +58,23 @@ public class JavaFetcherTest {
         System.out.println(responseValues);
         assertFalse(responses.get(0).values.isSuccess());
     }
+
+    @Test
+    public void testRetrieveSchema() {
+        Join generatedJoin = TestUtils.generateRandomData(session, namespace, 10, 10, "test_topic_java");
+
+        Api mockApi = TestUtils.setupFetcherWithJoin(session, generatedJoin, namespace);
+        JavaFetcher javaFetcher = mockApi.buildJavaFetcher();
+
+        Map<String, DataType> joinSchemaResult = javaFetcher.retrieveJoinSchema(generatedJoin.getMetaData().getName());
+        assertEquals(joinSchemaResult, JavaConverters.mapAsJavaMap(TestUtils.expectedSchemaForTestPaymentsJoin()));
+
+        String groupByName = "unit_test/vendor_ratings";
+        assertTrue(generatedJoin.joinParts.stream().map(j -> j.groupBy.getMetaData().getName()).collect(Collectors.toSet()).contains(groupByName));
+        Map<String, DataType> groupBySchemaResult = javaFetcher.retrieveGroupBySchema(groupByName);
+        assertEquals(groupBySchemaResult, JavaConverters.mapAsJavaMap(TestUtils.expectedSchemaForVendorRatingsGroupBy()));
+    }
+
 
     @Test
     public void testNullMapConversion() throws InterruptedException, ExecutionException, TimeoutException {

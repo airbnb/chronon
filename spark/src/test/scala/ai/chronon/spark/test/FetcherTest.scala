@@ -8,9 +8,10 @@ import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{Api, JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
+import ai.chronon.spark.test.TestUtils.generateRandomData
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
@@ -216,167 +217,6 @@ class FetcherTest extends TestCase {
       left = leftSource,
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
       metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_join", namespace = namespace, team = "chronon")
-    )
-    joinConf
-  }
-
-  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
-    val rowCount = cardinality * keyCount
-    val userCol = Column("user", StringType, keyCount)
-    val vendorCol = Column("vendor", StringType, keyCount)
-    // temporal events
-    val paymentCols = Seq(userCol, vendorCol, Column("payment", LongType, 100), Column("notes", StringType, 20))
-    val paymentsTable = s"$namespace.payments_table"
-    val paymentsDf = DataFrameGen.events(spark, paymentCols, rowCount, 60)
-    val tsColString = "ts_string"
-
-    paymentsDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(paymentsTable)
-    val userPaymentsGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
-      keyColumns = Seq("user"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.COUNT,
-                             inputColumn = "payment",
-                             windows = Seq(new Window(6, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))),
-        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "payment"),
-        Builders.Aggregation(operation = Operation.LAST, inputColumn = "payment"),
-        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "5"), inputColumn = "notes"),
-        Builders.Aggregation(operation = Operation.VARIANCE, inputColumn = "payment"),
-        Builders.Aggregation(operation = Operation.FIRST, inputColumn = "notes"),
-        Builders.Aggregation(operation = Operation.FIRST, inputColumn = tsColString),
-        Builders.Aggregation(operation = Operation.LAST, inputColumn = tsColString)
-      ),
-      metaData = Builders.MetaData(name = "unit_test/user_payments", namespace = namespace)
-    )
-
-    // snapshot events
-    val ratingCols =
-      Seq(
-        userCol,
-        vendorCol,
-        Column("rating", IntType, 5),
-        Column("bucket", StringType, 5),
-        Column("sub_rating", ListType(DoubleType), 5),
-        Column("txn_types", ListType(StringType), 5)
-      )
-    val ratingsTable = s"$namespace.ratings_table"
-    DataFrameGen.events(spark, ratingCols, rowCount, 180).save(ratingsTable)
-    val vendorRatingsGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = Builders.Query(), table = ratingsTable)),
-      keyColumns = Seq("vendor"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.AVERAGE,
-                             inputColumn = "rating",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
-                             buckets = Seq("bucket")),
-        Builders.Aggregation(operation = Operation.HISTOGRAM,
-                             inputColumn = "txn_types",
-                             windows = Seq(new Window(3, TimeUnit.DAYS))),
-        Builders.Aggregation(operation = Operation.LAST_K,
-                             argMap = Map("k" -> "300"),
-                             inputColumn = "user",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
-      ),
-      metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
-      accuracy = Accuracy.SNAPSHOT
-    )
-
-    // no-agg
-    val userBalanceCols = Seq(userCol, Column("balance", IntType, 5000))
-    val balanceTable = s"$namespace.balance_table"
-    DataFrameGen
-      .entities(spark, userBalanceCols, rowCount, 180)
-      .groupBy("user", "ds")
-      .agg(avg("balance") as "avg_balance")
-      .save(balanceTable)
-    val userBalanceGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = balanceTable)),
-      keyColumns = Seq("user"),
-      metaData = Builders.MetaData(name = "unit_test/user_balance", namespace = namespace)
-    )
-
-    // snapshot-entities
-    val userVendorCreditCols =
-      Seq(Column("account", StringType, 100),
-          vendorCol, // will be renamed
-          Column("credit", IntType, 500),
-          Column("ts", LongType, 100))
-    val creditTable = s"$namespace.credit_table"
-    DataFrameGen
-      .entities(spark, userVendorCreditCols, rowCount, 100)
-      .withColumnRenamed("vendor", "vendor_id")
-      .save(creditTable)
-    val creditGroupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = creditTable)),
-      keyColumns = Seq("vendor_id"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.SUM,
-                             inputColumn = "credit",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
-    )
-
-    // temporal-entities
-    val vendorReviewCols =
-      Seq(Column("vendor", StringType, 10), // will be renamed
-          Column("review", LongType, 10))
-    val snapshotTable = s"$namespace.reviews_table_snapshot"
-    val mutationTable = s"$namespace.reviews_table_mutations"
-    val mutationTopic = "reviews_mutation_topic"
-    val (snapshotDf, mutationsDf) =
-      DataFrameGen.mutations(spark, vendorReviewCols, 10000, 35, 0.2, 1, keyColumnName = "vendor")
-    snapshotDf.withColumnRenamed("vendor", "vendor_id").save(snapshotTable)
-    mutationsDf.withColumnRenamed("vendor", "vendor_id").save(mutationTable)
-    val reviewGroupBy = Builders.GroupBy(
-      sources = Seq(
-        Builders.Source
-          .entities(
-            query = Builders.Query(
-              startPartition = tableUtils.partitionSpec.before(yesterday)
-            ),
-            snapshotTable = snapshotTable,
-            mutationTable = mutationTable,
-            mutationTopic = mutationTopic
-          )),
-      keyColumns = Seq("vendor_id"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.SUM,
-                             inputColumn = "review",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
-      metaData = Builders.MetaData(name = "unit_test/vendor_review", namespace = namespace),
-      accuracy = Accuracy.TEMPORAL
-    )
-
-    // queries
-    val queryCols = Seq(userCol, vendorCol)
-    val queriesTable = s"$namespace.queries_table"
-    val queriesDf = DataFrameGen
-      .events(spark, queryCols, rowCount, 4)
-      .withColumnRenamed("user", "user_id")
-      .withColumnRenamed("vendor", "vendor_id")
-    queriesDf.show()
-    queriesDf.save(queriesTable)
-
-    val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
-      joinParts = Seq(
-        Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
-        Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
-        Builders.JoinPart(groupBy = reviewGroupBy),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
-      ),
-      metaData = Builders.MetaData(name = "test/payments_join",
-                                   namespace = namespace,
-                                   team = "chronon",
-                                   consistencySamplePercent = 30),
-      derivations = Seq(
-        Builders.Derivation("*", "*"),
-        Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
-        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
-      )
     )
     joinConf
   }
@@ -700,7 +540,7 @@ class FetcherTest extends TestCase {
 
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
-    val joinConf = generateRandomData(namespace)
+    val joinConf = generateRandomData(spark=spark, namespace=namespace)
     compareTemporalFetch(joinConf,
                          tableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
@@ -716,7 +556,7 @@ class FetcherTest extends TestCase {
   // test soft-fail on missing keys
   def testEmptyRequest(): Unit = {
     val namespace = "empty_request"
-    val joinConf = generateRandomData(namespace, 5, 5)
+    val joinConf = generateRandomData(spark=spark, namespace=namespace, keyCount=5, cardinality=5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
@@ -735,5 +575,17 @@ class FetcherTest extends TestCase {
     println(responseMap)
     assertEquals(joinConf.joinParts.size() + joinConf.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
+  }
+
+  def testRetrieveSchema(): Unit = {
+    val namespace: String = "test_retrieve_schema"
+    val generatedJoin: Join = TestUtils.generateRandomData(spark=spark, namespace=namespace, keyCount=5, cardinality=5)
+    val mockApi: Api = TestUtils.setupFetcherWithJoin(spark, generatedJoin, namespace)
+
+    val joinResult: Map[String, DataType] = mockApi.fetcher.retrieveJoinSchema(generatedJoin.metaData.getName)
+    assertEquals(joinResult, TestUtils.expectedSchemaForTestPaymentsJoin)
+
+    val groupByResult: Map[String, DataType] = mockApi.fetcher.retrieveGroupBySchema(TestUtils.vendorRatingsGroupByName)
+    assertEquals(groupByResult, TestUtils.expectedSchemaForVendorRatingsGroupBy)
   }
 }

@@ -149,10 +149,13 @@ object GroupByUpload {
 
     val metricRow =
       kvDfReloaded.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
-    context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
-    context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
-    context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
-    context.gauge(Metrics.Name.LatencyMinutes, (System.currentTimeMillis() - startTs) / (60 * 1000))
+
+    if(!metricRow.isEmpty && !metricRow(0).isNullAt(0) && !metricRow(0).isNullAt(1) && !metricRow(0).isNullAt(2) ) {
+      context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
+      context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
+      context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
+      context.gauge(Metrics.Name.LatencyMinutes, (System.currentTimeMillis() - startTs) / (60 * 1000))
+    }
   }
 
   def main(args: Array[String]): Unit = {

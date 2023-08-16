@@ -32,6 +32,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     partitionSpec = PartitionSpec(format = format, spanMillis = partitionSpec.spanMillis)
   }
 
+  def getPartitionSpec(): PartitionSpec = {
+    partitionSpec
+  }
+
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
