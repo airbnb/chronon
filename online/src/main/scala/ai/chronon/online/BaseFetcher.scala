@@ -82,8 +82,19 @@ class BaseFetcher(kvStore: KVStore,
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map { tVal =>
-              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-              TiledIr(tVal.millis, tile)
+              try {
+                val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+                TiledIr(tVal.millis, tile)
+              } catch {
+                case e: Throwable =>
+                  // capture additional info we need and rethrow so that we can log upstream
+                  val base64Bytes = java.util.Base64.getEncoder.encodeToString(tVal.bytes)
+                  val avroSchema = servingInfo.tiledCodec.tileAvroSchema
+                  throw new RuntimeException(
+                    s"Failed to decode tile for ${servingInfo.groupBy.metaData.getName} at ${tVal.millis}. " +
+                      s"Avro schema: $avroSchema. Base64 bytes: $base64Bytes",
+                    e)
+              }
             }
 
           if (debug) {
