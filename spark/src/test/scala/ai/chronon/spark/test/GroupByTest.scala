@@ -3,24 +3,13 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.dsl.expressions.StringToAttributeConversionHelper
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert._
@@ -490,32 +479,49 @@ class GroupByTest {
     val joinName = "parent_join_table"
     val parentGBName = "parent_gb"
 
-    // todo: chained feature name handling
     val joinSource = TestUtils.getParentJoin(spark, namespace, joinName, parentGBName)
     val query = Builders.Query(startPartition = today)
     val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "user_viewed_price_gb")
     val newGroupBy = GroupBy.from(chainingGroupBy, PartitionRange(today, today), tableUtils, true)
 
     //verify parent join output table is computed and
-    assertTrue(spark.catalog.tableExists(s"$namespace.parent_join_table_parent_gb"))
+    assertTrue(spark.catalog.tableExists(s"$namespace.parent_join_table"))
     val expectedSQL =
       s"""
-         |WITH LatestB AS (
-         |    SELECT listing, MAX(ts) AS last_ts
-         |    FROM $namespace.parent_join_table_parent_gb B
-         |    GROUP BY listing
+         |WITH latestB AS (
+         |    SELECT
+         |        A.listing,
+         |        A.user,
+         |        MAX(B.ts) as ts,
+         |        A.ds
+         |    FROM
+         |        $namespace.views_table A
+         |    LEFT OUTER JOIN
+         |        $namespace.parent_join_table B ON A.listing = B.listing
+         |    WHERE
+         |        (B.ts <= A.ts) AND A.ds = '$today'
+         |    GROUP BY
+         |        A.listing, A.user, A.ds
          |)
-         |SELECT A.listing, LB.last_ts as ts, A.user, B.price_last as parent_gb_price_last, A.ds
-         |FROM $namespace.views_table A
-         |JOIN LatestB LB ON A.listing = LB.listing
-         |JOIN $namespace.parent_join_table_parent_gb B ON LB.listing = B.listing AND LB.last_ts = B.ts
-         |WHERE A.ds = '$today' and A.user is not null
+         |SELECT
+         |    latestB.listing,
+         |    latestB.user,
+         |    latestB.ts,
+         |    latestB.ds,
+         |    C.parent_gb_price_last
+         |FROM
+         |    latestB
+         |JOIN
+         |    $namespace.parent_join_table C
+         |ON
+         |    latestB.listing = C.listing AND latestB.ts = C.ts
          |""".stripMargin
     val expectedInputDf = spark.sql(expectedSQL)
     println("Expected input DF: ")
     expectedInputDf.show()
     println("Computed input DF: ")
     newGroupBy.inputDf.show()
+
     val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user"))
     if (diff.count() > 0) {
       println(s"Actual count: ${newGroupBy.inputDf.count()}")

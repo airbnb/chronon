@@ -2,11 +2,10 @@ package ai.chronon.spark.test
 
 import ai.chronon.api.Builders
 import ai.chronon.spark.streaming.JoinWriter
-import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.scalatest.Ignore
 
 class JoinWriterTest {
   val spark: SparkSession = SparkSessionBuilder.build("JoinWriterTest", local = true)
@@ -14,16 +13,17 @@ class JoinWriterTest {
   private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
-//  @Test
-  @Ignore
+  @Test
   def testJoinWriter(): Unit = {
     val joinName = "parent_join_table"
     val parentGBName = "parent_gb"
 
-    // todo: This test is currently failing since underlying dependency is not computed.
     val joinSource = TestUtils.getParentJoin(spark, namespace, joinName, parentGBName)
     val query = Builders.Query(startPartition = today)
     val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "user_viewed_price_gb")
+    // compute batch first to make sure batch table exists
+    ai.chronon.spark.GroupBy
+      .from(chainingGroupBy, PartitionRange(today, today)(tableUtils), TableUtils(spark), computeDependency = true)
 
     val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
     val mockApi = new MockApi(() => kvStore, namespace)
