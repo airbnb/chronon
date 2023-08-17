@@ -43,7 +43,6 @@ class TileCodec(rowAggregator: RowAggregator, groupBy: GroupBy) {
   val tileChrononSchema: StructType =
     StructType.from(s"${groupBy.metaData.cleanName}_TILE_IR", fields)
   val tileAvroSchema: String = AvroConversions.fromChrononSchema(tileChrononSchema).toString()
-  val tileAvroCodec: AvroCodec = AvroCodec.of(tileAvroSchema)
   private val irToBytesFn = AvroConversions.encodeBytes(tileChrononSchema, null)
 
   def makeTileIr(ir: Array[Any], isComplete: Boolean): Array[Byte] = {
@@ -53,6 +52,7 @@ class TileCodec(rowAggregator: RowAggregator, groupBy: GroupBy) {
   }
 
   def decodeTileIr(tileIr: Array[Byte]): (Array[Any], Boolean) = {
+    val tileAvroCodec: AvroCodec = AvroCodec.of(tileAvroSchema)
     val decodedTileIr = tileAvroCodec.decode(tileIr)
     val collapsedIr = decodedTileIr
       .get("collapsedIr")
