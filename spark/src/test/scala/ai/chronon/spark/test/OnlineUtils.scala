@@ -10,6 +10,8 @@ import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import org.apache.spark.sql.SparkSession
 
+import scala.annotation.tailrec
+
 object OnlineUtils {
 
   // TODO: deprecate
@@ -40,6 +42,7 @@ object OnlineUtils {
     query.awaitTermination()
   }
 
+  @tailrec
   private def mutateTopicWithDs(source: api.Source, ds: String): Unit = {
     if (source.isSetEntities) {
       source.getEntities.setMutationTopic(s"${source.getEntities.mutationTable}/ds=$ds")
