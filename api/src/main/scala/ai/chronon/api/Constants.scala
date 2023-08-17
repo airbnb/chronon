@@ -14,6 +14,7 @@ object Constants {
   val EndPartitionMacro = "[END_PARTITION]"
   val GroupByServingInfoKey = "group_by_serving_info"
   val UTF8 = "UTF-8"
+  val TopicInvalidSuffix = "_invalid"
   val lineTab = "\n    "
   val SemanticHashKey = "semantic_hash"
   val SchemaHash = "schema_hash"

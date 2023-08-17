@@ -396,7 +396,7 @@ object GroupBy {
           events.setQuery(joinSource.query)
           events.setTable(joinOutputTable)
           // set invalid topic to make sure inferAccuracy works as expected
-          events.setTopic(joinConf.left.topic + "_invalid")
+          events.setTopic(topic + Constants.TopicInvalidSuffix)
         } else if (newSource.isSetEntities) {
           val entities = newSource.getEntities
           entities.setQuery(joinSource.query)

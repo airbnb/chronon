@@ -467,7 +467,7 @@ class GroupByTest {
     val newGroupBy = GroupBy.replaceJoinSource(chainingGroupBy, PartitionRange(today, today), tableUtils, false)
 
     assertEquals(joinSource.metaData.outputTable, newGroupBy.sources.get(0).table)
-    assertEquals(joinSource.left.topic, newGroupBy.sources.get(0).topic)
+    assertEquals(joinSource.left.topic + Constants.TopicInvalidSuffix, newGroupBy.sources.get(0).topic)
     assertEquals(query, newGroupBy.sources.get(0).query)
   }
 
@@ -498,7 +498,7 @@ class GroupByTest {
          |    LEFT OUTER JOIN
          |        $namespace.parent_join_table B ON A.listing = B.listing
          |    WHERE
-         |        (B.ts <= A.ts) AND A.ds = '$today'
+         |        (B.listing is null OR B.ts <= A.ts) AND A.ds = '$today'
          |    GROUP BY
          |        A.listing, A.user, A.ds
          |)
