@@ -1040,7 +1040,8 @@ class JoinTest {
                           keyMapping = Map(
                             "user_id" -> "user"
                           ))),
-      metaData = Builders.MetaData(name = "unit_test.key_overlap.user_features", namespace = namespace, team = "chronon")
+      metaData =
+        Builders.MetaData(name = "unit_test.key_overlap.user_features", namespace = namespace, team = "chronon")
     )
 
     val runner = new Join(joinConf, end, tableUtils)

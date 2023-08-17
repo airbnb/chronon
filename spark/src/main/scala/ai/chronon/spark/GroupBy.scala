@@ -375,7 +375,8 @@ object GroupBy {
   def replaceJoinSource(groupByConf: api.GroupBy,
                         queryRange: PartitionRange,
                         tableUtils: TableUtils,
-                        computeDependency: Boolean = true): api.GroupBy = {
+                        computeDependency: Boolean = true,
+                        showDf: Boolean = false): api.GroupBy = {
     println("Join source detected. Materializing the join.")
     val result = groupByConf.deepCopy()
     val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
@@ -383,7 +384,7 @@ object GroupBy {
         val joinSource = source.getJoinSource
         val joinConf = joinSource.join
         // materialize the table
-        val join = new Join(joinConf, queryRange.end, tableUtils)
+        val join = new Join(joinConf, queryRange.end, tableUtils, mutationScan = false, showDf = showDf)
         if (computeDependency) {
           join.computeJoin()
         }
@@ -395,13 +396,16 @@ object GroupBy {
           events.setQuery(joinSource.query)
           events.setTable(joinOutputTable)
           // set invalid topic to make sure inferAccuracy works as expected
-          events.setTopic(topic)
+          events.setTopic(joinConf.left.topic + "_invalid")
         } else if (newSource.isSetEntities) {
           val entities = newSource.getEntities
           entities.setQuery(joinSource.query)
           entities.setSnapshotTable(joinConf.metaData.outputTable)
-          entities.setMutationTable(null)
-          entities.setMutationTopic(null)
+          // TODO: PITC backfill of temporal entity tables require mutations to be set & enriched
+          // Do note that mutations can only be backfilled if the aggregations are all deletable
+          // It is very unlikely that we will ever need to PITC backfill
+          // we don't need mutation enrichment for serving
+          entities.setMutationTopic(joinConf.left.topic + "_invalid")
         }
         newSource
       } else {
@@ -418,9 +422,11 @@ object GroupBy {
            computeDependency: Boolean,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
-           finalize: Boolean = true): GroupBy = {
+           finalize: Boolean = true,
+           mutationScan: Boolean = true,
+           showDf: Boolean = false): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
-    val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency)
+    val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(groupByConf,
@@ -461,12 +467,13 @@ object GroupBy {
     // at-least one of the keys should be present in the row.
     val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
+    if (showDf) nullFiltered.prettyPrint()
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
     val mutationDf =
-      if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+      if (mutationScan && groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(groupByConf,

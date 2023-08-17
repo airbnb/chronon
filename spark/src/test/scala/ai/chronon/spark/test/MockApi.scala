@@ -4,6 +4,7 @@ import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
@@ -14,7 +15,6 @@ import java.io.{ByteArrayInputStream, InputStream}
 import java.util
 import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
-
 import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
@@ -45,6 +45,16 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
   }
 
   override def schema: StructType = inputSchema
+}
+
+class MockStreamBuilder extends StreamBuilder {
+  override def from(topicInfo: TopicInfo)(implicit session: SparkSession, props: Map[String, String]): DataStream = {
+    val tableUtils = TableUtils(session)
+    val ds = topicInfo.params("ds")
+    val df = tableUtils.sql(s"select * from ${topicInfo.name} where ds >= '$ds'")
+    // table name should be same as topic name
+    DataStream(df, 1, topicInfo)
+  }
 }
 
 class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
@@ -143,5 +153,8 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
     registry.add("always_fails", new AlwaysFailsHandler)
     registry.add("java_plus_one", new JavaPlusOneExternalHandler)
     registry
+  }
+  override def generateStreamBuilder(streamType: String): StreamBuilder = {
+    new MockStreamBuilder()
   }
 }

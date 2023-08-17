@@ -77,10 +77,14 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
-  def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[TableUtils] = None): Unit = {
+  def run(groupByConf: api.GroupBy,
+          endDs: String,
+          tableUtilsOpt: Option[TableUtils] = None,
+          showDf: Boolean = false,
+          jsonPercent: Int = 1): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
-    implicit val tableUtils =
+    implicit val tableUtils: TableUtils =
       tableUtilsOpt.getOrElse(
         TableUtils(
           SparkSessionBuilder
@@ -88,12 +92,24 @@ object GroupByUpload {
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
-    // for snapshot accuracy
-    lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils, computeDependency = true)
+    // for snapshot accuracy - we don't need to scan mutations
+    lazy val groupBy = GroupBy.from(groupByConf,
+                                    PartitionRange(endDs, endDs),
+                                    tableUtils,
+                                    computeDependency = true,
+                                    mutationScan = false)
+    if (showDf) {
+      groupBy.inputDf.prettyPrint()
+    }
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
-    // for temporal accuracy
+    // for temporal accuracy - we don't need to scan mutations for upload
     lazy val shiftedGroupBy =
-      GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils, computeDependency = true)
+      GroupBy.from(groupByConf,
+                   PartitionRange(endDs, endDs).shift(1),
+                   tableUtils,
+                   computeDependency = true,
+                   mutationScan = false,
+                   showDf = showDf)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
@@ -104,12 +120,17 @@ object GroupByUpload {
          |Data Model: ${groupByConf.dataModel}
          |""".stripMargin)
 
-    val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
+    val kvRdd = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
-    }).toAvroDf
+    })
+
+    val kvDf = kvRdd.toAvroDf(jsonPercent = jsonPercent)
+    if (showDf) {
+      kvRdd.toFlatDf.prettyPrint()
+    }
 
     val groupByServingInfo = new GroupByServingInfo()
     groupByServingInfo.setBatchEndDate(batchEndDate)
@@ -155,13 +176,5 @@ object GroupByUpload {
     context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
     context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
     context.gauge(Metrics.Name.LatencyMinutes, (System.currentTimeMillis() - startTs) / (60 * 1000))
-  }
-
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new Args(args)
-    parsedArgs.verify()
-    assert(parsedArgs.stepDays.isEmpty, "Don't need to specify step days for GroupBy uploads")
-    println(s"Parsed Args: $parsedArgs")
-    run(parsedArgs.parseConf[api.GroupBy], parsedArgs.endDate())
   }
 }

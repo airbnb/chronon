@@ -2,15 +2,17 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, StructType}
-import ai.chronon.online.{SparkConversions, KVStore}
+import ai.chronon.online.{KVStore, SparkConversions}
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
-import ai.chronon.spark.streaming.GroupBy
+import ai.chronon.spark.streaming.{GroupBy, GroupByRunner}
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, JoinOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import org.apache.spark.sql.SparkSession
 
 object OnlineUtils {
+
+  // TODO: deprecate
   def putStreaming(session: SparkSession,
                    groupByConf: api.GroupBy,
                    kvStore: () => KVStore,
@@ -35,6 +37,30 @@ object OnlineUtils {
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
     val dataStream = groupByStreaming.buildDataStream()
     val query = dataStream.trigger(Trigger.Once()).start()
+    query.awaitTermination()
+  }
+
+  private def mutateTopicWithDs(source: api.Source, ds: String): Unit = {
+    if (source.isSetEntities) {
+      source.getEntities.setMutationTopic(s"${source.getEntities.mutationTable}/ds=$ds")
+    } else if (source.isSetEvents) {
+      source.getEntities.setMutationTopic(s"${source.getEvents.table}/ds=$ds")
+    } else {
+      val joinLeft = source.getJoinSource.getJoin.left
+      mutateTopicWithDs(joinLeft, ds)
+    }
+  }
+
+  // TODO - deprecate putStreaming
+  def putStreamingNew(session: SparkSession, originalGroupByConf: api.GroupBy, ds: String, namespace: String): Unit = {
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+    val groupByConf = originalGroupByConf.deepCopy()
+    val source = groupByConf.streamingSource.get
+    mutateTopicWithDs(source, ds)
+    val groupByStreaming =
+      new GroupByRunner(groupByConf, session, Map.empty, mockApi, debug = true)
+    val query = groupByStreaming.startWriting
     query.awaitTermination()
   }
 

@@ -1,11 +1,11 @@
 package ai.chronon.spark.streaming
 
-import ai.chronon.online.{DataStream, DataStreamBuilder, TopicInfo}
+import ai.chronon.online.{DataStream, StreamBuilder, TopicInfo}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 
-object KafkaStreamBuilder extends DataStreamBuilder {
+object KafkaStreamBuilder extends StreamBuilder {
   override def from(topicInfo: TopicInfo)(implicit session: SparkSession, conf: Map[String, String]): DataStream = {
     val conf = topicInfo.params
     val bootstrap = conf.getOrElse("bootstrap", conf("host") + conf.get("port").map(":" + _).getOrElse(""))

@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{BootstrapPart, Constants}
+import ai.chronon.api.Constants
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.{DataFrame, Row}
@@ -215,6 +215,10 @@ object Extensions {
       val filtered = df.where(filterClause)
       filtered.orderBy(keys.map(desc).toSeq: _*)
     }
+
+    def prettyPrint(timeColumns: Seq[String] = Seq(Constants.TimeColumn, Constants.MutationTimeColumn)): Unit = {
+      df.replaceWithReadableTime(timeColumns, true).show(truncate = false)
+    }
   }
 
   implicit class ArrayOps[T: ClassTag](arr: Array[T]) {
@@ -234,7 +238,7 @@ object Extensions {
     }
   }
 
-  implicit class InternalRowOps(internalRow: InternalRow){
+  implicit class InternalRowOps(internalRow: InternalRow) {
     def toRow(schema: StructType): Row = {
       new Row() {
         override def length: Int = {

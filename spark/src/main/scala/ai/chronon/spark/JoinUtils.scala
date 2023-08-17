@@ -9,8 +9,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 
-import scala.collection.Seq
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
 
@@ -184,17 +183,15 @@ object JoinUtils {
                             tableUtils: TableUtils,
                             propertiesOverride: Map[String, String] = null): Unit = {
     val baseViewProperties = tableUtils.getTableProperties(baseView).getOrElse(Map.empty)
-    val labelTableName = baseViewProperties.get(Constants.LabelViewPropertyKeyLabelTable).getOrElse("")
-    assert(!labelTableName.isEmpty, s"Not able to locate underlying label table for partitions")
+    val labelTableName = baseViewProperties.getOrElse(Constants.LabelViewPropertyKeyLabelTable, "")
+    assert(labelTableName.nonEmpty, s"Not able to locate underlying label table for partitions")
 
     val labelMapping = getLatestLabelMapping(labelTableName, tableUtils)
-    val caseDefinitions = labelMapping
-      .map(entry => {
-        entry._2
-          .map(v => s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'")
-          .toList
-      })
-      .flatten
+    val caseDefinitions = labelMapping.flatMap(entry => {
+      entry._2
+        .map(v => s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'")
+        .toList
+    })
 
     val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
     val queryFragment =
@@ -231,10 +228,10 @@ object JoinUtils {
     *
     * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
     */
-  def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, Seq[PartitionRange]] = {
+  def getLatestLabelMapping(tableName: String, tableUtils: TableUtils): Map[String, collection.Seq[PartitionRange]] = {
     val partitions = tableUtils.allPartitions(tableName)
     assert(
-      partitions(0).keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
+      partitions.head.keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
       s""" Table must have label partition columns for latest label computation: `${tableUtils.partitionColumn}`
          | & `${Constants.LabelPartitionColumn}`
          |inputView: ${tableName}
@@ -243,16 +240,16 @@ object JoinUtils {
 
     val labelMap = collection.mutable.Map[String, String]()
     partitions.foreach(par => {
-      val ds_value = par.get(tableUtils.partitionColumn).get
-      val label_value: String = par.get(Constants.LabelPartitionColumn).get
+      val ds_value = par(tableUtils.partitionColumn)
+      val label_value: String = par(Constants.LabelPartitionColumn)
       if (!labelMap.contains(ds_value)) {
         labelMap.put(ds_value, label_value)
       } else {
-        labelMap.put(ds_value, Seq(labelMap.get(ds_value).get, label_value).max)
+        labelMap.put(ds_value, Seq(labelMap(ds_value), label_value).max)
       }
     })
 
-    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.map(_._1).toSet)) }
+    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.keySet.toSet)) }
   }
 
   def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {
@@ -261,12 +258,14 @@ object JoinUtils {
     df.drop(columnsToDrop: _*)
   }
 
-  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Seq[String] = {
+  def tablesToRecompute(joinConf: ai.chronon.api.Join,
+                        outputTable: String,
+                        tableUtils: TableUtils): collection.Seq[String] = {
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
-      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
+      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
     ) yield {
       println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)

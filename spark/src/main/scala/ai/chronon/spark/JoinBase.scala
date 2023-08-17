@@ -16,18 +16,23 @@ import scala.collection.Seq
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.IterableOps
 
-abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: TableUtils, skipFirstHole: Boolean) {
+abstract class JoinBase(joinConf: api.Join,
+                        endPartition: String,
+                        tableUtils: TableUtils,
+                        skipFirstHole: Boolean,
+                        mutationScan: Boolean = true,
+                        showDf: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
+  val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
   // Get table properties from config
-  protected val confTableProps = Option(joinConf.metaData.tableProperties)
+  protected val confTableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
   private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
-  protected val tableProps =
+  protected val tableProps: Map[String, String] =
     confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -196,7 +201,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
                    tableUtils,
                    computeDependency = true,
                    Option(rightBloomMap),
-                   rightSkewFilter)
+                   rightSkewFilter,
+                   mutationScan = mutationScan,
+                   showDf = showDf)
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
@@ -255,6 +262,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
       }
     }
+    if (showDf) {
+      rightDf.prettyPrint()
+    }
     Some(rightDf)
   }
 
@@ -305,7 +315,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
     }
 
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils)
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, mutationScan = mutationScan)
 
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (stepRanges.isEmpty) {
@@ -320,6 +330,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ta
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
+          if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
           computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

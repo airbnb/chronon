@@ -44,9 +44,9 @@ class GroupByRunner(groupByConf: api.GroupBy,
         }
       }
       .filter { mutation =>
-        val beforeAndAfterAreNull = mutation.before != null && mutation.after != null
-        val beforeAndAfterAreSame = mutation.before sameElements mutation.after
-        mutation != null && (!beforeAndAfterAreNull || !beforeAndAfterAreSame)
+        val bothNull = mutation.before != null && mutation.after != null
+        val bothSame = mutation.before sameElements mutation.after
+        mutation != null && (!bothNull || !bothSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
     println(
@@ -75,7 +75,7 @@ class GroupByRunner(groupByConf: api.GroupBy,
     }
   }
 
-  private def internalStreamBuilder(streamType: String): DataStreamBuilder = {
+  private def internalStreamBuilder(streamType: String): StreamBuilder = {
     val suppliedBuilder = apiImpl.generateStreamBuilder(streamType)
     if (suppliedBuilder == null) {
       if (streamType == "kafka") {
@@ -92,14 +92,14 @@ class GroupByRunner(groupByConf: api.GroupBy,
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
-  @transient lazy val fetcher = apiImpl.buildFetcher(debug)
+  @transient lazy val fetcher: Fetcher = apiImpl.buildFetcher(debug)
 
   def startWriting: StreamingQuery = {
     assert(groupByConf.streamingSource.isDefined, s"No streaming source in groupBy: ${groupByConf.metaData.cleanName}")
 
     val source = groupByConf.streamingSource.get
-    val putRequestBuilder = PutRequestBuilder.from(groupByConf, session)
     if (source.isSetEvents || source.isSetEntities) {
+      val putRequestBuilder = PutRequestBuilder.from(groupByConf, session)
       val dataWriter = new DataWriter(apiImpl, context.withSuffix("egress"), 120, debug)
       implicit val putRequestEncoder: Encoder[KVStore.PutRequest] = Encoders.kryo[KVStore.PutRequest]
       buildStreamForSource(source).df

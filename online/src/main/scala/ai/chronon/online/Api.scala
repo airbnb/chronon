@@ -111,7 +111,7 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
-trait DataStreamBuilder {
+trait StreamBuilder {
   def from(topicInfo: TopicInfo)(implicit session: SparkSession, props: Map[String, String]): DataStream
 }
 
@@ -149,7 +149,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
   // kafka has built-in support - but one can add support to other types using this method.
-  def generateStreamBuilder(streamType: String): DataStreamBuilder = null
+  def generateStreamBuilder(streamType: String): StreamBuilder = null
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns

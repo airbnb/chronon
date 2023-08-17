@@ -111,12 +111,12 @@ object Builders {
     }
 
     def joinSource(join: Join, query: Query): Source = {
-        val result = new JoinSource()
-        result.setJoin(join)
-        result.setQuery(query)
-        val source = new Source()
-        source.setJoinSource(result)
-        source
+      val joinSource = new JoinSource()
+      joinSource.setJoin(join)
+      joinSource.setQuery(query)
+      val source = new Source()
+      source.setJoinSource(joinSource)
+      source
     }
   }
 

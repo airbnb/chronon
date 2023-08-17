@@ -56,21 +56,26 @@ object PutRequestBuilder {
     val keys: Array[String] = groupByConf.keyColumns.toScala.toArray
     implicit val tableUtils: TableUtils = TableUtils(session)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val groupBy = ai.chronon.spark.GroupBy
-      .from(groupByConf, PartitionRange(today, today), TableUtils(session), computeDependency = false)
-    val selectedSchema: SparkStruct = groupBy.inputDf.schema //groupBy.preAggSchema
 
-    def selectedFieldIndex(s: String): Int = selectedSchema.fieldIndex(s)
+    // TODO: Fix mutation case here
+    val groupBy = ai.chronon.spark.GroupBy.from(groupByConf,
+                                                PartitionRange(today, today),
+                                                TableUtils(session),
+                                                computeDependency = false,
+                                                mutationScan = false)
 
-    val keyIndices: Array[Int] = keys.map(selectedFieldIndex)
+    val inputSchema: SparkStruct = groupBy.inputDf.schema
+    def inputFieldIndex(s: String): Int = inputSchema.fieldIndex(s)
+
+    val keyIndices: Array[Int] = keys.map(inputFieldIndex)
     val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
       case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
       case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
     }
     val valueColumns: Array[String] = groupByConf.aggregationInputs ++ additionalColumns
-    val valueIndices: Array[Int] = valueColumns.map(selectedFieldIndex)
+    val valueIndices: Array[Int] = valueColumns.map(inputFieldIndex)
 
-    val tsIndex: Int = selectedFieldIndex(eventTimeColumn)
+    val tsIndex: Int = inputFieldIndex(eventTimeColumn)
     val streamingDataset: String = groupByConf.streamingDataset
 
     def toChrononSchema(name: String, schema: SparkStruct): api.StructType =
@@ -79,7 +84,7 @@ object PutRequestBuilder {
     val keyZSchema: api.StructType = toChrononSchema("key", groupBy.keySchema)
     lazy val valueChrononSchema: api.StructType = {
       val valueFields = groupByConf.aggregationInputs
-        .flatMap(inp => selectedSchema.fields.find(_.name == inp))
+        .flatMap(inp => inputSchema.fields.find(_.name == inp))
         .map(field => api.StructField(field.name, toChrononType(field.name, field.dataType)))
       api.StructType(s"${groupByConf.metaData.cleanName}_INPUT_COLS", valueFields)
     }
