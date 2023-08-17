@@ -5,39 +5,36 @@ import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request, Response}
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.Fetcher.{Request}
+import ai.chronon.online.{MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
-import org.junit.Ignore
 
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.Console.println
-import scala.compat.java8.FutureConverters
-import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 
 class ChainingFetcherTest extends TestCase {
-  val sessionName = "FetcherTest"
+  val sessionName = "ChainingFetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val yesterday = tableUtils.partitionSpec.before(today)
   def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 
   /**
     * This test group by is trying to get the latest rating of listings a user viewed in the last 7 days.
+    * Parent Join: lasted price a certain user viewed
+    * Chained Join: latest rating of the listings the user viewed in the last 7 days
     */
   def generateMutationData(namespace: String, accuracy: Accuracy): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
@@ -149,10 +146,10 @@ class ChainingFetcherTest extends TestCase {
     val searchData = Seq(
       Row(12L, 59L, toTs("2021-04-18 10:00:00"), "2021-04-18"),
       Row(12L, 123L, toTs("2021-04-18 13:45:00"), "2021-04-18"),
-      Row(88L, 1L, toTs("2021-04-16 00:10:00"), "2021-04-16"),
+      Row(88L, 1L, toTs("2021-04-18 00:10:00"), "2021-04-18"),
       Row(88L, 59L, toTs("2021-04-18 23:10:00"), "2021-04-18"),
-      Row(68L, 1L, toTs("2021-04-17 03:10:00"), "2021-04-17"),
-      Row(68L, 123L, toTs("2021-04-18 23:55:00"), "2021-04-18")
+      Row(88L, 456L, toTs("2021-04-18 03:10:00"), "2021-04-18"),
+      Row(68L, 123L, toTs("2021-04-17 23:55:00"), "2021-04-18")
     ).toList
 
     TestUtils.makeDf(spark, searchSchema, searchData).save(s"$namespace.${searchSchema.name}")
@@ -192,92 +189,6 @@ class ChainingFetcherTest extends TestCase {
       joinParts = Seq(Builders.JoinPart(groupBy = chainingGroupby)),
       metaData = Builders.MetaData(name = "chaining_join", namespace = namespace, team = "chronon")
     )
-  }
-
-  def joinResponses(requests: Array[Request],
-                    mockApi: MockApi,
-                    useJavaFetcher: Boolean = false,
-                    runCount: Int = 1,
-                    samplePercent: Double = -1,
-                    logToHive: Boolean = false,
-                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
-    val chunkSize = 100
-    @transient lazy val fetcher = mockApi.buildFetcher(debug)
-    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
-
-    def fetchOnce = {
-      var latencySum: Long = 0
-      var latencyCount = 0
-      val blockStart = System.currentTimeMillis()
-      val result = requests.iterator
-        .grouped(chunkSize)
-        .map { r =>
-          val responses = if (useJavaFetcher) {
-            // Converting to java request and using the toScalaRequest functionality to test conversion
-            val convertedJavaRequests = r.map(new JavaRequest(_)).toJava
-            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
-            FutureConverters
-              .toScala(javaResponse)
-              .map(
-                _.toScala.map(jres =>
-                  Response(
-                    Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
-                    jres.values.toScala.map(_.toScala)
-                  )))
-          } else {
-            fetcher.fetchJoin(r)
-          }
-          System.currentTimeMillis() -> responses
-        }
-        .flatMap {
-          case (start, future) =>
-            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
-            val latency = System.currentTimeMillis() - start
-            latencySum += latency
-            latencyCount += 1
-            result
-        }
-        .toList
-      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
-      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
-      (latencyMillis, qps, result)
-    }
-
-    // to overwhelm the profiler with fetching code path
-    // so as to make it prominent in the flamegraph & collect enough stats
-
-    var latencySum = 0.0
-    var qpsSum = 0.0
-    var loggedValues: Seq[LoggableResponseBase64] = null
-    var result: List[Response] = null
-    (0 until runCount).foreach { _ =>
-      val (latency, qps, resultVal) = fetchOnce
-      result = resultVal
-      loggedValues = mockApi.flushLoggedValues
-      latencySum += latency
-      qpsSum += qps
-    }
-    val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
-
-    println(s"""
-               |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
-               |with batch size: $chunkSize
-               |average qps: ${qpsSum / runCount}
-               |average latency: ${latencySum / runCount}
-               |""".stripMargin)
-    val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
-    if (logToHive) {
-      TableUtils(spark).insertPartitions(
-        loggedDf,
-        mockApi.logTable,
-        partitionColumns = Seq("ds", "name")
-      )
-    }
-    if (samplePercent > 0) {
-      println(s"logged count: ${loggedDf.count()}")
-      loggedDf.show()
-    }
-    result -> loggedDf
   }
 
   def executeFetch(joinConf: api.Join,
@@ -331,7 +242,7 @@ class ChainingFetcherTest extends TestCase {
     //fetch
     val columns = endDsExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] =
-      joinResponses(requests, mockApi, debug = true)._1.map { res =>
+      FetcherTestUtil.joinResponses(spark, requests, mockApi, debug = true)._1.map { res =>
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++
@@ -392,8 +303,6 @@ class ChainingFetcherTest extends TestCase {
     compareTemporalFetch(joinConf, "2021-04-15", expected, fetcherResponse, "user")
   }
 
-  @Ignore
-  //todo: test currently failing fetcher responses have queries != endDs
   def testFetchChainingDeterministic(): Unit = {
     val namespace = "chaining_fetch"
     val chainingJoinConf = generateChainingJoinData(namespace, Accuracy.TEMPORAL)
