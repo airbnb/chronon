@@ -425,7 +425,8 @@ class FetcherTest extends TestCase {
     if (consistencyCheck) {
       val lagMs = -100000
       val laggedRequests = buildRequests(lagMs)
-      val laggedResponseDf = FetcherTestUtil.joinResponses(spark, laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
+      val laggedResponseDf =
+        FetcherTestUtil.joinResponses(spark, laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
       val correctedLaggedResponse = laggedResponseDf
         .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
         .withColumn("ts_millis", col("ts_lagged"))
@@ -598,8 +599,7 @@ object FetcherTestUtil {
     }
     val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
 
-    println(
-      s"""
+    println(s"""
          |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
          |with batch size: $chunkSize
          |average qps: ${qpsSum / runCount}
