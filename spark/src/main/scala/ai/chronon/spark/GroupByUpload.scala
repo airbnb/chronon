@@ -97,10 +97,8 @@ object GroupByUpload {
                                     PartitionRange(endDs, endDs),
                                     tableUtils,
                                     computeDependency = true,
-                                    mutationScan = false)
-    if (showDf) {
-      groupBy.inputDf.prettyPrint()
-    }
+                                    mutationScan = false,
+                                    showDf = showDf)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy - we don't need to scan mutations for upload
     lazy val shiftedGroupBy =

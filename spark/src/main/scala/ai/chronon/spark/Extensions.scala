@@ -199,8 +199,10 @@ object Extensions {
       df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
 
     def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(colName,
-                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
+      df.withColumn(
+        colName,
+        date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days),
+                    tableUtils.partitionSpec.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>
@@ -217,7 +219,9 @@ object Extensions {
     }
 
     def prettyPrint(timeColumns: Seq[String] = Seq(Constants.TimeColumn, Constants.MutationTimeColumn)): Unit = {
-      df.replaceWithReadableTime(timeColumns, true).show(truncate = false)
+      val availableColumns = timeColumns.filter(df.schema.names.contains)
+      println(s"schema: ${df.schema.fieldNames.mkString("Array(", ", ", ")")}")
+      df.replaceWithReadableTime(availableColumns, dropOriginal = true).show(truncate = false)
     }
   }
 

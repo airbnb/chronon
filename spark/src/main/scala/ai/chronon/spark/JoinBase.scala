@@ -263,6 +263,7 @@ abstract class JoinBase(joinConf: api.Join,
       }
     }
     if (showDf) {
+      println(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
       rightDf.prettyPrint()
     }
     Some(rightDf)

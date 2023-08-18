@@ -49,8 +49,7 @@ class GroupByRunner(groupByConf: api.GroupBy,
         mutation != null && (!bothNull || !bothSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
-    println(
-      s"""
+    println(s"""
          | Streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
          | stream schema: $streamSchema

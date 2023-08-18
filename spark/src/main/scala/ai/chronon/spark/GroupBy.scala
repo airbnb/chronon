@@ -386,7 +386,12 @@ object GroupBy {
         // materialize the table
         val join = new Join(joinConf, queryRange.end, tableUtils, mutationScan = false, showDf = showDf)
         if (computeDependency) {
-          join.computeJoin()
+          val df = join.computeJoin()
+          if (showDf) {
+            println(
+              s"printing output data from groupby::join_source: ${groupByConf.metaData.name}::${joinConf.metaData.name}")
+            df.prettyPrint()
+          }
         }
         val joinOutputTable = joinConf.metaData.outputTable
         val topic = joinConf.left.topic
@@ -467,7 +472,10 @@ object GroupBy {
     // at-least one of the keys should be present in the row.
     val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
-    if (showDf) nullFiltered.prettyPrint()
+    if (showDf) {
+      println(s"printing input date for groupBy: ${groupByConf.metaData.name}")
+      nullFiltered.prettyPrint()
+    }
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
@@ -495,6 +503,11 @@ object GroupBy {
           .selectExpr(mutationsColumnOrder: _*)
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
+
+    if (showDf && mutationDf != null) {
+      println(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
+      mutationDf.prettyPrint()
+    }
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,

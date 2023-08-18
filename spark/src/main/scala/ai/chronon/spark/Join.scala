@@ -252,7 +252,12 @@ class Join(joinConf: api.Join,
               }
           }
 
-    baseDf.select(finalOutputColumns: _*)
+    val result = baseDf.select(finalOutputColumns: _*)
+    if (showDf) {
+      println(s"printing results for join: ${joinConf.metaData.name}")
+      result.prettyPrint()
+    }
+    result
   }
 
   /*

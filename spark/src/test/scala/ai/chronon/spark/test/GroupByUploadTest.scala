@@ -123,17 +123,15 @@ class GroupByUploadTest {
   // groupBy = keys:[listing, category], aggs:[avg(rating)]
   @Test
   def listingRatingCategoryJoinSourceTest(): Unit = {
-    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     tableUtils.sql(s"USE $namespace")
 
     val ratingsTable = s"${namespace}.ratings"
-    def ts(arg: String) = TsUtils.datetimeToTs(arg)
+    def ts(arg: String) = TsUtils.datetimeToTs(s"2023-$arg:00")
 
     val ratingsColumns = Seq("review", "rating", "ts", "ds")
     val ratingsData = Seq(
-      ("review1", 4, ts("2023-07-13 11:00"), "2023-08-14"),
+      ("review1", 4, ts("07-13 11:00"), "2023-08-14"),
       ("review2", 5, ts("07-13 12:00"), "2023-08-14"), // to delete
       ("review3", 3, ts("08-15 09:00"), "2023-08-15"), // insert
       ("review1", 2, ts("08-15 10:00"), "2023-08-15") // update
@@ -163,7 +161,7 @@ class GroupByUploadTest {
       ("review3", "listing2", ts("08-15 08:00"), "2023-08-15") // insert
     )
     val reviewsRdd = spark.sparkContext.parallelize(reviewsData)
-    val reviewsDf = spark.createDataFrame(ratingsRdd).toDF(reviewsColumns: _*)
+    val reviewsDf = spark.createDataFrame(reviewsRdd).toDF(reviewsColumns: _*)
     reviewsDf.save(reviewsTable)
     reviewsDf.show()
 
@@ -224,13 +222,13 @@ class GroupByUploadTest {
     )
 
     // batch upload with endDs = yesterday
-    GroupByUpload.run(listingRatingGroupBy, endDs = yesterday, jsonPercent = 100, showDf = true)
+    GroupByUpload.run(listingRatingGroupBy, endDs = "2023-08-14", jsonPercent = 100, showDf = true)
     // TODO write equivalent spark sql to verify that the join table is as expected
 
     // streaming put of all events in ds >= today
     OnlineUtils.putStreamingNew(session = spark,
                                 originalGroupByConf = listingRatingGroupBy,
-                                ds = today,
+                                ds = "2023-08-15",
                                 namespace = namespace)
 
   }
