@@ -33,7 +33,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumnGroup_SingleQuery(): Unit = {
+  def testFetchColumns_SingleQuery(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
@@ -60,7 +60,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumnGroup_Batch(): Unit = {
+  def testFetchColumns_Batch(): Unit = {
     // Fetch a batch of queries
     val guestKeyMap = Map(GuestKey -> GuestId)
     val guestQuery = ColumnSpec(GroupBy, Column, Some(GuestKey), Some(guestKeyMap))
@@ -92,7 +92,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumnGroup_MissingResponse(): Unit = {
+  def testFetchColumns_MissingResponse(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))

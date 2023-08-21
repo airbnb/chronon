@@ -380,6 +380,9 @@ class FetcherBase(kvStore: KVStore,
    * queries and receive a mapping of results.
    *
    * TODO: Metrics
+   * TODO: Collection identifier for metrics
+   * TODO: Consider removing prefix interface for this method
+   * TODO: Consider using simpler response type since mapping is redundant
    *
    * @param columnSpecs – batch of ColumnSpec queries
    * @return Future map of query to GroupBy response
