@@ -2,7 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.api
@@ -22,7 +22,7 @@ import scala.util.{Failure, Success, Try}
 //   1. takes join request or groupBy requests
 //   2. does the fan out and fan in from kv store in a parallel fashion
 //   3. does the post aggregation
-class BaseFetcher(kvStore: KVStore,
+class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
@@ -52,6 +52,7 @@ class BaseFetcher(kvStore: KVStore,
     batchResponsesTry.map {
       reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
     }
+
     // bulk upload didn't remove an older batch value - so we manually discard
     val batchBytes: Array[Byte] = batchResponsesTry
       .map(_.maxBy(_.millis))
@@ -282,19 +283,12 @@ class BaseFetcher(kvStore: KVStore,
 
   // prioritize passed in joinOverrides over the ones in metadata store
   // used in stream-enrichment and in staging testing
-  def fetchJoin(requests: scala.collection.Seq[Request],
-                joinOverrides: Map[String, api.Join] = Map.empty): Future[scala.collection.Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
-        // prioritize joins passed in join overrides
-        val localJoinOpt = joinOverrides.get(request.name)
-        val joinTry: Try[JoinOps] = if (localJoinOpt.isDefined) {
-          Success(new JoinOps(localJoinOpt.get))
-        } else {
-          getJoinConf(request.name)
-        }
+        val joinTry: Try[JoinOps] = getJoinConf(request.name)
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))

@@ -20,8 +20,10 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
 
   override def process(putRequest: PutRequest): Unit = {
     localStats.get().increment(putRequest)
+    kvStore.put(putRequest)
     if (!debug) {
-      kvStore.put(putRequest)
+      // TODO-UNDO
+//      kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
         context.histogram(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)

@@ -2,17 +2,18 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec}
+import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.online.{Metrics, SparkConversions}
+import ai.chronon.online.{GroupByServingInfoParsed, Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{Row, SparkSession, types}
 
 import scala.collection.Seq
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
@@ -77,6 +78,58 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
+
+  def buildServingInfo(groupByConf: api.GroupBy, session: SparkSession, endDs: String): GroupByServingInfoParsed = {
+    val groupByServingInfo = new GroupByServingInfo()
+    implicit val tableUtils: TableUtils = TableUtils(session)
+    val nextDay = tableUtils.partitionSpec.after(endDs)
+
+    val groupBy = ai.chronon.spark.GroupBy
+      .from(groupByConf,
+            PartitionRange(endDs, endDs),
+            TableUtils(session),
+            computeDependency = false,
+            mutationScan = false)
+    groupByServingInfo.setBatchEndDate(nextDay)
+    groupByServingInfo.setGroupBy(groupByConf)
+    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
+    groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
+    if (groupByConf.streamingSource.isDefined) {
+      val streamingSource = groupByConf.streamingSource.get
+
+      // TODO: move this to SourceOps
+      def getInfo(source: api.Source): (String, api.Query, Boolean) = {
+        if (source.isSetEvents) {
+          (source.getEvents.getTable, source.getEvents.getQuery, false)
+        } else if (source.isSetEntities) {
+          (source.getEntities.getSnapshotTable, source.getEntities.getQuery, true)
+        } else {
+          val left = source.getJoinSource.getJoin.getLeft
+          getInfo(left)
+        }
+      }
+
+      val (rootTable, query, _) = getInfo(streamingSource)
+      val fullInputSchema = tableUtils.getSchemaFromTable(rootTable)
+      val inputSchema: types.StructType =
+        if (Option(query.selects).isEmpty) fullInputSchema
+        else {
+          val selects = query.selects.toScala ++ Map(Constants.TimeColumn -> query.timeColumn)
+          val unselectedButPresentKeys =
+            groupByConf.keyColumns.toScala.filter(fullInputSchema.fieldNames.contains).filterNot(selects.contains)
+          val keySelects = unselectedButPresentKeys.map(k => k -> k).toMap
+          val streamingQuery =
+            QueryUtils.build(selects ++ keySelects, rootTable, query.wheres.toScala)
+          val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
+          types.StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+        }
+      groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
+    } else {
+      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
+    }
+    new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
+  }
+
   def run(groupByConf: api.GroupBy,
           endDs: String,
           tableUtilsOpt: Option[TableUtils] = None,
@@ -130,25 +183,7 @@ object GroupByUpload {
       kvRdd.toFlatDf.prettyPrint()
     }
 
-    val groupByServingInfo = new GroupByServingInfo()
-    groupByServingInfo.setBatchEndDate(batchEndDate)
-    groupByServingInfo.setGroupBy(groupByConf)
-    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
-    groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
-    if (groupByConf.streamingSource.isDefined) {
-      val streamingSource = groupByConf.streamingSource.get
-      val fullInputSchema = tableUtils.getSchemaFromTable(streamingSource.table)
-      val streamingQuery = groupByConf.buildStreamingQuery
-      val inputSchema =
-        if (Option(streamingSource.query.selects).isEmpty) fullInputSchema
-        else {
-          val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
-          StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
-        }
-      groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
-    } else {
-      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
-    }
+    val groupByServingInfo = buildServingInfo(groupByConf, session = tableUtils.sparkSession, endDs).groupByServingInfo
 
     val metaRows = Seq(
       Row(

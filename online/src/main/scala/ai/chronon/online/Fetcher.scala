@@ -45,7 +45,7 @@ class Fetcher(val kvStore: KVStore,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null)
-    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
@@ -118,10 +118,9 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  override def fetchJoin(requests: scala.collection.Seq[Request],
-                         joinOverrides: Map[String, api.Join] = Map.empty): Future[scala.collection.Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
-    val internalResponsesF = super.fetchJoin(requests, joinOverrides)
+    val internalResponsesF = super.fetchJoin(requests)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
@@ -282,7 +281,7 @@ class Fetcher(val kvStore: KVStore,
     // step-1 handle invalid requests and collect valid ones
     joinRequests.foreach { request =>
       val joinName = request.name
-      val joinConfTry = getJoinConf(joinName)
+      val joinConfTry: Try[JoinOps] = getJoinConf(request.name)
       if (joinConfTry.isFailure) {
         resultMap.update(
           request,

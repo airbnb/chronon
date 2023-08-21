@@ -286,6 +286,16 @@ object Extensions {
       else source.getJoinSource.getJoin.left.dataModel
     }
 
+    def rootQuery: Query = {
+      if (source.isSetEntities) {
+        source.getEntities.query
+      } else if (source.isSetEvents) {
+        source.getEvents.query
+      } else {
+        source.getJoinSource.getJoin.getLeft.query
+      }
+    }
+
     def query: Query = {
       if (source.isSetEntities) {
         source.getEntities.query
@@ -293,6 +303,18 @@ object Extensions {
         source.getEvents.query
       } else {
         source.getJoinSource.query
+      }
+    }
+
+    lazy val rootTable: String = {
+      if (source.isSetEntities) {
+        source.getEntities.getSnapshotTable
+      }
+      else if (source.isSetEvents) {
+        source.getEvents.getTable
+      }
+      else {
+        source.getJoinSource.getJoin.left.table
       }
     }
 
@@ -435,7 +457,7 @@ object Extensions {
     def buildStreamingQuery: String = {
       assert(streamingSource.isDefined,
              s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
-      val query = streamingSource.get.query
+      val query = streamingSource.get.rootQuery
       val selects = Option(query.selects)
         .map(_.toScala.toMap)
         .orNull

@@ -1,5 +1,6 @@
 package ai.chronon.spark.test
 
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
@@ -20,7 +21,7 @@ import scala.concurrent.Future
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.Success
 
-class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends StreamDecoder {
+class MockDecoder(inputSchema: StructType) extends StreamDecoder {
 
   private def byteArrayToAvro(avro: Array[Byte], schema: Schema): GenericRecord = {
     val reader = new SpecificDatumReader[GenericRecord](schema)
@@ -30,7 +31,7 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
   }
 
   override def decode(bytes: Array[Byte]): Mutation = {
-    val avroSchema = AvroConversions.fromChrononSchema(streamSchema)
+    val avroSchema = AvroConversions.fromChrononSchema(inputSchema)
     val avroRecord = byteArrayToAvro(bytes, avroSchema)
 
     val row: Array[Any] = schema.fields.map { f =>
@@ -50,10 +51,12 @@ class MockDecoder(inputSchema: StructType, streamSchema: StructType) extends Str
 class MockStreamBuilder extends StreamBuilder {
   override def from(topicInfo: TopicInfo)(implicit session: SparkSession, props: Map[String, String]): DataStream = {
     val tableUtils = TableUtils(session)
+    println(s"""building stream from topic: ${topicInfo.name}""")
     val ds = topicInfo.params("ds")
     val df = tableUtils.sql(s"select * from ${topicInfo.name} where ds >= '$ds'")
+    val encodedDf = (new InMemoryStream).getContinuousStreamDF(session, df)
     // table name should be same as topic name
-    DataStream(df, 1, topicInfo)
+    DataStream(encodedDf, 1, topicInfo)
   }
 }
 
@@ -112,11 +115,10 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   val loggedResponseList: ConcurrentLinkedQueue[LoggableResponseBase64] =
     new ConcurrentLinkedQueue[LoggableResponseBase64]
 
-  var streamSchema: StructType = null
-
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
-    assert(streamSchema != null, s"Stream Schema is necessary for stream decoder")
-    new MockDecoder(parsedInfo.streamChrononSchema, streamSchema)
+    println(
+      s"decoding stream with schema: ${SparkConversions.fromChrononSchema(parsedInfo.streamChrononSchema).catalogString}")
+    new MockDecoder(parsedInfo.streamChrononSchema)
   }
 
   override def genKvStore: KVStore = {

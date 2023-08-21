@@ -9,6 +9,10 @@ import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
+import java.util.concurrent.Executors
+import scala.concurrent.ExecutionContext
+import scala.util.ScalaJavaConversions.ListOps
+
 class GroupByUploadTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
@@ -183,34 +187,34 @@ class GroupByUploadTest {
         mutationTable = s"${ratingsTable}_mutations"
       )
 
-    val rightReviewPart = Builders.JoinPart(
-      groupBy = Builders.GroupBy(
-        metaData = Builders.MetaData(namespace = namespace, name = "review_attrs"),
-        sources = Seq(
-          Builders.Source.entities(
-            Builders.Query(selects = Builders.Selects("review", "listing", "ts")),
-            snapshotTable = reviewsTable,
-            mutationTopic = s"${reviewsTable}_mutations",
-            mutationTable = s"${reviewsTable}_mutations"
-          )),
-        keyColumns = collection.Seq("review"),
-        aggregations = Seq(
-          Builders.Aggregation(
-            operation = Operation.LAST,
-            inputColumn = "listing"
-          ))
-      )
+    val reviewGroupBy = Builders.GroupBy(
+      metaData = Builders.MetaData(namespace = namespace, name = "review_attrs"),
+      sources = Seq(
+        Builders.Source.entities(
+          Builders.Query(selects = Builders.Selects("review", "listing", "ts")),
+          snapshotTable = reviewsTable,
+          mutationTopic = s"${reviewsTable}_mutations",
+          mutationTable = s"${reviewsTable}_mutations"
+        )),
+      keyColumns = collection.Seq("review"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.LAST,
+          inputColumn = "listing"
+        ))
+    )
+
+    val joinConf = Builders.Join(
+      metaData = Builders.MetaData(namespace = namespace, name = "review_enrichment"),
+      left = leftRatings,
+      joinParts = Seq(Builders.JoinPart(groupBy = reviewGroupBy))
     )
 
     val listingRatingGroupBy = Builders.GroupBy(
       metaData = Builders.MetaData(namespace = namespace, name = "listing_ratings"),
       sources = Seq(
         Builders.Source.joinSource(
-          join = Builders.Join(
-            metaData = Builders.MetaData(namespace = namespace, name = "review_enrichment"),
-            left = leftRatings,
-            joinParts = Seq(rightReviewPart)
-          ),
+          join = joinConf,
           query = Builders.Query(selects = Builders.Selects("review", "review_attrs_listing_last", "rating", "ts"))
         )),
       keyColumns = collection.Seq("review_attrs_listing_last"),
@@ -221,15 +225,16 @@ class GroupByUploadTest {
         ))
     )
 
-    // batch upload with endDs = yesterday
-    GroupByUpload.run(listingRatingGroupBy, endDs = "2023-08-14", jsonPercent = 100, showDf = true)
-    // TODO write equivalent spark sql to verify that the join table is as expected
+    val kvStore = OnlineUtils.buildInMemoryKVStore("chaining_test")
+    val endDs = "2023-08-15"
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("chaining_test")
 
-    // streaming put of all events in ds >= today
-    OnlineUtils.putStreamingNew(session = spark,
-                                originalGroupByConf = listingRatingGroupBy,
-                                ds = "2023-08-15",
-                                namespace = namespace)
+    joinConf.joinParts.toScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, jp.groupBy))
+
+    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy)
+
+    kvStoreFunc().show()
 
   }
 }

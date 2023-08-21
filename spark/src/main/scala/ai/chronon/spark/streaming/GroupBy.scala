@@ -154,6 +154,7 @@ class GroupBy(inputStream: DataFrame,
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
           val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))
           println(s"""
+               |streaming dataset: $streamingDataset
                |keys: ${gson.toJson(keys)}
                |values: ${gson.toJson(values)}
                |keyBytes: ${Base64.getEncoder.encodeToString(keyBytes)}

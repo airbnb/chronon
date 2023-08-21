@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
-import ai.chronon.spark.streaming.{GroupByRunner, TopicChecker}
+import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
@@ -487,10 +487,6 @@ object Driver {
         descr = "file path to json of the keys to fetch",
         short = 'f'
       )
-      val localJoinConfs: ScallopOption[String] = opt[String](
-        required = false,
-        descr = "local files to use for fetching joins - rather than using metadata upload"
-      )
       val interval: ScallopOption[Int] = opt[Int](
         required = false,
         descr = "interval between requests in seconds",
@@ -560,14 +556,7 @@ object Driver {
             val startNs = System.nanoTime
             val requests = Seq(Fetcher.Request(args.name(), keyMap))
             val resultFuture = if (args.`type`() == "join") {
-              if (args.localJoinConfs.isDefined) {
-                val overridePaths = args.localJoinConfs().split(',')
-                val overrideMap =
-                  overridePaths.map(p => fetcher.pathToKey(p) -> ThriftJsonCodec.fromJsonFile[api.Join](p, false)).toMap
-                fetcher.fetchJoin(requests, overrideMap)
-              } else {
-                fetcher.fetchJoin(requests)
-              }
+              fetcher.fetchJoin(requests)
             } else {
               fetcher.fetchGroupBys(requests)
             }
@@ -708,7 +697,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
-      val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
+      implicit val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
 
       val confFile = findFile(args.confPath())
       val groupByConf = confFile
@@ -718,25 +707,23 @@ object Driver {
       val onlineJar = findFile(args.onlineJar())
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
-//      val streamingSource = groupByConf.streamingSource
-//      assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-//      lazy val host = streamingSource.get.topicTokens.get("host")
-//      lazy val port = streamingSource.get.topicTokens.get("port")
-//      if (!args.kafkaBootstrap.isDefined)
-//        assert(
-//          host.isDefined && port.isDefined,
-//          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
-//      val inputStream: DataFrame =
-//        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-      // val query =
-      //   new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).start
-      // val query = streamingRunner.run(args.debug())
-      val query =
-       new GroupByRunner(groupByConf,
-        session,
-        args.serializableProps,
-        args.impl(args.serializableProps),
-        args.debug()).startWriting
+      implicit val apiImpl = args.impl(args.serializableProps)
+      val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
+        new JoinSourceRunner(groupByConf, args.serializableProps, args.debug()).chainedStreamingQuery.start()
+      } else {
+        val streamingSource = groupByConf.streamingSource
+        assert(streamingSource.isDefined,
+               "There is no valid streaming source - with a valid topic, and endDate < today")
+        lazy val host = streamingSource.get.topicTokens.get("host")
+        lazy val port = streamingSource.get.topicTokens.get("port")
+        if (!args.kafkaBootstrap.isDefined)
+          assert(
+            host.isDefined && port.isDefined,
+            "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+        val inputStream: DataFrame =
+          dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
+      }
       query.awaitTermination()
     }
   }

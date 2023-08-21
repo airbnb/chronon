@@ -91,19 +91,14 @@ public class JavaFetcher {
     return convertResponsesWithTs(scalaResponses, true, startTs);
   }
 
-  public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests, Map<String, Join> joinOverrides) {
+  public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
     long startTs = System.currentTimeMillis();
     // Convert java requests to scala requests
     Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
-    scala.collection.immutable.Map<String, Join> scalaOverrides = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(joinOverrides);
     // Get responses from the fetcher
-    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests, scalaOverrides));
+    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
-  }
-
-  public CompletableFuture<List<JavaResponse>> fetchJoin(List<JavaRequest> requests) {
-    return fetchJoin(requests, new HashMap<String, Join>());
   }
 
   private void instrument(List<String> requestNames, boolean isGroupBy, String metricName, Long startTs) {

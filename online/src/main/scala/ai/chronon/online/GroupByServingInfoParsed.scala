@@ -5,11 +5,12 @@ import ai.chronon.api.Constants.{ReversalField, TimeField}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api._
 import org.apache.avro.Schema
+import org.apache.spark.sql.SparkSession
 
 import scala.collection.JavaConverters.asScalaBufferConverter
 
 // mixin class - with schema
-class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
+class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
     extends GroupByServingInfo(groupByServingInfo)
     with Serializable {
 
@@ -69,7 +70,8 @@ class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partition
   lazy val mutationValueAvroSchema: String = {
     AvroConversions
       .fromChrononSchema(
-        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueChrononSchema ++ Constants.MutationAvroFields).toArray))
+        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS",
+                   (valueChrononSchema ++ Constants.MutationAvroFields).toArray))
       .toString
   }
 
