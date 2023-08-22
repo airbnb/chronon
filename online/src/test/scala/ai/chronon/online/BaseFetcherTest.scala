@@ -4,6 +4,7 @@ import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
 import org.mockito.{Answers, ArgumentCaptor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
@@ -38,7 +39,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
 
-    doAnswer(invocation => {
+    doAnswer((invocation: InvocationOnMock) => {
       val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
       val request = requests.head
       val response = Response(request, Success(Map(request.name -> "100")))
@@ -67,7 +68,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     val hostKeyMap = Map(HostKey -> HostId)
     val hostQuery = ColumnSpec(GroupBy, Column, Some(HostKey), Some(hostKeyMap))
 
-    doAnswer(invocation => {
+    doAnswer((invocation: InvocationOnMock) => {
       val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
       val responses = requests.map(r => Response(r, Success(Map(r.name -> "100"))))
       Future.successful(responses)
@@ -97,7 +98,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
 
-    doAnswer(_ => {
+    doAnswer((_: InvocationOnMock) => {
       Future.successful(Seq())
     }).when(baseFetcher).fetchGroupBys(any())
 
