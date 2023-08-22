@@ -377,10 +377,10 @@ object GroupBy {
                         tableUtils: TableUtils,
                         computeDependency: Boolean = true,
                         showDf: Boolean = false): api.GroupBy = {
-    println("Join source detected. Materializing the join.")
     val result = groupByConf.deepCopy()
     val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
       if (source.isSetJoinSource) {
+        println("Join source detected. Materializing the join.")
         val joinSource = source.getJoinSource
         val joinConf = joinSource.join
         // materialize the table
@@ -405,19 +405,18 @@ object GroupBy {
         } else if (newSource.isSetEntities) {
           val entities = newSource.getEntities
           entities.setQuery(joinSource.query)
-          entities.setSnapshotTable(joinConf.metaData.outputTable)
+          entities.setSnapshotTable(joinOutputTable)
           // TODO: PITC backfill of temporal entity tables require mutations to be set & enriched
           // Do note that mutations can only be backfilled if the aggregations are all deletable
           // It is very unlikely that we will ever need to PITC backfill
           // we don't need mutation enrichment for serving
-          entities.setMutationTopic(joinConf.left.topic + "_invalid")
+          entities.setMutationTopic(joinConf.left.topic + Constants.TopicInvalidSuffix)
         }
         newSource
       } else {
         source
       }
     }.toJava
-    println(s"Join source materialized. Compute join output table : $computeDependency")
     result.setSources(newSources)
   }
 
