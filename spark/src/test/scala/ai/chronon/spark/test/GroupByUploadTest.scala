@@ -28,7 +28,7 @@ class GroupByUploadTest {
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     tableUtils.sql(s"USE $namespace")
-    val eventsTable = "events_last_k"
+    val eventsTable = "events_last_k_dup" // occurs in groupByTest
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("list_event", StringType, 100)
@@ -232,10 +232,11 @@ class GroupByUploadTest {
     val endDs = "2023-08-15"
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("chaining_test")
 
+    // DO-NOT-SET debug=true here since the streaming job won't put data into kv store
     joinConf.joinParts.toScala.foreach(jp =>
-      OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, jp.groupBy))
+      OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, jp.groupBy, dropDsOnWrite = true))
 
-    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy)
+    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy, debug = true)
 
     kvStoreFunc().show()
 

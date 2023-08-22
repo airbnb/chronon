@@ -91,8 +91,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           Instant.ofEpochMilli(ts))}
              |""".stripMargin)
       }
-      // UNDO
-      println(s"chained value schema for encoding : ${valueZSchema.catalogString}")
       KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
     }
   }

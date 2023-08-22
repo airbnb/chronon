@@ -90,8 +90,8 @@ class GroupBy(inputStream: DataFrame,
           case ex: Throwable =>
             println(
               s"Error while decoding streaming events for ${groupByConf.getMetaData.getName} with "
-                + "schema ${streamDecoder.schema.catalogString}"
-                + " \n${ex.traceString}")
+                + s"schema ${streamDecoder.schema.catalogString}"
+                + s" \n${ex.traceString}")
             ingressContext.incrementException(ex)
             null
         }

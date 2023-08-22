@@ -219,7 +219,7 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateRandomData(namespace: String, keyCount: Int = 100, cardinality: Int = 1000): api.Join = {
+  def generateRandomData(namespace: String, keyCount: Int = 10, cardinality: Int = 100): api.Join = {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
@@ -231,6 +231,7 @@ class FetcherTest extends TestCase {
     val tsColString = "ts_string"
 
     paymentsDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(paymentsTable)
+    // temporal events
     val userPaymentsGroupBy = Builders.GroupBy(
       sources = Seq(Builders.Source.events(query = Builders.Query(), table = paymentsTable, topic = topic)),
       keyColumns = Seq("user"),

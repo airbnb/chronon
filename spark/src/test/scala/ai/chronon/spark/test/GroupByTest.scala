@@ -120,7 +120,7 @@ class GroupByTest {
   }
 
   @Test
-  def temporalEventsLastKTest(): Unit = {
+  def eventsLastKTest(): Unit = {
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("listing_view", StringType, 100)

@@ -20,7 +20,9 @@ object OnlineUtils {
                    kvStore: () => KVStore,
                    tableUtils: TableUtils,
                    ds: String,
-                   namespace: String): Unit = {
+                   namespace: String,
+                   debug: Boolean,
+                   dropDsOnWrite: Boolean): Unit = {
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
         val entity = groupByConf.streamingSource.get
@@ -34,7 +36,7 @@ object OnlineUtils {
     val inputStream = new InMemoryStream
     val mockApi = new MockApi(kvStore, namespace)
     var inputModified = inputStreamDf
-    if (inputStreamDf.schema.fieldNames.contains(tableUtils.partitionColumn)) {
+    if (dropDsOnWrite && inputStreamDf.schema.fieldNames.contains(tableUtils.partitionColumn)) {
       inputModified = inputStreamDf.drop(tableUtils.partitionColumn)
     }
     // re-arrange so that mutation_ts and is_before come to the end - to match with streamSchema of GroupBy servingInfo
@@ -46,7 +48,7 @@ object OnlineUtils {
     }
     // mockApi.streamSchema = StructType.from("Stream", SparkConversions.toChrononSchema(inputModified.schema))
     val groupByStreaming =
-      new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified), session, groupByConf, mockApi, debug = false)
+      new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified), session, groupByConf, mockApi, debug = debug)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
     val dataStream = groupByStreaming.buildDataStream()
     val query = dataStream.trigger(Trigger.Once()).start()
@@ -66,13 +68,16 @@ object OnlineUtils {
   }
 
   // TODO - deprecate putStreaming
-  def putStreamingNew(originalGroupByConf: api.GroupBy, ds: String, namespace: String, kvStoreFunc: () => KVStore)(
-      implicit session: SparkSession): Unit = {
+  def putStreamingNew(originalGroupByConf: api.GroupBy,
+                      ds: String,
+                      namespace: String,
+                      kvStoreFunc: () => KVStore,
+                      debug: Boolean)(implicit session: SparkSession): Unit = {
     implicit val mockApi = new MockApi(kvStoreFunc, namespace)
     val groupByConf = originalGroupByConf.deepCopy()
     val source = groupByConf.streamingSource.get
     mutateTopicWithDs(source, ds)
-    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = true)
+    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug)
     val query = groupByStreaming.chainedStreamingQuery.trigger(Trigger.Once()).start()
     // there is async stuff under the hood of chained streaming query
     query.awaitTermination()
@@ -83,7 +88,11 @@ object OnlineUtils {
             kvStoreGen: () => InMemoryKvStore,
             namespace: String,
             endDs: String,
-            groupByConf: api.GroupBy): Unit = {
+            groupByConf: api.GroupBy,
+            debug: Boolean = false,
+            // TODO: I don't fully understand why this is needed, but this is a quirk of the test harness
+            // we need to fix the quirk and drop this flag
+            dropDsOnWrite: Boolean = false): Unit = {
     val prevDs = tableUtils.partitionSpec.before(endDs)
     GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
@@ -93,9 +102,16 @@ object OnlineUtils {
       if (streamingSource.isSetJoinSource) {
         inMemoryKvStore.create(Constants.ChrononMetadataKey)
         new MockApi(kvStoreGen, namespace).buildFetcher().putJoinConf(streamingSource.getJoinSource.getJoin)
-        OnlineUtils.putStreamingNew(groupByConf, endDs, namespace, kvStoreGen)(tableUtils.sparkSession)
+        OnlineUtils.putStreamingNew(groupByConf, endDs, namespace, kvStoreGen, debug)(tableUtils.sparkSession)
       } else {
-        OnlineUtils.putStreaming(tableUtils.sparkSession, groupByConf, kvStoreGen, tableUtils, endDs, namespace)
+        OnlineUtils.putStreaming(tableUtils.sparkSession,
+                                 groupByConf,
+                                 kvStoreGen,
+                                 tableUtils,
+                                 endDs,
+                                 namespace,
+                                 debug,
+                                 dropDsOnWrite)
       }
     }
   }

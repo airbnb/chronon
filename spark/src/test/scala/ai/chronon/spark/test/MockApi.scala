@@ -54,7 +54,7 @@ class MockStreamBuilder extends StreamBuilder {
     println(s"""building stream from topic: ${topicInfo.name}""")
     val ds = topicInfo.params("ds")
     val df = tableUtils.sql(s"select * from ${topicInfo.name} where ds >= '$ds'")
-    val encodedDf = (new InMemoryStream).getContinuousStreamDF(session, df)
+    val encodedDf = (new InMemoryStream).getContinuousStreamDF(session, df.drop("ds"))
     // table name should be same as topic name
     DataStream(encodedDf, 1, topicInfo)
   }
@@ -117,7 +117,8 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
     println(
-      s"decoding stream with schema: ${SparkConversions.fromChrononSchema(parsedInfo.streamChrononSchema).catalogString}")
+      s"decoding stream ${parsedInfo.groupBy.streamingSource.get.topic} with " +
+        s"schema: ${SparkConversions.fromChrononSchema(parsedInfo.streamChrononSchema).catalogString}")
     new MockDecoder(parsedInfo.streamChrononSchema)
   }
 
