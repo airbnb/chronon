@@ -2,7 +2,7 @@ package ai.chronon.api
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
-import scala.collection.{Seq, mutable}
+import scala.collection.mutable
 
 trait Row {
   def get(index: Int): Any

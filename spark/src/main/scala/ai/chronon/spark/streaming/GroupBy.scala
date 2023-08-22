@@ -5,6 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
 import ai.chronon.api.Extensions._
+import ai.chronon.online.Extensions.ChrononStructTypeOps
 import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.spark.GenericRowHandler
 import com.google.gson.Gson
@@ -87,7 +88,10 @@ class GroupBy(inputStream: DataFrame,
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            println(s"Error while decoding streaming events ${ex.printStackTrace()}")
+            println(
+              s"Error while decoding streaming events for ${groupByConf.getMetaData.getName} with "
+                + "schema ${streamDecoder.schema.catalogString}"
+                + " \n${ex.traceString}")
             ingressContext.incrementException(ex)
             null
         }

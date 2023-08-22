@@ -124,7 +124,7 @@ object AvroConversions {
     Row.from[GenericRecord, ByteBuffer, GenericData.Array[Any], Utf8](
       value,
       dataType,
-      { (record: GenericRecord, fields: collection.Seq[StructField]) =>
+      { (record: GenericRecord, fields: Seq[StructField]) =>
         new AbstractIterator[Any]() {
           var idx = 0
           override def next(): Any = {

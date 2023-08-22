@@ -75,10 +75,6 @@ class FetcherBase(kvStore: KVStore,
         if (debug) println("Both batch and streaming data are null")
         null
       } else {
-        // UNDO
-        val mutationValueSparkSchema = SparkConversions.fromChrononSchema(servingInfo.mutationChrononSchema)
-        println(s"chained value schema for decoding: ${mutationValueSparkSchema.catalogString}")
-
         val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))

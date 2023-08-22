@@ -92,10 +92,9 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
 }
 
 // This class by itself it not thread safe because of the transformBuffer
-class CatalystUtil(
-    expressions: collection.Seq[(String, String)],
-    inputSchema: StructType,
-    filters: collection.Seq[String] = Seq.empty) {
+class CatalystUtil(expressions: collection.Seq[(String, String)],
+                   inputSchema: StructType,
+                   filters: collection.Seq[String] = Seq.empty) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
@@ -105,11 +104,11 @@ class CatalystUtil(
       s"${w.mkString(" AND ")}"
     }
 
-  val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
+  private val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
   @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
   private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
-  val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
+  private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
@@ -156,7 +155,7 @@ class CatalystUtil(
         }
         codegenFunc
       }
-      case ProjectExec(projectList, fp@FilterExec(condition, child)) => {
+      case ProjectExec(projectList, fp @ FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
         def projectFunc(row: InternalRow): Option[InternalRow] = {

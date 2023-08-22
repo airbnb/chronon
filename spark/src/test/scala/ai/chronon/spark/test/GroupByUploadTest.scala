@@ -239,15 +239,17 @@ class GroupByUploadTest {
 
     kvStoreFunc().show()
 
-    // visualizing values to help with the comparisons below
+    // visualizing values by time to help reason about the tests
+    //
     // listing1    08-15    hr = 00    hr = 06   hr = 10
     //   review 1             4                     2
     //   review 2             5         absent    absent
     //                       4.5          4         2
-
+    //
     // listing2    08-15    hr = 00    hr = 09
     //   review 3            absent        3
     //                        null         3
+    //
     val api = new MockApi(kvStoreFunc, "chaining_test")
     val fetcher = api.buildFetcher(debug = true)
     val requestResponse = Seq(
