@@ -15,6 +15,7 @@ import org.apache.spark.sql.{Row, SparkSession, types}
 
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
@@ -132,13 +133,16 @@ object GroupByUpload {
     }
 
     val result = new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
+    val firstSource = groupByConf.sources.get(0)
     println(s"""
         |Built GroupByServingInfo for ${groupByConf.metaData.name}:
-        |     keySchema: ${result.keyChrononSchema.catalogString}
-        |   valueSchema: ${result.valueChrononSchema.catalogString}
-        |   inputSchema: ${result.inputChrononSchema.catalogString}
-        |selectedSchema: ${result.selectedChrononSchema.catalogString}
-        |  streamSchema: ${result.streamChrononSchema.catalogString}
+        |table: ${firstSource.table} / data-model: ${firstSource.dataModel}
+        |     keySchema: ${Try(result.keyChrononSchema.catalogString)}
+        |   valueSchema: ${Try(result.valueChrononSchema.catalogString)}
+        |mutationSchema: ${Try(result.mutationChrononSchema.catalogString)}
+        |   inputSchema: ${Try(result.inputChrononSchema.catalogString)}
+        |selectedSchema: ${Try(result.selectedChrononSchema.catalogString)}
+        |  streamSchema: ${Try(result.streamChrononSchema.catalogString)}
         |""".stripMargin)
     result
   }

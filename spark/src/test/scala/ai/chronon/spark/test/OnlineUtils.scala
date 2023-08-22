@@ -72,8 +72,9 @@ object OnlineUtils {
     val groupByConf = originalGroupByConf.deepCopy()
     val source = groupByConf.streamingSource.get
     mutateTopicWithDs(source, ds)
-    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = false)
+    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = true)
     val query = groupByStreaming.chainedStreamingQuery.trigger(Trigger.Once()).start()
+    // there is async stuff under the hood of chained streaming query
     query.awaitTermination()
   }
 

@@ -8,6 +8,7 @@ import ai.chronon.online.Fetcher
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import java.util.concurrent.Executors
@@ -238,18 +239,7 @@ class GroupByUploadTest {
 
     kvStoreFunc().show()
 
-    val api = new MockApi(kvStoreFunc, "chaining_test")
-    val fetcher = api.buildFetcher()
-    val responseF = fetcher.fetchGroupBys(
-      Seq(
-        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 05:00"))),
-        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 08:00"))),
-        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 11:00"))),
-        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing2"), Some(ts("08-15 07:00"))),
-        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing2"), Some(ts("08-15 10:00")))
-      ))
-
-    // timeline below
+    // visualizing values to help with the comparisons below
     // listing1    08-15    hr = 00    hr = 06   hr = 10
     //   review 1             4                     2
     //   review 2             5         absent    absent
@@ -258,9 +248,23 @@ class GroupByUploadTest {
     // listing2    08-15    hr = 00    hr = 09
     //   review 3            absent        3
     //                        null         3
+    val api = new MockApi(kvStoreFunc, "chaining_test")
+    val fetcher = api.buildFetcher(debug = true)
+    val requestResponse = Seq(
+      Fetcher.Request("listing_ratings",
+                      Map("review_attrs_listing_last" -> "listing1"),
+                      Some(ts("08-15 05:00"))) -> 4.5,
+      Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 08:00"))) -> 4,
+      Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 11:00"))) -> 2,
+      Fetcher.Request("listing_ratings",
+                      Map("review_attrs_listing_last" -> "listing2"),
+                      Some(ts("08-15 07:00"))) -> null,
+      Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing2"), Some(ts("08-15 10:00"))) -> 3
+    )
+    val responseF = fetcher.fetchGroupBys(requestResponse.map(_._1))
 
     val responses = Await.result(responseF, 10.seconds)
-    responses.foreach(r => println(r.request.keys ++ r.values.get))
-
+    val results = responses.map(r => r.values.get("rating_average"))
+    assertEquals(results, requestResponse.map(_._2))
   }
 }

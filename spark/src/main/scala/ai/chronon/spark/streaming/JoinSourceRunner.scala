@@ -3,7 +3,7 @@ package ai.chronon.spark.streaming
 import ai.chronon.api
 import ai.chronon.api.{Constants, DataModel, GroupByServingInfo, JoinSource, Query, QueryUtils, Source}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.online.Extensions.StructTypeOps
+import ai.chronon.online.Extensions.{ChrononStructTypeOps, StructTypeOps}
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{
   Api,
@@ -29,6 +29,7 @@ import org.apache.spark.sql.{Dataset, Encoder, Encoders, ForeachWriter, Row, Spa
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.time.format.DateTimeFormatter
 import java.util.Base64
+import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, DurationInt, TimeUnit}
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
@@ -38,10 +39,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     extends Serializable {
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
-  val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
-    case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
-    case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
-  }
+
   case class Schemas(leftSchema: StructType,
                      leftStreamSchema: StructType,
                      leftSourceSchema: StructType,
@@ -49,21 +47,28 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                      joinSourceSchema: StructType)
       extends Serializable
 
+  val valueZSchema: api.StructType = groupByConf.dataModel match {
+    case api.DataModel.Events   => servingInfoProxy.valueChrononSchema
+    case api.DataModel.Entities => servingInfoProxy.mutationValueChrononSchema
+  }
+  val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
+    case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
+    case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
+  }
+  val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
+
   case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     val keyColumns = groupByConf.keyColumns.toScala.toArray
     val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex).toArray
-    val valueColumns: Array[String] = (groupByConf.aggregationInputs ++ additionalColumns)
-    val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
+
     val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)
 
     val keySparkSchema: StructType = StructType(keyIndices.map(inputSchema))
     val keySchema: api.StructType = SparkConversions.toChrononStruct("key", keySparkSchema)
-    val valueSparkSchema: StructType = StructType(valueIndices.map(inputSchema))
-    val valueSchema: api.StructType = SparkConversions.toChrononStruct("value", valueSparkSchema)
 
     @transient lazy val keyToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(keySchema, null)
     @transient lazy val valueToBytes: Any => Array[Byte] =
-      AvroConversions.encodeBytes(valueSchema, null)
+      AvroConversions.encodeBytes(valueZSchema, null)
     val streamingDataset: String = groupByConf.streamingDataset
 
     def toPutRequest(input: Map[String, Any]): KVStore.PutRequest = {
@@ -87,7 +92,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
              |""".stripMargin)
       }
       // UNDO
-      println(s"chained value schema for encoding: ${valueSparkSchema.catalogString}")
+      println(s"chained value schema for encoding : ${valueZSchema.catalogString}")
       KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts))
     }
   }
@@ -304,9 +309,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             }
         }
       }
-//      if (debug) {
-//        Await.result(responsesFuture, 10.minute)
-//      }
+      if (debug) {
+        Await.result(responsesFuture, 5.second)
+      }
     }
 
     override def close(errorOrNull: Throwable): Unit = {}

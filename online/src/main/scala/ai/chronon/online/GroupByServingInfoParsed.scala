@@ -18,6 +18,9 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   lazy val batchEndTsMillis: Long = partitionSpec.epochMillis(batchEndDate)
   private def parser = new Schema.Parser()
 
+  val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
+  val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
+
   lazy val aggregator: SawtoothOnlineAggregator = {
     new SawtoothOnlineAggregator(batchEndTsMillis,
                                  groupByServingInfo.groupBy.aggregations.asScala.toSeq,
@@ -67,11 +70,15 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   // Schema associated to the stored KV value for streaming data.
   // Mutations require reversal column and timestamp for proper computation and the effective timestamp of mutations is
   // the MutationTime. Therefore, the schema in the value now includes timestamp and reversal column.}
-  lazy val mutationValueAvroSchema: String = AvroConversions.fromChrononSchema(mutationChrononSchema).toString
+  lazy val mutationValueAvroSchema: String = {
+    AvroConversions
+      .fromChrononSchema(
+        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS", (valueChrononSchema ++ MutationAvroFields).toArray))
+      .toString
+  }
 
   def mutationValueChrononSchema: StructType = {
-    StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS",
-               (valueChrononSchema ++ Constants.MutationAvroFields).toArray)
+    AvroConversions.toChrononSchema(parser.parse(mutationValueAvroSchema)).asInstanceOf[StructType]
   }
 
   def mutationValueAvroCodec: AvroCodec = AvroCodec.of(mutationValueAvroSchema)
