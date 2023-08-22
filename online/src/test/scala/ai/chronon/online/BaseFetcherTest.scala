@@ -5,6 +5,7 @@ import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
+import org.mockito.stubbing.Answer
 import org.mockito.{Answers, ArgumentCaptor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
@@ -39,11 +40,13 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
 
-    doAnswer((invocation: InvocationOnMock) => {
-      val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
-      val request = requests.head
-      val response = Response(request, Success(Map(request.name -> "100")))
-      Future.successful(Seq(response))
+    doAnswer(new Answer[Future[Seq[Fetcher.Response]]] {
+      def answer(invocation: InvocationOnMock): Future[Seq[Response]] = {
+        val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
+        val request = requests.head
+        val response = Response(request, Success(Map(request.name -> "100")))
+        Future.successful(Seq(response))
+      }
     }).when(baseFetcher).fetchGroupBys(any())
 
     // Map should contain query with valid response
@@ -68,10 +71,12 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     val hostKeyMap = Map(HostKey -> HostId)
     val hostQuery = ColumnSpec(GroupBy, Column, Some(HostKey), Some(hostKeyMap))
 
-    doAnswer((invocation: InvocationOnMock) => {
-      val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
-      val responses = requests.map(r => Response(r, Success(Map(r.name -> "100"))))
-      Future.successful(responses)
+    doAnswer(new Answer[Future[Seq[Fetcher.Response]]] {
+      def answer(invocation: InvocationOnMock): Future[Seq[Response]] = {
+        val requests = invocation.getArgument(0).asInstanceOf[Seq[Request]]
+        val responses = requests.map(r => Response(r, Success(Map(r.name -> "100"))))
+        Future.successful(responses)
+      }
     }).when(baseFetcher).fetchGroupBys(any())
 
     // Map should contain query with valid response
@@ -97,9 +102,11 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
-
-    doAnswer((_: InvocationOnMock) => {
-      Future.successful(Seq())
+    
+    doAnswer(new Answer[Future[Seq[Fetcher.Response]]] {
+      def answer(invocation: InvocationOnMock): Future[Seq[Response]] = {
+        Future.successful(Seq())
+      }
     }).when(baseFetcher).fetchGroupBys(any())
 
     // Map should contain query with Failure response
