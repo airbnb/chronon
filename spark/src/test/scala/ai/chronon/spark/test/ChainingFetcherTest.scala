@@ -240,7 +240,7 @@ class ChainingFetcherTest extends TestCase {
     //fetch
     val columns = endDsExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] =
-      FetcherTestUtil.joinResponses(spark, requests, mockApi, debug = true)._1.map { res =>
+      FetcherTestUtil.joinResponses(spark, requests, mockApi)._1.map { res =>
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++

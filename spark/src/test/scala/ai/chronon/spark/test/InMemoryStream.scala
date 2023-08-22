@@ -72,8 +72,3 @@ class InMemoryStream {
     input.toDF
   }
 }
-
-// encoding stream with schema: struct<review:string,rating:int,ts:bigint,mutation_ts:bigint,is_before:boolean>
-// decoding stream with schema: struct<review:string,rating:int,ts:bigint,mutation_ts:bigint,is_before:boolean>
-
-//

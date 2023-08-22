@@ -4,13 +4,15 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.Fetcher
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
 import java.util.concurrent.Executors
-import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, ExecutionContext}
 import scala.util.ScalaJavaConversions.ListOps
 
 class GroupByUploadTest {
@@ -235,6 +237,30 @@ class GroupByUploadTest {
     OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy)
 
     kvStoreFunc().show()
+
+    val api = new MockApi(kvStoreFunc, "chaining_test")
+    val fetcher = api.buildFetcher()
+    val responseF = fetcher.fetchGroupBys(
+      Seq(
+        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 05:00"))),
+        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 08:00"))),
+        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing1"), Some(ts("08-15 11:00"))),
+        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing2"), Some(ts("08-15 07:00"))),
+        Fetcher.Request("listing_ratings", Map("review_attrs_listing_last" -> "listing2"), Some(ts("08-15 10:00")))
+      ))
+
+    // timeline below
+    // listing1    08-15    hr = 00    hr = 06   hr = 10
+    //   review 1             4                     2
+    //   review 2             5         absent    absent
+    //                       4.5          4         2
+
+    // listing2    08-15    hr = 00    hr = 09
+    //   review 3            absent        3
+    //                        null         3
+
+    val responses = Await.result(responseF, 10.seconds)
+    responses.foreach(r => println(r.request.keys ++ r.values.get))
 
   }
 }

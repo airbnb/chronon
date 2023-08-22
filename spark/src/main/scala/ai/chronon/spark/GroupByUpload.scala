@@ -115,11 +115,13 @@ object GroupByUpload {
         if (Option(query.selects).isEmpty) fullInputSchema
         else {
           val selects = query.selects.toScala ++ Map(Constants.TimeColumn -> query.timeColumn)
+          // UNDO
           val unselectedButPresentKeys =
             groupByConf.keyColumns.toScala.filter(fullInputSchema.fieldNames.contains).filterNot(selects.contains)
           val keySelects = unselectedButPresentKeys.map(k => k -> k).toMap
           val streamingQuery =
             QueryUtils.build(selects ++ keySelects, rootTable, query.wheres.toScala)
+//            QueryUtils.build(selects, rootTable, query.wheres.toScala)
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
           types.StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
         }

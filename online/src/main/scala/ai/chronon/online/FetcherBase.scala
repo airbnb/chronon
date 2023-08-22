@@ -75,6 +75,10 @@ class FetcherBase(kvStore: KVStore,
         if (debug) println("Both batch and streaming data are null")
         null
       } else {
+        // UNDO
+        val mutationValueSparkSchema = SparkConversions.fromChrononSchema(servingInfo.mutationChrononSchema)
+        println(s"chained value schema for decoding: ${mutationValueSparkSchema.catalogString}")
+
         val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
@@ -211,7 +215,11 @@ class FetcherBase(kvStore: KVStore,
           response.request -> response.values
         }.toMap
         val totalResponseValueBytes =
-          responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
+          responsesMap.iterator
+            .map(_._2)
+            .filter(_.isSuccess)
+            .flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0)))
+            .sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>

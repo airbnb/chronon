@@ -67,16 +67,11 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   // Schema associated to the stored KV value for streaming data.
   // Mutations require reversal column and timestamp for proper computation and the effective timestamp of mutations is
   // the MutationTime. Therefore, the schema in the value now includes timestamp and reversal column.}
-  lazy val mutationValueAvroSchema: String = {
-    AvroConversions
-      .fromChrononSchema(
-        StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS",
-                   (valueChrononSchema ++ Constants.MutationAvroFields).toArray))
-      .toString
-  }
+  lazy val mutationValueAvroSchema: String = AvroConversions.fromChrononSchema(mutationChrononSchema).toString
 
   def mutationValueChrononSchema: StructType = {
-    AvroConversions.toChrononSchema(parser.parse(mutationValueAvroSchema)).asInstanceOf[StructType]
+    StructType(s"${groupBy.metaData.cleanName}_MUTATION_COLS",
+               (valueChrononSchema ++ Constants.MutationAvroFields).toArray)
   }
 
   def mutationValueAvroCodec: AvroCodec = AvroCodec.of(mutationValueAvroSchema)
