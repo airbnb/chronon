@@ -4,6 +4,7 @@ import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Reso
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.online.Extensions.ChrononStructTypeOps
 import ai.chronon.online.{GroupByServingInfoParsed, Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.SparkEnv
@@ -129,7 +130,17 @@ object GroupByUpload {
     } else {
       println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
     }
-    new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
+
+    val result = new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
+    println(s"""
+        |Built GroupByServingInfo for ${groupByConf.metaData.name}:
+        |     keySchema: ${result.keyChrononSchema.catalogString}
+        |   valueSchema: ${result.valueChrononSchema.catalogString}
+        |   inputSchema: ${result.inputChrononSchema.catalogString}
+        |selectedSchema: ${result.selectedChrononSchema.catalogString}
+        |  streamSchema: ${result.streamChrononSchema.catalogString}
+        |""".stripMargin)
+    result
   }
 
   def run(groupByConf: api.GroupBy,

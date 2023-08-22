@@ -6,6 +6,12 @@ import org.apache.spark.sql.types.StructType
 
 object Extensions {
 
+  implicit class ChrononStructTypeOps(schema: api.StructType) {
+    def catalogString: String = {
+      SparkConversions.fromChrononSchema(schema).catalogString
+    }
+  }
+
   implicit class StructTypeOps(schema: StructType) {
     def pretty: String = {
       val schemaTuples = schema.fields.map { field =>
