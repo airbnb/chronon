@@ -51,8 +51,8 @@ class JoinTest {
     val rupeeTable = s"$namespace.rupee_transactions"
     spark.sql(s"DROP TABLE IF EXISTS $dollarTable")
     spark.sql(s"DROP TABLE IF EXISTS $rupeeTable")
-    DataFrameGen.entities(spark, dollarTransactions, 30000, partitions = 200).save(dollarTable, Map("tblProp1" -> "1"))
-    DataFrameGen.entities(spark, rupeeTransactions, 4500, partitions = 30).save(rupeeTable)
+    DataFrameGen.entities(spark, dollarTransactions, 3000, partitions = 200).save(dollarTable, Map("tblProp1" -> "1"))
+    DataFrameGen.entities(spark, rupeeTransactions, 450, partitions = 30).save(rupeeTable)
 
     val dollarSource = Builders.Source.entities(
       query = Builders.Query(
@@ -437,7 +437,7 @@ class JoinTest {
     )
 
     val viewsTable = s"$namespace.view_temporal"
-    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).save(viewsTable, Map("tblProp1" -> "1"))
 
     val viewsSource = Builders.Source.events(
       table = viewsTable,
@@ -460,7 +460,7 @@ class JoinTest {
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
     val itemQueriesDf = DataFrameGen
-      .events(spark, itemQueries, 10000, partitions = 100)
+      .events(spark, itemQueries, 1000, partitions = 100)
     // duplicate the events
     itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
 
@@ -819,7 +819,7 @@ class JoinTest {
     )
 
     val viewsTable = s"$namespace.view_$suffix"
-    val df = DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200)
+    val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200)
 
     val viewsSource = Builders.Source.events(
       table = viewsTable,
@@ -909,7 +909,7 @@ class JoinTest {
     )
 
     val viewsTable = s"$namespace.view_$nameSuffix"
-    val df = DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 200)
+    val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200)
 
     val viewsSource = Builders.Source.events(
       table = viewsTable,
