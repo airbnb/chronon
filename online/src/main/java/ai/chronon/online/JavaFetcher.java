@@ -1,6 +1,5 @@
 package ai.chronon.online;
 
-import ai.chronon.api.Join;
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import scala.collection.Iterator;
@@ -8,12 +7,9 @@ import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
-import scala.util.ScalaVersionSpecificCollectionsConverter;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;

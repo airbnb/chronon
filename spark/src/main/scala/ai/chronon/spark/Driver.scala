@@ -30,7 +30,6 @@ import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success, Try}
-import scala.util.ScalaJavaConversions.ListOps
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions

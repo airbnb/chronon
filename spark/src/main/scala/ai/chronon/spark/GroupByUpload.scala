@@ -10,7 +10,6 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
-import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SparkSession, types}
 
 import scala.collection.Seq
