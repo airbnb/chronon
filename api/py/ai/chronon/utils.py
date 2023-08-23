@@ -96,7 +96,12 @@ def is_streaming(source: api.Source) -> bool:
 
 
 def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource, api.JoinSource]:
-    return source.entities if source.entities else (source.events if source.events else source.joinSource)
+    if source.entities:
+        return source.entities
+    elif source.events:
+        return source.events
+    else:
+        return source.joinSource
 
 
 def get_query(source: api.Source) -> api.Query:
@@ -104,8 +109,12 @@ def get_query(source: api.Source) -> api.Query:
 
 
 def get_table(source: api.Source) -> str:
-    table = source.entities.snapshotTable if source.entities else (
-        source.events.table if source.events else get_join_output_table_name(source.joinSource.join, True))
+    if source.entities:
+        table = source.entities.snapshotTable
+    elif source.events:
+        table = source.events.table
+    else:
+        table = get_join_output_table_name(source.joinSource.join, True)
     return table.split('/')[0]
 
 
