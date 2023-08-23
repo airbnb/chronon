@@ -11,9 +11,8 @@ import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-import java.util.concurrent.Executors
 import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await}
 import scala.util.ScalaJavaConversions.ListOps
 
 class GroupByUploadTest {

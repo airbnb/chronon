@@ -1,9 +1,8 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.{Constants, DataModel, GroupByServingInfo, JoinSource, Query, QueryUtils, Source}
+import ai.chronon.api.{Constants, DataModel, JoinSource, Query, Source}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.online.Extensions.{ChrononStructTypeOps, StructTypeOps}
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{
   Api,
@@ -169,6 +168,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                                    TableUtils(session).partitionSpec.at(System.currentTimeMillis()))
 
   private def decode(dataStream: DataStream): DataStream = {
+    val servingInfoProxy = apiImpl.buildFetcher(debug).getGroupByServingInfo(groupByConf.getMetaData.getName).get
     val streamDecoder = apiImpl.streamDecoder(servingInfoProxy)
     val df = dataStream.df
     val ingressContext = context.withSuffix("ingress")
