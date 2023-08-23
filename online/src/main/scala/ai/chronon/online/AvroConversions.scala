@@ -96,7 +96,7 @@ object AvroConversions {
     }
   }
 
-  def fromChrononRow(value: Any, dataType: DataType,  extraneousRecord: Any => Array[Any] = null): Any = {
+  def fromChrononRow(value: Any, dataType: DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,

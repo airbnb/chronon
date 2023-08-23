@@ -2,6 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
+import org.apache.spark.sql.SparkSession
 
 import java.util.function.Consumer
 import scala.collection.Seq
@@ -110,6 +111,10 @@ abstract class StreamDecoder extends Serializable {
   def schema: StructType
 }
 
+trait StreamBuilder {
+  def from(topicInfo: TopicInfo)(implicit session: SparkSession, props: Map[String, String]): DataStream
+}
+
 object ExternalSourceHandler {
   private[ExternalSourceHandler] val executor = FlexibleExecutionContext.buildExecutionContext
 }
@@ -142,6 +147,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   private var timeoutMillis: Long = 10000
 
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
+
+  // kafka has built-in support - but one can add support to other types using this method.
+  def generateStreamBuilder(streamType: String): StreamBuilder = null
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns

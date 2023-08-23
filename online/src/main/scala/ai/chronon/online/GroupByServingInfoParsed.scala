@@ -5,11 +5,12 @@ import ai.chronon.api.Constants.{ReversalField, TimeField}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api._
 import org.apache.avro.Schema
+import org.apache.spark.sql.SparkSession
 
 import scala.collection.JavaConverters.asScalaBufferConverter
 
 // mixin class - with schema
-class GroupByServingInfoParsed(groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
+class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
     extends GroupByServingInfo(groupByServingInfo)
     with Serializable {
 

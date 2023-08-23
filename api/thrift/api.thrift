@@ -105,9 +105,31 @@ struct ExternalSource {
     3: optional TDataType valueSchema
 }
 
+/**
+* Output of a Join can be used as input to downstream computations like GroupBy or a Join.
+* Below is a short description of each of the cases we handle.
+* Case #1: a join's source is another join [TODO]
+*   - while serving, we expect the keys for the upstream join to be passed in the request.
+*     we will query upstream first, and use the result to query downstream
+*   - while backfill, we will backfill the upstream first, and use the table as the left of the subsequent join
+*   - this is currently a "to do" because users can achieve this by themselves unlike case 2:
+* Case #2: a join is the source of another GroupBy
+*   - We will support arbitrarily long transformation chains with this.
+*   - for batch (Accuracy.SNAPSHOT), we simply backfill the join first and compute groupBy as usual
+*     - will substitute the joinSource with the resulting table and continue computation
+*     - we will add a "resolve source" step prior to backfills that will compute the parent join and update the source
+*   - for realtime (Accuracy.TEMPORAL), we need to do "stream enrichment"
+*     - we will simply issue "fetchJoin" and create an enriched source. Note the join left should be of type "events".
+**/
+struct JoinSource {
+    1: optional Join join
+    2: optional Query query
+}
+
 union Source {
     1: EventSource events
     2: EntitySource entities
+    3: JoinSource joinSource
 }
 
 enum Operation {

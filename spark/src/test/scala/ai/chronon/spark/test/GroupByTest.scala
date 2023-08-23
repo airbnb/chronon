@@ -13,11 +13,10 @@ import ai.chronon.api.{
   Operation,
   Source,
   StringType,
-  ThriftJsonCodec,
   TimeUnit,
   Window
 }
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
@@ -121,7 +120,7 @@ class GroupByTest {
   }
 
   @Test
-  def temporalEventsLastKTest(): Unit = {
+  def eventsLastKTest(): Unit = {
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("listing_view", StringType, 100)
@@ -467,5 +466,80 @@ class GroupByTest {
              namespace = namespace,
              tableUtils = tableUtils,
              additionalAgg = aggs)
+  }
+
+  @Test
+  def testReplaceJoinSource(): Unit = {
+    val namespace = "replace_join_source_ns"
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+
+    val joinSource = TestUtils.getParentJoin(spark, namespace, "parent_join_table", "parent_gb")
+    val query = Builders.Query(startPartition = today)
+    val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "chaining_gb")
+    val newGroupBy = GroupBy.replaceJoinSource(chainingGroupBy, PartitionRange(today, today), tableUtils, false)
+
+    assertEquals(joinSource.metaData.outputTable, newGroupBy.sources.get(0).table)
+    assertEquals(joinSource.left.topic + Constants.TopicInvalidSuffix, newGroupBy.sources.get(0).topic)
+    assertEquals(query, newGroupBy.sources.get(0).query)
+  }
+
+  @Test
+  def testGroupByFromChainingGB(): Unit = {
+    val namespace = "test_chaining_gb"
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val joinName = "parent_join_table"
+    val parentGBName = "parent_gb"
+
+    val joinSource = TestUtils.getParentJoin(spark, namespace, joinName, parentGBName)
+    val query = Builders.Query(startPartition = today)
+    val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "user_viewed_price_gb")
+    val newGroupBy = GroupBy.from(chainingGroupBy, PartitionRange(today, today), tableUtils, true)
+
+    //verify parent join output table is computed and
+    assertTrue(spark.catalog.tableExists(s"$namespace.parent_join_table"))
+    val expectedSQL =
+      s"""
+         |WITH latestB AS (
+         |    SELECT
+         |        A.listing,
+         |        A.user,
+         |        MAX(B.ts) as ts,
+         |        A.ds
+         |    FROM
+         |        $namespace.views_table A
+         |    LEFT OUTER JOIN
+         |        $namespace.parent_join_table B ON A.listing = B.listing
+         |    WHERE
+         |        (B.listing is null OR B.ts <= A.ts) AND A.ds = '$today'
+         |    GROUP BY
+         |        A.listing, A.user, A.ds
+         |)
+         |SELECT
+         |    latestB.listing,
+         |    latestB.user,
+         |    latestB.ts,
+         |    latestB.ds,
+         |    C.parent_gb_price_last
+         |FROM
+         |    latestB
+         |JOIN
+         |    $namespace.parent_join_table C
+         |ON
+         |    latestB.listing = C.listing AND latestB.ts = C.ts
+         |""".stripMargin
+    val expectedInputDf = spark.sql(expectedSQL)
+    println("Expected input DF: ")
+    expectedInputDf.show()
+    println("Computed input DF: ")
+    newGroupBy.inputDf.show()
+
+    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${newGroupBy.inputDf.count()}")
+      println(s"Expected count: ${expectedInputDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 }

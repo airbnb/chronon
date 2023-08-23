@@ -14,7 +14,10 @@ object SparkSessionBuilder {
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
-  def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None, additionalConfig: Option[Map[String, String]] = None): SparkSession = {
+  def build(name: String,
+            local: Boolean = false,
+            localWarehouseLocation: Option[String] = None,
+            additionalConfig: Option[Map[String, String]] = None): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
@@ -38,11 +41,9 @@ object SparkSessionBuilder {
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
-    additionalConfig.foreach{configMap =>
-      configMap.foreach{config => baseBuilder = baseBuilder.config(config._1, config._2)}
+    additionalConfig.foreach { configMap =>
+      configMap.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
     }
-
-
 
     if (SPARK_VERSION.startsWith("2")) {
       // Otherwise files left from deleting the table with the same name result in test failures
@@ -63,6 +64,7 @@ object SparkSessionBuilder {
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
+        .config("spark.driver.bindAddress", "127.0.0.1")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder

@@ -1,8 +1,9 @@
 package ai.chronon.online
 
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
+import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -28,13 +29,14 @@ object Fetcher {
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
-  case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
+  case class ResponseWithContext(request: Request,
+                                 derivedValues: Map[String, AnyRef],
+                                 baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
 }
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
-
 
 // BaseFetcher + Logging + External service calls
 class Fetcher(val kvStore: KVStore,
@@ -43,73 +45,72 @@ class Fetcher(val kvStore: KVStore,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null)
-    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
-  // key and value schemas
-  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>
-    val joinConfTry = getJoinConf(joinName)
+  def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
-    joinConfTry.map { joinConf =>
-      // collect schema from
-      joinConf.joinPartOps.foreach {
-        joinPart =>
-          val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
-          servingInfoTry
-            .map {
-              servingInfo =>
-                val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-                joinPart.leftToRight
-                  .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
-                  .foreach {
-                    case (name, dType) =>
-                      val keyField = StructField(name, dType)
-                      keyFields.add(keyField)
-                  }
-                val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
-                  servingInfo.selectedChrononSchema
-                } else {
-                  servingInfo.outputChrononSchema
-                }
-                baseValueSchema.fields.foreach { sf =>
-                  valueFields.append(joinPart.constructJoinPartSchema(sf))
-                }
+    // collect keyFields and valueFields from joinParts/GroupBys
+    joinConf.joinPartOps.foreach { joinPart =>
+      val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
+      servingInfoTry
+        .map { servingInfo =>
+          val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+          joinPart.leftToRight
+            .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
+            .foreach {
+              case (name, dType) =>
+                val keyField = StructField(name, dType)
+                keyFields.add(keyField)
             }
-      }
-
-      // gather key schema and value schema from external sources.
-      Option(joinConf.join.onlineExternalParts).foreach {
-        externals =>
-          externals
-            .iterator()
-            .asScala
-            .foreach { part =>
-              val source = part.source
-
-              def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
-                DataType
-                  .fromTDataType(schema)
-                  .asInstanceOf[StructType]
-                  .fields
-                  .map(f => StructField(prefix + f.name, f.fieldType))
-
-              buildFields(source.getKeySchema).foreach(f =>
-                keyFields.add(f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))))
-              buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
-            }
-      }
-
-      val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
-      val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
-      val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-      val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
-      val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
-      logControlEvent(joinCodec)
-      joinCodec
+          val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+            servingInfo.selectedChrononSchema
+          } else {
+            servingInfo.outputChrononSchema
+          }
+          baseValueSchema.fields.foreach { sf =>
+            valueFields.append(joinPart.constructJoinPartSchema(sf))
+          }
+        }
     }
-  },
-    {join: String => Metrics.Context(environment = "join.codec.fetch", join = join)}
-  )
+
+    // gather key schema and value schema from external sources.
+    Option(joinConf.join.onlineExternalParts).foreach { externals =>
+      externals
+        .iterator()
+        .asScala
+        .foreach { part =>
+          val source = part.source
+
+          def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
+            DataType
+              .fromTDataType(schema)
+              .asInstanceOf[StructType]
+              .fields
+              .map(f => StructField(prefix + f.name, f.fieldType))
+
+          buildFields(source.getKeySchema).foreach(f =>
+            keyFields.add(f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))))
+          buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
+        }
+    }
+
+    val joinName = joinConf.metaData.nameToFilePath
+    val keySchema = StructType(s"${joinName.sanitize}_key", keyFields.toArray)
+    val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
+    val baseValueSchema = StructType(s"${joinName.sanitize}_value", valueFields.toArray)
+    val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
+    val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
+    logControlEvent(joinCodec)
+    joinCodec
+  }
+
+  // key and value schemas
+  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
+    { joinName: String =>
+      getJoinConf(joinName).map(_.join).map(buildJoinCodec)
+    },
+    { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
   private[online] def withTs(responses: Future[scala.collection.Seq[Response]]): Future[FetcherResponseWithTs] = {
     responses.map { response =>
@@ -149,8 +150,11 @@ class Fetcher(val kvStore: KVStore,
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val baseMap = internalMap ++ externalMap
-            val derivedMap: Map[String, AnyRef] = Try(joinCodec.deriveFunc(internalResponse.request.keys, baseMap)
-              .mapValues(_.asInstanceOf[AnyRef]).toMap) match {
+            val derivedMap: Map[String, AnyRef] = Try(
+              joinCodec
+                .deriveFunc(internalResponse.request.keys, baseMap)
+                .mapValues(_.asInstanceOf[AnyRef])
+                .toMap) match {
               case Success(derivedMap) => derivedMap
               case Failure(exception) => {
                 ctx.incrementException(exception)
@@ -247,8 +251,10 @@ class Fetcher(val kvStore: KVStore,
         if (logFunc != null) {
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
-          joinContext.foreach(context => context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
-          joinContext.foreach(context => context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
+          joinContext.foreach(context =>
+            context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
+          joinContext.foreach(context =>
+            context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
 
           if (debug) {
             println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
@@ -275,7 +281,7 @@ class Fetcher(val kvStore: KVStore,
     // step-1 handle invalid requests and collect valid ones
     joinRequests.foreach { request =>
       val joinName = request.name
-      val joinConfTry = getJoinConf(joinName)
+      val joinConfTry: Try[JoinOps] = getJoinConf(request.name)
       if (joinConfTry.isFailure) {
         resultMap.update(
           request,
@@ -350,7 +356,9 @@ class Fetcher(val kvStore: KVStore,
 
       // step-4 convert the resultMap into Responses
       joinRequests.map { req =>
-        Metrics.Context(Environment.JoinFetching, join = req.name).histogram("external.latency.millis", System.currentTimeMillis() - startTime)
+        Metrics
+          .Context(Environment.JoinFetching, join = req.name)
+          .histogram("external.latency.millis", System.currentTimeMillis() - startTime)
         Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }
@@ -381,12 +389,19 @@ class Fetcher(val kvStore: KVStore,
   def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] = {
     val joinCodecs = getJoinCodecs(joinRequest.name).get
     val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
-    kvStore.get(
-      GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)), Constants.StatsBatchDataset, afterTsMillis = joinRequest.startTs)
-    ).map(_.values.get.toArray.filter(_.millis <= upperBound).map {
-      tv =>
-        StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
-    }.toSeq)
+    kvStore
+      .get(
+        GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)),
+                   Constants.StatsBatchDataset,
+                   afterTsMillis = joinRequest.startTs)
+      )
+      .map(
+        _.values.get.toArray
+          .filter(_.millis <= upperBound)
+          .map { tv =>
+            StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
+          }
+          .toSeq)
   }
 
   /**
@@ -395,42 +410,52 @@ class Fetcher(val kvStore: KVStore,
   def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
     if (joinRequest.name.endsWith("__drift")) {
       // In the case of drift we only find the percentile keys and do a shifted distance.
-      val rawResponses = fetchStats(StatsRequest(joinRequest.name.dropRight("__drift".length), joinRequest.startTs, joinRequest.endTs))
-      return rawResponses.map {
-        response =>
-          val driftMap = response.sortBy(_.millis).sliding(2).collect {
+      val rawResponses = fetchStats(
+        StatsRequest(joinRequest.name.dropRight("__drift".length), joinRequest.startTs, joinRequest.endTs))
+      return rawResponses.map { response =>
+        val driftMap = response
+          .sortBy(_.millis)
+          .sliding(2)
+          .collect {
             case Seq(prev, curr) =>
               val commonKeys = prev.values.get.keySet.intersect(curr.values.get.keySet.filter(_.endsWith("percentile")))
-              commonKeys.map { key =>
-                val previousValue = prev.values.get(key)
-                val currentValue = curr.values.get(key)
-                s"${key}_drift" -> Map(
-                  "millis" -> curr.millis.asInstanceOf[AnyRef],
-                  "value" -> StatsGenerator.lInfKllSketch(previousValue, currentValue)
-                ).asJava
-              }.filter(_._2.get("value") != None).toMap
-          }.toSeq
-          .flatMap(_.toSeq).groupBy(_._1).mapValues(_.map(_._2).toList.asJava).toMap
-          SeriesStatsResponse(joinRequest, Try(driftMap))
+              commonKeys
+                .map { key =>
+                  val previousValue = prev.values.get(key)
+                  val currentValue = curr.values.get(key)
+                  s"${key}_drift" -> Map(
+                    "millis" -> curr.millis.asInstanceOf[AnyRef],
+                    "value" -> StatsGenerator.lInfKllSketch(previousValue, currentValue)
+                  ).asJava
+                }
+                .filter(_._2.get("value") != None)
+                .toMap
+          }
+          .toSeq
+          .flatMap(_.toSeq)
+          .groupBy(_._1)
+          .mapValues(_.map(_._2).toList.asJava)
+          .toMap
+        SeriesStatsResponse(joinRequest, Try(driftMap))
       }
     }
     val rawResponses = fetchStats(joinRequest)
-    rawResponses.map {
-      responseFuture =>
-        val convertedValue = responseFuture.flatMap {
-          response =>
-            response.values.get.map {
-              case (key, v) =>
-                key ->
-                    Map(
-                      "millis" -> response.millis.asInstanceOf[AnyRef],
-                      "value" -> StatsGenerator.SeriesFinalizer(key, v)
-                    ).asJava
-            }
-        }.groupBy(_._1)
-          .mapValues(_.map(_._2).toList.asJava)
-          .toMap
-        SeriesStatsResponse(joinRequest, Try(convertedValue))
+    rawResponses.map { responseFuture =>
+      val convertedValue = responseFuture
+        .flatMap { response =>
+          response.values.get.map {
+            case (key, v) =>
+              key ->
+                Map(
+                  "millis" -> response.millis.asInstanceOf[AnyRef],
+                  "value" -> StatsGenerator.SeriesFinalizer(key, v)
+                ).asJava
+          }
+        }
+        .groupBy(_._1)
+        .mapValues(_.map(_._2).toList.asJava)
+        .toMap
+      SeriesStatsResponse(joinRequest, Try(convertedValue))
     }
   }
 
@@ -447,21 +472,24 @@ class Fetcher(val kvStore: KVStore,
     val rawResponses = fetchStats(joinRequest)
     rawResponses.map {
       var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
-      responseFuture => responseFuture.foreach {
-        response =>
-          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+      responseFuture =>
+        responseFuture.foreach { response =>
+          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field =>
+            response.values.get(field.name).asInstanceOf[Any]
+          }.toArray)
           mergedIr = aggregator.merge(mergedIr, batchRecord)
-      }
+        }
         // Other things that would require custom processing: HeavyHitters
         val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
           case (statName, finalStat) =>
             if (statName.endsWith("percentile")) {
               statName ->
-                StatsGenerator.finalizedPercentilesMerged.indices.map(idx =>
-                  Map(
-                    "xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
-                    "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava
-                ).toList.asJava
+                StatsGenerator.finalizedPercentilesMerged.indices
+                  .map(idx =>
+                    Map("xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
+                        "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava)
+                  .toList
+                  .asJava
             } else {
               statName -> finalStat.asInstanceOf[AnyRef]
             }
