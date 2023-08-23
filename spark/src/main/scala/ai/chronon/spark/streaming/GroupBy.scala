@@ -54,7 +54,7 @@ class GroupBy(inputStream: DataFrame,
     }
     QueryUtils.build(
       selects,
-      Constants.StreamingInputTable,
+      inputTable,
       baseWheres ++ timeWheres :+ s"($keyWhereOption)",
       fillIfAbsent = if (selects == null) null else fillIfAbsent
     )
