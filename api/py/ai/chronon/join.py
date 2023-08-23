@@ -45,7 +45,7 @@ def JoinPart(group_by: api.GroupBy,
     gc.collect()
     group_by_module_name = None
     for ref in gc.get_referrers(group_by):
-        if '__name__' in ref and ref['__name__'].startswith("group_bys"):
+        if '__name__' in ref and (ref['__name__'].startswith("group_bys") or ".group_bys." in ref['__name__']):
             group_by_module_name = ref['__name__']
             break
     if group_by_module_name:
