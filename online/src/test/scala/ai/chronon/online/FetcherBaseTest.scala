@@ -14,14 +14,14 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
-class BaseFetcherTest extends MockitoSugar with Matchers {
+class FetcherBaseTest extends MockitoSugar with Matchers {
   val GroupBy = "relevance.short_term_user_features"
   val Column = "pdp_view_count_14d"
   val GuestKey = "guest"
   val HostKey = "host"
   val GuestId = "123"
   val HostId = "456"
-  var baseFetcher: BaseFetcher = _
+  var fetcherBase: FetcherBase = _
   var kvStore: KVStore = _
 
   @Before
@@ -31,7 +31,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
     // Future compositions in the Fetcher so provision it in
     // the mock to prevent hanging.
     when(kvStore.executionContext).thenReturn(ExecutionContext.global)
-    baseFetcher = spy(new BaseFetcher(kvStore))
+    fetcherBase = spy(new FetcherBase(kvStore))
   }
 
   @Test
@@ -47,16 +47,16 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
         val response = Response(request, Success(Map(request.name -> "100")))
         Future.successful(Seq(response))
       }
-    }).when(baseFetcher).fetchGroupBys(any())
+    }).when(fetcherBase).fetchGroupBys(any())
 
     // Map should contain query with valid response
-    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(query)), 1.second)
+    val queryResults = Await.result(fetcherBase.fetchColumns(Seq(query)), 1.second)
     queryResults.contains(query) shouldBe true
     queryResults.get(query).map(_.values) shouldBe Some(Success(Map(s"$GroupBy.$Column" -> "100")))
 
     // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
-    verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
+    verify(fetcherBase, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
     val actualRequest = requestsCaptor.getValue.asInstanceOf[Seq[Request]].headOption
     actualRequest shouldNot be(None)
     actualRequest.get.name shouldBe s"${query.groupByName}.${query.columnName}"
@@ -77,10 +77,10 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
         val responses = requests.map(r => Response(r, Success(Map(r.name -> "100"))))
         Future.successful(responses)
       }
-    }).when(baseFetcher).fetchGroupBys(any())
+    }).when(fetcherBase).fetchGroupBys(any())
 
     // Map should contain query with valid response
-    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(guestQuery, hostQuery)), 1.second)
+    val queryResults = Await.result(fetcherBase.fetchColumns(Seq(guestQuery, hostQuery)), 1.second)
     queryResults.contains(guestQuery) shouldBe true
     queryResults.get(guestQuery).map(_.values) shouldBe Some(Success(Map(s"${GuestKey}_$GroupBy.$Column" -> "100")))
     queryResults.contains(hostQuery) shouldBe true
@@ -88,7 +88,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
 
     // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
-    verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
+    verify(fetcherBase, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
     val actualRequests = requestsCaptor.getValue.asInstanceOf[Seq[Request]]
     actualRequests.length shouldBe 2
     actualRequests.head.name shouldBe s"${guestQuery.groupByName}.${guestQuery.columnName}"
@@ -107,10 +107,10 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
       def answer(invocation: InvocationOnMock): Future[Seq[Response]] = {
         Future.successful(Seq())
       }
-    }).when(baseFetcher).fetchGroupBys(any())
+    }).when(fetcherBase).fetchGroupBys(any())
 
     // Map should contain query with Failure response
-    val queryResults = Await.result(baseFetcher.fetchColumns(Seq(query)), 1.second)
+    val queryResults = Await.result(fetcherBase.fetchColumns(Seq(query)), 1.second)
     queryResults.contains(query) shouldBe true
     queryResults.get(query).map(_.values) match {
       case Some(Failure(ex: IllegalStateException)) => succeed
@@ -119,7 +119,7 @@ class BaseFetcherTest extends MockitoSugar with Matchers {
 
     // GroupBy request sent to KV store for the query
     val requestsCaptor = ArgumentCaptor.forClass(classOf[Seq[_]])
-    verify(baseFetcher, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
+    verify(fetcherBase, times(1)).fetchGroupBys(requestsCaptor.capture().asInstanceOf[Seq[Request]])
     val actualRequest = requestsCaptor.getValue.asInstanceOf[Seq[Request]].headOption
     actualRequest shouldNot be(None)
     actualRequest.get.name shouldBe query.groupByName + "." + query.columnName
