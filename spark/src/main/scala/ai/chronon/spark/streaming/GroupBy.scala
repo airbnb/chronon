@@ -29,7 +29,7 @@ class GroupBy(inputStream: DataFrame,
               debug: Boolean = false)
     extends Serializable {
 
-  private def buildStreamingQuery(): String = {
+  private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
     val query = streamingSource.query
     val selects = Option(query.selects).map(_.asScala.toMap).orNull
@@ -73,7 +73,7 @@ class GroupBy(inputStream: DataFrame,
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
-    val streamingQuery = buildStreamingQuery()
+    val streamingQuery = buildStreamingQuery(groupByConf.metaData.cleanName + "_stream")
 
     val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
     val ingressContext = context.withSuffix("ingress")
