@@ -382,7 +382,11 @@ class FetcherTest extends TestCase {
   }
 
   // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
-  def compareTemporalFetch(joinConf: api.Join, endDs: String, namespace: String, consistencyCheck: Boolean): Unit = {
+  def compareTemporalFetch(joinConf: api.Join,
+                           endDs: String,
+                           namespace: String,
+                           consistencyCheck: Boolean,
+                           dropDsOnWrite: Boolean): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
@@ -395,7 +399,13 @@ class FetcherTest extends TestCase {
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
     joinConf.joinParts.toScala.foreach(jp =>
-      OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
+      OnlineUtils.serve(tableUtils,
+                        inMemoryKvStore,
+                        kvStoreFunc,
+                        namespace,
+                        endDs,
+                        jp.groupBy,
+                        dropDsOnWrite = dropDsOnWrite))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
@@ -497,7 +507,7 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_fetch"
     val joinConf = generateMutationData(namespace)
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
@@ -506,7 +516,8 @@ class FetcherTest extends TestCase {
     compareTemporalFetch(joinConf,
                          tableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
-                         consistencyCheck = true)
+                         consistencyCheck = true,
+                         dropDsOnWrite = false)
   }
 
   // test soft-fail on missing keys

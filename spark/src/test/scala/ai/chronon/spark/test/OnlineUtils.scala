@@ -14,7 +14,6 @@ import scala.annotation.tailrec
 
 object OnlineUtils {
 
-  // TODO: deprecate
   def putStreaming(session: SparkSession,
                    groupByConf: api.GroupBy,
                    kvStore: () => KVStore,
