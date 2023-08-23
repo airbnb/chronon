@@ -66,6 +66,7 @@ class GroupBy(inputStream: DataFrame,
 
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
+    val streamingTable = groupByConf.metaData.cleanName + "_stream"
     val fetcher = onlineImpl.buildFetcher(local)
     val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
@@ -73,7 +74,8 @@ class GroupBy(inputStream: DataFrame,
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
-    val streamingQuery = buildStreamingQuery(groupByConf.metaData.cleanName + "_stream")
+
+    val streamingQuery = buildStreamingQuery(streamingTable)
 
     val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
     val ingressContext = context.withSuffix("ingress")
@@ -115,7 +117,7 @@ class GroupBy(inputStream: DataFrame,
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
       }(RowEncoder(streamSchema))
 
-    des.createOrReplaceTempView(Constants.StreamingInputTable)
+    des.createOrReplaceTempView(streamingTable)
 
     groupByConf.setups.foreach(session.sql)
     val selectedDf = session.sql(streamingQuery)
