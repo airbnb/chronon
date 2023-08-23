@@ -81,6 +81,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 
 object GroupByUpload {
 
+  // TODO - remove this if spark streaming can't reach hive tables
   def buildServingInfo(groupByConf: api.GroupBy, session: SparkSession, endDs: String): GroupByServingInfoParsed = {
     val groupByServingInfo = new GroupByServingInfo()
     implicit val tableUtils: TableUtils = TableUtils(session)

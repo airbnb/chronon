@@ -45,7 +45,7 @@ object OnlineUtils {
       val finalOrder = (fields.filterNot(trailingColumns.contains) ++ trailingColumns).toSeq
       inputModified = inputModified.selectExpr(finalOrder: _*)
     }
-    // mockApi.streamSchema = StructType.from("Stream", SparkConversions.toChrononSchema(inputModified.schema))
+
     val groupByStreaming =
       new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified), session, groupByConf, mockApi, debug = debug)
     // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
@@ -78,6 +78,8 @@ object OnlineUtils {
     mutateTopicWithDs(source, ds)
     val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug)
     val query = groupByStreaming.chainedStreamingQuery.trigger(Trigger.Once()).start()
+    // drain work scheduled as futures over the executioncontext
+    Thread.sleep(5000)
     // there is async stuff under the hood of chained streaming query
     query.awaitTermination()
   }
