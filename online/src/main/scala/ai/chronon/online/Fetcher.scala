@@ -24,6 +24,7 @@ object Fetcher {
                      atMillis: Option[Long] = None,
                      context: Option[Metrics.Context] = None)
 
+  case class PrefixedRequest(prefix: String, request: Request)
   case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
@@ -34,6 +35,7 @@ object Fetcher {
                                  baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
+  case class ColumnSpec(groupByName: String, columnName: String, prefix: Option[String], keyMapping: Option[Map[String, String]])
 }
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
