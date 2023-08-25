@@ -46,7 +46,8 @@ def JoinPart(group_by: api.GroupBy,
     group_by_module_name = None
     for ref in gc.get_referrers(group_by):
         if '__name__' in ref and (ref['__name__'].startswith("group_bys") or ".group_bys." in ref['__name__']):
-            group_by_module_name = ref['__name__']
+            group_by_module_name = ref['__name__'].replace("src.python.shepherd.chronon_poc.", "")
+            logging.debug("ref {} will be converted to {}".format(ref['__name__'], group_by_module_name))
             break
     if group_by_module_name:
         logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
