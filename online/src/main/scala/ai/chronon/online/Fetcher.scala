@@ -461,12 +461,33 @@ class Fetcher(val kvStore: KVStore,
   /**
    * Generate the list of features for a given group by and what the data type is for each feature.
    *
-   * @param groupByname - name of the group by
+   * @param groupByName - name of the group by
    * @return - mapping of feature name to data type
    */
-  def retrieveGroupBySchema(groupByname: String): Map[String, DataType] = {
-    val groupByServingInfoParsed: GroupByServingInfoParsed = new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByname).get, getPartitionSpec())
+  def retrieveGroupBySchema(groupByName: String): Map[String, DataType] = {
+    val groupByServingInfoParsed: GroupByServingInfoParsed = new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
     groupByServingInfoParsed.outputChrononSchema.fields.map(sf => (sf.name, sf.fieldType)).toMap
+  }
+
+  /**
+   * Retrieve the set of keys for a given join and what the data type is for each key.
+   *
+   * @param joinName - name of the join
+   * @return - mapping of key name to data type
+   */
+  def retrieveJoinKeys(joinName: String): Map[String, DataType] = {
+    getJoinCodecs(joinName).get.keyFields.map(sf => (sf.name, sf.fieldType)).toMap
+  }
+
+  /**
+   * Retrieve the set of keys for a given groupby and what the data type is for each key.
+   *
+   * @param groupByName - name of the groupby
+   * @return - mapping of key name to data type
+   */
+  def retrieveGroupByKeys(groupByName: String): Map[String, DataType] = {
+    val groupByServingInfoParsed: GroupByServingInfoParsed = new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
+    groupByServingInfoParsed.keyChrononSchema.fields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],

@@ -158,6 +158,14 @@ public class JavaFetcher {
     return JavaConverters.mapAsJavaMap(this.fetcher.retrieveGroupBySchema(groupByName));
   }
 
+  public Map<String, DataType> retrieveJoinKeys(String joinName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveJoinKeys(joinName));
+  }
+
+  public Map<String, DataType> retrieveGroupByKeys(String groupByName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveGroupByKeys(groupByName));
+  }
+
   /**
    * Set the partition meta format for the fetcher.
    * @param format - The date format to use for parsing. (i.e. "yyyy-MM-dd")
