@@ -2,9 +2,12 @@ package ai.chronon.online;
 
 import ai.chronon.api.DataType;
 import ai.chronon.api.GroupByServingInfo;
+import ai.chronon.api.Join;
 import ai.chronon.api.StructField;
+import ai.chronon.api.Constants;
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
+import scala.Option;
 import scala.collection.Iterator;
 import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
@@ -14,6 +17,7 @@ import scala.concurrent.JavaConversions;
 import scala.collection.JavaConverters;
 
 
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -160,5 +164,18 @@ public class JavaFetcher {
    */
   public void setPartitionMeta(String format) {
     this.fetcher.setPartitionMeta(format);
+  }
+
+  /**
+   * Allow users to set the join configuration for the fetcher.
+   */
+  public void putJoinConf(String joinName, String joinConfigString) throws UnsupportedEncodingException {
+    KVStore.PutRequest joinPutReq = new KVStore.PutRequest(
+            ("joins/" + joinName).getBytes(Constants.UTF8()),
+            joinConfigString.getBytes(Constants.UTF8()),
+            fetcher.dataset(),
+            Option.empty());
+
+    this.fetcher.kvStore().put(joinPutReq);
   }
 }

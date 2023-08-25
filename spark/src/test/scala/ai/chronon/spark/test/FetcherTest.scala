@@ -579,7 +579,7 @@ class FetcherTest extends TestCase {
 
   def testRetrieveSchema(): Unit = {
     val namespace: String = "test_retrieve_schema"
-    val generatedJoin: Join = TestUtils.generateRandomData(spark=spark, namespace=namespace, keyCount=5, cardinality=5)
+    val generatedJoin: Join = TestUtils.generateRandomData(spark=spark, namespace=namespace, keyCount=10, cardinality=10)
     val mockApi: Api = TestUtils.setupFetcherWithJoin(spark, generatedJoin, namespace)
 
     val joinResult: Map[String, DataType] = mockApi.fetcher.retrieveJoinSchema(generatedJoin.metaData.getName)
