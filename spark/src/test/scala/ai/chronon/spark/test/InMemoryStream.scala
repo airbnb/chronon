@@ -66,15 +66,14 @@ class InMemoryStream {
       val tileTimestamp: Long = keyedRow._1._2.asInstanceOf[Long] // second entry of grouping tuple is tile timestamp
       val rows = keyedRow._2
 
-      val rowAggregator = TileCodec.buildRowAggregator(groupBy, chrononSchema.iterator.map { field => (field.name, field.fieldType) }.toSeq)
-      val aggIr = rowAggregator.init
+      val tileCodec = new TileCodec(groupBy, chrononSchema.iterator.map { field => (field.name, field.fieldType) }.toSeq)
+      val aggIr = tileCodec.rowAggregator.init
 
       rows.map { row =>
         val chrononRow = SparkConversions.toChrononRow(row, tsIndex).asInstanceOf[ai.chronon.api.Row]
-        rowAggregator.update(aggIr, chrononRow)
+        tileCodec.rowAggregator.update(aggIr, chrononRow)
       }
 
-      val tileCodec = new TileCodec(rowAggregator, groupBy)
       val preAgg: Array[Byte] = tileCodec.makeTileIr(aggIr, true)
 
       (rowsKeys, tileTimestamp, preAgg)
