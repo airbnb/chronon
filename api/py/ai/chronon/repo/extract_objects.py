@@ -33,14 +33,17 @@ def from_folder(root_path: str,
 
 def import_module_set_name(module, cls):
     """evaluate imported modules to assign object name"""
+    # AirBnB imports their group-bys in joins via relative imports
+    # Thus we need to slightly alter the module name if we used an absolute import.
+    module_name = module.__name__.replace("python.shepherd.chronon_poc.group_bys.", "")
     for name, obj in list(module.__dict__.items()):
         if isinstance(obj, cls):
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
             # example module.__name__=group_bys.user.avg_session_length, name=v1
             # obj.metaData.name=user.avg_session_length.v1
             # obj.metaData.team=user
-            obj.metaData.name = module.__name__.partition(".")[2] + "." + name
-            obj.metaData.team = module.__name__.split(".")[1]
+            obj.metaData.name = module_name.partition(".")[2] + "." + name
+            obj.metaData.team = module_name.split(".")[1]
     return module
 
 
