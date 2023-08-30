@@ -653,19 +653,30 @@ object GroupBy {
       case groupByUnfilledRange =>
         try {
           val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-          println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+          println(s"Group By ranges to compute: ${
+            stepRanges.map {
+              _.toString
+            }.pretty
+          }")
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
-              (groupByConf.dataModel match {
+              val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
-                case Events   => groupByBackfill.snapshotEvents(range)
-              }).save(outputTable, tableProps)
-              println(s"Wrote to table $outputTable, into partitions: $range")
+                case Events => groupByBackfill.snapshotEvents(range)
+              }
+              if (groupByConf.isSetDerivations || groupByConf.derivations.isEmpty) {
+                outputDf.save(outputTable, tableProps)
+                println(s"Wrote to table $outputTable, into partitions: $range")
+              } else {
+                val projections = groupByConf.derivations.toScala.derivationProjection(outputDf.columns)
+                val projectionsMap = projections.toMap
+                val baseOutputColumns = outputDf.columns.toSet
+              }
+              println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
           }
-          println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
         } catch {
           case err: Throwable =>
             exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"

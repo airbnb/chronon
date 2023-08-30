@@ -85,7 +85,7 @@ object BootstrapInfo {
       sparkSchema
     )
     val derivedSchema = if (joinConf.isSetDerivations) {
-      val projections = joinConf.derivationProjection(baseFields.map(_.name))
+      val projections = joinConf.derivations.toScala.derivationProjection(baseFields.map(_.name))
       val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {

@@ -1,12 +1,13 @@
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{JoinOps, DerivationOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType, Constants}
 import ai.chronon.aggregator.row.StatsGenerator
 import com.google.gson.Gson
 
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -27,29 +28,29 @@ case class JoinCodec(conf: JoinOps,
       def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
         SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
       // if spark catalyst is not necessary, and all the derivations are just renames, we don't invoke catalyst
-      if (conf.areDerivationsRenameOnly) {
-        val baseExpressions = if (conf.derivationsContainStar) {
-          baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
+      if (conf.join.derivations.toScala.areDerivationsRenameOnly) {
+        val baseExpressions = if (conf.join.derivations.toScala.derivationsContainStar) {
+          baseValueSchema.filterNot { conf.join.derivations.toScala.derivationExpressionSet contains _.name }
         } else {
           Seq.empty
         }
-        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d =>
+        val expressions = baseExpressions ++ conf.join.derivations.toScala.derivationsWithoutStar.map { d =>
           StructField(d.name, baseValueSchema.typeOf(d.expression).get)
         }
         build(
           expressions,
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
+              JoinCodec.adjustExceptions(conf.join.derivations.toScala.applyRenameOnlyDerivation(values), values)
           }
         )
       } else {
-        val baseExpressions = if (conf.derivationsContainStar) {
+        val baseExpressions = if (conf.join.derivations.toScala.derivationsContainStar) {
           baseValueSchema
-            .filterNot { conf.derivationExpressionSet contains _.name }
+            .filterNot { conf.join.derivations.toScala.derivationExpressionSet contains _.name }
             .map(sf => sf.name -> sf.name)
         } else { Seq.empty }
-        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
+        val expressions = baseExpressions ++ conf.join.derivations.toScala.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil =
           new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
         build(
