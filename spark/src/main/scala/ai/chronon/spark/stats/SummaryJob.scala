@@ -17,6 +17,8 @@ import org.apache.spark.sql.SparkSession
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tableUtils: TableUtils = TableUtils(session)
+  private val loggingTable = joinConf.metaData.loggedTable
+  private val loggingStatsTable = joinConf.metaData.loggingStatsTable
   private val dailyStatsTable = joinConf.metaData.dailyStatsOutputTable
   private val dailyStatsAvroTable = joinConf.metaData.dailyStatsUploadTable
   private val tableProps: Map[String, String] = tableUtils.getTableProperties(joinConf.metaData.outputTable).orNull
@@ -68,5 +70,60 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       }
     }
     println("Finished writing stats.")
+  }
+
+  def basicStatsJob(inputTable: String, outputTable: String, stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
+    val unfilledRanges = tableUtils
+      .unfilledRanges(outputTable,
+        PartitionRange(null, endDate)(tableUtils),
+        Some(Seq(inputTable)))
+      .getOrElse(Seq.empty)
+    if (unfilledRanges.isEmpty) {
+      println(s"No data to compute for $outputTable")
+      return
+    }
+    unfilledRanges.foreach { computeRange =>
+      println(s"Daily output statistics table $outputTable unfilled range: $computeRange")
+      val stepRanges = stepDays.map(computeRange.steps).getOrElse(Seq(computeRange))
+      println(s"Ranges to compute: ${stepRanges.map(_.toString).pretty}")
+      // We are going to build the aggregator to denormalize sketches for hive.
+      stepRanges.zipWithIndex.foreach {
+        case (range, index) =>
+          println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
+          val joinOutputDf = tableUtils.sql(
+            s"""
+               |SELECT *
+               |FROM ${inputTable}
+               |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
+               |""".stripMargin)
+          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
+          val inputDf = if (joinOutputDf.columns.contains(Constants.TimeColumn)) {
+            joinOutputDf.select(Constants.TimeColumn, baseColumns: _*)
+          } else {
+            joinOutputDf.select(baseColumns.head, baseColumns.tail: _*)
+          }
+          val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
+          val aggregator = StatsGenerator.buildAggregator(
+            stats.metrics,
+            StructType.from("selected", SparkConversions.toChrononSchema(stats.selectedDf.schema)))
+          val summaryKvRdd = stats.dailySummary(aggregator, sample)
+          // Build upload table for stats store.
+          summaryKvRdd.toAvroDf
+            .withTimeBasedColumn(tableUtils.partitionColumn)
+            .save(dailyStatsAvroTable, tableProps)
+          stats
+            .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
+            .save(dailyStatsTable, tableProps)
+          println(s"Finished range [${index + 1}/${stepRanges.size}].")
+      }
+    }
+    println("Finished writing stats.")
+  }
+
+  /**
+    * Batch stats compute and upload for the logs
+    */
+  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
+
   }
 }
