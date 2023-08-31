@@ -6,7 +6,6 @@ import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Extensions.ChrononStructTypeOps
-import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.spark.GenericRowHandler
 import com.google.gson.Gson
 import org.apache.spark.sql._
@@ -17,10 +16,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
-import scala.collection.Seq
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
-import scala.util.{Failure, Success}
+import scala.concurrent.duration.{DurationInt}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
