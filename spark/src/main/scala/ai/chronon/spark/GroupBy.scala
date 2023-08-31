@@ -10,13 +10,14 @@ import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
-import scala.collection.mutable
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
@@ -667,16 +668,21 @@ object GroupBy {
                 case Entities => groupByBackfill.snapshotEntities
                 case Events => groupByBackfill.snapshotEvents(range)
               }
-              if (groupByConf.isSetDerivations || groupByConf.derivations.isEmpty) {
+              if (!groupByConf.isSetDerivations || groupByConf.derivations.isEmpty) {
                 outputDf.save(outputTable, tableProps)
-                println(s"Wrote to table $outputTable, into partitions: $range")
               } else {
                 val projections = groupByConf.derivations.toScala.derivationProjection(outputDf.columns)
-                val projectionsMap = projections.toMap
-                val baseOutputColumns = outputDf.columns.toSet
+                val finalOutputColumns = projections
+                  .flatMap {
+                    case (name, expression) => Some(expr(expression).as(name))
+                  }.toSeq
+                val result = outputDf.select(finalOutputColumns: _*)
+                result.save(outputTable, tableProps)
               }
-              println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+              println(s"Wrote to table $outputTable, into partitions: $range")
           }
+          println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+
         } catch {
           case err: Throwable =>
             exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"

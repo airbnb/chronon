@@ -5,6 +5,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.MetadataStore
+import ai.chronon.spark
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import ai.chronon.spark._
@@ -578,5 +579,26 @@ class DerivationTest {
     assertTrue(schema4.contains("ext_contextual_context_1"))
     assertFalse(schema4.contains("context_2"))
     assertFalse(schema4.contains("ext_contextual_context_2"))
+  }
+
+  @Test
+  def testGroupByDerivations(): Unit = {
+    val namespace = "test_group_by_derivations"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+    groupBy.setBackfillStartDate(today)
+    groupBy.setDerivations(Seq(Builders.Derivation(
+      name = "*"
+    ),
+      Builders.Derivation(
+        name = "amount_dollars_avg_15d",
+        expression = "amount_dollars_sum_15d / 15"
+      )).toJava)
+    ai.chronon.spark.GroupBy.computeBackfill(groupBy, today, tableUtils)
+    val actualDf = tableUtils.sql(
+      s"""
+         |select * from $namespace.${groupBy.metaData.cleanName}
+         |""".stripMargin).show(true)
+    
   }
 }
