@@ -395,7 +395,7 @@ object TestUtils {
     val viewsCols = Seq(listingCol, userCol)
     val viewsTable = s"$namespace.views_table"
     val viewsDf = DataFrameGen
-      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull)
+      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull && col("listing").isNotNull)
     viewsDf.show()
     viewsDf.save(viewsTable)
 
