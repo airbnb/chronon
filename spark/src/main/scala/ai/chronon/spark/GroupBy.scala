@@ -429,7 +429,8 @@ object GroupBy {
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
            mutationScan: Boolean = true,
-           showDf: Boolean = false): GroupBy = {
+           showDf: Boolean = false,
+           isBackfill: Boolean = false): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala

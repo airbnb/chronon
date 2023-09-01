@@ -598,7 +598,27 @@ class DerivationTest {
     val actualDf = tableUtils.sql(
       s"""
          |select * from $namespace.${groupBy.metaData.cleanName}
-         |""".stripMargin).show(true)
-    
+         |""".stripMargin)
+
+    val expectedDf = tableUtils.sql(
+      s"""
+         |select
+         |  user,
+         |  amount_dollars_sum_30d,
+         |  amount_dollars_sum_15d,
+         |  amount_dollars_sum_15d / 15 as amount_dollars_avg_15d,
+         |  ds
+         |from $namespace.${groupBy.metaData.cleanName}
+         |""".stripMargin)
+
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${actualDf.count()}")
+      println(s"Expected count: ${expectedDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 }
