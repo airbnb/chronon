@@ -254,7 +254,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None, maybeSampleNumRows: Option[Int] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -302,7 +302,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
+        leftDf(joinConf, range, tableUtils, maybeSampleNumRows = maybeSampleNumRows).map { leftDfInRange =>
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
           computeRange(leftDfInRange, range, bootstrapInfo).saveWithTableUtils(tableUtils, outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

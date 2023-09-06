@@ -6,9 +6,8 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, JoinPart, QueryUtils, Source}
 import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, Dataset, Row}
 import org.apache.spark.sql.functions.lit
-
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 
@@ -24,7 +23,8 @@ object JoinUtils {
   def leftDf(joinConf: ai.chronon.api.Join,
              range: PartitionRange,
              tableUtils: BaseTableUtils,
-             allowEmpty: Boolean = false): Option[DataFrame] = {
+             allowEmpty: Boolean = false,
+             maybeSampleNumRows: Option[Int] = None): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -61,7 +61,7 @@ object JoinUtils {
         return None
       }
     }
-    if (isLeftUnpartitionedTable && joinConf.left.isSetEntities) {
+    val maybeUnsampledResult = if (isLeftUnpartitionedTable && joinConf.left.isSetEntities) {
       // For unpartitioned left entities, one day's snapshot of data is used and
       // so the partition column is set to the end of the range (and for unpartitioned left entities, only
       // a single output partition is computed per job run and so start partition = end partition).
@@ -70,6 +70,13 @@ object JoinUtils {
       Some(result.withTimeBasedColumn(tableUtils.partitionColumn))
     } else {
       Some(result)
+    }
+    
+    maybeSampleNumRows match {
+      case Some(numRows) =>
+        println(s"Downsampling leftDf for this step to $numRows rows.")
+        maybeUnsampledResult.map(_.limit(numRows))
+      case None => maybeUnsampledResult
     }
   }
 
