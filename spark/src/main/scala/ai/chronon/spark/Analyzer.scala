@@ -181,6 +181,7 @@ class Analyzer(tableUtils: TableUtils,
       else ""
     val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
       // handle group by backfill mode for derivations
+      // todo: add the similar logic to join derivations
       val sparkSchema = SparkConversions.fromChrononSchema(groupBy.outputSchema)
       val dummyOutputDf = tableUtils.sparkSession.createDataFrame(
         tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
