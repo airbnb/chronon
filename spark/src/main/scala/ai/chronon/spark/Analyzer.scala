@@ -179,8 +179,16 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
-    val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
+    val schema = if (groupByConf.isSetBackfillStartDate) {
+      val sparkSchema = SparkConversions.fromChrononSchema(groupBy.outputSchema)
+      val dummyOutputDf = tableUtils.sparkSession.createDataFrame(sparkSchema)
+      val finalOutputColumns = groupByConf.derivations.toScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+      val derivedOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(derivedOutputDf.schema)
+      api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+    } else {
+      groupBy.outputSchema
+    }
     if (silenceMode) {
       println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
@@ -193,6 +201,8 @@ class Analyzer(tableUtils: TableUtils,
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
+      val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
+      schema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
       println(s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
@@ -205,7 +215,7 @@ class Analyzer(tableUtils: TableUtils,
     val aggMetadata = if (groupByConf.aggregations != null) {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     } else {
-      groupBy.outputSchema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
+      schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     }
     val keySchemaMap = groupBy.keySchema.map { field =>
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)

@@ -587,9 +587,9 @@ class DerivationTest {
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     groupBy.setBackfillStartDate(today)
-    groupBy.setDerivations(Seq(Builders.Derivation(
-      name = "*"
-    ),
+    groupBy.setDerivations(Seq(
+      Builders.Derivation(
+        name = "*"),
       Builders.Derivation(
         name = "amount_dollars_avg_15d",
         expression = "amount_dollars_sum_15d / 15"

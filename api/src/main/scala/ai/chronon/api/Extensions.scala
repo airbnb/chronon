@@ -4,6 +4,8 @@ import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.apache.spark.sql.Column
+import org.apache.spark.sql.functions.expr
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -496,6 +498,8 @@ object Extensions {
 
       baseKeys ++ partitionKey ++ timeKey
     }
+
+    def hasDerivations: Boolean = groupBy.isSetDerivations && !groupBy.derivations.isEmpty
   }
 
   implicit class StringOps(string: String) {
@@ -909,6 +913,15 @@ object Extensions {
           Seq(d.name -> d.expression)
         }
       }.toSeq
+    }
+
+    def finalOutputColumn(baseColumns: Seq[String]): Seq[Column] = {
+      val projections = derivationProjection(baseColumns)
+      val finalOutputColumns = projections
+        .flatMap {
+          case (name, expression) => Some(expr(expression).as(name))
+        }
+      finalOutputColumns.toSeq
     }
 
     // Used only during online fetching to reduce latency

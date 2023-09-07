@@ -429,8 +429,7 @@ object GroupBy {
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
            mutationScan: Boolean = true,
-           showDf: Boolean = false,
-           isBackfill: Boolean = false): GroupBy = {
+           showDf: Boolean = false): GroupBy = {
     println(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
@@ -669,14 +668,10 @@ object GroupBy {
                 case Entities => groupByBackfill.snapshotEntities
                 case Events => groupByBackfill.snapshotEvents(range)
               }
-              if (!groupByConf.isSetDerivations || groupByConf.derivations.isEmpty) {
+              if (!groupByConf.hasDerivations) {
                 outputDf.save(outputTable, tableProps)
               } else {
-                val projections = groupByConf.derivations.toScala.derivationProjection(outputDf.columns)
-                val finalOutputColumns = projections
-                  .flatMap {
-                    case (name, expression) => Some(expr(expression).as(name))
-                  }.toSeq
+                val finalOutputColumns = groupByConf.derivations.toScala.finalOutputColumn(outputDf.columns).toSeq
                 val result = outputDf.select(finalOutputColumns: _*)
                 result.save(outputTable, tableProps)
               }
