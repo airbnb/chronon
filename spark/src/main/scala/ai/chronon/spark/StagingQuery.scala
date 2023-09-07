@@ -20,7 +20,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       .getOrElse(new java.util.ArrayList[String]())
       .asInstanceOf[java.util.ArrayList[String]].toScala
 
-  def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
+  def computeStagingQuery(stepDays: Option[Int] = None, enableAutoExpand: Option[Boolean] = Some(true)): Unit = {
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
@@ -51,7 +51,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
             val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             println(s"Rendered Staging Query to run is:\n$renderedQuery")
             val df = tableUtils.sql(renderedQuery)
-            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = true)
+            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
             println(s"Wrote to table $outputTable, into partitions: $range $progress")
         }
         println(s"Finished writing Staging Query data to $outputTable")
