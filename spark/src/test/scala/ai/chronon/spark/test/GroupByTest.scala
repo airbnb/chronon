@@ -533,7 +533,7 @@ class GroupByTest {
     println("Computed input DF: ")
     newGroupBy.inputDf.show()
 
-    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user"))
+    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user", "ds"))
     if (diff.count() > 0) {
       println(s"Actual count: ${newGroupBy.inputDf.count()}")
       println(s"Expected count: ${expectedInputDf.count()}")
