@@ -163,12 +163,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   }
 
   private def servingInfoProxy: GroupByServingInfoParsed =
-    GroupByUpload.buildServingInfo(groupByConf,
-                                   session,
-                                   TableUtils(session).partitionSpec.at(System.currentTimeMillis()))
+    apiImpl.buildFetcher(debug).getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
   private def decode(dataStream: DataStream): DataStream = {
-    val servingInfoProxy = apiImpl.buildFetcher(debug).getGroupByServingInfo(groupByConf.getMetaData.getName).get
     val streamDecoder = apiImpl.streamDecoder(servingInfoProxy)
     val df = dataStream.df
     val ingressContext = context.withSuffix("ingress")
