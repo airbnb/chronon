@@ -19,7 +19,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
   val Column = "pdp_view_count_14d"
   val GuestKey = "guest"
   val HostKey = "host"
-  val GuestId = "123"
+  val GuestId: AnyRef = 123.asInstanceOf[AnyRef]
   val HostId = "456"
   var fetcherBase: FetcherBase = _
   var kvStore: KVStore = _
