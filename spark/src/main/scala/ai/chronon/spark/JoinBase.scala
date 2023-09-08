@@ -176,7 +176,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
 
-    val leftBlooms = joinConf.leftKeyCols.toSeq.parallel.map { key =>
+    val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
       key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
     }.toMap
 
@@ -297,7 +297,7 @@ abstract class JoinBase(joinConf: api.Join,
         metrics.gauge(Metrics.Name.validationFailure, 1)
         println(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
-    
+
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(

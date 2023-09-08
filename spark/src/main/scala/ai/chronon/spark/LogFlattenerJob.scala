@@ -123,7 +123,7 @@ class LogFlattenerJob(session: SparkSession,
             metrics.increment(Metrics.Name.Exception)
             None
           } else {
-            val dataColumns = dataFields.parallel.map { field =>
+            val dataColumns = dataFields.map { field =>
               val keyIdxOpt = joinCodec.keyIndices.get(field)
               val valIdxOpt = joinCodec.valueIndices.get(field)
               if (keyIdxOpt.isDefined) {
