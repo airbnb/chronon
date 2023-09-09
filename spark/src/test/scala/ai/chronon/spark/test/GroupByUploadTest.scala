@@ -183,7 +183,7 @@ class GroupByUploadTest {
 
     val leftRatings =
       Builders.Source.entities(
-        Builders.Query(selects = Builders.Selects("review", "rating", "ts")),
+        Builders.Query(selects = Builders.Selects("review", "rating"), timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000"),
         snapshotTable = ratingsTable,
         mutationTopic = s"${ratingsTable}_mutations",
         mutationTable = s"${ratingsTable}_mutations"
@@ -193,7 +193,7 @@ class GroupByUploadTest {
       metaData = Builders.MetaData(namespace = namespace, name = "review_attrs"),
       sources = Seq(
         Builders.Source.entities(
-          Builders.Query(selects = Builders.Selects("review", "listing", "ts")),
+          Builders.Query(selects = Builders.Selects("review", "listing"), timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000"),
           snapshotTable = reviewsTable,
           mutationTopic = s"${reviewsTable}_mutations",
           mutationTable = s"${reviewsTable}_mutations"
@@ -217,7 +217,7 @@ class GroupByUploadTest {
       sources = Seq(
         Builders.Source.joinSource(
           join = joinConf,
-          query = Builders.Query(selects = Builders.Selects("review", "review_attrs_listing_last", "rating", "ts"))
+          query = Builders.Query(selects = Builders.Selects("review", "review_attrs_listing_last", "rating"), timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000")
         )),
       keyColumns = collection.Seq("review_attrs_listing_last"),
       aggregations = Seq(
