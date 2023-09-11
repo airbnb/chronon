@@ -124,6 +124,17 @@ jobs:
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
 
+    "Chronon Scalafmt Check":
+        executor: docker_baseimg_executor
+        steps:
+            - checkout
+            - run:
+                  name: Run ScalafmtCheck
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate chronon_py
+                      sbt +scalafmtCheck
+
 workflows:
     build_test_deploy:
         jobs:
@@ -141,5 +152,8 @@ workflows:
                   requires:
                       - "Docker Base Build"
             - "Chronon Python Lint":
+                  requires:
+                      - "Docker Base Build"
+            - "Chronon Scalafmt Check":
                   requires:
                       - "Docker Base Build"
