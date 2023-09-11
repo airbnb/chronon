@@ -57,8 +57,12 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                  when: on_fail
             - store_artifacts:
-                  path: /chronon/spark-warehouse
+                  path: spark-warehouse.tar.gz
                   destination: spark_warehouse
                   when: on_fail
 
@@ -78,8 +82,12 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                  when: on_fail
             - store_artifacts:
-                  path: /chronon/spark-warehouse
+                  path: spark-warehouse.tar.gz
                   destination: spark_warehouse
                   when: on_fail
 
@@ -99,8 +107,12 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                  when: on_fail
             - store_artifacts:
-                  path: /chronon/spark-warehouse
+                  path: spark-warehouse.tar.gz
                   destination: spark_warehouse
                   when: on_fail
 
