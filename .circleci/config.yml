@@ -57,6 +57,9 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - store_artifacts:
+                  path: /chronon/spark/spark-warehouse
+                  destination: test_data
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
@@ -74,6 +77,9 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - store_artifacts:
+                  path: /chronon/spark/spark-warehouse
+                  destination: test_data
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
@@ -91,6 +97,9 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - store_artifacts:
+                  path: /chronon/spark/spark-warehouse
+                  destination: test_data
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
