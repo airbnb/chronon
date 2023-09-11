@@ -325,7 +325,6 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     baseDirectory.value / "metastore_db"
   ),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
-  Test / testOptions += Tests.Cleanup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
