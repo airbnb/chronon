@@ -510,7 +510,7 @@ class GroupByTest {
          |    LEFT OUTER JOIN
          |        $namespace.parent_join_table B ON A.listing = B.listing
          |    WHERE
-         |        (B.listing is null OR B.ts <= A.ts) AND A.ds = '$today'
+         |        B.ts <= A.ts AND A.ds = '$today'
          |    GROUP BY
          |        A.listing, A.user, A.ds
          |)

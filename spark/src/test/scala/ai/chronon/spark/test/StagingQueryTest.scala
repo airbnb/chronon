@@ -8,7 +8,6 @@ import ai.chronon.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUti
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.apache.spark.sql.functions.{max, col}
 
 class StagingQueryTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
@@ -61,6 +60,80 @@ class StagingQueryTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+  }
+
+  /** Test Staging Query update with new feature/column added to the query.
+    */
+  @Test
+  def testStagingQueryAutoExpand(): Unit = {
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 50),
+      Column("new_feature", StringType, 50)
+    )
+
+    val df = DataFrameGen
+      .events(spark, schema, count = 30, partitions = 8)
+      .dropDuplicates("ts") // duplicates can create issues in comparisons
+    println("Generated staging query data:")
+    df.show()
+    val viewName = s"$namespace.test_staging_query_view"
+    df.save(viewName)
+
+    val fiveDaysAgo = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+    val stagingQueryConf = Builders.StagingQuery(
+      query =
+        s"select user, session_length, ds, ts from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = ninetyDaysAgo,
+      setups = Seq("create temporary function temp_replace_b as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
+      metaData = Builders.MetaData(name = "test.user_auto_expand",
+                                   namespace = namespace,
+                                   tableProperties = Map("key" -> "val"),
+                                   customJson = "{\"additional_partition_cols\": [\"user\"]}")
+    )
+
+    val stagingQuery = new StagingQuery(stagingQueryConf, fiveDaysAgo, tableUtils)
+    stagingQuery.computeStagingQuery(stepDays = Option(30))
+    val expected =
+      tableUtils.sql(
+        s"select user, session_length, ds, ts from $viewName where ds between '$ninetyDaysAgo' and '$fiveDaysAgo' AND user IS NOT NULL")
+
+    val computed = tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
+    val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
+    assertEquals(0, diff.count())
+
+    // Add new feature to the query
+    val stagingQueryConfUpdated = Builders.StagingQuery(
+      query =
+        s"select user, session_length, new_feature, ds, ts from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = fiveDaysAgo,
+      metaData = Builders.MetaData(name = "test.user_auto_expand",
+                                   namespace = namespace,
+                                   tableProperties = Map("key" -> "val"),
+                                   customJson = "{\"additional_partition_cols\": [\"user\"]}")
+    )
+    val stagingQueryUpdated = new StagingQuery(stagingQueryConfUpdated, today, tableUtils)
+    stagingQueryUpdated.computeStagingQuery(stepDays = Option(30))
+    val fourDaysAgo = tableUtils.partitionSpec.minus(today, new Window(4, TimeUnit.DAYS))
+    val expectedUpdated =
+      tableUtils.sql(
+        s"select user, session_length, new_feature, ds, ts from $viewName where ds between '$fourDaysAgo' and '$today' AND user IS NOT NULL")
+    expectedUpdated.show()
+    val computedUpdated = tableUtils.sql(
+      s"select * from ${stagingQueryConfUpdated.metaData.outputTable} WHERE user IS NOT NULL and ds between '$fourDaysAgo' and '$today'")
+    computedUpdated.show()
+
+    val diffV2 = Comparison.sideBySide(expectedUpdated, computedUpdated, List("user", "ts", "ds"))
+    if (diffV2.count() > 0) {
+      println(s"Actual count: ${expectedUpdated.count()}")
+      println(expectedUpdated.show())
+      println(s"Computed count: ${computedUpdated.count()}")
+      println(computedUpdated.show())
+      println(s"Diff count: ${diffV2.count()}")
+      println(s"diff result rows")
+      diffV2.show()
+    }
+    assertEquals(0, diffV2.count())
   }
 
   /** Test that latest date is not changed between step ranges.
@@ -118,7 +191,7 @@ class StagingQueryTest {
     }
     assertEquals(0, diff.count())
   }
-  
+
   @Test
   def testStagingQueryMaxDate(): Unit = {
     val schema = List(
@@ -141,9 +214,8 @@ class StagingQueryTest {
                  |FROM $viewName
                  |WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'""".stripMargin,
       startPartition = ninetyDaysAgo,
-      metaData = Builders.MetaData(name = "test.staging_max_date",
-        namespace = namespace,
-        tableProperties = Map("key" -> "val"))
+      metaData =
+        Builders.MetaData(name = "test.staging_max_date", namespace = namespace, tableProperties = Map("key" -> "val"))
     )
     val stagingQuery = new StagingQuery(stagingQueryConf, today, tableUtils)
     stagingQuery.computeStagingQuery(stepDays = Option(30))
