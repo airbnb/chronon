@@ -25,7 +25,9 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, dailyStatsTable, tableUtils).isEmpty
     if (backfillRequired) Seq(dailyStatsTable, dailyStatsAvroTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
-      .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate)(tableUtils), Some(Seq(joinConf.metaData.outputTable)))
+      .unfilledRanges(dailyStatsTable,
+                      PartitionRange(null, endDate)(tableUtils),
+                      Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) {
       println(s"No data to compute for $dailyStatsTable")

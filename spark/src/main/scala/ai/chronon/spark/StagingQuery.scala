@@ -18,7 +18,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   private val partitionCols: Seq[String] = Seq(tableUtils.partitionColumn) ++
     Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
       .getOrElse(new java.util.ArrayList[String]())
-      .asInstanceOf[java.util.ArrayList[String]].toScala
+      .asInstanceOf[java.util.ArrayList[String]]
+      .toScala
 
   def computeStagingQuery(stepDays: Option[Int] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
@@ -48,7 +49,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
           case (range, index) =>
             val progress = s"| [${index + 1}/${stepRanges.size}]"
             println(s"Computing staging query for range: $range  $progress")
-            val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
+            val renderedQuery =
+              StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             println(s"Rendered Staging Query to run is:\n$renderedQuery")
             val df = tableUtils.sql(renderedQuery)
             tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols)
@@ -64,7 +66,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       val length = exceptions.length
       val fullMessage = exceptions.zipWithIndex
         .map {
-          case (message, index) => s"[${index+1}/${length} exceptions]\n${message}"
+          case (message, index) => s"[${index + 1}/${length} exceptions]\n${message}"
         }
         .mkString("\n")
       throw new Exception(fullMessage)
@@ -79,19 +81,22 @@ object StagingQuery {
       ParametricMacro("start_date", _ => start),
       ParametricMacro("end_date", _ => end),
       ParametricMacro("latest_date", _ => latest),
-      ParametricMacro("max_date", args => {
-        lazy val table = args("table")
-        lazy val partitions = tu.partitions(table)
-        if(table == null) {
-          throw new IllegalArgumentException(s"No table in args:[$args] to macro max_date")
-        } else if (partitions.isEmpty) {
-          throw new IllegalStateException(s"No partitions exist for table $table to calculate max_date")
+      ParametricMacro(
+        "max_date",
+        args => {
+          lazy val table = args("table")
+          lazy val partitions = tu.partitions(table)
+          if (table == null) {
+            throw new IllegalArgumentException(s"No table in args:[$args] to macro max_date")
+          } else if (partitions.isEmpty) {
+            throw new IllegalStateException(s"No partitions exist for table $table to calculate max_date")
+          }
+          partitions.max
         }
-        partitions.max
-      })
+      )
     )
 
-    macros.foldLeft(query) { case(q, m) => m.replace(q)}
+    macros.foldLeft(query) { case (q, m) => m.replace(q) }
   }
 
   def main(args: Array[String]): Unit = {
