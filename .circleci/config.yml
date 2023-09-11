@@ -60,6 +60,7 @@ jobs:
             - store_artifacts:
                   path: /chronon/spark-warehouse
                   destination: spark_warehouse
+                  when: on_fail
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
@@ -80,6 +81,7 @@ jobs:
             - store_artifacts:
                   path: /chronon/spark-warehouse
                   destination: spark_warehouse
+                  when: on_fail
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
@@ -100,6 +102,7 @@ jobs:
             - store_artifacts:
                   path: /chronon/spark-warehouse
                   destination: spark_warehouse
+                  when: on_fail
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
