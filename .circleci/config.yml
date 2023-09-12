@@ -61,15 +61,10 @@ jobs:
                   name: Compress spark-warehouse
                   command: |
                     tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
-                    tar -czvf metastore_db.tar.gz /chronon/metastore_db
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
                   destination: spark_warehouse
-                  when: on_fail
-            - store_artifacts:
-                  path: metastore_db.tar.gz
-                  destination: metastore_db
                   when: on_fail
 
     "Scala 12 -- Spark 3 Tests":
@@ -92,15 +87,10 @@ jobs:
                   name: Compress spark-warehouse
                   command: |
                     tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
-                    tar -czvf metastore_db.tar.gz /chronon/metastore_db
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
                   destination: spark_warehouse
-                  when: on_fail
-            - store_artifacts:
-                  path: metastore_db.tar.gz
-                  destination: metastore_db
                   when: on_fail
 
     "Scala 13 -- Tests":
@@ -123,15 +113,10 @@ jobs:
                   name: Compress spark-warehouse
                   command: |
                     tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
-                    tar -czvf metastore_db.tar.gz /chronon/metastore_db
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
                   destination: spark_warehouse
-                  when: on_fail
-            - store_artifacts:
-                  path: metastore_db.tar.gz
-                  destination: metastore_db
                   when: on_fail
 
     "Chronon Python Lint":

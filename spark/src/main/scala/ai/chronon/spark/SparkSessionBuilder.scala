@@ -52,11 +52,7 @@ object SparkSessionBuilder {
 
     val builder = if (local) {
       println(s"Building local spark session with warehouse at $warehouseDir")
-      val metastoreDb = if (localWarehouseLocation.isDefined) {
-        s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
-      } else {
-        "jdbc:derby:memory:myInMemDB;create=true"
-      }
+      val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
