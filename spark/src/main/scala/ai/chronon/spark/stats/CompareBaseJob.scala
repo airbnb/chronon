@@ -45,7 +45,7 @@ object CompareBaseJob {
         val leftFieldType = leftFields.get(leftFieldName).get
         if (rightField._2 != leftFieldType) {
           errors += s"Comparison data types do not match for column '${leftFieldName}';" +
-                    s" left side: ${leftFieldType}, right side: ${rightField._2}"
+            s" left side: ${leftFieldType}, right side: ${rightField._2}"
         }
       } else {
         errors += s"Mapping column on the left table is not present; column name: ${leftFieldName}"
@@ -60,18 +60,18 @@ object CompareBaseJob {
     // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
     if (!mapping.keySet.subsetOf(leftFields.keySet)) {
       errors += s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
-                s" expected to be subset of: ${leftFields.keySet}"
+        s" expected to be subset of: ${leftFields.keySet}"
     }
     if (!mapping.values.toSet.subsetOf(rightFields.keySet)) {
       errors += s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
-                s" expected to be subset of: ${rightFields.keySet}"
+        s" expected to be subset of: ${rightFields.keySet}"
     }
 
     // Make sure the key columns are present in both the frames.
     Seq(leftFields, rightFields).foreach { kset =>
       if (!keys.toSet.subsetOf(kset.keySet)) {
         errors += s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
-                  s" expected to be subset of: ${kset.keySet}"
+          s" expected to be subset of: ${kset.keySet}"
       }
     }
 
@@ -87,13 +87,13 @@ object CompareBaseJob {
    * Navigate the dataframes and compare them and fetch statistics.
    */
   def compare(
-               leftDf: DataFrame,
-               rightDf: DataFrame,
-               keys: Seq[String],
-               tableUtils: TableUtils,
-               mapping: Map[String, String] = Map.empty,
-               migrationCheck: Boolean = false
-             ): (DataFrame, DataFrame, DataMetrics) = {
+      leftDf: DataFrame,
+      rightDf: DataFrame,
+      keys: Seq[String],
+      tableUtils: TableUtils,
+      mapping: Map[String, String] = Map.empty,
+      migrationCheck: Boolean = false
+  ): (DataFrame, DataFrame, DataMetrics) = {
     // 1. Check for schema consistency issues
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap

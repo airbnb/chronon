@@ -10,7 +10,7 @@ import scala.util.Properties
 
 object SparkSessionBuilder {
 
-  val DefaultWarehouseDir = new File("spark-warehouse")
+  val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
@@ -52,11 +52,7 @@ object SparkSessionBuilder {
 
     val builder = if (local) {
       println(s"Building local spark session with warehouse at $warehouseDir")
-      val metastoreDb = if (localWarehouseLocation.isDefined) {
-        s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
-      } else {
-        "jdbc:derby:memory:myInMemDB;create=true"
-      }
+      val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")

@@ -11,6 +11,7 @@ lazy val scala213 = "2.13.6"
 lazy val spark2_4_0 = "2.4.0"
 lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
+lazy val tmp_warehouse = "/tmp/chronon/"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -308,9 +309,9 @@ lazy val online_unshaded = (project in file("online"))
 
 def cleanSparkMeta(): Unit = {
   Folder.clean(file(".") / "spark" / "spark-warehouse",
-               file(".") / "spark-warehouse",
+               file(tmp_warehouse) / "spark-warehouse",
                file(".") / "spark" / "metastore_db",
-               file(".") / "metastore_db")
+               file(tmp_warehouse) / "metastore_db")
 }
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
@@ -320,12 +321,8 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     art.withClassifier(Some("assembly"))
   },
   mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
-  cleanFiles ++= Seq(
-    baseDirectory.value / "spark-warehouse",
-    baseDirectory.value / "metastore_db"
-  ),
+  cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
-  Test / testOptions += Tests.Cleanup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings

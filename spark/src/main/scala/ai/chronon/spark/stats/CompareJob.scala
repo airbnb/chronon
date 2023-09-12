@@ -16,12 +16,12 @@ import scala.util.ScalaJavaConversions.{ListOps, MapOps}
   * Leverage the compare module for computation between sources.
   */
 class CompareJob(
-                  tableUtils: TableUtils,
-                  joinConf: api.Join,
-                  stagingQueryConf: api.StagingQuery,
-                  startDate: String,
-                  endDate: String
-                ) extends Serializable {
+    tableUtils: TableUtils,
+    joinConf: api.Join,
+    stagingQueryConf: api.StagingQuery,
+    startDate: String,
+    endDate: String
+) extends Serializable {
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)
     .orNull
@@ -54,19 +54,12 @@ class CompareJob(
     // Save the comparison table
     println("Saving comparison output..")
     println(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
-    tableUtils.insertUnPartitioned(compareDf,
-                                   comparisonTableName,
-                                   tableProps,
-                                   saveMode = SaveMode.Overwrite)
+    tableUtils.insertUnPartitioned(compareDf, comparisonTableName, tableProps, saveMode = SaveMode.Overwrite)
 
     // Save the metrics table
     println("Saving metrics output..")
     println(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
-    tableUtils.insertUnPartitioned(metricsDf,
-                                   metricsTableName,
-                                   tableProps,
-                                   saveMode = SaveMode.Overwrite)
-
+    tableUtils.insertUnPartitioned(metricsDf, metricsTableName, tableProps, saveMode = SaveMode.Overwrite)
 
     println("Printing basic comparison results..")
     println("(Note: This is just an estimation and not a detailed analysis of results)")
@@ -80,17 +73,16 @@ class CompareJob(
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
     val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
-    val joinSchema = joinChrononSchema.map{ case(k,v) => (k, SparkConversions.fromChrononType(v)) }.toMap
+    val joinSchema = joinChrononSchema.map { case (k, v) => (k, SparkConversions.fromChrononType(v)) }.toMap
     val finalStagingQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
-    val stagingQuerySchema = tableUtils.sql(
-      s"${finalStagingQuery} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
+    val stagingQuerySchema =
+      tableUtils.sql(s"${finalStagingQuery} LIMIT 1").schema.fields.map(sb => (sb.name, sb.dataType)).toMap
 
-    CompareBaseJob.checkConsistency(
-      joinSchema,
-      stagingQuerySchema,
-      getJoinKeys(joinConf, tableUtils),
-      tableUtils,
-      migrationCheck = true)
+    CompareBaseJob.checkConsistency(joinSchema,
+                                    stagingQuerySchema,
+                                    getJoinKeys(joinConf, tableUtils),
+                                    tableUtils,
+                                    migrationCheck = true)
   }
 }
 
@@ -105,28 +97,33 @@ object CompareJob {
     * @return the consolidated daily data
     */
   def getConsolidatedData(metrics: DataMetrics, partitionSpec: PartitionSpec): List[(String, Long)] =
-    metrics.series.groupBy(t => partitionSpec.at(t._1))
+    metrics.series
+      .groupBy(t => partitionSpec.at(t._1))
       .mapValues(_.map(_._2))
-      .map { case (day, values) =>
-        val aggValue = values.map { aggMetrics =>
-          val leftNullSum: Long = aggMetrics.filterKeys(_.endsWith("left_null_sum"))
-            .values
-            .map(_.asInstanceOf[Long])
-            .reduceOption(_ max _)
-            .getOrElse(0)
-          val rightNullSum: Long = aggMetrics.filterKeys(_.endsWith("right_null_sum"))
-            .values
-            .map(_.asInstanceOf[Long])
-            .reduceOption(_ max _)
-            .getOrElse(0)
-          val mismatchSum: Long = aggMetrics.filterKeys(_.endsWith("mismatch_sum"))
-            .values
-            .map(_.asInstanceOf[Long])
-            .reduceOption(_ max _)
-            .getOrElse(0)
-          leftNullSum + rightNullSum + mismatchSum
-        }.sum
-        (day, aggValue)
+      .map {
+        case (day, values) =>
+          val aggValue = values.map { aggMetrics =>
+            val leftNullSum: Long = aggMetrics
+              .filterKeys(_.endsWith("left_null_sum"))
+              .values
+              .map(_.asInstanceOf[Long])
+              .reduceOption(_ max _)
+              .getOrElse(0)
+            val rightNullSum: Long = aggMetrics
+              .filterKeys(_.endsWith("right_null_sum"))
+              .values
+              .map(_.asInstanceOf[Long])
+              .reduceOption(_ max _)
+              .getOrElse(0)
+            val mismatchSum: Long = aggMetrics
+              .filterKeys(_.endsWith("mismatch_sum"))
+              .values
+              .map(_.asInstanceOf[Long])
+              .reduceOption(_ max _)
+              .getOrElse(0)
+            leftNullSum + rightNullSum + mismatchSum
+          }.sum
+          (day, aggValue)
       }
       .toList
       .filter(_._2 > 0)
@@ -136,11 +133,13 @@ object CompareJob {
     val consolidatedData = getConsolidatedData(metrics, partitionSpec)
 
     if (consolidatedData.size == 0) {
-      println(s"No discrepancies found for data mismatches and missing counts. " +
-        s"It is highly recommended to explore the full metrics.")
+      println(
+        s"No discrepancies found for data mismatches and missing counts. " +
+          s"It is highly recommended to explore the full metrics.")
     } else {
-      consolidatedData.foreach { case (date, mismatchCount) =>
-        println(s"Found ${mismatchCount} mismatches on date '${date}'")
+      consolidatedData.foreach {
+        case (date, mismatchCount) =>
+          println(s"Found ${mismatchCount} mismatches on date '${date}'")
       }
     }
     consolidatedData

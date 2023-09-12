@@ -48,10 +48,9 @@ object LocalDataLoader {
     }
   }
 
-  def loadDataRecursively(
-      fileOrDirectory: File,
-      session: SparkSession,
-      namespaces: Seq[String] = Seq.empty[String]): Unit = {
+  def loadDataRecursively(fileOrDirectory: File,
+                          session: SparkSession,
+                          namespaces: Seq[String] = Seq.empty[String]): Unit = {
     assert(fileOrDirectory.exists(), s"Non existent file: ${fileOrDirectory.getPath}")
     val nsFields = if (namespaces.isEmpty) { Seq("default") }
     else { namespaces }

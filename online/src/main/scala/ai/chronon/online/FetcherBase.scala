@@ -374,31 +374,32 @@ class FetcherBase(kvStore: KVStore,
   }
 
   /**
-   * Fetch method to simulate a random access interface for Chronon
-   * by distributing requests to relevant GroupBys. This is a batch
-   * API which allows the caller to provide a sequence of ColumnSpec
-   * queries and receive a mapping of results.
-   *
-   * TODO: Metrics
-   * TODO: Collection identifier for metrics
-   * TODO: Consider removing prefix interface for this method
-   * TODO: Consider using simpler response type since mapping is redundant
-   *
-   * @param columnSpecs – batch of ColumnSpec queries
-   * @return Future map of query to GroupBy response
-   */
+    * Fetch method to simulate a random access interface for Chronon
+    * by distributing requests to relevant GroupBys. This is a batch
+    * API which allows the caller to provide a sequence of ColumnSpec
+    * queries and receive a mapping of results.
+    *
+    * TODO: Metrics
+    * TODO: Collection identifier for metrics
+    * TODO: Consider removing prefix interface for this method
+    * TODO: Consider using simpler response type since mapping is redundant
+    *
+    * @param columnSpecs – batch of ColumnSpec queries
+    * @return Future map of query to GroupBy response
+    */
   def fetchColumns(
-    columnSpecs: Seq[ColumnSpec]
+      columnSpecs: Seq[ColumnSpec]
   ): Future[Map[ColumnSpec, Response]] = {
     val startTimeMs = System.currentTimeMillis()
 
     // Generate a mapping from ColumnSpec query --> GroupBy request
     val groupByRequestsByQuery: Map[ColumnSpec, Request] =
-      columnSpecs.map { case query =>
-        val prefix = query.prefix.getOrElse("")
-        val requestName = s"${query.groupByName}.${query.columnName}"
-        val keyMap = query.keyMapping.getOrElse(Map())
-        query -> PrefixedRequest(prefix, Request(requestName, keyMap, Some(startTimeMs), None)).request
+      columnSpecs.map {
+        case query =>
+          val prefix = query.prefix.getOrElse("")
+          val requestName = s"${query.groupByName}.${query.columnName}"
+          val keyMap = query.keyMapping.getOrElse(Map())
+          query -> PrefixedRequest(prefix, Request(requestName, keyMap, Some(startTimeMs), None)).request
       }.toMap
 
     // Start I/O and generate a mapping from query --> GroupBy response
@@ -407,26 +408,29 @@ class FetcherBase(kvStore: KVStore,
       val resultsByRequest = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
       val responseByQuery = groupByRequestsByQuery.map {
         case (query, request) =>
-          val results = resultsByRequest.getOrElse(
-            request,
-            Failure(new IllegalStateException(
-              s"Couldn't find a groupBy response for $request in response map"))
-          ).map { valueMap =>
-            if (valueMap != null) {
-              valueMap.map { case (aggName, aggValue) =>
-                val resultKey = query.prefix.map(p => s"${p}_${aggName}").getOrElse(aggName)
-                resultKey -> aggValue
+          val results = resultsByRequest
+            .getOrElse(
+              request,
+              Failure(new IllegalStateException(s"Couldn't find a groupBy response for $request in response map"))
+            )
+            .map { valueMap =>
+              if (valueMap != null) {
+                valueMap.map {
+                  case (aggName, aggValue) =>
+                    val resultKey = query.prefix.map(p => s"${p}_${aggName}").getOrElse(aggName)
+                    resultKey -> aggValue
+                }
+              } else {
+                Map.empty[String, AnyRef]
               }
-            } else {
-              Map.empty[String, AnyRef]
             }
-          }.recoverWith { // capture exception as a key
-            case ex: Throwable =>
-              if (debug || Math.random() < 0.001) {
-                println(s"Failed to fetch $request with \n${ex.traceString}")
-              }
-              Failure(ex)
-          }
+            .recoverWith { // capture exception as a key
+              case ex: Throwable =>
+                if (debug || Math.random() < 0.001) {
+                  println(s"Failed to fetch $request with \n${ex.traceString}")
+                }
+                Failure(ex)
+            }
           val response = Response(request, results)
           query -> response
       }
