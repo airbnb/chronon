@@ -271,7 +271,7 @@ class Analyzer(tableUtils: TableUtils,
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
         .filter(_ != null)
-      if(!gbStartPartition.isEmpty)
+      if (!gbStartPartition.isEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
     val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
@@ -357,7 +357,7 @@ class Analyzer(tableUtils: TableUtils,
   def runTablePermissionValidation(sources: Set[String]): Set[String] = {
     println(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    //todo: handle offset-by-1 depending on temporal vs snapshot accuracy 
+    //todo: handle offset-by-1 depending on temporal vs snapshot accuracy
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
       !tableUtils.checkTablePermission(sourceTable, partitionFilter)

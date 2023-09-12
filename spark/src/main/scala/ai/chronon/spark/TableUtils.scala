@@ -153,7 +153,7 @@ case class TableUtils(sparkSession: SparkSession) {
   // method to check if a user has access to a table
   def checkTablePermission(tableName: String,
                            fallbackPartition: String =
-                           partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
+                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
     println(s"Checking permission for table $tableName...")
     try {
       // retrieve one row from the table
@@ -184,7 +184,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def ifPartitionExistsInTable(tableName: String, partition: String): Boolean =
     partitions(tableName).contains(partition)
-  
+
   def insertPartitions(df: DataFrame,
                        tableName: String,
                        tableProperties: Map[String, String] = null,

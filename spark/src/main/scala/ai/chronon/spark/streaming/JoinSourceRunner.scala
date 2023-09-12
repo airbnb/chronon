@@ -123,8 +123,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinSource: JoinSource = source.get.getJoinSource
     val left: Source = joinSource.getJoin.getLeft
     assert(left.topic != null, s"join source left side should have a topic")
-    val tableUtils: TableUtils = TableUtils(session)
-    val leftSchema: StructType = tableUtils.getSchemaFromTable(left.table)
+    val leftSchema: StructType =
+      SparkConversions.fromChrononType(servingInfoProxy.inputChrononSchema).asInstanceOf[StructType]
 
     // for entities there is reversal and mutation column additionally
     val reversalField: StructField = StructField(Constants.ReversalColumn, BooleanType)
@@ -163,12 +163,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   }
 
   private def servingInfoProxy: GroupByServingInfoParsed =
-    GroupByUpload.buildServingInfo(groupByConf,
-                                   session,
-                                   TableUtils(session).partitionSpec.at(System.currentTimeMillis()))
+    apiImpl.buildFetcher(debug).getGroupByServingInfo(groupByConf.getMetaData.getName).get
 
   private def decode(dataStream: DataStream): DataStream = {
-    val servingInfoProxy = apiImpl.buildFetcher(debug).getGroupByServingInfo(groupByConf.getMetaData.getName).get
     val streamDecoder = apiImpl.streamDecoder(servingInfoProxy)
     val df = dataStream.df
     val ingressContext = context.withSuffix("ingress")

@@ -57,6 +57,15 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: |
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+                  when: on_fail
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
+                  when: on_fail
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
@@ -74,6 +83,15 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: |
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+                  when: on_fail
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
+                  when: on_fail
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
@@ -91,6 +109,15 @@ jobs:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: |
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+                  when: on_fail
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
+                  when: on_fail
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
@@ -124,6 +151,17 @@ jobs:
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
 
+    "Scalafmt Check":
+        executor: docker_baseimg_executor
+        steps:
+            - checkout
+            - run:
+                  name: Run ScalafmtCheck
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate chronon_py
+                      sbt +scalafmtCheck
+
 workflows:
     build_test_deploy:
         jobs:
@@ -135,6 +173,9 @@ workflows:
                   requires:
                       - "Docker Base Build"
             - "Scala 13 -- Tests":
+                  requires:
+                      - "Docker Base Build"
+            - "Scalafmt Check":
                   requires:
                       - "Docker Base Build"
             - "Chronon Python Tests":

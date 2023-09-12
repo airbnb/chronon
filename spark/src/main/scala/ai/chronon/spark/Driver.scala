@@ -353,6 +353,10 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val enableAutoExpand: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          descr = "Auto expand hive table if new columns added in staging query",
+          default = Option(true))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
@@ -364,7 +368,7 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
+      stagingQueryJob.computeStagingQuery(args.stepDays.toOption, args.enableAutoExpand.toOption)
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)

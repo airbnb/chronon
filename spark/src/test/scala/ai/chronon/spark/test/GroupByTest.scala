@@ -501,21 +501,21 @@ class GroupByTest {
       s"""
          |WITH latestB AS (
          |    SELECT
-         |        A.listing,
+         |        COALESCE(A.listing, '--null--') listing,
          |        A.user,
-         |        MAX(B.ts) as ts,
+         |        MAX(A.ts) as ts,
          |        A.ds
          |    FROM
-         |        $namespace.views_table A
+         |        $namespace.parent_join_table  A
          |    LEFT OUTER JOIN
-         |        $namespace.parent_join_table B ON A.listing = B.listing
+         |       $namespace.views_table B ON A.listing = B.listing
          |    WHERE
-         |        (B.listing is null OR B.ts <= A.ts) AND A.ds = '$today'
+         |        B.ts <= A.ts AND A.ds = '$today'
          |    GROUP BY
          |        A.listing, A.user, A.ds
          |)
          |SELECT
-         |    latestB.listing,
+         |    IF(latestB.listing == '--null--', null, latestB.listing) as listing,
          |    latestB.user,
          |    latestB.ts,
          |    latestB.ds,
@@ -523,9 +523,9 @@ class GroupByTest {
          |FROM
          |    latestB
          |JOIN
-         |    $namespace.parent_join_table C
+         |   $namespace.parent_join_table C
          |ON
-         |    latestB.listing = C.listing AND latestB.ts = C.ts
+         |    latestB.listing = COALESCE(C.listing, '--null--') AND latestB.ts = C.ts
          |""".stripMargin
     val expectedInputDf = spark.sql(expectedSQL)
     println("Expected input DF: ")
