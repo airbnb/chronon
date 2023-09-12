@@ -84,11 +84,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   def getSchemaFromKVStore(dataset: String, key: String): AvroCodec = {
     kvStore
-      .getString(key, dataset, timeoutMillis).recover {
-      case e: java.util.NoSuchElementException =>
-        println(s"Failed to retrieve $key for $dataset. Is it possible that hasn't been uploaded?")
-        throw e
-    }.map(AvroCodec.of(_)).get
+      .getString(key, dataset, timeoutMillis)
+      .recover {
+        case e: java.util.NoSuchElementException =>
+          println(s"Failed to retrieve $key for $dataset. Is it possible that hasn't been uploaded?")
+          throw e
+      }
+      .map(AvroCodec.of(_))
+      .get
   }
 
   // pull and cache groupByServingInfo from the groupBy uploads

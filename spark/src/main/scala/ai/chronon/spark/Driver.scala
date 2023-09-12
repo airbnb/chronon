@@ -355,8 +355,8 @@ object Driver {
                  default = Option(30))
       val enableAutoExpand: ScallopOption[Boolean] =
         opt[Boolean](required = false,
-          descr = "Auto expand hive table if new columns added in staging query",
-          default = Option(true))
+                     descr = "Auto expand hive table if new columns added in staging query",
+                     default = Option(true))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
