@@ -60,11 +60,11 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
-                  path: spark-warehouse.tar.gz
-                  destination: spark_warehouse
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
                   when: on_fail
 
     "Scala 12 -- Spark 3 Tests":
@@ -86,11 +86,11 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
-                  path: spark-warehouse.tar.gz
-                  destination: spark_warehouse
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
                   when: on_fail
 
     "Scala 13 -- Tests":
@@ -112,11 +112,11 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
-                  path: spark-warehouse.tar.gz
-                  destination: spark_warehouse
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
                   when: on_fail
 
     "Chronon Python Lint":
