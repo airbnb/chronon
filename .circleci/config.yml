@@ -166,7 +166,7 @@ jobs:
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
 
-    "Chronon Scalafmt Check":
+    "Scalafmt Check":
         executor: docker_baseimg_executor
         steps:
             - checkout
@@ -190,12 +190,12 @@ workflows:
             - "Scala 13 -- Tests":
                   requires:
                       - "Docker Base Build"
+            - "Scalafmt Check":
+                  requires:
+                      - "Docker Base Build"
             - "Chronon Python Tests":
                   requires:
                       - "Docker Base Build"
             - "Chronon Python Lint":
-                  requires:
-                      - "Docker Base Build"
-            - "Chronon Scalafmt Check":
                   requires:
                       - "Docker Base Build"
