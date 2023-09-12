@@ -500,6 +500,11 @@ object Extensions {
     }
 
     def hasDerivations: Boolean = groupBy.isSetDerivations && !groupBy.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] = if (groupBy.hasDerivations) groupBy.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = groupBy.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = if (groupBy.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean = groupBy.hasDerivations && groupBy.derivations.toScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] = if (groupBy.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
   }
 
   implicit class StringOps(string: String) {
@@ -856,6 +861,13 @@ object Extensions {
         .map(new JoinPartOps(_))
 
     def logFullValues: Boolean = true // TODO: supports opt-out in the future
+
+    def hasDerivations: Boolean = join.isSetDerivations && !join.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] = if (join.hasDerivations) join.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = join.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = if (join.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] = if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -889,7 +901,6 @@ object Extensions {
   }
 
   implicit class DerivationOps(derivations : List[Derivation]) {
-//    private lazy val derivations = derivations.toScala
     lazy val derivationsContainStar: Boolean = derivations.iterator.exists(_.name == "*")
     lazy val derivationsWithoutStar: List[Derivation] = derivations.filterNot(_.name == "*")
     lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
