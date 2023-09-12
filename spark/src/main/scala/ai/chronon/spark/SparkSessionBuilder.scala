@@ -10,7 +10,7 @@ import scala.util.Properties
 
 object SparkSessionBuilder {
 
-  val DefaultWarehouseDir = new File("spark-warehouse")
+  val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing

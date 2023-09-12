@@ -60,7 +60,7 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
@@ -86,7 +86,7 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
@@ -112,7 +112,7 @@ jobs:
             - run:
                   name: Compress spark-warehouse
                   command: |
-                    tar -czvf spark-warehouse.tar.gz /chronon/spark-warehouse
+                    tar -czvf spark-warehouse.tar.gz /tmp/chronon/spark-warehouse
                   when: on_fail
             - store_artifacts:
                   path: spark-warehouse.tar.gz
