@@ -27,6 +27,7 @@ object Constants {
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
   val StatsBatchDataset = "CHRONON_STATS_BATCH"
   val ConsistencyMetricsDataset = "CHRONON_CONSISTENCY_METRICS"
+  val LogStatsBatchDataset = "CHRONON_LOG_STATS_BATCH"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
   val MutationTimeField: StructField = StructField(MutationTimeColumn, LongType)

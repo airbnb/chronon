@@ -102,6 +102,10 @@ class FetchStatsTest extends TestCase {
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
+    tableUtils.sql(s"CREATE TABLE ${joinConf.metaData.loggedTable} LIKE ${joinConf.metaData.outputTable}")
+    tableUtils.sql(
+      s"INSERT OVERWRITE TABLE ${joinConf.metaData.loggedTable} PARTITION(ds) SELECT * FROM ${joinConf.metaData.outputTable}")
+    OnlineUtils.serveLogStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
     joinConf.joinParts.asScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, yesterday, jp.groupBy))
 

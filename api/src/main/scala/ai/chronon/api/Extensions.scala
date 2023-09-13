@@ -99,7 +99,8 @@ object Extensions {
     def loggingStatsTable = s"${loggedTable}_daily_stats"
     def uploadTable = s"${outputTable}_upload"
     def dailyStatsOutputTable = s"${outputTable}_daily_stats"
-    def dailyStatsUploadTable = s"${dailyStatsOutputTable}_upload"
+
+    def toUploadTable(name: String) = s"${name}_upload"
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -455,37 +456,6 @@ object Extensions {
     def streamingSource: Option[Source] =
       groupBy.sources.toScala
         .find(_.topic != null)
-
-    def buildStreamingQuery: String = {
-      assert(streamingSource.isDefined,
-             s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
-      val query = streamingSource.get.query
-      val selects = Option(query.selects)
-        .map(_.toScala.toMap)
-        .orNull
-      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-      val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
-      val keys = groupBy.getKeyColumns.toScala
-
-      val baseWheres = Option(query.wheres)
-        .map(_.toScala)
-        .getOrElse(Seq.empty[String])
-      val keyWhereOption =
-        Option(selects)
-          .map { selectsMap =>
-            keys
-              .map(key => s"(${selectsMap(key)} is NOT NULL)")
-              .mkString(" OR ")
-          }
-      val timeWheres = Seq(s"$timeColumn is NOT NULL")
-
-      QueryUtils.build(
-        selects,
-        Constants.StreamingInputTable,
-        baseWheres.toSeq ++ timeWheres.toSeq ++ keyWhereOption.toSeq,
-        fillIfAbsent = fillIfAbsent
-      )
-    }
 
     // de-duplicate all columns necessary for aggregation in a deterministic order
     // so we use distinct instead of toSet here
