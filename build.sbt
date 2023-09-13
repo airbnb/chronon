@@ -342,8 +342,7 @@ lazy val spark_embedded = (project in file("spark"))
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    (test in Test) := {},
-    (testOnly in Test) := {}
+    (test in Test) := {}
   )
 
 // Build Sphinx documentation
