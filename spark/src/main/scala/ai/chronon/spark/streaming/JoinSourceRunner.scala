@@ -98,9 +98,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     if (groupByConf.streamingSource.get.getJoinSource.getJoin.getLeft.isSetEntities) {
       enrichedQuery.selects.put(Constants.ReversalColumn, Constants.ReversalColumn)
       enrichedQuery.selects.put(Constants.MutationTimeColumn, Constants.MutationTimeColumn)
-    } else {
-      enrichedQuery.selects.put(Constants.TimeColumn, enrichedQuery.timeColumn)
     }
+    enrichedQuery.selects.put(Constants.TimeColumn, enrichedQuery.timeColumn)
     enrichedQuery
   }
 
