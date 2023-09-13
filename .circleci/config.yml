@@ -48,13 +48,8 @@ jobs:
             - run:
                   name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate chronon_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      # Generate list of tests to run.
-                      sbt printTests
-            - run: conda activate chronon_py && sbt "testOnly  $(circleci tests split --split-by=timings --timings-type=classname /tmp/test-full-class-names.log | tr '\n' ' ') "
+                  command: sbt printTests
+            - run: sbt "testOnly  $(circleci tests split --split-by=timings --timings-type=classname /tmp/test-full-class-names.log | tr '\n' ' ') "
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:

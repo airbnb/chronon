@@ -192,7 +192,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    sourceGenerators in Compile += python_api_build.taskValue,
+    // Compile / sourceGenerators += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++
@@ -320,7 +320,7 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     val art = (assembly / artifact).value
     art.withClassifier(Some("assembly"))
   },
-  mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
+  Compile / run / mainClass := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
@@ -342,7 +342,7 @@ lazy val spark_embedded = (project in file("spark"))
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    (test in Test) := {}
+    Test / test := {}
   )
 
 // Build Sphinx documentation
