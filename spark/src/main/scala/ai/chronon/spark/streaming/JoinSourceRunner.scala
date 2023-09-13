@@ -99,7 +99,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       enrichedQuery.selects.put(Constants.ReversalColumn, Constants.ReversalColumn)
       enrichedQuery.selects.put(Constants.MutationTimeColumn, Constants.MutationTimeColumn)
     }
-    enrichedQuery.selects.put(Constants.TimeColumn, enrichedQuery.timeColumn)
+    if (query.isSetTimeColumn) {
+      enrichedQuery.selects.put(Constants.TimeColumn, query.timeColumn)
+    }
     enrichedQuery
   }
 
