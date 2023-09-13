@@ -20,7 +20,8 @@ object JoinUtils {
   def leftDf(joinConf: ai.chronon.api.Join,
              range: PartitionRange,
              tableUtils: TableUtils,
-             allowEmpty: Boolean = false): Option[DataFrame] = {
+             allowEmpty: Boolean = false,
+             limit: Option(Int) = None): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -28,8 +29,8 @@ object JoinUtils {
     }
     val scanQuery = range.genScanQuery(joinConf.left.query,
                                        joinConf.left.table,
-                                       fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection)
-
+                                       fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection) +
+        + limit.map(_ => s" LIMIT $_").getOrElse("")
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter

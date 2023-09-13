@@ -315,8 +315,9 @@ abstract class JoinBase(joinConf: api.Join,
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
+    val leftSchema = leftDf(joinConf, unfilledRanges, tableUtils, Some(1)).schema
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, mutationScan = mutationScan)
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
 
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (stepRanges.isEmpty) {

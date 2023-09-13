@@ -57,6 +57,7 @@ object BootstrapInfo {
   def from(joinConf: api.Join,
            range: PartitionRange,
            tableUtils: TableUtils,
+           leftSchema: StructType,
            mutationScan: Boolean = true): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
