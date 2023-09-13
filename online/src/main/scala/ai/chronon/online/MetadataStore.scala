@@ -21,6 +21,7 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
+  private val CONF_BATCH_SIZE = 100
 
   // Note this should match with the format used in the warehouse
   def setPartitionMeta(format: String, spanMillis: Long): Unit = {
@@ -188,8 +189,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                      tsMillis = Some(System.currentTimeMillis()))
         }
       }
+    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    kvStore.multiPut(puts)
+    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
+    Future.sequence(futures).map(_.flatten)
   }
 
   // list file recursively
