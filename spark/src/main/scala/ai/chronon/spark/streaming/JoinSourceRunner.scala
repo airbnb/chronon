@@ -40,7 +40,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     case api.DataModel.Entities => servingInfoProxy.mutationValueChrononSchema
   }
   val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
-    case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
+    case api.DataModel.Entities => Constants.MutationFields.map(_.name) -> Constants.MutationTimeColumn
     case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
   }
 
