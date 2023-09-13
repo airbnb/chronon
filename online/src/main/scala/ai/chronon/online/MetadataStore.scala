@@ -21,7 +21,7 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
-  private val CONF_BATCH_SIZE = 100
+  private val CONF_BATCH_SIZE = 50
 
   // Note this should match with the format used in the warehouse
   def setPartitionMeta(format: String, spanMillis: Long): Unit = {
