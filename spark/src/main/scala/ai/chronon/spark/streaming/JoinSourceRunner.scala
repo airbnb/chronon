@@ -98,10 +98,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     if (groupByConf.streamingSource.get.getJoinSource.getJoin.getLeft.isSetEntities) {
       enrichedQuery.selects.put(Constants.ReversalColumn, Constants.ReversalColumn)
       enrichedQuery.selects.put(Constants.MutationTimeColumn, Constants.MutationTimeColumn)
+    } else if (query.isSetTimeColumn) {
+      enrichedQuery.selects.put(Constants.TimeColumn, enrichedQuery.timeColumn)
     }
-    if (query.isSetTimeColumn) {
-      enrichedQuery.selects.put(Constants.TimeColumn, query.timeColumn)
-    }
+//    if (query.isSetTimeColumn) {
+//      enrichedQuery.selects.put(Constants.TimeColumn, query.timeColumn)
+//    }
     enrichedQuery
   }
 
@@ -183,7 +185,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
     println(s"""
-         | Streaming source: ${groupByConf.streamingSource.get}
+         | streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
          | stream schema: ${streamSchema.catalogString}
          |""".stripMargin)
@@ -201,7 +203,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildQueryParts(query: Query): QueryParts = {
     val selects = Option(query.selects).map(_.toScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val keys = groupByConf.getKeyColumns.toScala
 
     val fillIfAbsent = (groupByConf.dataModel match {
       case DataModel.Entities =>
@@ -263,7 +264,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     }
 
     val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query)
-    val joinRequestName = joinSource.join.metaData.getName
+    // key format joins/<team>/join_name
+    val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
     val schemas = buildSchemas
     val leftColumns = schemas.leftSourceSchema.fieldNames
     val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
@@ -279,6 +281,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
             Request(joinRequestName, keyMap, Option(row.getLong(leftTimeIndex)))
           }
+          println(s"Fetching upstream join $joinRequestName with ${requests.size} requests")
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
