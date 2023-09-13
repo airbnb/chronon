@@ -309,6 +309,12 @@ abstract class JoinBase(joinConf: api.Join,
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
       .getOrElse(Seq.empty)
 
+    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    if (unfilledRanges.isEmpty) {
+      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
+      return finalResult
+    }
+
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = unfilledRanges.flatMap { unfilledRange =>
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
@@ -317,12 +323,6 @@ abstract class JoinBase(joinConf: api.Join,
     val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
     val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
-
-    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    if (stepRanges.isEmpty) {
-      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
-      return finalResult
-    }
 
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
