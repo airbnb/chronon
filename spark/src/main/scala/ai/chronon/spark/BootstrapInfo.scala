@@ -57,7 +57,7 @@ object BootstrapInfo {
   def from(joinConf: api.Join,
            range: PartitionRange,
            tableUtils: TableUtils,
-           leftSchema: StructType,
+           leftSchema: Option[StructType],
            mutationScan: Boolean = true): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
@@ -79,14 +79,19 @@ object BootstrapInfo {
       .getOrElse(Seq.empty)
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
-    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+    val leftFields = leftSchema
+      .map(schema => SparkConversions.toChrononSchema(schema))
+      .map(_.map(field => StructField(field._1, field._2)))
+      .getOrElse(Array.empty[StructField])
+    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema) ++ leftFields
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
+
     val baseDf = tableUtils.sparkSession.createDataFrame(
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
     val derivedSchema = if (joinConf.isSetDerivations) {
-      val projections = joinConf.derivationProjection(baseFields.map(_.name))
+      val projections = joinConf.derivationProjection(baseDf.columns)
       val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {

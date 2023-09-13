@@ -21,7 +21,7 @@ object JoinUtils {
              range: PartitionRange,
              tableUtils: TableUtils,
              allowEmpty: Boolean = false,
-             limit: Option(Int) = None): Option[DataFrame] = {
+             limit: Option[Int] = None): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -30,7 +30,7 @@ object JoinUtils {
     val scanQuery = range.genScanQuery(joinConf.left.query,
                                        joinConf.left.table,
                                        fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection) +
-        + limit.map(_ => s" LIMIT $_").getOrElse("")
+      limit.map(num => s" LIMIT $num").getOrElse("")
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter

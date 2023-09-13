@@ -1,9 +1,9 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
@@ -12,9 +12,8 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
-import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.ScalaJavaConversions.IterableOps
+import scala.collection.Seq
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
@@ -315,7 +314,7 @@ abstract class JoinBase(joinConf: api.Join,
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
-    val leftSchema = leftDf(joinConf, unfilledRanges, tableUtils, Some(1)).schema
+    val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
     val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
 
