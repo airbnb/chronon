@@ -342,7 +342,8 @@ lazy val spark_embedded = (project in file("spark"))
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    Test / test := {}
+    (test in Test) := {},
+    (testOnly in Test) := {}
   )
 
 // Build Sphinx documentation
@@ -358,6 +359,26 @@ sphinx := {
   } else {
     throw new IllegalStateException("Sphinx build failed!")
   }
+}
+
+lazy val printTests = taskKey[Unit]("Print all tests for CI")
+
+printTests := {
+  import java.io._
+  val pw = new PrintWriter(new File("/tmp/test-full-class-names.log"))
+  (spark_uber / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (aggregator / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (api / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (online / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  pw.close()
 }
 
 ThisBuild / assemblyMergeStrategy := {
