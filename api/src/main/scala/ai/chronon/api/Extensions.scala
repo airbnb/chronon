@@ -4,6 +4,8 @@ import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.apache.spark.sql.Column
+import org.apache.spark.sql.functions.expr
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
@@ -496,6 +498,17 @@ object Extensions {
 
       baseKeys ++ partitionKey ++ timeKey
     }
+
+    def hasDerivations: Boolean = groupBy.isSetDerivations && !groupBy.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] =
+      if (groupBy.hasDerivations) groupBy.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = groupBy.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] =
+      if (groupBy.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean =
+      groupBy.hasDerivations && groupBy.derivations.toScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] =
+      if (groupBy.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
   }
 
   implicit class StringOps(string: String) {
@@ -851,47 +864,16 @@ object Extensions {
         .toSeq
         .map(new JoinPartOps(_))
 
-    private lazy val derivationsScala = join.derivations.toScala
-    lazy val derivationsContainStar: Boolean = derivationsScala.iterator.exists(_.name == "*")
-    lazy val derivationsWithoutStar: List[Derivation] = derivationsScala.filterNot(_.name == "*")
-    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
-    lazy val derivationExpressionSet: Set[String] = derivationsScala.iterator.map(_.expression).toSet
-    lazy val derivationExpressionFlippedMap: Map[String, String] =
-      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
-
-    // Used during offline spark job and this method preserves ordering of derivations
-    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
-        val expressions = derivationsScala.iterator.map(_.expression).toSet
-        baseColumns.filterNot(expressions)
-      } else {
-        Seq.empty
-      }
-
-      derivationsScala.iterator.flatMap { d =>
-        if (d.name == "*") {
-          wildcardDerivations.map(c => c -> c)
-        } else {
-          Seq(d.name -> d.expression)
-        }
-      }.toSeq
-    }
-
-    // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
-      assert(
-        areDerivationsRenameOnly,
-        s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")
-      val wildcardDerivations = if (derivationsContainStar) {
-        baseColumns.filterNot(derivationExpressionSet contains _._1)
-      } else {
-        Map.empty[String, Any]
-      }
-
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
-    }
-
     def logFullValues: Boolean = true // TODO: supports opt-out in the future
+
+    def hasDerivations: Boolean = join.isSetDerivations && !join.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] = if (join.hasDerivations) join.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = join.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] =
+      if (join.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] =
+      if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -921,6 +903,56 @@ object Extensions {
       val pw = new PrintWriter(sw)
       throwable.printStackTrace(pw)
       sw.toString();
+    }
+  }
+
+  implicit class DerivationOps(derivations: List[Derivation]) {
+    lazy val derivationsContainStar: Boolean = derivations.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = derivations.filterNot(_.name == "*")
+    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
+    lazy val derivationExpressionSet: Set[String] = derivations.iterator.map(_.expression).toSet
+    lazy val derivationExpressionFlippedMap: Map[String, String] =
+      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+
+    // Used during offline spark job and this method preserves ordering of derivations
+    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
+      val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
+        val expressions = derivations.iterator.map(_.expression).toSet
+        baseColumns.filterNot(expressions)
+      } else {
+        Seq.empty
+      }
+
+      derivations.iterator.flatMap { d =>
+        if (d.name == "*") {
+          wildcardDerivations.map(c => c -> c)
+        } else {
+          Seq(d.name -> d.expression)
+        }
+      }.toSeq
+    }
+
+    def finalOutputColumn(baseColumns: Seq[String]): Seq[Column] = {
+      val projections = derivationProjection(baseColumns)
+      val finalOutputColumns = projections
+        .flatMap {
+          case (name, expression) => Some(expr(expression).as(name))
+        }
+      finalOutputColumns.toSeq
+    }
+
+    // Used only during online fetching to reduce latency
+    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+      assert(
+        areDerivationsRenameOnly,
+        s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
+      val wildcardDerivations = if (derivationsContainStar) {
+        baseColumns.filterNot(derivationExpressionSet contains _._1)
+      } else {
+        Map.empty[String, Any]
+      }
+
+      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
   }
 }

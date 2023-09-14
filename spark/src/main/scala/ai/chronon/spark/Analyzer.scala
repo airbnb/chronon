@@ -8,12 +8,12 @@ import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{DataFrame, types}
+import org.apache.spark.sql.{DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 import ai.chronon.aggregator.row.StatsGenerator
 
-import scala.collection.{Seq, mutable}
+import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -179,8 +179,19 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
-    val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-    val schema = groupBy.outputSchema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
+    val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
+      // handle group by backfill mode for derivations
+      // todo: add the similar logic to join derivations
+      val sparkSchema = SparkConversions.fromChrononSchema(groupBy.outputSchema)
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+      val finalOutputColumns = groupByConf.derivations.toScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(derivedDummyOutputDf.schema)
+      api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+    } else {
+      groupBy.outputSchema
+    }
     if (silenceMode) {
       println(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
@@ -193,6 +204,8 @@ class Analyzer(tableUtils: TableUtils,
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
+      val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
+      schema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
       println(s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
@@ -205,7 +218,7 @@ class Analyzer(tableUtils: TableUtils,
     val aggMetadata = if (groupByConf.aggregations != null) {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     } else {
-      groupBy.outputSchema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
+      schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     }
     val keySchemaMap = groupBy.keySchema.map { field =>
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
