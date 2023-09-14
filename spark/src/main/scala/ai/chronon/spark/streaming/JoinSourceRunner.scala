@@ -1,36 +1,25 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.{Constants, DataModel, JoinSource, Query, Source}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.{
-  Api,
-  AvroConversions,
-  DataStream,
-  Fetcher,
-  GroupByServingInfoParsed,
-  JoinCodec,
-  KVStore,
-  Metrics,
-  Mutation,
-  SparkConversions,
-  StreamBuilder,
-  TopicInfo
-}
-import ai.chronon.spark.{GenericRowHandler, GroupByUpload, PartitionRange, TableUtils}
+import ai.chronon.online._
+import ai.chronon.spark.GenericRowHandler
 import com.google.gson.Gson
+import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
+import org.apache.spark.sql.streaming.DataStreamWriter
 import org.apache.spark.sql.types.{BooleanType, LongType, StructField, StructType}
-import org.apache.spark.sql.{Dataset, Encoder, Encoders, ForeachWriter, Row, SparkSession, types}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
 
-import java.time.{Instant, ZoneId, ZoneOffset}
 import java.time.format.DateTimeFormatter
+import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
+import java.{lang, util}
 import scala.concurrent.Await
-import scala.concurrent.duration.{Duration, DurationInt, TimeUnit}
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.concurrent.duration.DurationInt
+import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
 class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(implicit
     session: SparkSession,
@@ -39,11 +28,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
 
-  case class Schemas(leftSchema: StructType,
-                     leftStreamSchema: StructType,
-                     leftSourceSchema: StructType,
-                     joinSchema: StructType,
-                     joinSourceSchema: StructType)
+  private case class Schemas(leftSchema: StructType,
+                             leftStreamSchema: StructType,
+                             leftSourceSchema: StructType,
+                             joinSchema: StructType,
+                             joinSourceSchema: StructType)
       extends Serializable
 
   val valueZSchema: api.StructType = groupByConf.dataModel match {
@@ -51,29 +40,29 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     case api.DataModel.Entities => servingInfoProxy.mutationValueChrononSchema
   }
   val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
-    case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
+    case api.DataModel.Entities => Constants.MutationFields.map(_.name) -> Constants.MutationTimeColumn
     case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
   }
-  val valueColumns = groupByConf.aggregationInputs ++ additionalColumns
 
-  case class PutRequestHelper(inputSchema: StructType) extends Serializable {
-    val keyColumns = groupByConf.keyColumns.toScala.toArray
-    val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex).toArray
+  val keyColumns: Array[String] = groupByConf.keyColumns.toScala.toArray
+  val valueColumns: Array[String] = groupByConf.aggregationInputs ++ additionalColumns
 
-    val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)
+  private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
+    private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
+    private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
+    private val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)
+    private val keySparkSchema: StructType = StructType(keyIndices.map(inputSchema))
+    private val keySchema: api.StructType = SparkConversions.toChrononStruct("key", keySparkSchema)
 
-    val keySparkSchema: StructType = StructType(keyIndices.map(inputSchema))
-    val keySchema: api.StructType = SparkConversions.toChrononStruct("key", keySparkSchema)
-
-    @transient lazy val keyToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(keySchema, null)
-    @transient lazy val valueToBytes: Any => Array[Byte] =
+    @transient private lazy val keyToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(keySchema, null)
+    @transient private lazy val valueToBytes: Any => Array[Byte] =
       AvroConversions.encodeBytes(valueZSchema, null)
-    val streamingDataset: String = groupByConf.streamingDataset
+    private val streamingDataset: String = groupByConf.streamingDataset
 
-    def toPutRequest(input: Map[String, Any]): KVStore.PutRequest = {
-      val keys = keyColumns.map(k => input.get(k).orNull)
-      val values = valueColumns.map(v => input.get(v).orNull)
-      val ts = input.get(eventTimeColumn).asInstanceOf[Option[Long]].get
+    def toPutRequest(input: Row): KVStore.PutRequest = {
+      val keys = keyIndices.map(input.get)
+      val values = valueIndices.map(input.get)
+      val ts = input.get(tsIndex).asInstanceOf[Long]
       val keyBytes = keyToBytes(keys)
       val valueBytes = valueToBytes(values)
       if (debug) {
@@ -104,18 +93,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     }
   }
 
-  def enrichQuery(query: Query): Query = {
+  private def enrichQuery(query: Query): Query = {
     val enrichedQuery = query.deepCopy()
     if (groupByConf.streamingSource.get.getJoinSource.getJoin.getLeft.isSetEntities) {
       enrichedQuery.selects.put(Constants.ReversalColumn, Constants.ReversalColumn)
       enrichedQuery.selects.put(Constants.MutationTimeColumn, Constants.MutationTimeColumn)
-    } else {
+    } else if (query.isSetTimeColumn) {
       enrichedQuery.selects.put(Constants.TimeColumn, enrichedQuery.timeColumn)
     }
     enrichedQuery
   }
 
-  def buildSchemas: Schemas = {
+  private def buildSchemas: Schemas = {
     val source = groupByConf.streamingSource
     assert(source.get.isSetJoinSource, s"No JoinSource found in the groupBy: ${groupByConf.metaData.name}")
     assert(source.isDefined, s"No streaming source present in the groupBy: ${groupByConf.metaData.name}")
@@ -193,7 +182,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
     println(s"""
-         | Streaming source: ${groupByConf.streamingSource.get}
+         | streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
          | stream schema: ${streamSchema.catalogString}
          |""".stripMargin)
@@ -207,11 +196,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     dataStream.copy(df = des)
   }
 
-  case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
+  private case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
   private def buildQueryParts(query: Query): QueryParts = {
     val selects = Option(query.selects).map(_.toScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val keys = groupByConf.getKeyColumns.toScala
 
     val fillIfAbsent = (groupByConf.dataModel match {
       case DataModel.Entities =>
@@ -252,66 +240,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
-  // enrich left with fetchJoin + apply joinSource.query + put kv bytes
-  class ChainedWriter extends ForeachWriter[Row] {
-    private val joinSource = groupByConf.streamingSource.get.getJoinSource
-    private val schemas = buildSchemas
-    private val leftColumns = schemas.leftSourceSchema.fieldNames
-    private val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
-    private val joinRequestName = joinSource.join.metaData.getName
-    private val joinOverrides = Map(joinRequestName -> joinSource.join)
-    var joinCodec: JoinCodec = _
-    var fetcher: Fetcher = _
-    var kvStore: KVStore = _
-    var putRequestHelper: PutRequestHelper = _
-
-    override def open(partitionId: Long, epochId: Long): Boolean = {
-      println("initialized chained writer")
-      fetcher = apiImpl.buildFetcher(debug)
-      joinCodec = fetcher.buildJoinCodec(joinSource.getJoin)
-      kvStore = apiImpl.genKvStore
-      putRequestHelper = PutRequestHelper(schemas.joinSourceSchema)
-      true
-    }
-
-    override def process(row: Row): Unit = {
-      val keyMap = row.getValuesMap[AnyRef](leftColumns)
-      // name matches putJoinConf/getJoinConf logic in MetadataStore.scala
-      val responsesFuture =
-        fetcher.fetchJoin(requests = Seq(Request(joinRequestName, keyMap, Option(row.getLong(leftTimeIndex)))))
-      implicit val ec = fetcher.executionContext
-      // we don't exit the future land - because awaiting will stall the calling thread in spark streaming
-      // we instead let the future run its course asynchronously - we apply all the sql using catalyst instead.
-      responsesFuture.foreach { responses =>
-        responses.foreach { response =>
-          val ts = response.request.atMillis.get
-          response.values.failed.foreach { ex =>
-            ex.printStackTrace(System.out); context.incrementException(ex)
-          }
-          response.values
-            .foreach { valuesMap =>
-              val derived = joinCodec.deriveFunc(Map.empty, keyMap ++ Map(Constants.TimeColumn -> ts) ++ valuesMap)
-              val putRequest =
-                putRequestHelper.toPutRequest(keyMap ++ valuesMap ++ Map(Constants.TimeColumn -> ts) ++ derived)
-              if (debug) {
-                println(s"""
-                     |input keys: $keyMap
-                     |input values: $valuesMap
-                     |derived map: $derived
-                     |""".stripMargin)
-              }
-              kvStore.put(putRequest)
-            }
-        }
-      }
-      if (debug) {
-        Await.result(responsesFuture, 5.second)
-      }
-    }
-
-    override def close(errorOrNull: Throwable): Unit = {}
-  }
-
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
@@ -319,19 +247,68 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val stream = buildStream(topic)
     val decoded = decode(stream)
-    val queryParts = buildQueryParts(left.query)
-    println(s"""
-         |decoded schema: ${decoded.df.schema.catalogString}
-         |Left QueryParts: $queryParts
-         |""".stripMargin)
 
-    // apply left.query
-    val selected = queryParts.selects.map(exprs => decoded.df.selectExpr(exprs: _*)).getOrElse(decoded.df)
-    val filtered = selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
+    def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
+      val queryParts = buildQueryParts(query)
+      println(s"""
+           |decoded schema: ${decoded.df.schema.catalogString}
+           |queryParts: $queryParts
+           |""".stripMargin)
 
-    filtered.writeStream
-      .outputMode("append")
-      .trigger(Trigger.Continuous(2.minute))
-      .foreach(new ChainedWriter)
+      // apply left.query
+      val selected = queryParts.selects.map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
+      selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
+    }
+
+    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query)
+    // key format joins/<team>/join_name
+    val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
+    println(s"Upstream join request name: $joinRequestName")
+    val schemas = buildSchemas
+    val leftColumns = schemas.leftSourceSchema.fieldNames
+    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
+    val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
+    val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
+    val joinFields = schemas.joinSchema.fieldNames
+    val enriched = leftSource.mapPartitions(
+      new MapPartitionsFunction[Row, Row] {
+        var fetcher: Fetcher = null
+        override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
+          if (fetcher == null) { fetcher = apiImpl.buildFetcher() }
+          val requests = rows.toScala.map { row =>
+            val keyMap = row.getValuesMap[AnyRef](leftColumns)
+            Request(joinRequestName, keyMap, Option(row.getLong(leftTimeIndex)))
+          }
+          val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
+          // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
+          // its own spark session, or when it passes around objects
+          val responses = Await.result(responsesFuture, 5.second)
+
+          responses.iterator.map { response =>
+            val allFields = response.request.keys ++ response.values.get
+            SparkConversions
+              .toSparkRow(joinFields.map(f => allFields.getOrElse(f, null)),
+                          api.StructType.from("record", joinChrononSchema))
+              .asInstanceOf[Row]
+          }.toJava
+        }
+      },
+      joinEncoder
+    )
+
+    val joinSourceDf = applyQuery(enriched, joinSource.query)
+    val writer = joinSourceDf.writeStream.outputMode("append")
+    val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
+
+    writer.foreachBatch {
+      new VoidFunction2[DataFrame, java.lang.Long] {
+        var kvStore: KVStore = null
+        override def call(df: DataFrame, l: lang.Long): Unit = {
+          if (kvStore == null) { kvStore = apiImpl.genKvStore }
+          val putRequests = df.collect().map(putRequestHelper.toPutRequest)
+          kvStore.multiPut(putRequests)
+        }
+      }
+    }
   }
 }
