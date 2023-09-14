@@ -113,7 +113,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                 s"Failed to fetch metadata for $batchDataset, is it possible Group By Upload for $name has not succeeded?")
               throw e
           }
-        println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
+        println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
         if (metaData.isFailure) {
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
