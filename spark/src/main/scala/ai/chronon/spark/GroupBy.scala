@@ -654,11 +654,9 @@ object GroupBy {
       case groupByUnfilledRange =>
         try {
           val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-          println(s"Group By ranges to compute: ${
-            stepRanges.map {
-              _.toString
-            }.pretty
-          }")
+          println(s"Group By ranges to compute: ${stepRanges.map {
+            _.toString
+          }.pretty}")
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
@@ -666,7 +664,7 @@ object GroupBy {
               val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
-                case Events => groupByBackfill.snapshotEvents(range)
+                case Events   => groupByBackfill.snapshotEvents(range)
               }
               if (!groupByConf.hasDerivations) {
                 outputDf.save(outputTable, tableProps)

@@ -183,9 +183,8 @@ class Analyzer(tableUtils: TableUtils,
       // handle group by backfill mode for derivations
       // todo: add the similar logic to join derivations
       val sparkSchema = SparkConversions.fromChrononSchema(groupBy.outputSchema)
-      val dummyOutputDf = tableUtils.sparkSession.createDataFrame(
-        tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
-        sparkSchema)
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
       val finalOutputColumns = groupByConf.derivations.toScala.finalOutputColumn(dummyOutputDf.columns).toSeq
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
       val columns = SparkConversions.toChrononSchema(derivedDummyOutputDf.schema)
