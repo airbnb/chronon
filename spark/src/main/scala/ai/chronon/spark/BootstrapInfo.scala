@@ -90,8 +90,8 @@ object BootstrapInfo {
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
-    val derivedSchema = if (joinConf.isSetDerivations) {
-      val projections = joinConf.derivationProjection(baseDf.columns)
+    val derivedSchema = if (joinConf.hasDerivations) {
+      val projections = joinConf.derivationsScala.derivationProjection(baseDf.columns)
       val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {
