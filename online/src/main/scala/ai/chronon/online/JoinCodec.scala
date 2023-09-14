@@ -1,12 +1,13 @@
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{JoinOps, DerivationOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType, Constants}
 import ai.chronon.aggregator.row.StatsGenerator
 import com.google.gson.Gson
 
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -40,7 +41,7 @@ case class JoinCodec(conf: JoinOps,
           expressions,
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(conf.applyRenameOnlyDerivation(values), values)
+              JoinCodec.adjustExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
           }
         )
       } else {

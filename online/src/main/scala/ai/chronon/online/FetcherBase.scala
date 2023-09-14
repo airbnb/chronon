@@ -8,7 +8,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{JoinOps, ThrowableOps}
+import ai.chronon.api.Extensions.{JoinOps, ThrowableOps, GroupByOps}
 import com.google.gson.Gson
 
 import java.util
@@ -155,6 +155,12 @@ class FetcherBase(kvStore: KVStore,
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
           var keyBytes: Array[Byte] = null
+          // todo: update the logic here when we are ready to support groupby online derivations
+          if (groupByServingInfo.groupBy.hasDerivations) {
+            val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
+            context.incrementException(ex)
+            throw ex
+          }
           try {
             keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
           } catch {

@@ -201,7 +201,7 @@ class Join(joinConf: api.Join,
       return baseDf
     }
 
-    val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
+    val projections = joinConf.derivations.toScala.derivationProjection(bootstrapInfo.baseValueNames)
     val projectionsMap = projections.toMap
     val baseOutputColumns = baseDf.columns.toSet
 
@@ -268,7 +268,7 @@ class Join(joinConf: api.Join,
     val contextualNames =
       bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema).map(_.name)
     val projections = if (joinConf.isSetDerivations) {
-      joinConf.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
+      joinConf.derivations.toScala.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
     } else {
       Seq()
     }

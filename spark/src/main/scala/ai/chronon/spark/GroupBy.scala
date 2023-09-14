@@ -10,13 +10,14 @@ import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
-import scala.collection.mutable
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
@@ -653,19 +654,29 @@ object GroupBy {
       case groupByUnfilledRange =>
         try {
           val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-          println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+          println(s"Group By ranges to compute: ${stepRanges.map {
+            _.toString
+          }.pretty}")
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
-              (groupByConf.dataModel match {
+              val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
                 case Events   => groupByBackfill.snapshotEvents(range)
-              }).save(outputTable, tableProps)
+              }
+              if (!groupByConf.hasDerivations) {
+                outputDf.save(outputTable, tableProps)
+              } else {
+                val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(outputDf.columns).toSeq
+                val result = outputDf.select(finalOutputColumns: _*)
+                result.save(outputTable, tableProps)
+              }
               println(s"Wrote to table $outputTable, into partitions: $range")
           }
           println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+
         } catch {
           case err: Throwable =>
             exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"
