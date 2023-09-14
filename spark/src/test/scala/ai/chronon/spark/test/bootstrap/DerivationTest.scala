@@ -7,8 +7,8 @@ import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import ai.chronon.spark._
+import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
@@ -66,6 +66,11 @@ class DerivationTest {
           name = "user_txn_count_15d",
           expression = "ext_payments_service_user_txn_count_15d"
         ),
+        // derivation based on one left field
+        Builders.Derivation(
+          name = "user_txn_count_15d_with_user_id",
+          expression = "CONCAT(ext_payments_service_user_txn_count_15d, ' ', user)"
+        ),
         // derivation based on one group by field (rename)
         Builders.Derivation(
           name = "user_amount_30d",
@@ -107,6 +112,7 @@ class DerivationTest {
         "ts",
         "user_txn_count_30d",
         "user_txn_count_15d",
+        "user_txn_count_15d_with_user_id",
         "user_amount_30d",
         "user_amount_15d",
         "user_amount_30d_minus_15d",
@@ -221,6 +227,7 @@ class DerivationTest {
         outputDf("ts"),
         contextualBootstrapDf("user_txn_count_30d"),
         externalBootstrapDf("ext_payments_service_user_txn_count_15d").as("user_txn_count_15d"),
+        (concat(externalBootstrapDf("ext_payments_service_user_txn_count_15d"), lit(' '), outputDf("user"))).as("user_txn_count_15d_with_user_id"),
         outputDf("user_amount_30d"),
         outputDf("user_amount_15d"),
         coalesce(diffBootstrapDf("user_amount_30d_minus_15d"), outputDf("user_amount_30d_minus_15d"))

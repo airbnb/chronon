@@ -1,9 +1,9 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
@@ -12,9 +12,8 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
-import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.ScalaJavaConversions.IterableOps
+import scala.collection.Seq
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
@@ -310,19 +309,20 @@ abstract class JoinBase(joinConf: api.Join,
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
       .getOrElse(Seq.empty)
 
+    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    if (unfilledRanges.isEmpty) {
+      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
+      return finalResult
+    }
+
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = unfilledRanges.flatMap { unfilledRange =>
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
+    val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, mutationScan = mutationScan)
-
-    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    if (stepRanges.isEmpty) {
-      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
-      return finalResult
-    }
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
 
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
