@@ -52,7 +52,7 @@ jobs:
                   command: sbt printTests
             - run:
                   name: sbt Tests
-                  command: sbt "++ 2.11.12 testOnly  $(circleci tests split --split-by=name /tmp/test-full-class-names.log | tr '\n' ' ')"
+                  command: sbt "++2.11.12" "testOnly  $(circleci tests split --split-by=name /tmp/test-full-class-names.log | tr '\n' ' ')"
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
