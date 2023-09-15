@@ -43,7 +43,7 @@ jobs:
 
     "Scala 11 -- Spark 2 Tests":
         executor: docker_baseimg_executor
-        parallelism: 20
+        parallelism: 32
         steps:
             - checkout
             - run:
@@ -52,7 +52,7 @@ jobs:
                   command: sbt printTests
             - run:
                   name: sbt Tests
-                  command: sbt "testOnly  $(circleci tests split --split-by=timings --timings-type=classname /tmp/test-full-class-names.log | tr '\n' ' ')"
+                  command: sbt "++2.11.12 testOnly  $(circleci tests run --split-by=name /tmp/test-full-class-names.log | tr '\n' ' ')"
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
