@@ -409,6 +409,53 @@ class Fetcher(val kvStore: KVStore,
           .toSeq)
   }
 
+  def fetchConsistencyMetricsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
+    val keyCodec = getSchemaFromKVStore(Constants.ConsistencyMetricsDataset,
+                                        s"${joinRequest.name}${Constants.TimedKvRDDKeySchemaKey}")
+    val valueCodec = getSchemaFromKVStore(Constants.ConsistencyMetricsDataset,
+                                          s"${joinRequest.name}${Constants.TimedKvRDDValueSchemaKey}")
+    val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
+    val responses = kvStore
+      .get(
+        GetRequest(keyCodec.encodeArray(Array(joinRequest.name)),
+                   Constants.ConsistencyMetricsDataset,
+                   afterTsMillis = joinRequest.startTs)
+      )
+      .map(
+        _.values.get.toArray
+          .filter(_.millis <= upperBound)
+          .map { tv =>
+            StatsResponse(joinRequest, Try(valueCodec.decodeMap(tv.bytes)), millis = tv.millis)
+          }
+          .toSeq)
+    convertStatsResponseToSeriesResponse(joinRequest, responses)
+  }
+
+  /**
+    *  Given a sequence of stats responses for different time intervals, re arrange it into a map containing the time
+    *  series for each statistic.
+    */
+  def convertStatsResponseToSeriesResponse(joinRequest: StatsRequest,
+                                           rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
+    rawResponses.map { responseFuture =>
+      val convertedValue = responseFuture
+        .flatMap { response =>
+          response.values.get.map {
+            case (key, v) =>
+              key ->
+                Map(
+                  "millis" -> response.millis.asInstanceOf[AnyRef],
+                  "value" -> StatsGenerator.SeriesFinalizer(key, v)
+                ).asJava
+          }
+        }
+        .groupBy(_._1)
+        .mapValues(_.map(_._2).toList.asJava)
+        .toMap
+      SeriesStatsResponse(joinRequest, Try(convertedValue))
+    }
+  }
+
   /**
     * Main endpoint for fetching statistics over time available.
     */
@@ -444,24 +491,7 @@ class Fetcher(val kvStore: KVStore,
         SeriesStatsResponse(joinRequest, Try(driftMap))
       }
     }
-    val rawResponses = fetchStats(joinRequest)
-    rawResponses.map { responseFuture =>
-      val convertedValue = responseFuture
-        .flatMap { response =>
-          response.values.get.map {
-            case (key, v) =>
-              key ->
-                Map(
-                  "millis" -> response.millis.asInstanceOf[AnyRef],
-                  "value" -> StatsGenerator.SeriesFinalizer(key, v)
-                ).asJava
-          }
-        }
-        .groupBy(_._1)
-        .mapValues(_.map(_._2).toList.asJava)
-        .toMap
-      SeriesStatsResponse(joinRequest, Try(convertedValue))
-    }
+    convertStatsResponseToSeriesResponse(joinRequest, fetchStats(joinRequest))
   }
 
   /**

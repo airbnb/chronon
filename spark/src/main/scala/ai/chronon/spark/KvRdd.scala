@@ -83,8 +83,10 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
   }
 }
 
-case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)], keySchema: StructType, valueSchema: StructType)(
-    implicit sparkSession: SparkSession)
+case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)],
+                      keySchema: StructType,
+                      valueSchema: StructType,
+                      storeSchemasPrefix: Option[String] = None)(implicit sparkSession: SparkSession)
     extends BaseKvRdd {
   val withTime = true
 
@@ -100,13 +102,39 @@ case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)], keySchema: Stru
         val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson, ts)
         new GenericRow(result)
     }
+
+    val schemasStr = Seq(keyZSchema, valueZSchema).map(AvroConversions.fromChrononSchema(_).toString(true))
     println(s"""
          |key schema:
-         |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
+         |  ${schemasStr(0)}
          |value schema:
-         |  ${AvroConversions.fromChrononSchema(valueZSchema).toString(true)}
+         |  ${schemasStr(1)}
          |""".stripMargin)
-    sparkSession.createDataFrame(avroRdd, rowSchema)
+    val dataDf = sparkSession.createDataFrame(avroRdd, rowSchema)
+    if (storeSchemasPrefix.isDefined) {
+      val ts = System.currentTimeMillis()
+      val schemaPrefix = storeSchemasPrefix.get
+      val schemaRows: Seq[Array[Any]] = Seq(
+        Array(
+          s"$schemaPrefix${api.Constants.TimedKvRDDKeySchemaKey}".getBytes(api.Constants.UTF8),
+          schemasStr(0).getBytes(api.Constants.UTF8),
+          api.Constants.TimedKvRDDKeySchemaKey,
+          schemasStr(0),
+          ts
+        ),
+        Array(
+          s"$schemaPrefix${api.Constants.TimedKvRDDValueSchemaKey}".getBytes(api.Constants.UTF8),
+          schemasStr(1).getBytes(api.Constants.UTF8),
+          api.Constants.TimedKvRDDValueSchemaKey,
+          schemasStr(1),
+          ts
+        )
+      )
+      val schemasRdd: RDD[Row] = sparkSession.sparkContext.parallelize(schemaRows.map(new GenericRow(_)))
+      val schemasDf = sparkSession.createDataFrame(schemasRdd, rowSchema)
+      return dataDf.union(schemasDf)
+    }
+    dataDf
   }
 
   override def toFlatDf: DataFrame = {

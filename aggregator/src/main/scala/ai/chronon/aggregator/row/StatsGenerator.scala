@@ -82,15 +82,16 @@ object StatsGenerator {
   }
 
   /**
-    * Post processing for IRs when generating a time series of stats.
+    * Post processing for finalized values or IRs when generating a time series of stats.
     * In the case of percentiles for examples we reduce to 5 values in order to generate candlesticks.
     */
   def SeriesFinalizer(key: String, value: AnyRef): AnyRef = {
-    if (key.endsWith("percentile") && value != null) {
-      val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
-      return sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+    (key, value) match {
+      case (k, sketch: Array[Byte]) if k.endsWith("percentile") =>
+        val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
+        sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+      case _ => value
     }
-    value
   }
 
   /**

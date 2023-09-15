@@ -129,7 +129,8 @@ class FetchStatsTest extends TestCase {
   def fetchStatsSeries(request: StatsRequest,
                        mockApi: MockApi,
                        useJavaFetcher: Boolean = false,
-                       debug: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
+                       debug: Boolean = false,
+                       logResponse: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
     @transient lazy val fetcher = mockApi.buildFetcher(debug)
     @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
     val results = if (useJavaFetcher) {

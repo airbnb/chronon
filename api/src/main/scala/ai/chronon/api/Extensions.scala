@@ -94,6 +94,7 @@ object Extensions {
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
 
     def consistencyTable = s"${outputTable}_consistency"
+    def consistencyUploadTable = s"${consistencyTable}_upload"
 
     def uploadTable = s"${outputTable}_upload"
     def dailyStatsOutputTable = s"${outputTable}_daily_stats"

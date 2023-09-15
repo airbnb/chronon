@@ -106,7 +106,6 @@ case class JoinCodec(conf: JoinOps,
   val statsInputSchema: StructType = StatsGenerator.statsInputSchema(valueSchema)
   val statsIrSchema: StructType = StatsGenerator.statsIrSchema(valueSchema)
   val statsIrCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(statsIrSchema).toString)
-
 }
 
 object JoinCodec {
