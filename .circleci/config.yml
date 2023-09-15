@@ -10,6 +10,11 @@ executors:
         working_directory: /chronon
         docker:
             - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
+    docker_baseimg_executor_small:
+        resource_class: small
+        working_directory: /chronon
+        docker:
+            - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
 
 jobs:
     "Docker Base Build":
@@ -124,7 +129,7 @@ jobs:
                   when: on_fail
 
     "Chronon Python Lint":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_small
         steps:
             - checkout
             - run:
@@ -137,7 +142,7 @@ jobs:
                       flake8 --extend-ignore=W605,Q000,F631
 
     "Chronon Python Tests":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_small
         steps:
             - checkout
             - run:
@@ -156,7 +161,7 @@ jobs:
                   path: /chronon/api/py/htmlcov
 
     "Scalafmt Check":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_small
         steps:
             - checkout
             - run:
