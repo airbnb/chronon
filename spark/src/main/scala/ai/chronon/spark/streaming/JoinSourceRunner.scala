@@ -301,7 +301,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val writer = joinSourceDf.writeStream.outputMode("append")
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
-    def emitRequestMetric(request: PutRequest, context:Metrics.Context): Unit = {
+    def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
       request.tsMillis.foreach { ts: Long =>
         context.histogram(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)
@@ -316,7 +316,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         override def call(df: DataFrame, l: lang.Long): Unit = {
           if (kvStore == null) { kvStore = apiImpl.genKvStore }
           val putRequests = df.collect().map(putRequestHelper.toPutRequest)
-          if(!debug) {
+          if (!debug) {
             putRequests.map(request => emitRequestMetric(request, context.withSuffix("egress")))
             kvStore.multiPut(putRequests)
           }

@@ -235,7 +235,7 @@ class GroupByUploadTest {
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, jp.groupBy, dropDsOnWrite = true))
 
-    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy, debug = true)
+    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "chaining_test", endDs, listingRatingGroupBy, debug = false)
 
     kvStoreFunc().show()
 
