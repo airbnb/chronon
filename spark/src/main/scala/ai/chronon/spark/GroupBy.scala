@@ -667,7 +667,7 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true, showDf = true)
+              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
               val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
