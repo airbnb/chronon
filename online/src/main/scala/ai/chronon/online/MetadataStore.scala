@@ -95,6 +95,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       .get
   }
 
+  lazy val getStatsSchemaFromKVStore: TTLCache[(String, String), AvroCodec] = new TTLCache[(String, String), AvroCodec](
+    { case (dataset, key) => getSchemaFromKVStore(dataset, key) },
+    { _ => null }
+  )
+
   // pull and cache groupByServingInfo from the groupBy uploads
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
     new TTLCache[String, Try[GroupByServingInfoParsed]](

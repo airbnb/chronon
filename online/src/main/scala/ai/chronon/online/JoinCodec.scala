@@ -2,7 +2,6 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions.{JoinOps, DerivationOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType, Constants}
-import ai.chronon.aggregator.row.StatsGenerator
 import com.google.gson.Gson
 
 import scala.collection.Seq
@@ -101,11 +100,6 @@ case class JoinCodec(conf: JoinOps,
   val valueFields: Array[StructField] = valueSchema.fields
   lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap
-  @transient lazy val statsKeyCodec: AvroCodec =
-    AvroCodec.of(AvroConversions.fromChrononSchema(Constants.StatsKeySchema).toString)
-  val statsInputSchema: StructType = StatsGenerator.statsInputSchema(valueSchema)
-  val statsIrSchema: StructType = StatsGenerator.statsIrSchema(valueSchema)
-  val statsIrCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(statsIrSchema).toString)
 }
 
 object JoinCodec {
