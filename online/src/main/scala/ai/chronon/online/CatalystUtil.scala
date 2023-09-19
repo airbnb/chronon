@@ -113,6 +113,8 @@ class CatalystUtil(
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
+  def getOutputSparkSchema: types.StructType = outputSparkSchema
+
   def performSql(values: Array[Any]): Option[Array[Any]] = {
     val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
     val resultRowOpt = transformFunc(internalRow)
@@ -122,7 +124,11 @@ class CatalystUtil(
 
   def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    val resultRowMaybe = transformFunc(internalRow)
+    performSql(internalRow)
+  }
+
+  def performSql(value: InternalRow): Option[Map[String, Any]] = {
+    val resultRowMaybe = transformFunc(value)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
