@@ -129,12 +129,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     hops
       .flatMap {
         case (keys, hopsArrays) =>
+          // filter out if the all the irs are nulls
           val irs = sawtoothAggregator.computeWindows(hopsArrays, shiftedEndTimes)
-          irs.indices.map { i =>
-            (keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), normalizeOrFinalize(irs(i)))
+          irs.indices.flatMap { i =>
+            val result = normalizeOrFinalize(irs(i))
+            if (result.forall(_ == null)) None
+            else Some((keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), result))
           }
       }
   }
+
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
   // At this time, we hardcode the resolution to Daily, but it is straight forward to support
   // hourly resolution.
@@ -441,8 +445,11 @@ object GroupBy {
                               tableUtils,
                               groupByConf.maxWindow,
                               groupByConf.inferredAccuracy)
+
       }
-      .map { tableUtils.sql }
+      .map {
+        tableUtils.sql
+      }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
         val columns1 = df1.schema.fields.map(_.name)
