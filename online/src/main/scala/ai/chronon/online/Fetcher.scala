@@ -2,7 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
-import ai.chronon.api.Constants.{ConsistencyMetricsDataset, LogStatsBatchDataset, StatsBatchDataset, UTF8}
+import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -391,15 +391,16 @@ class Fetcher(val kvStore: KVStore,
     * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
     */
   def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] =
-    fetchMetricsTimeseriesFromDataset(joinRequest, StatsBatchDataset)
+    fetchMetricsTimeseriesFromDataset(joinRequest, Constants.StatsBatchDataset)
 
   def fetchConsistencyMetricsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
-    convertStatsResponseToSeriesResponse(joinRequest,
-                                         fetchMetricsTimeseriesFromDataset(joinRequest, ConsistencyMetricsDataset))
+    convertStatsResponseToSeriesResponse(
+      joinRequest,
+      fetchMetricsTimeseriesFromDataset(joinRequest, Constants.ConsistencyMetricsDataset))
 
   def fetchLogStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
     convertStatsResponseToSeriesResponse(joinRequest,
-                                         fetchMetricsTimeseriesFromDataset(joinRequest, LogStatsBatchDataset))
+                                         fetchMetricsTimeseriesFromDataset(joinRequest, Constants.LogStatsBatchDataset))
 
   private def fetchMetricsTimeseriesFromDataset(joinRequest: StatsRequest,
                                                 dataset: String): Future[Seq[StatsResponse]] = {
