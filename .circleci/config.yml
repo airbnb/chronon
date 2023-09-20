@@ -93,7 +93,7 @@ jobs:
                   destination: spark_warehouse.tar.gz
                   when: on_fail
 
-    "Scala 13 -- Tests":
+    "Scala 13 -- Coverage":
         executor: docker_baseimg_executor
         steps:
             - checkout
@@ -104,7 +104,8 @@ jobs:
                       conda activate chronon_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.13.6 test"
+                      sbt "++2.13.6" clean coverage test
+                      sbt "++2.13.6" coverageAggregate
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
@@ -118,6 +119,9 @@ jobs:
                   path: /tmp/spark-warehouse.tar.gz
                   destination: spark_warehouse.tar.gz
                   when: on_fail
+            - store_artifacts:
+                  path: /chronon/target/scala-2.13/scoverage-report
+                  destination: coverage_report
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
@@ -172,7 +176,7 @@ workflows:
             - "Scala 12 -- Spark 3 Tests":
                   requires:
                       - "Docker Base Build"
-            - "Scala 13 -- Tests":
+            - "Scala 13 -- Coverage":
                   requires:
                       - "Docker Base Build"
             - "Scalafmt Check":
