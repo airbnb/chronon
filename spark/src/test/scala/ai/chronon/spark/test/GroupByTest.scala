@@ -108,11 +108,15 @@ class GroupByTest {
                                           |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*(10-1)) * 1000, rating, null)) AS rating_sum_10d
                                           |FROM $viewName CROSS JOIN $datesViewName
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis}
+                                          |AND user IS NOT NULL
                                           |group by user, $datesViewName.ds
                                           |""".stripMargin)
 
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
+      println("actual data frame")
+      actualDf.show()
+      println("diff data frame")
       diff.show()
       println("diff result rows")
     }

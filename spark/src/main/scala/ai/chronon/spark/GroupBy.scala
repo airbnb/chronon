@@ -126,7 +126,11 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
 
-    hops
+    val inputDfView = "inputDfView"
+    inputDf.createOrReplaceTempView(inputDfView)
+    val inputDfInRange = inputDf.prunePartition(partitionRange)
+
+    val initialResultRdd = hops
       .flatMap {
         case (keys, hopsArrays) =>
           // filter out if the all the irs are nulls
@@ -137,6 +141,17 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             else Some((keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), result))
           }
       }
+    val initialResultDf = toDf(initialResultRdd, Seq((tableUtils.partitionColumn, StringType)))
+    val keyColumnsWithPartition = keyColumns.toSeq :+ tableUtils.partitionColumn
+    val outputDf = initialResultDf
+      .join(inputDfInRange, keyColumnsWithPartition, "inner")
+      .selectExpr(initialResultDf.columns.toSeq: _*)
+    outputDf.rdd
+      .flatMap(row =>
+        Some(
+          keyColumnsWithPartition.indices.map(row.get).toArray,
+          keyColumnsWithPartition.length.until(row.length).map(row.get).toArray
+        ))
   }
 
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
