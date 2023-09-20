@@ -1,7 +1,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{AggregationPart, Constants, DataType, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
@@ -12,6 +12,7 @@ import org.apache.spark.sql.{DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.StringType
 import ai.chronon.aggregator.row.StatsGenerator
+import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
@@ -265,7 +266,7 @@ class Analyzer(tableUtils: TableUtils,
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
       gbTables ++= part.groupBy.sources.toScala.map(_.table)
-      dataAvailabilityErrors ++= runDataAvailabilityCheck(part.groupBy, unfilledRanges)
+      dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel, part.groupBy, unfilledRanges)
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
@@ -367,18 +368,32 @@ class Analyzer(tableUtils: TableUtils,
   // - For aggregation case, gb table earliest partition should go back to (first_unfilled_partition - max_window) date
   // - For none aggregation case or unbounded window, no earliest partition is required
   // return a list of (table, gb_name, expected_start) that don't have data available
-  def runDataAvailabilityCheck(groupBy: api.GroupBy,
+  def runDataAvailabilityCheck(leftDataModel: DataModel,
+                               groupBy: api.GroupBy,
                                unfilledRanges: Seq[PartitionRange]): List[(String, String, String)] = {
     if (unfilledRanges.isEmpty) {
       println("No unfilled ranges found.")
       List.empty
     } else {
-      val firstUnfilledPartition = unfilledRanges.sorted.head.start
+      val firstUnfilledPartition = unfilledRanges.min.start
       lazy val groupByOps = new GroupByOps(groupBy)
+      lazy val leftShiftedPartitionRangeStart = unfilledRanges.min.shift(-1).start
+      lazy val rightShiftedPartitionRangeStart = unfilledRanges.min.shift(1).start
       val maxWindow = groupByOps.maxWindow
       maxWindow match {
         case Some(window) =>
-          val expectedStart = tableUtils.partitionSpec.minus(firstUnfilledPartition, window)
+          val expectedStart = (leftDataModel, groupBy.dataModel, groupBy.inferredAccuracy) match {
+            // based on the end of the day snapshot
+            case (Entities, Events, _)   => tableUtils.partitionSpec.minus(rightShiftedPartitionRangeStart, window)
+            case (Entities, Entities, _) => firstUnfilledPartition
+            case (Events, Events, Accuracy.SNAPSHOT) =>
+              tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, window)
+            case (Events, Events, Accuracy.TEMPORAL) =>
+              tableUtils.partitionSpec.minus(firstUnfilledPartition, window)
+            case (Events, Entities, Accuracy.SNAPSHOT) => leftShiftedPartitionRangeStart
+            case (Events, Entities, Accuracy.TEMPORAL) =>
+              tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, window)
+          }
           groupBy.sources.toScala.flatMap { source =>
             val table = source.table
             println(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
