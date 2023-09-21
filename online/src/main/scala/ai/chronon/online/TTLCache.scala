@@ -24,6 +24,7 @@ class TTLCache[I, O](f: I => O,
       override def apply(t: I, u: Entry): Entry = {
         val now = nowFunc()
         if (u == null) {
+          contextBuilder(i).increment("cache.insert")
           Entry(f(t), now)
         } else {
           u
@@ -39,7 +40,6 @@ class TTLCache[I, O](f: I => O,
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
       cMap.compute(i, updateWhenNull).value
-      contextBuilder(i).increment("cache.insert")
     } else {
       if (
         (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
