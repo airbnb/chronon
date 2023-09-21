@@ -39,6 +39,7 @@ class TTLCache[I, O](f: I => O,
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
       cMap.compute(i, updateWhenNull).value
+      contextBuilder(i).increment("cache.insert")
     } else {
       if (
         (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
@@ -50,6 +51,7 @@ class TTLCache[I, O](f: I => O,
           override def run(): Unit = {
             try {
               cMap.put(i, Entry(f(i), nowFunc()))
+              contextBuilder(i).increment("cache.update")
             } catch {
               case ex: Exception =>
                 // reset the mark so that another thread can retry

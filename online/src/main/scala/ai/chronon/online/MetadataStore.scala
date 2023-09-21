@@ -123,7 +123,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           val groupByServingInfo = ThriftJsonCodec
             .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
           Metrics
-            .Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy)
+            .Context(Metrics.Environment.MetaDataFetching, groupByServingInfo.groupBy)
             .withSuffix("group_by")
             .histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
           Success(new GroupByServingInfoParsed(groupByServingInfo, partitionSpec))
