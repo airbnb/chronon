@@ -19,6 +19,7 @@ object TestUtils {
       tableName,
       Array(
         StructField("listing_id", LongType),
+        StructField("user", LongType),
         StructField("m_views", LongType),
         StructField("ts", StringType),
         StructField("ds", StringType)
@@ -27,18 +28,19 @@ object TestUtils {
     val rows =
       if (customRows.isEmpty)
         List(
-          Row(1L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
-          Row(2L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
-          Row(3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
-          Row(4L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
-          Row(5L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
-          Row(1L, 15L, "2022-10-03 10:00:00", "2022-10-03")
+          Row(1L, 4L, 20L, "2022-10-01 10:00:00", "2022-10-01"),
+          Row(2L, 4L, 30L, "2022-10-02 10:00:00", "2022-10-02"),
+          Row(3L, 3L, 10L, "2022-10-01 10:00:00", "2022-10-01"),
+          Row(4L, 3L, 20L, "2022-10-02 10:00:00", "2022-10-02"),
+          Row(5L, 2L, 35L, "2022-10-03 10:00:00", "2022-10-03"),
+          Row(1L, 2L, 15L, "2022-10-03 10:00:00", "2022-10-03")
         )
       else customRows
     val source = Builders.Source.events(
       query = Builders.Query(
         selects = Map(
           "listing" -> "listing_id",
+          "null" -> "user",
           "m_views" -> "m_views"
         ),
         timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
@@ -395,7 +397,8 @@ object TestUtils {
     val viewsCols = Seq(listingCol, userCol)
     val viewsTable = s"$namespace.views_table"
     val viewsDf = DataFrameGen
-      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull && col("listing").isNotNull)
+      .events(spark, viewsCols, 30, 7)
+      .filter(col("user").isNotNull && col("listing").isNotNull)
     viewsDf.show()
     viewsDf.save(viewsTable)
 
