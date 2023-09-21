@@ -24,7 +24,7 @@ class TTLCache[I, O](f: I => O,
       override def apply(t: I, u: Entry): Entry = {
         val now = nowFunc()
         if (u == null) {
-          contextBuilder(i).increment("cache.insert")
+          contextBuilder(t).increment("cache.insert")
           Entry(f(t), now)
         } else {
           u
