@@ -257,7 +257,7 @@ abstract class JoinBase(joinConf: api.Join,
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) => {
-        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
+        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:59>.
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
       }
     }
