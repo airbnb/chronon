@@ -26,7 +26,7 @@ object Constants {
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
   val StatsBatchDataset = "CHRONON_STATS_BATCH"
-  val ConsistencyMetricsDataset = "CHRONON_CONSISTENCY_METRICS"
+  val ConsistencyMetricsDataset = "CHRONON_CONSISTENCY_METRICS_STATS_BATCH"
   val LogStatsBatchDataset = "CHRONON_LOG_STATS_BATCH"
   val TimeField: StructField = StructField(TimeColumn, LongType)
   val ReversalField: StructField = StructField(ReversalColumn, BooleanType)
