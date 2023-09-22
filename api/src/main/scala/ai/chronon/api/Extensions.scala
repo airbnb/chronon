@@ -96,9 +96,11 @@ object Extensions {
     def consistencyTable = s"${outputTable}_consistency"
     def consistencyUploadTable = s"${consistencyTable}_upload"
 
+    def loggingStatsTable = s"${loggedTable}_daily_stats"
     def uploadTable = s"${outputTable}_upload"
     def dailyStatsOutputTable = s"${outputTable}_daily_stats"
-    def dailyStatsUploadTable = s"${dailyStatsOutputTable}_upload"
+
+    def toUploadTable(name: String) = s"${name}_upload"
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table

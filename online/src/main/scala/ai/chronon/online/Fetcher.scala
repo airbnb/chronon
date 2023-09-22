@@ -27,7 +27,6 @@ object Fetcher {
   case class PrefixedRequest(prefix: String, request: Request)
   case class StatsRequest(name: String, startTs: Option[Long] = None, endTs: Option[Long] = None)
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
-  case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request,
@@ -391,36 +390,25 @@ class Fetcher(val kvStore: KVStore,
     *
     * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
     */
-  def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] = {
-    val joinCodecs = getJoinCodecs(joinRequest.name).get
-    val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
-    kvStore
-      .get(
-        GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)),
-                   Constants.StatsBatchDataset,
-                   afterTsMillis = joinRequest.startTs)
-      )
-      .map(
-        _.values.get.toArray
-          .filter(_.millis <= upperBound)
-          .map { tv =>
-            StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
-          }
-          .toSeq)
-  }
+  def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] =
+    fetchMetricsTimeseriesFromDataset(joinRequest, Constants.StatsBatchDataset)
 
-  def fetchConsistencyMetricsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
-    val keyCodec = getSchemaFromKVStore(Constants.ConsistencyMetricsDataset,
-                                        s"${joinRequest.name}${Constants.TimedKvRDDKeySchemaKey}")
-    val valueCodec = getSchemaFromKVStore(Constants.ConsistencyMetricsDataset,
-                                          s"${joinRequest.name}${Constants.TimedKvRDDValueSchemaKey}")
+  def fetchConsistencyMetricsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
+    convertStatsResponseToSeriesResponse(
+      joinRequest,
+      fetchMetricsTimeseriesFromDataset(joinRequest, Constants.ConsistencyMetricsDataset))
+
+  def fetchLogStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
+    convertStatsResponseToSeriesResponse(joinRequest,
+                                         fetchMetricsTimeseriesFromDataset(joinRequest, Constants.LogStatsBatchDataset))
+
+  private def fetchMetricsTimeseriesFromDataset(joinRequest: StatsRequest,
+                                                dataset: String): Future[Seq[StatsResponse]] = {
+    val keyCodec = getStatsSchemaFromKVStore(dataset, s"${joinRequest.name}${Constants.TimedKvRDDKeySchemaKey}")
+    val valueCodec = getStatsSchemaFromKVStore(dataset, s"${joinRequest.name}${Constants.TimedKvRDDValueSchemaKey}")
     val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
-    val responses = kvStore
-      .get(
-        GetRequest(keyCodec.encodeArray(Array(joinRequest.name)),
-                   Constants.ConsistencyMetricsDataset,
-                   afterTsMillis = joinRequest.startTs)
-      )
+    val responseFuture: Future[Seq[StatsResponse]] = kvStore
+      .get(GetRequest(keyCodec.encodeArray(Array(joinRequest.name)), dataset, afterTsMillis = joinRequest.startTs))
       .map(
         _.values.get.toArray
           .filter(_.millis <= upperBound)
@@ -428,7 +416,7 @@ class Fetcher(val kvStore: KVStore,
             StatsResponse(joinRequest, Try(valueCodec.decodeMap(tv.bytes)), millis = tv.millis)
           }
           .toSeq)
-    convertStatsResponseToSeriesResponse(joinRequest, responses)
+    responseFuture
   }
 
   /**
@@ -492,45 +480,6 @@ class Fetcher(val kvStore: KVStore,
       }
     }
     convertStatsResponseToSeriesResponse(joinRequest, fetchStats(joinRequest))
-  }
-
-  /**
-    * For a time interval determine the aggregated stats between an startTs and endTs. Particularly useful for
-    * determining data distributions between [startTs, endTs]
-    */
-  def fetchMergedStatsBetween(joinRequest: StatsRequest): Future[MergedStatsResponse] = {
-    val joinCodecs = getJoinCodecs(joinRequest.name).get
-    // Metrics are derived from the valueSchema of the join.
-    val metrics = StatsGenerator.buildMetrics(joinCodecs.valueSchema.map(sf => (sf.name, sf.fieldType)))
-    // Aggregator needs to aggregate partial IRs of stats. This should include transformations over the metrics.
-    val aggregator = StatsGenerator.buildAggregator(metrics, joinCodecs.statsInputSchema)
-    val rawResponses = fetchStats(joinRequest)
-    rawResponses.map {
-      var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
-      responseFuture =>
-        responseFuture.foreach { response =>
-          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field =>
-            response.values.get(field.name).asInstanceOf[Any]
-          }.toArray)
-          mergedIr = aggregator.merge(mergedIr, batchRecord)
-        }
-        // Other things that would require custom processing: HeavyHitters
-        val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
-          case (statName, finalStat) =>
-            if (statName.endsWith("percentile")) {
-              statName ->
-                StatsGenerator.finalizedPercentilesMerged.indices
-                  .map(idx =>
-                    Map("xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
-                        "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava)
-                  .toList
-                  .asJava
-            } else {
-              statName -> finalStat.asInstanceOf[AnyRef]
-            }
-        }.toMap
-        MergedStatsResponse(joinRequest, Try(responseMap))
-    }
   }
 
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],

@@ -120,7 +120,20 @@ object OnlineUtils {
   def serveStats(tableUtils: TableUtils, inMemoryKvStore: InMemoryKvStore, endDs: String, joinConf: api.Join): Unit = {
     val statsJob = new SummaryJob(tableUtils.sparkSession, joinConf, endDs)
     statsJob.dailyRun()
-    inMemoryKvStore.bulkPut(joinConf.metaData.dailyStatsUploadTable, Constants.StatsBatchDataset, null)
+    inMemoryKvStore.bulkPut(joinConf.metaData.toUploadTable(joinConf.metaData.dailyStatsOutputTable),
+                            Constants.StatsBatchDataset,
+                            null)
+  }
+
+  def serveLogStats(tableUtils: TableUtils,
+                    inMemoryKvStore: InMemoryKvStore,
+                    endDs: String,
+                    joinConf: api.Join): Unit = {
+    val statsJob = new SummaryJob(tableUtils.sparkSession, joinConf, endDs)
+    statsJob.loggingRun()
+    inMemoryKvStore.bulkPut(joinConf.metaData.toUploadTable(joinConf.metaData.loggingStatsTable),
+                            Constants.LogStatsBatchDataset,
+                            null)
   }
 
   def serveConsistency(tableUtils: TableUtils,

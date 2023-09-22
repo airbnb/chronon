@@ -396,6 +396,25 @@ object Driver {
     }
   }
 
+  object LogStats {
+    class Args extends Subcommand("log-summary") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+
+      override def subcommandName() = s"log_stats_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
+        .loggingRun(Some(args.stepDays()), args.sample())
+    }
+  }
+
   object GroupByUploader {
     class Args extends Subcommand("group-by-upload") with OfflineSubcommand {
       override def subcommandName() = "group-by-upload"
@@ -754,6 +773,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object LogStatsArgs extends LogStats.Args
+    addSubcommand(LogStatsArgs)
     object CompareJoinQueryArgs extends CompareJoinQuery.Args
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
@@ -794,6 +815,7 @@ object Driver {
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
           case _                           => println(s"Unknown subcommand: $x")
