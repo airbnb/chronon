@@ -242,6 +242,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
   def chainedStreamingQuery: DataStreamWriter[Row] = {
+    val MAX_FETCH_WAIT_TIME = 2000 // 2 seconds
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
     val topic = TopicInfo.parse(left.topic)
@@ -271,15 +272,28 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
+
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         var fetcher: Fetcher = null
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          if (fetcher == null) { fetcher = apiImpl.buildFetcher() }
+          if (fetcher == null) { fetcher = apiImpl.buildFetcher(debug = debug) }
           val requests = rows.toScala.map { row =>
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
-            Request(joinRequestName, keyMap, Option(row.getLong(leftTimeIndex)))
+            Request(joinRequestName, keyMap)
           }
+//          val latestEventTime = rows.toScala.map { row =>
+//            Option(row.getLong(leftTimeIndex))
+//          }.max
+//          println(s" $$ max event time $latestEventTime ms")
+//          val waitTime: Long = latestEventTime
+//            .map { ts =>
+//              MAX_FETCH_WAIT_TIME - (System.currentTimeMillis() - ts)
+//            }
+//            .getOrElse(MAX_FETCH_WAIT_TIME)
+
+          //Wait for parent stream to complete
+          Thread.sleep(MAX_FETCH_WAIT_TIME)
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
@@ -315,8 +329,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         var kvStore: KVStore = null
         override def call(df: DataFrame, l: lang.Long): Unit = {
           if (kvStore == null) { kvStore = apiImpl.genKvStore }
-          val putRequests = df.collect().map(putRequestHelper.toPutRequest)
-          if (!debug) {
+          val data = df.collect()
+          val putRequests = data.map(putRequestHelper.toPutRequest)
+          if (debug) {
+            println(s" Final df size to write: ${data.length}")
+            println(s" Size of putRequests to kv store- ${putRequests.length}")
+          } else {
             putRequests.map(request => emitRequestMetric(request, context.withSuffix("egress")))
             kvStore.multiPut(putRequests)
           }
