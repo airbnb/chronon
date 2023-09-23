@@ -22,7 +22,8 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
-class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(implicit
+class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
+    implicit
     session: SparkSession,
     apiImpl: Api)
     extends Serializable {
@@ -242,7 +243,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
   def chainedStreamingQuery: DataStreamWriter[Row] = {
-    val MAX_FETCH_WAIT_TIME = 2000 // 2 seconds
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
     val topic = TopicInfo.parse(left.topic)
@@ -293,7 +293,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 //            .getOrElse(MAX_FETCH_WAIT_TIME)
 
           //Wait for parent stream to complete
-          Thread.sleep(MAX_FETCH_WAIT_TIME)
+          Thread.sleep(lagMillis)
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects

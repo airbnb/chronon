@@ -665,6 +665,7 @@ object Driver {
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
+      val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =
         opt[String](required = false, descr = "host:port of a kafka bootstrap server")
       val mockWrites: ScallopOption[Boolean] = opt[Boolean](required = false,
@@ -675,6 +676,11 @@ object Driver {
         required = false,
         default = Some(false),
         descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
+      val lagMillis: ScallopOption[Int] = opt[Int](
+        required = false,
+        default = Some(DEFAULT_LAG_MILLIS),
+        descr = "Lag time for chaining, before fetching upstream join results, in milliseconds. Default 2 seconds"
+      )
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
@@ -712,7 +718,10 @@ object Driver {
         onlineJar.foreach(session.sparkContext.addJar)
       implicit val apiImpl = args.impl(args.serializableProps)
       val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
-        new JoinSourceRunner(groupByConf, args.serializableProps, args.debug()).chainedStreamingQuery.start()
+        new JoinSourceRunner(groupByConf,
+                             args.serializableProps,
+                             args.debug(),
+                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
       } else {
         val streamingSource = groupByConf.streamingSource
         assert(streamingSource.isDefined,
