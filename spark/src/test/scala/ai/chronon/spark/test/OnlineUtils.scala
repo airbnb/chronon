@@ -76,7 +76,7 @@ object OnlineUtils {
     val groupByConf = originalGroupByConf.deepCopy()
     val source = groupByConf.streamingSource.get
     mutateTopicWithDs(source, ds)
-    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug)
+    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug, lagMillis = 0)
     val query = groupByStreaming.chainedStreamingQuery.trigger(Trigger.Once()).start()
     // drain work scheduled as futures over the executioncontext
     Thread.sleep(5000)

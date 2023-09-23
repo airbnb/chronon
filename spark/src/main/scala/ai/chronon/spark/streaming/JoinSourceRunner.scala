@@ -268,7 +268,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"Upstream join request name: $joinRequestName")
     val schemas = buildSchemas
     val leftColumns = schemas.leftSourceSchema.fieldNames
-    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
@@ -282,15 +281,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
             Request(joinRequestName, keyMap)
           }
-//          val latestEventTime = rows.toScala.map { row =>
-//            Option(row.getLong(leftTimeIndex))
-//          }.max
-//          println(s" $$ max event time $latestEventTime ms")
-//          val waitTime: Long = latestEventTime
-//            .map { ts =>
-//              MAX_FETCH_WAIT_TIME - (System.currentTimeMillis() - ts)
-//            }
-//            .getOrElse(MAX_FETCH_WAIT_TIME)
 
           //Wait for parent stream to complete
           Thread.sleep(lagMillis)
