@@ -1,8 +1,8 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, JoinSource, StructType}
-import ai.chronon.online.{KVStore, SparkConversions}
+import ai.chronon.api.{Accuracy, Constants, DataModel}
+import ai.chronon.online.KVStore
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.{GroupBy, JoinSourceRunner}
 import ai.chronon.spark.stats.SummaryJob
@@ -76,7 +76,7 @@ object OnlineUtils {
     val groupByConf = originalGroupByConf.deepCopy()
     val source = groupByConf.streamingSource.get
     mutateTopicWithDs(source, ds)
-    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug)
+    val groupByStreaming = new JoinSourceRunner(groupByConf, Map.empty, debug = debug, lagMillis = 0)
     val query = groupByStreaming.chainedStreamingQuery.trigger(Trigger.Once()).start()
     // drain work scheduled as futures over the executioncontext
     Thread.sleep(5000)

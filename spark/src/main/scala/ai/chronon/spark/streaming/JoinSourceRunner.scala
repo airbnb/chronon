@@ -22,7 +22,8 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
-class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(implicit
+class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
+    implicit
     session: SparkSession,
     apiImpl: Api)
     extends Serializable {
@@ -267,19 +268,25 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"Upstream join request name: $joinRequestName")
     val schemas = buildSchemas
     val leftColumns = schemas.leftSourceSchema.fieldNames
-    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
+
+    println(s"Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis")
+    // todo: add proper timestamp to the fetcher
+    // leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         var fetcher: Fetcher = null
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          if (fetcher == null) { fetcher = apiImpl.buildFetcher() }
+          if (fetcher == null) { fetcher = apiImpl.buildFetcher(debug = debug) }
           val requests = rows.toScala.map { row =>
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
-            Request(joinRequestName, keyMap, Option(row.getLong(leftTimeIndex)))
+            Request(joinRequestName, keyMap)
           }
+
+          //Wait for parent stream to complete
+          Thread.sleep(lagMillis)
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
@@ -315,8 +322,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         var kvStore: KVStore = null
         override def call(df: DataFrame, l: lang.Long): Unit = {
           if (kvStore == null) { kvStore = apiImpl.genKvStore }
-          val putRequests = df.collect().map(putRequestHelper.toPutRequest)
-          if (!debug) {
+          val data = df.collect()
+          val putRequests = data.map(putRequestHelper.toPutRequest)
+          if (debug) {
+            println(s" Final df size to write: ${data.length}")
+            println(s" Size of putRequests to kv store- ${putRequests.length}")
+          } else {
             putRequests.map(request => emitRequestMetric(request, context.withSuffix("egress")))
             kvStore.multiPut(putRequests)
           }
