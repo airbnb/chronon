@@ -13,7 +13,6 @@ import org.junit.Test
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await}
-import scala.util.ScalaJavaConversions.ListOps
 
 class GroupByUploadTest {
 

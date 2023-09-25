@@ -431,6 +431,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         elif isinstance(source, ttypes.EntitySource):
             return ttypes.Source(entities=source)
         elif isinstance(source, ttypes.JoinSource):
+            source.join.metadata = output_namespace or source.metaData.outputNamespace
             return ttypes.Source(joinSource=source)
         elif isinstance(source, ttypes.Source):
             return source

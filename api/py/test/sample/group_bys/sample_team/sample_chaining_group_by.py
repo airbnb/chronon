@@ -59,5 +59,5 @@ chaining_group_by_v1 = GroupBy(
         "sample_config_json": """{"sample_key": "sample_value"}""",
         "description": "sample description"
     },
-    output_namespace="sample_namespace",
+    output_namespace="test_namespace",
 )
