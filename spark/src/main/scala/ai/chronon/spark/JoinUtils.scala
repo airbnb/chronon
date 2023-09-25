@@ -79,7 +79,10 @@ object JoinUtils {
     */
   def getRangesToFill(leftSource: ai.chronon.api.Source,
                       tableUtils: TableUtils,
-                      endPartition: String): PartitionRange = {
+                      endPartition: String,
+                      overrideStartPartition: Option[String] = None
+                     ): PartitionRange = {
+    
     val leftStart = Option(leftSource.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
     val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)

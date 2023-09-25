@@ -270,7 +270,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -303,7 +303,7 @@ abstract class JoinBase(joinConf: api.Join,
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // detect holes and chunks to fill
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition, overrideStartPartition)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
