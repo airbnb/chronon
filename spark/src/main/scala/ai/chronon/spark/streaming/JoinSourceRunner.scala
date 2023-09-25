@@ -272,6 +272,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
 
+    println(s"Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis")
+    // todo: add proper timestamp to the fetcher
+    // leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         var fetcher: Fetcher = null

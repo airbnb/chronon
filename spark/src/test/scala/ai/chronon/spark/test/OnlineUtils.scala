@@ -1,8 +1,8 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, JoinSource, StructType}
-import ai.chronon.online.{KVStore, SparkConversions}
+import ai.chronon.api.{Accuracy, Constants, DataModel}
+import ai.chronon.online.KVStore
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.{GroupBy, JoinSourceRunner}
 import ai.chronon.spark.stats.SummaryJob
