@@ -139,22 +139,22 @@ object JoinUtils {
                           tableUtils: TableUtils,
                           viewProperties: Map[String, String] = null,
                           labelColumnPrefix: String = Constants.LabelColumnPrefix): Unit = {
-    val fieldDefinitions = joinKeys.map(field => s"l.${field}") ++
+    val fieldDefinitions = joinKeys.map(field => s"l.`${field}`") ++
       tableUtils
         .getSchemaFromTable(leftTable)
         .filterNot(field => joinKeys.contains(field.name))
-        .map(field => s"l.${field.name}") ++
+        .map(field => s"l.`${field.name}`") ++
       tableUtils
         .getSchemaFromTable(rightTable)
         .filterNot(field => joinKeys.contains(field.name))
         .map(field => {
           if (field.name.startsWith(labelColumnPrefix)) {
-            s"r.${field.name}"
+            s"r.`${field.name}`"
           } else {
-            s"r.${field.name} AS ${labelColumnPrefix}_${field.name}"
+            s"r.`${field.name}` AS `${labelColumnPrefix}_${field.name}`"
           }
         })
-    val joinKeyDefinitions = joinKeys.map(key => s"l.${key} = r.${key}")
+    val joinKeyDefinitions = joinKeys.map(key => s"l.`${key}` = r.`${key}`")
     val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
     val queryFragment =
       s"""

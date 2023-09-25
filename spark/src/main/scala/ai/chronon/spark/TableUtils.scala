@@ -343,7 +343,7 @@ case class TableUtils(sparkSession: SparkSession) {
                              fileFormat: String): String = {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
-      .map(field => s"${field.name} ${field.dataType.catalogString}")
+      .map(field => s"`${field.name}` ${field.dataType.catalogString}")
     val createFragment =
       s"""CREATE TABLE $tableName (
          |    ${fieldDefinitions.mkString(",\n    ")}

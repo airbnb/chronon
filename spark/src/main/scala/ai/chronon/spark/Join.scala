@@ -188,7 +188,7 @@ class Join(joinConf: api.Join,
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
+    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns.map(c => s"`$c`"): _*), bootstrapInfo)
     val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo, leftDf.columns),
                                           bootstrapInfo,
                                           leftDf.columns)
