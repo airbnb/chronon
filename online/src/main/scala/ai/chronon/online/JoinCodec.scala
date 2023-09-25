@@ -50,6 +50,9 @@ case class JoinCodec(conf: JoinOps,
             .map(sf => sf.name -> sf.name)
         } else { Seq.empty }
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
+        // Before we instantiate PooledCatalystUtil, we run all setup statements
+        // on the Join e.g. UDFs
+        conf.join.setups.foreach(CatalystUtil.checkAndRegister)
         val catalystUtil =
           new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
         build(

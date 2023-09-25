@@ -39,9 +39,27 @@ object CatalystUtil {
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.adaptive.enabled", "false")
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+      .enableHiveSupport()
       .getOrCreate()
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
+  }
+
+  /**
+   * We may instantiate multiple [[CatalystUtil]]s with the same setups
+   * (e.g. tests + [[PooledCatalystUtil]]) which all point to the same
+   * SparkSession. Spark will crash if we register a UDF multiple times
+   * with the same name, so we catch any exceptions specifically related to that.
+   *
+   * @param setup setup statement from a Chronon Query
+   */
+  def checkAndRegister(setup: String): Unit = {
+    try {
+      session.sql(setup)
+    } catch {
+      case e: Exception if "Function ([^\\s])\\w+ already exists".r.findFirstIn(e.getMessage).isDefined =>
+        println(s"Not running setup statement $setup because of exception: ${e}")
+    }
   }
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)

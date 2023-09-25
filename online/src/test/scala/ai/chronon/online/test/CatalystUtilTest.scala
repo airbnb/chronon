@@ -3,10 +3,13 @@ package ai.chronon.online.test
 import ai.chronon.api._
 import ai.chronon.online.CatalystUtil
 import junit.framework.TestCase
-import org.junit.Assert.{assertEquals, assertTrue, assertArrayEquals}
+import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue, fail}
 import org.junit.Test
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.spark.sql.AnalysisException
 
 import java.util
+import scala.util.{Failure, Success, Try}
 
 trait CatalystUtilTestSparkSQLStructs {
 
@@ -140,6 +143,10 @@ trait CatalystUtilTestSparkSQLStructs {
 
 }
 
+class Int32Udf extends UDF {
+  def evaluate(n: Int): Int = n - 1
+}
+
 class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
 
   @Test
@@ -258,6 +265,53 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertEquals(res.get("float64_x"), Double.MaxValue - 1.0f)
     assertEquals(res.get("string_x"), "hello123")
     assertArrayEquals(res.get("bytes_x").asInstanceOf[Array[Byte]], "worldworld".getBytes())
+  }
+
+  @Test
+  def testUdfSetupStatementShouldWork(): Unit = {
+    val selects = Seq(
+      "int32_x" -> "INT32_udf(`int32_x`)",
+    )
+    val setupStatement = "CREATE TEMPORARY FUNCTION INT32_udf as 'ai.chronon.online.test.Int32Udf'"
+    CatalystUtil.checkAndRegister(setupStatement)
+    val cu = new CatalystUtil(selects, CommonScalarsStruct)
+    val res = cu.performSql(CommonScalarsRow)
+    assertEquals(res.get.size, 1)
+    assertEquals(res.get("int32_x"), Int.MaxValue - 1)
+  }
+
+  /**
+   * Validates that instantiating multiple CatalystUtils with the same setup statements
+   * only registers UDFs once
+   */
+  @Test
+  def testCatalystUtilCheckAndRegister(): Unit = {
+    val selects = Seq(
+      "int32_x" -> "INT32_udf_2(`int32_x`)",
+    )
+    val setupStatement = "CREATE TEMPORARY FUNCTION INT32_udf_2 as 'ai.chronon.online.test.Int32Udf'"
+    CatalystUtil.checkAndRegister(setupStatement)
+    CatalystUtil.checkAndRegister(setupStatement)
+    val cu = new CatalystUtil(selects, CommonScalarsStruct)
+    val res = cu.performSql(CommonScalarsRow)
+    assertEquals(res.get.size, 1)
+    assertEquals(res.get("int32_x"), Int.MaxValue - 1)
+  }
+
+  /**
+   * Validates that checkAndRegister still crashes for other malformed SparkSQL statements
+   */
+  @Test
+  def testCatalystUtilCheckAndRegisterCrashes(): Unit = {
+    val setupStatement = "CREATE TEMPORARY FUNCTION fake_udf as 'fake_package.fake_class'"
+    val attempt = Try {
+      CatalystUtil.checkAndRegister(setupStatement)
+    }
+    attempt match {
+      case Failure(exception) => assert(exception.getClass == classOf[AnalysisException])
+      case Success(_) => fail()
+    }
+
   }
 
   @Test
@@ -530,5 +584,6 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertTrue(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("hello"))
     assertTrue(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("world"))
   }
+
 
 }
