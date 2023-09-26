@@ -563,7 +563,6 @@ def Join(left: api.Source,
 
     bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
 
-    print("$$ historical_backfill: {}".format(historical_backfill))
     metadata = api.MetaData(
         online=online,
         production=production,
