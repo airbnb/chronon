@@ -148,6 +148,22 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
+def Derivation(name: str, expression: str) -> ttypes.Derivation:
+    """
+    Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
+    output schema. It is supported for offline computations for now.
+
+    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
+
+    :param name: output column name of the SQL expression
+    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
+    """
+    return ttypes.Derivation(
+        name=name, expression=expression
+    )
+
+
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
     if not aggregations:
         return False
@@ -295,6 +311,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             offline_schedule: str = '@daily',
             name: str = None,
             tags: Dict[str, str] = None,
+            derivations: List[ttypes.Derivation] = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -388,13 +405,17 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         '@monthly': '0 0 1 * *',
         '@yearly': '0 0 1 1 *',
     :type offline_schedule: str
-    :param kwargs:
-        Additional properties that would be passed to run.py if specified under additional_args property.
-        And provides an option to pass custom values to the processing logic.
-    :type kwargs: Dict[str, str]
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
+    :type tags: Dict[str, str]
+    :param derivations:
+        Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
+        output schema. It is supported for offline computations for now.
+    :type derivations: List[ai.chronon.api.ttypes.Drivation]
+    :param kwargs:
+        Additional properties that would be passed to run.py if specified under additional_args property.
+        And provides an option to pass custom values to the processing logic.
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -476,7 +497,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         aggregations=aggregations,
         metaData=metadata,
         backfillStartDate=backfill_start_date,
-        accuracy=accuracy
+        accuracy=accuracy,
+        derivations=derivations
     )
     validate_group_by(group_by)
     return group_by

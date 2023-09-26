@@ -3,6 +3,7 @@ from ai.chronon.group_by import (
     GroupBy,
     Aggregation,
     Operation,
+    Derivation
 )
 
 
@@ -30,5 +31,15 @@ require_backfill = GroupBy(
     ],
     production=False,
     output_namespace="sample_namespace",
-    backfill_start_date="2023-01-01"
+    backfill_start_date="2023-01-01",
+    derivations=[
+        Derivation(
+            name="derived_field",
+            expression=""
+        ),
+        Derivation(
+            name="*",
+            expression="*"
+        )
+    ]
 )
