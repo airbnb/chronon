@@ -306,14 +306,11 @@ abstract class JoinBase(joinConf: api.Join,
     // OverrideStartPartition is used to replace the start partition of the join config. This is useful when
     //  1 - User would like to test run with different start partition
     //  2 - User has entity table which is accumulative and only want to run backfill for the latest partition
-    val overrideStart = if(joinConf.metaData.historicalBackfill) {
-      overrideStartPartition
-    } else {
-      println(s"Historical backfill is set to false. Backfill single partition only: $endPartition")
-      Some(endPartition)
-    }
-
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition, overrideStart)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left,
+                                                tableUtils,
+                                                endPartition,
+                                                overrideStartPartition,
+                                                joinConf.metaData.historicalBackfill)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)

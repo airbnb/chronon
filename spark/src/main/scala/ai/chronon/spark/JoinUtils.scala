@@ -80,12 +80,18 @@ object JoinUtils {
   def getRangesToFill(leftSource: ai.chronon.api.Source,
                       tableUtils: TableUtils,
                       endPartition: String,
-                      overrideStartPartition: Option[String] = None
+                      overrideStartPartition: Option[String] = None,
+                      historicalBackfill: Boolean = true
                      ): PartitionRange = {
-
+    val overrideStart = if (historicalBackfill) {
+      overrideStartPartition
+    } else {
+      println(s"Historical backfill is set to false. Backfill single partition only: $endPartition")
+      Some(endPartition)
+    }
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
-    val leftStart = overrideStartPartition.getOrElse(defaultLeftStart)
+    val leftStart = overrideStart.getOrElse(defaultLeftStart)
     val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)
     PartitionRange(leftStart, leftEnd)(tableUtils)
   }
