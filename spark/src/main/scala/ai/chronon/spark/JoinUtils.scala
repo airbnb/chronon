@@ -81,8 +81,7 @@ object JoinUtils {
                       tableUtils: TableUtils,
                       endPartition: String,
                       overrideStartPartition: Option[String] = None,
-                      historicalBackfill: Boolean = true
-                     ): PartitionRange = {
+                      historicalBackfill: Boolean = true): PartitionRange = {
     val overrideStart = if (historicalBackfill) {
       overrideStartPartition
     } else {

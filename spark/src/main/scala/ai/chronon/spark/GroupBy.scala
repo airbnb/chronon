@@ -390,7 +390,8 @@ object GroupBy {
         val joinConf = joinSource.join
         // materialize the table with the right end date. QueryRange.end could be shifted for temporal events
         val beforeDs = tableUtils.partitionSpec.before(queryRange.end)
-        val isPreShifted = groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
+        val isPreShifted =
+          groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
         val endDate = if (isPreShifted) beforeDs else queryRange.end
 
         val join = new Join(joinConf, endDate, tableUtils, mutationScan = false, showDf = showDf)

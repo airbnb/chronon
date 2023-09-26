@@ -211,7 +211,8 @@ object Driver {
                      descr = "Skip the first unfilled partition range if some future partitions have been populated.")
       val startPartitionOverride: ScallopOption[String] =
         opt[String](required = false,
-          descr = "Start date to compute join backfill, this start date will override start partition in conf.")
+                    descr =
+                      "Start date to compute join backfill, this start date will override start partition in conf.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
