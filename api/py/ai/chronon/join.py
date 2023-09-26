@@ -377,6 +377,7 @@ def Join(left: api.Source,
          consistency_sample_percent: float = 5.0,
          online_external_parts: List[api.ExternalPart] = None,
          offline_schedule: str = '@daily',
+         historical_backfill: bool = True,
          row_ids: List[str] = None,
          bootstrap_parts: List[api.BootstrapPart] = None,
          bootstrap_from_log: bool = False,
@@ -468,6 +469,10 @@ def Join(left: api.Source,
     :param tags:
         Additional metadata about the Join that you wish to track. Does not effect computation.
     :type tags: Dict[str, str]
+    :param historical_backfill:
+        Flag to indicate whether join backfill should backfill previous holes.
+        Setting to false will only backfill latest single partition
+    :type historical_backfill: bool
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -558,6 +563,7 @@ def Join(left: api.Source,
 
     bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
 
+    print("$$ historical_backfill: {}".format(historical_backfill))
     metadata = api.MetaData(
         online=online,
         production=production,
@@ -568,7 +574,8 @@ def Join(left: api.Source,
         modeToEnvMap=env,
         samplePercent=sample_percent,
         offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
+        consistencySamplePercent=consistency_sample_percent,
+        historicalBackfill=historical_backfill
     )
 
     return api.Join(

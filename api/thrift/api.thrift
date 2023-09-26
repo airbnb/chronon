@@ -253,6 +253,9 @@ struct MetaData {
     12: optional string offlineSchedule
     // percentage of online serving requests used to compute consistency metrics
     13: optional double consistencySamplePercent
+    // Flag to indicate whether join backfill should backfill previous holes.
+    // Setting to false will only backfill latest single partition
+    14: optional bool historicalBackfill
 }
 
 // Equivalent to a FeatureSet in chronon terms

@@ -36,7 +36,8 @@
             "team": "sample_team",
             "samplePercent": 100.0,
             "offlineSchedule": "@daily",
-            "consistencySamplePercent": 5.0
+            "consistencySamplePercent": 5.0,
+            "historicalBackfill": 0
           },
           "left": {
             "events": {

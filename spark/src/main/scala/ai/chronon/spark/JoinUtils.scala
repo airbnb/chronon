@@ -82,9 +82,10 @@ object JoinUtils {
                       endPartition: String,
                       overrideStartPartition: Option[String] = None
                      ): PartitionRange = {
-    
-    val leftStart = Option(leftSource.query.startPartition)
+
+    lazy val defaultLeftStart = Option(leftSource.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
+    val leftStart = overrideStartPartition.getOrElse(defaultLeftStart)
     val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)
     PartitionRange(leftStart, leftEnd)(tableUtils)
   }

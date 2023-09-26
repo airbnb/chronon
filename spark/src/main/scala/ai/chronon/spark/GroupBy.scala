@@ -388,8 +388,7 @@ object GroupBy {
         println("Join source detected. Materializing the join.")
         val joinSource = source.getJoinSource
         val joinConf = joinSource.join
-        // materialize the table with the right end date
-        // queryRange.end could be shifted for temporal events
+        // materialize the table with the right end date. QueryRange.end could be shifted for temporal events
         val beforeDs = tableUtils.partitionSpec.before(queryRange.end)
         val isPreShifted = groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
         val endDate = if (isPreShifted) beforeDs else queryRange.end

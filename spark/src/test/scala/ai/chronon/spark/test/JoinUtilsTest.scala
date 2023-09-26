@@ -327,6 +327,24 @@ class JoinUtilsTest {
     assertEquals(range, PartitionRange(startPartition, endPartition)(tableUtils))
   }
 
+  @Test
+  def testGetRangesToFillWithOverride(): Unit = {
+    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    // left table
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = "joinUtil.queries_table"
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 50)
+      .save(itemQueriesTable)
+
+    val startPartition = "2023-04-15"
+    val startPartitionOverride = "2023-08-01"
+    val endPartition = "2023-08-08"
+    val leftSource = Builders.Source.events(Builders.Query(startPartition = startPartition), table = itemQueriesTable)
+    val range = JoinUtils.getRangesToFill(leftSource, tableUtils, endPartition, Some(startPartitionOverride))
+    assertEquals(range, PartitionRange(startPartitionOverride, endPartition)(tableUtils))
+  }
+
   import ai.chronon.api.{LongType, StringType, StructField, StructType}
 
   def createSampleTable(tableName: String = "testSampleTable"): DataFrame = {

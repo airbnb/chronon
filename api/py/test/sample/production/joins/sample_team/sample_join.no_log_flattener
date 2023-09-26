@@ -13,7 +13,8 @@
     "outputNamespace": "sample_namespace",
     "team": "sample_team",
     "samplePercent": 0.0,
-    "offlineSchedule": "@daily"
+    "offlineSchedule": "@daily",
+    "historicalBackfill": 1
   },
   "left": {
     "entities": {
