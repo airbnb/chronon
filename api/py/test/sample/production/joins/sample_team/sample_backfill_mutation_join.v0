@@ -15,8 +15,7 @@
     "outputNamespace": "chronon_db",
     "team": "sample_team",
     "samplePercent": 100.0,
-    "offlineSchedule": "@daily",
-    "historicalBackfill": 1
+    "offlineSchedule": "@daily"
   },
   "left": {
     "events": {

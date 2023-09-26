@@ -18,8 +18,7 @@
       }
     },
     "samplePercent": 100.0,
-    "offlineSchedule": "@daily",
-    "historicalBackfill": 1
+    "offlineSchedule": "@daily"
   },
   "left": {
     "entities": {

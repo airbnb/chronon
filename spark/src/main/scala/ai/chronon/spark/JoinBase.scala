@@ -310,7 +310,7 @@ abstract class JoinBase(joinConf: api.Join,
                                                 tableUtils,
                                                 endPartition,
                                                 overrideStartPartition,
-                                                joinConf.metaData.historicalBackfill)
+                                                joinConf.historicalBackfill)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
