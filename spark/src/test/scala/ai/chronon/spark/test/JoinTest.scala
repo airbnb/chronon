@@ -406,8 +406,7 @@ class JoinTest {
     println(s"Left side expected count: $leftSideCount")
     println(s"Actual count: ${computed.count()}")
     assertEquals(leftSideCount, computed.count())
-    //There should be only one partition in computed df which equals to end partition
-    // Select the column you want as a DataFrame
+    // There should be only one partition in computed df which equals to end partition
     val allPartitions = computed.select("ds").rdd.map(row => row(0)).collect().toSet
     assert(allPartitions.size == 1)
     assertEquals(allPartitions.toList(0), end)
