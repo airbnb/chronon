@@ -10,7 +10,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Encoders, KeyValueGroupedDataset, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
@@ -467,13 +467,39 @@ object GroupBy {
 
   def needsTime(groupByConf: api.GroupBy) = Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
 
+  def millisecondsToDays(lagMilliseconds: Long) = {
+    val millisecondsInDay = 1000.0 * 60 * 60 * 24
+    math.ceil(lagMilliseconds / millisecondsInDay).toInt
+  }
+
+  def adjustForLag(input: DataFrame, lagToAdjustBy: Long, tableUtils: BaseTableUtils) = {
+    val maybeTimeColumnAdjusted = if (tableUtils.hasValidTimeColumn(input)) {
+      logger.info(s"Adjusting time column ${Constants.TimeColumn} for lag by ${lagToAdjustBy}")
+      input.withColumn(Constants.TimeColumn, col(Constants.TimeColumn) + lit(lagToAdjustBy))
+    } else {
+      input
+    }
+    if (input.schema.fieldNames.contains(tableUtils.partitionColumn)) {
+      // Adjust partition column.
+      val lagDays = millisecondsToDays(lagToAdjustBy)
+      logger.info(s"Adjusting partition column ${tableUtils.partitionColumn} for lag by ${lagDays}")
+      maybeTimeColumnAdjusted.withShiftedPartition(tableUtils.partitionColumn, lagDays)
+    } else {
+      maybeTimeColumnAdjusted
+    }
+  }
+
   def from(groupByConf: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: BaseTableUtils,
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
-           finalize: Boolean = true): GroupBy = {
+           finalize: Boolean = true,
+           lag: Long = 0): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
+    val lagDays = millisecondsToDays(lag)
+    logger.info("adjusting start of query range by " + lagDays + " days for lag of " + lag)
+    val updatedQueryRange = queryRange.shiftStart(-1 * lagDays)
     val inputDf = groupByConf.sources.asScala
       .map { source =>
         if (!tableUtils.isPartitioned(source.table)) {
@@ -484,7 +510,7 @@ object GroupBy {
           renderDataSourceQuery(groupByConf,
             source,
             groupByConf.getKeyColumns.asScala,
-            queryRange,
+            updatedQueryRange,
             tableUtils,
             groupByConf.maxWindow,
             groupByConf.inferredAccuracy)
@@ -498,22 +524,23 @@ object GroupBy {
       }
 
     def doesNotNeedTime = !needsTime(groupByConf)
-    def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
+    def hasValidTimeColumn = tableUtils.hasValidTimeColumn(inputDf)
     assert(
       doesNotNeedTime || hasValidTimeColumn,
       s"Time column, ts doesn't exists (or is not a LONG type) for groupBy ${groupByConf.metaData.name}, but you either have windowed aggregation(s) or time based aggregation(s) like: " +
         "first, last, firstK, lastK. \n" +
         "Please note that for the entities case, \"ts\" needs to be explicitly specified in the selects."
     )
+    val dfWithAdjustedTime = adjustForLag(inputDf, lag, tableUtils)
     val logPrefix = s"gb:{${groupByConf.metaData.name}}:"
     val keyColumns = groupByConf.getKeyColumns.toScala
     val skewFilteredDf = skewFilter
       .map { sf =>
         logger.info(s"$logPrefix filtering using skew filter:\n    $sf")
-        val filtered = inputDf.filter(sf)
+        val filtered = dfWithAdjustedTime.filter(sf)
         filtered
       }
-      .getOrElse(inputDf)
+      .getOrElse(dfWithAdjustedTime)
 
     val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 

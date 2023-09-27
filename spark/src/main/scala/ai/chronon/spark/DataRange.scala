@@ -117,6 +117,14 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: BaseT
     }
   }
 
+  def shiftStart(days: Int): PartitionRange = {
+    if (days == 0) {
+      this
+    } else {
+      PartitionRange(tableUtils.partitionSpec.shift(start, days), end)
+    }
+  }
+
   override def compare(that: PartitionRange): Int = {
     def compareDate(left: String, right: String): Int = {
       if (left == right) {

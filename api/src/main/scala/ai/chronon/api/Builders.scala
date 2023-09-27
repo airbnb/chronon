@@ -90,23 +90,26 @@ object Builders {
     def entities(query: Query,
                  snapshotTable: String,
                  mutationTable: String = null,
-                 mutationTopic: String = null): Source = {
+                 mutationTopic: String = null,
+                 lag: Long = 0): Source = {
       val result = new EntitySource()
       result.setQuery(query)
       result.setSnapshotTable(snapshotTable)
       result.setMutationTable(mutationTable)
       result.setMutationTopic(mutationTopic)
+      result.setLag(lag)
       val source = new Source()
       source.setEntities(result)
       source
     }
 
-    def events(query: Query, table: String, topic: String = null, isCumulative: Boolean = false): Source = {
+    def events(query: Query, table: String, topic: String = null, isCumulative: Boolean = false, lag: Long = 0): Source = {
       val result = new EventSource()
       result.setQuery(query)
       result.setTable(table)
       result.setTopic(topic)
       result.setIsCumulative(isCumulative)
+      result.setLag(lag)
       val source = new Source()
       source.setEvents(result)
       source

@@ -37,6 +37,8 @@ trait BaseTableUtils {
       .toMap
   }
 
+  def hasValidTimeColumn(inputDf: DataFrame): Boolean = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
+
   // A method to add breaks between joins. When joining many dataframes together at once,
   // the Spark driver can experience memory pressure. To alleviate this, breaks in the
   // execution plan can be added. There are various ways to do this (including choosing

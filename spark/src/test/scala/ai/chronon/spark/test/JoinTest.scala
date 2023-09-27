@@ -10,7 +10,7 @@ import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.{Before, Test}
@@ -361,6 +361,114 @@ class JoinTest {
   }
 
   @Test
+  def testEntitiesEntitiesWithLag(): Unit = {
+    // untimed/unwindowed entities on right
+    // right side
+    val weightSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("weight", api.DoubleType, 500)
+    )
+    val weightTable = s"$namespace.weights"
+    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
+    val lagDays = 1
+    val weightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("weight"),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore),
+      snapshotTable = weightTable,
+      lag = 1000 * 24 * 60 * 60 * lagDays // 1 day
+    )
+
+    val weightGroupBy = Builders.GroupBy(
+      sources = Seq(weightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
+      metaData = Builders.MetaData(name = "unit_test.country_weights_lag_unittest", namespace = namespace)
+    )
+
+    val heightSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("height", api.LongType, 200)
+    )
+    val heightTable = s"$namespace.heights"
+    DataFrameGen.entities(spark, heightSchema, 1000, partitions = 400).save(heightTable)
+    val heightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
+      snapshotTable = heightTable
+    )
+
+    val heightGroupBy = Builders.GroupBy(
+      sources = Seq(heightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
+      metaData = Builders.MetaData(name = "unit_test.country_heights_lag_unittest", namespace = namespace)
+    )
+
+    // left side
+    val countrySchema = List(Column("country", api.StringType, 100))
+    val countryTable = s"$namespace.countries"
+    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 400).save(countryTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
+      metaData = Builders.MetaData(name = "test.country_features_lag_unittest", namespace = namespace, team = "chronon")
+    )
+
+    val runner = new Join(joinConf, end, tableUtils)
+    val computed = runner.computeJoin(Some(7))
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
+         |   grouped_weights AS (
+         |      SELECT country,
+         |             ds,
+         |             avg(weight) as unit_test_country_weights_lag_unittest_weight_average
+         |      FROM $weightTable
+         |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
+         |      GROUP BY country, ds),
+         |   grouped_heights AS (
+         |      SELECT country,
+         |             ds,
+         |             avg(height) as unit_test_country_heights_lag_unittest_height_average
+         |      FROM $heightTable
+         |      WHERE ds >= '$monthAgo'
+         |      GROUP BY country, ds)
+         |   SELECT countries.country,
+         |        countries.ds,
+         |        grouped_weights.unit_test_country_weights_lag_unittest_weight_average,
+         |        grouped_heights.unit_test_country_heights_lag_unittest_height_average
+         | FROM countries left outer join grouped_weights
+         | ON countries.country = grouped_weights.country
+         | AND countries.ds = (date_format(date_add(to_date(grouped_weights.ds, '${tableUtils.partitionSpec.format}'), $lagDays), '${tableUtils.partitionSpec.format}'))
+         | left outer join grouped_heights
+         | ON countries.ds = grouped_heights.ds
+         | AND countries.country = grouped_heights.country
+    """.stripMargin)
+
+    println("showing join result")
+    computed.show()
+    println("showing query result")
+    expected.show()
+    println(
+      s"Left side count: ${spark.sql(s"SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'").count()}")
+    println(s"Actual count: ${computed.count()}")
+    println(s"Expected count: ${expected.count()}")
+    val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
   def testEventsEventsSnapshot(): Unit = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -417,6 +525,83 @@ class JoinTest {
                                      | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
                                      |""".stripMargin)
     expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
+
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testEventsEventsSnapshotWithLag(): Unit = {
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
+
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      table = viewsTable,
+      lag = 1000 * 24 * 60 * 60 // 1 day
+    )
+
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100))
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
+      metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
+    )
+
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
+    val join = new Join(joinConf = joinConf, endPartition = monthAgo, tableUtils)
+    val computed = join.computeJoin()
+    computed.show()
+
+    println("queries!")
+    tableUtils.sql(s"select * from $itemQueriesTable").show()
+
+    println("views!")
+    tableUtils.sql(s"select * from $viewsTable").show()
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$monthAgo')
+         | SELECT queries.item,
+         |        queries.ts,
+         |        queries.ds,
+         |        AVG(IF(queries.ds > date_format(date_add(to_date($viewsTable.ds, 'yyyy-MM-dd'), 1), 'yyyy-MM-dd'), time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+         | FROM queries left outer join $viewsTable
+         |  ON queries.item = $viewsTable.item
+         | WHERE ($viewsTable.item IS NOT NULL) AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+         | GROUP BY queries.item, queries.ts, queries.ds, from_unixtime(queries.ts/1000, 'yyyy-MM-dd')
+         |""".stripMargin)
+    expected.show()
+    println("expected count! " + expected.count())
+    println("computed: " + computed.count())
 
     val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
 
@@ -729,6 +914,53 @@ class JoinTest {
                                      | JOIN queries
                                      | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
                                      |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
+    val queriesBare =
+      tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
+    assertEquals(queriesBare.count(), computed.count())
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff
+        .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
+          dropOriginal = true)
+        .show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testEventsEventsTemporalWithLag(): Unit = {
+    val lag = 1000 * 24 * 60 * 60 // 1 day
+    val joinConf = getEventsEventsTemporal("temporal", lag = lag)
+
+    val viewsTable = s"$namespace.view_temporal"
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val computed = join.computeJoin(Some(100))
+    computed.show()
+    // date_format(date_add(to_date($viewsTable.ds, 'yyyy-MM-dd'), 1), 'yyyy-MM-dd')
+    val expected = tableUtils.sql(
+      s"""
+         |WITH
+         |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+         | SELECT queries.item, queries.ts, queries.ds, part.user_unit_test_item_views_ts_min, part.user_unit_test_item_views_ts_max, part.user_unit_test_item_views_time_spent_ms_average
+         | FROM (SELECT queries.item,
+         |        queries.ts,
+         |        queries.ds,
+         |        MIN(IF(queries.ts > ($viewsTable.ts + $lag), $viewsTable.ts + $lag, null)) as user_unit_test_item_views_ts_min,
+         |        MAX(IF(queries.ts > ($viewsTable.ts + $lag), $viewsTable.ts + $lag, null)) as user_unit_test_item_views_ts_max,
+         |        AVG(IF(queries.ts > ($viewsTable.ts + $lag), time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+         |     FROM queries left outer join $viewsTable
+         |     ON queries.item = $viewsTable.item
+         |     WHERE $viewsTable.item IS NOT NULL AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+         |     GROUP BY queries.item, queries.ts, queries.ds) as part
+         | JOIN queries
+         | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
+         |""".stripMargin)
     expected.show()
 
     val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
@@ -1117,7 +1349,7 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false, makeUnpartitioned: Boolean = false) = {
+  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false, makeUnpartitioned: Boolean = false, lag: Long = 0) = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -1130,7 +1362,8 @@ class JoinTest {
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
-      isCumulative = makeCumulative
+      isCumulative = makeCumulative,
+      lag = lag
     )
 
     val dfTemp = if (makeCumulative) {
@@ -1168,7 +1401,7 @@ class JoinTest {
     )
   }
 
-  private def getEventsEventsTemporal(nameSuffix: String = "") = {
+  private def getEventsEventsTemporal(nameSuffix: String = "", lag: Long = 0) = {
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesDf = DataFrameGen
@@ -1180,7 +1413,7 @@ class JoinTest {
     val suffix = if (nameSuffix.isEmpty) "" else s"_$nameSuffix"
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix), prefix = "user")),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix, lag = lag), prefix = "user")),
       metaData =
         Builders.MetaData(name = s"test.item_temporal_features${suffix}", namespace = namespace, team = "item_team")
     )
@@ -1317,8 +1550,8 @@ class JoinTest {
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
-      "left_source" -> "vbQc07vaqm",
-      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
+      "left_source" -> "c+n/pTnymO",
+      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "cfi62Ap32e"
     )
     assertEquals(0, join.tablesToDrop(productionHashV1).length)
 

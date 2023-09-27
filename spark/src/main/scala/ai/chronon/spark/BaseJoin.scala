@@ -14,7 +14,7 @@ import org.apache.spark.sql.functions._
 import java.time.Instant
 import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.ScalaJavaConversions.IterableOps
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
 
 abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean, sparkUtils: Option[SparkUtils] = None) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
@@ -150,7 +150,6 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
   }
 
   def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart): Option[DataFrame] = {
-
     val stats = leftDf
       .select(
         count(lit(1)),
@@ -188,8 +187,11 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
          |  groupBy: ${joinPart.groupBy.toString}
          |""".stripMargin)
 
+    assert(joinPart.groupBy.sources.toScala.map(_.lag).toSet.size == 1, "All sources for a GroupBy must have the same lag")
+    assert(joinPart.groupBy.sources.toScala.filter(s => s.lag > 0 && s.isSetEntities && (s.getEntities.isSetMutationTable || s.getEntities.isSetMutationTopic)).isEmpty, "lag is not supported for entity sources that have mutations")
+    val lag = joinPart.groupBy.sources.get(0).lag
     def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter)
+      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter, lag = lag)
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)

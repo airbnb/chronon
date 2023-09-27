@@ -67,6 +67,13 @@ struct EventSource {
     * If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
     **/
     4: optional bool isCumulative
+
+    /**
+    The lag for this datasource, used when performing joins. Specified in milliseconds. This allows simulating the lag
+    on sources when performing joins to help prevent training / serving skew. For example, if the lag on a source is set
+    to 2 days, when computing features from that source for 9/3/23 only data up to 9/1/23 will be used.
+    */
+    5: optional i64 lag
 }
 
 
@@ -97,6 +104,13 @@ struct EntitySource {
     If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
     */
     4: optional Query query
+
+    /**
+    The lag for this datasource, used when performing joins. Specified in milliseconds. This allows simulating the lag
+    on sources when performing joins to help prevent training / serving skew. For example, if the lag on a source is set
+    to 2 days, when computing features from that source for 9/3/23 only data up to 9/1/23 will be used.
+    */
+    5: optional i64 lag
 }
 
 struct ExternalSource {

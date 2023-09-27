@@ -298,6 +298,11 @@ object Extensions {
       if (source.isSetEntities) Entities else Events
     }
 
+    def lag: Long = {
+      assert(source.isSetEntities || source.isSetEvents, "Source type is not specified")
+      if (source.isSetEntities) source.getEntities.getLag else source.getEvents.getLag
+    }
+
     def query: Query = {
       if (source.isSetEntities) source.getEntities.query else source.getEvents.query
     }
