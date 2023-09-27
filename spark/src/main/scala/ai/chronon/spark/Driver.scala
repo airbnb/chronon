@@ -209,6 +209,10 @@ object Driver {
         opt[Boolean](required = false,
                      default = Some(false),
                      descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+      val startPartitionOverride: ScallopOption[String] =
+        opt[String](required = false,
+                    descr =
+                      "Start date to compute join backfill, this start date will override start partition in conf.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -221,7 +225,7 @@ object Driver {
         args.buildTableUtils(),
         !args.runFirstHole()
       )
-      val df = join.computeJoin(args.stepDays.toOption)
+      val df = join.computeJoin(args.stepDays.toOption, args.startPartitionOverride.toOption)
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.joinConf.metaData.outputTable, tableUtils)

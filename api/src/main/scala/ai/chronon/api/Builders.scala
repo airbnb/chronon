@@ -250,7 +250,8 @@ object Builders {
         team: String = null,
         samplePercent: Double = 100,
         consistencySamplePercent: Double = 5,
-        tableProperties: Map[String, String] = Map.empty
+        tableProperties: Map[String, String] = Map.empty,
+        historicalBackill: Boolean = true
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -259,6 +260,7 @@ object Builders {
       result.setCustomJson(customJson)
       result.setOutputNamespace(namespace)
       result.setTeam(Option(team).getOrElse("chronon"))
+      result.setHistoricalBackfill(historicalBackill)
       if (dependencies != null)
         result.setDependencies(dependencies.toSeq.toJava)
       if (samplePercent > 0)

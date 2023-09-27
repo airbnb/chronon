@@ -4,7 +4,7 @@ import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{Accuracy, Constants, DataModel}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
@@ -388,8 +388,13 @@ object GroupBy {
         println("Join source detected. Materializing the join.")
         val joinSource = source.getJoinSource
         val joinConf = joinSource.join
-        // materialize the table
-        val join = new Join(joinConf, queryRange.end, tableUtils, mutationScan = false, showDf = showDf)
+        // materialize the table with the right end date. QueryRange.end could be shifted for temporal events
+        val beforeDs = tableUtils.partitionSpec.before(queryRange.end)
+        val isPreShifted =
+          groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
+        val endDate = if (isPreShifted) beforeDs else queryRange.end
+
+        val join = new Join(joinConf, endDate, tableUtils, mutationScan = false, showDf = showDf)
         if (computeDependency) {
           val df = join.computeJoin()
           if (showDf) {

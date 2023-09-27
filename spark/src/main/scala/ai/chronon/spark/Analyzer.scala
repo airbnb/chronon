@@ -246,7 +246,8 @@ class Analyzer(tableUtils: TableUtils,
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate)
+    val rangeToFill =
+      JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
     println(s"[Analyzer] Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))

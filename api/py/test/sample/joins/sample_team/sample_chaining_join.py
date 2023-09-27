@@ -34,7 +34,8 @@ parent_join = Join(
         ),
     ],
     online=True,
-    check_consistency=True
+    check_consistency=True,
+    historical_backfill=False,
 )
 
 chaining_group_by_v1 = GroupBy(

@@ -270,7 +270,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
-  def computeJoin(stepDays: Option[Int] = None): DataFrame = {
+  def computeJoin(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): DataFrame = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -303,7 +303,14 @@ abstract class JoinBase(joinConf: api.Join,
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
     // detect holes and chunks to fill
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition)
+    // OverrideStartPartition is used to replace the start partition of the join config. This is useful when
+    //  1 - User would like to test run with different start partition
+    //  2 - User has entity table which is accumulative and only want to run backfill for the latest partition
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left,
+                                                tableUtils,
+                                                endPartition,
+                                                overrideStartPartition,
+                                                joinConf.historicalBackfill)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)

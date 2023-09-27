@@ -696,6 +696,10 @@ object Extensions {
         .toArray
     }
 
+    def historicalBackfill: Boolean = {
+      Option(join.metaData.historicalBackfill).getOrElse(true)
+    }
+
     def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
 
     def partOutputTable(jp: JoinPart): String =
