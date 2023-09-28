@@ -85,7 +85,7 @@ object JoinUtils {
     val overrideStart = if (historicalBackfill) {
       overrideStartPartition
     } else {
-      println(s"Historical backfill is set to false. Backfill single partition only: $endPartition")
+      println(s"Historical backfill is set to false. Backfill latest single partition only: $endPartition")
       Some(endPartition)
     }
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
