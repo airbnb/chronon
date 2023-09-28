@@ -697,7 +697,11 @@ object Extensions {
     }
 
     def historicalBackfill: Boolean = {
-      Option(join.metaData.historicalBackfill).getOrElse(true)
+      if (join.metaData.isSetHistoricalBackfill) {
+        join.metaData.historicalBackfill
+      } else {
+        true
+      }
     }
 
     def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
