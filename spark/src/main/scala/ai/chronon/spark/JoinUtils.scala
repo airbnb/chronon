@@ -1,14 +1,18 @@
 package ai.chronon.spark
 
-import ai.chronon.api.Constants
+import ai.chronon.api.{Constants, JoinPart}
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
+import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
+import org.apache.spark.util.sketch.BloomFilter
 
+import scala.collection.JavaConverters._
+import scala.collection.Seq
 import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
@@ -260,6 +264,46 @@ object JoinUtils {
     })
 
     labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.keySet.toSet)) }
+  }
+
+  /**
+    * Generate bloomfilter for joinPart if backfill row count is below specified threshold
+    * @return bloomfilter map option for right part
+    */
+
+  def genBloomFilterIfNeeded(leftDf: DataFrame,
+                             joinPart: ai.chronon.api.JoinPart,
+                             joinConf: ai.chronon.api.Join,
+                             rowCount: Long,
+                             unfilledRange: PartitionRange,
+                             tableUtils: TableUtils): Option[Map[String, BloomFilter]] = {
+    println(
+      s"\nRow count to be filled for ${joinPart.groupBy.metaData.name}. BloomFilter Threshold: ${tableUtils.bloomFilterThreshold}")
+
+    // apply bloom filter when row count is below threshold
+    if (rowCount > tableUtils.bloomFilterThreshold) {
+      println("Row count is above threshold. Skip gen bloom filter.")
+      Option.empty
+    } else {
+      val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
+        key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
+      }.toMap
+
+      val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
+      val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
+      println(s"""
+           |JoinPart Info:
+           |  part name : ${joinPart.groupBy.metaData.name},
+           |  left type : ${joinConf.left.dataModel},
+           |  right type: ${joinPart.groupBy.dataModel},
+           |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
+           |  part unfilled range: $unfilledRange,
+           |  left row count: $rowCount
+           |  bloom sizes: $bloomSizes
+           |  groupBy: ${joinPart.groupBy.toString}
+           |""".stripMargin)
+      Some(rightBloomMap)
+    }
   }
 
   def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {

@@ -10,7 +10,7 @@ import scala.util.Properties
 
 object SparkSessionBuilder {
 
-  val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
+  val DefaultWarehouseDir = new File("./spark-warehouse")
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
@@ -40,6 +40,7 @@ object SparkSessionBuilder {
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+      .config("spark.chronon.backfill.bloomfilter.threshold","100")
 
     additionalConfig.foreach { configMap =>
       configMap.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }

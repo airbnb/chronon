@@ -20,7 +20,9 @@ import scala.util.ScalaJavaConversions.ListOps
 
 class JoinTest {
 
-  val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
+  val spark: SparkSession = SparkSessionBuilder.build(
+    "JoinTest",
+    local = true)
   private val tableUtils = TableUtils(spark)
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -368,9 +370,7 @@ class JoinTest {
     DataFrameGen.entities(spark, weightSchema, 1000, partitions = 400).save(weightTable)
 
     val weightSource = Builders.Source.entities(
-      query = Builders.Query(selects = Builders.Selects("weight"),
-                             startPartition = yearAgo,
-                             endPartition = today),
+      query = Builders.Query(selects = Builders.Selects("weight"), startPartition = yearAgo, endPartition = today),
       snapshotTable = weightTable
     )
 
@@ -942,6 +942,19 @@ class JoinTest {
     toCompute.computeJoin()
     val ds = tableUtils.sql(s"SELECT MAX(ds) FROM ${limitedJoin.metaData.outputTable}")
     assertTrue(ds.first().getString(0) < today)
+  }
+
+  @Test
+  def testSkipBloomFilterJoinBackfill(): Unit = {
+    val testSpark: SparkSession = SparkSessionBuilder.build(
+      "JoinTest",
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.bloomfilter.threshold" -> "100")))
+    val testTableUtils = TableUtils(testSpark)
+
+    val join = getEventsEventsTemporal("end_partition_test")
+    val toCompute = new Join(join, today, testTableUtils)
+    toCompute.computeJoin()
   }
 
   @Test
