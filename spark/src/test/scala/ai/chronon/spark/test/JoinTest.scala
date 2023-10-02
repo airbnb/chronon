@@ -952,9 +952,22 @@ class JoinTest {
       additionalConfig = Some(Map("spark.chronon.backfill.bloomfilter.threshold" -> "100")))
     val testTableUtils = TableUtils(testSpark)
 
-    val join = getEventsEventsTemporal("end_partition_test")
-    val toCompute = new Join(join, today, testTableUtils)
-    toCompute.computeJoin()
+    val join = getEventsEventsTemporal("bloom_filter_test")
+    val skipBloomCompute = new Join(join, today, testTableUtils)
+    val skipBloomComputed = skipBloomCompute.computeJoin()
+    val regularCompute = new Join(join, today, tableUtils)
+    val expected = regularCompute.computeJoin()
+
+    val diff = Comparison.sideBySide(skipBloomComputed, expected, List("item", "ts", "ds"))
+
+    if (diff.count() > 0) {
+      println(s"Actual count: ${skipBloomComputed.count()}")
+      println(s"Expected count: ${expected.count()}")
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 
   @Test
