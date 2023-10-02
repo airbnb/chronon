@@ -164,7 +164,6 @@ object Metrics {
     lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
 
     private[Metrics] def toTags: Array[String] = {
-      assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")

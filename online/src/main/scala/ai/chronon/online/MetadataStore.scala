@@ -97,7 +97,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   lazy val getStatsSchemaFromKVStore: TTLCache[(String, String), AvroCodec] = new TTLCache[(String, String), AvroCodec](
     { case (dataset, key) => getSchemaFromKVStore(dataset, key) },
-    { _ => null }
+    { _ => Metrics.Context(environment = "stats.serving_info.fetch") }
   )
 
   // pull and cache groupByServingInfo from the groupBy uploads
@@ -113,7 +113,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                 s"Failed to fetch metadata for $batchDataset, is it possible Group By Upload for $name has not succeeded?")
               throw e
           }
-        println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset\n$metaData")
+        println(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
         if (metaData.isFailure) {
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
@@ -123,7 +123,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           val groupByServingInfo = ThriftJsonCodec
             .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
           Metrics
-            .Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy)
+            .Context(Metrics.Environment.MetaDataFetching, groupByServingInfo.groupBy)
             .withSuffix("group_by")
             .histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
           Success(new GroupByServingInfoParsed(groupByServingInfo, partitionSpec))
