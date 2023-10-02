@@ -16,7 +16,7 @@ ONLINE_WRITE_ARGS = '--conf-path={conf_path} ' + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = ['streaming', 'metadata-upload', 'fetch', 'local-streaming']
 SPARK_MODES = ['backfill', 'upload', 'streaming', 'consistency-metrics-compute',
-               'compare', 'analyze', 'stats-summary',
+               'compare', 'analyze', 'stats-summary', 'log-summary',
                'log-flattener', 'metadata-export', 'label-join']
 MODES_USING_EMBEDDED = ['metadata-upload', 'fetch', 'local-streaming']
 
@@ -32,6 +32,7 @@ MODE_ARGS = {
     'backfill': OFFLINE_ARGS,
     'upload': OFFLINE_ARGS,
     'stats-summary': OFFLINE_ARGS,
+    'log-summary': OFFLINE_ARGS,
     'analyze': OFFLINE_ARGS,
     'streaming': ONLINE_WRITE_ARGS,
     'metadata-upload': ONLINE_WRITE_ARGS,
@@ -62,6 +63,7 @@ ROUTES = {
         'consistency-metrics-compute': 'consistency-metrics-compute',
         'compare': 'compare-join-query',
         'stats-summary': 'stats-summary',
+        'log-summary': 'log-summary',
         'analyze': 'analyze',
         'log-flattener': 'log-flattener',
         'metadata-export': 'metadata-export',
