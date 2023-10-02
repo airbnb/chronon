@@ -24,7 +24,6 @@ class TTLCache[I, O](f: I => O,
       override def apply(t: I, u: Entry): Entry = {
         val now = nowFunc()
         if (u == null) {
-          contextBuilder(t).increment("cache.insert")
           Entry(f(t), now)
         } else {
           u
@@ -39,6 +38,7 @@ class TTLCache[I, O](f: I => O,
     val entry = cMap.get(i)
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
+      contextBuilder(i).increment("cache.insert")
       cMap.compute(i, updateWhenNull).value
     } else {
       if (
@@ -50,8 +50,8 @@ class TTLCache[I, O](f: I => O,
         TTLCache.executor.execute(new Runnable {
           override def run(): Unit = {
             try {
-              cMap.put(i, Entry(f(i), nowFunc()))
               contextBuilder(i).increment("cache.update")
+              cMap.put(i, Entry(f(i), nowFunc()))
             } catch {
               case ex: Exception =>
                 // reset the mark so that another thread can retry
