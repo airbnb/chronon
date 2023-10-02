@@ -38,8 +38,9 @@ class TTLCache[I, O](f: I => O,
     val entry = cMap.get(i)
     if (entry == null) {
       // block all concurrent callers of this key only on the very first read
+      val entry = cMap.compute(i, updateWhenNull)
       contextBuilder(i).increment("cache.insert")
-      cMap.compute(i, updateWhenNull).value
+      entry.value
     } else {
       if (
         (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
@@ -50,8 +51,8 @@ class TTLCache[I, O](f: I => O,
         TTLCache.executor.execute(new Runnable {
           override def run(): Unit = {
             try {
-              contextBuilder(i).increment("cache.update")
               cMap.put(i, Entry(f(i), nowFunc()))
+              contextBuilder(i).increment("cache.update")
             } catch {
               case ex: Exception =>
                 // reset the mark so that another thread can retry
