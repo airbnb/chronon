@@ -261,11 +261,18 @@ abstract class JoinBase(joinConf: api.Join,
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
       }
     }
+    val rightDfWithDerivations = if (joinPart.groupBy.hasDerivations) {
+      val finalOutputColumns = joinPart.groupBy.derivationsScala.finalOutputColumn(rightDf.columns).toSeq
+      val result = rightDf.select(finalOutputColumns: _*)
+      result
+    } else {
+      rightDf
+    }
     if (showDf) {
       println(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
-      rightDf.prettyPrint()
+      rightDfWithDerivations.prettyPrint()
     }
-    Some(rightDf)
+    Some(rightDfWithDerivations)
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame

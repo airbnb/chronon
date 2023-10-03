@@ -29,8 +29,14 @@ class DerivationTest {
     val namespace = "test_derivations"
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+      .setDerivations(Seq(
+        Builders.Derivation(name = "user_amount_30d_avg",
+          expression = "amount_dollars_sum_30d / 30"),
+        Builders.Derivation(
+          name = "*"
+        ),
+      ).toJava)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
-
     val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
@@ -78,6 +84,11 @@ class DerivationTest {
         ),
         // derivation based on one group by field (rename)
         Builders.Derivation(
+          name = "user_amount_30d_avg",
+          expression = "unit_test_user_transactions_user_amount_30d_avg"
+        ),
+        // derivation based on one group by field (rename)
+        Builders.Derivation(
           name = "user_amount_15d",
           expression = "unit_test_user_transactions_amount_dollars_sum_15d"
         ),
@@ -114,6 +125,7 @@ class DerivationTest {
         "user_txn_count_15d",
         "user_txn_count_15d_with_user_id",
         "user_amount_30d",
+        "user_amount_30d_avg",
         "user_amount_15d",
         "user_amount_30d_minus_15d",
         "user_amount_avg_30d",
@@ -236,6 +248,7 @@ class DerivationTest {
           .as("user_amount_avg_30d"),
         (outputDf("user_amount_15d") * lit(1.0) / externalBootstrapDf("ext_payments_service_user_txn_count_15d"))
           .as("user_amount_avg_15d"),
+        (outputDf("user_amount_30d") * lit(1.0) / 30).as("user_amount_30d_avg"),
         outputDf("ds")
       )
 

@@ -69,7 +69,19 @@ object BootstrapInfo {
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
-        val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
+
+        val outputSchema = if (part.groupBy.hasDerivations) {
+          val sparkSchema = SparkConversions.fromChrononSchema(gb.outputSchema)
+          val dummyOutputDf = tableUtils.sparkSession
+            .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+          val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+          val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+          val columns = SparkConversions.toChrononSchema(derivedDummyOutputDf.schema)
+          api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+        } else {
+          gb.outputSchema
+        }
+        val valueSchema = outputSchema.fields.map(part.constructJoinPartSchema)
         JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
       })
 
