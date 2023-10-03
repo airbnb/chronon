@@ -7,7 +7,7 @@ import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StringType, StructType}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
@@ -71,12 +71,17 @@ object BootstrapInfo {
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
         val outputSchema = if (part.groupBy.hasDerivations) {
-          val sparkSchema = SparkConversions.fromChrononSchema(gb.outputSchema)
+          val sparkSchema = {
+            StructType(
+              SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ gb.keySchema.fields ++ Seq(
+                org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType)))
+          }
           val dummyOutputDf = tableUtils.sparkSession
             .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
           val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
           val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-          val columns = SparkConversions.toChrononSchema(derivedDummyOutputDf.schema)
+          val columns = SparkConversions.toChrononSchema(
+            StructType(derivedDummyOutputDf.schema.filterNot(gb.keySchema.fields.contains)))
           api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
         } else {
           gb.outputSchema
