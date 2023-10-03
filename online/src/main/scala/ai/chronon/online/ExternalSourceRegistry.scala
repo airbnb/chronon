@@ -49,8 +49,8 @@ class ExternalSourceRegistry extends Serializable {
             responses.map { responses =>
               val failures = responses.count(_.values.isFailure)
               ctx.histogram("response.latency", System.currentTimeMillis() - startTime)
-              ctx.histogram("response.failures", failures)
-              ctx.histogram("response.successes", responses.size - failures)
+              ctx.count("response.failures", failures)
+              ctx.count("response.successes", responses.size - failures)
               responses
             }
           } else {
