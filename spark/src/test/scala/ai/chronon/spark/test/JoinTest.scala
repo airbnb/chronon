@@ -951,23 +951,47 @@ class JoinTest {
       local = true,
       additionalConfig = Some(Map("spark.chronon.backfill.bloomfilter.threshold" -> "100")))
     val testTableUtils = TableUtils(testSpark)
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
 
-    val join = getEventsEventsTemporal("bloom_filter_test")
-    val skipBloomCompute = new Join(join, today, testTableUtils)
-    val skipBloomComputed = skipBloomCompute.computeJoin()
-    val regularCompute = new Join(join, today, tableUtils)
-    val expected = regularCompute.computeJoin()
+    val viewsTable = s"$namespace.view_events_bloom_test"
+    DataFrameGen.events(testSpark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
-    val diff = Comparison.sideBySide(skipBloomComputed, expected, List("item", "ts", "ds"))
+    val viewsSource = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      table = viewsTable
+    )
 
-    if (diff.count() > 0) {
-      println(s"Actual count: ${skipBloomComputed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
-      diff.show()
-    }
-    assertEquals(0, diff.count())
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms")
+      ),
+      metaData = Builders.MetaData(name = "bloom_test.item_views", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_bloom_test"
+    DataFrameGen
+      .events(testSpark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = testTableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
+      metaData = Builders.MetaData(name = "test.item_snapshot_bloom_test", namespace = namespace, team = "chronon")
+    )
+    val skipBloomComputed = new Join(joinConf, today, testTableUtils).computeJoin()
+    val leftSideCount = testSpark.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start'").count()
+    println("computed count: " + skipBloomComputed.count())
+    assertEquals(leftSideCount, skipBloomComputed.count())
   }
 
   @Test
