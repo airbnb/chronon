@@ -70,18 +70,18 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
+        val keyAndPartitionFields =
+          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
         val outputSchema = if (part.groupBy.hasDerivations) {
           val sparkSchema = {
-            StructType(
-              SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ gb.keySchema.fields ++ Seq(
-                org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType)))
+            StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
           }
           val dummyOutputDf = tableUtils.sparkSession
             .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
           val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
           val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
           val columns = SparkConversions.toChrononSchema(
-            StructType(derivedDummyOutputDf.schema.filterNot(gb.keySchema.fields.contains)))
+            StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
           api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
         } else {
           gb.outputSchema

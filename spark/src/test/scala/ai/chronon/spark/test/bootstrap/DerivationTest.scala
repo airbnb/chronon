@@ -29,20 +29,20 @@ class DerivationTest {
     val namespace = "test_derivations"
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
-      .setDerivations(Seq(
-        Builders.Derivation(name = "user_amount_30d_avg",
-          expression = "amount_dollars_sum_30d / 30"),
-        Builders.Derivation(
-          name = "*"
-        ),
-      ).toJava)
+    val groupByWithDerivation = groupBy.setDerivations(Seq(
+      Builders.Derivation(name = "user_amount_30d_avg",
+        expression = "amount_dollars_sum_30d / 30"),
+      Builders.Derivation(
+        name = "*"
+      ),
+    ).toJava)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
         query = Builders.Query()
       ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByWithDerivation)),
       rowIds = Seq("request_id"),
       externalParts = Seq(
         Builders.ExternalPart(
@@ -117,7 +117,7 @@ class DerivationTest {
     val outputDf = runner.computeJoin()
 
     assertTrue(
-      outputDf.columns sameElements Array(
+      outputDf.columns.toSet == Set(
         "user",
         "request_id",
         "ts",

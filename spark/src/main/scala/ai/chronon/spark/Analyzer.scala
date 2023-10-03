@@ -183,17 +183,17 @@ class Analyzer(tableUtils: TableUtils,
     val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
       // handle group by backfill mode for derivations
       // todo: add the similar logic to join derivations
+      val keyAndPartitionFields =
+        groupBy.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
       val sparkSchema = {
-        StructType(
-          SparkConversions.fromChrononSchema(groupBy.outputSchema).fields ++ groupBy.keySchema.fields ++ Seq(
-            org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType)))
+        StructType(SparkConversions.fromChrononSchema(groupBy.outputSchema).fields ++ keyAndPartitionFields)
       }
       val dummyOutputDf = tableUtils.sparkSession
         .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
       val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
       val columns = SparkConversions.toChrononSchema(
-        StructType(derivedDummyOutputDf.schema.filterNot(groupBy.keySchema.fields.contains)))
+        StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
       api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
     } else {
       groupBy.outputSchema
