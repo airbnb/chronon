@@ -267,26 +267,27 @@ object JoinUtils {
   }
 
   /**
-    * Generate bloomfilter for joinPart if backfill row count is below specified threshold
+    * Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
+    * This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
     * @return bloomfilter map option for right part
     */
 
   def genBloomFilterIfNeeded(leftDf: DataFrame,
                              joinPart: ai.chronon.api.JoinPart,
                              joinConf: ai.chronon.api.Join,
-                             rowCount: Long,
+                             leftRowCount: Long,
                              unfilledRange: PartitionRange,
                              tableUtils: TableUtils): Option[Map[String, BloomFilter]] = {
     println(
       s"\nRow count to be filled for ${joinPart.groupBy.metaData.name}. BloomFilter Threshold: ${tableUtils.bloomFilterThreshold}")
 
-    // apply bloom filter when row count is below threshold
-    if (rowCount > tableUtils.bloomFilterThreshold) {
+    // apply bloom filter when left row count is below threshold
+    if (leftRowCount > tableUtils.bloomFilterThreshold) {
       println("Row count is above threshold. Skip gen bloom filter.")
       Option.empty
     } else {
       val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
-        key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
+        key -> leftDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, unfilledRange)
       }.toMap
 
       val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
@@ -298,7 +299,7 @@ object JoinUtils {
            |  right type: ${joinPart.groupBy.dataModel},
            |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
            |  part unfilled range: $unfilledRange,
-           |  left row count: $rowCount
+           |  left row count: $leftRowCount
            |  bloom sizes: $bloomSizes
            |  groupBy: ${joinPart.groupBy.toString}
            |""".stripMargin)
