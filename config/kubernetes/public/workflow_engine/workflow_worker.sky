@@ -11,7 +11,7 @@ load("config/kubernetes/core/probe.sky", "command_probe", "probes")
 load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
 load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
-load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
 
 # Can't be overriden because the canary is always one node.
 def deployment_strategy_canary_func(ctx):
@@ -44,7 +44,12 @@ def ruby_workflow_worker_shared_msp(
         strict_packaging = True,
         manage_workers = True,
         separate_canary_by_name = False,
-        hack_kick_interval = None):
+        hack_kick_interval = None,
+        serverless = False,
+        cpu = None,
+        memory = None,
+        requires_consul = None,
+        image = None):
     """
     Create deployments for a Ruby Workflow Engine worker that runs on Shared MSP.
 
@@ -91,6 +96,16 @@ def ruby_workflow_worker_shared_msp(
             health detectors that are specifically target the canary at the cost
             of needing more complex search query to find all log lines in Splunk.
         hack_kick_interval: How often to restart einhorn workers
+        serverless: Run the worker in a serverless configuration
+        cpu: The amount of CPU the main container needs, provided using a single `cores` or `millicores` if you are setting both request
+            and limits to the same value. Or a tuple (requests, limits) if you are specifying different values.
+        memory: The amount of memory the main container needs, provided using a single `gigabytes` or `megabytes` if you are setting both
+            request and limits to the same value. Or a tuple (requests, limits) if you are specifying different values.
+        requires_consul: Whether the service uses Consul or not. This flag is part of Consul deprecation effort and
+            should be set to either `True` or `False` only upon explicit request to your team and following the corresponding
+            instructions.
+        image: (Only for shared MSP) the artifact name of the container image the pod should run for its main
+               container. Defaults to the default pay-server image when not passed in.
 
     Returns:
         A struct with two members, canary and main. These are functions
@@ -124,7 +139,17 @@ def ruby_workflow_worker_shared_msp(
             manage_workers = manage_workers,
             separate_canary_by_name = separate_canary_by_name,
             hack_kick_interval = hack_kick_interval,
+            serverless = serverless,
+            cpu = cpu,
+            memory = memory,
+            requires_consul = requires_consul,
+            image = image,
         )
+
+    # Opt-out until RUN_WOFLO-1522 is resolved
+    TEMPORARY_PACKAGING_VALIDATION_OPT_OUT = [
+        "workflow-work-connections-dre"
+    ]
 
     def _main(ctx):
         plugins = []
@@ -134,7 +159,7 @@ def ruby_workflow_worker_shared_msp(
         if type(plugins) == 'struct':
             plugins = plugins.main
 
-        if not strict_packaging:
+        if not strict_packaging and namespace not in TEMPORARY_PACKAGING_VALIDATION_OPT_OUT:
             memory_mib = aws_instance_size(instance_type.name).memory_mib
             _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib)
 
@@ -162,6 +187,10 @@ def ruby_workflow_worker_shared_msp(
             manage_workers = manage_workers,
             separate_canary_by_name = separate_canary_by_name,
             hack_kick_interval = hack_kick_interval,
+            serverless = serverless,
+            cpu = cpu,
+            memory = memory,
+            image = image,
         )
 
     return struct(
@@ -294,14 +323,19 @@ def _service_shared_msp(
         is_canary,
         manage_workers,
         separate_canary_by_name,
-        hack_kick_interval = None):
+        hack_kick_interval = None,
+        serverless,
+        cpu = None,
+        memory = None,
+        requires_consul = None,
+        image = None):
     envs = {}
     file_to_wait_for = "/tmp/workflowworker-alive"
     consul_name = name
     container_name = name
     drain_timeout = _compensate_drain_timeout(drain_timeout)
 
-    if is_canary:
+    if is_canary and not serverless:
         name = name + "-canary"
         if separate_canary_by_name:
             container_name = name
@@ -311,6 +345,18 @@ def _service_shared_msp(
 
     envs["WORKFLOW_ENGINE_WORKER"] = "true"
 
+    # The --remote flag configures this worker to listen on the deployed
+    # task queue rather than the local one (used on devboxes).
+    command = command + ["--remote"]
+    if serverless:
+        command = command + ["--serverless"]
+
+    if image == None:
+        image = image_defaults(
+            name = None,
+            artifact = "pay-server-image",
+        )
+
     all_plugins = [
         pay_server_pod(
             ctx,
@@ -319,10 +365,11 @@ def _service_shared_msp(
             namespace = namespace,
             instance_type = instance_type,
             availability_tier = availability_tier,
-
-            # The --remote flag configures this worker to listen on the deployed
-            # task queue rather than the local one (used on devboxes).
-            command = command + ["--remote"],
+            command = command,
+            cpu = cpu,
+            memory = memory,
+            requires_consul = requires_consul,
+            image = image,
         ),
         einhorn_service(
             ctx,
@@ -345,7 +392,6 @@ def _service_shared_msp(
             # the server back to itself.
             startup = _startup_command_probe(ctx, startup_timeout = startup_timeout, path = file_to_wait_for),
         ),
-        auto_secrets(),
         grace_period(drain_timeout)
     ]
     all_plugins.extend(*plugins)
@@ -420,7 +466,6 @@ def _service_dedicated_msp(
             # the server back to itself.
             startup = _startup_command_probe(ctx, startup_timeout = startup_timeout, path = file_to_wait_for),
         ),
-        auto_secrets(),
         grace_period(drain_timeout),
     ]
     all_plugins.extend(*plugins)

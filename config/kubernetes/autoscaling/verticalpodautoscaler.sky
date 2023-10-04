@@ -1,0 +1,73 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/proto_or_yaml.sky", "VerticalPodAutoscaler", "VerticalPodAutoscalerSpec")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color")
+
+def vertical_pod_autoscaler():
+    """
+    Returns a plugin that creates an VPA to be deployed with a deployment.
+
+
+    Args:
+        None yet
+
+    Returns:
+        A plugin to add a VPA to a resource
+    """
+    return deployment_plugin(
+        _update_resource,
+    )
+
+def _update_resource(ctx, plugin, resource_def):
+    resource_def["verticalpodautoscaler"] = {
+        "render": _render_verticalpodautoscaler,
+        "metadata": resource_def["metadata"],
+    }
+
+def _render_verticalpodautoscaler(ctx, vpa_def, shared_msp, main_container):
+    if not shared_msp:
+        # We don't support VPAs in dedicated MSP
+        return None
+
+    metadata = struct(**vpa_def["metadata"])
+    metadata_obj = render_metadata(ctx, metadata)
+
+    # Store the deployment name as we need it for our targetRef
+    deployment_name = metadata_obj['name']
+
+    # Add the prefix 'vpa' to the VPA object
+    metadata_obj['name'] = 'vpa-' + metadata_obj['name']
+
+    # Grab the main container so we can get the name of it
+    main_container_name = deployment_name
+    if main_container != None and "name" in main_container:
+        main_container_name = main_container["name"]
+    elif deployment_name.endswith("-blue"):
+        main_container_name = deployment_name.replace("-blue", "")
+    elif deployment_name.endswith("-green"):
+        main_container_name = deployment_name.replace("-green", "")
+
+    return VerticalPodAutoscaler(
+        ctx,
+        metadata = metadata_obj,
+        spec = VerticalPodAutoscalerSpec(
+            ctx,
+            targetRef = {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "name": deployment_name,
+            },
+            updatePolicy = {
+                "updateMode": "Off",
+            },
+            resourcePolicy = {
+                "containerPolicies": [
+                    # For now only generate recommendations for the main application container
+                    {
+                        "containerName": main_container_name
+                    }
+                ]
+            }
+        ),
+    )

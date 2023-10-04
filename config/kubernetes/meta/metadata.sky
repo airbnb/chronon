@@ -3,12 +3,11 @@
 Plugins for applying metadata to Kubernetes resources.
 """
 
-load("config/kubernetes/helpers/tags.sky", "default_annotations", "default_labels", "service_selectors")
+load("config/kubernetes/helpers/tags.sky", "default_annotations", "default_labels", "service_selectors", "DEPRECATED_OWNER_LABEL")
 load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_function_name", "get_henson_git_commit", "get_name", "get_owner")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "any_resource_plugin", "cronjob_plugin", "daemonset_plugin", "deployment_plugin", "job_plugin", "pod_plugin", "rbac_plugin", "crd_plugin", "statefulset_plugin", "webhook_configuration_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "ObjectMeta", "LabelSelector")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def metadata(namespace, service_name = None, owner = None, selectors_override = None):
     """
@@ -267,14 +266,15 @@ def render_metadata(ctx, metadata, extra_labels = {}, extra_annotations = {}):
         function_name = metadata.function_name,
         blue_green_color = metadata.blue_green_color,
     )
+
+    if metadata.is_cronjob:
+        labels[DEPRECATED_OWNER_LABEL] = metadata.owner  # owner is deprecated according to go/kubernetes-labels, but is used for the ticketmaker cron failure alerting pipeline as of 08/17/2020
+        labels["stripe.io/job"] = metadata.name
+
     labels.update(metadata.labels)
     labels.update(extra_labels)
 
     labels["stripe.io/henson-git-commit"] = metadata.henson_git_commit
-
-    if metadata.is_cronjob:
-        labels["stripe.io/owner"] = metadata.owner  # owner is deprecated according to go/kubernetes-labels, but is used for the ticketmaker cron failure alerting pipeline as of 08/17/2020
-        labels["stripe.io/job"] = metadata.name
 
     name = metadata.name
     if metadata.blue_green_color != None:
@@ -284,10 +284,9 @@ def render_metadata(ctx, metadata, extra_labels = {}, extra_annotations = {}):
     annotations.update(metadata.annotations)
     annotations.update(extra_annotations)
 
-    if get_render_yaml(ctx):
-        # add annotation and label to display whether the object was rendered in yaml
-        annotations.update({"stripe.io/render-yaml": "enabled"})
-        labels.update({"stripe.io/render-yaml": "enabled"})
+    # add annotation and label to display whether the object was rendered in yaml
+    annotations.update({"stripe.io/render-yaml": "enabled"})
+    labels.update({"stripe.io/render-yaml": "enabled"})
 
     obj_meta = ObjectMeta(
         ctx,
@@ -298,15 +297,9 @@ def render_metadata(ctx, metadata, extra_labels = {}, extra_annotations = {}):
 
     name_prefix = metadata.options["name_prefix"]
     if name_prefix == None:
-        if get_render_yaml(ctx):
-            obj_meta["name"] = name
-        else:
-            obj_meta.name = name
+        obj_meta["name"] = name
     else:
-        if get_render_yaml(ctx):
-            obj_meta["generateName"] = name_prefix
-        else:
-            obj_meta.generateName = name_prefix
+        obj_meta["generateName"] = name_prefix
 
     return obj_meta
 

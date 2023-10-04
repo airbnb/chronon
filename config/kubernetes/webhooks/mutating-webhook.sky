@@ -3,7 +3,6 @@ load("config/kubernetes/helpers/proto_or_yaml.sky", "MutatingWebhook", "Mutating
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "webhook_configuration_plugin")
 load("config/kubernetes/meta/metadata.sky", "metadata", "render_metadata")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def mutating_webhook_configuration(ctx, *plugins, webhook_name = None, **kwargs):
     """
@@ -71,22 +70,13 @@ def _render_webhooks(ctx, mutating_webhooks):
             fail("webhooks passed in must be an array")
 
     webhooks_obj = MutatingWebhookConfiguration(ctx)
-    if get_render_yaml(ctx):
-        webhooks_obj["metadata"] = render_metadata(ctx, mutating_webhooks.metadata)
-        if webhooks_obj["metadata"].get("namespace"):
-            # remove the namespace from the metadata however
-            webhooks_obj["metadata"].pop("namespace")
-        if len(obj_webhooks_list) > 0:
-            webhooks_obj["webhooks"] = obj_webhooks_list
-        return yaml.marshal(webhooks_obj)
-    else:
-        webhooks_obj.metadata = render_metadata(ctx, mutating_webhooks.metadata)
+    webhooks_obj["metadata"] = render_metadata(ctx, mutating_webhooks.metadata)
+    if webhooks_obj["metadata"].get("namespace"):
         # remove the namespace from the metadata however
-        webhooks_obj.metadata.namespace = None
-        if len(obj_webhooks_list) > 0:
-            webhooks_obj.Webhooks = obj_webhooks_list
-
-    return webhooks_obj
+        webhooks_obj["metadata"].pop("namespace")
+    if len(obj_webhooks_list) > 0:
+        webhooks_obj["webhooks"] = obj_webhooks_list
+    return yaml.marshal(webhooks_obj)
 
 def mutating_webhook(
     ctx,

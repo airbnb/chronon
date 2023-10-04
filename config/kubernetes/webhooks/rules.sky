@@ -1,6 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/helpers/proto_or_yaml.sky", "RuleWithOperations", "Rule")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 ALLOWED_OPERATIONS = ["CREATE", "UPDATE", "DELETE", "CONNECT", "*"]
 ALLOWED_SCOPES = ["Cluster", "Namespaced", "*"]
@@ -34,21 +33,16 @@ def webhook_rule_with_operations(
 			fail("invalid operation passed: %s" % operation)
 
 	wh_rule = RuleWithOperations(ctx)
-	if get_render_yaml(ctx):
-		wh_rule["operations"] = operations
-		if not rule == None:
-			wh_rule["apiGroups"] = rule["apiGroups"]
-			wh_rule["apiVersions"] = rule["apiVersions"]
-			wh_rule["resources"] = rule["resources"]
-			wh_rule["scope"] = rule["scope"]
-		else:
-			print("No Rule passed into webhook_rule_with_operations, this will be a NOOP webhook configuration!")
+	wh_rule["operations"] = operations
+
+	if not rule == None:
+		wh_rule["apiGroups"] = rule["apiGroups"]
+		wh_rule["apiVersions"] = rule["apiVersions"]
+		wh_rule["resources"] = rule["resources"]
+		wh_rule["scope"] = rule["scope"]
 	else:
-		wh_rule.operations = operations
-		if not rule == None:
-			wh_rule.rule = rule
-		else:
-			print("No Rule passed into webhook_rule_with_operations, this will be a NOOP webhook configuration!")
+		print("No Rule passed into webhook_rule_with_operations, this will be a NOOP webhook configuration!")
+
 	return wh_rule
 
 

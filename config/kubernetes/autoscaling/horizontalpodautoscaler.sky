@@ -2,7 +2,7 @@
 load("config/kubernetes/helpers/proto_or_yaml.sky", "HorizontalPodAutoscaler", "CrossVersionObjectReference", "HorizontalPodAutoscalerBehavior", "HorizontalPodAutoscalerSpec", "HPAScalingPolicy", "HPAScalingRules", "MetricSpec", "MetricTarget", "ResourceMetricSource")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
 load("config/kubernetes/meta/metadata.sky", "render_metadata")
-load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml")
+load("config/kubernetes/helpers/context.sky", "get_env")
 
 def horizontal_pod_autoscaler(
         min_replicas = None,
@@ -276,10 +276,7 @@ def _render_horizontalpodautoscaler(ctx, hpa_def, replicas, shared_msp):
     # i.e blue/green is suffixed to the name of an object when metadata is rendered
     metadata_obj = render_metadata(ctx, metadata)
     target_name = ""
-    if get_render_yaml(ctx):
-        target_name = metadata_obj["name"]
-    else:
-        target_name = metadata_obj.name
+    target_name = metadata_obj["name"]
 
     spec = HorizontalPodAutoscalerSpec(
         ctx,
@@ -300,14 +297,10 @@ def _object_reference(ctx, name, kind = "Deployment", apiVersion = "apps/v1"):
 
     # Skycfg drops apiVersion and kind when passed through the object constructuro in Proto mode
     # so we need to set them on the object here.
-    if get_render_yaml(ctx):
-        object_reference["kind"] = kind
-        object_reference["name"] = name
-        object_reference["apiVersion"] = apiVersion
-    else:
-        object_reference.kind = kind
-        object_reference.name = name
-        object_reference.apiVersion = apiVersion
+    object_reference["kind"] = kind
+    object_reference["name"] = name
+    object_reference["apiVersion"] = apiVersion
+
 
     return object_reference
 

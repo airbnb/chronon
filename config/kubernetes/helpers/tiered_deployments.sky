@@ -1,0 +1,55 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priority_routing")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/helpers/context.sky", "get_compute_config")
+
+SUBSET_HEADER_NAME = "X-Stripe-Routing-Context-Priority-Tier"
+
+# This list should stay in sync with the list in Zoolander:
+# https://git.corp.stripe.com/stripe-internal/zoolander/blob/master/config/tiered-service-base.sky#L8-L15
+DEFAULT_TIERS = [
+    struct(name = "LIVEMODE_CRITICAL", receive_non_priority_traffic = True),
+    struct(name = "LIVEMODE", receive_non_priority_traffic = True),
+    struct(name = "API_TESTMODE", receive_non_priority_traffic = True),
+    struct(name = "BATCH_CRITICAL", receive_non_priority_traffic = True),
+    struct(name = "BATCH", receive_non_priority_traffic = True),
+    struct(name = "SYNTHETIC", receive_non_priority_traffic = True),
+]
+
+def tiered_deployments(ctx, deployment_supplier):
+    """ Helper function that creates a set of deployments based on the priority tier information specified in the service's compute.yaml.
+
+    Args:
+        ctx: Contains a dictionary of data that is useful when defining a workload.
+        deployment_supplier: User-supplied function that creates a deployment. It should take
+        in the priority_name and metadata object as parameters.
+
+    Returns:
+        List of deployments.
+    """
+    deployments = []
+    priority_tiers = None
+    if ctx.vars.get("service.config.compute"):
+        v1_compute = get_compute_config(ctx)
+        priority_tiers = v1_compute.priority_tiers
+    elif ctx.vars.get("service.config.compute_v2"):
+        v2_compute = get_merged_compute_v2_config(ctx)
+        priority_tiers = v2_compute.priority_tiers
+
+    if not priority_tiers or not priority_tiers.enable_host_isolation:
+        fail("Must enable host isolation in order to use tiered_deployments")
+
+    subset_header = priority_tiers.custom_priority_tier_header if priority_tiers.custom_priority_tier_header != "" else SUBSET_HEADER_NAME
+    priority_tiers = priority_tiers.custom_priority_tiers if priority_tiers.custom_priority_tiers else DEFAULT_TIERS
+
+    for priority_tier in priority_tiers:
+        priority_name = priority_tier.name.lower().replace("_", "-")
+        meta = consul_meta_envoy_priority_routing(
+            subset_header,
+            priority_name,
+            receive_non_priority_traffic = priority_tier.receive_non_priority_traffic,
+        )
+
+        deployments.append(deployment_supplier(ctx, priority_name, meta))
+
+    return deployments

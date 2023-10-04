@@ -133,8 +133,15 @@ def _add_arch_suffix(ctx, arguments, deployment_def):
     if type(arguments.suffix) != "string":
         fail("You must provide a string for the arch suffix plugin")
     if arguments.suffix != None:
+        suffix_len = len(arguments.suffix)
+        dep_name = deployment_def["metadata"]["name"]
+        if len(deployment_def["metadata"]["name"]) + suffix_len + 1 > 63:
+            # Kubernetes does not allow length of names exceeding 63 chars. We will truncate the original name
+            # to accomodate for the "-<suffix>".
+            truncate_len = suffix_len + 1
+            dep_name = deployment_def["metadata"]["name"][:-truncate_len]
         deployment_def['metadata'].update({
-        "name": deployment_def["metadata"]["name"] + "-" + arguments.suffix
+            "name": dep_name + "-" + arguments.suffix
         })
 
 def _graviton_deployment_0_replicas(ctx,argument,deployment_def):

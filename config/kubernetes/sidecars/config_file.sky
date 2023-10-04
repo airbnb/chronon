@@ -18,7 +18,6 @@ load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/variables.sky", "FILE_WRITER_ALPINE_CONTAINER_SHA")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def config_file(path, content, volume):
     """
@@ -77,9 +76,8 @@ def _render_container(ctx, container_def, pod):
         commands.append("echo \"$%s\" > %s" % (idx + 1, file.path))
 
         content = file.content
-        if get_render_yaml(ctx):
-            # trim white space from beginning of file so it can be embedded correctly
-            content = content.lstrip()
+        # trim white space from beginning of file so it can be embedded correctly
+        content = content.lstrip()
 
         contents.append(content)
         volumes[file.volume] = 1  # using volumes dict as a set

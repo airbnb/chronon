@@ -4,28 +4,19 @@ For the structure of RoleRef message please refer to
 https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L168-L177
 """
 
-load("config/kubernetes/rbac/rbacschema.sky", "rbac")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "RoleRef")
 
 def role_ref(ctx, role_ref_mapping):
-    obj_role_ref = rbac.RoleRef()
-    role_ref_mapping = struct(**role_ref_mapping)
-
-    if hasattr(role_ref_mapping, "apiGroup"):
-        if type(role_ref_mapping.apiGroup) == "string":
-            obj_role_ref.apiGroup = role_ref_mapping.apiGroup
-        else:
+    if role_ref_mapping.get("apiGroup", None):
+        if type(role_ref_mapping["apiGroup"]) != "string":
             fail("RoleRef apiGroup field called with non string value")
 
-    if hasattr(role_ref_mapping, "kind"):
-        if type(role_ref_mapping.kind) == "string":
-            obj_role_ref.kind = role_ref_mapping.kind
-        else:
+    if role_ref_mapping.get("kind", None):
+        if type(role_ref_mapping["kind"]) != "string":
             fail("RoleRef kind field called with non string value")
 
-    if hasattr(role_ref_mapping, "name"):
-        if type(role_ref_mapping.name) == "string":
-            obj_role_ref.name = role_ref_mapping.name
-        else:
+    if role_ref_mapping.get("name", None):
+        if type(role_ref_mapping["name"]) != "string":
             fail("RoleRef name field called with non string value")
 
-    return obj_role_ref
+    return RoleRef(ctx, **role_ref_mapping)

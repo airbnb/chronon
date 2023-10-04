@@ -1,0 +1,36 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins and helpers for enabling Ruby 3
+"""
+
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/meta/metadata.sky", "labels")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+
+def ruby_3_1_plugin(value):
+    if value == True:
+        return _override_ruby_version("sorbet_ruby_3_1")
+    elif value == False:
+        return compose_plugins()
+    elif type(value) == "int":
+        return _1_in_n_override_ruby_version("sorbet_ruby_3_1", value)
+    else:
+        fail("_ruby_3_1_plugin invalid return value, must be integer (1/N frequency) or boolean. (Got %s)" % value)
+
+def _override_ruby_version(rbenv_version):
+    return compose_plugins(
+        container_env_vars({
+            "STRIPE_BUNDLE_MSP_OVERRIDE_RBENV_VERSION": rbenv_version,
+        }),
+        labels({
+            "pay-server.stripe.io/override_rbenv_version": rbenv_version,
+        })
+    )
+
+def _1_in_n_override_ruby_version(rbenv_version, n):
+    if type(n) != "int" or n < 1:
+        fail("_1_in_n_override_ruby_version: n must be an integer > 1. (Got %s)" % n)
+    return container_env_vars({
+        "STRIPE_BUNDLE_USE_SORBET_RANDOM_FREQ": str(n),
+        "STRIPE_BUNDLE_USE_SORBET_RANDOM_RBENV_VERSION": rbenv_version,
+    })

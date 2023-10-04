@@ -12,7 +12,7 @@ AQPS_MOUNT_PATH_MAP = {
 
 def aqueduct_pay_server(ctx, target="primary"):
     """
-    pay-server mount owned by reporting-data-platform.
+    pay-server mount owned by reporting-data-interface.
     The version is managed by deploying http://go/service/aqueduct-pay-server-sidecar
 
     Args:

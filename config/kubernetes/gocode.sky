@@ -13,8 +13,8 @@ def gocode_pod(ctx, **kwargs):
     Args:
         name: The name of service or job. Generally, this should match the Henson service name.
         image: The name of the ECR repository of the container images the pod should run for its main container.
-            Defaults to the default gocode image. See http://go/sky/service-specific-containers for more info
-            about setting up a container image for your service.
+            When unset, image will be selected using service configuration / deploy.yaml.
+            See http://go/sky/service-specific-containers for more info about setting up a container image.
         command: An array containing the command and arguments that should run in the main container.
         cpu: The amount of CPU the main container needs, provided using `cores` or `millicores`.
         memory: The amount of memory the main container needs, provided using `gigabytes` or `megabytes`.
@@ -30,6 +30,9 @@ def gocode_pod(ctx, **kwargs):
     Returns:
         A plugin that can be used with an entrypoint like `deployment` or `cronjob`
     """
+
+    # If the user supplies an image, use that. Otherwise, defer to deploy.yaml.
+    # See _default_gocode_image commentary below to better understand image selection.
     image = kwargs.pop("image", _default_gocode_image)
 
     pay_health_mount = compose_plugins()
@@ -49,14 +52,19 @@ def gocode_pod(ctx, **kwargs):
         pay_health_mount,
     )
 
-# The container image repository name for gocode containers.
+# Gocode no longer has a sensible default image. However, we have to set
+# image_defaults here in order to keep downstream image selection working.
 #
-# You generally will use `gocode_pod` to create a container with this image, but if
-# you need additional containers in your pod that use the gocode image, you can use
-# this value as the `image` parameter to `container`.
-gocode_image = "stripe/gocode"
-
+# Users passing `image` into gocode_pod explicitly will have their wish honored.
+#
+# Users leaving it unset will get the "default" value, which is None/None.
+# Later in the pipeline, images.sky will see the default value, and defer to the
+# containers specified in deploy.yaml. If nothing is set there, evaluation fails
+# with a semi-informative error.
+#
+# See https://git.corp.stripe.com/stripe-internal/gocode/blob/ed30ec512358dca589b4fda2cda8c5b0ffd3e25b/config/kubernetes/helpers/images.sky#L37-L68
+# or https://jira.corp.stripe.com/browse/RUN_GOLANG-664 for additional context.
 _default_gocode_image = image_defaults(
-    name = "stripe/gocode",
-    artifact = "gocode-image",
+    name = None,
+    artifact = None,
 )

@@ -5,7 +5,7 @@
 load("config/kubernetes/async-processing/monster/util.sky", "ALL_CLUSTERS")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "m5_2xlarge", "m5_16xlarge", "r5_8xlarge", "r5_xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge"
+    "m5_2xlarge", "m5_16xlarge", "r5_8xlarge", "r5_xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge"
 )
 
 DEFAULT_WORKER_COUNT = 2
@@ -34,7 +34,7 @@ DEFAULT_DEFAULT_INSTANCE_TYPE = r5_xlarge
 
 ALLOWED_INSTANCE_TYPES = [
     # Default option for clusters with low traffic
-    r5_xlarge, r6g_xlarge,
+    r5_xlarge, r6g_xlarge, r7g_xlarge,
     # Default option for clusters with higher traffic
     r5_8xlarge, r6g_8xlarge,
 

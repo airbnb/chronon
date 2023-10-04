@@ -2,7 +2,7 @@
 load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "c5_2xlarge", "c5d_4xlarge", "m5_2xlarge", "m5d_xlarge",
+    "c5_2xlarge", "c5_4xlarge", "c5d_4xlarge", "m5_2xlarge", "m5d_4xlarge",
     "aws_instance_size"
 )
 load("config/kubernetes/async-processing/monster/config.sky", "AVAILABILITY_TIER_A100", "AVAILABILITY_TIER_A200", "AVAILABILITY_TIER_A400", "AVAILABILITY_TIER_A400_AUTO")
@@ -68,8 +68,15 @@ def get_all_cluster(mapping):
 
 # Maps an (env, availability_tier) to a concrete instance type for placement
 # Only used for control-plane services
-def get_instance_type(ctx, availability_tier, monster_service):
-    mapping = {
+def get_instance_type(ctx, availability_tier, monster_service, host_set_name=None):
+    overrides_by_host_set_name = {
+        "feeder": {
+            "prod.northwest": {
+                "webhooks": c5_4xlarge,
+             },
+        },
+    }
+    mapping_by_availability_tier = {
         "sweeper": get_all_cluster(get_all_tier(c5_2xlarge)),
         "feeder": get_all_cluster({
             AVAILABILITY_TIER_A100: c5_2xlarge,
@@ -79,12 +86,13 @@ def get_instance_type(ctx, availability_tier, monster_service):
         }),
         "fanout": get_all_cluster(get_all_tier(c5_2xlarge)),
         "fanout-retry": get_all_cluster(get_all_tier(c5_2xlarge)),
-        "api": get_all_cluster(get_all_tier(m5d_xlarge)),
+        "api": get_all_cluster(get_all_tier(m5d_4xlarge)),
         "express": get_all_cluster(get_all_tier(m5_2xlarge)),
     }
 
     key = "%s.%s" % (get_env(ctx), get_cluster(ctx))
-    return mapping[monster_service][key][availability_tier]
+    override = overrides_by_host_set_name.get(monster_service, {}).get(key, {}).get(host_set_name)
+    return override or mapping_by_availability_tier[monster_service][key][availability_tier]
 
 def workers_per_pod(description, available_mib, mb_per_worker):
     if mb_per_worker == 0:

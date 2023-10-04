@@ -405,6 +405,34 @@ def metric_label_non_empty_filter(*label_names):
     """
     return ['.tags."%s" != ""' % (lbl) for lbl in label_names]
 
+def metric_label_filter_regex_match(label_name, *label_patterns):
+    """
+    Returns a filter_rule which checks that the given metric label matches any of the provided regex
+
+    Args:
+        label_name: `string` name of the label
+        *label_patterns: `string` variable number of regex patterns to try and match
+
+    Returns:
+        A list which can be passed to `filter_rules` in `vector_target()`
+
+    Example:
+        ```
+        vector_target(
+            ctx,
+            "my-service",
+            ["http://localhost:1234"],
+            filter_rules=metric_name_prefix_filter("http_requests_") + \
+                         metric_label_filter_regex_match("http_status", "5.*", "4.*")
+        )
+        ```
+    """
+    formatted_patterns = []
+    for pattern in label_patterns:
+        formatted_patterns.append("r'%s'" % pattern)
+
+    return ['match_any(to_string(.tags."%s") ?? "", [%s])' % (label_name, ', '.join(formatted_patterns))]
+
 
 ##############
 # Transforms #

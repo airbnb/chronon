@@ -27,3 +27,20 @@ def smart_graviton_instance(ctx, instance):
     smart_instance = mapping["default" if get_cluster(ctx) != "bom" else "bom"]
 
     return get_instance_type_by_name(smart_instance)
+
+
+def is_graviton_instance(instance):
+    """
+    Returns whether the given instance is a Graviton instance
+
+    Args:
+        instance: The AWS instance you want to check
+
+    Returns:
+        True if Graviton, False otherwise
+    """
+
+    if instance.name[1:3]  in ["6g", "7g"]:
+        return True
+
+    return False

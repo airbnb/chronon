@@ -5,6 +5,7 @@ load("config/kubernetes/async-processing/monster/secrets.sky", "monster_secrets"
 load("config/kubernetes/async-processing/monster/util.sky", "format_isolation_group", "generate_consul_name", "monster_deployment_labels", "worker_type")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/entrypoints.sky", "deployment")
+load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A200", "A300", "A400")
 load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env", "get_availability_tier")
 load("config/kubernetes/helpers/dynamic.sky", "dynamic_replicas")
 load("config/kubernetes/helpers/failure_threshold.sky", "failure_threshold")
@@ -59,15 +60,19 @@ def make_deployment_options_plugins(config):
     # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
     return [deployment_options(replicas = config.replicas, revisionHistoryLimit = 3)]
 
-def monster_ruby_3_1_policy(ctx, **kwargs):
+def monster_ruby_3_1_policy(ctx, availability_tier = None, **kwargs):
     """Define a ruby_3_1_policy for monster
 
     See: https://git.corp.stripe.com/stripe-internal/third-party-containers/blob/e53c8d53/config/kubernetes/pay-server.sky#L73
     for a description of how the policy applies to a pod.
+
+    # If we again need to set this by environment in the future
+    # for testing, use an expression like "get_env(ctx) == preprod"
     """
-    if get_env(ctx) == "qa" and get_availability_tier(ctx) == "A400":
-        return 2 # 50% enabled
-    return False
+    if availability_tier == None:
+        fail("Monster deployment missing availability_tier {}".format(kwargs))
+
+    return True
 
 def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
     formatted_isolation_group = config.monster_isolation_group.replace("_", "-")

@@ -38,9 +38,10 @@ def secret_options(use_credentials_proxy = None):
             use_credentials_proxy = use_credentials_proxy,
         )
 
-def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False):
+def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False, secrets_dir='/pay/keys'):
     """
     Add a secret to a pod in YAML format.
+
     Args:
         prefix: The prefix of the secret in confidant.
         filename: Optional filename for the secret, relative to `/pay/keys`. Defaults to
@@ -52,6 +53,7 @@ def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {},
         container_names: Optional list of names of containers that need to access secrets. Defaults
             to just the main container.
         allow_missing: Optional Whether the secret is allowed to be missing for an environment or a cluster. Defaults to False.
+        secrets_dir: The directory to load secrets to. Defaults to `/pay/keys`.
     Returns:
         A plugin that sets up the pod to render the secret and expose it to the containers.
     """
@@ -59,7 +61,7 @@ def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {},
         filename = prefix + ".yaml"
 
     yaml_template_spec = {
-        "path": "/pay/keys/{}".format(filename),
+        "path": "{}/{}".format(secrets_dir, filename),
         "mode": mode,
         "prefix": prefix,
         "key_type": key_type,
@@ -72,11 +74,13 @@ def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {},
         type = "yaml",
         template_spec = yaml_template_spec,
         container_names = container_names,
+        secrets_dir = secrets_dir,
     )
 
 def json_secret(*, prefix, filename = None, mode = 0o640, container_names = [None]):
     """
     Add a secret to a pod in JSON format.
+
     Args:
         prefix: The prefix of the secret in confidant. This will also be the name of the template
             file.
@@ -105,6 +109,7 @@ def json_secret(*, prefix, filename = None, mode = 0o640, container_names = [Non
 def raw_secret(*, filename, key, base64 = False, mode = 0o640, container_names = [None]):
     """
     Add a secret to a pod, rendered to a raw file.
+
     Args:
         filename: Filename for the secret, relative to `/pay/keys`.
         key: The key where the secret is stored in confidant.
@@ -129,6 +134,7 @@ def raw_secret(*, filename, key, base64 = False, mode = 0o640, container_names =
 def ssh_secrets(*, name, private_key_mode = 0o400, public_key_mode = 0o600, container_names = [None]):
     """
     Add an ssh key pair secret to a pod.
+
     Args:
         name: The name for the ssh key stored in confidant. It will match a key in
             confidant stored at `ssh/{name}/{name}/privkey` and `ssh/{name}/{name}/pubkey`.
@@ -155,6 +161,7 @@ def ssh_secrets(*, name, private_key_mode = 0o400, public_key_mode = 0o600, cont
 def mustache_secret(*, filename, template_content, mode = 0o640, container_names = [None]):
     """
     Add a secret to a pod, rendered using a Mustache template.
+
     This allows the secret file format to be customized to suit the application needs, in case one
     of the other formats is not workable.
     Args:
@@ -188,6 +195,7 @@ def pgpass_secret(
         container_names = [None]):
     """
     Add a pgpass secret to a pod.
+
     Args:
         db_endpoint: The endpoint to connect to for the database, shown in the RDS console.
         dbname: The name of the database to use, shown in the RDS console.
@@ -214,27 +222,27 @@ def pgpass_secret(
         container_names = container_names,
     )
 
-def _pandora_make_secret(type, template_spec, container_names):
-    if template_spec["path"].startswith("/pay/keys/pay/keys") or template_spec["path"].startswith("/pay/keys//pay/keys"):
-        fail("don't specify /pay/keys in secret file paths, they're already relative to /pay/keys (instead of '/pay/keys/blah.txt', use 'blah.txt')")
-    keys_mounts = [volume_mount("/pay/keys", container_name = name) for name in container_names]
+def _pandora_make_secret(type, template_spec, container_names, secrets_dir='/pay/keys'):
+    if template_spec["path"].startswith("{}/{}".format(secrets_dir, secrets_dir)) or template_spec["path"].startswith("{}//{}".format(secrets_dir, secrets_dir)):
+        fail("don't specify {} in secret file paths, they're already relative to {} (instead of '{}/blah.txt', use 'blah.txt')".format(secrets_dir, secrets_dir, secrets_dir))
+    keys_mounts = [volume_mount(secrets_dir, container_name = name) for name in container_names]
 
     return compose_plugins(
         pod_plugin(
             _pandora_update_pod,
-            secret = _ConfidantSecret(type = type, template_spec = template_spec),
+            secret = _ConfidantSecret(type = type, template_spec = template_spec, secrets_dir = secrets_dir),
         ),
         *keys_mounts
     )
 
 def _pandora_update_pod(ctx, plugin, pod_def):
-    config = _setup_pandora(ctx, pod_def)
+    config = _setup_pandora(ctx, pod_def, secrets_dir = plugin.secret.secrets_dir)
     config["secrets"].append(plugin.secret)
 
 def _update_pod_options(ctx, plugin, pod_def):
     _setup_pandora(ctx, pod_def, use_credentials_proxy = plugin.use_credentials_proxy)
 
-def _setup_pandora(ctx, pod_def, use_credentials_proxy = None):
+def _setup_pandora(ctx, pod_def, use_credentials_proxy = None, secrets_dir='/pay/keys'):
     if "confidant_config" in pod_def:
         if use_credentials_proxy != None:
             fail("Choosing whether to enable the credentials proxy for secrets must be done before adding any secrets.")
@@ -244,24 +252,38 @@ def _setup_pandora(ctx, pod_def, use_credentials_proxy = None):
         ## add the confidant-init image. In case of pandora migration, we need the pandora-init-image.
         new_init_containers = []
         contains_pandora_container = False
+        confidant_container_index = -1
         # Iterate over each init_container
-        for container in pod_def["init_containers"]:
+        for index, container in enumerate(pod_def["init_containers"]):
             # Check if the name is not equal to "confidant-init"
-            if container.get("name") != "confidant-init":
-                # Append the container to the new list
-                new_init_containers.append(container)
+            if container.get("name") == "confidant-init":
+                # Store index of confidant-init container
+                confidant_container_index = index
+                continue
             if container.get("name") == "pandora-init-image":
                 contains_pandora_container = True
+            # Append the container to the new list
+            new_init_containers.append(container)
 
         # Replace the init_containers list with the new one
         pod_def["init_containers"] = new_init_containers
-        # Add Pandora-init container if not present
-        if contains_pandora_container == False:
-            pod_def["init_containers"].append({
+        # Add Pandora-init container at confidant-init container position if not present
+        if not contains_pandora_container and confidant_container_index >= 0:
+            pod_def["init_containers"].insert(confidant_container_index, {
                 "render": _render_pandora_container,
                 "name": pandora_container_name,
                 "config": pod_def["confidant_config"],
             })
+
+        ## make sure all the volume mounts mentioned in the config are added
+        if secrets_dir != "/pay/keys":
+            volume = pod_volume(
+                path = secrets_dir,
+                reason = "Provides in-memory storage for the pod's secrets.",
+                medium = "Memory",
+                sizeLimit = mebibytes(ctx, 100),
+            )
+            volume.update_pod(ctx, volume, pod_def)
 
         return pod_def["confidant_config"]
 
@@ -287,6 +309,7 @@ def _setup_pandora(ctx, pod_def, use_credentials_proxy = None):
             sizeLimit = mebibytes(ctx, 100),
         ),
     ]
+
     if config["use_credentials_proxy"]:
         volumes.extend([
             host_volume(
@@ -327,6 +350,14 @@ def _render_pandora_container(ctx, container_def, pod):
     volume_mounts = [
         volume_mount("/pay/keys", read_only = False),
     ]
+
+    seen_dirs = []
+    for secret in container.config["secrets"]:
+        ## make sure all the unique volume mounts mentioned in the config are added
+        if secret.secrets_dir != "/pay/keys" and not contains(seen_dirs, secret.secrets_dir):
+            volume_mounts.append(volume_mount(secret.secrets_dir, read_only = False))
+            seen_dirs.append(secret.secrets_dir)
+
     if container.config["use_credentials_proxy"]:
         volume_mounts.extend([
             mount_credentials_proxy(read_only = is_bin_packing_enabled(ctx) == False),
@@ -382,3 +413,9 @@ def _confidant_mtls_config(ctx):
 
 def _pandora_image(ctx):
     return image(ctx, artifact=pandora_container_name)
+
+def contains(lst, value):
+        for v in lst:
+            if v == value:
+                return True
+        return False

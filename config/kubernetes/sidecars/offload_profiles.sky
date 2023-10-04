@@ -90,7 +90,11 @@ def _offload_profiles_container(ctx, container_def, pod):
         ctx,
         name = container.name,
         image = image(ctx, default_pay_server_image),
-        command = ["/deploy/pay-server/current/lib/production_profiler/scripts/offload_dumps_sidecar.rb"],
+        command = [
+          "/deploy/pay-server/current/deploy-scripts/stripe-bundle-msp",
+          "pay-server",
+          "/deploy/pay-server/current/lib/production_profiler/scripts/offload_dumps_sidecar.rb"
+        ],
         env = env,
         volumeMounts = volume_mounts,
         resources = resource_requirements(ctx),

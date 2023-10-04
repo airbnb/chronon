@@ -13,6 +13,7 @@ load("config/kubernetes/networking/public/networking.sky", "networking")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "job_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
+load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Job", "JobSpec")
 
 def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **kwargs):
@@ -39,6 +40,10 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **k
         A [Job](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#job-v1-batch)
         Kubernetes protobuf message describing the configuration of the batch job.
     """
+
+    if is_isolated_deploy(ctx) and get_env(ctx) != "qa":
+        fail("Isolated deployment jobs are not allowed to be created outside of the QA environment")
+
     job = {
         "render": _render_job,
         "type": "job",

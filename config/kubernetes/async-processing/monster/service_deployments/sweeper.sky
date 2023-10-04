@@ -8,7 +8,6 @@ load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
 load("config/kubernetes/networking/public/config.sky", "networking_config")
-load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/consul.sky", "consul_service")
 load("config/kubernetes/stripe.sky", "stripe_pod")
@@ -108,7 +107,6 @@ def monster_sweeper_deployment(ctx, unformatted_host_set, config):
         add_security_groups(
             "monstersweeper",
         ),
-        auto_secrets(),
         config_srv_sidecar(ctx),
         networking_config(mproxy_tier = "monster"),
         # We limit how many previous revisions of ReplicaSet's we keep around to limit

@@ -17,9 +17,11 @@ load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 SUPPORTED_MSP_INSTANCE_TYPES = [
     'c5.12xlarge', 'c5.18xlarge', 'c5.24xlarge', 'c5.2xlarge', 'c5.4xlarge', 'c5.9xlarge', 'c5.xlarge',
     'c5d.12xlarge', 'c5d.18xlarge', 'c5d.24xlarge', 'c5d.2xlarge', 'c5d.4xlarge', 'c5d.9xlarge', 'c5d.xlarge',
+    'c5n.large', 'c5n.xlarge', 'c5n.2xlarge', 'c5n.4xlarge', 'c5n.9xlarge', 'c5n.18xlarge', 'c5n.metal',
     'c6a.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
     'c6i.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
     'i3.2xlarge', 'i3.xlarge', 'i3.4xlarge',
+    'i3en.xlarge', 'i3en.2xlarge',
     'm5.12xlarge', 'm5.16xlarge', 'm5.24xlarge', 'm5.2xlarge', 'm5.4xlarge', 'm5.8xlarge', 'm5.large', 'm5.xlarge',
     'm5d.12xlarge', 'm5d.16xlarge', 'm5d.24xlarge', 'm5d.2xlarge', 'm5d.4xlarge', 'm5d.8xlarge', 'm5d.large', 'm5d.xlarge',
     'm6a.12xlarge', 'm6a.16xlarge', 'm6a.24xlarge', 'm6a.xlarge',
@@ -1144,40 +1146,10 @@ _AWS_INSTANCE_SIZES = {
     "memory_mib": 31232,
     "instance_storage_gib": 950
   },
-  "i3en.12xlarge": {
-    "vcpu": 48,
-    "memory_mib": 393216,
-    "instance_storage_gib": 30000
-  },
-  "i3en.24xlarge": {
-    "vcpu": 96,
-    "memory_mib": 786432,
-    "instance_storage_gib": 60000
-  },
   "i3en.2xlarge": {
     "vcpu": 8,
     "memory_mib": 65536,
     "instance_storage_gib": 5000
-  },
-  "i3en.3xlarge": {
-    "vcpu": 12,
-    "memory_mib": 98304,
-    "instance_storage_gib": 7500
-  },
-  "i3en.6xlarge": {
-    "vcpu": 24,
-    "memory_mib": 196608,
-    "instance_storage_gib": 15000
-  },
-  "i3en.large": {
-    "vcpu": 2,
-    "memory_mib": 16384,
-    "instance_storage_gib": 1250
-  },
-  "i3en.metal": {
-    "vcpu": 96,
-    "memory_mib": 786432,
-    "instance_storage_gib": 60000
   },
   "i3en.xlarge": {
     "vcpu": 4,
@@ -3381,6 +3353,136 @@ c5d_24xlarge = struct(
     slack_cpu_millicores=1000,
 )
 
+c5n_large = struct(
+    name="c5n.large",
+    slack_cpu_millicores=1000,
+)
+
+c5n_xlarge = struct(
+    name="c5n.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c5n_2xlarge = struct(
+    name="c5n.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c5n_4xlarge = struct(
+    name="c5n.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c5n_9xlarge = struct(
+    name="c5n.9xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c5n_18xlarge = struct(
+    name="c5n.18xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c5n_metal = struct(
+    name="c5n.metal",
+    slack_cpu_millicores=1000,
+)
+
+c6a_12xlarge = struct(
+    name="c6a.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_xlarge = struct(
+    name="c6g.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_2xlarge = struct(
+    name="c6g.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_4xlarge = struct(
+    name="c6g.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_8xlarge = struct(
+    name="c6g.8xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_12xlarge = struct(
+    name="c6g.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6g_16xlarge = struct(
+    name="c6g.16xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c6i_12xlarge = struct(
+    name="c6i.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_xlarge = struct(
+    name="c7g.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_2xlarge = struct(
+    name="c7g.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_4xlarge = struct(
+    name="c7g.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_8xlarge = struct(
+    name="c7g.8xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_12xlarge = struct(
+    name="c7g.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+c7g_16xlarge = struct(
+    name="c7g.16xlarge",
+    slack_cpu_millicores=1000,
+)
+
+i3_xlarge = struct(
+    name="i3.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+i3_2xlarge = struct(
+    name="i3.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+i3_4xlarge = struct(
+    name="i3.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+i3en_xlarge = struct(
+    name="i3en.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+i3en_2xlarge = struct(
+    name="i3en.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
 m5_large = struct(
     name="m5.large",
     slack_cpu_millicores=1000,
@@ -3458,6 +3560,106 @@ m5d_16xlarge = struct(
 
 m5d_24xlarge = struct(
     name="m5d.24xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6a_xlarge = struct(
+    name="m6a.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6a_12xlarge = struct(
+    name="m6a.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6a_16xlarge = struct(
+    name="m6a.16xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6a_24xlarge = struct(
+    name="m6a.24xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_large = struct(
+    name="m6g.large",
+    slack_cpu_millicores=1000,
+)
+
+m6g_xlarge = struct(
+    name="m6g.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_2xlarge = struct(
+    name="m6g.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_4xlarge = struct(
+    name="m6g.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_8xlarge = struct(
+    name="m6g.8xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_12xlarge = struct(
+    name="m6g.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6g_16xlarge = struct(
+    name="m6g.16xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6i_4xlarge = struct(
+    name="m6i.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6i_12xlarge = struct(
+    name="m6i.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_large = struct(
+    name="m7g.large",
+    slack_cpu_millicores=1000,
+)
+
+m7g_xlarge = struct(
+    name="m7g.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_2xlarge = struct(
+    name="m7g.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_4xlarge = struct(
+    name="m7g.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_8xlarge = struct(
+    name="m7g.8xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_12xlarge = struct(
+    name="m7g.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7g_16xlarge = struct(
+    name="m7g.16xlarge",
     slack_cpu_millicores=1000,
 )
 
@@ -3541,258 +3743,73 @@ r5d_24xlarge = struct(
     slack_cpu_millicores=1000,
 )
 
-m6a_xlarge = struct(
-    name="m6a.xlarge",
-    slack_cpu_millicores=1000,
-)
-
-i3_xlarge = struct(
-    name="i3.xlarge",
-    slack_cpu_millicores=1000,
-)
-
-i3_2xlarge = struct(
-    name="i3.2xlarge",
-    slack_cpu_millicores=1000,
-)
-
-i3_4xlarge = struct(
-    name="i3.4xlarge",
-    slack_cpu_millicores=1000,
-)
-
-c6i_12xlarge = struct(
-    name="c6i.12xlarge",
-    slack_cpu_millicores=1000,
-)
-
-m6i_4xlarge = struct(
-    name="m6i.4xlarge",
-    slack_cpu_millicores=1000,
-)
-
-m6i_12xlarge = struct(
-    name="m6i.12xlarge",
-    slack_cpu_millicores=1000,
-)
-
-c6a_12xlarge = struct(
-    name="c6a.12xlarge",
-    slack_cpu_millicores=1000,
-)
-
-m6a_12xlarge = struct(
-    name="m6a.12xlarge",
-    slack_cpu_millicores=1000,
-)
-
-m6a_16xlarge = struct(
-    name="m6a.16xlarge",
-    slack_cpu_millicores=1000,
-)
-
-m6a_24xlarge = struct(
-    name="m6a.24xlarge",
-    slack_cpu_millicores=1000,
-)
-
-c6g_12xlarge = struct(
-    name='c6g.12xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c6g_16xlarge = struct(
-    name='c6g.16xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c6g_2xlarge = struct(
-    name='c6g.2xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c6g_4xlarge = struct(
-    name='c6g.4xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c6g_8xlarge = struct(
-    name='c6g.8xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c6g_xlarge = struct(
-    name='c6g.xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_12xlarge = struct(
-    name='m6g.12xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_16xlarge = struct(
-    name='m6g.16xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_2xlarge = struct(
-    name='m6g.2xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_4xlarge = struct(
-    name='m6g.4xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_8xlarge = struct(
-    name='m6g.8xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_xlarge = struct(
-    name='m6g.xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r6g_12xlarge = struct(
-    name='r6g.12xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r6g_16xlarge = struct(
-    name='r6g.16xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r6g_2xlarge = struct(
-    name='r6g.2xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r6g_4xlarge = struct(
-    name='r6g.4xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r6g_8xlarge = struct(
-    name='r6g.8xlarge',
+r6g_large = struct(
+    name="r6g.large",
     slack_cpu_millicores=1000,
 )
 
 r6g_xlarge = struct(
-    name='r6g.xlarge',
+    name="r6g.xlarge",
     slack_cpu_millicores=1000,
 )
 
-c7g_12xlarge = struct(
-    name='c7g.12xlarge',
+r6g_2xlarge = struct(
+    name="r6g.2xlarge",
     slack_cpu_millicores=1000,
 )
 
-c7g_16xlarge = struct(
-    name='c7g.16xlarge',
+r6g_4xlarge = struct(
+    name="r6g.4xlarge",
     slack_cpu_millicores=1000,
 )
 
-c7g_2xlarge = struct(
-    name='c7g.2xlarge',
+r6g_8xlarge = struct(
+    name="r6g.8xlarge",
     slack_cpu_millicores=1000,
 )
 
-c7g_4xlarge = struct(
-    name='c7g.4xlarge',
+r6g_12xlarge = struct(
+    name="r6g.12xlarge",
     slack_cpu_millicores=1000,
 )
 
-c7g_8xlarge = struct(
-    name='c7g.8xlarge',
-    slack_cpu_millicores=1000,
-)
-
-c7g_xlarge = struct(
-    name='c7g.xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_12xlarge = struct(
-    name='m7g.12xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_16xlarge = struct(
-    name='m7g.16xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_2xlarge = struct(
-    name='m7g.2xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_4xlarge = struct(
-    name='m7g.4xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_8xlarge = struct(
-    name='m7g.8xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m7g_xlarge = struct(
-    name='m7g.xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_12xlarge = struct(
-    name='r7g.12xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_16xlarge = struct(
-    name='r7g.16xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_2xlarge = struct(
-    name='r7g.2xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_4xlarge = struct(
-    name='r7g.4xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_8xlarge = struct(
-    name='r7g.8xlarge',
-    slack_cpu_millicores=1000,
-)
-
-r7g_xlarge = struct(
-    name='r7g.xlarge',
-    slack_cpu_millicores=1000,
-)
-
-m6g_large = struct(
-    name='m6g.large',
-    slack_cpu_millicores=1000,
-)
-
-r6g_large = struct(
-    name='r6g.large',
-    slack_cpu_millicores=1000,
-)
-
-m7g_large = struct(
-    name='m7g.large',
+r6g_16xlarge = struct(
+    name="r6g.16xlarge",
     slack_cpu_millicores=1000,
 )
 
 r7g_large = struct(
-    name='r7g.large',
+    name="r7g.large",
+    slack_cpu_millicores=1000,
+)
+
+r7g_xlarge = struct(
+    name="r7g.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+r7g_2xlarge = struct(
+    name="r7g.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
+r7g_4xlarge = struct(
+    name="r7g.4xlarge",
+    slack_cpu_millicores=1000,
+)
+
+r7g_8xlarge = struct(
+    name="r7g.8xlarge",
+    slack_cpu_millicores=1000,
+)
+
+r7g_12xlarge = struct(
+    name="r7g.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+r7g_16xlarge = struct(
+    name="r7g.16xlarge",
     slack_cpu_millicores=1000,
 )
 
@@ -3817,6 +3834,32 @@ _INSTANCE_TYPES_BY_NAME = {
     c5d_12xlarge.name: c5d_12xlarge,
     c5d_18xlarge.name: c5d_18xlarge,
     c5d_24xlarge.name: c5d_24xlarge,
+    c5n_large.name: c5n_large,
+    c5n_xlarge.name: c5n_xlarge,
+    c5n_2xlarge.name: c5n_2xlarge,
+    c5n_4xlarge.name: c5n_4xlarge,
+    c5n_9xlarge.name: c5n_9xlarge,
+    c5n_18xlarge.name: c5n_18xlarge,
+    c5n_metal.name: c5n_metal,
+    c6a_12xlarge.name: c6a_12xlarge,
+    c6g_xlarge.name: c6g_xlarge,
+    c6g_2xlarge.name: c6g_2xlarge,
+    c6g_4xlarge.name: c6g_4xlarge,
+    c6g_8xlarge.name: c6g_8xlarge,
+    c6g_12xlarge.name: c6g_12xlarge,
+    c6g_16xlarge.name: c6g_16xlarge,
+    c6i_12xlarge.name: c6i_12xlarge,
+    c7g_xlarge.name: c7g_xlarge,
+    c7g_2xlarge.name: c7g_2xlarge,
+    c7g_4xlarge.name: c7g_4xlarge,
+    c7g_8xlarge.name: c7g_8xlarge,
+    c7g_12xlarge.name: c7g_12xlarge,
+    c7g_16xlarge.name: c7g_16xlarge,
+    i3_xlarge.name: i3_xlarge,
+    i3_2xlarge.name: i3_2xlarge,
+    i3_4xlarge.name: i3_4xlarge,
+    i3en_xlarge.name: i3en_xlarge,
+    i3en_2xlarge.name: i3en_2xlarge,
     m5_large.name: m5_large,
     m5_xlarge.name: m5_xlarge,
     m5_2xlarge.name: m5_2xlarge,
@@ -3833,6 +3876,26 @@ _INSTANCE_TYPES_BY_NAME = {
     m5d_12xlarge.name: m5d_12xlarge,
     m5d_16xlarge.name: m5d_16xlarge,
     m5d_24xlarge.name: m5d_24xlarge,
+    m6a_xlarge.name: m6a_xlarge,
+    m6a_12xlarge.name: m6a_12xlarge,
+    m6a_16xlarge.name: m6a_16xlarge,
+    m6a_24xlarge.name: m6a_24xlarge,
+    m6g_large.name: m6g_large,
+    m6g_xlarge.name: m6g_xlarge,
+    m6g_2xlarge.name: m6g_2xlarge,
+    m6g_4xlarge.name: m6g_4xlarge,
+    m6g_8xlarge.name: m6g_8xlarge,
+    m6g_12xlarge.name: m6g_12xlarge,
+    m6g_16xlarge.name: m6g_16xlarge,
+    m6i_4xlarge.name: m6i_4xlarge,
+    m6i_12xlarge.name: m6i_12xlarge,
+    m7g_large.name: m7g_large,
+    m7g_xlarge.name: m7g_xlarge,
+    m7g_2xlarge.name: m7g_2xlarge,
+    m7g_4xlarge.name: m7g_4xlarge,
+    m7g_8xlarge.name: m7g_8xlarge,
+    m7g_12xlarge.name: m7g_12xlarge,
+    m7g_16xlarge.name: m7g_16xlarge,
     r5_large.name: r5_large,
     r5_xlarge.name: r5_xlarge,
     r5_2xlarge.name: r5_2xlarge,
@@ -3849,57 +3912,20 @@ _INSTANCE_TYPES_BY_NAME = {
     r5d_12xlarge.name: r5d_12xlarge,
     r5d_16xlarge.name: r5d_16xlarge,
     r5d_24xlarge.name: r5d_24xlarge,
-    m6a_xlarge.name: m6a_xlarge,
-    i3_xlarge.name: i3_xlarge,
-    i3_2xlarge.name: i3_2xlarge,
-    i3_4xlarge.name: i3_4xlarge,
-    c6i_12xlarge.name: c6i_12xlarge,
-    m6i_4xlarge.name: m6i_4xlarge,
-    m6i_12xlarge.name: m6i_12xlarge,
-    c6a_12xlarge.name: c6a_12xlarge,
-    m6a_12xlarge.name: m6a_12xlarge,
-    m6a_16xlarge.name: m6a_16xlarge,
-    m6a_24xlarge.name: m6a_24xlarge,
-    c6g_12xlarge.name: c6g_12xlarge,
-    c6g_16xlarge.name: c6g_16xlarge,
-    c6g_2xlarge.name: c6g_2xlarge,
-    c6g_4xlarge.name: c6g_4xlarge,
-    c6g_8xlarge.name: c6g_8xlarge,
-    c6g_xlarge.name: c6g_xlarge,
-    m6g_12xlarge.name: m6g_12xlarge,
-    m6g_16xlarge.name: m6g_16xlarge,
-    m6g_2xlarge.name: m6g_2xlarge,
-    m6g_4xlarge.name: m6g_4xlarge,
-    m6g_8xlarge.name: m6g_8xlarge,
-    m6g_xlarge.name: m6g_xlarge,
-    r6g_12xlarge.name: r6g_12xlarge,
-    r6g_16xlarge.name: r6g_16xlarge,
+    r6g_large.name: r6g_large,
+    r6g_xlarge.name: r6g_xlarge,
     r6g_2xlarge.name: r6g_2xlarge,
     r6g_4xlarge.name: r6g_4xlarge,
     r6g_8xlarge.name: r6g_8xlarge,
-    r6g_xlarge.name: r6g_xlarge,
-    c7g_12xlarge.name: c7g_12xlarge,
-    c7g_16xlarge.name: c7g_16xlarge,
-    c7g_2xlarge.name: c7g_2xlarge,
-    c7g_4xlarge.name: c7g_4xlarge,
-    c7g_8xlarge.name: c7g_8xlarge,
-    c7g_xlarge.name: c7g_xlarge,
-    m7g_12xlarge.name: m7g_12xlarge,
-    m7g_16xlarge.name: m7g_16xlarge,
-    m7g_2xlarge.name: m7g_2xlarge,
-    m7g_4xlarge.name: m7g_4xlarge,
-    m7g_8xlarge.name: m7g_8xlarge,
-    m7g_xlarge.name: m7g_xlarge,
-    r7g_12xlarge.name: r7g_12xlarge,
-    r7g_16xlarge.name: r7g_16xlarge,
+    r6g_12xlarge.name: r6g_12xlarge,
+    r6g_16xlarge.name: r6g_16xlarge,
+    r7g_large.name: r7g_large,
+    r7g_xlarge.name: r7g_xlarge,
     r7g_2xlarge.name: r7g_2xlarge,
     r7g_4xlarge.name: r7g_4xlarge,
     r7g_8xlarge.name: r7g_8xlarge,
-    r7g_xlarge.name: r7g_xlarge,
-    m6g_large.name: m6g_large,
-    r6g_large.name: r6g_large,
-    m7g_large.name: m7g_large,
-    r7g_large.name: r7g_large,
+    r7g_12xlarge.name: r7g_12xlarge,
+    r7g_16xlarge.name: r7g_16xlarge,
 }
 
 # 4. Mapping from instance type to the struct defined above, which contains the CPU slack amount for host agents.
@@ -4007,12 +4033,12 @@ _X86_TO_GRAVITON_INSTANCE_TYPE_MAPPINGS = {
     "m6i.12xlarge": {
         "default": "m7g.12xlarge",
         "default_6g": "m6g.12xlarge",
-        "bom": "m6g.12xlarge"
+        "bom": "m7g.12xlarge"
     },
     "m6i.4xlarge": {
         "default": "m7g.4xlarge",
         "default_6g": "m6g.4xlarge",
-        "bom": "m6g.4xlarge"
+        "bom": "m7g.4xlarge"
     },
     "c6a.12xlarge": {
         "default": "c7g.12xlarge",
@@ -4212,11 +4238,18 @@ def get_bin_packing_instance_type(ctx, requested_instance_type):
         ctx: context
         requested_instance_type: The instance type that actually fits the pods resource limits
     """
+    # TODO: Remove this list once new node selector support is merged into prod.
     instance_family=base_instance_family(requested_instance_type)
     INSTANCE_FAMILY_TO_BIN_PACKING_INSTANCE_TYPE = {
         "m5": "m5.metal",
-        "c5": "m5.metal", #TODO: Change this to c5 metal when we have that ASG provisioned
-        "r5": "m5.metal", #TODO: Change this to r5 metal when we have that ASG provisioned
+        "m6g": "m7g.metal",
+        "m7g": "m7g.metal",
+        "c5": "m5.metal",
+        "c6g": "m7g.metal",
+        "c7g": "m7g.metal",
+        "r5": "m5.metal",
+        "r6g": "m7g.metal",
+        "r7g": "m7g.metal",
         #Add additional instance types here as we support them
     }
     bin_packing_instance_type = INSTANCE_FAMILY_TO_BIN_PACKING_INSTANCE_TYPE.get(instance_family)

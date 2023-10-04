@@ -92,6 +92,10 @@ def _default_sidecar_cli_args(target):
 
 def _default_sidecar_config(target):
     """
+    Note to Service Networking:
+    Please use envoy-config-srv.yaml in gocode instead, found at:
+    https://git.corp.stripe.com/stripe-internal/gocode/blob/master/kube-tools/envoy-config-srv/config/envoy-config-srv.yaml
+
     Args:
         target: deploy-time properties about the current workload. Used to match
             against config generation rules to synthesize the correct values for
@@ -115,13 +119,10 @@ def _default_sidecar_config(target):
             "cluster_healthcheck_opts": {
                 "initial_jitter": "3s",
                 "interval_jitter": "0.5s",
-                "enable_server_side_hc": True,
-                "use_sn_internal_hc": True,
                 "enable_http2_hc": False,
                 "enable_client_side_health_events": True,
                 "enable_server_side_health_events": True
             },
-            "uds_rds_service_allowlist": ["*"],
             # TODO(xyu): This should be set by the user in `networking_config`
             # TODO(xyu): Enabling tracing touches both envoy-config-srv and the
             # envoy bootstrap config. Implement this when we modify the
@@ -183,8 +184,8 @@ def _default_sidecar_config(target):
             ),
             "access_log_filter": match(
                 target,
-                access_log_sampling_native_filter(True, True),
-                when(role = "envoy-shape", env = "qa", value = access_log_sampling_native_filter(False, False)),
+                access_log_sampling_native_filter(True),
+                when(role = "envoy-shape", env = "qa", value = access_log_sampling_native_filter(False)),
             ),
             "enable_grpc_stats": True,
             "mproxy_local_rate_limit": None,
@@ -192,8 +193,6 @@ def _default_sidecar_config(target):
             "enable_streamed_initial_snapshot": True,
             "enable_dual_registration": True,
             "enable_cross_domain_services": [],
-            "enable_region_aware_traffic_shifting_routing": True,
-            "enable_consul_sidecar_http_proxy": True,
             "enable_envoy_http_tap_filter": match(
                 target,
                 False,
@@ -210,7 +209,7 @@ def _default_sidecar_config(target):
                 when(env="qa", role="envoy-shape", value = True)
             ),
             "health_agent_address": "127.0.0.1:12073", # note: setting this field to empty string will disable collection from health-agent (potentially useful in breakglass scenario)
-            "control_envoy_xds_resource_versions": control_envoy_xds_resource_versions("v1", "v0"),
+            "control_envoy_xds_resource_versions": control_envoy_xds_resource_versions("v1"),
             "mesh_service_config_watcher": {
                 "config_srv_addr": match(
                     target,
@@ -221,6 +220,17 @@ def _default_sidecar_config(target):
                 "polling_interval": "10s"
             },
             "max_headers_count": 100,
+            "use_regional_vhost": True,
+            "egress_proxy": match(
+                target,
+                egress_proxy(tier="", enable_unix_socket=True),
+                when(role="monobapibox", availability_tier="A100", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+                when(role="monobapibox", availability_tier="A110", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+                when(role="workflow-work-banking-platform", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+                when(role="issuingauth", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+                # TODO(jakewang): configure egress-proxy-prober-ruby.sky p0 workloads to use p0 egress-proxy.
+            ),
+            # NOTE(mattkipps): please add new configuration options to gocode in envoy-config-srv.yaml
         },
         # Use the match block below to conditionally set configuration options in QA/Prod:
         match(
@@ -240,18 +250,28 @@ def _default_sidecar_config(target):
         ),
     )
 
-def control_envoy_xds_resource_versions(target, compatible):
+def egress_proxy(*, tier, enable_unix_socket):
+    if tier == "p0":
+        return {
+            "tier": "P0",
+            "enable_unix_socket": enable_unix_socket,
+        }
+    else:
+        return {
+            "tier": "DEFAULT",
+            "enable_unix_socket": enable_unix_socket,
+        }
+
+def control_envoy_xds_resource_versions(target):
     return {
         "target_version": target,
-        "compatible_version": compatible,
     }
 
-def access_log_sampling_native_filter(enable, use_native):
+def access_log_sampling_native_filter(enable):
     return {
         "enabled": enable,
         "success_sample_percent": 10,
         "error_sample_percent": 100,
-        "use_native": use_native,
     }
 
 def control_locality_aware_routing(disable_locality, enable_capacity):

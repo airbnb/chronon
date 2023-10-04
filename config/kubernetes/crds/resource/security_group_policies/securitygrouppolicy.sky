@@ -60,7 +60,9 @@ def _render_sgp(ctx, sgp_mapping):
         if get_env(ctx) == "qa":
             env_secgroups = ['qa-' + secgroup for secgroup in secgroups]
         elif get_env(ctx) == "preprod":
-             env_secgroups = ['preprod-' + secgroup for secgroup in secgroups]
+            env_secgroups = ['preprod-' + secgroup for secgroup in secgroups]
+        else:
+            env_secgroups = secgroups
 
         spec["securityGroupNames"] = {"groupNames": env_secgroups}
         total_sg_count = len(env_secgroups)

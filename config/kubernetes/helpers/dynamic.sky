@@ -19,9 +19,9 @@ def dynamic_replicas(desired_count=1, max_count=1, min_count=1):
             your first deployment, if this value changes from one deployment to
             the next the new value will override the deployment's replica
             count. Otherwise the current replica count will remain unchanged.
-        min_count: The minimum number of replicas the deployment should have
-            (for autoscaling)
         max_count: The maximum number of replicas the deployment should have
+            (for autoscaling)
+        min_count: The minimum number of replicas the deployment should have
             (for autoscaling)
     """
     if min_count > max_count:

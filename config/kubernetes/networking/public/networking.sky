@@ -122,7 +122,6 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
         blue_green_color = get_blue_green_color(ctx)
         if blue_green_color != None:
             extra_tags.append("color:%s" % blue_green_color)
-
         consul_agent_services.append(
             finalize_consul_service(
                 consul_service,
@@ -133,14 +132,12 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
         plugins_for_consul_sidecar.extend(srv["plugins"])
 
     _env = get_env(ctx)
-
     config_target = target(
         role = namespace,  # XXX(xyu): introduce more granular `//namespace/<get_name(ctx)>` ?
         region = get_cluster(ctx),
         env = _env,
         availability_tier = availability_tier,
     )
-
     if use_network_isolation:
         # Registered services are fed into xDS sidecar to configure envoy ingress
         xds_static_consul_config = []
@@ -166,7 +163,6 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
         # TODO(xyu): add interfaces to explicitly declare inbound and outbound
         # network ACLs, so we can experiment with more granular ACLs than the
         # ones specified in a henson service config
-
         envoy_config_srv_prestop_call = generate_infra_sidecar_prestop_command_args(ctx, ENVOY_CONFIG_SRV_SIDECAR_NAME, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds) # TODO de-hardcode
 
         sn_stack_plugins.append(
@@ -176,7 +172,6 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
                 reason = "Each per-pod SN stack has a subpath in this basedir scoped to the pod",
             )
         )
-
         # This is safe to do as the networking_config implementation made sure
         # this field exists
         if config.enable_global_ratelimit.kwargs.enable == True:
@@ -196,7 +191,6 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
             sn_stack_plugins.extend([
                 ratelimit_sidecar(ctx, "latest", rate_limiter_namespace, **kwargs),
             ])
-
         if host_network:
             plugins_for_consul_sidecar.extend([
                 probes(
@@ -214,7 +208,6 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
                     container_name = "consul-sidecar",
                 ),
             ])
-
         sn_stack_plugins.extend([
             envoy_config_srv_sidecar(ctx, namespace, xds_static_consul_config, config_target, config, consul_agent_services, host_network, consul_deprecated),
             pre_stop(exec_action(ctx, *envoy_config_srv_prestop_call), container_name = ENVOY_CONFIG_SRV_SIDECAR_NAME),

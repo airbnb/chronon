@@ -2,12 +2,11 @@
 """
 Plugins for controlling the lifecycle of pods.
 """
-load("config/kubernetes/core/volume.sky", "volume_mount_all_containers", "volume_mount", "mount_host_volume")
+load("config/kubernetes/core/volume.sky", "volume_mount", )
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin", "all_container_plugin")
 load("config/kubernetes/helpers/constants.sky", "CONFIG_SRV_SIDECAR_NAME", "CONSUL_SIDECAR_CONTAINER_NAME", "ENVOY_SIDECAR_NAME", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "ENVOY_RATELIMIT_SRV_SIDECAR_NAME", "METRICS_SIDECAR_CONTAINER_NAME", "NSQD_SIDECAR_CONTAINER_NAME", "CRED_PROXY_SHIM_CONTAINER_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Lifecycle", "LifecycleHandler", "ExecAction")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml", "is_bin_packing_enabled", "get_name")
 
 def pre_stop(action, container_name = None):
     """
@@ -154,9 +153,7 @@ def generate_infra_sidecar_prestop_command_args(ctx, sidecarName, pod_terminatio
 #   from the prestop binary. This is the reason this arg is included for this sidecar.
     if sidecarName == ENVOY_CONFIG_SRV_SIDECAR_NAME:
         args.append('--fail-healthcheck')
-
-        if is_bin_packing_enabled(ctx):
-            args.append('--initiate-pod-termination')
+        args.append('--initiate-pod-termination')
 
     for sidecarCommand in BLESSED_INFRA_SIDECAR_COMMANDS:
         args.append("--sidecar-command")
@@ -254,10 +251,7 @@ def render_lifecycle(ctx, lifecycle):
     result = Lifecycle(ctx)
 
     if "preStop" in lifecycle:
-        if get_render_yaml(ctx):
-            result["preStop"] = lifecycle["preStop"]
-        else:
-            result.preStop = lifecycle["preStop"]
+        result["preStop"] = lifecycle["preStop"]
 
     return result
 

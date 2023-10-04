@@ -1,0 +1,32 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
+load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
+load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+
+def sidecars(ctx, sidecars_map):
+    """
+    Add sidecars to the current pod.
+
+    Args:
+        ctx: The current context
+        sidecars_map: A map of sidecar names to their configuration
+    Returns:
+        an array of sidecar configurations
+    """
+    args = []
+    # Sort the keys so the order is deterministic
+    for sidecar_name in sorted(sidecars_map.keys()):
+        if sidecar_name == "config_srv":
+            args = [ config_srv_sidecar(ctx) ] + args
+        elif sidecar_name == "offload_profiles":
+            args = [ use_offload_profiles() ] + args
+        elif sidecar_name == "geoip_databases":
+            args = [ use_geoip_databases() ] + args
+        elif sidecar_name == "ratelimit":
+            # Ugh, need to handle positional args and key/value args
+            args = [ ratelimit_sidecar(ctx) ] + args
+        else:
+            fail("Unknown sidecar name: " + sidecar_name)
+
+    return args

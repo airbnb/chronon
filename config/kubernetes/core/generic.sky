@@ -1,5 +1,6 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml", "is_bin_packing_enabled")
+load("config/kubernetes/helpers/context.sky", "get_env", "is_bin_packing_enabled")
+
 
 """
 Functions that apply to generic k8s resources instead of any particular type
@@ -51,4 +52,4 @@ def is_security_group_policy_enabled(ctx, resource):
     Returns:
         security group policy enabled or not
     """
-    return (get_render_yaml(ctx) and is_shared_msp(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx)
+    return (is_shared_msp(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx)

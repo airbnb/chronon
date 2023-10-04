@@ -13,7 +13,7 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "statefulset_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml")
+load("config/kubernetes/helpers/context.sky", "get_env", "is_isolated_deploy")
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "StatefulSet", "StatefulSetSpec")
@@ -47,6 +47,9 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
         A [StatefulSet](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#statefulset-v1-apps)
         Kubernetes protobuf message describing the configuration of the service.
     """
+
+    if is_isolated_deploy(ctx) and get_env(ctx) != "qa":
+        fail("Isolated deployment statefulsets are not allowed to be created outside of the QA environment")
 
     statefulset = {
         "render": _render_statefulset,

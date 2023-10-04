@@ -179,7 +179,15 @@ def consul_http_check(path, port, interval = "10s", timeout = "5s", notes = None
     return check
 
 
-def consul_grpc_check(*, port, interval = "10s", service = None, notes = None):
+def consul_grpc_check(
+        *,
+        port,
+        interval = "10s",
+        service = None,
+        notes = None,
+        use_tls = None,
+        tls_skip_verify = None,
+):
     """
     Creates a Consul check to perform gRPC healthchecking on the service.
 
@@ -188,6 +196,8 @@ def consul_grpc_check(*, port, interval = "10s", service = None, notes = None):
         interval: The frequency at which to perform the check. Defaults to 10s.
         service: Optional service identifier for Consul to include in the gRPC health check request.
         notes: Optional notes to add to the check.
+        use_tls: Optional, instructs the health-agent to use TLS when performing this health check
+        tls_skip_verify: Optional, instructs the health-agent whether to verify the server's TLS certs. Only makes sense when using TLS.
 
     Returns:
         A check that can be used with `consul_service`.
@@ -204,6 +214,12 @@ def consul_grpc_check(*, port, interval = "10s", service = None, notes = None):
 
     if notes != None:
         check["notes"] = notes
+
+    if use_tls != None:
+        check["grpc_use_tls"] = use_tls
+
+    if tls_skip_verify != None:
+        check["tls_skip_verify"] = tls_skip_verify
 
     return check
 

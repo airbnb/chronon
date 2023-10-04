@@ -6,7 +6,6 @@ be registered as routable endpoints.
 
 load("config/kubernetes/helpers/msp_shard.sky", "MSP_SHARD_ANNOTATION", "MSP_CLUSTER_ANNOTATION")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "ObjectMeta", "Service", "ServiceSpec")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def external_name_service(ctx, name, namespace, shard, external_name):
     """
@@ -36,11 +35,6 @@ def external_name_service(ctx, name, namespace, shard, external_name):
         ),
     )
 
-    if get_render_yaml(ctx):
-        service["metadata"]["annotations"][MSP_CLUSTER_ANNOTATION] = shard
-        service["metadata"]["annotations"][MSP_SHARD_ANNOTATION] = shard
-    else:
-        service.metadata.annotations[MSP_CLUSTER_ANNOTATION] = shard
-        service.metadata.annotations[MSP_SHARD_ANNOTATION] = shard
-
+    service["metadata"]["annotations"][MSP_CLUSTER_ANNOTATION] = shard
+    service["metadata"]["annotations"][MSP_SHARD_ANNOTATION] = shard
     return service

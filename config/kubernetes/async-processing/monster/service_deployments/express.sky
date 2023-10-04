@@ -9,7 +9,6 @@ load("config/kubernetes/helpers/context.sky", "get_cluster")
 load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
-load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/consul.sky", "consul_service", "consul_check")
 load("config/kubernetes/stripe.sky", "stripe_pod")
@@ -150,7 +149,6 @@ def monster_express_deployment(ctx, unformatted_host_set, config):
             "monsterexpress",
         ),
 
-        auto_secrets(),
         config_srv_sidecar(ctx),
         # We limit how many previous revisions of ReplicaSet's we keep around to limit
         # the amount of metadata the k8s control plane has to serve up for Monster

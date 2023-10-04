@@ -1,7 +1,6 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Toleration")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def add_toleration(key = None, operator = None, effect = None, value = None, toleration_seconds = None):
     """
@@ -36,23 +35,16 @@ def add_toleration(key = None, operator = None, effect = None, value = None, tol
 def render_pod_toleration(ctx, toleration_def):
     toleration = Toleration(ctx)
 
-    if get_render_yaml(ctx):
-        if toleration_def.key:
-            toleration["key"] = toleration_def.key
-        if toleration_def.operator:
-            toleration["operator"] = toleration_def.operator
-        if toleration_def.value:
-            toleration["value"] = toleration_def.value
-        if toleration_def.effect:
-            toleration["effect"] = toleration_def.effect
-        if toleration_def.toleration_seconds:
-            toleration["tolerationSeconds"] = toleration_def.toleration_seconds
-    else:
-        toleration.key = toleration_def.key
-        toleration.operator = toleration_def.operator
-        toleration.value = toleration_def.value
-        toleration.effect = toleration_def.effect
-        toleration.tolerationSeconds = toleration_def.toleration_seconds
+    if toleration_def.key:
+        toleration["key"] = toleration_def.key
+    if toleration_def.operator:
+        toleration["operator"] = toleration_def.operator
+    if toleration_def.value:
+        toleration["value"] = toleration_def.value
+    if toleration_def.effect:
+        toleration["effect"] = toleration_def.effect
+    if toleration_def.toleration_seconds:
+        toleration["tolerationSeconds"] = toleration_def.toleration_seconds
 
     return toleration
 

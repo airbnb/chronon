@@ -7,8 +7,6 @@ load("config/kubernetes/core/volume.sky", "pod_volume", "volume_mount", "host_vo
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/core/probe.sky", "http_probe", "probes")
 
-load("config/kubernetes/sidecars/confidant.sky", "mustache_secret")
-
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/helpers/constants.sky", "METRICS_SIDECAR_CONTAINER_NAME")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin", "statefulset_plugin")
@@ -62,14 +60,6 @@ _CONFIG_FILE = _CONFIG_DIR + "/veneur.yaml"
 _VENEUR_INIT_DIR = "/veneur-init"
 _DEFAULTS_FILE = _VENEUR_INIT_DIR + "/defaults.yaml"
 _INIT_SH = _VENEUR_INIT_DIR + "/init.sh"
-
-# Path and filename of the confidant secrets.
-# SECRETS_DIR includes the trailing slash because we use SECRETS_FILENAME as
-# an argument to mustache_secret, while the other constants specify the directory
-# as arguments to things instead of filenames
-_SECRETS_DIR = "/pay/keys/"
-_SECRETS_FILENAME = "veneur-secrets.yaml"
-_SECRETS_FILE = _SECRETS_DIR + _SECRETS_FILENAME
 
 # Path to veneur's unix socket listeners
 _UNIX_SOCKET_DIR = "/veneur-sockets"
@@ -190,7 +180,6 @@ def metrics(
 
         # the input data to merge
         "-defaults", _DEFAULTS_FILE,
-        "-secrets", _SECRETS_FILE,
 
         # attribution
         "-responsible-team", responsible_team,
@@ -316,22 +305,15 @@ def metrics(
                 ),
             ],
         ),
-
-        mustache_secret(
-            container_names = [METRICS_SIDECAR_CONTAINER_NAME],
-            filename = _SECRETS_FILENAME,
-            template_content = '\n'.join([
-                'signalfx_api_key: {{ secrets["veneur/signalfx_api_key"] }}',
-                'per_team_signalfx_api_keys: {{ secrets["veneur/signalfx_per_tag_api_keys"] }}',
-            ]),
-        ),
     )
 
 def metrics_config(**kwargs):
     """
-    Allows for overriding metrics configurations from the deployment; modifies the deployment's definition to
-    initialize metrics(...) with a non-None `config` struct. Note that passing in any `config` value is all
-    or nothing. There is no way to override only one value in the config struct, so make sure the defaults in
+    Allows for overriding metrics configurations from the deployment.
+
+    modifies the deployment's definition to initialize metrics(...) with a non-None `config` struct. Note that
+    passing in any `config` value is all
+or nothing. There is no way to override only one value in the config struct, so make sure the defaults in
     metrics_config(...) match those of metrics(...).
 
     Args:

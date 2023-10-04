@@ -8,7 +8,7 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/core/container.sky", "container", "container_resources", "resource_requirements")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
-load("config/kubernetes/core/pod.sky", "pod", "pod_host_network")
+load("config/kubernetes/core/pod.sky", "pod", "pod_host_network", "pod_scheduler_name")
 load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "host_volume")
 load("config/kubernetes/helpers/availability_tiers.sky", "A400")
 load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "exec_action")
@@ -23,10 +23,13 @@ load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/confidant.sky", "secret_options")
 load("config/kubernetes/sidecars/feature_flags.sky", "use_feature_flags")
-load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "is_bin_packing_scheduler_enabled", "get_name", "get_henson_config")
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-
+load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
+load("config/kubernetes/networking/internal/envoy-config-srv.sky", "henson_listener_config")
+load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance")
+load("config/kubernetes/helpers/warning.sky", "warn")
 
 TUPLE_TYPE = "tuple"
 
@@ -46,7 +49,10 @@ def stripe_pod(
         instance_type = None,
         availability_tier = None,
         use_shared_msp_service_account = True,
-        requires_consul = None
+        requires_consul = None,
+        command_required = True,
+        proxyless = False,
+        resource_requirements_spec = None,
 ):
     """
     Create a standard Stripe job or service with a main container.
@@ -64,7 +70,7 @@ def stripe_pod(
         image: The name of the ECR repository of the container images the pod should run for its main container.
         command: An array containing the command and arguments that should run in the main container
         cpu: The amount of CPU the main container needs, provided using a single `cores` or `millicores` if you are setting both request
-            and limits to the same value. Or a tuple (requests, limits) if you are specifying different values. 
+            and limits to the same value. Or a tuple (requests, limits) if you are specifying different values.
         memory: The amount of memory the main container needs, provided using a single `gigabytes` or `megabytes` if you are setting both
             request and limits to the same value. Or a tuple (requests, limits) if you are specifying different values.
         storage: The amount of ephemeral storage the main container needs, provided using `gigabytes` or `megabytes`.
@@ -88,20 +94,31 @@ def stripe_pod(
         requires_consul: Whether the service uses Consul or not. This flag is part of Consul deprecation effort and
             should be set to either `True` or `False` only upon explicit request to your team and following the corresponding
             instructions.
+        command_required: If set to false, command param in the input is ignore i.e. passed as is to downstream. Every
+        stripe_pod call should pass command which should be non none. However there are certain pods that require command
+        to be empty. Only those callers should set command_required = false. At the time of adding this only karpenter
+        pods require this param. All other pods should use the default behavior.
+        proxyless: Whether the main container uses sn-proxyless library which bypasses client-side or server-side Envoy
+            and talkes to the other side directly via mTLS.
+            This flag instructs HENSON_CONFIG_JSON environment to be set for the proxyless library to consume Envoy ACLs.
+        resource_requirements_spec: Specifies the resource limits for the main container (usually only the main container specifies
+            limit values). These resource limits will override any values in the 'cpu' and 'memory' parameters. These
+            limits will be provided by the Orchestration team through rightsizing recommendations.
     Returns:
         A plugin that can be used with an entrypoint like `deployment` or `cronjob`.
     """
 
-    if command == None or len(command) == 0:
+    # Check if command argument has been supplied only if allow_non_command set to false
+    if command_required and (command == None or len(command) == 0):
         fail("No command specified in stripe_pod " + str(name))
 
-    if str(type(command)) != 'list':
+    if command_required and str(type(command)) != 'list':
         fail("Invalid command specified in stripe_pod " + str(name) + ": was not of type list, was " + str(type(command)))
 
     # For most of the history of this function, the cpu and memory was of the Quantity type.
-    # However this doesn't allow users to specify both requests & limits, which allows further 
+    # However this doesn't allow users to specify both requests & limits, which allows further
     # optimized scheduling. We are migrating to this new paradigm, but still supporting this old approach.
-    container_resource_spec = _build_pod_resources(ctx, cpu, memory, storage)
+    container_resource_spec, using_vpa_rec = _build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec)
 
     all_args = dict(
         name=name,
@@ -143,6 +160,7 @@ def stripe_pod(
             image = image,
             command = command,
             storage = storage,
+            command_required = command_required,
         ),
         conditional_plugin(
             condition=is_shared_msp,
@@ -156,6 +174,7 @@ def stripe_pod(
                     availability_tier=defaulted_availability_tier,
                     requires_consul=requires_consul,
                     container_resource_spec=container_resource_spec,
+                    proxyless = proxyless,
                 ),
             )
         ),
@@ -179,11 +198,22 @@ def stripe_pod(
     ]
     if use_shared_msp_service_account:
         plugins.append(shared_msp_service_account_plugin())
+    if using_vpa_rec:
+        plugins.append(labels({'stripe.io/right-sized': 'true'}))
 
     return compose_plugins(*plugins)
 
 
-def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None):
+def _proxyless_container_env_vars(ctx, proxyless=False):
+    if proxyless:
+        henson_acls_proto = get_henson_config(ctx).inbound_config
+        henson_acls = henson_listener_config(henson_acls_proto)
+        return container_env_vars(
+            vars = {"HENSON_CONFIG_JSON": json.marshal(henson_acls)},
+        )
+    return container_env_vars()
+
+def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None, proxyless = False):
     """
     Plugin for enabling a pod to run on Shared MSP.
     """
@@ -203,10 +233,29 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
     if bin_pack:
         annotations_map["stripe.io/requested-instance-type"] = instance_type.name
         annotations_map["stripe.io/bin-packing"] = "enabled"
-        node_selectors_map["stripe.io/aws-instance-type"]= get_bin_packing_instance_type(ctx=ctx, requested_instance_type=instance_type.name)
         bin_packing_label["stripe.io/bin-packing"] = "enabled"
+
+        if get_env(ctx) == "qa":
+            node_selectors_map["stripe.io/bin-packing"]= "enabled"
+            if is_graviton_instance(instance_type):
+                node_selectors_map["kubernetes.io/arch"]= "arm64"
+            else:
+                node_selectors_map["kubernetes.io/arch"]= "amd64"
+        else:
+            node_selectors_map["stripe.io/aws-instance-type"]= get_bin_packing_instance_type(ctx=ctx, requested_instance_type=instance_type.name)
+
+        if container_resource_spec != None:
+            annotations_map["stripe.io/original-instance-type"] = instance_type.name
+            annotations_map["stripe.io/requested-instance-type"] = "custom"
     else:
         node_selectors_map["stripe.io/aws-instance-type"]= instance_type.name
+        # if not binpacked, do not allow services to set custom resources
+        container_resource_spec = None
+
+    # If bin packing is enabled, we want to use the bin packing scheduler, otherwise we want to use the default scheduler.
+    scheduler_name = "default-scheduler"
+    if is_bin_packing_scheduler_enabled(ctx):
+        scheduler_name = "bin-packing-scheduler"
 
     return compose_plugins(
         pod_plugin(_set_shared_msp),
@@ -224,6 +273,7 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         node_selectors(node_selectors_map),
 
         pod_host_network(False),
+        pod_scheduler_name(scheduler_name),
         run_as_unprivileged(),
 
         shard_plugin,
@@ -249,6 +299,7 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         # TODO(ORCH-2190) Remove kube-iam-credentials bind mount for Shared MSP
         container_env_vars({"AWS_CONFIG_FILE": "/pay/aws-config/kube_iam_aws_credentials.ini"}),
         container_env_vars({"AWS_SDK_LOAD_CONFIG": "true"}), # necessary for go/js AWS SDK's (possibly more) to use the config file
+        _proxyless_container_env_vars(ctx, proxyless),
         mount_host_volume(path="/pay/aws-config/kube_iam_aws_credentials.ini", volume_args = {"type": "File"}),
         mount_host_volume(path="/usr/stripe/bin/kube-iam-credentials", volume_args={"type": "File"}),
 
@@ -260,6 +311,9 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         mount_pod_volume(path="/kube-iam-credentials", volume_args = {"medium": "Memory"}, mount_args = {"read_only": False}),
 
         host_volume(path="/usr/stripe/bin/kube-prestop", type="File"),
+
+        # Allow pods to be scheduled on nodes that have been tainted to that particular service
+        add_toleration(key = "stripe.io/henson-service", operator = "Equal", effect = "NoSchedule", value = get_name(ctx))
     )
 
 # TODO we may no longer need this as shared_msp is already set
@@ -358,6 +412,23 @@ def _with_consul_agent_enablement(ctx, requires_consul = None):
     if not is_msp_consul_deprecation_enabled_extra_safe(ctx):
         return compose_plugins()
 
+    # Get the label value
+    consul_agent_label_value = _determine_consul_enablement_label_value(requires_consul)
+
+    plugins = [labels({CONSUL_AGENT_ENABLED_LABEL: consul_agent_label_value})]
+    if consul_agent_label_value != CONSUL_AGENT_ENABLED_LABEL_DISABLED:
+        plugins.append(consul_agent_init(ctx))
+
+    return compose_plugins(*plugins)
+
+def consul_enablement_label(ctx, requires_consul = None):
+    # Circuit breaker in case of emergencies
+    if not is_msp_consul_deprecation_enabled_extra_safe(ctx):
+        return CONSUL_AGENT_ENABLED_LABEL_UNKNOWN # fallback to unknown, which is essentially the same as 'Consul Aware'
+
+    return _determine_consul_enablement_label_value(requires_consul)
+
+def _determine_consul_enablement_label_value(requires_consul = None):
     # "unknown" label means that Consul request wasn't explicitly set by the service owner but
     # will be considered as needed. Having a third value for the label will allow us to track down
     # services that haven't been reviewed and added the Consul dependency explicitly.
@@ -367,15 +438,37 @@ def _with_consul_agent_enablement(ctx, requires_consul = None):
     elif requires_consul == False:
         consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
 
-    plugins = [labels({CONSUL_AGENT_ENABLED_LABEL: consul_agent_label_value})]
-    if consul_agent_label_value != CONSUL_AGENT_ENABLED_LABEL_DISABLED:
-        plugins.append(consul_agent_init(ctx))
+    return consul_agent_label_value
 
-    return compose_plugins(*plugins)
+def _build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec):
+    if cpu == None and memory == None and storage == None and resource_requirements_spec == None:
+        return None, False
 
-def _build_pod_resources(ctx, cpu, memory, storage):
+    # If specified resource_limits takes precedence over cpu and memory
+    if resource_requirements_spec != None:
+        # This service needs to be binpacked for this to be valid for now.
+        # eventually we will provide an instance-type mapper, but we don't have one yet.
+        if is_bin_packing_enabled(ctx):
+            specified_limit = getattr(resource_requirements_spec, get_env(ctx))
+
+            # If the user specified a resource_limit for some environment, but just not for this environment
+            # to be extra safe we will fallback to the old resource limit paradigm so that the deployment doesn't fail
+            if specified_limit != None:
+
+                # Orchestration recommendations won't provide a 'ephemeral-storage' value, so fall back to the old
+                # storage value if it's not specified in the current limit
+                specified_ephemeral_storage = specified_limit.get('limits', {}).get('ephemeral-storage', None)
+                if specified_ephemeral_storage == None and storage != None:
+                    specified_limit['limits']['ephemeral-storage'] = storage
+
+                return specified_limit, True
+        else:
+            warn(ctx, "resource_limits should only be specified when bin packing is enabled")
+
     if cpu == None and memory == None and storage == None:
-        return None
+        return None, False
+    if cpu == "" and memory == "" and storage == "":
+        return None, False
 
     _valid_pod_resource_param(cpu)
     _valid_pod_resource_param(memory)
@@ -387,7 +480,7 @@ def _build_pod_resources(ctx, cpu, memory, storage):
             cpu = cpu,
             memory = memory,
             storage = storage,
-        )
+        ), False
 
     # One or both of cpu or memory is a TUPLE_TYPE, meaning the user is specifying both
     # requests & limits. We need to build this a bit more custom now
@@ -413,7 +506,7 @@ def _build_pod_resources(ctx, cpu, memory, storage):
         storage = storage,
         requests = requests,
         limits = limits,
-    )
+    ), False
 
 def _valid_pod_resource_param(val):
     if type(val) == TUPLE_TYPE and len(val) != 2:

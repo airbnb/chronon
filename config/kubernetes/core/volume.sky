@@ -6,7 +6,6 @@ Plugins for working with volumes in pods.
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin", "all_container_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "VolumeMount", "VolumeSource", "HostPathVolumeSource", "EmptyDirVolumeSource", "Volume")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def mount_host_volume(path, container_name = None, volume_args = {}, mount_args = {}):
     """
@@ -238,26 +237,15 @@ def render_volume(ctx, volume):
     if hasattr(volume, "host_path"):
         kwargs = volume.host_path_kwargs
 
-        if get_render_yaml(ctx):
-            source["hostPath"] = HostPathVolumeSource(
-                ctx,
-                path = volume.host_path,
-                **kwargs
-            )
-        else:
-            source.hostPath = HostPathVolumeSource(
-                ctx,
-                path = volume.host_path,
-                **kwargs
-            )
+        source["hostPath"] = HostPathVolumeSource(
+            ctx,
+            path = volume.host_path,
+            **kwargs
+        )
 
     elif hasattr(volume, "empty_dir_kwargs"):
         kwargs = volume.empty_dir_kwargs
-
-        if get_render_yaml(ctx):
-            source["emptyDir"] = EmptyDirVolumeSource(ctx, **kwargs)
-        else:
-            source.emptyDir = EmptyDirVolumeSource(ctx, **kwargs)
+        source["emptyDir"] = EmptyDirVolumeSource(ctx, **kwargs)
 
     else:
         fail("Unsupported volume type")

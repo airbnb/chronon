@@ -12,6 +12,7 @@ load("config/kubernetes/core/lifecycle.sky", "restart_policy")
 load("config/kubernetes/meta/metadata.sky", "render_metadata")
 load("config/kubernetes/plugins/types.sky", "cronjob_plugin")
 load("config/kubernetes/public/sox_compliance/exception_list.sky", "cron_in_exceptions")
+load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "CronJob", "CronJobSpec", "JobTemplateSpec", "JobSpec")
 load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT", "DEFAULT_FAILED_JOB_HISTORY_LIMIT")
 
@@ -39,6 +40,9 @@ def cronjob(ctx, *plugins, ttl_secs_after_finish=2592000, job_backoff_limit=6, *
         A [CronJob](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjob-v1beta1-batch)
         Kubernetes protobuf message describing the configuration of the cron job.
     """
+
+    if is_isolated_deploy(ctx):
+        fail("Isolated deployment cronjobs are not currently supported")
 
     cronjob = {
         "render": _render_cronjob,

@@ -14,7 +14,7 @@ load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector"
 load("config/kubernetes/plugins/types.sky", "daemonset_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "DaemonSet", "DaemonSetSpec")
 load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/helpers/context.sky", "get_render_yaml", "get_env", "is_isolated_deploy")
 
 def daemonset(ctx, *plugins, **kwargs):
     """
@@ -38,6 +38,9 @@ def daemonset(ctx, *plugins, **kwargs):
         A [DaemonSet](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#daemonset-v1-apps)
         Kubernetes protobuf message describing the configuration of the service.
     """
+
+    if is_isolated_deploy(ctx):
+        fail("Isolated deployment daemonsets are not currently supported")
 
     daemonset = {
         "render": _render_daemonset,
@@ -102,7 +105,7 @@ def _render_daemonset(ctx, daemonset_def):
         ]
     return rendered_daemonset
 
-def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = "10%", node_selector_label = None, node_selectors_map = None):
+def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = None, node_selector_label = None, node_selectors_map = None):
     """
     Creates a daemonset to be applied to mspworker nodes
 
@@ -132,7 +135,9 @@ def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = "10%", nod
         ),
         host_type(SHARED_MSP_HOST_TYPE),
         msp_shard(shard),
-        add_toleration(key = "stripe.io/pod-evictor", operator = "Exists", effect = "NoExecute")
+        add_toleration(key = "stripe.io/pod-evictor", operator = "Exists", effect = "NoExecute"),
+        add_toleration(key = "msp.stripe.io/host-set-template", operator = "Exists", effect = "NoSchedule"),
+        add_toleration(key = "stripe.io/henson-service", operator = "Exists", effect = "NoSchedule")
     ]
 
     if node_selectors_map == None:
@@ -143,6 +148,13 @@ def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = "10%", nod
 
     all_plugins.extend(common_plugins)
     all_plugins.extend(plugins)
+
+    # Preprod has a lot of churn, we want to make these deployments move forward a bit quicker.
+    # This only takes effect if someone is not explicitly setting a max_unavailable percentage, else it defaults to 10%.
+    if get_env(ctx) == "preprod" and max_unavailable == None:
+        max_unavailable = "25%"
+    elif max_unavailable == None:
+        max_unavailable = "10%"
 
     return daemonset(
         ctx,

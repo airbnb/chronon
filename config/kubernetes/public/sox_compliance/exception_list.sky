@@ -308,10 +308,6 @@ _CRONS = [
         "namespace": "threatpapermillbox"
     },
     {
-        "name": "mitre-attck-hunt-daily",
-        "namespace": "threatpapermillbox"
-    },
-    {
         "name": "ofac-vpn-usage",
         "namespace": "threatpapermillbox"
     },
@@ -380,18 +376,6 @@ _CRONS = [
         "namespace": "threatpapermillbox"
     },
     {
-        "name": "threat-actor-sync",
-        "namespace": "threatpapermillbox"
-    },
-    {
-        "name": "threat-intel-metrics",
-        "namespace": "threatpapermillbox"
-    },
-    {
-        "name": "threat-intel-signal-daily-report",
-        "namespace": "threatpapermillbox"
-    },
-    {
         "name": "threatsignal-daily-report",
         "namespace": "threatpapermillbox"
     },
@@ -413,6 +397,10 @@ _CRONS = [
     },
     {
         "name": "yoyo-offboard-failures",
+        "namespace": "threatpapermillbox"
+    },
+    {
+        "name": "threat-intel-snapshot",
         "namespace": "threatpapermillbox"
     },
     # hadoop-*-decom-hosts-fetcher does not interact with any financial data. It only grabs the status of Hadoop datanodes.
@@ -754,7 +742,22 @@ _CRONS = [
         # cron job to verify merchant logo is updated in s3, does not touch financial data
         "name": "verify-merchant-logo-update",
         "namespace": "kubeacronnoegress"
-    }
+    },
+    {
+        # cron job that is used to manage stale deployments in MSP, does not touch financial or customer data
+        "name": "msp-deployment-checker-finder",
+        "namespace": "kubemonitoring"
+    },
+    {
+        # cron job that is used to manage stale deployments in MSP, does not touch financial or customer data
+        "name": "msp-deployment-checker-creator",
+        "namespace": "kubemonitoring"
+    },
+    {
+        # cron job to analyze pay-server source code and update modularity metrics. It does not touch financial or customer data.
+        "name": "v1-platform--modularization-metrics",
+        "namespace": "kubeacronnoegress"
+    },
 ]
 
 def cron_in_exceptions(namespace, name):

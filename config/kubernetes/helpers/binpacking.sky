@@ -1,0 +1,48 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/pod.sky", "pod_runtime_class")
+load("config/kubernetes/core/volume.sky", "mount_pod_volume", "volume_mount_all_containers")
+load("config/kubernetes/sidecars/credentials_proxy_shim.sky", "credentials_proxy_shim_sidecar")
+load("config/kubernetes/meta/metadata.sky", "labels")
+load("config/kubernetes/core/ha.sky", "prefer_zone_balance", "prefer_node_balance", "require_zone_balance", "require_node_balance")
+
+def bin_packing(set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1):
+    """
+    Returns the array of plugins needed to support binpacking in a deployment.
+
+    Args:
+        set_require_zone_balance_with_skew: Set the require_zone_balance flag on the deployment with the provided skew
+        set_require_node_balance_with_skew: Set the require_node_balance flag on the deployment with the provided skew
+
+    Returns:
+        An array of plugins to be added to a deployment.
+    """
+    bin_packing_plugins = [
+        # Set the proper runtime for this pod, which is kata runtime. Which will enclose the pod in a MicroVM
+        pod_runtime_class("kata-clh"),
+
+        # The /run/stripe/credentials-proxy which is usually a host_mount needs to now be a pod_mount
+        # as each pod in a multi-tenant node will need their own isolated credentials-proxy socket.
+        volume_mount_all_containers("/run/stripe/credentials-proxy", name = None, read_only = False),
+        mount_pod_volume("/run/stripe/credentials-proxy", mount_args = {"read_only": False}),
+
+        # Since the /run/stripe/credentials-proxy socket is now a pod_mount, we need a shim to
+        # transparently copy the requests/responses through a vsocket to the credentials-proxy daemonset
+        # which lives outside of the pod and handles requests for all multi-tenant pods.
+        credentials_proxy_shim_sidecar(),
+
+        # For tracking, attach an extra label when we use soft constraints
+        labels({
+            "stripe.io/binpacking-soft-constraints": "enabled",
+        })
+    ]
+
+    # We want to automatically spread BinPacked workloads across Availability Zones
+    # however we do not want this to be a hard constraint, unless specified.
+    if set_require_node_balance_with_skew != -1:
+        bin_packing_plugins.append(require_node_balance(set_require_node_balance_with_skew))
+    if set_require_zone_balance_with_skew == -1:
+        bin_packing_plugins.append(prefer_zone_balance())
+    else:
+        bin_packing_plugins.append(require_zone_balance(set_require_zone_balance_with_skew))
+
+    return bin_packing_plugins

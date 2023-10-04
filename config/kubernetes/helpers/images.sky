@@ -130,17 +130,14 @@ def sidecar_image(ctx, name, fallback = None):
             # care about the sidecar image, so we return a dummy image so we don't fail.
             # If a test does care about the sidecar image, it should specify it explicitly.
             return "containers.global.prod.stripe.io/stripe/%s:fake-sidecar-version-for-automated-testing-only" % name
-        else:
-            # When evaluating skycfg in production, we want to warn if a sidecar image is not found.
-            # In the future we will remove the fallback images and make it a hard error.
-            # See https://jira.corp.stripe.com/browse/SD-6345
-            warn(ctx, "".join([
-                "WARNING: sidecar image \"%s\" not found in service manifest, using fallback image. " % name,
-                "This will soon be a hard error, as fallback images could be outdated and unsafe. ",
-                "This should be fixed in the service configuration. Service being deployed: %s" % get_name(ctx),
-            ]))
 
-        return fallback
+        fail("".join([
+            "Sidecar image \"%s\" not found in service manifest. " % name,
+            "Previously, this would fall back to the default sidecar image, but this is no longer supported. ",
+            "The fallback image version that was previously used was: \"%s\". " % fallback,
+            "This should be fixed in the service configuration. Service being deployed: \"%s\"." % get_name(ctx),
+        ]))
+
     return container_images[name]
 
 def image_defaults(name, artifact):

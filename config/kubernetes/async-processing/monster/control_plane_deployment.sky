@@ -16,7 +16,6 @@ def monster_control_plane_deployment(ctx, config):
     Returns:
         A k8s deployment, as defined in config/kubernetes/apps/deployment.sky
     """
-
     if config.monster_service == "express":
         return monster_express_deployment(ctx, config.monster_isolation_group, config)
     elif config.monster_service in ["fanout", "fanout-retry"]:

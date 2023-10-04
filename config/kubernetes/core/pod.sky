@@ -3,18 +3,17 @@
 Low-level plugin for defining a pod for a Kubernetes workload.
 """
 
-load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/core/affinity.sky", "empty_affinity", "render_affinity")
 load("config/kubernetes/core/ha.sky", "render_topology_spreading")
+load("config/kubernetes/core/lifecycle.sky", "MAX_GRACE_PERIOD_SECONDS", "MAX_ENFORCED_GRACE_PERIOD_SECONDS")
 load("config/kubernetes/core/volume.sky", "render_volume", "volume_reason_annotations")
-load("config/kubernetes/plugins/types.sky", "any_resource_plugin", "pod_plugin")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "PodSpec", "PodTemplateSpec")
 load("config/kubernetes/helpers/security.sky", "render_pod_security_context")
 load("config/kubernetes/helpers/sidecars.sky", "generate_sidecars_annotation")
 load("config/kubernetes/helpers/tolerations.sky", "render_pod_toleration")
 load("config/kubernetes/helpers/warning.sky", "warn")
-load("config/kubernetes/core/affinity.sky", "empty_affinity", "render_affinity")
-load("config/kubernetes/core/lifecycle.sky", "MAX_GRACE_PERIOD_SECONDS", "MAX_ENFORCED_GRACE_PERIOD_SECONDS")
-load("config/kubernetes/helpers/proto_or_yaml.sky", "PodSpec", "PodTemplateSpec")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/plugins/types.sky", "any_resource_plugin", "pod_plugin")
 
 # We validate that services do not set grace period which exceeds 5m20s. However, we make exceptions for
 # certain Henson services that require a longer grace period. The list includes the names of Henson
@@ -23,7 +22,7 @@ GRACE_PERIOD_EXCLUSION_LIST = [
     "monster",
 ]
 
-def pod(node_selectors = None, host_network = True, share_pid_namespace = False, host_pid = False, runtime_class = None):
+def pod(node_selectors = None, host_network = True, share_pid_namespace = False, host_pid = False, runtime_class = None, scheduler_name = None):
     """
     Creates the pod for a Kubernetes workload resource.
 
@@ -60,6 +59,7 @@ def pod(node_selectors = None, host_network = True, share_pid_namespace = False,
         share_pid_namespace = share_pid_namespace,
         host_pid = host_pid,
         runtime_class = runtime_class,
+        scheduler_name = scheduler_name,
     )
 
 def _update_resource(ctx, plugin, resource_def):
@@ -70,6 +70,7 @@ def _update_resource(ctx, plugin, resource_def):
         "share_pid_namespace": plugin.share_pid_namespace,
         "host_pid": plugin.host_pid,
         "runtime_class": plugin.runtime_class,
+        "scheduler_name": plugin.scheduler_name,
         "containers": [],
         "init_containers": [],
         "volumes": {},
@@ -128,54 +129,34 @@ def _render_pod(ctx, pod_def):
 
     if pod.grace_period != None:
         _validate_pod_grace_period_seconds(ctx, pod)
-        if get_render_yaml(ctx):
-            pod_template["spec"]["terminationGracePeriodSeconds"] = pod.grace_period
-        else:
-            pod_template.spec.terminationGracePeriodSeconds = pod.grace_period
+        pod_template["spec"]["terminationGracePeriodSeconds"] = pod.grace_period
 
     if pod.security != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["securityContext"] = render_pod_security_context(ctx, pod.security, pod)
-        else:
-            pod_template.spec.securityContext = render_pod_security_context(ctx, pod.security, pod)
+        pod_template["spec"]["securityContext"] = render_pod_security_context(ctx, pod.security, pod)
 
     if hasattr(pod, "service_account_name"):
-        if get_render_yaml(ctx):
-            pod_template["spec"]["serviceAccountName"] = pod.service_account_name
-        else:
-            pod_template.spec.serviceAccountName = pod.service_account_name
+        pod_template["spec"]["serviceAccountName"] = pod.service_account_name
 
     affinity = render_affinity(ctx, pod.affinity)
     if affinity != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["affinity"] = affinity
-        else:
-            pod_template.spec.affinity = affinity
+        pod_template["spec"]["affinity"] = affinity
+
 
     topology_spreading = render_topology_spreading(ctx, pod)
     if topology_spreading != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["topologySpreadConstraints"] = topology_spreading
-        else:
-            pod_template.spec.topologySpreadConstraints = topology_spreading
+        pod_template["spec"]["topologySpreadConstraints"] = topology_spreading
 
     if pod.host_aliases != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["hostAliases"] = pod.host_aliases
-        else:
-            pod_template.spec.hostAliases = pod.host_aliases
+        pod_template["spec"]["hostAliases"] = pod.host_aliases
 
     if pod.tolerations != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["tolerations"] = [render_pod_toleration(ctx, toleration) for toleration in pod.tolerations]
-        else:
-            pod_template.spec.tolerations = [render_pod_toleration(ctx, toleration) for toleration in pod.tolerations]
+        pod_template["spec"]["tolerations"] = [render_pod_toleration(ctx, toleration) for toleration in pod.tolerations]
 
     if pod.runtime_class != None:
-        if get_render_yaml(ctx):
-            pod_template["spec"]["runtimeClassName"] = pod.runtime_class
-        else:
-            pod_template.spec.runtimeClassName = pod.runtime_class
+        pod_template["spec"]["runtimeClassName"] = pod.runtime_class
+
+    if pod.scheduler_name != None:
+        pod_template["spec"]["schedulerName"] = pod.scheduler_name
 
 
     return pod_template
@@ -224,3 +205,12 @@ def pod_runtime_class(runtime_class):
 
 def _set_runtime_class_on_pod(ctx, arguments, pod_def):
     pod_def["runtime_class"] = arguments.runtime_class
+
+def pod_scheduler_name(scheduler_name):
+    return pod_plugin(
+        _set_scheduler_name_on_pod,
+        scheduler_name = scheduler_name,
+    )
+
+def _set_scheduler_name_on_pod(ctx, arguments, pod_def):
+    pod_def["scheduler_name"] = arguments.scheduler_name

@@ -3,18 +3,17 @@
 Plugins for making Kubernetes configurations highly available
 """
 
-load("config/kubernetes/meta/metadata.sky", "render_selector")
-load("config/kubernetes/helpers/context.sky", "get_henson_git_commit")
-load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/context.sky", "get_henson_git_commit", "get_name")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "TopologySpreadConstraint")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
+load("config/kubernetes/meta/metadata.sky", "render_selector")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
 
 
 def spread_across_zones(selected_zones=()):
     """Spread pods across availability zones.
 
     NOTE: We suspect this plugin has no effect; the kubernetes scheduler by
-    default will try to balance pods across availability zones.
+    default will try to balance pods across availability zones with a skew of 5.
 
     Args:
         selected_zones: A tuple of zones in which the pod may be scheduled, for use
@@ -31,10 +30,12 @@ def _add_anti_affinity_to_pod(ctx, arguments, pod_def):
     pod_def["affinity"]["highly_available"] = True
     pod_def["affinity"]["highly_available_zones"] = selected_zones
 
-def require_zone_balance(max_skew=1):
-    """Require that a workload's pods by balanced across availability zones.
+def require_node_balance(max_skew=1):
+    """Require that a workload's pods be balanced across Nodes.
 
-    The scheduler will refuse to assign pods to nodes if sufficient balance cannot be acheived.
+    The scheduler will refuse to assign pods to nodes if sufficient balance cannot be acheived
+    and allow Karpenter to spin up a new Node to meet the constraint.
+    NOTE: Do not use this plugin directly. Instead, set `set_require_node_balance_with_skew=1` in deployment() which internally uses this plugin.
 
     Args:
         max_skew: The maximum amount of skew to allow, as defined by topology
@@ -43,10 +44,70 @@ def require_zone_balance(max_skew=1):
     """
     if max_skew <= 0:
         fail("max_skew must be positive")
-    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew)
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="kubernetes.io/hostname", strict_constraint=True, by_service=False)
+
+def require_node_balance_by_henson_service(max_skew=1):
+    """Require that a workload's pods be balanced across nodes by Henson service name (rather than deployment name)
+
+    The scheduler will refuse to assign pods to nodes if sufficient balance cannot be acheived
+    and allow Karpenter to spin up a new Node to meet the constraint.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="kubernetes.io/hostname", strict_constraint=True, by_service=True)
+
+def prefer_node_balance(max_skew=1):
+    """Prefer that a workload's pods be balanced across Nodes.
+
+    The scheduler will safely fallback to assigning pods to nodes if sufficient balance cannot be acheived.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="kubernetes.io/hostname", strict_constraint=False, by_service=False)
+
+def require_zone_balance(max_skew=1):
+    """Require that a workload's pods be balanced across availability zones.
+
+    The scheduler will refuse to assign pods to nodes if sufficient balance cannot be acheived.
+    NOTE: Do not use this plugin directly. Instead, set `set_require_zone_balance_with_skew=1` in deployment() which internally uses this plugin.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="topology.kubernetes.io/zone", strict_constraint=True, by_service=False)
+
+def prefer_zone_balance(max_skew=1):
+    """Prefer that a workload's pods be balanced across availability zones.
+
+    The scheduler will safely fallback to assigning pods to nodes if sufficient balance cannot be acheived.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="topology.kubernetes.io/zone", strict_constraint=False, by_service=False)
 
 def _add_topology_spreading_to_pod(ctx, arguments, pod_def):
-    pod_def["topology_spreading"] = arguments
+    constraints = pod_def.get("topology_spreading", [])
+    constraints.append(arguments)
+    pod_def["topology_spreading"] = constraints
 
 def render_topology_spreading(ctx, pod):
     """
@@ -59,27 +120,38 @@ def render_topology_spreading(ctx, pod):
     Returns:
         A list of TopologySpreadConstraints to apply to the pod.
     """
-    plugin = getattr(pod, "topology_spreading", None)
-    if plugin == None:
+    plugins = getattr(pod, "topology_spreading", None)
+    if plugins == None:
         return None
+    constraints = []
+    for plugin in plugins:
+        constraints += _render_topology_spreading(ctx, plugin, pod)
+    return constraints
 
-    # We're using `render_selector` to get the same selector as the pod
-    # template's parent deployment (or similar workload).
+def _render_topology_spreading(ctx, plugin, pod):
+
     selector = render_selector(ctx, pod.resource["metadata"])
+    # Spread pods by Henson service name instead of deployment name
+    # if requested by the caller
+    selector_match_labels = selector.get("matchLabels", {})
+    if plugin.by_service and selector_match_labels.get("stripe.io/service-name"):
+        selector_match_labels.pop("stripe.io/service-name")
+        selector_match_labels["stripe.io/henson-service"] = get_name(ctx)
 
     # Include the current henson-git-commit in the selector to address
     # https://github.com/kubernetes/kubernetes/issues/98215.
     if hasattr(pod.resource["metadata"], "henson_git_commit"):
-        if get_render_yaml(ctx):
-            if selector.get("matchLabels"):
-                selector["matchLabels"]["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
-        else:
-            selector.matchLabels["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
+        if selector.get("matchLabels"):
+            selector["matchLabels"]["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
+
+    when_unsatisfiable = "DoNotSchedule"
+    if not plugin.strict_constraint:
+        when_unsatisfiable = "ScheduleAnyway"
 
     return [TopologySpreadConstraint(
         ctx,
         labelSelector = selector,
         maxSkew = plugin.max_skew,
-        topologyKey = "topology.kubernetes.io/zone",
-        whenUnsatisfiable = "DoNotSchedule",
+        topologyKey = plugin.topology_key,
+        whenUnsatisfiable = when_unsatisfiable,
     )]

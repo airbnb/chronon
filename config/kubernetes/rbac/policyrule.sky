@@ -4,41 +4,22 @@ For the structure of PolicyRule message please refer to
 https://github.com/kubernetes/api/blob/v0.24.2/rbac/v1/generated.proto#L94-L116
 """
 
-load("config/kubernetes/rbac/rbacschema.sky", "rbac")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "PolicyRule")
 
 def policy_rule(ctx, rule):
-    rule = struct(**rule)
+    if rule.get("verbs") and type(rule["verbs"]) != type([]):
+        fail("PolicyRule verbs field called with non list value")
 
-    obj_rule = rbac.PolicyRule()
+    if rule.get("apiGroups") and type(rule["apiGroups"]) != type([]):
+        fail("PolicyRule apiGroups field called with non list value")
 
-    if hasattr(rule, "verbs"):
-        if type(rule.verbs) == type([]):
-            obj_rule.verbs = rule.verbs
-        else:
-            fail("PolicyRule verbs field called with non list value")
+    if rule.get("resources") and type(rule["resources"]) != type([]):
+        fail("PolicyRule resources field called with non list value")
 
-    if hasattr(rule, "apiGroups"):
-        if type(rule.apiGroups) == type([]):
-            obj_rule.apiGroups = rule.apiGroups
-        else:
-            fail("PolicyRule apiGroups field called with non list value")
+    if rule.get("resourceNames") and type(rule["resourceNames"]) != type([]):
+        fail("PolicyRule resourceNames field called with non list value")
 
-    if hasattr(rule, "resources"):
-        if type(rule.resources) == type([]):
-            obj_rule.resources = rule.resources
-        else:
-            fail("PolicyRule resources field called with non list value")
+    if rule.get("nonResourceURLs") and type(rule["nonResourceURLs"]) != type([]):
+        fail("PolicyRule nonResourceURLs field called with non list value")
 
-    if hasattr(rule, "resourceNames"):
-        if type(rule.resourceNames) == type([]):
-            obj_rule.resourceNames = rule.resourceNames
-        else:
-            fail("PolicyRule resourceNames field called with non list value")
-
-    if hasattr(rule, "nonResourceURLs"):
-        if type(rule.nonResourceURLs) == type([]):
-            obj_rule.nonResourceURLs = rule.nonResourceURLs
-        else:
-            fail("PolicyRule nonResourceURLs field called with non list value")
-
-    return obj_rule
+    return PolicyRule(ctx, **rule)

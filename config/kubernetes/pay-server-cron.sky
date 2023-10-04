@@ -16,8 +16,10 @@ load("config/kubernetes/stripe.sky", "stripe_pod")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "cronjob_plugin", "container_plugin")
 load("config/kubernetes/helpers/msp_shard.sky", "msp_shard")
+load("config/kubernetes/helpers/tags.sky", "SERVICE_OWNER_LABEL", "DEPRECATED_OWNER_LABEL")
 load("config/kubernetes/meta/cron_metadata.sky", "cron_metadata")
 load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT", "DEFAULT_FAILED_JOB_HISTORY_LIMIT")
+load("config/kubernetes/helpers/ruby_3.sky", "ruby_3_1_plugin")
 
 MAX_CRON_NAME_LEN = 52
 DEFAULT_TTL_SECS_AFTER_FINISH = 1209600
@@ -41,6 +43,7 @@ KUBECRON_FAILOVER_SHARD = "kubeapidd"
 DEFAULT_SHARD = "kubemaster"
 LABEL_USER_DISABLED = "stripe.io/disabled-by-user"
 LABEL_BACKUP = "stripe.io/backup"
+PANDORA_CONTAINER_NAME = "pandora-init-image"
 
 def pay_server_cronjob_wrapper(*cronjobs):
     """
@@ -59,6 +62,11 @@ def pay_server_cronjob_wrapper(*cronjobs):
         if c:
             crons.extend(c)
     return crons
+
+def _default_cron_ruby_3_1_policy(ctx, cron_tier=None, **kwargs):
+    # See http://go/ruby-3 for plan. Questions in #ruby-infra
+    # If an issue arises caused by Ruby 3, this can safely be rolled back by returning `False`
+    return True
 
 def pay_server_cronjob(
     ctx,
@@ -89,6 +97,9 @@ def pay_server_cronjob(
     cron_tier=None,
     description=None,
     runbook_url=None,
+    ruby_3_1_policy=_default_cron_ruby_3_1_policy,
+    override_owner=None,
+    pandora_migration=False,
 ):
     """
     Define a cron job (a batch job that will run on a schedule) in pay-server.
@@ -191,7 +202,7 @@ def pay_server_cronjob(
         cron_tier: The tier specification for the cron which shows its business criticality. For more details, see http://go/cron-tiers
         description: A human-readable description of the purpose of the cron
         runbook_url: A URL to a runbook for the cron, maintained by the owning team
-
+        pandora_migration: If a service is under Pandora migration, this value is set to true. The default is false.
 
     Returns:
         A pay-server [CronJob](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjob-v1beta1-batch)
@@ -258,6 +269,9 @@ def pay_server_cronjob(
                 cron_tier=cron_tier,
                 description=description,
                 runbook_url=runbook_url,
+                ruby_3_1_policy=ruby_3_1_policy,
+                override_owner=override_owner,
+                pandora_migration=pandora_migration,
             )
         if pc != None:
             out_crons.append(pc)
@@ -293,6 +307,9 @@ def _pay_server_cronjob(
     cron_tier=None,
     description=None,
     runbook_url=None,
+    ruby_3_1_policy=_default_cron_ruby_3_1_policy,
+    override_owner=None,
+    pandora_migration=False,
 ):
     """
     Internal function to generate the list of CronJobs in different shards based on user input.
@@ -442,7 +459,7 @@ def _pay_server_cronjob(
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "KUBE_JOB_NAME_FULL": name,
-        "KUBE_JOB_OWNER": get_owner(ctx),
+        "KUBE_JOB_OWNER": override_owner if override_owner else get_owner(ctx),
         "KUBE_JOB_NAME": _truncate_cron_job_name(name),
         "KUBE_CLUSTER": get_cluster(ctx),
         "KUBE_MSP_SHARD": shard,
@@ -479,6 +496,15 @@ def _pay_server_cronjob(
         _label_prefix("deploy-stage"): deploy_stage,
         _label_prefix("deploy-method"): "skycfg"
     }
+    cronjob_annotations = {
+        "owner": get_owner(ctx),
+        "iam.amazonaws.com/role": _pod_iam_role(ctx, iam_role_prefix),
+        _label_prefix("job-full-name"): name,
+    }
+    if override_owner:
+        cronjob_labels[SERVICE_OWNER_LABEL] = override_owner
+        cronjob_labels[DEPRECATED_OWNER_LABEL] = override_owner
+        cronjob_annotations[SERVICE_OWNER_LABEL] = override_owner
     if extra_labels:
         cronjob_labels.update(extra_labels)
     cron_plugins = [
@@ -497,6 +523,7 @@ def _pay_server_cronjob(
             namespace,
             iam_role_prefix,
             secrets,
+            pandora_migration,
         ),
         _customize_backoff_limit_plugin(max_retries_on_failure),
         container_env_vars(cron_env_variables),
@@ -508,11 +535,7 @@ def _pay_server_cronjob(
             description = description,
             runbook_url = runbook_url,
         ),
-        annotations({
-            "owner": get_owner(ctx),
-            "iam.amazonaws.com/role": _pod_iam_role(ctx, iam_role_prefix),
-            _label_prefix("job-full-name"): name,
-        }),
+        annotations(cronjob_annotations),
         # default main container volumes
         _volume_plugins(ctx),
         _confidant_volume_plugins(),
@@ -521,6 +544,7 @@ def _pay_server_cronjob(
         # verified
         mount_host_stripe_ca_certs(container_name = name),
         msp_shard(shard),
+        ruby_3_1_plugin(ruby_3_1_policy(ctx, cron_tier = cron_tier)),
     ]
     if cron_mount_pod_volumes:
         for pv in cron_mount_pod_volumes:
@@ -532,7 +556,6 @@ def _pay_server_cronjob(
                     mount_args = pv.get("mount_args", {}),
                 )
             )
-
     if namespace == DEFAULT_NAMESPACE:
         cron_plugins.append(run_as_unprivileged(3000, 3000))
 
@@ -542,7 +565,6 @@ def _pay_server_cronjob(
         ttl_secs_after_finish=ttl_secs_after_finish,
         **cron_options,
     )
-
     return cron
 
 # Takes in a list that contains a combination of objects and strs and join thier string representations together
@@ -990,7 +1012,7 @@ def _volume_plugins(ctx):
     return compose_plugins(*plugins)
 
 
-def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets = None):
+def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets = None, pandora_migration=False):
     """
     Return a plugin to setup init containers in pay-server cronjobs.
     """
@@ -1032,6 +1054,15 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
         "--confidant-service-name={}".format(aws_role_name),
         "--secret-templates-json={}".format(json.encode(computed_secrets)),
     ]
+    if pandora_migration:
+        confidant_container_command = [
+            "/bin/confidant-sidecar",
+            "--confidant-config-json={}".format(json.encode(confidant_config)),
+            "--confidant-service-name={}".format(aws_role_name),
+            "--secret-templates-json={}".format(json.encode(computed_secrets)),
+            "--pandora-path=/pandora-encrypted-secret-bundles",
+            "--secret-bag-type=migration",
+            ]
 
     # A job that doesn't have a dedicated host type (namespace) that declares an IAM role will
     # need to use a custom AWS config that gets credentials from kube-iam on the worker.
@@ -1046,6 +1077,7 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
         confidant_container_command.append("--kube-iam-server-socket=/run/kube-iam/kube-iam.sock")
 
 
+
     confidant_container = init_container(
         name = DEFAULT_CONFIDANT_INIT_CONTAINER_NAME,
         image = image(
@@ -1057,6 +1089,14 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
         command = confidant_container_command,
         plugins = confidant_container_plugins,
     )
+
+    if pandora_migration:
+        confidant_container = init_container(
+            name = PANDORA_CONTAINER_NAME,
+            image = _pandora_image(ctx),
+            command = confidant_container_command,
+            plugins = confidant_container_plugins,
+        )
 
     # there's only one init container for now.
     return confidant_container
@@ -1331,3 +1371,5 @@ def _require_cron_tier(cron_tier, name):
     if cron_tier == None or cron_tier == "":
         _fail_with_message("The cron_tier parameter is required for all cronjobs: %s did not specify a cron_tier" % name)
 
+def _pandora_image(ctx):
+    return image(ctx, artifact=PANDORA_CONTAINER_NAME)

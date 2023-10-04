@@ -7,7 +7,6 @@ Helper functions for configuring security properties of your service
 load("config/kubernetes/plugins/types.sky", "pod_or_container_plugin", "pod_plugin", "container_plugin")
 load("config/kubernetes/core/volume.sky", "host_volume", "volume_mount", "mount_host_volume")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "SecurityContext", "Capabilities", "PodSecurityContext")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
 load("config/kubernetes/crds/resource/security_group_policies/securitygrouppolicy.sky", "security_group_policy")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
@@ -85,23 +84,14 @@ def render_pod_security_context(ctx, security_def, pod):
         uid = _uidgid_or_default(security_def["uid"], pod)
         gid = _uidgid_or_default(security_def["gid"], pod)
 
-        if get_render_yaml(ctx):
-            securityContext["runAsNonRoot"] = True
-            securityContext["runAsUser"] = uid
-            securityContext["runAsGroup"] = gid
-            securityContext["fsGroup"] = gid
-        else:
-            securityContext.runAsNonRoot = True
-            securityContext.runAsUser = uid
-            securityContext.runAsGroup = gid
-            securityContext.fsGroup = gid
+        securityContext["runAsNonRoot"] = True
+        securityContext["runAsUser"] = uid
+        securityContext["runAsGroup"] = gid
+        securityContext["fsGroup"] = gid
 
 
         if "supplementalGroups" in security_def:
-            if get_render_yaml(ctx):
-                securityContext["supplementalGroups"] = security_def["supplementalGroups"]
-            else:
-                securityContext.supplementalGroups = security_def["supplementalGroups"]
+            securityContext["supplementalGroups"] = security_def["supplementalGroups"]
 
     return securityContext
 
@@ -109,28 +99,16 @@ def render_security_context(ctx, security_def, pod):
     securityContext = SecurityContext(ctx)
 
     if "uid" in security_def or "gid" in security_def:
-        if get_render_yaml(ctx):
-            securityContext["runAsNonRoot"] = True
-            securityContext["runAsUser"] = _uidgid_or_default(security_def["uid"], pod)
-            securityContext["runAsGroup"] = _uidgid_or_default(security_def["gid"], pod)
-        else:
-            securityContext.runAsNonRoot = True
-            securityContext.runAsUser = _uidgid_or_default(security_def["uid"], pod)
-            securityContext.runAsGroup = _uidgid_or_default(security_def["gid"], pod)
+        securityContext["runAsNonRoot"] = True
+        securityContext["runAsUser"] = _uidgid_or_default(security_def["uid"], pod)
+        securityContext["runAsGroup"] = _uidgid_or_default(security_def["gid"], pod)
 
 
     if "capabilities" in security_def:
-        if get_render_yaml(ctx):
-            securityContext["capabilities"] = _add_to_default_capabilities(ctx, security_def["capabilities"])
-        else:
-            securityContext.capabilities = _add_to_default_capabilities(ctx, security_def["capabilities"])
-
+        securityContext["capabilities"] = _add_to_default_capabilities(ctx, security_def["capabilities"])
 
     if "privileged" in security_def:
-        if get_render_yaml(ctx):
-            securityContext["privileged"] = True
-        else:
-            securityContext.privileged = True
+        securityContext["privileged"] = True
 
     return securityContext
 

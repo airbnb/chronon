@@ -13,7 +13,6 @@ for you.
 
 load("config/kubernetes/plugins/types.sky", "container_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "ProbeHandler", "Probe", "ExecAction", "HTTPHeader", "HTTPGetAction", "TCPSocketAction", "IntOrString")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 
 def probes(liveness = None, readiness = None, startup = None, container_name = None):
     """
@@ -175,7 +174,4 @@ def add_initial_delay_seconds(*, probe, delay = 90, container_name = None):
     )
 
 def _add_initial_delay_seconds(ctx, arguments, container_def):
-    if get_render_yaml(ctx):
-        container_def["probes"][arguments.probe]["initialDelaySeconds"] = arguments.delay
-    else:
-        container_def["probes"][arguments.probe].initialDelaySeconds = arguments.delay
+    container_def["probes"][arguments.probe]["initialDelaySeconds"] = arguments.delay

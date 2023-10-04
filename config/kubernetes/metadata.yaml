@@ -20,7 +20,7 @@ review_requirements:
   - codeowners-feature-deployments
   - codeowners-cloud
   - codeowners-infra-platform
-  - codeowners-fleet-management
+  - codeowners-fleet-automation
   - codeowners-async-processing # for vendor mirroring
 - files:
   - sidecars/envoy_ratelimit.sky
@@ -35,6 +35,10 @@ review_requirements:
 - files:
   - sidecars/confidant.sky
   - sidecars/confidant_test.sky
+  - sidecars/confidant_migration.sky
+  - sidecars/confidant_migration_test.sky
+  - sidecars/pandora.sky
+  - sidecars/pandora_test.sky
   assignees:
   - codeowners-secrets-infra
   reviewers:

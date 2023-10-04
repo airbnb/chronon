@@ -543,7 +543,7 @@ def get_fail_on_warnings(ctx):
     return ctx.vars.get("henson.fail_on_warnings", None)
 
 def get_render_yaml(ctx):
-    return ctx.vars.get("skycfg.render_yaml", False)
+    return True
 
 def get_suppress_warnings(ctx):
     """
@@ -567,15 +567,41 @@ def is_bin_packing_enabled(ctx):
     """
     return ctx.vars.get("msp.binpacking", False) and get_render_yaml(ctx)
 
+def is_bin_packing_scheduler_enabled(ctx):
+    """
+    Gets whether binpacking scheduler is set to true or not
+
+        Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        Bin packing scheduler enabled or not
+    """
+    # If bin-packing is not enabled, then bin-packing scheduler cannot be enabled
+    if not is_bin_packing_enabled(ctx):
+        return False
+    return ctx.vars.get("msp.binpacking_custom_scheduler", False) and get_render_yaml(ctx)
+
 def is_horizontal_pod_autoscaling_enabled(ctx):
     """
     Gets whether hpa is set to true or not
+
         Args:
         ctx: The context containing Henson and the Centralized Service Configurations.
     Returns:
         Bin packing enabled or not
     """
     return ctx.vars.get("msp.horizontal_pod_autoscaling", False) or ctx.vars.get("msp.horizonal_pod_autoscaling", False)
+
+def is_vertical_pod_autoscaling_enabled(ctx):
+    """
+    Gets whether VPA is set to true or not
+
+        Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        VPA enabled or not
+    """
+    return ctx.vars.get("msp.vertical_pod_autoscaling", False)
 
 def get_sc_bundle_manifest(ctx):
     """
@@ -668,3 +694,25 @@ def is_msp_consul_deprecation_enabled(ctx):
         MSP Consul Deprecation mechanism enabled
     """
     return ctx.vars.get("msp.consul_deprecating", False)
+
+def is_isolated_deploy(ctx):
+    """
+    Gets whether the skycfg being rendered is for an MSP isolated deployment
+
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        Boolean whether given skycfg evaluation belongs to an MSP isolated deployment
+    """
+    return ctx.vars.get("devenv.resource_workspace_id", "") != ""
+
+def get_service_variant(ctx):
+    """
+    Gets the service variant of the deployment for which Henson is rendering skycfg
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The service variant of the deployment
+    """
+    return ctx.vars.get("henson.service_variant", "")

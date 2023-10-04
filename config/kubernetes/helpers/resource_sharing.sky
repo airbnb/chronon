@@ -1,14 +1,36 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME")
-load("config/kubernetes/helpers/quantities.sky", "millicores")
+load("config/kubernetes/helpers/quantities.sky", "millicores", "gibibytes")
 load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled")
+load("config/kubernetes/helpers/math.sky", "round_float_up")
 
 def share_resources_with_envoy():
     """
     Adjusts resources between the main application container and envoy-config-srv (which runs envoy).
     """
     return pod_plugin(_share_resources_with_envoy)
+
+def maybe_clear_sidecar_resources():
+    """
+    If BinPacking is enabled, this plugin will remove all of the sidecar resources EXCEPT for the
+    envoy-config-srv sidecar, which we will retain the requests value for. All other services will end
+    up with no resource requests/limits.
+
+    This is done to ensure that we only have the main_container with a limit specified, and envoy with a
+    request specified.
+    """
+    return pod_plugin(_maybe_clear_sidecar_resources)
+
+def maybe_add_overhead_for_kata():
+    """
+    If BinPacking is enabled, this plugin will round the one resource Limit that is allowed to be specified (main_container)
+    to a whole core. This is done to ensure that we don't over provision vcpus when using Kata MicroVMs.
+
+    It will also add a 450MiB overhead to the main_container limit, to account for the Kata MicroVM overhead.
+    """
+    return pod_plugin(_maybe_add_overhead_for_kata)
 
 def _share_resources_with_envoy(ctx, _, pod_def):
     if pod_def.get("shared_msp") != True:
@@ -24,29 +46,126 @@ def _share_resources_with_envoy(ctx, _, pod_def):
         warn(ctx, "Unable to find either the main container or envoy container, skipping resource sharing")
         return
 
-    # extract the existing cpu setting from the main container
+    # extract the existing cpu setting or container_resource_spec from the main container
     cpu = main_container.get("cpu")
-    if cpu == None:
-        warn(ctx, "Main container does not have \"cpu\" set, skipping resource sharing")
+    container_resources = main_container.get("container_resource_spec")
+
+    if cpu == None and container_resources == None:
+        warn(ctx, "Main container does not have \"cpu\" or \"container_resource_spec\" set, skipping resource sharing")
         return
 
-    # unset cpu from the container def, so we can override it with custom requests and limits values
-    main_container["cpu"] = None
+    if container_resources != None and container_resources["requests"].get("cpu") != None:
+        # if the pod is using custom container resources, we override the container resources struct
+        cpu_requests = container_resources["requests"]["cpu"]
 
-    # split the cores evenly between the main container and envoy
-    split_cpu = millicores(ctx, _parse_millicores_from_cores(cpu) // 2)
+        # Make a copy of the limits, or updating the requests below will also update the limits
+        limits = dict(container_resources["limits"])
 
-    # set cpu requests for both the main container and envoy to the split cpu value.
-    # this will cause k8s to configure equal cgroups cpu shares for these two containers.
-    main_container.setdefault("requests", {})
-    main_container["requests"]["cpu"] = split_cpu
-    envoy_container.setdefault("requests", {})
-    envoy_container["requests"]["cpu"] = split_cpu
+        # split the cores evenly between the main container and envoy
+        split_cpu = millicores(ctx, _parse_millicores_from_cores(cpu_requests) // 2)
+        container_resources["requests"]["cpu"] = split_cpu
+        container_resources["limits"] = limits
+        main_container["container_resource_spec"] = container_resources
 
-    # retain the full limits value that the main container would get from the cpu arg.
-    # this will cause k8s to configure the full cpu cfs quota for the main container.
-    main_container.setdefault("limits", {})
-    main_container["limits"]["cpu"] = cpu
+        envoy_container.setdefault("requests", {})
+        envoy_container["requests"]["cpu"] = split_cpu
+    else:
+        # if the pod is not using custom resources, we override the requests on the container struct itself
+        # unset cpu from the container def, so we can override it with custom requests and limits values
+        main_container["cpu"] = None
+
+        # split the cores evenly between the main container and envoy
+        split_cpu = millicores(ctx, _parse_millicores_from_cores(cpu) // 2)
+
+        # set cpu requests for both the main container and envoy to the split cpu value.
+        # this will cause k8s to configure equal cgroups cpu shares for these two containers.
+        main_container.setdefault("requests", {})
+        main_container["requests"]["cpu"] = split_cpu
+        envoy_container.setdefault("requests", {})
+        envoy_container["requests"]["cpu"] = split_cpu
+
+        # retain the full limits value that the main container would get from the cpu arg.
+        # this will cause k8s to configure the full cpu cfs quota for the main container.
+        main_container.setdefault("limits", {})
+        main_container["limits"]["cpu"] = cpu
+
+def _maybe_clear_sidecar_resources(ctx, _, pod_def):
+    if pod_def.get("shared_msp") != True:
+        return
+
+    if not is_bin_packing_enabled(ctx):
+        return
+
+    # Only clear the resources if the pod is right-sized.
+    if pod_def.get("resource", {}).get("metadata", {}).get("labels", {}).get("stripe.io/right-sized", "false") == "false":
+        return
+
+    main_container = pod_def.get("main_container")
+    for container in pod_def.get("containers"):
+        if container.get("name") == main_container["name"]:
+            continue
+
+        # Keep the requests for envoy-config-srv, but clear the requests/limits for all other containers.
+        if container.get("name") == ENVOY_CONFIG_SRV_SIDECAR_NAME:
+            container["limits"] = None
+        else:
+            container["requests"] = None
+            container["limits"] = None
+
+def _maybe_add_overhead_for_kata(ctx, _, pod_def):
+        if pod_def.get("shared_msp") != True:
+            return
+
+        if not is_bin_packing_enabled(ctx):
+            return
+
+        # Only clear the resources if the pod is right-sized.
+        if pod_def.get("resource", {}).get("metadata", {}).get("labels", {}).get("stripe.io/right-sized", "false") == "false":
+            return
+
+        main_container = pod_def.get("main_container")
+
+        envoy_cpu_requests = None
+        for container in pod_def.get("containers"):
+            if container.get("name") == main_container["name"]:
+                continue
+
+            if container.get("name") == ENVOY_CONFIG_SRV_SIDECAR_NAME:
+                envoy_cpu_requests = container.get("requests", {}).get("cpu", None)
+                break
+
+
+        # extract the existing cpu setting or container_resource_spec from the main container
+        container_resources = main_container.get("container_resource_spec")
+
+        if container_resources != None and container_resources["limits"].get("cpu") != None:
+
+            # Round the CPU limit up to the nearest whole core and then subtract the envoy requests from the main container
+            # requests, so we can maintain the requests on that sidecar, but still ensure that we enforce requests = limits
+            _add_kata_cpu_overhead(container_resources, envoy_cpu_requests)
+
+            # Add 450MiB overhead to the main container limit, to account for the Kata MicroVM overhead.
+            if "memory" in container_resources["limits"]:
+                container_resources["requests"]["memory"] = container_resources["limits"]["memory"]
+        else:
+            # Round the CPU limit up to the nearest whole core and then subtract the envoy requests from the main container
+            # requests, so we can maintain the requests on that sidecar, but still ensure that we enforce requests = limits
+            _add_kata_cpu_overhead(main_container, envoy_cpu_requests)
+
+            # Add 450MiB overhead to the main container limit, to account for the Kata MicroVM overhead.
+            if "memory" in main_container["limits"]:
+                main_container["requests"]["memory"] = main_container["limits"]["memory"]
+
+def _add_kata_cpu_overhead(container_val, envoy_cpu_requests):
+    if "cpu" not in container_val["limits"]:
+        return
+
+    raw_float_val = round_float_up(float(container_val["limits"]["cpu"]))
+    container_val["limits"]["cpu"] = str(raw_float_val)
+
+    # Subtract the envoy requests from the main container requests, so we can maintain the requests on that
+    # sidecar, but still ensure that we enforce requests = limits for the entire pod.
+    container_val["requests"]["cpu"] = str(float(raw_float_val) - float(envoy_cpu_requests))
 
 def _parse_millicores_from_cores(cores):
     # extract cores value from either the struct or the rendered yaml content

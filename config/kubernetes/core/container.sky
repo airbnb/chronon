@@ -11,7 +11,7 @@ load("config/kubernetes/helpers/quantities.sky", "cores", "megabytes")
 load("config/kubernetes/helpers/security.sky", "render_security_context")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin")
-load("config/kubernetes/helpers/context.sky", "get_env", "get_render_yaml")
+load("config/kubernetes/helpers/context.sky", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container", "ContainerPort", "ResourceRequirements")
 
 def container(
@@ -25,6 +25,7 @@ def container(
         storage = None,
         sidecar_service = None,
         plugins = [],
+        command_required = True,
         **kwargs):
     """
     Add an additional container to the pod.
@@ -76,6 +77,7 @@ def container(
         storage = storage,
         sidecar_service = sidecar_service,
         plugins = plugins,
+        command_required = command_required,
         **kwargs
     )
 
@@ -89,6 +91,7 @@ def init_container(
         storage = None,
         sidecar_service = None,
         plugins = [],
+        command_required = True,
         **kwargs):
     """
     Add an init container to the pod.
@@ -289,8 +292,9 @@ def _container_plugin(
         sidecar_service,
         plugins,
         limits = None,
-        requests = None):
-    if command == None and args == None:
+        requests = None,
+        command_required = True):
+    if command_required and command == None and args == None:
         fail("Container %s must specify either a command or args" % name)
 
     if command != None and args != None:
@@ -424,34 +428,19 @@ def _render_container(ctx, container_def, pod):
     )
 
     if container.command != None:
-        if get_render_yaml(ctx):
-            rendered["command"] = container.command
-        else:
-            rendered.command = container.command
+        rendered["command"] = container.command
 
     if container.args != None:
-        if get_render_yaml(ctx):
-            rendered["args"] = container.args
-        else:
-            rendered.args = container.args
+        rendered["args"] = container.args
 
     if container.security != None:
-        if get_render_yaml(ctx):
-            rendered["securityContext"] = render_security_context(ctx, container.security, pod)
-        else:
-            rendered.securityContext = render_security_context(ctx, container.security, pod)
+        rendered["securityContext"] = render_security_context(ctx, container.security, pod)
 
     if container.image_pull_policy in ("Always", "Never", "IfNotPresent"):
-        if get_render_yaml(ctx):
-            rendered["imagePullPolicy"] = container.image_pull_policy
-        else:
-            rendered.imagePullPolicy = container.image_pull_policy
+        rendered["imagePullPolicy"] = container.image_pull_policy
 
     if container.working_dir != None:
-        if get_render_yaml(ctx):
-            rendered["workingDir"] = container.working_dir
-        else:
-            rendered.workingDir = container.working_dir
+        rendered["workingDir"] = container.working_dir
 
     return rendered
 
@@ -462,10 +451,8 @@ def _get_volume_mount_path(ctx):
     def _get_volume_mount_path_proto(volume_mount):
         return volume_mount.mountPath
 
-    if get_render_yaml(ctx):
-        return _get_volume_mount_path_yaml
-    else:
-        return _get_volume_mount_path_proto
+    return _get_volume_mount_path_yaml
+
 
 def _add_container_port(ctx, arguments, container_def):
     container_def["ports"][arguments.port] = arguments

@@ -1,0 +1,71 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "resource_requirements")
+load("config/kubernetes/helpers/warning.sky", "warn")
+
+def ResourceRequirements(ctx, all = None, qa = None, prod = None):
+    if all == None and qa == None and prod == None:
+        fail("At least one of all, qa, or prod must be specified for ResourceRequirements")
+
+    # If they specify an all, generate versions of the same resources for all envs and add it to the struct
+    if all != None:
+        return _buildMatchingResourceLimit(ctx, all)
+
+    # If they only specify production, use that for all environments also
+    # this is a sanity check, but ideally users use the all parameter instead
+    if prod != None and qa == None:
+        warn(ctx, "You have specified production resource request/limits, without specifying QA. Please use all instead.")
+        return _buildMatchingResourceLimit(ctx, prod)
+
+    # Else, just provide the resources for each environment
+    _validResourceLimit(qa)
+    _validResourceLimit(prod)
+    return struct(
+        qa = _buildResourceRequirementFromSpec(ctx, qa),
+        preprod = _buildResourceRequirementFromSpec(ctx, prod),
+        prod = _buildResourceRequirementFromSpec(ctx, prod),
+    )
+
+def ResourceRequirementSpec(cpu, memory, storage = None):
+    return {
+        "cpu": cpu,
+        "memory": memory,
+        "storage": storage,
+    }
+
+def _buildMatchingResourceLimit(ctx, spec):
+        if spec == None:
+            return None
+
+        _validResourceLimit(spec)
+        reqs = _buildResourceRequirementFromSpec(ctx, spec)
+        return struct(
+            qa = reqs,
+            preprod = reqs,
+            prod = reqs,
+        )
+
+def _buildResourceRequirementFromSpec(ctx, spec):
+        if spec == None:
+            return None
+
+        # We are enforcing that requests = limits
+        requests_and_limits = {
+             "cpu": spec["cpu"],
+             "memory": spec["memory"],
+        }
+
+        return resource_requirements(
+            ctx,
+            storage = spec.get("storage", None),
+            requests = requests_and_limits,
+            limits = requests_and_limits,
+        )
+
+def _validResourceLimit(resourceLimit):
+    if resourceLimit == None:
+        return
+
+    if resourceLimit.get("cpu", None) == None:
+        fail("cpu must be specified for ResourceLimit")
+    if resourceLimit.get("memory", None) == None:
+        fail("memory must be specified for ResourceLimit")

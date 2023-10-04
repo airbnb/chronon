@@ -22,13 +22,8 @@ def add_override_to_def(ctx, arguments, deployment_def):
     if override <= 0:
         return
 
-    if get_render_yaml(ctx):
-        if deployment_def["kwargs"]["strategy"]["type"] != "RollingUpdate":
-            return
-    else:
-        if deployment_def["kwargs"]["strategy"].type != "RollingUpdate":
-            return
-
+    if deployment_def["kwargs"]["strategy"]["type"] != "RollingUpdate":
+        return
     deployment_def["kwargs"]["strategy"] = rolling_update_strategy(
         ctx,
         max_surge="{}%".format(override),

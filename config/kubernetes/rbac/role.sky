@@ -8,7 +8,6 @@ load("config/kubernetes/meta/metadata.sky", "render_metadata")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "rbac_plugin")
 load("config/kubernetes/rbac/policyrule.sky", "policy_rule")
-load("config/kubernetes/helpers/context.sky", "get_render_yaml")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Role")
 
 def role(ctx, *plugins, **kwargs):
@@ -51,13 +50,8 @@ def _render_role(ctx, role_mapping):
             else:
                 fail("Role rules field called with non list value")
     obj_role = Role(ctx)
-    if get_render_yaml(ctx):
-        obj_role["metadata"] = render_metadata(ctx, role_mapping.metadata)
-        if len(obj_rule_list) > 0:
-            obj_role["rules"] = obj_rule_list
-        return yaml.marshal(obj_role)
-    else:
-        obj_role.metadata = render_metadata(ctx, role_mapping.metadata)
-        if len(obj_rule_list) > 0:
-            obj_role.rules = obj_rule_list
-    return obj_role
+    obj_role["metadata"] = render_metadata(ctx, role_mapping.metadata)
+    if len(obj_rule_list) > 0:
+        obj_role["rules"] = obj_rule_list
+    return yaml.marshal(obj_role)
+

@@ -1,0 +1,34 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Function to indicate a deployment's scale is controlled externally, not by MSP,
+and it should not have its replica count modified otherwise.
+"""
+
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+
+def external_scaling_control():
+    """
+    Annotates the deployment to indicate that its scale is controlled externally, not by MSP, and it should not have its replica count modified otherwise.
+
+    Note that this is for services whose scale is managed via Henson's programmatic
+    deployment and manipulation API, not for services that are auto-scaled via
+    native Kubernetes mechanisms such as the Horizontal Pod Autoscaler (HPA).
+
+    WARNING: You should only use this if there is no way to use auto-scaling AND
+    you can commit to building and operating a control plane to manage scaling
+    yourself. Please talk to MSP (#msp) about auto-scaling and the Deploy team
+    (#deploy-help) about onboarding before using this.
+
+    Returns:
+        A deployment plug-in that, when run, will update the deployment as requested.
+    """
+
+    return deployment_plugin(
+        _external_scaling_control,
+    )
+
+
+def _external_scaling_control(ctx, arguments, deployment_def):
+    deployment_def['metadata']['annotations'].update({
+        "stripe.io/external-scaling-control": "yes",
+    })

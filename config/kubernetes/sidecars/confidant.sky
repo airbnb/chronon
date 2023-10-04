@@ -247,7 +247,7 @@ def pgpass_secret(
         container_names = container_names,
     )
 
-def _make_secret(type, template_spec, container_names):
+def _make_secret(type, template_spec, container_names, secrets_dir='/pay/keys'):
     if template_spec["path"].startswith("/pay/keys/pay/keys") or template_spec["path"].startswith("/pay/keys//pay/keys"):
         fail("don't specify /pay/keys in secret file paths, they're already relative to /pay/keys (instead of '/pay/keys/blah.txt', use 'blah.txt')")
     keys_mounts = [volume_mount("/pay/keys", container_name = name) for name in container_names]
@@ -255,7 +255,7 @@ def _make_secret(type, template_spec, container_names):
     return compose_plugins(
         pod_plugin(
             _update_pod,
-            secret = _ConfidantSecret(type = type, template_spec = template_spec),
+            secret = _ConfidantSecret(type = type, template_spec = template_spec, secrets_dir = secrets_dir),
         ),
         *keys_mounts
     )

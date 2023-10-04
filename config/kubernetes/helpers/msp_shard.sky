@@ -14,14 +14,14 @@ MSP_CLUSTER_ANNOTATION = "stripe.io/msp-cluster"
 
 MSP_SHARD_ANNOTATION = "stripe.io/msp-shard"
 
-def _shard(name, *, shared_msp=True, cron=False):
-    return struct(name=name, shared_msp=shared_msp, cron=cron)
+def _shard(name, *, shared_msp=True, cron=False, account="mainland"):
+    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account)
 
 ENV_CLUSTER_SHARDS = {
     "qa": {
         "bom": [_shard("kubemaster", cron=True)],
         "cmh": [_shard("kubemaster", cron=True)],
-        "east": [_shard("kubemaster", cron=True), _shard("kubeapitest")],
+        "east": [_shard("kubemaster", cron=True), _shard("kubeapitest", account="mainland2")],
         "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapitest", cron=True), _shard("kubeapisktest")],
     },
     "preprod": {
@@ -48,6 +48,22 @@ def all_available_shards(ctx, shared_msp=None):
     if shared_msp == None:
         return [s.name for s in shards]
     return [s.name for s in shards if s.shared_msp == shared_msp]
+
+def account_for_shard(ctx, shard):
+    """
+    Returns the AWS account that the shard is running in.
+    Args:
+      ctx: The Henson context.
+      shard: The name of the MSP shard.
+    """
+    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    shards = clusters.get(get_cluster(ctx), [])
+    for s in shards:
+        if s.name == shard:
+            return s.account
+
+    fail("Shard not found: {}".format(shard))
+
 
 def all_available_shards_with_cron(ctx):
     """

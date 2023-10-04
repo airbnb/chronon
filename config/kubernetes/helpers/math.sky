@@ -1,0 +1,11 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Math related utilities.
+"""
+
+def round_float_up(val):
+    val_remainder = val % 1
+    if val_remainder == 0:
+        return val
+
+    return val + (1 - val_remainder)
