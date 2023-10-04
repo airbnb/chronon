@@ -293,7 +293,7 @@ object JoinUtils {
       val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
       val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
       println(s"""
-           |JoinPart Info:
+           Generating bloom filter for joinPart:
            |  part name : ${joinPart.groupBy.metaData.name},
            |  left type : ${joinConf.left.dataModel},
            |  right type: ${joinPart.groupBy.dataModel},
