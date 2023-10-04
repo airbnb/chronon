@@ -132,7 +132,7 @@ object Extensions {
                             totalCount: Long,
                             tableName: String,
                             partitionRange: PartitionRange,
-                            fpp: Double = 0.01): BloomFilter = {
+                            fpp: Double = 0.03): BloomFilter = {
       val approxCount =
         df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
       if (approxCount == 0) {

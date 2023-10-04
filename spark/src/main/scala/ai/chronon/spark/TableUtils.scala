@@ -24,8 +24,8 @@ case class TableUtils(sparkSession: SparkSession) {
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
   val backfillValidationEnforced = sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
-  // Threshold to control whether or not to use bloomfilter on join backfill. If the row approximate count is under this threshold, we will use bloomfilter.
-  // default threshold is 1 million rows
+  // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
+  // default threshold is 100K rows
   val bloomFilterThreshold = sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
 
   sparkSession.sparkContext.setLogLevel("ERROR")
