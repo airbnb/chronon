@@ -33,9 +33,9 @@ class LogFlattenerJob(session: SparkSession,
                       logTable: String,
                       schemaTable: String,
                       stepDays: Option[Int] = None,
-                      tableUtilsOpt: Option[TableUtils] = None)
+                      tableUtilsOpt: Option[BaseTableUtils] = None)
     extends Serializable {
-  implicit val tableUtils: TableUtils = tableUtilsOpt match {
+  implicit val tableUtils: BaseTableUtils = tableUtilsOpt match {
     case Some(tblUtils) => tblUtils
     case None => TableUtils(session)
   }
