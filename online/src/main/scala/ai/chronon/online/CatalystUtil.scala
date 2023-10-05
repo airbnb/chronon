@@ -39,27 +39,20 @@ object CatalystUtil {
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.adaptive.enabled", "false")
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
-      .enableHiveSupport()
       .getOrCreate()
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
   }
 
-  /**
-   * We may instantiate multiple [[CatalystUtil]]s with the same setups
-   * (e.g. tests + [[PooledCatalystUtil]]) which all point to the same
-   * SparkSession. Spark will crash if we register a UDF multiple times
-   * with the same name, so we catch any exceptions specifically related to that.
-   *
-   * @param setup setup statement from a Chronon Query
-   */
-  def checkAndRegister(setup: String): Unit = {
-    try {
-      session.sql(setup)
-    } catch {
-      case e: Exception if "Function ([^\\s])\\w+ already exists".r.findFirstIn(e.getMessage).isDefined =>
-        println(s"Not running setup statement $setup because of exception: ${e}")
-    }
+  def getOutputSparkSchema(expressions: collection.Seq[(String, String)], inputSchema: StructType): types.StructType = {
+    val emptyRowRdd = session.emptyDataFrame.rdd
+    val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
+    val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
+    val sessionTable =
+      s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
+    val emptyDf = CatalystUtil.session.createDataFrame(emptyRowRdd, inputSparkSchema)
+    emptyDf.createOrReplaceTempView(sessionTable)
+    CatalystUtil.session.sqlContext.table(sessionTable).selectExpr(selectClauses: _*).schema
   }
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)
@@ -131,8 +124,6 @@ class CatalystUtil(
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
-  def getOutputSparkSchema: types.StructType = outputSparkSchema
-
   def performSql(values: Array[Any]): Option[Array[Any]] = {
     val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
     val resultRowOpt = transformFunc(internalRow)
@@ -144,6 +135,8 @@ class CatalystUtil(
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
     performSql(internalRow)
   }
+
+  def getOutputSparkSchema: types.StructType = outputSparkSchema
 
   def performSql(value: InternalRow): Option[Map[String, Any]] = {
     val resultRowMaybe = transformFunc(value)

@@ -268,53 +268,6 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
   }
 
   @Test
-  def testUdfSetupStatementShouldWork(): Unit = {
-    val selects = Seq(
-      "int32_x" -> "INT32_udf(`int32_x`)",
-    )
-    val setupStatement = "CREATE TEMPORARY FUNCTION INT32_udf as 'ai.chronon.online.test.Int32Udf'"
-    CatalystUtil.checkAndRegister(setupStatement)
-    val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
-    assertEquals(res.get.size, 1)
-    assertEquals(res.get("int32_x"), Int.MaxValue - 1)
-  }
-
-  /**
-   * Validates that instantiating multiple CatalystUtils with the same setup statements
-   * only registers UDFs once
-   */
-  @Test
-  def testCatalystUtilCheckAndRegister(): Unit = {
-    val selects = Seq(
-      "int32_x" -> "INT32_udf_2(`int32_x`)",
-    )
-    val setupStatement = "CREATE TEMPORARY FUNCTION INT32_udf_2 as 'ai.chronon.online.test.Int32Udf'"
-    CatalystUtil.checkAndRegister(setupStatement)
-    CatalystUtil.checkAndRegister(setupStatement)
-    val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
-    assertEquals(res.get.size, 1)
-    assertEquals(res.get("int32_x"), Int.MaxValue - 1)
-  }
-
-  /**
-   * Validates that checkAndRegister still crashes for other malformed SparkSQL statements
-   */
-  @Test
-  def testCatalystUtilCheckAndRegisterCrashes(): Unit = {
-    val setupStatement = "CREATE TEMPORARY FUNCTION fake_udf as 'fake_package.fake_class'"
-    val attempt = Try {
-      CatalystUtil.checkAndRegister(setupStatement)
-    }
-    attempt match {
-      case Failure(exception) => assert(exception.getClass == classOf[AnalysisException])
-      case Success(_) => fail()
-    }
-
-  }
-
-  @Test
   def testComplexUdfsWithCommonScalarsShouldWork(): Unit = {
     CatalystUtil.session.udf.register("two_param_udf", (x: Int, y: Long) => y - x)
     val add_one = (x: Int) => x + 1
