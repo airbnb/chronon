@@ -32,9 +32,13 @@ class LogFlattenerJob(session: SparkSession,
                       endDate: String,
                       logTable: String,
                       schemaTable: String,
-                      stepDays: Option[Int] = None)
+                      stepDays: Option[Int] = None,
+                      tableUtilsOpt: Option[TableUtils] = None)
     extends Serializable {
-  implicit val tableUtils: TableUtils = TableUtils(session)
+  implicit val tableUtils: TableUtils = tableUtilsOpt match {
+    case Some(tblUtils) => tblUtils
+    case None => TableUtils(session)
+  }
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
     .getOrElse(Map.empty[String, String])
