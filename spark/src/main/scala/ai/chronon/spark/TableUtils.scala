@@ -24,6 +24,9 @@ case class TableUtils(sparkSession: SparkSession) {
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
   val backfillValidationEnforced = sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
+  // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
+  // default threshold is 100K rows
+  val bloomFilterThreshold = sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -172,7 +175,7 @@ case class TableUtils(sparkSession: SparkSession) {
       case ex: Exception =>
         println(s"[Error] Encountered exception when reading table: $tableName.")
         ex.printStackTrace()
-        false
+        true
     }
   }
 
