@@ -24,7 +24,8 @@ import scala.util.{Failure, Success, Try}
 class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = false,
+                  exceptionSampleRate: Double = 0.1)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
@@ -34,6 +35,16 @@ class FetcherBase(kvStore: KVStore,
       endTs: Option[Long],
       context: Metrics.Context
   )
+
+  protected def teeException[Ex <: Throwable](ex: Ex): Ex = {
+    // TODO make this sample rate configurable
+    // we don't always log because it can consume a lot of disk bandwidth.
+    val sampleRate = exceptionSampleRate
+    if (debug || Math.random() <= sampleRate) {
+      ex.printStackTrace()
+    }
+    ex
+  }
 
   // a groupBy request is split into batchRequest and optionally a streamingRequest
   // this method decodes bytes (of the appropriate avro schema) into chronon rows aggregates further if necessary
@@ -158,7 +169,7 @@ class FetcherBase(kvStore: KVStore,
           // todo: update the logic here when we are ready to support groupby online derivations
           if (groupByServingInfo.groupBy.hasDerivations) {
             val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
-            context.incrementException(ex)
+            context.incrementException(teeException(ex))
             throw ex
           }
           try {
@@ -255,7 +266,7 @@ class FetcherBase(kvStore: KVStore,
                 case ex: Exception =>
                   // not all exceptions are due to stale schema, so we want to control how often we hit kv store
                   getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
-                  context.incrementException(ex)
+                  context.incrementException(teeException(ex))
                   ex.printStackTrace()
                   throw ex
               }
@@ -363,7 +374,7 @@ class FetcherBase(kvStore: KVStore,
               }.toMap
             }
             joinValuesTry match {
-              case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
+              case Failure(ex) => joinRequest.context.foreach(_.incrementException(teeException(ex)))
               case Success(responseMap) =>
                 joinRequest.context.foreach { ctx =>
                   ctx.histogram("response.keys.count", responseMap.size)

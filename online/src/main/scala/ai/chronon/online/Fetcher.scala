@@ -48,8 +48,9 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
+              exceptionSampleRate: Double = 0.1,
               val externalSourceRegistry: ExternalSourceRegistry = null)
-    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, exceptionSampleRate) {
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
@@ -161,7 +162,7 @@ class Fetcher(val kvStore: KVStore,
                 .toMap) match {
               case Success(derivedMap) => derivedMap
               case Failure(exception) => {
-                ctx.incrementException(exception)
+                ctx.incrementException(teeException(exception))
                 throw exception
               }
             }
@@ -269,7 +270,7 @@ class Fetcher(val kvStore: KVStore,
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
-      joinContext.foreach(_.incrementException(exception))
+      joinContext.foreach(_.incrementException(teeException(exception)))
       println(s"logging failed due to ${exception.traceString}")
     }
     Response(resp.request, Success(resp.derivedValues))
@@ -341,7 +342,7 @@ class Fetcher(val kvStore: KVStore,
           responseTry match {
             case Failure(exception) =>
               resultValueMap.update(prefix + "exception", exception)
-              externalToJoin.context.incrementException(exception)
+              externalToJoin.context.incrementException(teeException(exception))
             case Success(responseMap) =>
               externalToJoin.context.count("response.value_count", responseMap.size)
               responseMap.foreach { case (name, value) => resultValueMap.update(prefix + name, value) }
@@ -355,7 +356,7 @@ class Fetcher(val kvStore: KVStore,
           val resultValueMap: mutable.HashMap[String, Any] = resultMap(externalToJoin.joinRequest).get
           val KeyMissingException = externalToJoin.externalRequest.right.get
           resultValueMap.update(externalToJoin.part.fullName + "_" + "exception", KeyMissingException)
-          externalToJoin.context.incrementException(KeyMissingException)
+          externalToJoin.context.incrementException(teeException(KeyMissingException))
         })
 
       // step-4 convert the resultMap into Responses

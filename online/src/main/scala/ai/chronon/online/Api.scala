@@ -145,8 +145,11 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def externalRegistry: ExternalSourceRegistry
 
   private var timeoutMillis: Long = 10000
+  private var exceptionSampleRate: Double = 0.1
 
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
+
+  def setExceptionSampleRate(ratio: Double): Unit = { exceptionSampleRate = ratio }
 
   // kafka has built-in support - but one can add support to other types using this method.
   def generateStreamBuilder(streamType: String): StreamBuilder = null
@@ -171,11 +174,17 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 Constants.ChrononMetadataKey,
                 logFunc = responseConsumer,
                 debug = debug,
+                exceptionSampleRate = exceptionSampleRate,
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis)
 
   final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+    new JavaFetcher(genKvStore,
+                    Constants.ChrononMetadataKey,
+                    timeoutMillis,
+                    responseConsumer,
+                    exceptionSampleRate,
+                    externalRegistry)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
