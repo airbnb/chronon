@@ -97,7 +97,7 @@ class FetcherBase(kvStore: KVStore,
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
-    context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
+    context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
     responseMap
   }
 
@@ -109,14 +109,14 @@ class FetcherBase(kvStore: KVStore,
     val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _)
     val responseBytes = response.iterator.map(_.bytes.length).sum
     val context = ctx.withSuffix("response")
-    context.histogram(Name.RowCount, response.length)
-    context.histogram(Name.Bytes, responseBytes)
+    context.distribution(Name.RowCount, response.length)
+    context.distribution(Name.Bytes, responseBytes)
     latestResponseTs.foreach { ts =>
-      context.histogram(Name.FreshnessMillis, queryTsMillis - ts)
-      context.histogram(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
+      context.distribution(Name.FreshnessMillis, queryTsMillis - ts)
+      context.distribution(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
     }
-    context.histogram("attributed_latency.millis",
-                      (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
+    context.distribution("attributed_latency.millis",
+                         ((responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis).toLong)
   }
 
   private def updateServingInfo(batchEndTs: Long,
@@ -226,9 +226,9 @@ class FetcherBase(kvStore: KVStore,
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
               context.count("multi_get.batch.size", allRequests.length)
-              context.histogram("multi_get.bytes", totalResponseValueBytes)
-              context.histogram("multi_get.response.length", kvResponses.length)
-              context.histogram("multi_get.latency.millis", multiGetMillis)
+              context.distribution("multi_get.bytes", totalResponseValueBytes)
+              context.distribution("multi_get.response.length", kvResponses.length)
+              context.distribution("multi_get.latency.millis", multiGetMillis)
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
                 .getOrElse(batchRequest,
@@ -366,11 +366,11 @@ class FetcherBase(kvStore: KVStore,
               case Failure(ex) => joinRequest.context.foreach(_.incrementException(ex))
               case Success(responseMap) =>
                 joinRequest.context.foreach { ctx =>
-                  ctx.histogram("response.keys.count", responseMap.size)
+                  ctx.distribution("response.keys.count", responseMap.size)
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.distribution("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
               ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)
