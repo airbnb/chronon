@@ -1,5 +1,6 @@
 package ai.chronon.aggregator.base
 
+import ai.chronon.api.DataType.toString
 import ai.chronon.api._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
@@ -473,7 +474,8 @@ class ApproxPercentiles(k: Int = 128, percentiles: Array[Double] = Array(0.5))
     KllFloatsSketch.heapify(Memory.wrap(normalized.asInstanceOf[Array[Byte]]))
 }
 
-abstract class Order[I](inputType: DataType) extends SimpleAggregator[I, I, I] {
+abstract class Order[I: Ordering](inputType: DataType) extends SimpleAggregator[I, I, I] {
+  @transient lazy protected val ordering = implicitly[Ordering[I]]
   override def outputType: DataType = inputType
 
   override def irType: DataType = inputType
@@ -487,16 +489,16 @@ abstract class Order[I](inputType: DataType) extends SimpleAggregator[I, I, I] {
 
 class Max[I: Ordering](inputType: DataType) extends Order[I](inputType) {
   override def update(ir: I, input: I): I =
-    implicitly[Ordering[I]].max(ir, input)
+    ordering.max(ir, input)
 
-  override def merge(ir1: I, ir2: I): I = implicitly[Ordering[I]].max(ir1, ir2)
+  override def merge(ir1: I, ir2: I): I = ordering.max(ir1, ir2)
 }
 
 class Min[I: Ordering](inputType: DataType) extends Order[I](inputType) {
   override def update(ir: I, input: I): I =
-    implicitly[Ordering[I]].min(ir, input)
+    ordering.min(ir, input)
 
-  override def merge(ir1: I, ir2: I): I = implicitly[Ordering[I]].min(ir1, ir2)
+  override def merge(ir1: I, ir2: I): I = ordering.min(ir1, ir2)
 }
 
 // generalization of topK and bottomK
@@ -513,18 +515,18 @@ class OrderByLimit[I: ClassTag](
 
   type Container = util.ArrayList[I]
 
-  override final def prepare(input: I): Container = {
+  override def prepare(input: I): Container = {
     val arr = new util.ArrayList[I]()
     arr.add(input)
     arr
   }
 
   // mutating
-  override final def update(state: Container, input: I): Container =
+  override def update(state: Container, input: I): Container =
     minHeap.insert(state, input)
 
   // mutating 1
-  override final def merge(state1: Container, state2: Container): Container =
+  override def merge(state1: Container, state2: Container): Container =
     minHeap.merge(state1, state2)
 
   override def finalize(state: Container): Container = minHeap.sort(state)
@@ -540,3 +542,103 @@ class TopK[T: Ordering: ClassTag](inputType: DataType, k: Int)
     extends OrderByLimit[T](inputType, k, Ordering[T].reverse)
 
 class BottomK[T: Ordering: ClassTag](inputType: DataType, k: Int) extends OrderByLimit[T](inputType, k, Ordering[T])
+
+object StructOrdering {
+  def valid(input: util.ArrayList[Any]): Boolean = !(input == null || input.size() == 0 || input.get(0) == null)
+  def apply(structType: StructType): Ordering[util.ArrayList[Any]] = {
+    structType.fields(0).fieldType match {
+      case IntType       => buildInternal[Int]
+      case LongType      => buildInternal[Long]
+      case DoubleType    => buildInternal[Double]
+      case FloatType     => buildInternal[Float]
+      case ShortType     => buildInternal[Short]
+      case BooleanType   => buildInternal[Boolean]
+      case ByteType      => buildInternal[Byte]
+      case StringType    => buildInternal[String]
+      case DateType      => buildInternal[java.util.Date]
+      case TimestampType => buildInternal[java.sql.Timestamp]
+      case _ =>
+        throw new IllegalArgumentException(s"Cannot order elements of type ${DataType.toString(
+          structType.fields(0).fieldType)} in struct ${DataType.toString(structType)}")
+    }
+  }
+
+  private def buildInternal[I: Ordering]: Ordering[util.ArrayList[Any]] = {
+    val baseOrdering = implicitly[Ordering[I]]
+    new Ordering[util.ArrayList[Any]] {
+      override def compare(x: util.ArrayList[Any], y: util.ArrayList[Any]): Int = {
+        lazy val xElem = x.get(0)
+        lazy val yElem = y.get(0)
+        lazy val xNull = x == null || xElem == null
+        lazy val yNull = y == null || yElem == null
+        if (xNull && yNull) {
+          0
+        } else if (xNull) { // y is greater
+          1
+        } else if (yNull) { // x is greater
+          -1
+        } else {
+          baseOrdering.compare(xElem.asInstanceOf[I], yElem.asInstanceOf[I])
+        }
+      }
+    }
+  }
+}
+
+abstract class OrderUnSpecialized(inputType: StructType)
+    extends SimpleAggregator[util.ArrayList[Any], util.ArrayList[Any], util.ArrayList[Any]] {
+  @transient lazy protected val ordering = StructOrdering(inputType)
+  override def outputType: DataType = inputType
+
+  override def irType: DataType = inputType
+
+  override def prepare(input: util.ArrayList[Any]): util.ArrayList[Any] =
+    if (StructOrdering.valid(input)) input else null
+
+  override def finalize(ir: util.ArrayList[Any]): util.ArrayList[Any] = ir
+
+  override def clone(ir: util.ArrayList[Any]): util.ArrayList[Any] = ir
+}
+
+class MaxStruct(inputType: StructType) extends OrderUnSpecialized(inputType) {
+  override def update(ir: util.ArrayList[Any], input: util.ArrayList[Any]): util.ArrayList[Any] = {
+    if (StructOrdering.valid(input))
+      ordering.max(ir, input)
+    else
+      ir
+  }
+
+  override def merge(ir1: util.ArrayList[Any], ir2: util.ArrayList[Any]): util.ArrayList[Any] = ordering.max(ir1, ir2)
+}
+
+class MinStruct(inputType: StructType) extends OrderUnSpecialized(inputType) {
+  override def update(ir: util.ArrayList[Any], input: util.ArrayList[Any]): util.ArrayList[Any] =
+    if (StructOrdering.valid(input))
+      ordering.min(ir, input)
+    else
+      ir
+
+  override def merge(ir1: util.ArrayList[Any], ir2: util.ArrayList[Any]): util.ArrayList[Any] = ordering.min(ir1, ir2)
+}
+
+class OrderByLimitStruct(inputType: StructType, limit: Int, ordering: Ordering[util.ArrayList[Any]])
+    extends OrderByLimit[util.ArrayList[Any]](inputType, limit, ordering) {
+
+  override final def prepare(input: util.ArrayList[Any]): Container = {
+    if (StructOrdering.valid(input)) {
+      super.prepare(input)
+    } else {
+      null
+    }
+  }
+
+  override final def update(state: Container, input: util.ArrayList[Any]): Container = {
+    if (StructOrdering.valid(input)) super.update(state, input) else state
+  }
+}
+
+class TopKStruct(inputType: StructType, k: Int)
+    extends OrderByLimitStruct(inputType, k, StructOrdering(inputType).reverse)
+
+class BottomKStruct(inputType: StructType, k: Int)
+    extends OrderByLimit[util.ArrayList[Any]](inputType, k, StructOrdering(inputType))

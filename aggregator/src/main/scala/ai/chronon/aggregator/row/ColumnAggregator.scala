@@ -294,48 +294,52 @@ object ColumnAggregator {
 
       case Operation.MIN =>
         inputType match {
-          case IntType    => simple(new Min[Int](inputType))
-          case LongType   => simple(new Min[Long](inputType))
-          case ShortType  => simple(new Min[Short](inputType))
-          case DoubleType => simple(new Min[Double](inputType))
-          case FloatType  => simple(new Min[Float](inputType))
-          case StringType => simple(new Min[String](inputType))
-          case _          => mismatchException
+          case IntType          => simple(new Min[Int](inputType))
+          case LongType         => simple(new Min[Long](inputType))
+          case ShortType        => simple(new Min[Short](inputType))
+          case DoubleType       => simple(new Min[Double](inputType))
+          case FloatType        => simple(new Min[Float](inputType))
+          case StringType       => simple(new Min[String](inputType))
+          case StructType(_, _) => simple(new MinStruct(inputType.asInstanceOf[StructType]))
+          case _                => mismatchException
         }
 
       case Operation.MAX =>
         inputType match {
-          case IntType    => simple(new Max[Int](inputType))
-          case LongType   => simple(new Max[Long](inputType))
-          case ShortType  => simple(new Max[Short](inputType))
-          case DoubleType => simple(new Max[Double](inputType))
-          case FloatType  => simple(new Max[Float](inputType))
-          case StringType => simple(new Max[String](inputType))
-          case _          => mismatchException
+          case IntType          => simple(new Max[Int](inputType))
+          case LongType         => simple(new Max[Long](inputType))
+          case ShortType        => simple(new Max[Short](inputType))
+          case DoubleType       => simple(new Max[Double](inputType))
+          case FloatType        => simple(new Max[Float](inputType))
+          case StringType       => simple(new Max[String](inputType))
+          case StructType(_, _) => simple(new MaxStruct(inputType.asInstanceOf[StructType]))
+          case _                => mismatchException
         }
 
       case Operation.TOP_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
-          case IntType    => simple(new TopK[Int](inputType, k))
-          case LongType   => simple(new TopK[Long](inputType, k))
-          case ShortType  => simple(new TopK[Short](inputType, k))
-          case DoubleType => simple(new TopK[Double](inputType, k))
-          case FloatType  => simple(new TopK[Float](inputType, k))
-          case StringType => simple(new TopK[String](inputType, k))
-          case _          => mismatchException
+          case IntType          => simple(new TopK[Int](inputType, k))
+          case LongType         => simple(new TopK[Long](inputType, k))
+          case ShortType        => simple(new TopK[Short](inputType, k))
+          case DoubleType       => simple(new TopK[Double](inputType, k))
+          case FloatType        => simple(new TopK[Float](inputType, k))
+          case StringType       => simple(new TopK[String](inputType, k))
+          case StructType(_, _) => simple(new TopKStruct(inputType.asInstanceOf[StructType], k))
+          case _                => mismatchException
         }
 
       case Operation.BOTTOM_K =>
         val k = aggregationPart.getInt("k")
         inputType match {
-          case IntType    => simple(new BottomK[Int](inputType, k))
-          case LongType   => simple(new BottomK[Long](inputType, k))
-          case ShortType  => simple(new BottomK[Short](inputType, k))
-          case DoubleType => simple(new BottomK[Double](inputType, k))
-          case FloatType  => simple(new BottomK[Float](inputType, k))
-          case StringType => simple(new BottomK[String](inputType, k))
-          case _          => mismatchException
+          case IntType          => simple(new BottomK[Int](inputType, k))
+          case LongType         => simple(new BottomK[Long](inputType, k))
+          case ShortType        => simple(new BottomK[Short](inputType, k))
+          case DoubleType       => simple(new BottomK[Double](inputType, k))
+          case FloatType        => simple(new BottomK[Float](inputType, k))
+          case StringType       => simple(new BottomK[String](inputType, k))
+          case StructType(_, _) => simple(new BottomKStruct(inputType.asInstanceOf[StructType], k))
+          case _                => mismatchException
         }
 
       case Operation.FIRST   => timed(new First(inputType))

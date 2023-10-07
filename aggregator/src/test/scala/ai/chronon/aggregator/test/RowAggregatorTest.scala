@@ -34,17 +34,24 @@ object TestRow {
 
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
+    def struct(d: java.lang.Double, s: String): util.ArrayList[Any] = {
+      val result = new util.ArrayList[Any](2)
+      result.add(d)
+      result.add(s)
+      result
+    }
+
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A")),
-      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq()),
-      TestRow(3L, 5, 7.0f, "D", null, null),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D")),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"))
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), struct(0.1, "1_item")),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null),
+      TestRow(3L, 5, 7.0f, "D", null, null, struct(null, "3_item")),
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), struct(0.2, "4_item")),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), struct(0.4, "5_item"))
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H")),
-      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq())
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), struct(0.2, "4_item")),
+      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), struct(0.4, "5_item"))
     )
 
     val schema = List(
@@ -53,7 +60,8 @@ class RowAggregatorTest extends TestCase {
       "rating" -> FloatType,
       "title" -> StringType,
       "session_lengths" -> ListType(IntType),
-      "hist_input" -> ListType(StringType)
+      "hist_input" -> ListType(StringType),
+      "content" -> StructType("Content", Array(StructField("price", DoubleType), StructField("item", StringType)))
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
@@ -70,12 +78,21 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.SUM, "rating") -> 15.0,
       Builders.AggregationPart(Operation.LAST, "title") -> "B",
       Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").asJava,
+      Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").asJava,
       Builders.AggregationPart(Operation.FIRST_K, "title", argMap = Map("k" -> "2")) -> List("A", "B").asJava,
       Builders.AggregationPart(Operation.FIRST, "title") -> "A",
       Builders.AggregationPart(Operation.TOP_K, "title", argMap = Map("k" -> "2")) -> List("D", "B").asJava,
+      Builders.AggregationPart(Operation.TOP_K, "content", argMap = Map("k" -> "2")) -> List(struct(0.4, "5_item"),
+                                                                                             struct(0.2,
+                                                                                                    "4_item")).asJava,
       Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").asJava,
+      Builders.AggregationPart(Operation.BOTTOM_K, "content", argMap = Map("k" -> "2")) -> List(
+        struct(0.1, "1_item"),
+        struct(0.2, "4_item")).asJava,
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
+      Builders.AggregationPart(Operation.MAX, "content") -> struct(0.4, "5_item"),
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
+      Builders.AggregationPart(Operation.MIN, "content") -> struct(0.1, "1_item"),
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title", argMap = Map("k" -> "10")) -> 3L,
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
