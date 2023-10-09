@@ -545,6 +545,7 @@ class BottomK[T: Ordering: ClassTag](inputType: DataType, k: Int) extends OrderB
 
 object StructOrdering {
   def valid(input: util.ArrayList[Any]): Boolean = !(input == null || input.size() == 0 || input.get(0) == null)
+
   def apply(structType: StructType): Ordering[util.ArrayList[Any]] = {
     structType.fields(0).fieldType match {
       case IntType       => buildInternal[Int]
@@ -560,6 +561,27 @@ object StructOrdering {
       case _ =>
         throw new IllegalArgumentException(s"Cannot order elements of type ${DataType.toString(
           structType.fields(0).fieldType)} in struct ${DataType.toString(structType)}")
+    }
+  }
+
+  private def fieldOrdering[I: Ordering]: Ordering[Any] = {
+    new Ordering[Any] {
+      private val baseOrdering = implicitly[Ordering[I]]
+
+      private def conv(i: Any): I = i.asInstanceOf[I]
+
+      override def compare(x: Any, y: Any): Int = implicitly[Ordering[I]].compare(conv(x), conv(y))
+
+      def guardedCompare(x: Any, y: Any, f: Int => Boolean): Boolean = {
+        if(x == null)
+      }
+      override def lteq(x: Any, y: Any): Boolean = if(x==null) false else if (x == null) false else if (y == null) compare(x, y) <= 0
+      override def gteq(x: T, y: T): Boolean = compare(x, y) >= 0
+      override def lt(x: T, y: T): Boolean = compare(x, y) < 0
+      override def gt(x: T, y: T): Boolean = compare(x, y) > 0
+
+      override def lteq(x: Any, y: Any): Boolean = if(x == null) baseOrdering.lteq(x, y)
+      override def gteq(x: Any, y: Any): Boolean = super.gteq(x, y)
     }
   }
 
