@@ -155,8 +155,7 @@ object Metrics {
       stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
     }
 
-    def histogram(metric: String, value: Double): Unit = stats.histogram(metric, value, Context.sampleRate)
-    def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
+    def distribution(metric: String, value: Long): Unit = stats.distribution(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
 

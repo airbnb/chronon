@@ -23,10 +23,10 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
     if (!debug) {
       kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
-        context.histogram(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
+        context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)
-        context.histogram(Metrics.Name.ValueBytes, putRequest.valueBytes.length)
-        context.histogram(Metrics.Name.KeyBytes, putRequest.keyBytes.length)
+        context.distribution(Metrics.Name.ValueBytes, putRequest.valueBytes.length)
+        context.distribution(Metrics.Name.KeyBytes, putRequest.keyBytes.length)
       }
     }
   }

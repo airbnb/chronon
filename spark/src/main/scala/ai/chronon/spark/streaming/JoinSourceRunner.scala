@@ -310,10 +310,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
       request.tsMillis.foreach { ts: Long =>
-        context.histogram(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
+        context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)
-        context.histogram(Metrics.Name.ValueBytes, request.valueBytes.length)
-        context.histogram(Metrics.Name.KeyBytes, request.keyBytes.length)
+        context.distribution(Metrics.Name.ValueBytes, request.valueBytes.length)
+        context.distribution(Metrics.Name.KeyBytes, request.keyBytes.length)
       }
     }
 

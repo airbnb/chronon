@@ -152,7 +152,7 @@ class Fetcher(val kvStore: KVStore,
             val joinName = internalResponse.request.name
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            ctx.histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+            ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val baseMap = internalMap ++ externalMap
             val derivedMap: Map[String, AnyRef] = Try(
               joinCodec
@@ -166,8 +166,8 @@ class Fetcher(val kvStore: KVStore,
               }
             }
             val requestEndTs = System.currentTimeMillis()
-            ctx.histogram("derivation.latency.millis", requestEndTs - derivationStartTs)
-            ctx.histogram("overall.latency.millis", requestEndTs - ts)
+            ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
+            ctx.distribution("overall.latency.millis", requestEndTs - ts)
             ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
     }
@@ -256,9 +256,9 @@ class Fetcher(val kvStore: KVStore,
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
           joinContext.foreach(context =>
-            context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
+            context.distribution("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
           joinContext.foreach(context =>
-            context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
+            context.distribution("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
 
           if (debug) {
             println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
@@ -326,7 +326,7 @@ class Fetcher(val kvStore: KVStore,
     val context =
       Metrics.Context(environment = Environment.JoinFetching,
                       join = validRequests.iterator.map(_.name.sanitize).toSeq.distinct.mkString(","))
-    context.histogram("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
+    context.distribution("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.count("response.external_invalid_joins.count", invalidCount)
     val responseFutures = externalSourceRegistry.fetchRequests(validExternalRequestToJoinRequestMap.keys.toSeq, context)
 
@@ -362,7 +362,7 @@ class Fetcher(val kvStore: KVStore,
       joinRequests.map { req =>
         Metrics
           .Context(Environment.JoinFetching, join = req.name)
-          .histogram("external.latency.millis", System.currentTimeMillis() - startTime)
+          .distribution("external.latency.millis", System.currentTimeMillis() - startTime)
         Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }
