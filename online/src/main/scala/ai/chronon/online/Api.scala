@@ -78,7 +78,7 @@ trait KVStore {
   }
 
   // Method for taking the set of keys and constructing the byte array sent to the KVStore
-  def createKeyBytes(keys: Map[String, AnyRef], groupByServingInfo: GroupByServingInfoParsed): Array[Byte] = {
+  def createKeyBytes(keys: Map[String, AnyRef], groupByServingInfo: GroupByServingInfoParsed, dataset: String): Array[Byte] = {
     groupByServingInfo.keyCodec.encode(keys)
   }
 }
