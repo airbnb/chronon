@@ -139,7 +139,6 @@ object OnlineUtils {
     val prevDs = tableUtils.partitionSpec.before(endDs)
     GroupByUpload.run(groupByConf, prevDs, Some(tableUtils))
     inMemoryKvStore.bulkPut(groupByConf.metaData.uploadTable, groupByConf.batchDataset, null)
-
     if (groupByConf.inferredAccuracy == Accuracy.TEMPORAL && groupByConf.streamingSource.isDefined) {
       val streamingSource = groupByConf.streamingSource.get
       inMemoryKvStore.create(groupByConf.streamingDataset)
