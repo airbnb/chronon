@@ -30,11 +30,11 @@ object TileCodec {
 }
 
 /**
- * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
- * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
- * with batch pre-aggregates produced by GroupByUploads.
- * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
- */
+  * TileCodec is a helper class that allows for the creation of pre-aggregated tiles of feature values.
+  * These pre-aggregated tiles can be used in the serving layer to compute the final feature values along
+  * with batch pre-aggregates produced by GroupByUploads.
+  * The pre-aggregated tiles are serialized as Avro and indicate whether the tile is complete or not (partial aggregates)
+  */
 class TileCodec(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]) {
 
   import TileCodec._
@@ -80,24 +80,23 @@ class TileCodec(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]) {
     val flattenedIr = windowedRowAggregator.init
     var irPos = 0
     var bucketPos = 0
-    groupBy.aggregations.asScala.foreach {
-      aggr =>
-        val buckets = Option(aggr.buckets)
-          .map(_.toScala)
-          .getOrElse(Seq(null))
-        val windows = Option(aggr.windows)
-          .map(_.toScala)
-          .getOrElse(Seq(WindowUtils.Unbounded))
-        // for each aggregation we have 1/more buckets and 1/more windows
-        // we need to iterate over the baseIr and clone a given counter's values n times where
-        // n is the number of windows for that counter
-        for(_ <- buckets) {
-          for(_ <- windows) {
-            flattenedIr(irPos) = rowAggregator.columnAggregators(bucketPos).clone(baseIr(bucketPos))
-            irPos += 1
-          }
-          bucketPos += 1
+    groupBy.aggregations.asScala.foreach { aggr =>
+      val buckets = Option(aggr.buckets)
+        .map(_.toScala)
+        .getOrElse(Seq(null))
+      val windows = Option(aggr.windows)
+        .map(_.toScala)
+        .getOrElse(Seq(WindowUtils.Unbounded))
+      // for each aggregation we have 1/more buckets and 1/more windows
+      // we need to iterate over the baseIr and clone a given counter's values n times where
+      // n is the number of windows for that counter
+      for (_ <- buckets) {
+        for (_ <- windows) {
+          flattenedIr(irPos) = rowAggregator.columnAggregators(bucketPos).clone(baseIr(bucketPos))
+          irPos += 1
         }
+        bucketPos += 1
+      }
     }
     flattenedIr
   }
