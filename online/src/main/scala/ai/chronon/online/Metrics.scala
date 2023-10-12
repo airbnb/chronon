@@ -160,8 +160,6 @@ object Metrics {
       stats.increment(prefix(Name.Exception), tags :+ s"${Metrics.Name.Exception}:${exceptionSignature}": _*)
     }
 
-    def distribution(metric: String, value: Double): Unit =
-      stats.distribution(prefix(metric), value, Context.sampleRate, tags: _*)
     def distribution(metric: String, value: Long): Unit =
       stats.distribution(prefix(metric), value, Context.sampleRate, tags: _*)
     def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags: _*)
