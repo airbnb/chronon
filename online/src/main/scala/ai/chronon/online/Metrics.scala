@@ -111,6 +111,8 @@ object Metrics {
       { ctx => ctx },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
+
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.chronon.", "localhost", statsPort)
   }
 
   case class Context(environment: Environment,
@@ -138,9 +140,12 @@ object Metrics {
       new String(charBuf)
     }
 
-    @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsCache(this)
+    private lazy val tags = this.toTags
+    private val prefixString = environment + Option(suffix).map("." + _).getOrElse("")
+    private def prefix(s: String): String = s"${prefixString}.$s"
+    @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsClient
 
-    def increment(metric: String): Unit = stats.increment(metric)
+    def increment(metric: String): Unit = stats.increment(prefix(metric), tags: _*)
     def incrementException(exception: Throwable): Unit = {
       val stackTrace = exception.getStackTrace
       val exceptionSignature = if (stackTrace.isEmpty) {
@@ -152,12 +157,21 @@ object Metrics {
         val method = stackRoot.getMethodName
         s"[$method@$file:$line]${exception.getClass.toString}"
       }
-      stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
+      stats.increment(prefix(Name.Exception), tags :+ s"${Metrics.Name.Exception}:${exceptionSignature}": _*)
     }
 
+<<<<<<< Updated upstream
     def distribution(metric: String, value: Long): Unit = stats.distribution(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
+=======
+    def histogram(metric: String, value: Double): Unit =
+      stats.histogram(prefix(metric), value, Context.sampleRate, tags: _*)
+    def histogram(metric: String, value: Long): Unit =
+      stats.histogram(prefix(metric), value, Context.sampleRate, tags: _*)
+    def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags: _*)
+    def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags: _*)
+>>>>>>> Stashed changes
 
     // There can be multiple joins - when issued as a batch request
     lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
