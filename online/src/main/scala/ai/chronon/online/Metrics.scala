@@ -112,7 +112,7 @@ object Metrics {
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
 
-    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.chronon.", "localhost", statsPort)
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline.", "localhost", statsPort)
   }
 
   case class Context(environment: Environment,
@@ -160,18 +160,12 @@ object Metrics {
       stats.increment(prefix(Name.Exception), tags :+ s"${Metrics.Name.Exception}:${exceptionSignature}": _*)
     }
 
-<<<<<<< Updated upstream
-    def distribution(metric: String, value: Long): Unit = stats.distribution(metric, value, Context.sampleRate)
-    def count(metric: String, value: Long): Unit = stats.count(metric, value)
-    def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
-=======
-    def histogram(metric: String, value: Double): Unit =
-      stats.histogram(prefix(metric), value, Context.sampleRate, tags: _*)
-    def histogram(metric: String, value: Long): Unit =
-      stats.histogram(prefix(metric), value, Context.sampleRate, tags: _*)
+    def distribution(metric: String, value: Double): Unit =
+      stats.distribution(prefix(metric), value, Context.sampleRate, tags: _*)
+    def distribution(metric: String, value: Long): Unit =
+      stats.distribution(prefix(metric), value, Context.sampleRate, tags: _*)
     def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags: _*)
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags: _*)
->>>>>>> Stashed changes
 
     // There can be multiple joins - when issued as a batch request
     lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
