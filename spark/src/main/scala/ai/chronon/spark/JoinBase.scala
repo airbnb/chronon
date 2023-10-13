@@ -174,32 +174,15 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
-
-    val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
-      key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
-    }.toMap
-
+    val rightBloomMap =
+      JoinUtils.genBloomFilterIfNeeded(leftDf, joinPart, joinConf, rowCount, unfilledRange, tableUtils)
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
-    val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-    println(s"""
-         |JoinPart Info:
-         |  part name : ${joinPart.groupBy.metaData.name},
-         |  left type : ${joinConf.left.dataModel},
-         |  right type: ${joinPart.groupBy.dataModel},
-         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
-         |  part unfilled range: $unfilledRange,
-         |  left row count: $rowCount
-         |  bloom sizes: $bloomSizes
-         |  groupBy: ${joinPart.groupBy.toString}
-         |""".stripMargin)
-
     def genGroupBy(partitionRange: PartitionRange) =
       GroupBy.from(joinPart.groupBy,
                    partitionRange,
                    tableUtils,
                    computeDependency = true,
-                   Option(rightBloomMap),
+                   rightBloomMap,
                    rightSkewFilter,
                    mutationScan = mutationScan,
                    showDf = showDf)

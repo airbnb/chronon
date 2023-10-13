@@ -33,7 +33,7 @@ jobs:
             - deploy:
                 name: Push docker image
                 command: |
-                    set +o pipefail
+                    set +euxo pipefail
                     docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
                     docker push houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
                     if [ "${CIRCLE_BRANCH}" == "master" ]; then

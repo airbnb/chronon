@@ -70,7 +70,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         context.withSuffix("join").increment(Metrics.Name.Exception)
         throw result.failed.get
       }
-      context.withSuffix("join").histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
+      context.withSuffix("join").distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
       result
     },
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
@@ -125,7 +125,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           Metrics
             .Context(Metrics.Environment.MetaDataFetching, groupByServingInfo.groupBy)
             .withSuffix("group_by")
-            .histogram(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
+            .distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
           Success(new GroupByServingInfoParsed(groupByServingInfo, partitionSpec))
         }
       },

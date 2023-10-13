@@ -103,7 +103,7 @@ public class JavaFetcher {
       } else {
         ctx = getJoinContext(s);
       }
-      ctx.histogram(metricName, endTs - startTs);
+      ctx.distribution(metricName, endTs - startTs);
     }
   }
 
