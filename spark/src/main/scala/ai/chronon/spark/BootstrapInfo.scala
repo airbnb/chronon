@@ -72,6 +72,9 @@ object BootstrapInfo {
 
         val keyAndPartitionFields =
           gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+        // todo: this change is only valid for offline use case
+        // we need to revisit logic for the logging part to make sure the derived columns are also logged
+        // to make bootstrap continue to work
         val outputSchema = if (part.groupBy.hasDerivations) {
           val sparkSchema = {
             StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
