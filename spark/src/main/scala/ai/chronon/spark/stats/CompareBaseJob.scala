@@ -3,7 +3,7 @@ package ai.chronon.spark.stats
 import ai.chronon.api._
 import ai.chronon.online.{SparkConversions, _}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.BaseTableUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 
@@ -15,7 +15,7 @@ object CompareBaseJob {
       leftFields: Map[String, DataType],
       rightFields: Map[String, DataType],
       keys: Seq[String],
-      tableUtils: TableUtils,
+      tableUtils: BaseTableUtils,
       mapping: Map[String, String] = Map.empty,
       migrationCheck: Boolean = false
   ): Unit = {
@@ -90,7 +90,7 @@ object CompareBaseJob {
                leftDf: DataFrame,
                rightDf: DataFrame,
                keys: Seq[String],
-               tableUtils: TableUtils,
+               tableUtils: BaseTableUtils,
                mapping: Map[String, String] = Map.empty,
                migrationCheck: Boolean = false
              ): (DataFrame, DataFrame, DataMetrics) = {

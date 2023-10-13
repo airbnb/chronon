@@ -5,19 +5,22 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{PartitionRange, TableUtils}
+import ai.chronon.spark.{BaseTableUtils, PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
 
 import java.util
 import scala.collection.JavaConverters._
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
-class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
+class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tableUtilsOpt: Option[BaseTableUtils] = None) extends Serializable {
 
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
-  implicit val tableUtils: TableUtils = TableUtils(session)
+  implicit val tableUtils: BaseTableUtils = tableUtilsOpt match {
+    case Some(tblUtils) => tblUtils
+    case None => TableUtils(session)
+  }
 
   // Replace join's left side with the logged table events to determine offline values of the aggregations.
   private def buildComparisonJoin(): Join = {
