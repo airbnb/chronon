@@ -7,7 +7,7 @@ import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StringType, StructType}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
@@ -69,7 +69,27 @@ object BootstrapInfo {
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
-        val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
+
+        val keyAndPartitionFields =
+          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+        // todo: this change is only valid for offline use case
+        // we need to revisit logic for the logging part to make sure the derived columns are also logged
+        // to make bootstrap continue to work
+        val outputSchema = if (part.groupBy.hasDerivations) {
+          val sparkSchema = {
+            StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
+          }
+          val dummyOutputDf = tableUtils.sparkSession
+            .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+          val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+          val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+          val columns = SparkConversions.toChrononSchema(
+            StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
+          api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+        } else {
+          gb.outputSchema
+        }
+        val valueSchema = outputSchema.fields.map(part.constructJoinPartSchema)
         JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
       })
 

@@ -10,7 +10,7 @@ import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{StringType, StructType}
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
@@ -183,12 +183,17 @@ class Analyzer(tableUtils: TableUtils,
     val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
       // handle group by backfill mode for derivations
       // todo: add the similar logic to join derivations
-      val sparkSchema = SparkConversions.fromChrononSchema(groupBy.outputSchema)
+      val keyAndPartitionFields =
+        groupBy.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+      val sparkSchema = {
+        StructType(SparkConversions.fromChrononSchema(groupBy.outputSchema).fields ++ keyAndPartitionFields)
+      }
       val dummyOutputDf = tableUtils.sparkSession
         .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns = groupByConf.derivations.toScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+      val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-      val columns = SparkConversions.toChrononSchema(derivedDummyOutputDf.schema)
+      val columns = SparkConversions.toChrononSchema(
+        StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
       api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
     } else {
       groupBy.outputSchema

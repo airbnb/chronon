@@ -29,14 +29,27 @@ class DerivationTest {
     val namespace = "test_derivations"
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
-    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
 
+    val derivation1 = Builders.Derivation(name = "user_amount_30d_avg",
+      expression = "amount_dollars_sum_30d / 30")
+    val derivation2 = Builders.Derivation(
+      name = "*"
+    )
+
+    val groupByWithDerivation = groupBy
+      .setDerivations(
+        Seq(
+          derivation1,
+          derivation2
+        ).toJava
+      )
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
         query = Builders.Query()
       ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByWithDerivation)),
       rowIds = Seq("request_id"),
       externalParts = Seq(
         Builders.ExternalPart(
@@ -78,6 +91,11 @@ class DerivationTest {
         ),
         // derivation based on one group by field (rename)
         Builders.Derivation(
+          name = "user_amount_30d_avg",
+          expression = "unit_test_user_transactions_user_amount_30d_avg"
+        ),
+        // derivation based on one group by field (rename)
+        Builders.Derivation(
           name = "user_amount_15d",
           expression = "unit_test_user_transactions_amount_dollars_sum_15d"
         ),
@@ -106,7 +124,7 @@ class DerivationTest {
     val outputDf = runner.computeJoin()
 
     assertTrue(
-      outputDf.columns sameElements Array(
+      outputDf.columns.toSet == Set(
         "user",
         "request_id",
         "ts",
@@ -114,6 +132,7 @@ class DerivationTest {
         "user_txn_count_15d",
         "user_txn_count_15d_with_user_id",
         "user_amount_30d",
+        "user_amount_30d_avg",
         "user_amount_15d",
         "user_amount_30d_minus_15d",
         "user_amount_avg_30d",
@@ -236,6 +255,7 @@ class DerivationTest {
           .as("user_amount_avg_30d"),
         (outputDf("user_amount_15d") * lit(1.0) / externalBootstrapDf("ext_payments_service_user_txn_count_15d"))
           .as("user_amount_avg_15d"),
+        (outputDf("user_amount_30d") * lit(1.0) / 30).as("user_amount_30d_avg"),
         outputDf("ds")
       )
 
