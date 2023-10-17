@@ -279,13 +279,15 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"Upstream join request name: $joinRequestName")
 
     val tableUtils = TableUtils(session)
-    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase)
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery)
 
     val leftSchema = StructType(
       decoded.df.schema.filter(field =>
         reqColumns
-        // handle nested struct, only the parent struct is needed here
+          // handle nested struct, only the parent struct is needed here
           .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
+          // the decoded schema is in lower case
+          .map(_.toLowerCase)
           .contains(field.name))
     )
 
