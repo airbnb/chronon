@@ -9,7 +9,6 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.util.{Success, Try}
 
