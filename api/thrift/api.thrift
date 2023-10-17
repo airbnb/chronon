@@ -413,3 +413,121 @@ struct TDataType {
     2: optional list<DataField> params
     3: optional string name // required only for struct types
 }
+
+/********************************  Embedding Framework ************************************************
+ *  declaratively specify embedding maintenance pipelines and query serving                           *
+ *  We leverate the semantics of Chronon's source API to specify the dataflows into an index          *
+ *  We create room to support multiple types of storages, model formats, data formats and index types *
+ ******************************************************************************************************/
+enum Storage {
+    LOCAL = 0,
+    S3 = 1,
+    HUGGING_FACE = 2
+}
+
+enum ModelFormat {
+    // direct model formats
+    ONNX = 0,
+    TENSOR_FLOW = 1,
+    XGBOOST_JSON = 2,
+    PICKLE_UNSAFE = 3,
+
+    // hugging face model formats
+    SENTENCE_TRANSFORMER = 100,
+    OPTIMUM_SENTENCE_TRANSFORMER = 101,
+
+    // remote model - need an RPC to get to it
+    REMOTE = 200
+}
+
+enum DataFormat {
+    // data formats
+    PARQUET = 200,
+    CSV = 201,
+    JSON = 202,
+    HIVE = 203, // not technically a format but we need to support it
+}
+
+struct ModelSpec {
+    1: optional Storage storage
+    2: optional ModelFormat format
+    3: optional string path
+    4: optional string jsonParams
+}
+
+struct StaticData {
+    1: optional Storage storage
+    2: optional DataFormat format
+    3: optional string path
+    4: optional string jsonParams
+}
+
+struct IndexSpec {
+    1: optional list<string> equalityFilterFields
+    2: optional list<string> rangeFilterFields
+    3: optional string partitionField
+    4: optional string embeddingField
+    5: optional string indexParamJson
+}
+
+struct EmbeddingSpec {
+    /**
+    * Just like rest of chronon, any option that doesn't impact the values in the index goes into metaData
+    * These can be things like execution parallelism, memory limits, compute cluster etc.
+    **/
+    1: optional MetaData metaData
+    /**
+    * Chronon's source abstraction is a powerful way to specify the dataflows into an embedding index.
+    * We support three types of sources. Each with three ways of maintaining the data in the index.
+    *
+    * Bootstrapping refers to initial creation of the index.
+    * Batch-Incremental refers to daily updates of the index.
+    * Realtime-Incremental refers to updates of the index as new events arrive.
+    *
+    * In the schema of these sources there should be an id column. This is the primary key of the index.
+    * 1. EventSource
+    *      - takes a hive table and an optional topic
+    *      - *Bootstrap*: the index with partitions specified by start_partition & latest_partition
+    *      - *Batch-Incremental*: daily, on every new partition we BULK INSERT new embeddings into the index
+    *      - *Realtime-Incremental*: alternatively, if topic is specified we will listen to new events and INSERT their embeddings
+    * 2. EntitySource
+    *      - takes a snapshot_table, a mutation_table and a mutation_topic.
+    *      - *Bootstrap*: The index with partitions specified by latest_partition of the snapshot_table.
+    *      - *Batch-Incremental*:
+    *          - Daily, on every new mutation_table partition we BULK *INSERT/UPDATE/DELETE* new embeddings into the index.
+    *          - If mutation_table is not specified, we will simply re-index data from the snapshot_table.
+    *          - Before values are ignored for updates. We simply upsert the after value.
+    *          - For deletes also the before value is ignored. We simply delete the corresponding entity from the index.
+    *      - *Realtime-Incremental*:
+    *          - alternatively, if mutation_topic is specified we will listen to new events and UPSERT or DELETE their embeddings*
+    * 3. JoinSource
+    *      - A join source simply takes an event/entity source and *enriches it with additional information.
+    *      - We follow the rules laid out above. For updates and deletes - we simply ignore the **before** value and upsert or delete the after values.
+    **/
+    2: optional Source dataSource
+    /**
+    * Python module that does preprocessing of the input data - such as text chunking, image downscaling, attribute filtering etc
+    * This is a data frame to data frame transformation.
+    *
+    **/
+    3: optional String preprocessor
+    /**
+    * This will be used for both batch inference - in two scenarios bootstrapping and batch-incremental update of the index.
+    * This same model will also be used for real-time-inference - for realtime-incremental update of the index.
+    *
+    * The model api has two methods - a batch_infer method that takes a dataframe and returns a dataframe with 'embedding' as a column.
+    *                               - a infer method that takes a dict and returns a list of dicts with 'embedding' column.
+    * Things like text chunking will produce multiple embeddings per input row, an additional element_id column can be specified.
+    *
+    **/
+    4: optional ModelSpec documentModel
+    5: optional ModelSpec queryModel
+    6: optional IndexSpec indexSpec
+    /**
+    * Advanced: (see: https://arxiv.org/abs/2305.15334)
+    * This is only required in scenarios where we want to parse out filters from a unstructured text query.
+    * We can eventually fine-tune a general queryParsing model based on the schema of the index.
+    * We expect the output of this model to be list of filters needed by the index
+    **/
+    7: optional ModelSpec queryParsingModel
+}
