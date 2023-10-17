@@ -6,7 +6,6 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.{GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
@@ -19,7 +18,6 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import java.{lang, util}
-import scala.collection.mutable.ListBuffer
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
@@ -244,9 +242,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   def buildLeftStreamingQuery(query: api.Query, defaultFieldNames: Seq[String]): String = {
     val queryParts = buildQueryParts(query)
+    val streamingInputTable =
+      Option(groupByConf.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
     s"""SELECT
        |  ${queryParts.selects.getOrElse(defaultFieldNames).mkString(",\n  ")}
-       |FROM streamingSourceTable
+       |FROM $streamingInputTable
        |WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}
        |""".stripMargin
   }
