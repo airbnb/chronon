@@ -168,7 +168,7 @@ object Metrics {
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
 
     def toTags: Array[String] = {
-      val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
+      val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String]).map(_.sanitize)
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
@@ -183,7 +183,10 @@ object Metrics {
       }
 
       joinNames.foreach(addTag(Tag.Join, _))
-      addTag(Tag.GroupBy, groupBy)
+
+      val groupByName = Option(groupBy).map(_.sanitize)
+      groupByName.foreach(addTag(Tag.GroupBy, _))
+
       addTag(Tag.StagingQuery, stagingQuery)
       addTag(Tag.Production, production.toString)
       addTag(Tag.Team, team)
