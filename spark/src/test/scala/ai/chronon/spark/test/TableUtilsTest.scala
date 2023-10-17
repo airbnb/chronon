@@ -7,8 +7,7 @@ import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 

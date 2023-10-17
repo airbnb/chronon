@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession, types}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
@@ -131,23 +131,6 @@ case class TableUtils(sparkSession: SparkSession) {
         .collect()
         .map(_.getString(0))
         .toSeq
-    }
-  }
-
-  def addPresentCol(field: StructField, reqColumns: Seq[String], result: ListBuffer[StructField]): Unit = {
-    field match {
-      case StructField(fieldName, dataType: StructType, _, _) =>
-        if (reqColumns.contains(fieldName)) {
-          result += StructField(fieldName, dataType)
-        } else {
-          val nestedFields = dataType.fields.map(nestField =>
-            StructField(s"$fieldName.${nestField.name}", nestField.dataType, nestField.nullable, nestField.metadata))
-          nestedFields.foreach(nestedField => addPresentCol(nestedField, reqColumns, result))
-        }
-      case StructField(fieldName, dataType, _, _) =>
-        if (reqColumns.contains(fieldName)) {
-          result += StructField(fieldName, dataType)
-        }
     }
   }
 
