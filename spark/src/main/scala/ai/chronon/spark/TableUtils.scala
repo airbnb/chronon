@@ -134,14 +134,14 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-
   def addPresentCol(field: StructField, reqColumns: Seq[String], result: ListBuffer[StructField]): Unit = {
     field match {
       case StructField(fieldName, dataType: StructType, _, _) =>
         if (reqColumns.contains(fieldName)) {
           result += StructField(fieldName, dataType)
         } else {
-          val nestedFields = dataType.fields.map(nestField => StructField(s"$fieldName.${nestField.name}", nestField.dataType, nestField.nullable, nestField.metadata))
+          val nestedFields = dataType.fields.map(nestField =>
+            StructField(s"$fieldName.${nestField.name}", nestField.dataType, nestField.nullable, nestField.metadata))
           nestedFields.foreach(nestedField => addPresentCol(nestedField, reqColumns, result))
         }
       case StructField(fieldName, dataType, _, _) =>
@@ -168,17 +168,6 @@ case class TableUtils(sparkSession: SparkSession) {
       .sorted
   }
 
-  // get all the field names including nested struct type field names
-  def getFieldNames(schema: StructType): Seq[String] = {
-    schema.fields.flatMap { field =>
-      field.dataType match {
-        case nestedSchema: StructType =>
-          field.name +: getFieldNames(nestedSchema)
-        case _ =>
-          Seq(field.name)
-      }
-    }
-  }
 
   def getSchemaFromTable(tableName: String): StructType = {
     sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema

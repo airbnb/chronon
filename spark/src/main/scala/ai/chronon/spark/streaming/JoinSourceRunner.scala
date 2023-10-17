@@ -32,8 +32,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
 
-  private case class Schemas(leftSchema: StructType,
-                             leftStreamSchema: StructType,
+  private case class Schemas(leftStreamSchema: StructType,
                              leftSourceSchema: StructType,
                              joinSchema: StructType,
                              joinSourceSchema: StructType)
@@ -93,13 +92,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     } else {
       val allSelects = query.selects.toScala
       val selects = allSelects.map { case (name, expr) => s"(${expr.toLowerCase}) AS $name" }.toSeq
-      println(s"input schema ${inputSchema.catalogString}")
-      println(s"selects ${selects.mkString(", ")}")
-      println(s"dummy df schema ${session.createDataFrame(session.sparkContext.emptyRDD[Row], inputSchema).schema.catalogString}")
-    val dummyDf = session.createDataFrame(session.sparkContext.emptyRDD[Row], inputSchema)
-      dummyDf.printSchema()
-        val dummyOutputDf = dummyDf.selectExpr(selects: _*)
-      dummyOutputDf.schema
+      session.createDataFrame(session.sparkContext.emptyRDD[Row], inputSchema).selectExpr(selects: _*).schema
     }
   }
 
@@ -114,7 +107,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     enrichedQuery
   }
 
-  private def buildSchemas(leftSchema:StructType): Schemas = {
+  private def buildSchemas(leftSchema: StructType): Schemas = {
     val source = groupByConf.streamingSource
     assert(source.get.isSetJoinSource, s"No JoinSource found in the groupBy: ${groupByConf.metaData.name}")
     assert(source.isDefined, s"No streaming source present in the groupBy: ${groupByConf.metaData.name}")
@@ -122,9 +115,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinSource: JoinSource = source.get.getJoinSource
     val left: Source = joinSource.getJoin.getLeft
     assert(left.topic != null, s"join source left side should have a topic")
-//    val leftSchema: StructType =
-//      SparkConversions.fromChrononType(api.StructType("InputAndSelectSchema", (servingInfoProxy.inputChrononSchema ++ servingInfoProxy.selectedChrononSchema).toSet.toArray)).asInstanceOf[StructType]
-//    SparkConversions.fromChrononType(servingInfoProxy.inputChrononSchema).asInstanceOf[StructType]
 
     // for entities there is reversal and mutation column additionally
     val reversalField: StructField = StructField(Constants.ReversalColumn, BooleanType)
@@ -159,7 +149,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
        |  ${joinSourceSchema.catalogString}
        |""".stripMargin)
 
-    Schemas(leftSchema, leftStreamSchema, leftSourceSchema, joinSchema, joinSourceSchema)
+    Schemas(leftStreamSchema, leftSourceSchema, joinSchema, joinSourceSchema)
   }
 
   private def servingInfoProxy: GroupByServingInfoParsed =
@@ -252,39 +242,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
-  def buildStreamingQuery: String = {
-    val streamingSource = groupByConf.streamingSource.get
-    val query = streamingSource.query
-
-    import scala.collection.JavaConverters._
-
-    val selects = Option(query.selects).map(_.asScala.toMap).orNull
-    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-    val fillIfAbsent = groupByConf.dataModel match {
-      case api.DataModel.Entities =>
-        Map(Constants.TimeColumn -> timeColumn, Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
-      case api.DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
-    }
-    val keys = groupByConf.getKeyColumns.asScala
-
-    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
-    val selectMap = Option(selects).getOrElse(Map.empty[String, String])
-    val keyWhereOption = keys
-      .map { key =>
-        s"${selectMap.getOrElse(key, key)} IS NOT NULL"
-      }
-      .mkString(" OR ")
-    val timeWheres = groupByConf.dataModel match {
-      case api.DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
-      case api.DataModel.Events => Seq(s"$timeColumn is NOT NULL")
-    }
-    val streamingInputTable = Option(groupByConf.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
-    QueryUtils.build(
-      selects,
-      streamingInputTable,
-      baseWheres ++ timeWheres :+ s"($keyWhereOption)",
-      fillIfAbsent = if (selects == null) null else fillIfAbsent
-    )
+  def buildLeftStreamingQuery(query: api.Query, defaultFieldNames: Seq[String]): String = {
+    val queryParts = buildQueryParts(query)
+    s"""SELECT
+       |  ${queryParts.selects.getOrElse(defaultFieldNames).mkString(",\n  ")}
+       |FROM streamingSourceTable
+       |WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}
+       |""".stripMargin
   }
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
@@ -294,26 +258,14 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val stream = buildStream(topic)
     val decoded = decode(stream)
 
-    val queryParts = buildQueryParts(left.query)
-    val streamingQuery =
-      s"""SELECT
-         |  ${queryParts.selects.getOrElse(decoded.df.schema.fieldNames.toSeq).mkString(",\n  ")}
-         |FROM streamingSourceTable WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}""".stripMargin
-    val tokens = {
-      val set = new java.util.HashSet[String]
-      streamingQuery.split("[^A-Za-z0-9_]").foreach(set.add)
-      set
-    }
+    val leftStreamingQuery = buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
+
     def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
       val queryParts = buildQueryParts(query)
-
-
       println(s"""
            |decoded schema: ${decoded.df.schema.catalogString}
            |queryParts: $queryParts
            |df schema: ${df.schema.prettyJson}
-           |tokens: ${tokens.toString}
-           |streaming query: ${streamingQuery}
            |""".stripMargin)
 
       // apply left.query
@@ -326,17 +278,20 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
     println(s"Upstream join request name: $joinRequestName")
 
-//    val leftColumns = schemas.leftSourceSchema.fieldNames
     val tableUtils = TableUtils(session)
-    val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
-    val leftColumns = tableUtils.getFieldNames(decoded.df.schema).filter(reqColumns.contains).toSeq
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery)
 
-    val existedFields: ListBuffer[StructField] = ListBuffer[StructField]()
-//    decoded.df.schema.foreach(col => tableUtils.addPresentCol(col, reqColumns, existedFields))
-    val leftSchema = StructType(decoded.df.schema.filter(col => reqColumns.map(col => if (col.contains(".")) col.split("\\.")(0) else col).contains(col.name)))
+    val leftSchema = StructType(
+      decoded.df.schema.filter(field =>
+        reqColumns
+          // handle nested struct, only the parent struct is needed here
+          .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
+          .contains(field.name))
+    )
+
+    val leftColumns = leftSchema.fieldNames
 
     val schemas = buildSchemas(leftSchema)
-
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames

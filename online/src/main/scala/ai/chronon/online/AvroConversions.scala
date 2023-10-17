@@ -1,7 +1,7 @@
 package ai.chronon.online
 
 import ai.chronon.api._
-import org.apache.avro.{LogicalTypes, Schema, SchemaBuilder}
+import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.util.Utf8
@@ -90,16 +90,6 @@ object AvroConversions {
       case DoubleType  => Schema.create(Schema.Type.DOUBLE)
       case BinaryType  => Schema.create(Schema.Type.BYTES)
       case BooleanType => Schema.create(Schema.Type.BOOLEAN)
-//      case ShortType => {
-//        val logicalType = LogicalTypes.fromSchema(
-//          SchemaBuilder.builder().intType()
-//        ).getName
-//
-//        val fieldSchema = Schema.create(Schema.Type.INT)
-//        fieldSchema.addProp("logicalType", logicalType)
-//        fieldSchema
-//      }
-
       case _ =>
         throw new UnsupportedOperationException(
           s"Cannot convert chronon type $dataType to avro type. Cast it to string please")
