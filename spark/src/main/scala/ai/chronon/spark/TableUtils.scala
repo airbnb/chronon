@@ -150,7 +150,6 @@ case class TableUtils(sparkSession: SparkSession) {
       .sorted
   }
 
-
   def getSchemaFromTable(tableName: String): StructType = {
     sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
