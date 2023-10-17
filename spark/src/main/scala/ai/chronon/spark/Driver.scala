@@ -743,7 +743,7 @@ object Driver {
       val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
         new JoinSourceRunner(groupByConf,
                              args.serializableProps,
-          true,
+                             args.debug(),
                              args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
       } else {
         val streamingSource = groupByConf.streamingSource
