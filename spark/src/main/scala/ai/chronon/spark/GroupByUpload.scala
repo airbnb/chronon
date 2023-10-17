@@ -10,9 +10,11 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.{Row, SparkSession, types}
 
 import scala.collection.Seq
+import scala.collection.mutable.ListBuffer
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.Try
 
@@ -120,7 +122,18 @@ object GroupByUpload {
           val streamingQuery =
             QueryUtils.build(selects, rootTable, query.wheres.toScala)
           val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
-          types.StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+          println(
+            s"""
+               |streaming query ${streamingQuery}
+               |required columns ${reqColumns.mkString(",")}
+               |""".stripMargin)
+          val existedFields: ListBuffer[StructField] = ListBuffer[StructField]()
+          fullInputSchema.foreach(col => tableUtils.addPresentCol(col, reqColumns, existedFields))
+          println(
+            s"""
+               |existed fields ${existedFields.mkString(",")}
+               |""".stripMargin)
+          types.StructType(existedFields.toSet.toArray)
         }
       groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
     } else {

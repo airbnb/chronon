@@ -5,10 +5,11 @@ import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession, types}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.util.{Success, Try}
 
@@ -133,6 +134,23 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+
+  def addPresentCol(field: StructField, reqColumns: Seq[String], result: ListBuffer[StructField]): Unit = {
+    field match {
+      case StructField(fieldName, dataType: StructType, _, _) =>
+        if (reqColumns.contains(fieldName)) {
+          result += StructField(fieldName, dataType)
+        } else {
+          val nestedFields = dataType.fields.map(nestField => StructField(s"$fieldName.${nestField.name}", nestField.dataType, nestField.nullable, nestField.metadata))
+          nestedFields.foreach(nestedField => addPresentCol(nestedField, reqColumns, result))
+        }
+      case StructField(fieldName, dataType, _, _) =>
+        if (reqColumns.contains(fieldName)) {
+          result += StructField(fieldName, dataType)
+        }
+    }
+  }
+
   // Given a table and a query extract the schema of the columns involved as input.
   def getColumnsFromQuery(query: String): Seq[String] = {
     val parser = sparkSession.sessionState.sqlParser
@@ -145,8 +163,21 @@ case class TableUtils(sparkSession: SparkSession) {
       }
       .flatten
       .map(_.replace("`", ""))
+      .map(_.toLowerCase)
       .distinct
       .sorted
+  }
+
+  // get all the field names including nested struct type field names
+  def getFieldNames(schema: StructType): Seq[String] = {
+    schema.fields.flatMap { field =>
+      field.dataType match {
+        case nestedSchema: StructType =>
+          field.name +: getFieldNames(nestedSchema)
+        case _ =>
+          Seq(field.name)
+      }
+    }
   }
 
   def getSchemaFromTable(tableName: String): StructType = {

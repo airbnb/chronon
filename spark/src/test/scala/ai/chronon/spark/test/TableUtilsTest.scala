@@ -27,6 +27,7 @@ class TableUtilsTest {
         |  column_c AS not_this_one,
         |  COALESCE(IF(column_d, column_e, NULL), column_e) AS not_this_one_either,
         |  column_nested.first.second AS not_this_one_as_well
+        |  cast(unit_timestamp(signal.context.timestamp)) as bigint) AS timestamp
         |FROM fake_table
         |WHERE column_f IS NOT NULL AND column_g != 'Something' AND column_d > 0
         |""".stripMargin
