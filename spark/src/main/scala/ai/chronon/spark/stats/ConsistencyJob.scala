@@ -65,7 +65,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
                       Some(Seq(joinConf.metaData.loggedTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return
-    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end, TableUtils(session))
+    val join = new chronon.spark.Join(buildComparisonJoin(), unfilledRanges.last.end, tableUtils)
     println("Starting compute Join for comparison table")
     val compareDf = join.computeJoin(Some(30))
     println("======= side-by-side comparison schema =======")
