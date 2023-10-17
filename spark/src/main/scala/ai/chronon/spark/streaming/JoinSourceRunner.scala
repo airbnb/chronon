@@ -120,7 +120,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val mutationFields: StructType = StructType(Seq(reversalField, mutationTsField))
     var leftStreamSchema: StructType = leftSchema
     if (left.isSetEntities) {
-      leftStreamSchema = StructType(mutationFields ++ leftStreamSchema)
+      leftStreamSchema = StructType((mutationFields ++ leftStreamSchema).distinct)
     }
     val leftSourceSchema: StructType = outputSchema(leftStreamSchema, enrichQuery(left.query)) // apply same thing
 
@@ -279,19 +279,21 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"Upstream join request name: $joinRequestName")
 
     val tableUtils = TableUtils(session)
-    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery)
+    // the decoded schema is in lower case
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase).toSet.toSeq
 
     val leftSchema = StructType(
-      decoded.df.schema.filter(field =>
-        reqColumns
-        // handle nested struct, only the parent struct is needed here
-          .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
-          // the decoded schema is in lower case
-          .map(_.toLowerCase)
-          .contains(field.name))
+      decoded.df.schema
+        .filter(field =>
+          reqColumns
+          // handle nested struct, only the parent struct is needed here
+            .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
+            .contains(field.name))
+        .toSet
+        .toArray
     )
 
-    val leftColumns = leftSchema.fieldNames
+    val leftColumns = decoded.df.schema.fieldNames.filter(reqColumns.contains).toSeq
 
     val schemas = buildSchemas(leftSchema)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
