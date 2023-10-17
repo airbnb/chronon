@@ -145,7 +145,6 @@ case class TableUtils(sparkSession: SparkSession) {
       }
       .flatten
       .map(_.replace("`", ""))
-      .map(_.toLowerCase)
       .distinct
       .sorted
   }

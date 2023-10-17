@@ -279,7 +279,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"Upstream join request name: $joinRequestName")
 
     val tableUtils = TableUtils(session)
-    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery)
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase)
 
     val leftSchema = StructType(
       decoded.df.schema.filter(field =>
