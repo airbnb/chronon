@@ -711,6 +711,10 @@ object GroupBy {
     query
   }
 
+  // Required for pyspark support
+  def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], accuracy: api.Accuracy): String = {
+    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, accuracy)
+  }
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: BaseTableUtils,

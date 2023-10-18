@@ -33,7 +33,7 @@ object PySparkUtils {
   /**
     * Type parameters are difficult to support in Pyspark, so we provide these helper methods for ThriftJsonCodec.fromJsonStr
     * @param groupByJson a JSON string representing a group by
-    * @return Empty string optional
+    * @return Chronon Scala API GroupBy object
   */
   def parseGroupBy(groupByJson: String): api.GroupBy = {
     ThriftJsonCodec.fromJsonStr[api.GroupBy](groupByJson, check =  true, classOf[api.GroupBy])
@@ -42,10 +42,29 @@ object PySparkUtils {
   /**
     * Type parameters are difficult to support in Pyspark, so we provide these helper methods for ThriftJsonCodec.fromJsonStr
     * @param joinJson a JSON string representing a join
-    * @return Empty string optional
+    * @return Chronon Scala API Join object
   */
   def parseJoin(joinJson: String): api.Join = {
     ThriftJsonCodec.fromJsonStr[api.Join](joinJson, check = true, classOf[api.Join])
+  }
+
+  /**
+    * Type parameters are difficult to support in Pyspark, so we provide these helper methods for ThriftJsonCodec.fromJsonStr
+    * @param sourceJson a JSON string representing a source.
+    * @return Chronon Scala API Source object
+    */
+  def parseSource(sourceJson: String): api.Source = {
+    ThriftJsonCodec.fromJsonStr[api.Source](sourceJson, check = true, classOf[api.Source])
+  }
+
+  /**
+    * Helper function to get Temporal or Snapshot Accuracy
+    *
+    * @param getTemporal boolean value that will decide if we return temporal or snapshot accuracy .
+    * @return api.Accuracy
+    */
+  def getAccuracy(getTemporal: Boolean): api.Accuracy = {
+    if (getTemporal) api.Accuracy.TEMPORAL else api.Accuracy.SNAPSHOT
   }
 
 
