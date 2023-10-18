@@ -6,7 +6,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.GenericRowHandler
+import ai.chronon.spark.{GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
@@ -30,8 +30,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
 
-  private case class Schemas(leftSchema: StructType,
-                             leftStreamSchema: StructType,
+  private case class Schemas(leftStreamSchema: StructType,
                              leftSourceSchema: StructType,
                              joinSchema: StructType,
                              joinSourceSchema: StructType)
@@ -90,7 +89,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       inputSchema
     } else {
       val allSelects = query.selects.toScala
-      val selects = allSelects.map { case (name, expr) => s"($expr) AS $name" }.toSeq
+      val selects = allSelects.map { case (name, expr) => s"(${expr.toLowerCase}) AS $name" }.toSeq
       session.createDataFrame(session.sparkContext.emptyRDD[Row], inputSchema).selectExpr(selects: _*).schema
     }
   }
@@ -106,7 +105,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     enrichedQuery
   }
 
-  private def buildSchemas: Schemas = {
+  private def buildSchemas(leftSchema: StructType): Schemas = {
     val source = groupByConf.streamingSource
     assert(source.get.isSetJoinSource, s"No JoinSource found in the groupBy: ${groupByConf.metaData.name}")
     assert(source.isDefined, s"No streaming source present in the groupBy: ${groupByConf.metaData.name}")
@@ -114,8 +113,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinSource: JoinSource = source.get.getJoinSource
     val left: Source = joinSource.getJoin.getLeft
     assert(left.topic != null, s"join source left side should have a topic")
-    val leftSchema: StructType =
-      SparkConversions.fromChrononType(servingInfoProxy.inputChrononSchema).asInstanceOf[StructType]
 
     // for entities there is reversal and mutation column additionally
     val reversalField: StructField = StructField(Constants.ReversalColumn, BooleanType)
@@ -123,7 +120,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val mutationFields: StructType = StructType(Seq(reversalField, mutationTsField))
     var leftStreamSchema: StructType = leftSchema
     if (left.isSetEntities) {
-      leftStreamSchema = StructType(mutationFields ++ leftStreamSchema)
+      leftStreamSchema = StructType((mutationFields ++ leftStreamSchema).distinct)
     }
     val leftSourceSchema: StructType = outputSchema(leftStreamSchema, enrichQuery(left.query)) // apply same thing
 
@@ -150,7 +147,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
        |  ${joinSourceSchema.catalogString}
        |""".stripMargin)
 
-    Schemas(leftSchema, leftStreamSchema, leftSourceSchema, joinSchema, joinSourceSchema)
+    Schemas(leftStreamSchema, leftSourceSchema, joinSchema, joinSourceSchema)
   }
 
   private def servingInfoProxy: GroupByServingInfoParsed =
@@ -158,6 +155,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   private def decode(dataStream: DataStream): DataStream = {
     val streamDecoder = apiImpl.streamDecoder(servingInfoProxy)
+
     val df = dataStream.df
     val ingressContext = context.withSuffix("ingress")
     import session.implicits._
@@ -198,33 +196,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     dataStream.copy(df = des)
   }
 
-  private case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
-  private def buildQueryParts(query: Query): QueryParts = {
-    val selects = Option(query.selects).map(_.toScala.toMap).orNull
-    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-
-    val fillIfAbsent = (groupByConf.dataModel match {
-      case DataModel.Entities =>
-        Map(Constants.ReversalColumn -> Constants.ReversalColumn,
-            Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
-      case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
-    })
-
-    val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
-    val timeWheres = groupByConf.dataModel match {
-      case DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
-      case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
-    }
-    val wheres = baseWheres ++ timeWheres
-
-    val allSelects = Option(selects).map(fillIfAbsent ++ _).map { m =>
-      m.map {
-        case (name, expr) => s"($expr) AS $name"
-      }.toSeq
-    }
-    QueryParts(allSelects, wheres)
-  }
-
   private def internalStreamBuilder(streamType: String): StreamBuilder = {
     val suppliedBuilder = apiImpl.generateStreamBuilder(streamType)
     if (suppliedBuilder == null) {
@@ -250,15 +221,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val stream = buildStream(topic)
     val decoded = decode(stream)
 
+    val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
+
     def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
-      val queryParts = buildQueryParts(query)
+      val queryParts = groupByConf.buildQueryParts(query)
       println(s"""
            |decoded schema: ${decoded.df.schema.catalogString}
            |queryParts: $queryParts
+           |df schema: ${df.schema.prettyJson}
            |""".stripMargin)
 
       // apply left.query
-      val selected = queryParts.selects.map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
+      val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
       selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
     }
 
@@ -266,8 +240,25 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     // key format joins/<team>/join_name
     val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
     println(s"Upstream join request name: $joinRequestName")
-    val schemas = buildSchemas
-    val leftColumns = schemas.leftSourceSchema.fieldNames
+
+    val tableUtils = TableUtils(session)
+    // the decoded schema is in lower case
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase).toSet.toSeq
+
+    val leftSchema = StructType(
+      decoded.df.schema
+        .filter(field =>
+          reqColumns
+          // handle nested struct, only the parent struct is needed here
+            .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
+            .contains(field.name))
+        .toSet
+        .toArray
+    )
+
+    val leftColumns = decoded.df.schema.fieldNames.filter(reqColumns.contains).toSeq
+
+    val schemas = buildSchemas(leftSchema)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames

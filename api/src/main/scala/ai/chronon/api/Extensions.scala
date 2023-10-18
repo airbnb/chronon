@@ -512,6 +512,87 @@ object Extensions {
       groupBy.hasDerivations && groupBy.derivations.toScala.areDerivationsRenameOnly
     lazy val derivationExpressionSet: Set[String] =
       if (groupBy.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
+
+    case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
+
+    def buildQueryParts(query: Query): QueryParts = {
+      val selects = query.getQuerySelects
+      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+
+      val fillIfAbsent = (groupBy.dataModel match {
+        case DataModel.Entities =>
+          Map(Constants.ReversalColumn -> Constants.ReversalColumn,
+              Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
+        case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+      })
+
+      val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
+      val wheres = baseWheres ++ timeWheres(timeColumn)
+
+      val allSelects = Option(selects).map(fillIfAbsent ++ _).map { m =>
+        m.map {
+          case (name, expr) => s"($expr) AS $name"
+        }.toSeq
+      }
+      QueryParts(allSelects, wheres)
+    }
+
+    // build left streaming query for join source runner
+    def buildLeftStreamingQuery(query: Query, defaultFieldNames: Seq[String]): String = {
+      val queryParts = groupBy.buildQueryParts(query)
+      val streamingInputTable =
+        Option(groupBy.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
+      s"""SELECT
+         |  ${queryParts.selects.getOrElse(defaultFieldNames).mkString(",\n  ")}
+         |FROM $streamingInputTable
+         |WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}
+         |""".stripMargin
+    }
+
+    def buildStreamingQuery: String = {
+      val streamingSource = groupBy.streamingSource.get
+      if (!streamingSource.isSetJoinSource) {
+        val query = streamingSource.query
+        val selects = query.getQuerySelects
+        val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+        val fillIfAbsent = groupBy.dataModel match {
+          case DataModel.Entities =>
+            Map(Constants.TimeColumn -> timeColumn,
+                Constants.ReversalColumn -> null,
+                Constants.MutationTimeColumn -> null)
+          case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+        }
+        val keys = groupBy.getKeyColumns.toScala
+
+        val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
+        val selectMap = Option(selects).getOrElse(Map.empty[String, String])
+        val keyWhereOption = keys
+          .map { key =>
+            s"${selectMap.getOrElse(key, key)} IS NOT NULL"
+          }
+          .mkString(" OR ")
+        val streamingInputTable =
+          Option(groupBy.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
+        QueryUtils.build(
+          selects,
+          streamingInputTable,
+          baseWheres ++ timeWheres(timeColumn) :+ s"($keyWhereOption)",
+          fillIfAbsent = if (selects == null) null else fillIfAbsent
+        )
+      } else {
+        //todo: this logic is similar in JoinSourceRunner, we can simplify it to a single place
+        val query = streamingSource.getJoinSource.join.left.query
+        groupBy.buildLeftStreamingQuery(query, groupBy.keyColumns.toScala)
+      }
+    }
+
+    private def timeWheres(timeColumn: String) = {
+      groupBy.dataModel match {
+        case DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
+        case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
+      }
+    }
+
   }
 
   implicit class StringOps(string: String) {
@@ -906,6 +987,8 @@ object Extensions {
         )
         .getOrElse(Seq.empty)
     }
+
+    def getQuerySelects: Map[String, String] = Option(query.selects).map(_.toScala.toMap).orNull
   }
 
   implicit class ThrowableOps(throwable: Throwable) {
