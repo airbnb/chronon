@@ -196,33 +196,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     dataStream.copy(df = des)
   }
 
-  private case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
-  private def buildQueryParts(query: Query): QueryParts = {
-    val selects = Option(query.selects).map(_.toScala.toMap).orNull
-    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-
-    val fillIfAbsent = (groupByConf.dataModel match {
-      case DataModel.Entities =>
-        Map(Constants.ReversalColumn -> Constants.ReversalColumn,
-            Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
-      case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
-    })
-
-    val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
-    val timeWheres = groupByConf.dataModel match {
-      case DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
-      case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
-    }
-    val wheres = baseWheres ++ timeWheres
-
-    val allSelects = Option(selects).map(fillIfAbsent ++ _).map { m =>
-      m.map {
-        case (name, expr) => s"($expr) AS $name"
-      }.toSeq
-    }
-    QueryParts(allSelects, wheres)
-  }
-
   private def internalStreamBuilder(streamType: String): StreamBuilder = {
     val suppliedBuilder = apiImpl.generateStreamBuilder(streamType)
     if (suppliedBuilder == null) {
@@ -240,16 +213,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
-  def buildLeftStreamingQuery(query: api.Query, defaultFieldNames: Seq[String]): String = {
-    val queryParts = buildQueryParts(query)
-    val streamingInputTable =
-      Option(groupByConf.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
-    s"""SELECT
-       |  ${queryParts.selects.getOrElse(defaultFieldNames).mkString(",\n  ")}
-       |FROM $streamingInputTable
-       |WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}
-       |""".stripMargin
-  }
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
@@ -258,10 +221,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val stream = buildStream(topic)
     val decoded = decode(stream)
 
-    val leftStreamingQuery = buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
+    val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
 
     def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
-      val queryParts = buildQueryParts(query)
+      val queryParts = groupByConf.buildQueryParts(query)
       println(s"""
            |decoded schema: ${decoded.df.schema.catalogString}
            |queryParts: $queryParts
@@ -269,7 +232,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
            |""".stripMargin)
 
       // apply left.query
-      val selected = queryParts.selects.map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
+      val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
       selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
     }
 
