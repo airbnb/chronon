@@ -149,6 +149,24 @@ case class TableUtils(sparkSession: SparkSession) {
       .sorted
   }
 
+  // get all the field names including nested struct type field names
+  def getFieldNames(schema: StructType): Seq[String] = {
+    schema.fields.flatMap { field =>
+      field.dataType match {
+        case nestedSchema: StructType =>
+          val nestedStruct = StructType(
+            nestedSchema.fields.map(nestField =>
+              StructField(s"${field.name}.${nestField.name}",
+                          nestField.dataType,
+                          nestField.nullable,
+                          nestField.metadata)))
+          field.name +: getFieldNames(nestedStruct)
+        case _ =>
+          Seq(field.name)
+      }
+    }
+  }
+
   def getSchemaFromTable(tableName: String): StructType = {
     sparkSession.sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }

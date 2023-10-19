@@ -7,7 +7,7 @@ import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
@@ -41,6 +41,23 @@ class TableUtilsTest {
                        "column_g",
                        "column_nested.first.second").sorted
     assertEquals(expected, columns.sorted)
+  }
+
+  @Test
+  def GetFieldNamesTest(): Unit = {
+    val schema = types.StructType(
+      Seq(
+        types.StructField("name", types.StringType, nullable = true),
+        types.StructField("age", types.IntegerType, nullable = false),
+        types.StructField("address", types.StructType(Seq(
+          types.StructField("street", types.StringType, nullable = true),
+          types.StructField("city", types.StringType, nullable = true)
+        )))
+      )
+    )
+    val expectedFieldNames = Seq("name", "age", "address", "address.street", "address.city")
+    val actualFieldNames = tableUtils.getFieldNames(schema)
+    assertEquals(expectedFieldNames, actualFieldNames)
   }
 
   private def testInsertPartitions(tableName: String,
