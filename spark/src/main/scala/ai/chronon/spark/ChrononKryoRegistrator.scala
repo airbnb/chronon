@@ -101,6 +101,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.expressions.Descending$",
       "org.apache.spark.sql.catalyst.expressions.NullsFirst$",
       "org.apache.spark.sql.catalyst.expressions.NullsLast$",
+      "org.apache.spark.sql.catalyst.util.RebaseDateTime$",
       "scala.collection.IndexedSeqLike$Elements",
       "org.apache.spark.unsafe.types.UTF8String",
       "scala.reflect.ClassTag$GenericClassTag",
