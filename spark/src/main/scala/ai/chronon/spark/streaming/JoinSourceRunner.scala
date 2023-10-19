@@ -256,14 +256,17 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         .toArray
     )
 
-    val leftColumns = decoded.df.schema.fieldNames.filter(reqColumns.contains).toSeq
-
     val schemas = buildSchemas(leftSchema)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
+    val leftColumns = schemas.leftSourceSchema.fieldNames
+    println(s"""
+         |left columns ${leftColumns.mkString(",")}
+         |reqColumns ${reqColumns.mkString(",")}
+         |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
+         |""".stripMargin)
 
-    println(s"Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis")
     // todo: add proper timestamp to the fetcher
     // leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
