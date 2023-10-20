@@ -262,6 +262,7 @@ struct GroupBy {
     5: optional Accuracy accuracy
     // Optional start date for a group by backfill, if it's unset then no historical partitions will be generate
     6: optional string backfillStartDate
+    7: optional string module_name
 }
 
 struct JoinPart {

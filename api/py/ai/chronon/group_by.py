@@ -1,8 +1,8 @@
 import ai.chronon.api.ttypes as ttypes
 import ai.chronon.utils as utils
 import logging
-import inspect
 import json
+import sys
 from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
@@ -438,7 +438,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         "lag": lag
     })
     # get caller's filename to assign team
-    team = inspect.stack()[1].filename.split("/")[-2]
+    team = sys._getframe().f_back.f_code.co_filename.split("/")[-2]
 
     column_tags = {}
     if aggregations:
@@ -460,14 +460,26 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         tableProperties=table_properties,
         team=team,
         offlineSchedule=offline_schedule)
-
+    
+    # The module name of the GroupBy is found by finding the module that corresponds to the frame
+    # before the frame that has the module name importlib._bootstrap
+    module_name = ''
+    i = 1
+    while True:
+        cur_module_name = sys._getframe(i).f_globals['__name__']
+        if cur_module_name == 'importlib._bootstrap':
+            break
+        module_name = cur_module_name
+        i = i + 1
+        
     group_by = ttypes.GroupBy(
         sources=sources,
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata,
         backfillStartDate=backfill_start_date,
-        accuracy=accuracy
+        accuracy=accuracy,
+        module_name=module_name
     )
     validate_group_by(group_by)
     return group_by

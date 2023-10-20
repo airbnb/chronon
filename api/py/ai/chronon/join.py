@@ -3,7 +3,6 @@ import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
 import copy
-import gc
 import importlib
 import json
 import logging
@@ -41,15 +40,9 @@ def JoinPart(group_by: api.GroupBy,
     """
     # used for reset for next run
     import_copy = __builtins__['__import__']
-    # get group_by's module info from garbage collector
-    gc.collect()
-    group_by_module_name = None
-    for ref in gc.get_referrers(group_by):
-        if '__name__' in ref and (ref['__name__'].startswith("group_bys") or ".group_bys." in ref['__name__']):
-            group_by_module_name = ref['__name__']
-            break
-    if group_by_module_name:
-        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+    group_by_module_name = group_by.module_name
+    if group_by_module_name and 'group_bys.' in group_by_module_name:
+        logging.debug("group_by's module info: {}".format(group_by_module_name))
         group_by_module = importlib.import_module(group_by_module_name)
         __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
     else:
