@@ -736,9 +736,7 @@ object Driver {
         onlineJar.foreach(session.sparkContext.addJar)
       implicit val apiImpl = args.impl(args.serializableProps)
       val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
-        new JoinSourceRunner(groupByConf,
-                             args.serializableProps,
-                             args.debug()).chainedStreamingQuery.start()
+        new JoinSourceRunner(groupByConf, args.serializableProps, args.debug()).chainedStreamingQuery.start()
       } else {
         val streamingSource = groupByConf.streamingSource
         assert(streamingSource.isDefined,

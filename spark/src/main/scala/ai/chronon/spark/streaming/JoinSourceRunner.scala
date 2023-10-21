@@ -22,8 +22,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
-class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(
-    implicit
+class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(implicit
     session: SparkSession,
     apiImpl: Api)
     extends Serializable {
