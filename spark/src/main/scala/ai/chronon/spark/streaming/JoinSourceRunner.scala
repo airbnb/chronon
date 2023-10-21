@@ -22,7 +22,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
-class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
+class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean)(
     implicit
     session: SparkSession,
     apiImpl: Api)
@@ -264,7 +264,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     println(s"""
          |left columns ${leftColumns.mkString(",")}
          |reqColumns ${reqColumns.mkString(",")}
-         |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
+         |Fetching upstream join to enrich the stream...
          |""".stripMargin)
 
     // todo: add proper timestamp to the fetcher
@@ -279,8 +279,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             Request(joinRequestName, keyMap)
           }
 
-          //Wait for parent stream to complete
-          Thread.sleep(lagMillis)
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects

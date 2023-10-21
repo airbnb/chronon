@@ -699,11 +699,6 @@ object Driver {
         required = false,
         default = Some(false),
         descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
-      val lagMillis: ScallopOption[Int] = opt[Int](
-        required = false,
-        default = Some(DEFAULT_LAG_MILLIS),
-        descr = "Lag time for chaining, before fetching upstream join results, in milliseconds. Default 2 seconds"
-      )
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
@@ -743,8 +738,7 @@ object Driver {
       val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
         new JoinSourceRunner(groupByConf,
                              args.serializableProps,
-                             args.debug(),
-                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
+                             args.debug()).chainedStreamingQuery.start()
       } else {
         val streamingSource = groupByConf.streamingSource
         assert(streamingSource.isDefined,
