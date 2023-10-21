@@ -4,7 +4,7 @@ import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel}
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.{RowWrapper, SparkConversions}
@@ -623,8 +623,15 @@ object GroupBy {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
 
+    val selects = Option(source.query.selects)
+      .map(_.toScala.map(keyValue => {
+        val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+        (keyValue._1,
+         if (keyValue._2.contains(Constants.ChrononRunDs)) parametricMacro.replace(keyValue._2) else keyValue._2)
+      }))
+      .orNull
     val query = api.QueryUtils.build(
-      Option(source.query.selects).map(_.toScala).orNull,
+      selects,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
