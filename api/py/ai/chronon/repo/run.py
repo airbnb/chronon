@@ -406,17 +406,8 @@ class Runner:
                         print("All good. No need to start a new app.")
                         return
                     elif self.mode == 'streaming-client':
-                        current_user = os.getlogin()
-                        foreign_user_apps = [app for app in filtered_apps if app.get("user","") != current_user]
-                        if foreign_user_apps:
-                            msg = (f"Found active streaming apps submitted by a different user from {current_user}. "
-                                  "Please clean these apps manually following the kill commands before attempting "
-                                  "again:\n{}".format(
-                                      "\n".join([json.dumps(app) for app in foreign_user_apps])))
-                            assert not foreign_user_apps, msg
-                        print("Killing former streaming jobs")
-                        for app in filtered_apps:
-                            check_call(app["kill_cmd"])
+                        raise RuntimeError("Attempting to submit an application in client mode, but there's already"
+                                           " an existing one running.")
                     else:
                         print("Found streaming apps that don't belong to {user}. In mode {mode} this is a fail")
             command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
