@@ -175,7 +175,10 @@ class Join(joinConf: api.Join,
           val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
           val joinPart = partMetadata.joinPart
           val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
-          if (selects.isDefined && selects.get.exists(_.values.exists(_.contains(Constants.ChrononRunDs)))) {
+          if (
+            selects.isDefined && selects.get.nonEmpty && selects.get.exists(selectsMap =>
+              Option(selectsMap).isDefined && selectsMap.values.exists(_.contains(Constants.ChrononRunDs)))
+          ) {
             assert(
               leftRange.isSingleDay,
               s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
