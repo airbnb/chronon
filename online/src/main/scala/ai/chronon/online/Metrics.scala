@@ -2,7 +2,6 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online.Metrics.{Context, Environment}
 import com.timgroup.statsd.NonBlockingStatsDClient
 
 import scala.util.ScalaJavaConversions.ListOps
@@ -107,7 +106,7 @@ object Metrics {
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
 
-    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline.", "localhost", statsPort)
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline", "localhost", statsPort)
   }
 
   case class Context(environment: Environment,
