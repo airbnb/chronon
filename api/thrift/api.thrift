@@ -462,7 +462,11 @@ struct StaticData {
     4: optional string jsonParams
 }
 
-struct IndexSpec {
+/**
+* The metadata for the index is propagated down from the embeddingSpec.
+* The index doesn't exist in a vacuum, it is always a part of the larger embedding spec.
+**/
+struct EmbeddingIndexSpec {
     1: optional list<string> equalityFilterFields
     2: optional list<string> rangeFilterFields
     3: optional string partitionField
@@ -476,6 +480,7 @@ struct EmbeddingSpec {
     * These can be things like execution parallelism, memory limits, compute cluster etc.
     **/
     1: optional MetaData metaData
+
     /**
     * Chronon's source abstraction is a powerful way to specify the dataflows into an embedding index.
     * We support three types of sources. Each with three ways of maintaining the data in the index.
@@ -502,7 +507,8 @@ struct EmbeddingSpec {
     *          - alternatively, if mutation_topic is specified we will listen to new events and UPSERT or DELETE their embeddings*
     * 3. JoinSource
     *      - A join source simply takes an event/entity source and *enriches it with additional information.
-    *      - We follow the rules laid out above. For updates and deletes - we simply ignore the **before** value and upsert or delete the after values.
+    *      - For updates and deletes - we simply ignore the **before** value and upsert or delete the after values.
+    *      - Before's are ignored because we can't enrich with information in the past.
     **/
     2: optional Source dataSource
     /**
