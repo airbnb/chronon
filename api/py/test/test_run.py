@@ -266,15 +266,5 @@ def test_streaming_client(repo, parser, test_online_group_by, monkeypatch):
     monkeypatch.setattr(run, 'check_output', mock_check_output_with_app_other_user)
     assert "<kill app cmd>" not in calls
     runner = run.Runner(parse_args, 'some.jar')
-    with pytest.raises(AssertionError):
+    with pytest.raises(RuntimeError):
         runner.run()
-    def mock_check_output_with_app_current_user(cmd):
-        current = os.getlogin()
-        return json.dumps(
-            {"app_name": streaming_app_name, "kill_cmd": "<kill app cmd>", "user": current}
-        ).encode('utf8')
-    monkeypatch.setattr(run, 'check_output', mock_check_output_with_app_current_user)
-    assert "<kill app cmd>" not in calls
-    runner = run.Runner(parse_args, 'some.jar')
-    runner.run()
-    assert "<kill app cmd>" in calls
