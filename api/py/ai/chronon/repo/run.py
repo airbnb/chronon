@@ -408,8 +408,6 @@ class Runner:
                     elif self.mode == 'streaming-client':
                         raise RuntimeError("Attempting to submit an application in client mode, but there's already"
                                            " an existing one running.")
-                    else:
-                        print("Found streaming apps that don't belong to {user}. In mode {mode} this is a fail")
             command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
                 script=self.spark_submit,
                 jar=self.jar_path,
