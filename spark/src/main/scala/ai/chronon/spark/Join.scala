@@ -12,7 +12,7 @@ import org.apache.spark.sql.functions._
 
 import scala.collection.Seq
 import scala.collection.mutable
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
@@ -174,6 +174,16 @@ class Join(joinConf: api.Join,
         case (partMetadata, coveringSets) =>
           val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
           val joinPart = partMetadata.joinPart
+          // if the join part contains ChrononRunDs macro, then we need to make sure the join is for a single day
+          val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
+          if (
+            selects.isDefined && selects.get.nonEmpty && selects.get.exists(selectsMap =>
+              Option(selectsMap).isDefined && selectsMap.values.exists(_.contains(Constants.ChrononRunDs)))
+          ) {
+            assert(
+              leftRange.isSingleDay,
+              s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
+          }
           computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
       }
 

@@ -27,11 +27,16 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     extends DataRange
     with Ordered[PartitionRange] {
 
-  def valid: Boolean =
+  def valid: Boolean = {
     (Option(start), Option(end)) match {
       case (Some(s), Some(e)) => s <= e
       case _                  => true
     }
+  }
+
+  def isSingleDay: Boolean = {
+    start == end
+  }
 
   def intersect(other: PartitionRange): PartitionRange = {
     // lots of null handling
