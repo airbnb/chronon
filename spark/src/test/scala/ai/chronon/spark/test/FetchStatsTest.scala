@@ -142,7 +142,7 @@ class FetchStatsTest extends TestCase {
     analyzer.analyzeJoin(joinConf)
 
     // Request drifts
-    val driftRequest = StatsRequest(joinConf.metaData.nameToFilePath + "__drift", None, None)
+    val driftRequest = StatsRequest(joinConf.metaData.nameToFilePath + "/drift", None, None)
     val fetchedDriftSeries = fetchStatsSeries(driftRequest, mockApi)
     println(gson.toJson(fetchedDriftSeries.values.get))
   }
