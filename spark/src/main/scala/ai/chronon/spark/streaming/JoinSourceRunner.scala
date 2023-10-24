@@ -48,6 +48,23 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   val keyColumns: Array[String] = groupByConf.keyColumns.toScala.toArray
   val valueColumns: Array[String] = groupByConf.aggregationInputs ++ additionalColumns
 
+  private def getProp(prop: String, default: String) = session.conf.get(s"spark.chronon.stream.chain.${prop}", default)
+
+  // when true, we will use the event time of the event to fetchJoin, otherwise we use the current time
+  private val useEventTimeForQuery: Boolean = getProp("event_time_query", "true").toBoolean
+
+  // this is the logical timestamp for a set of rows in a micro-batch
+  // we will apply any delay based on this timestamp at this percentile
+  private val timePercentile: Double = getProp("time_percentile", "0.95").toDouble
+
+  // each micro-batch will be delayed by this amount of time
+  // if the micro-batch is already delayed by more than this amount no delay will be added
+  private val minimumQueryDelayMs: Int = getProp("query_delay_ms", "0").toInt
+
+  // we will add this shift to the timestamp of the query before issuing fetchJoin
+  // in theory this will cause online offline skew, but it is needed when timestamps of the events to join
+  private val queryShiftMs: Int = getProp("query_shift_ms", "0").toInt
+
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
     private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
@@ -213,6 +230,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
+  def percentile(arr: Array[Long], p: Double): Long = {
+    val sorted = arr.sorted
+    val k = math.ceil((sorted.length - 1) * p).toInt
+    sorted(k)
+  }
+
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
@@ -268,19 +291,39 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
          |""".stripMargin)
 
     // todo: add proper timestamp to the fetcher
-    // leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
+    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         var fetcher: Fetcher = null
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          if (fetcher == null) { fetcher = apiImpl.buildFetcher(debug = debug) }
-          val requests = rows.toScala.map { row =>
-            val keyMap = row.getValuesMap[AnyRef](leftColumns)
-            Request(joinRequestName, keyMap)
+          if (fetcher == null) {
+            println(s"Initializing Fetcher. ${System.currentTimeMillis()}")
+            fetcher = apiImpl.buildFetcher(debug = debug)
+            context.increment("chain.fetcher.init")
           }
 
-          //Wait for parent stream to complete
-          Thread.sleep(lagMillis)
+          val requests = rows.toScala.map { row =>
+            val keyMap = row.getValuesMap[AnyRef](leftColumns)
+            val eventTs = row.get(leftTimeIndex).asInstanceOf[Long]
+            context.distribution(Metrics.Name.LagMillis, System.currentTimeMillis() - eventTs)
+            val ts = if (useEventTimeForQuery) eventTs else System.currentTimeMillis()
+            Request(joinRequestName, keyMap, atMillis = Some(ts + queryShiftMs))
+          }
+
+          if (minimumQueryDelayMs > 0) {
+            val microBatchTimestamp = percentile(requests.map(_.atMillis.get).toArray, timePercentile)
+            val currentTimestamp = System.currentTimeMillis()
+            val lag = currentTimestamp - microBatchTimestamp
+            context.distribution(Metrics.Name.BatchLagMillis, lag)
+            if (debug) {
+              println(
+                s"Current timestamp: $currentTimestamp, microBatchTimestamp: $microBatchTimestamp, lagMillis: $lag")
+            }
+            if (lag >= 0 && lag < minimumQueryDelayMs) {
+              Thread.sleep(minimumQueryDelayMs - lag)
+            }
+          }
+
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects

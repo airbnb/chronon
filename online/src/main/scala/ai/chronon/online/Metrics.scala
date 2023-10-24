@@ -40,6 +40,8 @@ object Metrics {
     val FreshnessMillis = "freshness.millis"
     val FreshnessMinutes = "freshness.minutes"
     val LatencyMillis = "latency.millis"
+    val LagMillis = "lag.millis"
+    val BatchLagMillis = "lag.millis"
     val LatencyMinutes = "latency.minutes"
 
     val PartitionCount = "partition.count"
