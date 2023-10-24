@@ -182,4 +182,25 @@ object StatsGenerator {
     }
     linfSimple.asInstanceOf[AnyRef]
   }
+
+  def PSIKllSketch(reference: AnyRef, comparison: AnyRef): AnyRef = {
+    val referenceSketch = KllFloatsSketch.heapify(Memory.wrap(reference.asInstanceOf[Array[Byte]]))
+    val comparisonSketch = KllFloatsSketch.heapify(Memory.wrap(comparison.asInstanceOf[Array[Byte]]))
+
+    // Initialize PSI
+    var psi = 0.0
+
+    // Iterate through quantiles and calculate PSI
+    for (quantile <- 1 to 100) {
+      val p1 = comparisonSketch.getQuantile(quantile / 100.0)
+      val p0 = referenceSketch.getQuantile(quantile / 100.0)
+
+      if (p0 > 0) {
+        psi += (p1 - p0) * math.log(p1 / p0)
+      }
+    }
+    // Calculate the overall PSI
+    psi *= 100.0 // Multiply by 100 to get a percentage
+    psi.asInstanceOf[AnyRef]
+  }
 }
