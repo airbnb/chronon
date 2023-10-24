@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, LongType, Operation, StringType, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
@@ -642,7 +642,7 @@ class JoinTest {
 
     val source = Builders.Source.events(
       table = table,
-      query = Builders.Query(selects = Builders.Selects("message"), startPartition = "2021-01-01")
+      query = Builders.Query(selects = Builders.Selects("message", s"{{ ${Constants.ChrononRunDs}  }}"), startPartition = "2021-01-01")
     )
 
     Builders.GroupBy(
@@ -681,13 +681,13 @@ class JoinTest {
       viewsGroupByCumulative,
       viewsGroupByIncremental.sources.asScala.head,
       Seq("item"),
-      PartitionRange("2021-01-01", "2021-01-03")(tableUtils),
+      PartitionRange("2021-01-01", "2021-01-01")(tableUtils),
       tableUtils,
       None,
       viewsGroupByCumulative.inferredAccuracy
     )
     println(renderedIncremental)
-    assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-03')"))
+    assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-01')"))
   }
 
   @Test
