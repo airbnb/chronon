@@ -184,6 +184,7 @@ object StatsGenerator {
   }
 
   def PSIKllSketch(reference: AnyRef, comparison: AnyRef): AnyRef = {
+    if (reference == null || comparison == null) return None
     val referenceSketch = KllFloatsSketch.heapify(Memory.wrap(reference.asInstanceOf[Array[Byte]]))
     val comparisonSketch = KllFloatsSketch.heapify(Memory.wrap(comparison.asInstanceOf[Array[Byte]]))
 

@@ -463,7 +463,7 @@ class Fetcher(val kvStore: KVStore,
                 .map { key =>
                   val previousValue = prev.values.get(key)
                   val currentValue = curr.values.get(key)
-                  s"${key}" -> Map(
+                  key -> Map(
                     "millis" -> curr.millis.asInstanceOf[AnyRef],
                     "value" -> StatsGenerator.PSIKllSketch(previousValue, currentValue)
                   ).asJava
