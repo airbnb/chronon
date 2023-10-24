@@ -22,6 +22,16 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
+object LocalFetcherCache {
+  private var fetcher: Fetcher = null
+  def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
+    if (fetcher == null) {
+      fetcher = builderFunc()
+    }
+    fetcher
+  }
+}
+
 class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
     implicit
     session: SparkSession,
@@ -294,12 +304,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
-        var fetcher: Fetcher = null
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          if (fetcher == null) {
+          val fetcher = LocalFetcherCache.getOrSetFetcher { () =>
             println(s"Initializing Fetcher. ${System.currentTimeMillis()}")
-            fetcher = apiImpl.buildFetcher(debug = debug)
             context.increment("chain.fetcher.init")
+            apiImpl.buildFetcher(debug = debug)
           }
 
           val requests = rows.toScala.map { row =>
