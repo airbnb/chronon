@@ -622,12 +622,16 @@ object GroupBy {
     if (mutations && !source.getEntities.isSetMutationTable) {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
-
+    // chronon run ds macro is only supported for group bys
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
-        val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
-        (keyValue._1,
-         if (keyValue._2.contains(Constants.ChrononRunDs)) parametricMacro.replace(keyValue._2) else keyValue._2)
+        if (keyValue._2.contains(Constants.ChrononRunDs)) {
+          assert(queryRange.isSingleDay, s"ChrononRunDs is only supported for single day queries")
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+          (keyValue._1, parametricMacro.replace(keyValue._2))
+        } else {
+          keyValue
+        }
       }))
       .orNull
     val query = api.QueryUtils.build(

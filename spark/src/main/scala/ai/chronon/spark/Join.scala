@@ -174,6 +174,7 @@ class Join(joinConf: api.Join,
         case (partMetadata, coveringSets) =>
           val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
           val joinPart = partMetadata.joinPart
+          // if the join part contains ChrononRunDs macro, then we need to make sure the join is for a single day
           val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
           if (
             selects.isDefined && selects.get.nonEmpty && selects.get.exists(selectsMap =>
