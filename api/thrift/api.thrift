@@ -74,6 +74,11 @@ struct EventSource {
     to 2 days, when computing features from that source for 9/3/23 only data up to 9/1/23 will be used.
     */
     5: optional i64 lag
+
+    /**
+    * It's okay to use hourly partitioned tables in the format of yyyyMMddhh, we just need to know whether it is or not at the time of scheduling the airflow task.
+    */
+    6: optional bool isHourlyPartitioned 
 }
 
 

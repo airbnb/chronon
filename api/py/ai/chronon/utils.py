@@ -170,10 +170,11 @@ def get_dependencies(
     query = get_query(src)
     start = query.startPartition
     end = query.endPartition
+    is_hourly_partitioned = src.events.isHourlyPartitioned if src.events else False
     if meta_data is not None:
         result = [json.loads(dep) for dep in meta_data.dependencies]
     elif dependencies:
-        result = [{
+         result = [{
             "name": wait_for_name(dep),
             "spec": dep,
             "start": start,
@@ -190,7 +191,7 @@ def get_dependencies(
         elif src.entities:
             result = [wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)]
         else:
-            result = [wait_for_simple_schema(src.events.table, lag, start, end)]
+            result = [wait_for_simple_schema(src.events.table, lag, start, end, is_hourly_partitioned)]
     return [json.dumps(res) for res in result]
 
 
@@ -223,13 +224,13 @@ def get_label_table_dependencies(label_part) -> List[str]:
     return label_dependencies
 
 
-def wait_for_simple_schema(table, lag, start, end):
+def wait_for_simple_schema(table, lag, start, end, is_hourly_partitioned=False):
     if not table:
         return None
     table_tokens = table.split('/')
     clean_name = table_tokens[0]
     subpartition_spec = '/'.join(table_tokens[1:]) if len(table_tokens) > 1 else ''
-    return {
+    result = {
         "name": "wait_for_{}_ds{}".format(clean_name, "" if lag == 0 else f"_minus_{lag}"),
         "spec": "{}/ds={}{}".format(
             clean_name,
@@ -239,6 +240,9 @@ def wait_for_simple_schema(table, lag, start, end):
         "start": start,
         "end": end,
     }
+    if is_hourly_partitioned:
+        result["is_hourly_partitioned"] = True
+    return result
 
 
 def wait_for_name(dep):
