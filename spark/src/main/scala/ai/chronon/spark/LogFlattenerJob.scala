@@ -108,9 +108,9 @@ class LogFlattenerJob(session: SparkSession,
     val dataFields = allDataFields.filterNot(_.name.startsWith(Constants.ContextualPrefix))
     val metadataFields = StructField(Constants.SchemaHash, StringType) +: JoinCodec.timeFields
     val outputSchema = StructType("", metadataFields ++ dataFields)
-    val (keyBase64Idx, valueBase64Idx, tsIdx, dsIdx, schemaHashIdx) = (0, 1, 2, 3, 4)
+    val (keyBase64Idx, valueBase64Idx, tsIdx, partitionIdx, schemaHashIdx) = (0, 1, 2, 3, 4)
     val outputRdd: RDD[Row] = rawDf
-      .select("key_base64", "value_base64", "ts_millis", "ds", Constants.SchemaHash)
+      .select("key_base64", "value_base64", "ts_millis", Constants.PartitionColumn, Constants.SchemaHash)
       .rdd
       .flatMap { row =>
         if (row.isNullAt(schemaHashIdx)) {
@@ -139,7 +139,7 @@ class LogFlattenerJob(session: SparkSession,
               }
             }.toArray
 
-            val metadataColumns = Array(row.get(schemaHashIdx), row.get(tsIdx), row.get(dsIdx))
+            val metadataColumns = Array(row.get(schemaHashIdx), row.get(tsIdx), row.get(partitionIdx))
             val outputRow = metadataColumns ++ dataColumns
             val unpackedRow = SparkConversions.toSparkRow(outputRow, outputSchema).asInstanceOf[GenericRow]
             Some(unpackedRow)
