@@ -4,6 +4,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
+import com.yahoo.sketches.kll.KllHelper
 
 import java.util
 import scala.collection.Seq
@@ -183,25 +184,39 @@ object StatsGenerator {
     linfSimple.asInstanceOf[AnyRef]
   }
 
-  def PSIKllSketch(reference: AnyRef, comparison: AnyRef): AnyRef = {
+  /**
+    * PSI is a measure of the difference between two probability distributions.
+    * However, it's not defined for cases where a bin can have zero elements in either distribution
+    * (meant for continous measures). In order to support PSI for discrete measures we add a small eps value to
+    * perturb the distribution in bins.
+    *
+    */
+  def PSIKllSketch(reference: AnyRef, comparison: AnyRef, bins: Int = 128, eps: Double = 0.000001): AnyRef = {
     if (reference == null || comparison == null) return None
     val referenceSketch = KllFloatsSketch.heapify(Memory.wrap(reference.asInstanceOf[Array[Byte]]))
     val comparisonSketch = KllFloatsSketch.heapify(Memory.wrap(comparison.asInstanceOf[Array[Byte]]))
-
-    // Initialize PSI
+    val keySet = referenceSketch.getQuantiles(bins).union(comparisonSketch.getQuantiles(bins)).toSet.toArray.sorted
+    val referencePMF = regularize(referenceSketch.getPMF(keySet), eps)
+    val comparisonPMF = regularize(comparisonSketch.getPMF(keySet), eps)
     var psi = 0.0
+    for (i <- 0 until referencePMF.length) {
+      psi += (referencePMF(i) - comparisonPMF(i)) * Math.log(referencePMF(i) / comparisonPMF(i))
+    }
+    psi.asInstanceOf[AnyRef]
+  }
 
-    // Iterate through quantiles and calculate PSI
-    for (quantile <- 1 to 100) {
-      val p1 = comparisonSketch.getQuantile(quantile / 100.0)
-      val p0 = referenceSketch.getQuantile(quantile / 100.0)
-
-      if (p0 > 0) {
-        psi += (p1 - p0) * math.log(p1 / p0)
+  /** Given a PMF add and substract small values to keep a valid probability distribution without zeros */
+  def regularize(doubles: Array[Double], eps: Double): Array[Double] = {
+    val countZeroes = doubles.count(_ == 0.0)
+    if (countZeroes == 0) {
+      doubles // If there are no zeros, return the original array
+    } else {
+      val nonZeroCount = doubles.length - countZeroes
+      val replacement = eps * nonZeroCount / countZeroes
+      doubles.map {
+        case 0.0 => replacement
+        case x   => x - eps
       }
     }
-    // Calculate the overall PSI
-    psi *= 100.0 // Multiply by 100 to get a percentage
-    psi.asInstanceOf[AnyRef]
   }
 }
