@@ -20,11 +20,8 @@ trait BaseTableUtils {
   private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
-  val partitionColumn: String =
-    sparkSession.conf.get("spark.chronon.partition.column", "ds")
-  private val partitionFormat: String =
-    sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
-  val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
+  val partitionColumn: String = Constants.PartitionColumn
+  val partitionSpec: PartitionSpec = Constants.Partition
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -126,7 +123,7 @@ trait BaseTableUtils {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
-        .select(s"partition.${Constants.PartitionColumn}", s"partition.${Constants.HourPartitionColumn}")
+        .select(s"partition.${partitionColumn}", s"partition.${Constants.HourPartitionColumn}")
         .collect()
         .filter(_.get(1) == null)
         .map(_.getString(0))
@@ -135,7 +132,7 @@ trait BaseTableUtils {
       partitionsDf
         // TODO(FCOMP-2242) We should factor out a provider for getting Iceberg partitions
         //  so we can inject a Stripe-specific one that takes into account locality_zone
-        .select(s"partition.${Constants.PartitionColumn}")
+        .select(s"partition.${partitionColumn}")
         .where("partition.locality_zone == 'DEFAULT'")
         .collect()
         .map(_.getString(0))
@@ -518,7 +515,7 @@ trait BaseTableUtils {
 
   def dropPartitions(tableName: String,
                      partitions: Seq[String],
-                     partitionColumn: String = Constants.PartitionColumn,
+                     partitionColumn: String = partitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = partitions
