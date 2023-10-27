@@ -4,7 +4,6 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
-import com.yahoo.sketches.kll.KllHelper
 
 import java.util
 import scala.collection.Seq
