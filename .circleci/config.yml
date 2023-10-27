@@ -46,6 +46,12 @@ jobs:
         steps:
             - checkout
             - run:
+                  name: Background time limit 40 minutes.
+                  command: |
+                    sleep 2400
+                    circleci-agent step halt
+                  background: true
+            - run:
                   name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
@@ -72,6 +78,12 @@ jobs:
         steps:
             - checkout
             - run:
+                  name: Background time limit 40 minutes.
+                  command: |
+                    sleep 2400
+                    circleci-agent step halt
+                  background: true
+            - run:
                   name: Run Spark 3.1.1 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
@@ -97,6 +109,12 @@ jobs:
         executor: docker_baseimg_executor
         steps:
             - checkout
+            - run:
+                  name: Background time limit 40 minutes.
+                  command: |
+                    sleep 2400
+                    circleci-agent step halt
+                  background: true
             - run:
                   name: Run Scala 13 tests
                   shell: /bin/bash -leuxo pipefail
