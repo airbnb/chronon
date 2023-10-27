@@ -182,4 +182,43 @@ object StatsGenerator {
     }
     linfSimple.asInstanceOf[AnyRef]
   }
+
+  /**
+    * PSI is a measure of the difference between two probability distributions.
+    * However, it's not defined for cases where a bin can have zero elements in either distribution
+    * (meant for continuous measures). In order to support PSI for discrete measures we add a small eps value to
+    * perturb the distribution in bins.
+    *
+    * Existing rules of thumb are: PSI < 0.10 means "little shift", .10<PSI<.25 means "moderate shift",
+    * and PSI>0.25 means "significant shift, action required"
+    * https://scholarworks.wmich.edu/dissertations/3208
+    */
+  def PSIKllSketch(reference: AnyRef, comparison: AnyRef, bins: Int = 128, eps: Double = 0.000001): AnyRef = {
+    if (reference == null || comparison == null) return None
+    val referenceSketch = KllFloatsSketch.heapify(Memory.wrap(reference.asInstanceOf[Array[Byte]]))
+    val comparisonSketch = KllFloatsSketch.heapify(Memory.wrap(comparison.asInstanceOf[Array[Byte]]))
+    val keySet = referenceSketch.getQuantiles(bins).union(comparisonSketch.getQuantiles(bins)).toSet.toArray.sorted
+    val referencePMF = regularize(referenceSketch.getPMF(keySet), eps)
+    val comparisonPMF = regularize(comparisonSketch.getPMF(keySet), eps)
+    var psi = 0.0
+    for (i <- 0 until referencePMF.length) {
+      psi += (referencePMF(i) - comparisonPMF(i)) * Math.log(referencePMF(i) / comparisonPMF(i))
+    }
+    psi.asInstanceOf[AnyRef]
+  }
+
+  /** Given a PMF add and substract small values to keep a valid probability distribution without zeros */
+  def regularize(doubles: Array[Double], eps: Double): Array[Double] = {
+    val countZeroes = doubles.count(_ == 0.0)
+    if (countZeroes == 0) {
+      doubles // If there are no zeros, return the original array
+    } else {
+      val nonZeroCount = doubles.length - countZeroes
+      val replacement = eps * nonZeroCount / countZeroes
+      doubles.map {
+        case 0.0 => replacement
+        case x   => x - eps
+      }
+    }
+  }
 }
