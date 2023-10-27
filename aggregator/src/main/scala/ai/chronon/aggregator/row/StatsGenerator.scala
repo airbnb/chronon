@@ -187,9 +187,12 @@ object StatsGenerator {
   /**
     * PSI is a measure of the difference between two probability distributions.
     * However, it's not defined for cases where a bin can have zero elements in either distribution
-    * (meant for continous measures). In order to support PSI for discrete measures we add a small eps value to
+    * (meant for continuous measures). In order to support PSI for discrete measures we add a small eps value to
     * perturb the distribution in bins.
     *
+    * Existing rules of thumb are: PSI < 0.10 means "little shift", .10<PSI<.25 means "moderate shift",
+    * and PSI>0.25 means "significant shift, action required"
+    * https://scholarworks.wmich.edu/dissertations/3208
     */
   def PSIKllSketch(reference: AnyRef, comparison: AnyRef, bins: Int = 128, eps: Double = 0.000001): AnyRef = {
     if (reference == null || comparison == null) return None
