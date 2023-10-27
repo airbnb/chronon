@@ -139,7 +139,11 @@ object Metrics {
     private val prefixString = environment + Option(suffix).map("." + _).getOrElse("")
 
     private def prefix(s: String): String =
-      new java.lang.StringBuilder(prefixString.length + s.length).append(prefixString).append(s).toString
+      new java.lang.StringBuilder(prefixString.length + s.length + 1)
+        .append(prefixString)
+        .append('.')
+        .append(s)
+        .toString
 
     @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsClient
 
