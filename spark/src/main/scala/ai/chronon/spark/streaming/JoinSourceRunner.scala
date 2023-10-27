@@ -22,13 +22,23 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
-object LocalFetcherCache {
+// micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
+// this allows for re-use
+object LocalIOCache {
   private var fetcher: Fetcher = null
+  private var kvStore: KVStore = null
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
     if (fetcher == null) {
       fetcher = builderFunc()
     }
     fetcher
+  }
+
+  def getOrSetKvStore(builderFunc: () => KVStore): KVStore = {
+    if (kvStore == null) {
+      kvStore = builderFunc()
+    }
+    kvStore
   }
 }
 
@@ -90,6 +100,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     def toPutRequest(input: Row): KVStore.PutRequest = {
       val keys = keyIndices.map(input.get)
       val values = valueIndices.map(input.get)
+
+      context.distribution(Metrics.Name.PutKeyNullPercent, (keys.count(_ == null) * 100) / keys.length)
+      context.distribution(Metrics.Name.PutValueNullPercent, (values.count(_ == null) * 100) / values.length)
+
       val ts = input.get(tsIndex).asInstanceOf[Long]
       val keyBytes = keyToBytes(keys)
       val valueBytes = valueToBytes(values)
@@ -240,10 +254,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
-  def percentile(arr: Array[Long], p: Double): Long = {
+  def percentile(arr: Array[Long], p: Double): Option[Long] = {
+    if (arr == null || arr.length == 0) return None
     val sorted = arr.sorted
     val k = math.ceil((sorted.length - 1) * p).toInt
-    sorted(k)
+    Some(sorted(k))
   }
 
   def chainedStreamingQuery: DataStreamWriter[Row] = {
@@ -305,32 +320,37 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          val fetcher = LocalFetcherCache.getOrSetFetcher { () =>
+          val shouldSample = Math.random() <= 0.1
+          val fetcher = LocalIOCache.getOrSetFetcher { () =>
             println(s"Initializing Fetcher. ${System.currentTimeMillis()}")
             context.increment("chain.fetcher.init")
             apiImpl.buildFetcher(debug = debug)
           }
 
-          val requests = rows.toScala.map { row =>
+          val rowsScala = rows.toScala.toArray
+          val requests = rowsScala.map { row =>
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
             val eventTs = row.get(leftTimeIndex).asInstanceOf[Long]
             context.distribution(Metrics.Name.LagMillis, System.currentTimeMillis() - eventTs)
-            val ts = if (useEventTimeForQuery) eventTs else System.currentTimeMillis()
-            Request(joinRequestName, keyMap, atMillis = Some(ts + queryShiftMs))
+            val ts = if (useEventTimeForQuery) Some(eventTs) else None
+            Request(joinRequestName, keyMap, atMillis = ts.map(_ + queryShiftMs))
           }
 
-          if (minimumQueryDelayMs > 0) {
-            val microBatchTimestamp = percentile(requests.map(_.atMillis.get).toArray, timePercentile)
-            val currentTimestamp = System.currentTimeMillis()
-            val lag = currentTimestamp - microBatchTimestamp
-            context.distribution(Metrics.Name.BatchLagMillis, lag)
-            if (debug) {
-              println(
-                s"Current timestamp: $currentTimestamp, microBatchTimestamp: $microBatchTimestamp, lagMillis: $lag")
+          val microBatchTimestamp =
+            percentile(rowsScala.map(_.get(leftTimeIndex).asInstanceOf[Long]), timePercentile)
+          if (microBatchTimestamp.isDefined) {
+            val microBatchLag = System.currentTimeMillis() - microBatchTimestamp.get
+            context.distribution(Metrics.Name.BatchLagMillis, microBatchLag)
+
+            if (minimumQueryDelayMs > 0 && microBatchLag >= 0 && microBatchLag < minimumQueryDelayMs) {
+              val sleepMillis = minimumQueryDelayMs - microBatchLag
+              Thread.sleep(sleepMillis)
+              context.distribution(Metrics.Name.QueryDelaySleepMillis, sleepMillis)
             }
-            if (lag >= 0 && lag < minimumQueryDelayMs) {
-              Thread.sleep(minimumQueryDelayMs - lag)
-            }
+          }
+
+          if (debug && shouldSample) {
+            requests.foreach(request => println(s"request: ${request.keys}, ts: ${request.atMillis}"))
           }
 
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
@@ -338,8 +358,17 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           // its own spark session, or when it passes around objects
           val responses = Await.result(responsesFuture, 5.second)
 
+          if (debug && shouldSample) {
+            println(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
+            responses.foreach(response =>
+              println(
+                s"request: ${response.request.keys}, ts: ${response.request.atMillis}, values: ${response.values}"))
+          }
           responses.iterator.map { response =>
-            val allFields = response.request.keys ++ response.values.get
+            val responseMap = response.values.get
+            val allFields = response.request.keys ++ responseMap
+            Fetcher.logResponseStats(response, context)
+
             SparkConversions
               .toSparkRow(joinFields.map(f => allFields.getOrElse(f, null)),
                           api.StructType.from("record", joinChrononSchema))
@@ -365,9 +394,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     writer.foreachBatch {
       new VoidFunction2[DataFrame, java.lang.Long] {
-        var kvStore: KVStore = null
         override def call(df: DataFrame, l: lang.Long): Unit = {
-          if (kvStore == null) { kvStore = apiImpl.genKvStore }
+          val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
           val data = df.collect()
           val putRequests = data.map(putRequestHelper.toPutRequest)
           if (debug) {
