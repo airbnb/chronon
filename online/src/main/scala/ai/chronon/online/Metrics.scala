@@ -2,7 +2,6 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online.Metrics.{Context, Environment}
 import com.timgroup.statsd.NonBlockingStatsDClient
 
 import scala.util.ScalaJavaConversions.ListOps
@@ -107,7 +106,7 @@ object Metrics {
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
 
-    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline.", "localhost", statsPort)
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline", "localhost", statsPort)
   }
 
   case class Context(environment: Environment,
@@ -140,7 +139,11 @@ object Metrics {
     private val prefixString = environment + Option(suffix).map("." + _).getOrElse("")
 
     private def prefix(s: String): String =
-      new java.lang.StringBuilder(prefixString.length + s.length).append(prefixString).append(s).toString
+      new java.lang.StringBuilder(prefixString.length + s.length + 1)
+        .append(prefixString)
+        .append('.')
+        .append(s)
+        .toString
 
     @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsClient
 
