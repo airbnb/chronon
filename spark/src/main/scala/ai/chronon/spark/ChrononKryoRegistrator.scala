@@ -87,6 +87,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.BooleanType$",
       "org.apache.spark.sql.types.BinaryType$",
       "org.apache.spark.sql.types.DateType$",
+      "org.apache.spark.sql.types.ArrayType",
       "org.apache.spark.sql.types.TimestampType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
