@@ -71,13 +71,19 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row, groupBy.tsIndex))
     }
 
-    val numPartitions = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
-    val outputRdd = groupBy.inputDf.rdd
-      .keyBy(keyBuilder)
-      // shuffle point: the input rdd has less number of partitions due to compact size
-      // when rows are converted to chronon rows, the size increases
-      // so we repartition it to reduce memory overhead and improve performance
-      .repartition(numPartitions)
+    val parallelism = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val inputPartition = groupBy.inputDf.rdd.getNumPartitions
+    val keyedInputRdd = groupBy.inputDf.rdd.keyBy(keyBuilder)
+    // shuffle point: the input rdd has less number of partitions due to compact size
+    // when rows are converted to chronon rows, the size increases
+    // so we repartition it to reduce memory overhead and improve performance
+    val keyedInputRddRepartitioned = if (inputPartition < (parallelism / 10)) {
+      keyedInputRdd
+        .repartition(parallelism)
+    } else {
+      keyedInputRdd
+    }
+    val outputRdd = keyedInputRddRepartitioned
       .aggregateByKey(sawtoothOnlineAggregator.init)(seqOp = seqOp, combOp = sawtoothOnlineAggregator.merge)
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
