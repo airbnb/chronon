@@ -1,6 +1,12 @@
 package ai.chronon.spark
 
-import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
+import ai.chronon.aggregator.windowing.{
+  BatchIr,
+  FinalBatchIr,
+  FiveMinuteResolution,
+  Resolution,
+  SawtoothOnlineAggregator
+}
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
@@ -60,11 +66,15 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       .serialize(sawtoothOnlineAggregator.init)
       .capacity()}
         |""".stripMargin)
+
+    def seqOp(batchIr: BatchIr, row: Row): BatchIr = {
+      sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row, groupBy.tsIndex))
+    }
+
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
-      .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update, combOp = sawtoothOnlineAggregator.merge)
+        seqOp = seqOp, combOp = sawtoothOnlineAggregator.merge)
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
@@ -75,7 +85,6 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       }
     KvRdd(outputRdd, groupBy.keySchema, irSchema)
   }
-
 }
 
 object GroupByUpload {
