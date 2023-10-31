@@ -190,8 +190,6 @@ abstract class JoinBase(joinConf: api.Join,
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
 
-    println(s"debug count ${partitionRangeGroupBy.inputDf.count()}")
-
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
       println(s"left unfilled time range: $timeRange")
