@@ -88,10 +88,18 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     if (unfilledRanges.isEmpty) return null
     val allMetrics = unfilledRanges.map { unfilled =>
       val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
+      // External parts / contextual features don't get logged in the online data but do appear in the comparison table.
+      // We need to remove them from the comparison df otherwise the comparison metric computation will fail.
+      // We need to prepend `ext_contextual_` to the feature name since that's how it appears in the comparison df.
+      val externalFeatureColumns = joinConf.getExternalFeatureCols.map(col => s"ext_contextual_$col")
+      val comparisonDfNoExternalCols = comparisonDf.select(
+        comparisonDf.columns.filterNot(externalFeatureColumns.contains(_)).map(org.apache.spark.sql.functions.col): _*
+      )
       val loggedDf =
         tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
       // there could be external columns that are logged during online env, therefore they could not be used for computing OOC
-      val loggedDfNoExternalCols = loggedDf.select(comparisonDf.columns.map(org.apache.spark.sql.functions.col): _*)
+      val loggedDfNoExternalCols =
+        loggedDf.select(comparisonDfNoExternalCols.columns.map(org.apache.spark.sql.functions.col): _*)
       println("Starting compare job for stats")
       val joinKeys = if (joinConf.isSetRowIds) {
         joinConf.rowIds.toScala
@@ -100,7 +108,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       }
       println(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
       val (compareDf, metricsKvRdd, metrics) =
-        CompareBaseJob.compare(comparisonDf,
+        CompareBaseJob.compare(comparisonDfNoExternalCols,
                                loggedDfNoExternalCols,
                                keys = joinKeys,
                                tableUtils,
