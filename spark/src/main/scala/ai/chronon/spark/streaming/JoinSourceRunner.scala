@@ -322,7 +322,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             println(s" Final df size to write: ${data.length}")
             println(s" Size of putRequests to kv store- ${putRequests.length}")
           } else {
-            putRequests.map(request => emitRequestMetric(request, context.withSuffix("egress")))
+            putRequests.foreach(request => emitRequestMetric(request, context.withSuffix("egress")))
             kvStore.multiPut(putRequests)
           }
         }
