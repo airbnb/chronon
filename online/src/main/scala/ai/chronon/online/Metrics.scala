@@ -40,6 +40,9 @@ object Metrics {
     val FreshnessMillis = "freshness.millis"
     val FreshnessMinutes = "freshness.minutes"
     val LatencyMillis = "latency.millis"
+    val LagMillis: String = "lag.millis"
+    val BatchLagMillis: String = "micro_batch_lag.millis"
+    val QueryDelaySleepMillis: String = "chain.query_delay_sleep.millis"
     val LatencyMinutes = "latency.minutes"
 
     val PartitionCount = "partition.count"
@@ -52,6 +55,12 @@ object Metrics {
     val Bytes = "bytes"
     val KeyBytes = "key.bytes"
     val ValueBytes = "value.bytes"
+    val FetchExceptions = "fetch.exception_count"
+    val FetchNulls = "fetch.null_count"
+    val FetchCount = "fetch.count"
+
+    val PutKeyNullPercent = "put.key.null_percent"
+    val PutValueNullPercent = "put.value.null_percent"
 
     val Exception = "exception"
     val validationFailure = "validation.failure"

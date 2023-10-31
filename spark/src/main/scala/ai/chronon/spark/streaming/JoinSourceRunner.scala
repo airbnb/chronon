@@ -22,6 +22,26 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 
+// micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
+// this allows for re-use
+object LocalIOCache {
+  private var fetcher: Fetcher = null
+  private var kvStore: KVStore = null
+  def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
+    if (fetcher == null) {
+      fetcher = builderFunc()
+    }
+    fetcher
+  }
+
+  def getOrSetKvStore(builderFunc: () => KVStore): KVStore = {
+    if (kvStore == null) {
+      kvStore = builderFunc()
+    }
+    kvStore
+  }
+}
+
 class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
     implicit
     session: SparkSession,
@@ -48,6 +68,23 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   val keyColumns: Array[String] = groupByConf.keyColumns.toScala.toArray
   val valueColumns: Array[String] = groupByConf.aggregationInputs ++ additionalColumns
 
+  private def getProp(prop: String, default: String) = session.conf.get(s"spark.chronon.stream.chain.${prop}", default)
+
+  // when true, we will use the event time of the event to fetchJoin, otherwise we use the current time
+  private val useEventTimeForQuery: Boolean = getProp("event_time_query", "true").toBoolean
+
+  // this is the logical timestamp for a set of rows in a micro-batch
+  // we will apply any delay based on this timestamp at this percentile
+  private val timePercentile: Double = getProp("time_percentile", "0.95").toDouble
+
+  // each micro-batch will be delayed by this amount of time
+  // if the micro-batch is already delayed by more than this amount no delay will be added
+  private val minimumQueryDelayMs: Int = getProp("query_delay_ms", "0").toInt
+
+  // we will add this shift to the timestamp of the query before issuing fetchJoin
+  // in theory this will cause online offline skew, but it is needed when timestamps of the events to join
+  private val queryShiftMs: Int = getProp("query_shift_ms", "0").toInt
+
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
     private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
@@ -63,6 +100,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     def toPutRequest(input: Row): KVStore.PutRequest = {
       val keys = keyIndices.map(input.get)
       val values = valueIndices.map(input.get)
+
+      context.distribution(Metrics.Name.PutKeyNullPercent, (keys.count(_ == null) * 100) / keys.length)
+      context.distribution(Metrics.Name.PutValueNullPercent, (values.count(_ == null) * 100) / values.length)
+
       val ts = input.get(tsIndex).asInstanceOf[Long]
       val keyBytes = keyToBytes(keys)
       val valueBytes = valueToBytes(values)
@@ -213,6 +254,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def buildStream(topic: TopicInfo): DataStream =
     internalStreamBuilder(topic.topicType).from(topic)(session, conf)
 
+  def percentile(arr: Array[Long], p: Double): Option[Long] = {
+    if (arr == null || arr.length == 0) return None
+    val sorted = arr.sorted
+    val k = math.ceil((sorted.length - 1) * p).toInt
+    Some(sorted(k))
+  }
+
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
@@ -268,26 +316,59 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
          |""".stripMargin)
 
     // todo: add proper timestamp to the fetcher
-    // leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
+    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
-        var fetcher: Fetcher = null
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          if (fetcher == null) { fetcher = apiImpl.buildFetcher(debug = debug) }
-          val requests = rows.toScala.map { row =>
-            val keyMap = row.getValuesMap[AnyRef](leftColumns)
-            Request(joinRequestName, keyMap)
+          val shouldSample = Math.random() <= 0.1
+          val fetcher = LocalIOCache.getOrSetFetcher { () =>
+            println(s"Initializing Fetcher. ${System.currentTimeMillis()}")
+            context.increment("chain.fetcher.init")
+            apiImpl.buildFetcher(debug = debug)
           }
 
-          //Wait for parent stream to complete
-          Thread.sleep(lagMillis)
+          val rowsScala = rows.toScala.toArray
+          val requests = rowsScala.map { row =>
+            val keyMap = row.getValuesMap[AnyRef](leftColumns)
+            val eventTs = row.get(leftTimeIndex).asInstanceOf[Long]
+            context.distribution(Metrics.Name.LagMillis, System.currentTimeMillis() - eventTs)
+            val ts = if (useEventTimeForQuery) Some(eventTs) else None
+            Request(joinRequestName, keyMap, atMillis = ts.map(_ + queryShiftMs))
+          }
+
+          val microBatchTimestamp =
+            percentile(rowsScala.map(_.get(leftTimeIndex).asInstanceOf[Long]), timePercentile)
+          if (microBatchTimestamp.isDefined) {
+            val microBatchLag = System.currentTimeMillis() - microBatchTimestamp.get
+            context.distribution(Metrics.Name.BatchLagMillis, microBatchLag)
+
+            if (minimumQueryDelayMs > 0 && microBatchLag >= 0 && microBatchLag < minimumQueryDelayMs) {
+              val sleepMillis = minimumQueryDelayMs - microBatchLag
+              Thread.sleep(sleepMillis)
+              context.distribution(Metrics.Name.QueryDelaySleepMillis, sleepMillis)
+            }
+          }
+
+          if (debug && shouldSample) {
+            requests.foreach(request => println(s"request: ${request.keys}, ts: ${request.atMillis}"))
+          }
+
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
           val responses = Await.result(responsesFuture, 5.second)
 
+          if (debug && shouldSample) {
+            println(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
+            responses.foreach(response =>
+              println(
+                s"request: ${response.request.keys}, ts: ${response.request.atMillis}, values: ${response.values}"))
+          }
           responses.iterator.map { response =>
-            val allFields = response.request.keys ++ response.values.get
+            val responseMap = response.values.get
+            val allFields = response.request.keys ++ responseMap
+            Fetcher.logResponseStats(response, context)
+
             SparkConversions
               .toSparkRow(joinFields.map(f => allFields.getOrElse(f, null)),
                           api.StructType.from("record", joinChrononSchema))
@@ -313,9 +394,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     writer.foreachBatch {
       new VoidFunction2[DataFrame, java.lang.Long] {
-        var kvStore: KVStore = null
         override def call(df: DataFrame, l: lang.Long): Unit = {
-          if (kvStore == null) { kvStore = apiImpl.genKvStore }
+          val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
           val data = df.collect()
           val putRequests = data.map(putRequestHelper.toPutRequest)
           if (debug) {

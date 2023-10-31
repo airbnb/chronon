@@ -146,7 +146,6 @@ class FetcherBase(kvStore: KVStore,
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    val requestTimeMillis = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)

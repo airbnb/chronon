@@ -38,6 +38,20 @@ object Fetcher {
                         columnName: String,
                         prefix: Option[String],
                         keyMapping: Option[Map[String, AnyRef]])
+
+  def logResponseStats(response: Response, context: Metrics.Context): Unit = {
+    val responseMap = response.values.get
+    var exceptions = 0
+    var nulls = 0
+    responseMap.foreach {
+      case (_, v) =>
+        if (v == null) nulls += 1
+        else if (v.isInstanceOf[Throwable]) exceptions += 1
+    }
+    context.distribution(Metrics.Name.FetchNulls, nulls)
+    context.distribution(Metrics.Name.FetchExceptions, exceptions)
+    context.distribution(Metrics.Name.FetchCount, responseMap.size)
+  }
 }
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
