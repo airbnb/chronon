@@ -217,6 +217,10 @@ def set_runtime_env(args):
         "cli_args": {},
     }
     conf_type = None
+    # Normalize modes that are effectively replacement of each other (streaming/local-streaming/streaming-client)
+    effective_mode = args.mode
+    if effective_mode and 'streaming' in effective_mode:
+        effective_mode = 'streaming'
     if args.repo:
         teams_file = os.path.join(args.repo, "teams.json")
         if os.path.exists(teams_file):
@@ -225,7 +229,7 @@ def set_runtime_env(args):
             environment["common_env"] = teams_json.get("default", {}).get(
                 "common_env", {}
             )
-            if args.conf and args.mode:
+            if args.conf and effective_mode:
                 try:
                     context, conf_type, team, _ = args.conf.split("/")[-4:]
                 except Exception as e:
@@ -247,19 +251,19 @@ def set_runtime_env(args):
                     environment["conf_env"] = (
                         conf_json.get("metaData")
                         .get("modeToEnvMap", {})
-                        .get(args.mode, {})
+                        .get(effective_mode, {})
                     )
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
-                        mode=args.mode,
+                        mode=effective_mode,
                         conf_type=conf_type,
                         context=context,
                         name=conf_json["metaData"]["name"],
                     )
                 environment["team_env"] = (
-                    teams_json[team].get(context, {}).get(args.mode, {})
+                    teams_json[team].get(context, {}).get(effective_mode, {})
                 )
                 environment["default_env"] = (
-                    teams_json.get("default", {}).get(context, {}).get(args.mode, {})
+                    teams_json.get("default", {}).get(context, {}).get(effective_mode, {})
                 )
                 environment["cli_args"]["CHRONON_CONF_PATH"] = conf_path
     if args.app_name:
