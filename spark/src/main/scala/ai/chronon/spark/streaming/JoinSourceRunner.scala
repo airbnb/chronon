@@ -10,7 +10,7 @@ import ai.chronon.spark.{GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.streaming.DataStreamWriter
+import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
 import org.apache.spark.sql.types.{BooleanType, LongType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
 
@@ -84,6 +84,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   // we will add this shift to the timestamp of the query before issuing fetchJoin
   // in theory this will cause online offline skew, but it is needed when timestamps of the events to join
   private val queryShiftMs: Int = getProp("query_shift_ms", "0").toInt
+
+  // Micro batch interval - users can tune for lowering latency - or maximizing batch size
+  private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "5000").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
@@ -380,7 +383,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     )
 
     val joinSourceDf = applyQuery(enriched, joinSource.query)
-    val writer = joinSourceDf.writeStream.outputMode("append")
+    val writer = joinSourceDf.writeStream.outputMode("append").trigger(Trigger.ProcessingTime(microBatchIntervalMillis))
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
     def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
