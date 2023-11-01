@@ -86,7 +86,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private val queryShiftMs: Int = getProp("query_shift_ms", "0").toInt
 
   // Micro batch interval - users can tune for lowering latency - or maximizing batch size
-  private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "5000").toInt
+  private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "1000").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
