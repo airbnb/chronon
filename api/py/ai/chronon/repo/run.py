@@ -14,7 +14,13 @@ ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
 ONLINE_WRITE_ARGS = "--conf-path={conf_path} " + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
-ONLINE_MODES = ["streaming", "metadata-upload", "fetch", "local-streaming", "streaming-client"]
+ONLINE_MODES = [
+    "streaming",
+    "metadata-upload",
+    "fetch",
+    "local-streaming",
+    "streaming-client",
+]
 SPARK_MODES = [
     "backfill",
     "upload",
@@ -50,7 +56,7 @@ MODE_ARGS = {
     "log-flattener": OFFLINE_ARGS,
     "metadata-export": OFFLINE_ARGS,
     "label-join": OFFLINE_ARGS,
-    'streaming-client': ONLINE_WRITE_ARGS,
+    "streaming-client": ONLINE_WRITE_ARGS,
     "info": "",
 }
 
@@ -63,7 +69,7 @@ ROUTES = {
         "fetch": "fetch",
         "analyze": "analyze",
         "metadata-export": "metadata-export",
-        'streaming-client': 'group-by-streaming',
+        "streaming-client": "group-by-streaming",
     },
     "joins": {
         "backfill": "join",
@@ -219,8 +225,8 @@ def set_runtime_env(args):
     conf_type = None
     # Normalize modes that are effectively replacement of each other (streaming/local-streaming/streaming-client)
     effective_mode = args.mode
-    if effective_mode and 'streaming' in effective_mode:
-        effective_mode = 'streaming'
+    if effective_mode and "streaming" in effective_mode:
+        effective_mode = "streaming"
     if args.repo:
         teams_file = os.path.join(args.repo, "teams.json")
         if os.path.exists(teams_file):
@@ -263,7 +269,9 @@ def set_runtime_env(args):
                     teams_json[team].get(context, {}).get(effective_mode, {})
                 )
                 environment["default_env"] = (
-                    teams_json.get("default", {}).get(context, {}).get(effective_mode, {})
+                    teams_json.get("default", {})
+                    .get(context, {})
+                    .get(effective_mode, {})
                 )
                 environment["cli_args"]["CHRONON_CONF_PATH"] = conf_path
     if args.app_name:
@@ -372,8 +380,10 @@ class Runner:
                 )
             )
         else:
-            if self.mode in ['streaming', 'streaming-client']:
-                self.app_name = self.app_name.replace('_streaming-client_', '_streaming_')   # If the job is running cluster mode we want to kill it.
+            if self.mode in ["streaming", "streaming-client"]:
+                self.app_name = self.app_name.replace(
+                    "_streaming-client_", "_streaming_"
+                )  # If the job is running cluster mode we want to kill it.
                 print(
                     "Checking to see if a streaming job by the name {} already exists".format(
                         self.app_name
@@ -404,16 +414,18 @@ class Runner:
                             "\n".join([str(app) for app in filtered_apps]),
                         )
                     )
-                    if self.mode == 'streaming':
+                    if self.mode == "streaming":
                         assert (
                             len(filtered_apps) == 1
                         ), "More than one found, please kill them all"
                         print("All good. No need to start a new app.")
                         return
-                    elif self.mode == 'streaming-client':
-                        raise RuntimeError("Attempting to submit an application in client mode, but there's already"
-                                           " an existing one running.")
-            command = 'bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}'.format(
+                    elif self.mode == "streaming-client":
+                        raise RuntimeError(
+                            "Attempting to submit an application in client mode, but there's already"
+                            " an existing one running."
+                        )
+            command = "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}".format(
                 script=self.spark_submit,
                 jar=self.jar_path,
                 subcommand=ROUTES[self.conf_type][self.mode],
