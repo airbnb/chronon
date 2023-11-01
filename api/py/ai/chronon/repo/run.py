@@ -14,11 +14,12 @@ ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
 ONLINE_WRITE_ARGS = "--conf-path={conf_path} " + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
-ONLINE_MODES = ["streaming", "metadata-upload", "fetch", "local-streaming"]
+ONLINE_MODES = ["streaming", "metadata-upload", "fetch", "local-streaming", "streaming-client"]
 SPARK_MODES = [
     "backfill",
     "upload",
     "streaming",
+    "streaming-client",
     "consistency-metrics-compute",
     "compare",
     "analyze",
