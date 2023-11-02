@@ -45,7 +45,12 @@ object JoinUtils {
     } else {
       range.genScanQuery(joinConf.left.query,
         joinConf.left.table,
-        fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection)
+        fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection,
+        partitionColumn = joinConf.left.query.selects match {
+          case selects: java.util.Map[_, _] => selects.getOrDefault(tableUtils.partitionColumn, tableUtils.partitionColumn)
+          case _ => tableUtils.partitionColumn
+        }
+      )
     }
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()

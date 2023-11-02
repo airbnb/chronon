@@ -665,7 +665,12 @@ object GroupBy {
          |""".stripMargin)
     metaColumns ++= timeMapping
 
-    val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
+    val partitionConditions = intersectedRange.map(pr => pr.whereClauses(
+      partitionColumn = source.query.selects match {
+        case selects: java.util.Map[_, _] => selects.getOrDefault(tableUtils.partitionColumn, tableUtils.partitionColumn)
+        case _ => tableUtils.partitionColumn 
+      },
+    )).getOrElse(Seq.empty)
 
     logger.info(s"""
          |Rendering source query:
