@@ -88,12 +88,10 @@ class TileCodec(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]) {
     var bucketPos = 0
     groupBy.aggregations.asScala.foreach {
       aggr =>
-        val buckets = Option(aggr.buckets)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
-          .getOrElse(Seq(null))
-        val windows = Option(aggr.windows)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
-          .getOrElse(Seq(WindowUtils.Unbounded))
+        val buckets =
+          Option(aggr.buckets).getOrElse(java.util.Arrays.asList(null)).asScala
+        val windows =
+          Option(aggr.windows).getOrElse(java.util.Arrays.asList(WindowUtils.Unbounded)).asScala
         // for each aggregation we have 1/more buckets and 1/more windows
         // we need to iterate over the baseIr and clone a given counter's values n times where
         // n is the number of windows for that counter
