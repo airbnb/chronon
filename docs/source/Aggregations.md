@@ -79,30 +79,44 @@ comes from Chronon's usage of avro in the serving environment. We plan to mitiga
 
 TODO: Bucketing Code Example
 
-## Lists as inputs / Flattening
+# Flattening
+
+Chronon can extract values nested in containers and perform aggregations - over lists and maps. See details below for semantics.
+
+## Lists as inputs 
 
 Aggregations can also accept list columns as input. For example if we want `average` `item_price` from a `user_purchase`
 source, which contains `item_prices` as a `list` of values in each row - represented by a single credit card transaction.
 Simply put, `GroupBy.aggregations[i].input_column` can refer to a columnname which contains lists as values. In
 traditional SQL this would require an expensive `explode` command and is supported natively in `Chronon`.
 
+## Maps as inputs 
+
+Aggregations over columns of type 'Map<String, Value>'. For example - if you have two histograms this will allow for merging those 
+histograms using - min, max, avg, sum etc. You can merge maps of any scalar values types using aggregations that operate on scalar values.
+The output of aggregations with scala values on map types is another map with aggregates as values.
+
+Limitations:
+- Map key needs to be string - because avro doesn't like it any other way
+- Map aggregations cannot be coupled with bucketing for now. We will add support later.
+- Aggregations need to be time independent for now - will add support for timed version later.
 
 ### NOTE: Windowing, Bucketing and Flattening can be flexibly mixed and matched.
 
 ## Table of properties for aggregations
 
-|aggregation            | input type       | output type       | reversible | parameters         | bounded memory |
-|-----------------------|------------------|-------------------|------------|--------------------|----------------|
-| count                 | all types        | long              | yes        |                    | yes            |
-| min, max              | primitive types  | input             | no         |                    | yes            |
-| top_k, bottom_k       | primitive types  | list<input,>      | no         | k                  | yes            |
-| first, last           | all types        | input             | no         |                    | yes            |
-| first_k, last_k       | all types        | list<input,>      | no         | k                  | yes            |
-| average, variance     | numeric types    | double            | yes        |                    | yes            |
-| histogram             | string           | map<string, long> | yes        | k=inf              | no             |
-| approx_unique_count   | primitive types  | long              | no         | k=8                | yes            |
-| approx_percentile     | primitive types  | list<input,>      | no         | k=128, percentiles | yes            |
-| unique_count          | primitive types  | long              | no         |                    | no             |
+|aggregation            | input type       | nesting allowed? | output type       | reversible | parameters         | bounded memory |
+|-----------------------|------------------|------------------|-------------------|------------|--------------------|----------------|
+| count                 | all types        | list, map        | long              | yes        |                    | yes            |
+| min, max              | primitive types  | list, map        | input             | no         |                    | yes            |
+| top_k, bottom_k       | primitive types  | list, map        | list<input,>      | no         | k                  | yes            |
+| first, last           | all types        | NO               | input             | no         |                    | yes            |
+| first_k, last_k       | all types        | NO               | list<input,>      | no         | k                  | yes            |
+| average, variance     | numeric types    | list, map        | double            | yes        |                    | yes            |
+| histogram             | string           | list, map        | map<string, long> | yes        | k=inf              | no             |
+| approx_unique_count   | primitive types  | list, map        | long              | no         | k=8                | yes            |
+| approx_percentile     | primitive types  | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
+| unique_count          | primitive types  | list, map        | long              | no         |                    | no             |
 
 
 ## Tuning
