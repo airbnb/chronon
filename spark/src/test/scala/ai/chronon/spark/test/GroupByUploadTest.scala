@@ -14,7 +14,7 @@ import org.junit.Test
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupByUploadTest {
 
@@ -276,16 +276,16 @@ class GroupByUploadTest {
 
     // visualizing values by time to help reason about the tests
     //
-    // listing1    08-15    hr = 00    hr = 06   hr = 10
-    //   review 1             4                     2
-    //   review 2             5         absent    absent
-    //                       4.5          4         2
+    // listing1    08-15    hr = 00      hr = 06       hr = 10
+    //   review 1           4, (4, 4)                  2, (1, 3)
+    //   review 2           5, (5, 4)     absent       absent
+    //                      4.5 (4.5, 4)  4, (4, 4)    2, (1, 3)
     //
     //                      location
     //
     // listing2    08-15    hr = 00    hr = 09
-    //   review 3            absent        3
-    //                        null         3
+    //   review 3            absent    3, (4, 2)
+    //                   null, null     3, (4, 2)
     //
     val api = new MockApi(kvStoreFunc, "chaining_test")
     val fetcher = api.buildFetcher(debug = true)
@@ -305,8 +305,24 @@ class GroupByUploadTest {
     val responses = Await.result(responseF, 10.seconds)
     val results = responses.map(r => r.values.get("rating_average"))
     val categoryRatingResults = responses.map(r => r.values.get("category_ratings_average")).toArray
+    def cRating(location: Double, cleanliness: Double): Map[String, Double] =
+      Map("location" -> location, "cleanliness" -> cleanliness)
     val gson = new Gson()
     assertEquals(results, requestResponse.map(_._2))
+
+    val expectedCategoryRatings = Array(
+      cRating(4.5, 4.0),
+      cRating(4.0, 4.0),
+      cRating(1.0, 3.0),
+      null,
+      cRating(4.0, 2.0)
+    )
+    println(gson.toJson(categoryRatingResults))
+    println(gson.toJson(expectedCategoryRatings))
+    categoryRatingResults.zip(expectedCategoryRatings).foreach {
+      case (actual, expected) =>
+        assertEquals(actual.asInstanceOf[java.util.Map[String, Int]].toScala, expected)
+    }
     println(gson.toJson(categoryRatingResults))
   }
 }
