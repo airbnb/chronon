@@ -25,6 +25,13 @@ object DataType {
       case UnknownType(any)            => "unknown_type"
     }
 
+  def isScalar(dt: DataType): Boolean =
+    dt match {
+      case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
+        true
+      case _ => false
+    }
+
   def isNumeric(dt: DataType): Boolean =
     dt match {
       case IntType | LongType | DoubleType | FloatType | ShortType | ByteType => true

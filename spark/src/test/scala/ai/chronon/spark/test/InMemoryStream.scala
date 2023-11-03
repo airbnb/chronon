@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.{AvroConversions, Mutation, SparkConversions}
 import ai.chronon.online.Extensions.StructTypeOps
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.{GenericRowHandler, TableUtils}
 import com.esotericsoftware.kryo.Kryo
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
@@ -27,6 +27,16 @@ class InMemoryStream {
     val out = new ByteArrayOutputStream()
     val encoder: BinaryEncoder = EncoderFactory.get().binaryEncoder(out, null)
     writer.write(gr, encoder)
+    encoder.flush()
+    out.close()
+    out.toByteArray
+  }
+
+  private def encodeRecord(schema: org.apache.avro.Schema)(genericRecord: GenericData.Record): Array[Byte] = {
+    val writer = new SpecificDatumWriter[GenericRecord](schema)
+    val out = new ByteArrayOutputStream()
+    val encoder: BinaryEncoder = EncoderFactory.get().binaryEncoder(out, null)
+    writer.write(genericRecord, encoder)
     encoder.flush()
     out.close()
     out.toByteArray
@@ -66,7 +76,9 @@ class InMemoryStream {
     val input: MemoryStream[Array[Byte]] =
       new MemoryStream[Array[Byte]](inputDf.schema.catalogString.hashCode % 1000, spark.sqlContext)
     input.addData(inputDf.collect.map { row: Row =>
-      val bytes = encode(avroSchema)(row)
+      val bytes =
+        encodeRecord(avroSchema)(
+          AvroConversions.fromChrononRow(row, schema, GenericRowHandler.func).asInstanceOf[GenericData.Record])
       bytes
     })
     input.toDF

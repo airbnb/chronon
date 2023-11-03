@@ -95,9 +95,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     private val keySparkSchema: StructType = StructType(keyIndices.map(inputSchema))
     private val keySchema: api.StructType = SparkConversions.toChrononStruct("key", keySparkSchema)
 
-    @transient private lazy val keyToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(keySchema, null)
+    @transient private lazy val keyToBytes: Any => Array[Byte] =
+      AvroConversions.encodeBytes(keySchema, GenericRowHandler.func)
     @transient private lazy val valueToBytes: Any => Array[Byte] =
-      AvroConversions.encodeBytes(valueZSchema, null)
+      AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
     private val streamingDataset: String = groupByConf.streamingDataset
 
     def toPutRequest(input: Row): KVStore.PutRequest = {

@@ -29,13 +29,19 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
           assert(bucketType == StringType, s"bucketing column: $bucketCol needs to be a string, but found $bucketType")
           bIndex
         }
-
-        ColumnAggregator.construct(
-          inputType,
-          spec,
-          ColumnIndices(inputIndex, aggregatorIndex),
-          bucketIndex
-        )
+        try {
+          ColumnAggregator.construct(
+            inputType,
+            spec,
+            ColumnIndices(inputIndex, aggregatorIndex),
+            bucketIndex
+          )
+        } catch {
+          case e: Exception =>
+            throw new RuntimeException(
+              s"Failed to create ${spec.operation} aggregator for ${spec.inputColumn} column of type $inputType",
+              e)
+        }
     }
   }.toArray
 
