@@ -29,7 +29,7 @@ class Join(joinConf: api.Join,
            skipFirstHole: Boolean = true,
            mutationScan: Boolean = true,
            showDf: Boolean = false)
-    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
+    extends JoinBase(joinConf, endPartition, skipFirstHole, mutationScan, showDf)(tableUtils) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -155,7 +155,6 @@ class Join(joinConf: api.Join,
     } else {
       leftDf
     }
-
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
     val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
@@ -184,7 +183,8 @@ class Join(joinConf: api.Join,
               leftRange.isSingleDay,
               s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
           }
-          computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
+
+          computeRightTable(unfilledLeftDf, joinPart, leftRange, ).map(df => joinPart -> df)
       }
 
     // combine bootstrap table and join part tables

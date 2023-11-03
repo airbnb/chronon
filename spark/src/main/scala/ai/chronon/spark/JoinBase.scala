@@ -8,7 +8,7 @@ import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
 import com.google.gson.Gson
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, RelationalGroupedDataset}
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
@@ -17,10 +17,9 @@ import scala.collection.Seq
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
-                        tableUtils: TableUtils,
                         skipFirstHole: Boolean,
                         mutationScan: Boolean = true,
-                        showDf: Boolean = false) {
+                        showDf: Boolean = false)(implicit tableUtils: TableUtils) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -95,13 +94,16 @@ abstract class JoinBase(joinConf: api.Join,
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame, joinPart: JoinPart, leftRange: PartitionRange): Option[DataFrame] = {
+  def computeRightTable(leftDf: DataFrame,
+                        joinPart: JoinPart,
+                        leftRange: PartitionRange,
+                        leftStats: DataFrameStats): Option[DataFrame] = {
 
     val partTable = joinConf.partOutputTable(joinPart)
     val partMetrics = Metrics.Context(metrics, joinPart)
     if (joinPart.groupBy.aggregations == null) {
       // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
-      computeJoinPart(leftDf, joinPart)
+      computeJoinPart(leftDf, joinPart, leftStats)
     } else {
       // in Events <> batch GB case, the partition dates are offset by 1
       val shiftDays =
@@ -129,7 +131,9 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart)
+              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange),
+                                             joinPart,
+                                             leftStats.intersect(leftUnfilledRange))
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -155,27 +159,43 @@ abstract class JoinBase(joinConf: api.Join,
     }
   }
 
-  def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart): Option[DataFrame] = {
+  case class DataFrameStats(partitionCounts: Map[String, Long]) {
+    val rowCount: Long = partitionCounts.values.sum
+    val partitionRange: PartitionRange = PartitionRange(partitionCounts.keySet.max, partitionCounts.keySet.min)
+    def intersect(otherRange: PartitionRange): DataFrameStats = {
+      val intersectedRange = partitionRange.intersect(otherRange)
+      val intersectedPartitions = intersectedRange.partitions
+      val intersectedRowCounts = partitionCounts.filter { case (key, _) => intersectedPartitions.contains(key) }.toMap
+      DataFrameStats(intersectedRowCounts)
+    }
+  }
 
-    val stats = leftDf
-      .select(
-        count(lit(1)),
-        min(tableUtils.partitionColumn),
-        max(tableUtils.partitionColumn)
-      )
-      .head()
-    val rowCount = stats.getLong(0)
+  object DataFrameStats {
+    def apply(dataFrame: DataFrame): DataFrameStats = {
+      val rowCounts = dataFrame
+        .groupBy(tableUtils.partitionColumn)
+        .agg(count("*"))
+        .collect()
+        .map(r => r.getString(0) -> r.getLong(1))
+        .toMap
+      DataFrameStats(rowCounts)
+    }
+  }
 
-    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))(tableUtils)
-    if (rowCount == 0) {
+  def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart, leftStats: DataFrameStats): Option[DataFrame] = {
+
+    if (leftStats.rowCount == 0) {
       // happens when all rows are already filled by bootstrap tables
       println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
       return None
     }
 
-    println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
+    val unfilledRange = leftStats.partitionRange
+    println(
+      s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for ${leftStats.rowCount} rows on range $unfilledRange")
+
     val rightBloomMap =
-      JoinUtils.genBloomFilterIfNeeded(leftDf, joinPart, joinConf, rowCount, unfilledRange, tableUtils)
+      JoinUtils.genBloomFilterIfNeeded(leftDf, joinPart, joinConf, leftStats.rowCount, unfilledRange, tableUtils)
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
       GroupBy.from(joinPart.groupBy,
