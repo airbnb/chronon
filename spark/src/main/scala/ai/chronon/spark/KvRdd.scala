@@ -11,8 +11,15 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 object GenericRowHandler {
   val func: Any => Array[Any] = {
-    // TODO: optimize this later - to iterator
-    case x: GenericRowWithSchema => x.toSeq.toArray
+    case x: GenericRowWithSchema => {
+      val result = new Array[Any](x.length)
+      var i = 0
+      while (i < x.length) {
+        result.update(i, x.get(i))
+        i += 1
+      }
+      result
+    }
   }
 }
 

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.util.ScalaJavaConversions.IteratorOps
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -97,6 +98,60 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
 
 }
 
+class SimpleMapDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
+                                     columnIndices: ColumnIndices,
+                                     toTypedInput: Any => Input)
+    extends Dispatcher[Input, Any]
+    with Serializable {
+
+  def mapIterator(inputRow: Row): Iterator[(String, Input)] = {
+    val inputVal = inputRow.get(columnIndices.input)
+    if (inputVal == null) return null
+    inputVal match {
+      case inputJMap: util.Map[String, Any] =>
+        inputJMap
+          .entrySet()
+          .iterator()
+          .toScala
+          .filter(_.getValue != null)
+          .map(e => e.getKey -> toTypedInput(e.getValue))
+      case inputMap: Map[String, Any] =>
+        inputMap.iterator.filter(_._2 != null).map(e => e._1 -> toTypedInput(e._2))
+    }
+  }
+
+  def guardedApply(inputRow: Row, prepare: Input => IR, update: (IR, Input) => IR, baseIr: Any = null): Any = {
+    val it = mapIterator(inputRow)
+    if (it == null) return baseIr
+    var resultMap: util.Map[String, Any] = null
+    if (baseIr == null) {
+      resultMap = new util.HashMap[String, Any]()
+    } else {
+      baseIr.asInstanceOf[util.Map[String, Any]]
+    }
+    while (it.hasNext) {
+      val entry = it.next()
+      val key = entry._1
+      val value = entry._2
+      val ir = resultMap.get(entry._1)
+      if (ir == null) {
+        resultMap.put(key, prepare(value))
+      } else {
+        resultMap.put(key, update(ir.asInstanceOf[IR], value))
+      }
+    }
+    resultMap
+  }
+  override def prepare(inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update)
+
+  override def updateColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update, ir)
+
+  override def inversePrepare(inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete)
+
+  override def deleteColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete, ir)
+
+}
+
 class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndices: ColumnIndices)
     extends Dispatcher[Input, Any] {
   override def prepare(inputRow: Row): IR =
@@ -152,16 +207,24 @@ object ColumnAggregator {
                                     columnIndices: ColumnIndices,
                                     toTypedInput: Any => Input,
                                     bucketIndex: Option[Int] = None,
-                                    isVector: Boolean = false): ColumnAggregator = {
+                                    isVector: Boolean = false,
+                                    isMap: Boolean = false): ColumnAggregator = {
+
+    assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
       new SimpleDispatcher(agg, columnIndices, toTypedInput)
     }
-    if (bucketIndex.isEmpty) {
-      new DirectColumnAggregator(agg, columnIndices, dispatcher)
-    } else {
+
+    // TODO: remove the below assertion and add support
+    assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
+    if (isMap) {
+      new MapColumnAggregator(agg, columnIndices, toTypedInput)
+    } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
+    } else {
+      new DirectColumnAggregator(agg, columnIndices, dispatcher)
     }
   }
 
@@ -202,18 +265,24 @@ object ColumnAggregator {
     // to support vector aggregations when input column is an array.
     // avg of [1, 2, 3], [3, 4], [5] = 18 / 6 => 3
     val vectorElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
-      case (true, ListType(elementType)) =>
-        elementType match {
-          case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
-            Some(elementType)
-        }
-      case _ => None
+      case (true, ListType(elementType)) if DataType.isScalar(elementType) => Some(elementType)
+      case _                                                               => None
     }
-    val inputType = vectorElementType.getOrElse(baseInputType)
+
+    val mapElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
+      case (true, MapType(StringType, elementType)) if DataType.isScalar(elementType) => Some(elementType)
+      case _                                                                          => None
+    }
+    val inputType = (mapElementType ++ vectorElementType ++ Some(baseInputType)).head
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg, columnIndices, toTypedInput, bucketIndex, isVector = vectorElementType.isDefined)
+      fromSimple(agg,
+                 columnIndices,
+                 toTypedInput,
+                 bucketIndex,
+                 isVector = vectorElementType.isDefined,
+                 isMap = mapElementType.isDefined)
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {

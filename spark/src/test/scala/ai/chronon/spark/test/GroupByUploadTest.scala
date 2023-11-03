@@ -7,12 +7,13 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
+import com.google.gson.Gson
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await}
+import scala.concurrent.Await
 import scala.util.ScalaJavaConversions.ListOps
 
 class GroupByUploadTest {
@@ -135,24 +136,52 @@ class GroupByUploadTest {
     val ratingsTable = s"${namespace}.ratings"
     def ts(arg: String) = TsUtils.datetimeToTs(s"2023-$arg:00")
 
-    val ratingsColumns = Seq("review", "rating", "ts", "ds")
+    val ratingsColumns = Seq("review", "rating", "category_ratings", "ts", "ds")
     val ratingsData = Seq(
-      ("review1", 4, ts("07-13 11:00"), "2023-08-14"),
-      ("review2", 5, ts("07-13 12:00"), "2023-08-14"), // to delete
-      ("review3", 3, ts("08-15 09:00"), "2023-08-15"), // insert
-      ("review1", 2, ts("08-15 10:00"), "2023-08-15") // update
+      ("review1", 4, Map("location" -> 4, "cleanliness" -> 4), ts("07-13 11:00"), "2023-08-14"),
+      ("review2", 5, Map("location" -> 5, "cleanliness" -> 4), ts("07-13 12:00"), "2023-08-14"), // to delete
+      ("review3", 3, Map("location" -> 4, "cleanliness" -> 2), ts("08-15 09:00"), "2023-08-15"), // insert
+      ("review1", 2, Map("location" -> 1, "cleanliness" -> 3), ts("08-15 10:00"), "2023-08-15") // update
     )
     val ratingsRdd = spark.sparkContext.parallelize(ratingsData)
     val ratingsDf = spark.createDataFrame(ratingsRdd).toDF(ratingsColumns: _*)
     ratingsDf.save(ratingsTable)
     ratingsDf.show()
 
-    val ratingsMutationsColumns = Seq("is_before", "mutation_ts", "review", "rating", "ts", "ds")
+    val ratingsMutationsColumns = Seq("is_before", "mutation_ts", "review", "rating", "category_ratings", "ts", "ds")
     val ratingsMutations = Seq(
-      (true, ts("08-15 06:00"), "review2", 5, ts("07-13 12:00"), "2023-08-15"), // delete
-      (false, ts("08-15 09:00"), "review3", 3, ts("08-15 09:00"), "2023-08-15"), // insert
-      (true, ts("08-15 10:00"), "review1", 4, ts("07-13 11:00"), "2023-08-15"), // update - before
-      (false, ts("08-15 10:00"), "review1", 2, ts("08-15 10:00"), "2023-08-15") // update - after
+      (true,
+       ts("08-15 06:00"),
+       "review2",
+       5,
+       Map("location" -> 5, "cleanliness" -> 4),
+       ts("07-13 12:00"),
+       "2023-08-15"
+      ), // delete
+      (false,
+       ts("08-15 09:00"),
+       "review3",
+       3,
+       Map("location" -> 4, "cleanliness" -> 2),
+       ts("08-15 09:00"),
+       "2023-08-15"
+      ), // insert
+      (true,
+       ts("08-15 10:00"),
+       "review1",
+       4,
+       Map("location" -> 4, "cleanliness" -> 4),
+       ts("07-13 11:00"),
+       "2023-08-15"
+      ), // update - before
+      (false,
+       ts("08-15 10:00"),
+       "review1",
+       2,
+       Map("location" -> 1, "cleanliness" -> 3),
+       ts("08-15 10:00"),
+       "2023-08-15"
+      ) // update - after
     )
     val ratingsMutationsRdd = spark.sparkContext.parallelize(ratingsMutations)
     val ratingsMutationsDf = spark.createDataFrame(ratingsMutationsRdd).toDF(ratingsMutationsColumns: _*)
@@ -183,7 +212,7 @@ class GroupByUploadTest {
 
     val leftRatings =
       Builders.Source.entities(
-        Builders.Query(selects = Builders.Selects("review", "rating", "ts")),
+        Builders.Query(selects = Builders.Selects("review", "rating", "category_ratings", "ts")),
         snapshotTable = ratingsTable,
         mutationTopic = s"${ratingsTable}_mutations",
         mutationTable = s"${ratingsTable}_mutations"
@@ -217,14 +246,20 @@ class GroupByUploadTest {
       sources = Seq(
         Builders.Source.joinSource(
           join = joinConf,
-          query = Builders.Query(selects = Builders.Selects("review", "review_attrs_listing_last", "rating", "ts"))
+          query = Builders.Query(selects =
+            Builders.Selects("review", "review_attrs_listing_last", "rating", "category_ratings", "ts"))
         )),
       keyColumns = collection.Seq("review_attrs_listing_last"),
       aggregations = Seq(
         Builders.Aggregation(
           operation = Operation.AVERAGE,
           inputColumn = "rating"
-        ))
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "category_ratings"
+        )
+      )
     )
 
     val kvStore = OnlineUtils.buildInMemoryKVStore("chaining_test")
@@ -245,6 +280,8 @@ class GroupByUploadTest {
     //   review 1             4                     2
     //   review 2             5         absent    absent
     //                       4.5          4         2
+    //
+    //                      location
     //
     // listing2    08-15    hr = 00    hr = 09
     //   review 3            absent        3
@@ -267,6 +304,9 @@ class GroupByUploadTest {
 
     val responses = Await.result(responseF, 10.seconds)
     val results = responses.map(r => r.values.get("rating_average"))
+    val categoryRatingResults = responses.map(r => r.values.get("category_ratings_average")).toArray
+    val gson = new Gson()
     assertEquals(results, requestResponse.map(_._2))
+    println(gson.toJson(categoryRatingResults))
   }
 }
