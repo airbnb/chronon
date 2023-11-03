@@ -98,60 +98,6 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
 
 }
 
-class SimpleMapDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
-                                     columnIndices: ColumnIndices,
-                                     toTypedInput: Any => Input)
-    extends Dispatcher[Input, Any]
-    with Serializable {
-
-  def mapIterator(inputRow: Row): Iterator[(String, Input)] = {
-    val inputVal = inputRow.get(columnIndices.input)
-    if (inputVal == null) return null
-    inputVal match {
-      case inputJMap: util.Map[String, Any] =>
-        inputJMap
-          .entrySet()
-          .iterator()
-          .toScala
-          .filter(_.getValue != null)
-          .map(e => e.getKey -> toTypedInput(e.getValue))
-      case inputMap: Map[String, Any] =>
-        inputMap.iterator.filter(_._2 != null).map(e => e._1 -> toTypedInput(e._2))
-    }
-  }
-
-  def guardedApply(inputRow: Row, prepare: Input => IR, update: (IR, Input) => IR, baseIr: Any = null): Any = {
-    val it = mapIterator(inputRow)
-    if (it == null) return baseIr
-    var resultMap: util.Map[String, Any] = null
-    if (baseIr == null) {
-      resultMap = new util.HashMap[String, Any]()
-    } else {
-      baseIr.asInstanceOf[util.Map[String, Any]]
-    }
-    while (it.hasNext) {
-      val entry = it.next()
-      val key = entry._1
-      val value = entry._2
-      val ir = resultMap.get(entry._1)
-      if (ir == null) {
-        resultMap.put(key, prepare(value))
-      } else {
-        resultMap.put(key, update(ir.asInstanceOf[IR], value))
-      }
-    }
-    resultMap
-  }
-  override def prepare(inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update)
-
-  override def updateColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.prepare, agg.update, ir)
-
-  override def inversePrepare(inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete)
-
-  override def deleteColumn(ir: Any, inputRow: Row): Any = guardedApply(inputRow, agg.inversePrepare, agg.delete, ir)
-
-}
-
 class TimedDispatcher[Input, IR](agg: TimedAggregator[Input, IR, _], columnIndices: ColumnIndices)
     extends Dispatcher[Input, Any] {
   override def prepare(inputRow: Row): IR =
