@@ -27,7 +27,7 @@ object DataType {
 
   def isScalar(dt: DataType): Boolean =
     dt match {
-      case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
+      case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType | BooleanType =>
         true
       case _ => false
     }
