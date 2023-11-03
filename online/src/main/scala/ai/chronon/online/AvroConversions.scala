@@ -126,13 +126,14 @@ object AvroConversions {
       dataType,
       { (record: GenericRecord, fields: Seq[StructField]) =>
         new AbstractIterator[Any]() {
+          val seqSize: Int = fields.size
           var idx = 0
           override def next(): Any = {
             val res = record.get(idx)
             idx += 1
             res
           }
-          override def hasNext: Boolean = idx < fields.size
+          override def hasNext: Boolean = idx < seqSize
         }
       },
       { (byteBuffer: ByteBuffer) => byteBuffer.array() },
