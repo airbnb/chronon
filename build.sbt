@@ -346,9 +346,8 @@ lazy val spark_embedded = (project in file("spark"))
   )
 
 lazy val flink = (project in file("flink"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
-    publishSettings,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "avro",
       "spark-all/provided",

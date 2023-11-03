@@ -71,6 +71,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   }
 
   def decode(bytes: Array[Byte]): GenericRecord = {
+
     if (bytes == null) return null
     val inputStream = new SeekableByteArrayInput(bytes)
     inputStream.reset()
