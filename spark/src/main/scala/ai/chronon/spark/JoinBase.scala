@@ -10,6 +10,7 @@ import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
+import org.apache.spark.util.sketch.BloomFilter
 
 import java.time.Instant
 import scala.collection.JavaConverters._
@@ -95,13 +96,16 @@ abstract class JoinBase(joinConf: api.Join,
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame, joinPart: JoinPart, leftRange: PartitionRange): Option[DataFrame] = {
+  def computeRightTable(leftDf: DataFrame,
+                        joinPart: JoinPart,
+                        leftRange: PartitionRange,
+                        joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
 
     val partTable = joinConf.partOutputTable(joinPart)
     val partMetrics = Metrics.Context(metrics, joinPart)
     if (joinPart.groupBy.aggregations == null) {
       // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
-      computeJoinPart(leftDf, joinPart)
+      computeJoinPart(leftDf, joinPart, joinLevelBloomMapOpt)
     } else {
       // in Events <> batch GB case, the partition dates are offset by 1
       val shiftDays =
@@ -129,7 +133,7 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart)
+              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -155,7 +159,9 @@ abstract class JoinBase(joinConf: api.Join,
     }
   }
 
-  def computeJoinPart(leftDf: DataFrame, joinPart: JoinPart): Option[DataFrame] = {
+  def computeJoinPart(leftDf: DataFrame,
+                      joinPart: JoinPart,
+                      joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
 
     val stats = leftDf
       .select(
@@ -175,7 +181,13 @@ abstract class JoinBase(joinConf: api.Join,
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
     val rightBloomMap =
-      JoinUtils.genBloomFilterIfNeeded(leftDf, joinPart, joinConf, rowCount, unfilledRange, tableUtils)
+      JoinUtils.genBloomFilterIfNeeded(leftDf,
+                                       joinPart,
+                                       joinConf,
+                                       rowCount,
+                                       unfilledRange,
+                                       tableUtils,
+                                       joinLevelBloomMapOpt)
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
       GroupBy.from(joinPart.groupBy,

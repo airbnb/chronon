@@ -1,9 +1,8 @@
 package ai.chronon.spark
 
-import ai.chronon.api.{Constants, JoinPart}
+import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
-import ai.chronon.api.Extensions._
-import ai.chronon.api.Extensions.JoinOps
+import ai.chronon.api.Extensions.{JoinOps, _}
 import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
@@ -11,7 +10,6 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
 
-import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.MapOps
 
@@ -272,12 +270,14 @@ object JoinUtils {
     * @return bloomfilter map option for right part
     */
 
-  def genBloomFilterIfNeeded(leftDf: DataFrame,
-                             joinPart: ai.chronon.api.JoinPart,
-                             joinConf: ai.chronon.api.Join,
-                             leftRowCount: Long,
-                             unfilledRange: PartitionRange,
-                             tableUtils: TableUtils): Option[Map[String, BloomFilter]] = {
+  def genBloomFilterIfNeeded(
+      leftDf: DataFrame,
+      joinPart: ai.chronon.api.JoinPart,
+      joinConf: ai.chronon.api.Join,
+      leftRowCount: Long,
+      unfilledRange: PartitionRange,
+      tableUtils: TableUtils,
+      joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[Map[String, BloomFilter]] = {
     println(
       s"\nRow count to be filled for ${joinPart.groupBy.metaData.name}. BloomFilter Threshold: ${tableUtils.bloomFilterThreshold}")
 
@@ -286,9 +286,13 @@ object JoinUtils {
       println("Row count is above threshold. Skip gen bloom filter.")
       Option.empty
     } else {
-      val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
-        key -> leftDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, unfilledRange)
-      }.toMap
+
+      val requiredLeftColumns = joinPart.rightToLeft.values.toSeq
+      val leftBlooms = {
+        joinLevelBloomMapOpt.getOrElse(requiredLeftColumns.map { key =>
+          key -> leftDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, unfilledRange)
+        }.toMap)
+      }
 
       val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
       val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty

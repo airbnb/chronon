@@ -164,6 +164,18 @@ class Join(joinConf: api.Join,
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
+    // compute a single bloomfilter at join level if there is no bootstrap operation
+    val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+      // do not compute if any bootstrap is involved
+      None
+    } else {
+      val leftRowCount = bootstrapDf.count()
+      val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
+        key -> bootstrapDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)
+      }.toMap
+      Some(leftBlooms)
+    }
+
     // compute join parts (GB) backfills
     // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
     // we do this by utilizing the per-record metadata computed during the bootstrap process.
@@ -184,7 +196,7 @@ class Join(joinConf: api.Join,
               leftRange.isSingleDay,
               s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
           }
-          computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
+          computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
       }
 
     // combine bootstrap table and join part tables
