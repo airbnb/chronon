@@ -264,7 +264,6 @@ def set_runtime_env(args):
                     # Load additional args used on backfill.
                     if conf_json.get("metaData", {}).get("customJson") and effective_mode == 'backfill':
                         customJson = json.loads(conf_json["metaData"]["customJson"])
-                        print(customJson)
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(customJson.get(
                             "additional_args", []))
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
