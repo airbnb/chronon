@@ -158,20 +158,20 @@ class Join(joinConf: api.Join,
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
     val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
-
+    val bootstrapDfStats = DataFrameStats(bootstrapDf)
     // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
     // compute join parts (GB) backfills
     // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
-    // we do this by utilizing the per-record metadata computed during the bootstrap process.
+    // we do this by utilizing the per-record metadata computed during the bootstrap table generation process.
     // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
     // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
     val rightResults = bootstrapCoveringSets
       .flatMap {
         case (partMetadata, coveringSets) =>
-          val unfilledLeftDf = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
+          val (unfilledLeftDf, modified) = findUnfilledRecords(bootstrapDf, coveringSets.filter(_.isCovering))
           val joinPart = partMetadata.joinPart
           // if the join part contains ChrononRunDs macro, then we need to make sure the join is for a single day
           val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
@@ -184,7 +184,7 @@ class Join(joinConf: api.Join,
               s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
           }
 
-          computeRightTable(unfilledLeftDf, joinPart, leftRange, ).map(df => joinPart -> df)
+          computeRightTable(unfilledLeftDf, joinPart, leftRange).map(df => joinPart -> df)
       }
 
     // combine bootstrap table and join part tables
@@ -297,7 +297,7 @@ class Join(joinConf: api.Join,
    * The purpose of Bootstrap is to leverage input tables which contain pre-computed values, such that we can
    * skip the computation for these record during the join-part computation step.
    *
-   * The main goal here to join together the various bootstrap source to the left table, and in the process maintain
+   * The main goal here is to join together the various bootstrap source to the left table, and in the process maintain
    * relevant metadata such that we can easily tell which record needs computation or not in the following step.
    */
   private def computeBootstrapTable(leftDf: DataFrame,
@@ -407,22 +407,27 @@ class Join(joinConf: api.Join,
    * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
    * full schema information.
    */
-  private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSet: Seq[CoveringSet]): DataFrame = {
+  private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSet: Seq[CoveringSet]): (DataFrame, Boolean) = {
 
+    // this happens when bootstrapParts is NULL for the JOIN and thus no metadata columns were created
     if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
-      // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
-      return bootstrapDf
+      return (bootstrapDf, false)
     }
+
+    val schema = bootstrapDf.schema
+    val hashesIndex = schema.fieldIndex(Constants.MatchedHashes)
+    val hashes: Seq[Seq[String]] = coveringSet.map(_.hashes)
 
     // Unfilled records are those that do NOT have a covering set, and thus require backfill
     bootstrapDf.filter { row =>
-      val matchedHashes = if (row.isNullAt(row.fieldIndex(Constants.MatchedHashes))) {
-        Seq()
+      val rowHashesAny = row.get(hashesIndex)
+      val requiresBackfill = if (rowHashesAny != null) {
+        val rowHashes = rowHashesAny.asInstanceOf[mutable.WrappedArray[String]]
+        !hashes.contains(rowHashes)
       } else {
-        row.getAs[mutable.WrappedArray[String]](Constants.MatchedHashes).toSeq
+        true
       }
-      val isCovering = coveringSet.map(_.hashes).contains(matchedHashes)
-      !isCovering
-    }
+      requiresBackfill
+    } -> true
   }
 }
