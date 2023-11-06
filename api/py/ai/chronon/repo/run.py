@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-
+"""
+run.py needs to only depend in python standard library to simplify execution requirements.
+"""
 import argparse
 import time
 import json
@@ -259,6 +261,12 @@ def set_runtime_env(args):
                         .get("modeToEnvMap", {})
                         .get(effective_mode, {})
                     )
+                    # Load additional args used on backfill.
+                    if conf_json.get("metaData", {}).get("customJson") and effective_mode == 'backfill':
+                        customJson = json.loads(conf_json["metaData"]["customJson"])
+                        print(customJson)
+                        environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(customJson.get(
+                            "additional_args", []))
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
                         mode=effective_mode,
                         conf_type=conf_type,
@@ -425,11 +433,12 @@ class Runner:
                             "Attempting to submit an application in client mode, but there's already"
                             " an existing one running."
                         )
-            command = "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}".format(
+            command = "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}".format(
                 script=self.spark_submit,
                 jar=self.jar_path,
                 subcommand=ROUTES[self.conf_type][self.mode],
                 args=final_args,
+                additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
             )
         check_call(command)
 

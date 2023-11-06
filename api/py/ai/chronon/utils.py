@@ -146,14 +146,50 @@ def __set_name(obj, cls, mod_prefix):
     eo.import_module_set_name(module, cls)
 
 
+def metadata_clean_name(name):
+    """
+    From api.Extensions.scala
+    Option(name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
+    """
+    if name is not None:
+        return re.sub("[^a-zA-Z0-9_]", "_", name)
+    return None
+
+
 def output_table_name(obj, full_name: bool):
-    table_name = obj.metaData.name.replace('.', '_')
+    table_name = metadata_clean_name(obj.metaData.name)
     db = obj.metaData.outputNamespace
     db = db or "{{ db }}"
     if full_name:
         return db + "." + table_name
     else:
         return table_name
+
+
+def join_part_output_table_name(join, jp, full_name: bool = False):
+    """
+    From api.Extensions.scala
+
+    Join Part output table name.
+    To be synced with Scala API.
+    def partOutputTable(jp: JoinPart): String = (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+
+      jp.groupBy.metaData.cleanName).mkString("_")
+    """
+    if jp.groupBy is None:
+        raise NotImplementedError("Join Part names for non group bys is not implemented.")
+    return "_".join([component for component in [
+        output_table_name(join, full_name),
+        jp.prefix,
+        metadata_clean_name(jp.groupBy.metaData.name)
+    ] if component is not None])
+
+
+def group_by_output_table_name(obj, full_name: bool = False):
+    """
+    Group by backfill output table name
+    To be synced with api.Extensions.scala
+    """
+    return output_table_name(obj, full_name)
 
 
 def log_table_name(obj, full_name: bool = False):
