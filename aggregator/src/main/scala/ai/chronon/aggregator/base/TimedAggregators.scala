@@ -32,7 +32,13 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
   def getTs(tup: util.ArrayList[Any]): Long = tup.get(0).asInstanceOf[Long]
 
   override def compare(x: util.ArrayList[Any], y: util.ArrayList[Any]): Int = {
-    java.lang.Long.compare(getTs(x), getTs(y))
+    // We break timestamp ties in TimeTuples deterministically by comparing the
+    // string representations of the payload.
+    java.lang.Long.compare(getTs(x), getTs(y)) match {
+      case 0 =>
+         x.get(1).toString.compareTo(y.get(1).toString)
+      case x => x
+    }
   }
 }
 

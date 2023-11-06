@@ -6,6 +6,11 @@ import org.junit.Assert._
 
 import java.util
 import scala.collection.JavaConverters._
+import ai.chronon.aggregator.base.TimeTuple
+
+import java.util.concurrent.ThreadLocalRandom
+import scala.collection.immutable
+import scala.util.Random
 
 class MinHeapTest extends TestCase {
   def testInserts(): Unit = {
@@ -32,5 +37,30 @@ class MinHeapTest extends TestCase {
 
     mh.merge(arr1, arr2)
     assertArrayEquals(arr1.asScala.toArray, Array(4, 2, 1, -1))
+  }
+
+  /**
+   * We test for deterministic timestamp tiebreaking for TimeTuples by
+   * sorting random items with the same TimeTuple timestamps.
+   *
+   * We want to ensure aggs like LastK that use this logic produce consistent
+   * results when aggregating over events that arrive with the same timestamp
+   */
+  def testTimeTupleSorts(): Unit = {
+    val size = 100
+    val elems: immutable.Seq[Int] = (1 to 200).map(_ => ThreadLocalRandom.current().nextInt(-100, 100))
+    def makeContainer = new util.ArrayList[TimeTuple.typ](size)
+
+    val results: Seq[Any] = (1 to 1000).map { _ =>
+      val mh = new MinHeap[TimeTuple.typ](size, TimeTuple)
+      val heapArr = makeContainer
+      Random.shuffle(elems).map { x =>
+        mh.insert(heapArr, TimeTuple.make(1L, x))
+      }
+      val sorted = mh.sort(heapArr)
+      println(sorted)
+      sorted
+    }
+    assert(results.forall(_ == results.head))
   }
 }
