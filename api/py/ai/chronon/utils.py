@@ -95,8 +95,13 @@ def is_streaming(source: api.Source) -> bool:
            (source.events and source.events.topic is not None)
 
 
-def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource]:
-    return source.entities if source.entities else source.events
+def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource, api.JoinSource]:
+    if source.entities:
+        return source.entities
+    elif source.events:
+        return source.events
+    else:
+        return source.joinSource
 
 
 def get_query(source: api.Source) -> api.Query:
@@ -104,7 +109,12 @@ def get_query(source: api.Source) -> api.Query:
 
 
 def get_table(source: api.Source) -> str:
-    table = source.entities.snapshotTable if source.entities else source.events.table
+    if source.entities:
+        table = source.entities.snapshotTable
+    elif source.events:
+        table = source.events.table
+    else:
+        table = get_join_output_table_name(source.joinSource.join, True)
     return table.split('/')[0]
 
 
@@ -157,7 +167,7 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_na
 
 
 def get_join_output_table_name(join: api.Join, full_name: bool):
-    """generate output table name for staging query job"""
+    """generate output table name for join backfill job"""
     __set_name(join, api.Join, "joins")
     return output_table_name(join, full_name=full_name)
 
@@ -190,6 +200,9 @@ def get_dependencies(
                 wait_for_simple_schema(src.entities.mutationTable, lag, start, end)]))
         elif src.entities:
             result = [wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)]
+        elif src.joinSource:
+            parentJoinOutputTable = get_join_output_table_name(src.joinSource.join, True)
+            result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end)]
         else:
             result = [wait_for_simple_schema(src.events.table, lag, start, end, is_hourly_partitioned)]
     return [json.dumps(res) for res in result]

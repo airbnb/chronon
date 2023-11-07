@@ -1,9 +1,9 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute}
@@ -12,22 +12,22 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.time.Instant
-import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.ListOps
 
-abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean, sparkUtils: Option[SparkUtils] = None) {
+abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean, sparkUtils: Option[SparkUtils] = None, mutationScan: Boolean = true, showDf: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  val metrics = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
+  val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
   // Get table properties from config
-  protected val confTableProps = Option(joinConf.metaData.tableProperties)
+  protected val confTableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
 
   private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
-  protected val tableProps =
+  protected val tableProps: Map[String, String] =
     confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -45,43 +45,46 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
     }
     val keys = partLeftKeys ++ additionalKeys
 
+    // apply prefix to value columns
+    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
+                                                                     tableUtils.partitionColumn,
+                                                                     Constants.TimePartitionColumn)
+    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
+    val prefixedRightDf = rightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+
     // apply key-renaming to key columns
-    val newColumns = rightDf.columns.map { column =>
+    val newColumns = prefixedRightDf.columns.map { column =>
       if (joinPart.rightToLeft.contains(column)) {
         col(column).as(joinPart.rightToLeft(column))
       } else {
         col(column)
       }
     }
-    val keyRenamedRightDf =  rightDf.select(newColumns: _*)
-
-    // apply prefix to value columns
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     tableUtils.partitionColumn,
-                                                                     Constants.TimePartitionColumn)
-    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val prefixedRightDf = keyRenamedRightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+    val keyRenamedRightDf = prefixedRightDf.select(newColumns: _*)
 
     // adjust join keys
     val joinableRightDf = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
-      prefixedRightDf
-        .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1), tableUtils.partitionSpec.format))
+      keyRenamedRightDf
+        .withColumn(
+          Constants.TimePartitionColumn,
+          date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1),
+                      tableUtils.partitionSpec.format)
+        )
         .drop(tableUtils.partitionColumn)
     } else {
-      prefixedRightDf
+      keyRenamedRightDf
     }
 
-    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
     println(s"""
                |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                |Left Schema:
                |${leftDf.schema.pretty}
                |Right Schema:
-               |${prefixedRightDf.schema.pretty}
-               |Final Schema:
+               |${joinableRightDf.schema.pretty}""".stripMargin)
+    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
+    println(s"""Final Schema:
                |${joinedDf.schema.pretty}
                |""".stripMargin)
 
@@ -168,7 +171,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
 
-    val leftBlooms = joinConf.leftKeyCols.toSeq.parallel.map { key =>
+    val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
       key -> leftDf.generateBloomFilter(key, rowCount, joinConf.left.table, unfilledRange)
     }.toMap
 
@@ -191,8 +194,15 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
     assert(joinPart.groupBy.sources.toScala.filter(s => s.lag > 0 && s.isSetEntities && (s.getEntities.isSetMutationTable || s.getEntities.isSetMutationTopic)).isEmpty, "lag is not supported for entity sources that have mutations")
     val lag = joinPart.groupBy.sources.get(0).lag
     def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter, lag = lag)
-
+      GroupBy.from(joinPart.groupBy,
+                   partitionRange,
+                   tableUtils,
+                   computeDependency = true,
+                   Option(rightBloomMap),
+                   rightSkewFilter,
+                   mutationScan = mutationScan,
+                   showDf = showDf,
+                   lag = lag)
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
 
@@ -220,7 +230,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       For the corner case when the values of the key mapping also exist in the keys, for example:
       Map(user -> user_name, user_name -> user)
       the below logic will first rename the conflicted column with some random suffix and update the rename map
-    */
+     */
     lazy val renamedLeftDf = {
       val columns = skewFilteredLeft.columns.flatMap { column =>
         if (joinPart.leftToRight.contains(column)) {
@@ -247,9 +257,13 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) => {
-        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.
+        // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:59>.
         genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
       }
+    }
+    if (showDf) {
+      println(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
+      rightDf.prettyPrint()
     }
     Some(rightDf)
   }
@@ -266,37 +280,49 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }
 
+    // Run validations before starting the job
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
+    try {
+      analyzer.analyzeJoin(joinConf, validationAssert = true)
+      metrics.gauge(Metrics.Name.validationSuccess, 1)
+      println("Join conf validation succeeded. No error found.")
+    } catch {
+      case ex: AssertionError =>
+        metrics.gauge(Metrics.Name.validationFailure, 1)
+        println(s"Validation failed. Please check the validation error in log.")
+        if (tableUtils.backfillValidationEnforced) throw ex
+      case e: Throwable =>
+        metrics.gauge(Metrics.Name.validationFailure, 1)
+        println(s"An unexpected error occurred during validation. ${e.getMessage}")
+    }
+
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
-    // run SQL environment setups such as UDFs and JARs
-    joinConf.setups.foreach(tableUtils.sql)
-
     // detect holes and chunks to fill
-    val leftStart = Option(joinConf.left.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(joinConf.left.table, joinConf.left.subPartitionFilters).get)
-    val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
-    val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
+    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left, tableUtils, endPartition)
     println(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole, joinConf = Some(joinConf))
       .getOrElse(Seq.empty)
+
+    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    if (unfilledRanges.isEmpty) {
+      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
+      return finalResult
+    }
 
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = unfilledRanges.flatMap { unfilledRange =>
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
+    val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils)
-
-    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
-    if (stepRanges.isEmpty) {
-      println(s"\nThere is no data to compute based on end partition of $leftEnd.\n\n Exiting..")
-      return finalResult
-    }
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
 
     println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
@@ -305,6 +331,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
         leftDf(joinConf, range, tableUtils, maybeSampleNumRows = maybeSampleNumRows).map { leftDfInRange =>
+          if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
           computeRange(leftDfInRange, range, bootstrapInfo).saveWithTableUtils(tableUtils, outputTable, tableProps, autoExpand = true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

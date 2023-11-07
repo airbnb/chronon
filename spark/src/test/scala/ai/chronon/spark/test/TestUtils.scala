@@ -12,6 +12,7 @@ import org.apache.spark.sql.functions.{avg, col}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.JListOps
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object TestUtils {
@@ -159,7 +160,7 @@ object TestUtils {
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
     df.save(s"${namespace}.${tableName}")
@@ -368,7 +369,7 @@ object TestUtils {
 
   def makeDf(spark: SparkSession, schema: StructType, rows: List[Row]): DataFrame = {
     spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
   }
@@ -574,6 +575,48 @@ object TestUtils {
     joinConf
   }
 
+  def getParentJoin(spark: SparkSession, namespace: String, name: String, gbName: String): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val topic = "kafka://test_topic/schema=my_schema/host=X/port=Y"
+    val listingCol = Column("listing", StringType, 50)
+    // price for listing
+    val priceCols = Seq(listingCol, Column("price", IntType, 100), Column("notes", StringType, 10))
+    val priceTable = s"$namespace.price_table"
+    val priceDf = DataFrameGen.events(spark, priceCols, 50, 30).filter(col("listing").isNotNull)
+    val tsColString = "ts_string"
+
+    priceDf.withTimeBasedColumn(tsColString, format = "yyyy-MM-dd HH:mm:ss").save(priceTable)
+    val priceGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = Builders.Query(), table = priceTable)),
+      keyColumns = Seq("listing"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.LAST, inputColumn = "price")
+      ),
+      metaData = Builders.MetaData(name = gbName, namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // views table
+    val userCol = Column("user", StringType, 50)
+    val viewsCols = Seq(listingCol, userCol)
+    val viewsTable = s"$namespace.views_table"
+    val viewsDf = DataFrameGen
+      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull && col("listing").isNotNull)
+    viewsDf.show()
+    viewsDf.save(viewsTable)
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        Builders.Query(startPartition = "2023-06-01", selects = Builders.Selects("listing", "user")),
+        table = viewsTable,
+        topic = topic),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = priceGroupBy)
+      ),
+      metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon", consistencySamplePercent = 30)
+    )
+    joinConf
+  }
 
   /**
    * Given a join configuration, this will conduct setup (including writing to KV store) so that fetcher can be called with the join.
@@ -601,4 +644,25 @@ object TestUtils {
     mockApi
   }
 
+  /**
+    * This test group by is trying to get the price of listings a user viewed in the last 7 days. The source
+    * of groupby is a Join source which computes the the last accuracy price for a given listing.
+    *
+    * @return a group by with a join source
+    */
+
+  def getTestGBWithJoinSource(joinSource: api.Join, query: api.Query, namespace: String, name: String): api.GroupBy = {
+    Builders.GroupBy(
+      sources = Seq(Builders.Source.joinSource(joinSource, query)),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.LAST_K,
+                             argMap = Map("k" -> "7"),
+                             inputColumn = "parent_gb_price_last",
+                             windows = Seq(new Window(7, TimeUnit.DAYS)))
+      ),
+      metaData = Builders.MetaData(name = name, namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+  }
 }

@@ -5,9 +5,9 @@ import ai.chronon.api.Extensions._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 
-import scala.collection.Seq
-import scala.util.ScalaVersionSpecificCollectionsConverter
 import java.util
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.JMapOps
 
 /**
   * Module managing FeatureStats Schema, Aggregations to be used by type and aggregator construction.
@@ -82,15 +82,16 @@ object StatsGenerator {
   }
 
   /**
-    * Post processing for IRs when generating a time series of stats.
+    * Post processing for finalized values or IRs when generating a time series of stats.
     * In the case of percentiles for examples we reduce to 5 values in order to generate candlesticks.
     */
   def SeriesFinalizer(key: String, value: AnyRef): AnyRef = {
-    if (key.endsWith("percentile") && value != null) {
-      val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
-      return sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+    (key, value) match {
+      case (k, sketch: Array[Byte]) if k.endsWith("percentile") =>
+        val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
+        sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+      case _ => value
     }
-    value
   }
 
   /**
@@ -145,8 +146,7 @@ object StatsGenerator {
         column,
         InputTransform.Raw,
         operation = api.Operation.APPROX_PERCENTILE,
-        argMap = ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
-          Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]"))
+        argMap = Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]").toJava
       ))
 
   /** For the schema of the data define metrics to be aggregated */
@@ -166,5 +166,20 @@ object StatsGenerator {
       }
       .sortBy(_.name)
     metrics :+ MetricTransform(totalColumn, InputTransform.One, api.Operation.COUNT)
+  }
+
+  def lInfKllSketch(sketch1: AnyRef, sketch2: AnyRef, bins: Int = 128): AnyRef = {
+    if (sketch1 == null || sketch2 == null) return None
+    val sketchIr1 = KllFloatsSketch.heapify(Memory.wrap(sketch1.asInstanceOf[Array[Byte]]))
+    val sketchIr2 = KllFloatsSketch.heapify(Memory.wrap(sketch2.asInstanceOf[Array[Byte]]))
+    val keySet = sketchIr1.getQuantiles(bins).union(sketchIr2.getQuantiles(bins))
+    var linfSimple = 0.0
+    keySet.foreach { key =>
+      val cdf1 = sketchIr1.getRank(key)
+      val cdf2 = sketchIr2.getRank(key)
+      val cdfDiff = Math.abs(cdf1 - cdf2)
+      linfSimple = Math.max(linfSimple, cdfDiff)
+    }
+    linfSimple.asInstanceOf[AnyRef]
   }
 }

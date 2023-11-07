@@ -68,6 +68,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.driver.maxResultSize=4G \
 --conf spark.chronon.partition.column="${PARTITION_COLUMN:-ds}" \
 --conf spark.chronon.partition.format="${PARTITION_FORMAT:-yyyy-MM-dd}" \
+--conf spark.chronon.backfill.validation.enabled="${ENABLE_VALIDATION:-false}" \
 --deploy-mode client \
 --master "${JOB_MODE:-yarn}" \
 --executor-memory "${EXECUTOR_MEMORY:-8G}" \

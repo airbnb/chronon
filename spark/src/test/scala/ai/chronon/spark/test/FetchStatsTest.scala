@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Fetcher.{SeriesStatsResponse, StatsRequest}
@@ -10,6 +10,7 @@ import ai.chronon.online.Fetcher.{SeriesStatsResponse, StatsRequest}
 import scala.compat.java8.FutureConverters
 import ai.chronon.online.{JavaStatsRequest, MetadataStore}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
@@ -102,6 +103,14 @@ class FetchStatsTest extends TestCase {
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
+    tableUtils.sql(s"CREATE TABLE ${joinConf.metaData.loggedTable} LIKE ${joinConf.metaData.outputTable}")
+    tableUtils.sql(
+      s"INSERT OVERWRITE TABLE ${joinConf.metaData.loggedTable} PARTITION(ds) SELECT * FROM ${joinConf.metaData.outputTable}")
+    // Run consistency job
+    val consistencyJob = new ConsistencyJob(spark, joinConf, today)
+    val metrics = consistencyJob.buildConsistencyMetrics()
+    OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
+    OnlineUtils.serveLogStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
     joinConf.joinParts.asScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, yesterday, jp.groupBy))
 
@@ -109,22 +118,40 @@ class FetchStatsTest extends TestCase {
     val request = StatsRequest(joinConf.metaData.nameToFilePath, None, None)
     val mockApi = new MockApi(kvStoreFunc, namespace)
     val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
-    val javaFetchedSeries = fetchStatsSeries(request, mockApi, false)
-    val fetchedSeries = fetchStatsSeries(request, mockApi, true)
+
+    // Stats
+    fetchStatsSeries(request, mockApi, true)
+    val fetchedSeries = fetchStatsSeries(request, mockApi)
     println(gson.toJson(fetchedSeries.values.get))
+
+    // LogStats
+    fetchLogStatsSeries(request, mockApi, true)
+    val fetchedLogSeries = fetchLogStatsSeries(request, mockApi)
+    println(gson.toJson(fetchedLogSeries.values.get))
+
+    // Online Offline Consistency
+    fetchOOCSeries(request, mockApi, true)
+    val fetchedOOCSeries = fetchOOCSeries(request, mockApi)
+    println(gson.toJson(fetchedOOCSeries.values.get))
 
     // Appendix: Incremental run to check incremental updates for summary job.
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, today, joinConf)
 
     // Appendix: Test Analyzer output.
-    val analyzer = new Analyzer(tableUtils,joinConf, yesterday, today)
+    val analyzer = new Analyzer(tableUtils, joinConf, yesterday, today)
     analyzer.analyzeJoin(joinConf)
+
+    // Request drifts
+    val driftRequest = StatsRequest(joinConf.metaData.nameToFilePath + "__drift", None, None)
+    val fetchedDriftSeries = fetchStatsSeries(driftRequest, mockApi)
+    println(gson.toJson(fetchedDriftSeries.values.get))
   }
 
   def fetchStatsSeries(request: StatsRequest,
                        mockApi: MockApi,
                        useJavaFetcher: Boolean = false,
-                       debug: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
+                       debug: Boolean = false,
+                       logResponse: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
     @transient lazy val fetcher = mockApi.buildFetcher(debug)
     @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
     val results = if (useJavaFetcher) {
@@ -133,6 +160,40 @@ class FetchStatsTest extends TestCase {
       FutureConverters.toScala(javaResponse).map(_.toScala)
     } else {
       fetcher.fetchStatsTimeseries(request)
+    }
+    Await.result(results, Duration(10000, SECONDS))
+  }
+
+  def fetchLogStatsSeries(request: StatsRequest,
+                          mockApi: MockApi,
+                          useJavaFetcher: Boolean = false,
+                          debug: Boolean = false,
+                          logResponse: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
+    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
+    val results = if (useJavaFetcher) {
+      val javaRequest = new JavaStatsRequest(request)
+      val javaResponse = javaFetcher.fetchLogStatsTimeseries(javaRequest)
+      FutureConverters.toScala(javaResponse).map(_.toScala)
+    } else {
+      fetcher.fetchLogStatsTimeseries(request)
+    }
+    Await.result(results, Duration(10000, SECONDS))
+  }
+
+  def fetchOOCSeries(request: StatsRequest,
+                     mockApi: MockApi,
+                     useJavaFetcher: Boolean = false,
+                     debug: Boolean = false,
+                     logResponse: Boolean = false)(implicit ec: ExecutionContext): SeriesStatsResponse = {
+    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
+    val results = if (useJavaFetcher) {
+      val javaRequest = new JavaStatsRequest(request)
+      val javaResponse = javaFetcher.fetchConsistencyMetricsTimeseries(javaRequest)
+      FutureConverters.toScala(javaResponse).map(_.toScala)
+    } else {
+      fetcher.fetchConsistencyMetricsTimeseries(request)
     }
     Await.result(results, Duration(10000, SECONDS))
   }

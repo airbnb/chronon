@@ -12,7 +12,6 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.collection.parallel.ParMap
 import scala.util.ScalaJavaConversions.IterableOps
 
 class LabelJoin(joinConf: api.Join, tableUtils: BaseTableUtils, labelDS: String) {
@@ -129,12 +128,12 @@ class LabelJoin(joinConf: api.Join, tableUtils: BaseTableUtils, labelDS: String)
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
-    val leftBlooms = labelJoinConf.leftKeyCols.toSeq.parallel.map { key =>
+    val leftBlooms = labelJoinConf.leftKeyCols.toSeq.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
     }.toMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labels.asScala.parallel.map { labelJoinPart =>
+    val rightDfs = labelJoinConf.labels.asScala.map { labelJoinPart =>
       val labelJoinPartMetrics = Metrics.Context(metrics, labelJoinPart)
       if (labelJoinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
@@ -193,7 +192,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: BaseTableUtils, labelDS: String)
 
   private def computeLabelPart(joinPart: JoinPart,
                                leftRange: PartitionRange,
-                               leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
+                               leftBlooms: Map[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
@@ -211,6 +210,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: BaseTableUtils, labelDS: String)
     val groupBy = GroupBy.from(joinPart.groupBy,
                                PartitionRange(labelDS, labelDS)(tableUtils),
                                tableUtils,
+                               computeDependency = true,
                                Option(rightBloomMap),
                                rightSkewFilter)
 

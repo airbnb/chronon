@@ -2,16 +2,15 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request, Response}
+import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.ThrowableOps
+import ai.chronon.api.Extensions.{JoinOps, ThrowableOps, GroupByOps}
 import com.google.gson.Gson
 
-import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
@@ -22,7 +21,7 @@ import scala.util.{Failure, Success, Try}
 //   1. takes join request or groupBy requests
 //   2. does the fan out and fan in from kv store in a parallel fashion
 //   3. does the post aggregation
-class BaseFetcher(kvStore: KVStore,
+class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
@@ -52,6 +51,7 @@ class BaseFetcher(kvStore: KVStore,
     batchResponsesTry.map {
       reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
     }
+
     // bulk upload didn't remove an older batch value - so we manually discard
     val batchBytes: Array[Byte] = batchResponsesTry
       .map(_.maxBy(_.millis))
@@ -195,6 +195,12 @@ class BaseFetcher(kvStore: KVStore,
           context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
+          // todo: update the logic here when we are ready to support groupby online derivations
+          if (groupByServingInfo.groupBy.hasDerivations) {
+            val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
+            context.incrementException(ex)
+            throw ex
+          }
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
@@ -254,7 +260,11 @@ class BaseFetcher(kvStore: KVStore,
           response.request -> response.values
         }.toMap
         val totalResponseValueBytes =
-          responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
+          responsesMap.iterator
+            .map(_._2)
+            .filter(_.isSuccess)
+            .flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0)))
+            .sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
@@ -322,15 +332,14 @@ class BaseFetcher(kvStore: KVStore,
     windowing.FinalBatchIr(collapsed, tailHops)
   }
 
-  private case class PrefixedRequest(prefix: String, request: Request)
-
+  // prioritize passed in joinOverrides over the ones in metadata store
+  // used in stream-enrichment and in staging testing
   def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
-        val joinTry = getJoinConf(request.name)
+        val joinTry: Try[JoinOps] = getJoinConf(request.name)
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
@@ -412,5 +421,71 @@ class BaseFetcher(kvStore: KVStore,
         }.toSeq
         responses
       }
+  }
+
+  /**
+    * Fetch method to simulate a random access interface for Chronon
+    * by distributing requests to relevant GroupBys. This is a batch
+    * API which allows the caller to provide a sequence of ColumnSpec
+    * queries and receive a mapping of results.
+    *
+    * TODO: Metrics
+    * TODO: Collection identifier for metrics
+    * TODO: Consider removing prefix interface for this method
+    * TODO: Consider using simpler response type since mapping is redundant
+    *
+    * @param columnSpecs – batch of ColumnSpec queries
+    * @return Future map of query to GroupBy response
+    */
+  def fetchColumns(
+      columnSpecs: Seq[ColumnSpec]
+  ): Future[Map[ColumnSpec, Response]] = {
+    val startTimeMs = System.currentTimeMillis()
+
+    // Generate a mapping from ColumnSpec query --> GroupBy request
+    val groupByRequestsByQuery: Map[ColumnSpec, Request] =
+      columnSpecs.map {
+        case query =>
+          val prefix = query.prefix.getOrElse("")
+          val requestName = s"${query.groupByName}.${query.columnName}"
+          val keyMap = query.keyMapping.getOrElse(Map())
+          query -> PrefixedRequest(prefix, Request(requestName, keyMap, Some(startTimeMs), None)).request
+      }.toMap
+
+    // Start I/O and generate a mapping from query --> GroupBy response
+    val groupByResponsesFuture = fetchGroupBys(groupByRequestsByQuery.values.toList)
+    groupByResponsesFuture.map { groupByResponses =>
+      val resultsByRequest = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
+      val responseByQuery = groupByRequestsByQuery.map {
+        case (query, request) =>
+          val results = resultsByRequest
+            .getOrElse(
+              request,
+              Failure(new IllegalStateException(s"Couldn't find a groupBy response for $request in response map"))
+            )
+            .map { valueMap =>
+              if (valueMap != null) {
+                valueMap.map {
+                  case (aggName, aggValue) =>
+                    val resultKey = query.prefix.map(p => s"${p}_${aggName}").getOrElse(aggName)
+                    resultKey -> aggValue
+                }
+              } else {
+                Map.empty[String, AnyRef]
+              }
+            }
+            .recoverWith { // capture exception as a key
+              case ex: Throwable =>
+                if (debug || Math.random() < 0.001) {
+                  println(s"Failed to fetch $request with \n${ex.traceString}")
+                }
+                Failure(ex)
+            }
+          val response = Response(request, results)
+          query -> response
+      }
+
+      responseByQuery
+    }
   }
 }

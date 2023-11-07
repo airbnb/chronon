@@ -245,7 +245,7 @@ Keys {unselected_keys}, are unselected in source
                 )
 
 
-_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
+_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource, ttypes.JoinSource]
 
 
 def _get_op_suffix(operation, argmap):
@@ -299,7 +299,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     """
 
     :param sources:
-        can be constructed as entities or events::
+        can be constructed as entities or events or joinSource::
 
             import ai.chronon.api.ttypes as chronon
             events = chronon.Source(events=chronon.Events(
@@ -309,11 +309,16 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
                 isCumulative=False  # <- defaults to false.
             ))
             Or
-            entities = chronon.Source(events=chronon.Events(
+            entities = chronon.Source(entities=chronon.Entities(
                 snapshotTable=YOUR_TABLE,
                 mutationTopic=YOUR_TOPIC,
                 mutationTable=YOUR_MUTATION_TABLE
                 query=chronon.Query(...)
+            ))
+            or
+            joinSource =  chronon.Source(joinSource=chronon.JoinSource(
+                join = YOUR_CHRONON_PARENT_JOIN,
+                query = chronon.Query(...)
             ))
 
         Multiple sources can be supplied to backfill the historical values with their respective start and end
@@ -403,7 +408,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     required_columns = keys + agg_inputs
 
     def _sanitize_columns(source: ttypes.Source):
-        query = source.entities.query if source.entities is not None else source.events.query
+        query = source.entities.query if source.entities is not None else (
+            source.events.query if source.events is not None else source.joinSource.query)
+
         if query.selects is None:
             query.selects = {}
         for col in required_columns:
@@ -423,6 +430,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             return ttypes.Source(events=source)
         elif isinstance(source, ttypes.EntitySource):
             return ttypes.Source(entities=source)
+        elif isinstance(source, ttypes.JoinSource):
+            return ttypes.Source(joinSource=source)
         elif isinstance(source, ttypes.Source):
             return source
         else:

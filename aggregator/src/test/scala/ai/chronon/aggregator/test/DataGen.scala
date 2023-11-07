@@ -69,14 +69,14 @@ object CStream {
     override def next(): String = Option(roll(keys.length, nullRate = 0)).map(dice => keys(dice.toInt)).get
   }
 
-  class StringStream(count: Int, prefix: String, absenceRatio: Double = 0.2) extends CStream[String] {
-    val keyCount: Int = (count * (1 - absenceRatio)).ceil.toInt
+  class StringStream(count: Int, prefix: String, nullRate: Double = 0.2) extends CStream[String] {
+    val keyCount: Int = (count * (1 - nullRate)).ceil.toInt
     val keys: Array[String] = {
       val fullKeySet = (1 until (count + 1)).map(i => s"$prefix$i")
       Random.shuffle(fullKeySet).take(keyCount).toArray
     }
 
-    override def next(): String = Option(roll(keyCount)).map(dice => keys(dice.toInt)).orNull
+    override def next(): String = Option(roll(keyCount, nullRate = nullRate)).map(dice => keys(dice.toInt)).orNull
   }
 
   class TimeStream(window: Window, roundMillis: Long = 1, maxTs: Long = System.currentTimeMillis())
@@ -90,19 +90,19 @@ object CStream {
     }
   }
 
-  class IntStream(max: Int = 10000) extends CStream[Integer] {
+  class IntStream(max: Int = 10000, nullRate: Double = 0.1) extends CStream[Integer] {
     override def next(): Integer =
-      Option(roll(max, 1)).map(dice => Integer.valueOf(dice.toInt)).orNull
+      Option(roll(max, 1, nullRate = nullRate)).map(dice => Integer.valueOf(dice.toInt)).orNull
   }
 
-  class LongStream(max: Int = 10000) extends CStream[JLong] {
+  class LongStream(max: Int = 10000, nullRate: Double = 0.1) extends CStream[JLong] {
     override def next(): JLong =
-      Option(roll(max, 1)).map(java.lang.Long.valueOf(_)).orNull
+      Option(roll(max, 1, nullRate = nullRate)).map(java.lang.Long.valueOf(_)).orNull
   }
 
-  class DoubleStream(max: Double = 10000) extends CStream[JDouble] {
+  class DoubleStream(max: Double = 10000, nullRate: Double = 0.1) extends CStream[JDouble] {
     override def next(): JDouble =
-      Option(rollDouble(max, 1)).map(java.lang.Double.valueOf(_)).orNull
+      Option(rollDouble(max, 1, nullRate = nullRate)).map(java.lang.Double.valueOf(_)).orNull
   }
 
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
@@ -122,25 +122,26 @@ object CStream {
   }
 }
 
-case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10) {
+case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10, nullRate: Double = 0.1) {
   def genImpl(dtype: DataType, partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =
     dtype match {
       case StringType =>
       val partitionColumn = Constants.PartitionColumn
         name match {
           case col if col == partitionColumn => new PartitionStream(cardinality, partitionSpec)
-          case _                             => new StringStream(cardinality, name)
+          case _                             => new StringStream(cardinality, name, nullRate)
         }
-      case IntType    => new IntStream(cardinality)
-      case DoubleType => new DoubleStream(cardinality)
+      case IntType    => new IntStream(cardinality, nullRate)
+      case DoubleType => new DoubleStream(cardinality, nullRate)
       case LongType =>
         val timeColumn = Constants.TimeColumn
         name match {
           case `timeColumn` => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
-          case _                    => new LongStream(cardinality)
+          case _            => new LongStream(cardinality, nullRate)
         }
-      case ListType(elementType) => genImpl(elementType, partitionColumn, partitionSpec).chunk(chunkSize)
-      case otherType             => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
+      case ListType(elementType) =>
+        genImpl(elementType, partitionColumn, partitionSpec).chunk(chunkSize)
+      case otherType => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
     }
 
   def gen(partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =

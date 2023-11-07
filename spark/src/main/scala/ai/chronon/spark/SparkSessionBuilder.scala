@@ -12,12 +12,20 @@ object SparkSessionBuilder {
 
   val wareHousePathPrefix = "spark-warehouse"
 
-  def build(name: String, local: Boolean = false, localWarehouseLocation: Option[String] = None, additionalConfig: Option[Map[String, String]] = None): SparkSession = {
+  val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
+
+  def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
+  // we would want to share locally generated warehouse during CI testing
+  def build(name: String,
+            local: Boolean = false,
+            localWarehouseLocation: Option[String] = None,
+            additionalConfig: Option[Map[String, String]] = None): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
     val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
 
     var baseBuilder = SparkSession
       .builder()
@@ -36,11 +44,9 @@ object SparkSessionBuilder {
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
-    additionalConfig.foreach{configMap =>
-      configMap.foreach{config => baseBuilder = baseBuilder.config(config._1, config._2)}
+    additionalConfig.foreach { configMap =>
+      configMap.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
     }
-
-
 
     if (SPARK_VERSION.startsWith("2")) {
       // Otherwise files left from deleting the table with the same name result in test failures
@@ -50,6 +56,7 @@ object SparkSessionBuilder {
     val builder = if (local) {
       val tmpPath = Files.createTempDirectory(wareHousePathPrefix)
       tmpPath.toFile.deleteOnExit()
+      println(s"Building local spark session with warehouse at $tmpPath")
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")

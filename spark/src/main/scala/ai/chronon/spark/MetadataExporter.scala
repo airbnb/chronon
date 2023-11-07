@@ -33,22 +33,23 @@ object MetadataExporter {
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
     val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true)
-    val enrichedData: Map[String, Any] = try {
-      if (path.contains(GROUPBY_PATH_SUFFIX)) {
-        val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-        configData + {"features" -> analyzer.analyzeGroupBy(groupBy).map(_.asMap)}
-      } else {
-        val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-        val joinAnalysis = analyzer.analyzeJoin(join)
-        val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
-        val statsSchema: Map[String, String] = joinAnalysis._3.map(st => st._1 -> DataType.toString(st._2))
-        configData + {"features" -> featureMetadata} + {"stats" -> statsSchema}
+    val enrichedData: Map[String, Any] =
+      try {
+        if (path.contains(GROUPBY_PATH_SUFFIX)) {
+          val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
+          configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
+        } else {
+          val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
+          val joinAnalysis = analyzer.analyzeJoin(join)
+          val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
+          val statsSchema: Map[String, String] = joinAnalysis._3.map(st => st._1 -> DataType.toString(st._2))
+          configData + { "features" -> featureMetadata } + { "stats" -> statsSchema }
+        }
+      } catch {
+        case exception: Throwable =>
+          println(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
+          configData
       }
-    } catch {
-      case exception: Throwable =>
-        println(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
-        configData
-    }
     mapper.writeValueAsString(enrichedData)
   }
 
@@ -73,8 +74,9 @@ object MetadataExporter {
       }
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
-    println(s"Successfully processed ${processSuccess.filter(_._2).length} from $suffix \n " +
-      s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
+    println(
+      s"Successfully processed ${processSuccess.filter(_._2).length} from $suffix \n " +
+        s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
   }
 
   def run(inputPath: String, outputPath: String): Unit = {

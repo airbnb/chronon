@@ -5,13 +5,17 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
-import ai.chronon.spark.streaming.TopicChecker
+import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -26,7 +30,6 @@ import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
 import scala.util.{Failure, Success, Try}
-import scala.util.ScalaJavaConversions.ListOps
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions
@@ -171,8 +174,7 @@ object Driver {
       opt[String](
         required = false,
         default = None,
-        descr =
-          """The name of the table containing expected result of a job.
+        descr = """The name of the table containing expected result of a job.
             |The table should have the exact schema of the output of the job""".stripMargin
       )
 
@@ -194,10 +196,11 @@ object Driver {
   }
 
   object JoinBackfill {
-    class Args extends Subcommand("join")
-      with OfflineSubcommand
-      with LocalExportTableAbility
-      with ResultValidationAbility {
+    class Args
+        extends Subcommand("join")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -237,10 +240,11 @@ object Driver {
   }
 
   object GroupByBackfill {
-    class Args extends Subcommand("group-by-backfill")
-      with OfflineSubcommand
-      with LocalExportTableAbility
-      with ResultValidationAbility {
+    class Args
+        extends Subcommand("group-by-backfill")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -270,9 +274,7 @@ object Driver {
   }
 
   object LabelJoin {
-    class Args extends Subcommand("label-join")
-      with OfflineSubcommand
-      with LocalExportTableAbility {
+    class Args extends Subcommand("label-join") with OfflineSubcommand with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs label join in steps, step-days at a time. Default is 30 days",
@@ -320,6 +322,7 @@ object Driver {
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
+
       override def subcommandName() = "analyzer_util"
     }
 
@@ -350,13 +353,15 @@ object Driver {
   }
 
   object StagingQueryBackfill {
-    class Args extends Subcommand("staging-query-backfill")
-      with OfflineSubcommand
-      with LocalExportTableAbility {
+    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand with LocalExportTableAbility {
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val enableAutoExpand: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Auto expand hive table if new columns added in staging query",
+                     default = Option(true))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
@@ -368,7 +373,7 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
+      stagingQueryJob.computeStagingQuery(args.stepDays.toOption, args.enableAutoExpand.toOption)
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
@@ -393,6 +398,25 @@ object Driver {
     def run(args: Args): Unit = {
       new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
         .dailyRun(Some(args.stepDays()), args.sample())
+    }
+  }
+
+  object LogStats {
+    class Args extends Subcommand("log-summary") with OfflineSubcommand {
+      val stepDays: ScallopOption[Int] =
+        opt[Int](required = false,
+                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
+                 default = Option(30))
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+
+      override def subcommandName() = s"log_stats_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
+        .loggingRun(Some(args.stepDays()), args.sample())
     }
   }
 
@@ -513,8 +537,8 @@ object Driver {
       val series = stats.values.get
       val toPrint =
         if (
-          keyMap.get("statsKey").isDefined
-          && series.contains(keyMap.get("statsKey").map(_.asInstanceOf[String]).getOrElse(""))
+          keyMap.contains("statsKey")
+          && series.contains(keyMap("statsKey").asInstanceOf[String])
         )
           series.get(keyMap("statsKey").asInstanceOf[String])
         else series
@@ -665,6 +689,7 @@ object Driver {
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
+      val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =
         opt[String](required = false, descr = "host:port of a kafka bootstrap server")
       val mockWrites: ScallopOption[Boolean] = opt[Boolean](required = false,
@@ -675,6 +700,11 @@ object Driver {
         required = false,
         default = Some(false),
         descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
+      val lagMillis: ScallopOption[Int] = opt[Int](
+        required = false,
+        default = Some(DEFAULT_LAG_MILLIS),
+        descr = "Lag time for chaining, before fetching upstream join results, in milliseconds. Default 2 seconds"
+      )
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
@@ -700,7 +730,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
-      val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
+      implicit val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
 
       val confFile = findFile(args.confPath())
       val groupByConf = confFile
@@ -710,19 +740,26 @@ object Driver {
       val onlineJar = findFile(args.onlineJar())
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
-      val streamingSource = groupByConf.streamingSource
-      assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-      lazy val host = streamingSource.get.topicTokens.get("host")
-      lazy val port = streamingSource.get.topicTokens.get("port")
-      if (!args.kafkaBootstrap.isDefined)
-        assert(
-          host.isDefined && port.isDefined,
-          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
-      val inputStream: DataFrame =
-        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-      val streamingRunner =
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      val query = streamingRunner.run(args.debug())
+      implicit val apiImpl = args.impl(args.serializableProps)
+      val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
+        new JoinSourceRunner(groupByConf,
+                             args.serializableProps,
+                             args.debug(),
+                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
+      } else {
+        val streamingSource = groupByConf.streamingSource
+        assert(streamingSource.isDefined,
+               "There is no valid streaming source - with a valid topic, and endDate < today")
+        lazy val host = streamingSource.get.topicTokens.get("host")
+        lazy val port = streamingSource.get.topicTokens.get("port")
+        if (!args.kafkaBootstrap.isDefined)
+          assert(
+            host.isDefined && port.isDefined,
+            "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+        val inputStream: DataFrame =
+          dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
+      }
       query.awaitTermination()
     }
   }
@@ -750,6 +787,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object LogStatsArgs extends LogStats.Args
+    addSubcommand(LogStatsArgs)
     object CompareJoinQueryArgs extends CompareJoinQuery.Args
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
@@ -790,6 +829,7 @@ object Driver {
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
           case _                           => println(s"Unknown subcommand: $x")
