@@ -596,7 +596,9 @@ object Extensions {
   }
 
   implicit class StringOps(string: String) {
-    def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
+    val IdPattern: Pattern = Pattern.compile("[^0-9a-zA-Z_]")
+
+    def sanitize: String = if (string == null) null else IdPattern.matcher(string).replaceAll("_")
 
     def cleanSpec: String = string.split("/").head
   }

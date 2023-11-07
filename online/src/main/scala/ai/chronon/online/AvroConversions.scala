@@ -1,5 +1,6 @@
 package ai.chronon.online
 
+import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api._
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
@@ -8,6 +9,7 @@ import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
+import java.util.regex.Pattern
 import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
 
@@ -45,9 +47,10 @@ object AvroConversions {
   }
 
   val RepetitionSuffix = "_REPEATED_NAME_"
+
   def fromChrononSchema(dataType: DataType, nameSet: mutable.Set[String] = new mutable.HashSet[String]): Schema = {
     def addName(name: String): String = {
-      val cleanName = name.replaceAll("[^0-9a-zA-Z_]", "_")
+      val cleanName = name.sanitize
       val eligibleName = if (!nameSet.contains(cleanName)) {
         cleanName
       } else {

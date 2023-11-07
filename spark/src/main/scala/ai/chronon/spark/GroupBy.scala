@@ -333,6 +333,19 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
+  implicit class PairRddOps[K, V](rdd: RDD[(K, V)]) {
+    def mapAggregateAndFinalize[I, IR, O](mapFunc: Row => I,
+                                          initFunc: () => IR,
+                                          updateFunc: (IR, I) => IR,
+                                          mergeFunc: (IR, IR) => IR,
+                                          finalizeFunc: IR => O): RDD[(K, O)] = {
+      rdd.aggregateByKey(zeroValue = initFunc)(
+        seqOp = { (ir, row) => updateFunc(ir, mapFunc(row)) },
+        combOp = { case (ir: )}
+      )
+
+    }
+  }
   // convert raw data into IRs, collected by hopSizes
   // TODO cache this into a table: interface below
   // Class HopsCacher(keySchema, irSchema, resolution) extends RddCacher[(KeyWithHash, HopsOutput)]
@@ -343,7 +356,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
-
+    
     inputDf.rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
