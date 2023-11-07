@@ -354,6 +354,9 @@ lazy val flink = (project in file("flink"))
       "scala-parallel-collections"),
     libraryDependencies ++= Seq(
       "org.apache.flink" %% "flink-streaming-scala" % "1.16.1",
+      "org.apache.flink" % "flink-metrics-dropwizard" % "1.16.1",
+      "org.apache.flink" % "flink-clients" % "1.16.1",
+      "org.apache.flink" % "flink-test-utils" % "1.16.1",
     ),
   )
 

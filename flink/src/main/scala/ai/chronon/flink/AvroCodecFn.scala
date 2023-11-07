@@ -7,21 +7,24 @@ import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.configuration.Configuration
+import org.apache.flink.metrics.Counter
 import org.apache.flink.util.Collector
 import org.apache.spark.sql.types.StructType
 
+import scala.Console.println
 import scala.jdk.CollectionConverters._
 
 /**
  * A Flink function that is responsible for converting the Spark expr eval output and converting that to a form
  * that can be written out to the KV store (PutRequest object)
  * @param groupBy The GroupBy we are working with
- * @param encoder The Spark Encoder for the input data type
  * @param outputSchema The output schema for the data
  * @tparam T The input data type
  */
 case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchema: StructType)
   extends RichFlatMapFunction[Map[String, Any], PutRequest] {
+
+  @transient protected var avroConversionErrorCounter: Counter = _
 
   protected val query: Query = groupBy.streamingSource.get.getEvents.query
   protected val streamingDataset: String = groupBy.streamingDataset
@@ -55,7 +58,14 @@ case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchem
     // Set key avro schema for groupByServingInfo
     groupByServingInfo.setKeyAvroSchema(
       StructType(
-        outputSchema.fields.filter(field => groupBy.keyColumns.asScala.contains(field.name))
+        groupBy.keyColumns.asScala.map { keyCol =>
+          val keyColStructType = outputSchema.fields.find(field => field.name == keyCol)
+          keyColStructType match {
+            case Some(col) => col
+            case None =>
+              throw new IllegalArgumentException(s"Missing key col from output schema: ${keyCol}")
+          }
+        }
       ).toAvroSchema("Key")
         .toString(true)
     )
@@ -107,6 +117,10 @@ case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchem
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
+    val metricsGroup = getRuntimeContext.getMetricGroup
+      .addGroup("chronon")
+      .addGroup("feature_group", groupBy.getMetaData.getName)
+    avroConversionErrorCounter = metricsGroup.counter("avro_conversion_errors")
   }
 
   override def close(): Unit = super.close()
@@ -116,9 +130,10 @@ case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchem
       out.collect(avroConvertMapToPutRequest(value))
     } catch {
       case e: Exception =>
-            // TODO: do something!
-        //logger.warn(s"SHEPHERD-AVRO-ERROR error converting to Avro bytes", e)
-        //avroConversionErrorCounter.inc()
+        // To improve availability, we don't rethrow the exception. We just drop the event
+        // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
+        println(s"Error converting to Avro bytes - $e")
+        avroConversionErrorCounter.inc()
     }
 
   def avroConvertMapToPutRequest(in: Map[String, Any]): PutRequest = {

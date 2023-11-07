@@ -1,24 +1,20 @@
 package ai.chronon.flink
 
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
-import ai.chronon.api.{Constants, GroupBy, Query, StructType, StructType => ChrononStructType}
+import ai.chronon.api.{Constants, GroupBy, Query, StructType => ChrononStructType}
 import ai.chronon.online.{CatalystUtil, SparkConversions}
+import com.codahale.metrics.ExponentiallyDecayingReservoir
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.configuration.Configuration
+import org.apache.flink.metrics.{Counter, Histogram}
 import org.apache.flink.util.Collector
 import org.apache.spark.sql.Encoder
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper
 import org.apache.spark.sql.types.StructType
 
 import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
-
-/**
- * Interface to provide Spark Encoders for a given type T
- * (based on T being a Thrift / Proto/ ..)
- */
-trait EncoderProvider[T] extends Serializable {
-  def getEncoder: Encoder[T]
-}
 
 /**
  * A Flink function that uses Chronon's CatalystUtil to evaluate the Spark SQL expression in a GroupBy.
@@ -36,6 +32,14 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
     (query.selects.asScala ++ Map(timeColumnAlias -> timeColumn)).toSeq
   private val filters: Seq[String] = query.getWheres.asScala
 
+  @transient private var catalystUtil: CatalystUtil = _
+  @transient private var rowSerializer: ExpressionEncoder.Serializer[T] = _
+
+  @transient private var exprEvalTimeHistogram: Histogram = _
+  @transient private var rowSerTimeHistogram: Histogram = _
+  @transient private var exprEvalSuccessCounter: Counter = _
+  @transient private var exprEvalErrorCounter: Counter = _
+
   // Chronon's CatalystUtil expects a Chronon `StructType` so we convert the
   // Encoder[T]'s schema to one.
   private val chrononSchema: ChrononStructType =
@@ -47,26 +51,58 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
   def getOutputSchema: StructType = {
     // before we do anything, run our setup statements.
     // in order to create the output schema, we'll evaluate expressions
-    // including UDFs so we'll need them to be registered already.
-    logger.info("--- REGISTERING ALL UDFS ---")
-    ShepherdUdfRegistry.registerAllUdfs(CatalystUtil.session)
-    logger.info("--- FINISHED REGISTERING ALL UDFS ---")
+    // TODO handle UDFs
     CatalystUtil.getOutputSparkSchema(transforms, chrononSchema)
   }
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
-    // TODO create CatalystUtil object
-    // TODO create rowSerializer object
+    catalystUtil = new CatalystUtil(transforms, chrononSchema, filters)
+    val eventExprEncoder = encoder.asInstanceOf[ExpressionEncoder[T]]
+    rowSerializer = eventExprEncoder.createSerializer()
+
+    val metricsGroup = getRuntimeContext.getMetricGroup
+      .addGroup("chronon")
+      .addGroup("feature_group", groupBy.getMetaData.getName)
+
+    exprEvalTimeHistogram = metricsGroup.histogram(
+      "spark_expr_eval_time",
+      new DropwizardHistogramWrapper(
+        new com.codahale.metrics.Histogram(new ExponentiallyDecayingReservoir())
+      )
+    )
+    rowSerTimeHistogram = metricsGroup.histogram(
+      "spark_row_ser_time",
+      new DropwizardHistogramWrapper(
+        new com.codahale.metrics.Histogram(new ExponentiallyDecayingReservoir())
+      )
+    )
+    exprEvalSuccessCounter = metricsGroup.counter("spark_expr_eval_success")
+    exprEvalErrorCounter = metricsGroup.counter("spark_expr_eval_errors")
   }
 
-  // TODO flesh out the implementation
   def flatMap(inputEvent: T, out: Collector[Map[String, Any]]): Unit = {
-    // todo fill me in
+    try {
+      val start = System.currentTimeMillis()
+      val row: InternalRow = rowSerializer(inputEvent)
+      val serFinish = System.currentTimeMillis()
+      rowSerTimeHistogram.update(serFinish - start)
+
+      val maybeRow = catalystUtil.performSql(row)
+      exprEvalTimeHistogram.update(System.currentTimeMillis() - serFinish)
+      maybeRow.foreach(out.collect)
+      exprEvalSuccessCounter.inc()
+    } catch {
+      case e: Exception =>
+        // To improve availability, we don't rethrow the exception. We just drop the event
+        // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
+        println(s"Error evaluating Spark expression - $e")
+        exprEvalErrorCounter.inc()
+    }
   }
 
   override def close(): Unit = {
     super.close()
-    // TODO close CatalystUtil session
+    CatalystUtil.session.close()
   }
 }

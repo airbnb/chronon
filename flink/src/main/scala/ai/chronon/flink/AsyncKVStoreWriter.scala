@@ -3,6 +3,7 @@ package ai.chronon.flink
 import ai.chronon.online.{Api, KVStore}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.configuration.Configuration
+import org.apache.flink.metrics.Counter
 import org.apache.flink.streaming.api.functions.async.{ResultFuture, RichAsyncFunction}
 import org.apache.flink.streaming.api.datastream.AsyncDataStream
 import org.apache.flink.streaming.api.scala.DataStream
@@ -13,10 +14,10 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 object AsyncKVStoreWriter {
-  val kvStoreConcurrency = 10
+  private val kvStoreConcurrency = 10
 
   def withUnorderedWaits(inputDS: DataStream[KVStore.PutRequest],
-    kvStoreWriter: AsyncKVStoreWriter,
+    kvStoreWriterFn: RichAsyncFunction[PutRequest, Option[Long]],
     featureGroupName: String,
     timeoutMillis: Long = 1000L,
     capacity: Int = kvStoreConcurrency
@@ -27,14 +28,13 @@ object AsyncKVStoreWriter {
       AsyncDataStream
         .unorderedWait(
           inputDS.javaStream,
-          kvStoreWriter,
+          kvStoreWriterFn,
           timeoutMillis,
           TimeUnit.MILLISECONDS,
           capacity
         )
-        .uid(s"memento-writer-async-$featureGroupName")
-        .name(s"async memento writes for $featureGroupName")
-        .slotSharingGroup(featureGroupName)
+        .uid(s"kvstore-writer-async-$featureGroupName")
+        .name(s"async kvstore writes for $featureGroupName")
         .setParallelism(inputDS.parallelism)
     )
   }
@@ -52,24 +52,37 @@ object AsyncKVStoreWriter {
     override def prepare: ExecutionContext = this
   }
 
-  val EXECUTION_CONTEXT_INSTANCE: ExecutionContext = new DirectExecutionContext
+  private val EXECUTION_CONTEXT_INSTANCE: ExecutionContext = new DirectExecutionContext
 }
 
-class AsyncKVStoreWriter(onlineImpl: Api)
+class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   extends RichAsyncFunction[PutRequest, Option[Long]] {
 
   @transient private var kvStore: KVStore = _
 
+  @transient private var errorCounter: Counter = _
+  @transient private var successCounter: Counter = _
+
   // The context used for the future callbacks
   implicit lazy val executor: ExecutionContext = AsyncKVStoreWriter.EXECUTION_CONTEXT_INSTANCE
 
+  protected def getKVStore: KVStore = {
+    onlineImpl.genKvStore
+  }
+
   override def open(configuration: Configuration): Unit = {
-    // TODO: hook up metrics
-    kvStore = onlineImpl.genKvStore
+    val group = getRuntimeContext.getMetricGroup
+      .addGroup("chronon")
+      .addGroup("feature_group", featureGroupName)
+    errorCounter = group.counter("kvstore_writer.errors")
+    successCounter = group.counter("kvstore_writer.successes")
+
+    kvStore = getKVStore
   }
 
   override def timeout(input: KVStore.PutRequest, resultFuture: ResultFuture[Option[Long]]): Unit = {
-    // TODO: update metrics
+    println(s"Timed out writing to Memento for object: $input")
+    errorCounter.inc()
     resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
   }
 
@@ -77,17 +90,19 @@ class AsyncKVStoreWriter(onlineImpl: Api)
     val resultFutureRequested: Future[Seq[Boolean]] = kvStore.multiPut(Seq(input))
     resultFutureRequested.onComplete {
       case Success(l) if l.forall(c => c) =>
-        // TODO incr metrics
+        successCounter.inc()
         resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
       case Success(l) if !l.forall(c => c) =>
         // we got a response that was marked as false (write failure)
-        // TODO incr metrics, log errors
+        errorCounter.inc()
+        println(s"Failed to write to KVStore for object: $input")
         resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
       case Failure(exception) =>
         // this should be rare and indicates we have an uncaught exception
         // in the KVStore - we log the exception and skip the object to
         // not fail the app
-        // TODO incr metrics, log errors
+        errorCounter.inc()
+        println(s"Caught exception writing to KVStore for object: $input - $exception")
         resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
     }
   }
