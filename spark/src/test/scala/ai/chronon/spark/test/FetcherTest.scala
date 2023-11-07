@@ -4,16 +4,15 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, DerivationOps}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
+import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.{Api, JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.test.TestUtils.generateRandomData
 import ai.chronon.spark.{Join => _, _}
-import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
@@ -23,13 +22,13 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.Console.println
+import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.io.Source
-import scala.util.ScalaJavaConversions._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class FetcherTest extends TestCase {
   val sessionName = "FetcherTest"
@@ -47,6 +46,7 @@ class FetcherTest extends TestCase {
     val joinPath = "joins/team/example_join.v1"
     val confResource = getClass.getResource(s"/$joinPath")
     val src = Source.fromFile(confResource.getPath)
+
 
     val expected = {
       try src.mkString
@@ -164,7 +164,7 @@ class FetcherTest extends TestCase {
     sourceData.foreach {
       case (schema, rows) =>
         spark
-          .createDataFrame(rows.toJava, SparkConversions.fromChrononSchema(schema))
+          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
           .save(s"$namespace.${schema.name}")
 
     }
@@ -281,7 +281,7 @@ class FetcherTest extends TestCase {
         spark.sql(s"DROP TABLE IF EXISTS $tableName")
 
         spark
-          .createDataFrame(rows.toJava, SparkConversions.fromChrononSchema(schema))
+          .createDataFrame(rows.asJava, SparkConversions.fromChrononSchema(schema))
           .save(tableName)
     }
     println("saved all data hand written for fetcher test")
@@ -335,12 +335,93 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
+  def joinResponses(requests: Array[Request],
+                    mockApi: MockApi,
+                    useJavaFetcher: Boolean = false,
+                    runCount: Int = 1,
+                    samplePercent: Double = -1,
+                    logToHive: Boolean = false,
+                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
+    val chunkSize = 100
+    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
+
+    def fetchOnce = {
+      var latencySum: Long = 0
+      var latencyCount = 0
+      val blockStart = System.currentTimeMillis()
+      val result = requests.iterator
+        .grouped(chunkSize)
+        .map { r =>
+          val responses = if (useJavaFetcher) {
+            // Converting to java request and using the toScalaRequest functionality to test conversion
+            val convertedJavaRequests = r.map(new JavaRequest(_)).asJava
+            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
+            FutureConverters
+              .toScala(javaResponse)
+              .map(_.asScala.map(jres =>
+                Response(
+                  Request(jres.request.name, jres.request.keys.asScala.toMap, Option(jres.request.atMillis)),
+                  jres.values.toScala.map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+                )))
+          } else {
+            fetcher.fetchJoin(r)
+          }
+          System.currentTimeMillis() -> responses
+        }
+        .flatMap {
+          case (start, future) =>
+            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
+            val latency = System.currentTimeMillis() - start
+            latencySum += latency
+            latencyCount += 1
+            result
+        }
+        .toList
+      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
+      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
+      (latencyMillis, qps, result)
+    }
+
+    // to overwhelm the profiler with fetching code path
+    // so as to make it prominent in the flamegraph & collect enough stats
+
+    var latencySum = 0.0
+    var qpsSum = 0.0
+    var loggedValues: Seq[LoggableResponseBase64] = null
+    var result: List[Response] = null
+    (0 until runCount).foreach { _ =>
+      val (latency, qps, resultVal) = fetchOnce
+      result = resultVal
+      loggedValues = mockApi.flushLoggedValues
+      latencySum += latency
+      qpsSum += qps
+    }
+    val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
+
+    println(s"""
+               |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
+               |with batch size: $chunkSize
+               |average qps: ${qpsSum / runCount}
+               |average latency: ${latencySum / runCount}
+               |""".stripMargin)
+    val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
+    if (logToHive) {
+      TableUtils(spark).insertPartitions(
+        loggedDf,
+        mockApi.logTable,
+        partitionColumns = Seq("ds", "name")
+      )
+    }
+    if (samplePercent > 0) {
+      println(s"logged count: ${loggedDf.count()}")
+      loggedDf.show()
+    }
+    result -> loggedDf
+  }
+
   // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
-  def compareTemporalFetch(joinConf: api.Join,
-                           endDs: String,
-                           namespace: String,
-                           consistencyCheck: Boolean,
-                           dropDsOnWrite: Boolean): Unit = {
+  def compareTemporalFetch(joinConf: api.Join, endDs: String, namespace: String, consistencyCheck: Boolean): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
@@ -352,14 +433,8 @@ class FetcherTest extends TestCase {
     joinedDf.save(joinTable)
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
 
-    joinConf.joinParts.toScala.foreach(jp =>
-      OnlineUtils.serve(tableUtils,
-                        inMemoryKvStore,
-                        kvStoreFunc,
-                        namespace,
-                        endDs,
-                        jp.groupBy,
-                        dropDsOnWrite = dropDsOnWrite))
+    joinConf.joinParts.asScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy))
 
     // Extract queries for the EndDs from the computedJoin results and eliminating computed aggregation values
     val endDsEvents = {
@@ -390,8 +465,7 @@ class FetcherTest extends TestCase {
     if (consistencyCheck) {
       val lagMs = -100000
       val laggedRequests = buildRequests(lagMs)
-      val laggedResponseDf =
-        FetcherTestUtil.joinResponses(spark, laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
+      val laggedResponseDf = joinResponses(laggedRequests, mockApi, samplePercent = 5, logToHive = true)._2
       val correctedLaggedResponse = laggedResponseDf
         .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
         .withColumn("ts_millis", col("ts_lagged"))
@@ -409,26 +483,15 @@ class FetcherTest extends TestCase {
       val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
       println(s"ooc metrics: $metrics".stripMargin)
-      OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
-      val fetcher = mockApi.buildFetcher()
-      val consistencyFetch =
-        fetcher.fetchConsistencyMetricsTimeseries(StatsRequest(joinConf.metaData.nameToFilePath, None, None))
-      val response = Await.result(consistencyFetch, Duration.Inf)
-      val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
-      println(s"""
-          |
-          | Fetched Consistency Metrics
-          | ${gson.toJson(response.values.get)}
-          |""".stripMargin)
     }
     // benchmark
-    FetcherTestUtil.joinResponses(spark, requests, mockApi, runCount = 10, useJavaFetcher = true)
-    FetcherTestUtil.joinResponses(spark, requests, mockApi, runCount = 10)
+    joinResponses(requests, mockApi, runCount = 10, useJavaFetcher = true)
+    joinResponses(requests, mockApi, runCount = 10)
 
     // comparison
     val columns = endDsExpected.schema.fields.map(_.name)
     val responseRows: Seq[Row] =
-      FetcherTestUtil.joinResponses(spark, requests, mockApi, useJavaFetcher = true, debug = true)._1.map { res =>
+      joinResponses(requests, mockApi, useJavaFetcher = true, debug = true)._1.map { res =>
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++
@@ -472,7 +535,7 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_fetch"
     val joinConf = generateMutationData(namespace)
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
@@ -481,14 +544,13 @@ class FetcherTest extends TestCase {
     compareTemporalFetch(joinConf,
                          tableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
-                         consistencyCheck = true,
-                         dropDsOnWrite = false)
+                         consistencyCheck = true)
   }
 
   def testTemporalTiledFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_tiled_fetch"
     val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
   }
 
   // test soft-fail on missing keys
@@ -496,6 +558,7 @@ class FetcherTest extends TestCase {
     val namespace = "empty_request"
     val joinConf = generateRandomData(spark=spark, namespace=namespace, keyCount=5, cardinality=5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
@@ -505,101 +568,24 @@ class FetcherTest extends TestCase {
     metadataStore.putJoinConf(joinConf)
 
     val request = Request(joinConf.metaData.nameToFilePath, Map.empty)
-    val (responses, _) = FetcherTestUtil.joinResponses(spark, Array(request), mockApi)
+    val (responses, _) = joinResponses(Array(request), mockApi)
     val responseMap = responses.head.values.get
 
     println("====== Empty request response map ======")
     println(responseMap)
-    assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
+    assertEquals(joinConf.joinParts.size() + joinConf.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
   }
-}
 
-object FetcherTestUtil {
-  def joinResponses(spark: SparkSession,
-                    requests: Array[Request],
-                    mockApi: MockApi,
-                    useJavaFetcher: Boolean = false,
-                    runCount: Int = 1,
-                    samplePercent: Double = -1,
-                    logToHive: Boolean = false,
-                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
-    val chunkSize = 100
-    @transient lazy val fetcher = mockApi.buildFetcher(debug)
-    @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
+  def testRetrieveSchema(): Unit = {
+    val namespace: String = "test_retrieve_schema"
+    val generatedJoin: Join = TestUtils.generateRandomData(spark=spark, namespace=namespace, keyCount=10, cardinality=10)
+    val mockApi: Api = TestUtils.setupFetcherWithJoin(spark, generatedJoin, namespace)
 
-    def fetchOnce = {
-      var latencySum: Long = 0
-      var latencyCount = 0
-      val blockStart = System.currentTimeMillis()
-      val result = requests.iterator
-        .grouped(chunkSize)
-        .map { r =>
-          val responses = if (useJavaFetcher) {
-            // Converting to java request and using the toScalaRequest functionality to test conversion
-            val convertedJavaRequests = r.map(new JavaRequest(_)).toJava
-            val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
-            FutureConverters
-              .toScala(javaResponse)
-              .map(
-                _.toScala.map(jres =>
-                  Response(
-                    Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
-                    jres.values.toScala.map(_.toScala)
-                  )))
-          } else {
-            fetcher.fetchJoin(r)
-          }
-          System.currentTimeMillis() -> responses
-        }
-        .flatMap {
-          case (start, future) =>
-            val result = Await.result(future, Duration(10000, SECONDS)) // todo: change back to millis
-            val latency = System.currentTimeMillis() - start
-            latencySum += latency
-            latencyCount += 1
-            result
-        }
-        .toList
-      val latencyMillis = latencySum.toFloat / latencyCount.toFloat
-      val qps = (requests.length * 1000.0) / (System.currentTimeMillis() - blockStart).toFloat
-      (latencyMillis, qps, result)
-    }
+    val joinResult: Map[String, DataType] = mockApi.fetcher.retrieveJoinSchema(generatedJoin.metaData.getName)
+    assertEquals(joinResult, TestUtils.expectedSchemaForTestPaymentsJoin)
 
-    // to overwhelm the profiler with fetching code path
-    // so as to make it prominent in the flamegraph & collect enough stats
-
-    var latencySum = 0.0
-    var qpsSum = 0.0
-    var loggedValues: Seq[LoggableResponseBase64] = null
-    var result: List[Response] = null
-    (0 until runCount).foreach { _ =>
-      val (latency, qps, resultVal) = fetchOnce
-      result = resultVal
-      loggedValues = mockApi.flushLoggedValues
-      latencySum += latency
-      qpsSum += qps
-    }
-    val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
-
-    println(s"""
-         |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
-         |with batch size: $chunkSize
-         |average qps: ${qpsSum / runCount}
-         |average latency: ${latencySum / runCount}
-         |""".stripMargin)
-    val loggedDf = mockApi.loggedValuesToDf(loggedValues, spark)
-    if (logToHive) {
-      TableUtils(spark).insertPartitions(
-        loggedDf,
-        mockApi.logTable,
-        partitionColumns = Seq("ds", "name")
-      )
-    }
-    if (samplePercent > 0) {
-      println(s"logged count: ${loggedDf.count()}")
-      loggedDf.show()
-    }
-    result -> loggedDf
+    val groupByResult: Map[String, DataType] = mockApi.fetcher.retrieveGroupBySchema(TestUtils.vendorRatingsGroupByName)
+    assertEquals(groupByResult, TestUtils.expectedSchemaForVendorRatingsGroupBy)
   }
 }

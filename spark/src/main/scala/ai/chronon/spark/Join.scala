@@ -23,8 +23,9 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
  */
 private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
-class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean = true, sparkUtils: Option[SparkUtils] = None, mutationScan: Boolean = true, showDf: Boolean = false)
-    extends BaseJoin(joinConf, endPartition, tableUtils, useTwoStack, skipFirstHole, sparkUtils: Option[SparkUtils], mutationScan, showDf) {
+class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils, useTwoStack:Boolean = false, skipFirstHole: Boolean = true, sparkUtils: Option[SparkUtils] = None)
+    extends BaseJoin(joinConf, endPartition, tableUtils, useTwoStack, skipFirstHole, sparkUtils: Option[SparkUtils]) {
+
   private val bootstrapTable = joinConf.metaData.bootstrapTable
   private val joinsAtATime = 8
 
@@ -189,7 +190,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
       .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
 
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
-    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns.map(c => s"`$c`"): _*), bootstrapInfo)
+    val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns: _*), bootstrapInfo)
     val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo, leftDf.columns),
                                           bootstrapInfo,
                                           leftDf.columns)
@@ -202,7 +203,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
       return baseDf
     }
 
-    val projections = joinConf.derivations.toScala.derivationProjection(bootstrapInfo.baseValueNames)
+    val projections = joinConf.derivationProjection(bootstrapInfo.baseValueNames)
     val projectionsMap = projections.toMap
     val baseOutputColumns = baseDf.columns.toSet
 
@@ -253,12 +254,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
               }
           }
 
-    val result = baseDf.select(finalOutputColumns: _*)
-    if (showDf) {
-      println(s"printing results for join: ${joinConf.metaData.name}")
-      result.prettyPrint()
-    }
-    result
+    baseDf.select(finalOutputColumns: _*)
   }
 
   /*
@@ -269,7 +265,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
     val contextualNames =
       bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema).map(_.name)
     val projections = if (joinConf.isSetDerivations) {
-      joinConf.derivations.toScala.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
+      joinConf.derivationProjection(bootstrapInfo.baseValueNames).map(_._1)
     } else {
       Seq()
     }
@@ -360,7 +356,8 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
               // this excludes columns that are NOT part of Join's output (either from GB or external source)
               val includedColumns = bootstrapDf.columns
                 .filter(bootstrapInfo.fieldNames ++ part.keys(joinConf, tableUtils.partitionColumn)
-                  ++ Seq(Constants.BootstrapHash, tableUtils.partitionColumn))
+                        ++ Seq(Constants.BootstrapHash,
+                        tableUtils.partitionColumn))
                 .sorted
 
               bootstrapDf = bootstrapDf
@@ -368,7 +365,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
                 // TODO: allow customization of deduplication logic
                 .dropDuplicates(part.keys(joinConf, tableUtils.partitionColumn).toArray)
 
-              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf, tableUtils.partitionColumn).toSeq)
+              coalescedJoin(partialDf, bootstrapDf, part.keys(joinConf, tableUtils.partitionColumn))
               // as part of the left outer join process, we update and maintain matched_hashes for each record
               // that summarizes whether there is a join-match for each bootstrap source.
               // later on we use this information to decide whether we still need to re-run the backfill logic

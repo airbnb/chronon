@@ -14,7 +14,7 @@ import org.junit.Test
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.util.ScalaJavaConversions._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class LogBootstrapTest {
 
@@ -32,7 +32,8 @@ class LogBootstrapTest {
     val groupBy2 = groupBy
       .deepCopy()
       .setAggregations(
-          Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")).toJava
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")))
       )
       .setMetaData(Builders.MetaData(name = "unit_test.user_transactions_v2", namespace = namespace, team = "chronon"))
 
@@ -61,22 +62,24 @@ class LogBootstrapTest {
     val baseJoinV2 = baseJoinV1
       .deepCopy()
       .setJoinParts(
-        Seq(
-          Builders.JoinPart(groupBy = groupBy),
-          Builders.JoinPart(groupBy = groupBy2)
-        ).toJava
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(
+            Builders.JoinPart(groupBy = groupBy),
+            Builders.JoinPart(groupBy = groupBy2)
+          ))
       )
 
     def createBootstrapJoin(baseJoin: Join): Join = {
       val join = baseJoin.deepCopy()
       join.getMetaData.setName("test.user_transaction_features.bootstrap")
       join.setBootstrapParts(
-        Seq(
-          Builders.BootstrapPart(
-            table = join.metaData.loggedTable
+        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+          Seq(
+            Builders.BootstrapPart(
+              table = join.metaData.loggedTable
+            )
           )
-        ).toJava
-      )
+        ))
       join
     }
 

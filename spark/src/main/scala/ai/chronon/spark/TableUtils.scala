@@ -22,8 +22,6 @@ trait BaseTableUtils {
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String = Constants.PartitionColumn
   val partitionSpec: PartitionSpec = Constants.Partition
-  val backfillValidationEnforced = sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
-
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
   def parsePartition(pstring: String): Map[String, String] = {
@@ -162,40 +160,11 @@ trait BaseTableUtils {
     sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
-  // method to check if a user has access to a table
-  def checkTablePermission(tableName: String,
-                           fallbackPartition: String =
-                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
-    println(s"Checking permission for table $tableName...")
-    try {
-      // retrieve one row from the table
-      val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
-      sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
-      true
-    } catch {
-      case e: RuntimeException =>
-        if (e.getMessage.contains("ACCESS DENIED"))
-          println(s"[Error] No access to table: $tableName ")
-        else {
-          println(s"[Error] Encountered exception when reading table: $tableName.")
-          e.printStackTrace()
-        }
-        false
-      case ex: Exception =>
-        println(s"[Error] Encountered exception when reading table: $tableName.")
-        ex.printStackTrace()
-        false
-    }
-  }
-
   def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
     partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
 
   def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
     partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
-
-  def ifPartitionExistsInTable(tableName: String, partition: String): Boolean =
-    partitions(tableName).contains(partition)
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
@@ -359,7 +328,7 @@ trait BaseTableUtils {
                      fileFormat: String): String = {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
-      .map(field => s"`${field.name}` ${field.dataType.catalogString}")
+      .map(field => s"${field.name} ${field.dataType.catalogString}")
     val createFragment =
       s"""CREATE TABLE $tableName (
          |    ${fieldDefinitions.mkString(",\n    ")}

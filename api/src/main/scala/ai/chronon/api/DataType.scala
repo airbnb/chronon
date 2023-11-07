@@ -1,7 +1,7 @@
 package ai.chronon.api
 
 import java.util
-import scala.util.ScalaJavaConversions.{JListOps, ListOps}
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 sealed trait DataType extends Serializable
 
@@ -73,7 +73,8 @@ object DataType {
       case DataKind.STRUCT => {
         assert(typeParams != null && !typeParams.isEmpty,
                s"TDataType needs non null `params` with non-zero length when kind == Struct. Given: $typeParams")
-        val fields = typeParams.toScala
+        val fields = ScalaVersionSpecificCollectionsConverter
+          .convertJavaListToScala(typeParams)
           .map(param => StructField(param.name, fromTDataType(param.dataType)))
         StructType(tDataType.name, fields.toArray)
       }
@@ -82,12 +83,10 @@ object DataType {
 
   def toTDataType(dataType: DataType): TDataType = {
     def toParams(params: (String, DataType)*): util.List[DataField] = {
-      params
-        .map {
-          case (name, dType) => new DataField().setName(name).setDataType(toTDataType(dType))
-        }
-        .toList
-        .toJava
+      val fields = params.map {
+        case (name, dType) => new DataField().setName(name).setDataType(toTDataType(dType))
+      }.toList
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(fields)
     }
     dataType match {
       case IntType               => new TDataType(DataKind.INT)

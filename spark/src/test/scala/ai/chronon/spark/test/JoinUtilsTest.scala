@@ -1,11 +1,8 @@
 package ai.chronon.spark.test
 
-import ai.chronon.aggregator.test.Column
-import ai.chronon.api
-import ai.chronon.api.{Builders, Constants, TimeUnit, Window}
+import ai.chronon.api.Constants
 import ai.chronon.spark.JoinUtils.{contains_any, set_add}
-import ai.chronon.spark.{JoinUtils, PartitionRange, SparkSessionBuilder, TableUtils}
-import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{JoinUtils, SparkSessionBuilder, TableUtils}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -308,23 +305,6 @@ class JoinUtilsTest {
     val filter = Array("listing", "ds", "feature_review")
     val filteredDf = JoinUtils.filterColumns(testDf, filter)
     assertTrue(filteredDf.schema.fieldNames.sorted sameElements filter.sorted)
-  }
-
-  @Test
-  def testGetRangesToFill(): Unit = {
-    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
-    // left table
-    val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = "joinUtil.item_queries_table"
-    DataFrameGen
-      .events(spark, itemQueries, 1000, partitions = 100)
-      .save(itemQueriesTable)
-
-    val startPartition = "2023-04-15"
-    val endPartition = "2023-08-01"
-    val leftSource = Builders.Source.events(Builders.Query(startPartition = startPartition), table = itemQueriesTable)
-    val range = JoinUtils.getRangesToFill(leftSource, tableUtils, endPartition)
-    assertEquals(range, PartitionRange(startPartition, endPartition)(tableUtils))
   }
 
   import ai.chronon.api.{LongType, StringType, StructField, StructType}

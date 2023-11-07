@@ -56,15 +56,6 @@ object ScalaJavaConversions {
       }
     }
   }
-  implicit class JListSeqOps[T](list: scala.collection.Seq[T]) {
-    def toJava: java.util.List[T] = {
-      if (list == null) {
-        null
-      } else {
-        list.asJava
-      }
-    }
-  }
   implicit class MapOps[K, V](map: java.util.Map[K, V]) {
     def toScala: Map[K, V] = {
       if (map == null) {

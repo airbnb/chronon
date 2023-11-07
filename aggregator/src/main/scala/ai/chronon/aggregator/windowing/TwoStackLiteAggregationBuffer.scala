@@ -8,8 +8,7 @@ case class BankersEntry[IR](var value: IR, ts: Long)
 
 // ported from: https://github.com/IBM/sliding-window-aggregators/blob/master/rust/src/two_stacks_lite/mod.rs with some
 // modification to work with simple aggregator
-class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggregator[Input, IR, Output],
-                                                                       maxSize: Int) {
+class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggregator[Input, IR, Output], maxSize: Int) {
 
   // last is where new events go, first is where old events get popped from
   val deque = new util.ArrayDeque[BankersEntry[IR]](maxSize)
@@ -57,7 +56,7 @@ class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregato
     val ir = if (front == null && aggBack == null) {
       null
     } else if (front == null) {
-      aggregator.clone(aggBack)
+        aggregator.clone(aggBack)
     } else if (aggBack == null) {
       front
     } else {

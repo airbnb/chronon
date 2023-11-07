@@ -9,12 +9,13 @@ import ai.chronon.spark.{BaseTableUtils, PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
 
 import java.util
-import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import scala.collection.JavaConverters._
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tableUtilsOpt: Option[BaseTableUtils] = None) extends Serializable {
 
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(_.toScala)
+    .map(_.asScala.toMap)
     .getOrElse(Map.empty[String, String])
   implicit val tableUtils: BaseTableUtils = tableUtilsOpt match {
     case Some(tblUtils) => tblUtils
@@ -35,12 +36,14 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
     query.setTimeColumn(Constants.TimeColumn)
     query.setStartPartition(joinConf.left.query.startPartition)
     // apply sampling logic to reduce OOC offline compute overhead
-    val wheres = if (joinConf.metaData.consistencySamplePercent < 100) {
-      Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
-    } else {
-      Seq()
-    }
-    query.setWheres(wheres.toJava)
+    val wheres = ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
+      if (joinConf.metaData.consistencySamplePercent < 100) {
+        Seq(s"RAND() <= ${joinConf.metaData.consistencySamplePercent / 100}")
+      } else {
+        Seq()
+      }
+    )
+    query.setWheres(wheres)
     loggedEvents.setQuery(query)
     loggedEvents.setTable(joinConf.metaData.loggedTable)
     loggedSource.setEvents(loggedEvents)
@@ -104,27 +107,22 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
       val loggedDfNoExternalCols = loggedDf.select(comparisonDfNoExternalCols.columns.map(org.apache.spark.sql.functions.col): _*)
       println("Starting compare job for stats")
       val joinKeys = if (joinConf.isSetRowIds) {
-        joinConf.rowIds.toScala
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
       } else {
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
       println(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
-      val (compareDf, metricsKvRdd, metrics) =
-        CompareBaseJob.compare(comparisonDfNoExternalCols,
-                               loggedDfNoExternalCols,
-                               keys = joinKeys,
-                               tableUtils,
-                               name = joinConf.metaData.nameToFilePath)
+      val (compareDf, metricsDf, metrics) = CompareBaseJob.compare(comparisonDfNoExternalCols,
+                                                                   loggedDfNoExternalCols,
+                                                                   keys = joinKeys,
+                                                                   tableUtils)
       println("Saving output.")
-      val outputDf = metricsKvRdd.toFlatDf.withTimeBasedColumn("ds")
+      val outputDf = metricsDf.withTimeBasedColumn("ds")
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
       tableUtils.insertPartitions(outputDf,
                                   joinConf.metaData.consistencyTable,
                                   tableProperties = tblProperties,
                                   autoExpand = true)
-      metricsKvRdd.toAvroDf
-        .withTimeBasedColumn(tableUtils.partitionColumn)
-        .save(joinConf.metaData.consistencyUploadTable, tblProperties)
       metrics
     }
     DataMetrics(allMetrics.flatMap(_.series))

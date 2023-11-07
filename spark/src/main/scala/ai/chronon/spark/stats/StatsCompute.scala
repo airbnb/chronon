@@ -94,8 +94,7 @@ class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends 
     TimedKvRdd(
       result,
       SparkConversions.fromChrononSchema(api.Constants.StatsKeySchema),
-      SparkConversions.fromChrononSchema(aggregator.irSchema),
-      storeSchemasPrefix = Some(name)
+      SparkConversions.fromChrononSchema(aggregator.irSchema)
     )
   }
 }

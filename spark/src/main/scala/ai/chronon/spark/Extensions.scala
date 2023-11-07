@@ -1,11 +1,10 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.{BootstrapPart, Constants}
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
-import org.apache.spark.sql.{DataFrame, Row}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
@@ -206,10 +205,8 @@ object Extensions {
       df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
 
     def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(
-        colName,
-        date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days),
-                    tableUtils.partitionSpec.format))
+      df.withColumn(colName,
+                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>
@@ -223,12 +220,6 @@ object Extensions {
       val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
       val filtered = df.where(filterClause)
       filtered.orderBy(keys.map(desc).toSeq: _*)
-    }
-
-    def prettyPrint(timeColumns: Seq[String] = Seq(Constants.TimeColumn, Constants.MutationTimeColumn)): Unit = {
-      val availableColumns = timeColumns.filter(df.schema.names.contains)
-      println(s"schema: ${df.schema.fieldNames.mkString("Array(", ", ", ")")}")
-      df.replaceWithReadableTime(availableColumns, dropOriginal = true).show(truncate = false)
     }
   }
 
@@ -246,22 +237,6 @@ object Extensions {
         idx += 1
       }
       result
-    }
-  }
-
-  implicit class InternalRowOps(internalRow: InternalRow) {
-    def toRow(schema: StructType): Row = {
-      new Row() {
-        override def length: Int = {
-          internalRow.numFields
-        }
-
-        override def get(i: Int): Any = {
-          internalRow.get(i, schema.fields(i).dataType)
-        }
-
-        override def copy(): Row = internalRow.copy().toRow(schema)
-      }
     }
   }
 }

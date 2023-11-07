@@ -54,17 +54,14 @@ case class BootstrapInfo(
 object BootstrapInfo {
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
-  def from(joinConf: api.Join,
-           range: PartitionRange,
-           tableUtils: BaseTableUtils,
-           leftSchema: Option[StructType],
-           mutationScan: Boolean = true): BootstrapInfo = {
+  def from(joinConf: api.Join, range: PartitionRange, tableUtils: BaseTableUtils): BootstrapInfo = {
+
     // Enrich each join part with the expected output schema
     println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
-        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true, mutationScan = mutationScan)
+        val gb = GroupBy.from(part.groupBy, range, tableUtils)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
@@ -78,19 +75,14 @@ object BootstrapInfo {
       .getOrElse(Seq.empty)
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
-    val leftFields = leftSchema
-      .map(schema => SparkConversions.toChrononSchema(schema))
-      .map(_.map(field => StructField(field._1, field._2)))
-      .getOrElse(Array.empty[StructField])
-    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema) ++ leftFields
+    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
-
     val baseDf = tableUtils.sparkSession.createDataFrame(
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
-    val derivedSchema = if (joinConf.hasDerivations) {
-      val projections = joinConf.derivationsScala.derivationProjection(baseDf.columns)
+    val derivedSchema = if (joinConf.isSetDerivations) {
+      val projections = joinConf.derivationProjection(baseFields.map(_.name))
       val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {

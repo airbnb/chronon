@@ -17,7 +17,7 @@ import java.util.{Base64, TimeZone}
 import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.util.ScalaJavaConversions.{JListOps, ListOps}
+import scala.util.ScalaVersionSpecificCollectionsConverter
 
 case class GroupByTestSuite(
     name: String,
@@ -37,7 +37,10 @@ object JoinTestSuite {
     val suite = JoinTestSuite(joinConf, groupBys)
     assert(
       groupBys.map(_.groupByConf.metaData.name) ==
-        joinConf.joinParts.toScala
+        ScalaVersionSpecificCollectionsConverter
+          .convertJavaListToScala(
+            joinConf.joinParts
+          )
           .map(_.groupBy.metaData.name)
     )
     suite
@@ -100,7 +103,7 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      rows.toJava,
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
       SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
@@ -145,7 +148,7 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      rows.toJava,
+      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
       SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(

@@ -3,7 +3,7 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.{DataType, Row}
 
-class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
+class DirectColumnAggregator[Input, IR, Output] (agg: BaseAggregator[Input, IR, Output],
                                                 columnIndices: ColumnIndices,
                                                 dispatcher: Dispatcher[Input, Any])
     extends ColumnAggregator {
@@ -59,9 +59,9 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
 
   def numberSanityCheck(value: Any): Any = {
     value match {
-      case i: java.lang.Float  => if (i.isNaN || i.isInfinite) null else i
-      case i: java.lang.Double => if (i.isNaN || i.isInfinite) null else i
-      case _                   => value
+      case i: java.lang.Float   => if (i.isNaN || i.isInfinite) null else i
+      case i: java.lang.Double    => if (i.isNaN || i.isInfinite) null else i
+      case _                    => value
     }
   }
 }

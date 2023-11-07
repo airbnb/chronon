@@ -8,8 +8,8 @@ import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWri
 import org.apache.avro.io._
 
 import java.io.ByteArrayOutputStream
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.util.ScalaJavaConversions.ListOps
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
@@ -22,12 +22,12 @@ class AvroCodec(val schemaStr: String) extends Serializable {
 
   @transient private lazy val outputStream = new ByteArrayOutputStream()
   @transient private var jsonEncoder: JsonEncoder = null
-  val fieldNames: Array[String] = schema.getFields.toScala.map(_.name()).toArray
+  val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
   @transient lazy val chrononSchema: DataType = AvroConversions.toChrononSchema(schema)
 
   @transient private var binaryEncoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null
-  @transient lazy val schemaElems: Array[Field] = schema.getFields.toScala.toArray
+  @transient lazy val schemaElems: Array[Field] = schema.getFields.asScala.toArray
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
     val record = new GenericData.Record(schema)
     schemaElems.foreach { field =>

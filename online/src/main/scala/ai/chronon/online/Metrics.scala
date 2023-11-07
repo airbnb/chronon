@@ -4,8 +4,6 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import com.timgroup.statsd.{NonBlockingStatsDClient, NonBlockingStatsDClientBuilder}
 
-import scala.util.ScalaJavaConversions.ListOps
-
 object Metrics {
   object Environment extends Enumeration {
     type Environment = String
@@ -53,8 +51,6 @@ object Metrics {
     val ValueBytes = "value.bytes"
 
     val Exception = "exception"
-    val validationFailure = "validation.failure"
-    val validationSuccess = "validation.success"
   }
 
   object Context {
@@ -75,11 +71,7 @@ object Metrics {
         groupBy = groupBy.metaData.cleanName,
         production = groupBy.metaData.isProduction,
         accuracy = groupBy.inferredAccuracy,
-        team = groupBy.metaData.owningTeam,
-        join = groupBy.sources.toScala
-          .find(_.isSetJoinSource)
-          .map(_.getJoinSource.join.metaData.cleanName)
-          .orNull
+        team = groupBy.metaData.owningTeam
       )
     }
 

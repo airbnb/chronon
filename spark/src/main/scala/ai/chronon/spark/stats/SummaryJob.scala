@@ -17,28 +17,22 @@ import org.apache.spark.sql.SparkSession
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
 
   val tableUtils: TableUtils = TableUtils(session)
-  private val loggingStatsTable = joinConf.metaData.loggingStatsTable
   private val dailyStatsTable = joinConf.metaData.dailyStatsOutputTable
+  private val dailyStatsAvroTable = joinConf.metaData.dailyStatsUploadTable
   private val tableProps: Map[String, String] = tableUtils.getTableProperties(joinConf.metaData.outputTable).orNull
 
-  def basicStatsJob(inputTable: String,
-                    outputTable: String,
-                    columns: Option[Seq[String]],
-                    stepDays: Option[Int] = None,
-                    sample: Double = 0.1): Unit = {
-    val uploadTable = joinConf.metaData.toUploadTable(outputTable)
-    val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty
-    if (backfillRequired)
-      Seq(outputTable, uploadTable).foreach(tableUtils.dropTableIfExists(_))
+  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
+    val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, dailyStatsTable, tableUtils).isEmpty
+    if (backfillRequired) Seq(dailyStatsTable, dailyStatsAvroTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
-      .unfilledRanges(outputTable, PartitionRange(null, endDate)(tableUtils), Some(Seq(inputTable)))
+      .unfilledRanges(dailyStatsTable, PartitionRange(null, endDate)(tableUtils), Some(Seq(joinConf.metaData.outputTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) {
-      println(s"No data to compute for $outputTable")
+      println(s"No data to compute for $dailyStatsTable")
       return
     }
     unfilledRanges.foreach { computeRange =>
-      println(s"Daily output statistics table $outputTable unfilled range: $computeRange")
+      println(s"Daily output statistics table $dailyStatsTable unfilled range: $computeRange")
       val stepRanges = stepDays.map(computeRange.steps).getOrElse(Seq(computeRange))
       println(s"Ranges to compute: ${stepRanges.map(_.toString).pretty}")
       // We are going to build the aggregator to denormalize sketches for hive.
@@ -47,13 +41,15 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
           val joinOutputDf = tableUtils.sql(s"""
                |SELECT *
-               |FROM ${inputTable}
+               |FROM ${joinConf.metaData.outputTable}
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val inputDf = if (columns.isDefined) {
-            val toSelect = columns.get
-            joinOutputDf.select(toSelect.head, toSelect.tail: _*)
-          } else joinOutputDf
+          val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
+          val inputDf = if (joinOutputDf.columns.contains(Constants.TimeColumn)) {
+            joinOutputDf.select(Constants.TimeColumn, baseColumns: _*)
+          } else {
+            joinOutputDf.select(baseColumns.head, baseColumns.tail: _*)
+          }
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(
             stats.metrics,
@@ -62,35 +58,13 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           // Build upload table for stats store.
           summaryKvRdd.toAvroDf
             .withTimeBasedColumn(tableUtils.partitionColumn)
-            .save(uploadTable, tableProps)
+            .save(dailyStatsAvroTable, tableProps)
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
-            .save(outputTable, tableProps)
+            .save(dailyStatsTable, tableProps)
           println(s"Finished range [${index + 1}/${stepRanges.size}].")
       }
     }
     println("Finished writing stats.")
   }
-
-  /**
-    * Daily stats job for backfill output tables.
-    * Filters contextual and external features.
-    */
-  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
-    val outputSchema = tableUtils.getSchemaFromTable(joinConf.metaData.outputTable)
-    val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
-    val columns = if (outputSchema.map(_.name).contains(Constants.TimeColumn)) {
-      baseColumns :+ Constants.TimeColumn
-    } else {
-      baseColumns
-    }
-    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, Some(columns), stepDays, sample)
-  }
-
-  /**
-    * Batch stats compute and upload for the logs
-    * Does not filter contextual or external features.
-    */
-  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
-    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, None, stepDays, sample)
 }

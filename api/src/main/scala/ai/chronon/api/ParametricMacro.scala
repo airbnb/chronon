@@ -9,25 +9,25 @@ case class ParametricMacro(value: String, func: Map[String, String] => String) {
   def replace(str: String): String = {
     var startIndex = 0
     val fragments = new mutable.ArrayBuffer[String] {}
-    pattern.findAllMatchIn(str) foreach { m =>
-      fragments.append(str.substring(startIndex, m.start))
-      val argMap = Option(m.group(1)).map { args =>
-        val inner = args.substring(1, args.length - 1)
-        val parsed = inner.split(",").foldLeft(Seq.empty[String]) {
-          case (argSeq, token) =>
+    pattern.findAllMatchIn(str) foreach {
+      m =>
+        fragments.append(str.substring(startIndex, m.start))
+        val argMap = Option(m.group(1)).map { args =>
+          val inner = args.substring(1, args.length - 1)
+          val parsed = inner.split(",").foldLeft(Seq.empty[String]) { case (argSeq, token) =>
             assert(token.count(_ == '=') <= 1)
             if (token.contains("=")) {
               argSeq :+ token
             } else {
               argSeq.tail :+ (argSeq.head + "," + token)
             }
+          }
+          println(parsed)
+          parsed.map(_.split("=").map(_.trim)).map(x => x(0) -> x(1)).toMap
         }
-        println(parsed)
-        parsed.map(_.split("=").map(_.trim)).map(x => x(0) -> x(1)).toMap
-      }
-      val result = func(argMap.getOrElse(Map.empty[String, String]))
-      fragments.append(result)
-      startIndex = m.end
+        val result = func(argMap.getOrElse(Map.empty[String, String]))
+        fragments.append(result)
+        startIndex = m.end
     }
     fragments.append(str.substring(startIndex, str.length))
     fragments.mkString("")

@@ -2,19 +2,17 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
+import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.online.Extensions.ChrononStructTypeOps
-import ai.chronon.online.{GroupByServingInfoParsed, Metrics, SparkConversions}
+import ai.chronon.online.{Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
-import org.apache.spark.sql.{Row, SparkSession, types}
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{Row, SparkSession}
 
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
-import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
@@ -54,17 +52,17 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     val irSchema = SparkConversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
-    println(s"""
-        |BatchIR Element Size: ${SparkEnv.get.serializer
-      .newInstance()
-      .serialize(sawtoothOnlineAggregator.init)
-      .capacity()}
+    println(
+      s"""
+        |BatchIR Element Size: ${SparkEnv.get.serializer.newInstance().serialize(sawtoothOnlineAggregator.init).capacity()}
         |""".stripMargin)
     val outputRdd = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update, combOp = sawtoothOnlineAggregator.merge)
+        seqOp = sawtoothOnlineAggregator.update,
+        combOp = sawtoothOnlineAggregator.merge
+      )
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
@@ -79,76 +77,10 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
-  // TODO - remove this if spark streaming can't reach hive tables
-  def buildServingInfo(groupByConf: api.GroupBy, session: SparkSession, endDs: String): GroupByServingInfoParsed = {
-    val groupByServingInfo = new GroupByServingInfo()
-    implicit val tableUtils: TableUtils = TableUtils(session)
-    val nextDay = tableUtils.partitionSpec.after(endDs)
-
-    val groupBy = ai.chronon.spark.GroupBy
-      .from(groupByConf,
-            PartitionRange(endDs, endDs),
-            TableUtils(session),
-            computeDependency = false,
-            mutationScan = false)
-    groupByServingInfo.setBatchEndDate(nextDay)
-    groupByServingInfo.setGroupBy(groupByConf)
-    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
-    groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
-    if (groupByConf.streamingSource.isDefined) {
-      val streamingSource = groupByConf.streamingSource.get
-
-      // TODO: move this to SourceOps
-      def getInfo(source: api.Source): (String, api.Query, Boolean) = {
-        if (source.isSetEvents) {
-          (source.getEvents.getTable, source.getEvents.getQuery, false)
-        } else if (source.isSetEntities) {
-          (source.getEntities.getSnapshotTable, source.getEntities.getQuery, true)
-        } else {
-          val left = source.getJoinSource.getJoin.getLeft
-          getInfo(left)
-        }
-      }
-
-      val (rootTable, query, _) = getInfo(streamingSource)
-      val fullInputSchema = tableUtils.getSchemaFromTable(rootTable)
-      val inputSchema: types.StructType =
-        if (Option(query.selects).isEmpty) fullInputSchema
-        else {
-          val selects = query.selects.toScala ++ Map(Constants.TimeColumn -> query.timeColumn)
-          val streamingQuery =
-            QueryUtils.build(selects, rootTable, query.wheres.toScala)
-          val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
-          types.StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
-        }
-      groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
-    } else {
-      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
-    }
-
-    val result = new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
-    val firstSource = groupByConf.sources.get(0)
-    println(s"""
-        |Built GroupByServingInfo for ${groupByConf.metaData.name}:
-        |table: ${firstSource.table} / data-model: ${firstSource.dataModel}
-        |     keySchema: ${Try(result.keyChrononSchema.catalogString)}
-        |   valueSchema: ${Try(result.valueChrononSchema.catalogString)}
-        |mutationSchema: ${Try(result.mutationChrononSchema.catalogString)}
-        |   inputSchema: ${Try(result.inputChrononSchema.catalogString)}
-        |selectedSchema: ${Try(result.selectedChrononSchema.catalogString)}
-        |  streamSchema: ${Try(result.streamChrononSchema.catalogString)}
-        |""".stripMargin)
-    result
-  }
-
-  def run(groupByConf: api.GroupBy,
-          endDs: String,
-          tableUtilsOpt: Option[BaseTableUtils] = None,
-          showDf: Boolean = false,
-          jsonPercent: Int = 1): Unit = {
+  def run(groupByConf: api.GroupBy, endDs: String, tableUtilsOpt: Option[BaseTableUtils] = None): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
-    implicit val tableUtils: BaseTableUtils =
+    implicit val tableUtils =
       tableUtilsOpt.getOrElse(
         TableUtils(
           SparkSessionBuilder
@@ -156,22 +88,11 @@ object GroupByUpload {
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
-    // for snapshot accuracy - we don't need to scan mutations
-    lazy val groupBy = GroupBy.from(groupByConf,
-                                    PartitionRange(endDs, endDs),
-                                    tableUtils,
-                                    computeDependency = true,
-                                    mutationScan = false,
-                                    showDf = showDf)
+    // for snapshot accuracy
+    lazy val groupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
-    // for temporal accuracy - we don't need to scan mutations for upload
-    lazy val shiftedGroupBy =
-      GroupBy.from(groupByConf,
-                   PartitionRange(endDs, endDs).shift(1),
-                   tableUtils,
-                   computeDependency = true,
-                   mutationScan = false,
-                   showDf = showDf)
+    // for temporal accuracy
+    lazy val shiftedGroupBy = GroupBy.from(groupByConf, PartitionRange(endDs, endDs).shift(1), tableUtils)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
@@ -182,19 +103,32 @@ object GroupByUpload {
          |Data Model: ${groupByConf.dataModel}
          |""".stripMargin)
 
-    val kvRdd = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
+    val kvDf = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
-    })
+    }).toAvroDf
 
-    val kvDf = kvRdd.toAvroDf(jsonPercent = jsonPercent)
-    if (showDf) {
-      kvRdd.toFlatDf.prettyPrint()
+    val groupByServingInfo = new GroupByServingInfo()
+    groupByServingInfo.setBatchEndDate(batchEndDate)
+    groupByServingInfo.setGroupBy(groupByConf)
+    groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
+    groupByServingInfo.setSelectedAvroSchema(groupBy.preAggSchema.toAvroSchema("Value").toString(true))
+    if (groupByConf.streamingSource.isDefined) {
+      val streamingSource = groupByConf.streamingSource.get
+      val fullInputSchema = tableUtils.getSchemaFromTable(streamingSource.table)
+      val streamingQuery = groupByConf.buildStreamingQuery
+      val inputSchema =
+        if (Option(streamingSource.query.selects).isEmpty) fullInputSchema
+        else {
+          val reqColumns = tableUtils.getColumnsFromQuery(streamingQuery)
+          StructType(fullInputSchema.filter(col => reqColumns.contains(col.name)))
+        }
+      groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
+    } else {
+      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
     }
-
-    val groupByServingInfo = buildServingInfo(groupByConf, session = tableUtils.sparkSession, endDs).groupByServingInfo
 
     val metaRows = Seq(
       Row(
@@ -222,5 +156,13 @@ object GroupByUpload {
       context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
       context.gauge(Metrics.Name.LatencyMinutes, (System.currentTimeMillis() - startTs) / (60 * 1000))
     }
+  }
+
+  def main(args: Array[String]): Unit = {
+    val parsedArgs = new Args(args)
+    parsedArgs.verify()
+    assert(parsedArgs.stepDays.isEmpty, "Don't need to specify step days for GroupBy uploads")
+    println(s"Parsed Args: $parsedArgs")
+    run(parsedArgs.parseConf[api.GroupBy], parsedArgs.endDate())
   }
 }

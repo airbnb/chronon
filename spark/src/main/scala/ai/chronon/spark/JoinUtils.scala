@@ -11,8 +11,8 @@ import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 
+import scala.collection.Seq
 import scala.collection.JavaConverters._
-import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
 
@@ -24,8 +24,7 @@ object JoinUtils {
              range: PartitionRange,
              tableUtils: BaseTableUtils,
              allowEmpty: Boolean = false,
-             maybeSampleNumRows: Option[Int] = None,
-             limit: Option[Int] = None): Option[DataFrame] = {
+             maybeSampleNumRows: Option[Int] = None): Option[DataFrame] = {
     val timeProjection = if (joinConf.left.dataModel == Events) {
       Seq(Constants.TimeColumn -> Option(joinConf.left.query).map(_.timeColumn).orNull)
     } else {
@@ -52,7 +51,7 @@ object JoinUtils {
           case _ => tableUtils.partitionColumn
         }
       )
-    } + limit.map(num => s" LIMIT $num").getOrElse("")
+    }
     val df = tableUtils.sql(scanQuery)
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
@@ -112,27 +111,15 @@ object JoinUtils {
       }
     })
 
-  /***
-    * Compute partition range to be filled for given join conf
-    */
-  def getRangesToFill(leftSource: ai.chronon.api.Source,
-                      tableUtils: BaseTableUtils,
-                      endPartition: String): PartitionRange = {
-    val leftStart = Option(leftSource.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
-    val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)
-    PartitionRange(leftStart, leftEnd)(tableUtils)
-  }
-
-  /***
-    * join left and right dataframes, merging any shared columns if exists by the coalesce rule.
-    * fails if there is any data type mismatch between shared columns.
-    *
-    * The order of output joined dataframe is:
-    *   - all keys
-    *   - all columns on left (incl. both shared and non-shared) in the original order of left
-    *   - all columns on right that are NOT shared by left, in the original order of right
-    */
+  /*
+   * join left and right dataframes, merging any shared columns if exists by the coalesce rule.
+   * fails if there is any data type mismatch between shared columns.
+   *
+   * The order of output joined dataframe is:
+   *   - all keys
+   *   - all columns on left (incl. both shared and non-shared) in the original order of left
+   *   - all columns on right that are NOT shared by left, in the original order of right
+   */
   def coalescedJoin(leftDf: DataFrame, rightDf: DataFrame, keys: Seq[String], joinType: String = "left"): DataFrame = {
     leftDf.validateJoinKeys(rightDf, keys)
     val sharedColumns = rightDf.columns.intersect(leftDf.columns)
@@ -177,22 +164,22 @@ object JoinUtils {
                           tableUtils: BaseTableUtils,
                           viewProperties: Map[String, String] = null,
                           labelColumnPrefix: String = Constants.LabelColumnPrefix): Unit = {
-    val fieldDefinitions = joinKeys.map(field => s"l.`${field}`") ++
+    val fieldDefinitions = joinKeys.map(field => s"l.${field}") ++
       tableUtils
         .getSchemaFromTable(leftTable)
         .filterNot(field => joinKeys.contains(field.name))
-        .map(field => s"l.`${field.name}`") ++
+        .map(field => s"l.${field.name}") ++
       tableUtils
         .getSchemaFromTable(rightTable)
         .filterNot(field => joinKeys.contains(field.name))
         .map(field => {
           if (field.name.startsWith(labelColumnPrefix)) {
-            s"r.`${field.name}`"
+            s"r.${field.name}"
           } else {
-            s"r.`${field.name}` AS `${labelColumnPrefix}_${field.name}`"
+            s"r.${field.name} AS ${labelColumnPrefix}_${field.name}"
           }
         })
-    val joinKeyDefinitions = joinKeys.map(key => s"l.`${key}` = r.`${key}`")
+    val joinKeyDefinitions = joinKeys.map(key => s"l.${key} = r.${key}")
     val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
     val queryFragment =
       s"""
@@ -222,15 +209,17 @@ object JoinUtils {
                             tableUtils: BaseTableUtils,
                             propertiesOverride: Map[String, String] = null): Unit = {
     val baseViewProperties = tableUtils.getTableProperties(baseView).getOrElse(Map.empty)
-    val labelTableName = baseViewProperties.getOrElse(Constants.LabelViewPropertyKeyLabelTable, "")
-    assert(labelTableName.nonEmpty, s"Not able to locate underlying label table for partitions")
+    val labelTableName = baseViewProperties.get(Constants.LabelViewPropertyKeyLabelTable).getOrElse("")
+    assert(!labelTableName.isEmpty, s"Not able to locate underlying label table for partitions")
 
     val labelMapping = getLatestLabelMapping(labelTableName, tableUtils)
-    val caseDefinitions = labelMapping.flatMap(entry => {
-      entry._2
-        .map(v => s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'")
-        .toList
-    })
+    val caseDefinitions = labelMapping
+      .map(entry => {
+        entry._2
+          .map(v => s"WHEN " + v.betweenClauses + s" THEN ${Constants.LabelPartitionColumn} = '${entry._1}'")
+          .toList
+      })
+      .flatten
 
     val createFragment = s"""CREATE OR REPLACE VIEW $viewName"""
     val queryFragment =
@@ -267,10 +256,10 @@ object JoinUtils {
     *
     * @return Mapping of the label ds ->  partition ranges of ds which has this label available as latest
     */
-  def getLatestLabelMapping(tableName: String, tableUtils: BaseTableUtils): Map[String, collection.Seq[PartitionRange]] = {
+  def getLatestLabelMapping(tableName: String, tableUtils: BaseTableUtils): Map[String, Seq[PartitionRange]] = {
     val partitions = tableUtils.allPartitions(tableName)
     assert(
-      partitions.head.keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
+      partitions(0).keys.equals(Set(tableUtils.partitionColumn, Constants.LabelPartitionColumn)),
       s""" Table must have label partition columns for latest label computation: `${tableUtils.partitionColumn}`
          | & `${Constants.LabelPartitionColumn}`
          |inputView: ${tableName}
@@ -279,16 +268,16 @@ object JoinUtils {
 
     val labelMap = collection.mutable.Map[String, String]()
     partitions.foreach(par => {
-      val ds_value = par(tableUtils.partitionColumn)
-      val label_value: String = par(Constants.LabelPartitionColumn)
+      val ds_value = par.get(tableUtils.partitionColumn).get
+      val label_value: String = par.get(Constants.LabelPartitionColumn).get
       if (!labelMap.contains(ds_value)) {
         labelMap.put(ds_value, label_value)
       } else {
-        labelMap.put(ds_value, Seq(labelMap(ds_value), label_value).max)
+        labelMap.put(ds_value, Seq(labelMap.get(ds_value).get, label_value).max)
       }
     })
 
-    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.keySet.toSet)) }
+    labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.map(_._1).toSet)) }
   }
 
   def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {
@@ -297,12 +286,12 @@ object JoinUtils {
     df.drop(columnsToDrop: _*)
   }
 
-  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: BaseTableUtils): collection.Seq[String] = {
+  def tablesToRecompute(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: BaseTableUtils): Seq[String] = {
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
-      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
+      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).asScala.toMap
     ) yield {
       println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)

@@ -7,7 +7,6 @@ import ai.chronon.spark.{MetadataExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
-import org.junit.Assert.assertTrue
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule

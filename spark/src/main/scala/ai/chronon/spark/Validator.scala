@@ -22,7 +22,7 @@ class Validator(tableUtils: BaseTableUtils,
   private val range = PartitionRange(startDate, endDate)(tableUtils)
 
   def validateGroupBy(groupByConf: api.GroupBy): List[String] = {
-    val groupBy = GroupBy.from(groupByConf, range, tableUtils, false, finalize = true)
+    val groupBy = GroupBy.from(groupByConf, range, tableUtils, finalize = true)
     Validator.validatePartitionColumn(groupBy.inputDf, groupByConf.metaData.name) ++ Validator.validateTimeColumn(groupBy.inputDf, groupByConf)
   }
 

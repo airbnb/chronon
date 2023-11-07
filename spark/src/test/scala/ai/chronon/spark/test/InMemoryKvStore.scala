@@ -12,7 +12,7 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.Try
 
-class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Serializable {
+class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
@@ -20,9 +20,9 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
   type Version = Long
   type VersionedData = mutable.Buffer[(Version, Data)]
   type Table = ConcurrentHashMap[Key, VersionedData]
-  protected[spark] val database = new ConcurrentHashMap[DataSet, Table]
+  private val database = new ConcurrentHashMap[DataSet, Table]
 
-  @transient lazy val encoder = Base64.getEncoder
+  private val encoder = Base64.getEncoder
   def encode(bytes: Array[Byte]): String = encoder.encodeToString(bytes)
   def toStr(bytes: Array[Byte]): String = new String(bytes, Constants.UTF8)
   override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] = {
@@ -56,16 +56,14 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
     }
 
   override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] = {
-    val result = putRequests.map {
-      case PutRequest(keyBytes, valueBytes, dataset, millis) =>
-        val table = database.get(dataset)
-        val key = encode(keyBytes)
-        table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
-        true
-    }
-
     Future {
-      result
+      putRequests.map {
+        case PutRequest(keyBytes, valueBytes, dataset, millis) =>
+          val table = database.get(dataset)
+          val key = encode(keyBytes)
+          table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
+          true
+      }
     }
   }
 
@@ -98,25 +96,6 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
 
   override def create(dataset: String): Unit = {
     database.put(dataset, new ConcurrentHashMap[Key, mutable.Buffer[(Version, Data)]])
-  }
-
-  def show(): Unit = {
-    val it = database.entrySet().iterator()
-    while (it.hasNext) {
-      val entry = it.next()
-      val tableName = entry.getKey
-      val table = entry.getValue
-      val innerIt = table.entrySet().iterator()
-      while (innerIt.hasNext) {
-        val tableEntry = innerIt.next()
-        val key = tableEntry.getKey
-        val value = tableEntry.getValue
-        value.foreach {
-          case (version, data) =>
-            println(s"table: $tableName, key: $key, value: $data, version: $version")
-        }
-      }
-    }
   }
 }
 

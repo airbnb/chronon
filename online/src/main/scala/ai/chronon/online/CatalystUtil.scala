@@ -103,9 +103,10 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
 }
 
 // This class by itself it not thread safe because of the transformBuffer
-class CatalystUtil(expressions: collection.Seq[(String, String)],
-                   inputSchema: StructType,
-                   filters: collection.Seq[String] = Seq.empty) {
+class CatalystUtil(
+    expressions: collection.Seq[(String, String)],
+    inputSchema: StructType,
+    filters: collection.Seq[String] = Seq.empty) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
@@ -172,7 +173,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
         }
         codegenFunc
       }
-      case ProjectExec(projectList, fp @ FilterExec(condition, child)) => {
+      case ProjectExec(projectList, fp@FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
         def projectFunc(row: InternalRow): Option[InternalRow] = {

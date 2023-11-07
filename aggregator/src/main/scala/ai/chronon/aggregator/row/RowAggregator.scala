@@ -9,8 +9,7 @@ import scala.collection.Seq
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
 class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
-    extends Serializable
-    with SimpleAggregator[Row, Array[Any], Array[Any]] {
+    extends Serializable with SimpleAggregator[Row, Array[Any], Array[Any]] {
 
   val length: Int = aggregationParts.size
   val indices: Range = 0 until length

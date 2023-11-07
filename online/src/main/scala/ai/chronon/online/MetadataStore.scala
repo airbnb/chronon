@@ -21,7 +21,6 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
-  private val CONF_BATCH_SIZE = 50
 
   // Note this should match with the format used in the warehouse
   def setPartitionMeta(format: String, spanMillis: Long): Unit = {
@@ -87,22 +86,41 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                  dataset))
   }
 
-  def getSchemaFromKVStore(dataset: String, key: String): AvroCodec = {
-    kvStore
-      .getString(key, dataset, timeoutMillis)
-      .recover {
-        case e: java.util.NoSuchElementException =>
-          println(s"Failed to retrieve $key for $dataset. Is it possible that hasn't been uploaded?")
-          throw e
+  def putConsistencyMetrics(joinConf: Join, metrics: DataMetrics): Unit = {
+    val gson = new GsonBuilder().setPrettyPrinting().create()
+    kvStore.multiPut(
+      metrics.series.map {
+        case (tsMillis, map) =>
+          val jMap: java.util.Map[String, Any] = map.asJava
+          val json = gson.toJson(jMap)
+          PutRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
+                     json.getBytes(Constants.UTF8),
+                     dataset,
+                     Some(tsMillis))
       }
-      .map(AvroCodec.of(_))
-      .get
+    )
   }
 
-  lazy val getStatsSchemaFromKVStore: TTLCache[(String, String), AvroCodec] = new TTLCache[(String, String), AvroCodec](
-    { case (dataset, key) => getSchemaFromKVStore(dataset, key) },
-    { _ => null }
-  )
+  def getConsistencyMetrics(joinConf: Join, fromDate: String): Future[Try[DataMetrics]] = {
+    val gson = new Gson()
+    val responseFuture = kvStore
+      .get(
+        GetRequest(s"consistency/join/${joinConf.metaData.name}".getBytes(UTF8),
+                   dataset,
+                   Some(partitionSpec.epochMillis(fromDate))))
+    responseFuture.map { response =>
+      val valuesTry = response.values
+      valuesTry.map { values =>
+        val series = values.map {
+          case TimedValue(bytes, millis) =>
+            val jsonString = new String(bytes, Constants.UTF8)
+            val jMap = gson.fromJson(jsonString, classOf[java.util.Map[String, Object]])
+            millis -> (SortedMap.empty[String, Any] ++ jMap.asScala)
+        }
+        DataMetrics(series)
+      }
+    }
+  }
 
   // pull and cache groupByServingInfo from the groupBy uploads
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
@@ -174,10 +192,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                      tsMillis = Some(System.currentTimeMillis()))
         }
       }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
     println(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
-    Future.sequence(futures).map(_.flatten)
+    kvStore.multiPut(puts)
   }
 
   // list file recursively
