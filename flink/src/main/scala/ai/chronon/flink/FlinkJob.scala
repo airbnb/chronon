@@ -8,7 +8,7 @@ import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 
-class FlinkJob[T](eventSrc: FlinkSource[T], sinkFn: RichAsyncFunction[PutRequest, Option[Long]], groupBy: GroupBy, encoder: Encoder[T], parallelism: Int) {
+class FlinkJob[T](eventSrc: FlinkSource[T], sinkFn: RichAsyncFunction[PutRequest, WriteResponse], groupBy: GroupBy, encoder: Encoder[T], parallelism: Int) {
 
   protected val exprEval: SparkExpressionEvalFn[T] = new SparkExpressionEvalFn[T](encoder, groupBy)
   val featureGroupName: String = groupBy.getMetaData.getName
@@ -22,7 +22,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T], sinkFn: RichAsyncFunction[PutRequest
   // The source of our Flink application is a Kafka topic
   val kafkaTopic: String = groupBy.streamingSource.get.topic
 
-  def runGroupByJob(env: StreamExecutionEnvironment): DataStream[Option[Long]] = {
+  def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
     val sourceStream: DataStream[T] =
       eventSrc
         .getDataStream(kafkaTopic, featureGroupName)(env, parallelism)

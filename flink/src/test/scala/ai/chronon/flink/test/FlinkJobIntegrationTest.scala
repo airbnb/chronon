@@ -1,6 +1,6 @@
 package ai.chronon.flink.test
 
-import ai.chronon.flink.{FlinkJob, FlinkSource}
+import ai.chronon.flink.{FlinkJob, FlinkSource, WriteResponse}
 import ai.chronon.online.Api
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
@@ -23,15 +23,15 @@ class E2EEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSource[E2ETestE
   }
 }
 
-class CollectSink extends SinkFunction[Option[Long]] {
-  override def invoke(value: Option[Long], context: SinkFunction.Context): Unit = {
+class CollectSink extends SinkFunction[WriteResponse] {
+  override def invoke(value: WriteResponse, context: SinkFunction.Context): Unit = {
     CollectSink.values.add(value)
   }
 }
 
 object CollectSink {
   // must be static
-  val values: util.List[Option[Long]] = Collections.synchronizedList(new util.ArrayList())
+  val values: util.List[WriteResponse] = Collections.synchronizedList(new util.ArrayList())
 }
 
 class FlinkJobIntegrationTest {
@@ -75,7 +75,12 @@ class FlinkJobIntegrationTest {
 
     // capture the datastream of the 'created' timestamps of all the written out events
     val writeEventCreatedDS = CollectSink.values.asScala
+
     assert(writeEventCreatedDS.size == elements.size)
-    assertEquals(writeEventCreatedDS.map(_.get), elements.map(_.created))
+    // check that the timestamps of the written out events match the input events
+    // we use a Set as we can have elements out of order given we have multiple tasks
+    assertEquals(writeEventCreatedDS.map(_.putRequest.tsMillis).map(_.get).toSet, elements.map(_.created).toSet)
+    // check that all the writes were successful
+    assertEquals(writeEventCreatedDS.map(_.status), Seq(true, true, true))
   }
 }

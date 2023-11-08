@@ -13,15 +13,17 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
+case class WriteResponse(putRequest: PutRequest, status: Boolean)
+
 object AsyncKVStoreWriter {
   private val kvStoreConcurrency = 10
 
-  def withUnorderedWaits(inputDS: DataStream[KVStore.PutRequest],
-    kvStoreWriterFn: RichAsyncFunction[PutRequest, Option[Long]],
+  def withUnorderedWaits(inputDS: DataStream[PutRequest],
+    kvStoreWriterFn: RichAsyncFunction[PutRequest, WriteResponse],
     featureGroupName: String,
     timeoutMillis: Long = 1000L,
     capacity: Int = kvStoreConcurrency
-  ): DataStream[Option[Long]] = {
+  ): DataStream[WriteResponse] = {
     // We use the Java API here as we have encountered issues in integration tests in the
     // past using the Scala async datastream API.
     new DataStream(
@@ -56,7 +58,7 @@ object AsyncKVStoreWriter {
 }
 
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
-  extends RichAsyncFunction[PutRequest, Option[Long]] {
+  extends RichAsyncFunction[PutRequest, WriteResponse] {
 
   @transient private var kvStore: KVStore = _
 
@@ -80,30 +82,30 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
     kvStore = getKVStore
   }
 
-  override def timeout(input: KVStore.PutRequest, resultFuture: ResultFuture[Option[Long]]): Unit = {
+  override def timeout(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
     println(s"Timed out writing to Memento for object: $input")
     errorCounter.inc()
-    resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
+    resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
   }
 
-  override def asyncInvoke(input: PutRequest, resultFuture: ResultFuture[Option[Long]]): Unit = {
+  override def asyncInvoke(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
     val resultFutureRequested: Future[Seq[Boolean]] = kvStore.multiPut(Seq(input))
     resultFutureRequested.onComplete {
       case Success(l) if l.forall(c => c) =>
         successCounter.inc()
-        resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = true)))
       case Success(l) if !l.forall(c => c) =>
         // we got a response that was marked as false (write failure)
         errorCounter.inc()
         println(s"Failed to write to KVStore for object: $input")
-        resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
       case Failure(exception) =>
         // this should be rare and indicates we have an uncaught exception
         // in the KVStore - we log the exception and skip the object to
         // not fail the app
         errorCounter.inc()
         println(s"Caught exception writing to KVStore for object: $input - $exception")
-        resultFuture.complete(util.Arrays.asList[Option[Long]](input.tsMillis))
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
     }
   }
 }

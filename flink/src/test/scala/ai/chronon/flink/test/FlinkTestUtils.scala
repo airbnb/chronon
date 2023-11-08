@@ -3,6 +3,8 @@ package ai.chronon.flink.test
 import ai.chronon.api.{Accuracy, Builders, GroupBy, Operation, TimeUnit, Window}
 import ai.chronon.flink.AsyncKVStoreWriter
 import ai.chronon.online.{Api, KVStore}
+import org.apache.flink.configuration.Configuration
+import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.{when, withSettings}
 import org.scalatestplus.mockito.MockitoSugar.mock
@@ -22,7 +24,21 @@ class MockAsyncKVStoreWriter(mockResults: Seq[Boolean], onlineImpl: Api, feature
 }
 
 object FlinkTestUtils {
-  def makeGroupBy(keyColumns: Seq[String]): GroupBy =
+
+  def createExecutionEnvironment(): StreamExecutionEnvironment = {
+    val config = new Configuration()
+    val parallelism = 4
+    config.setString("taskmanager.memory.segment-size", "4096")
+    // the withUnorderedWaits operation is now using slotSharingGroup
+    // total number task slots = sum(max(# of parallelism for each operation))
+    config.setString("taskmanager.numberOfTaskSlots", "8")
+    StreamExecutionEnvironment.createLocalEnvironment(
+      parallelism,
+      config
+    )
+  }
+
+  def makeGroupBy(keyColumns: Seq[String], filters: Seq[String] = Seq.empty): GroupBy =
     Builders.GroupBy(
       sources = Seq(
         Builders.Source.events(
@@ -34,7 +50,7 @@ object FlinkTestUtils {
               "int_val" -> "int_val",
               "double_val" -> "double_val"
             ),
-            wheres = Seq(),
+            wheres = filters,
             timeColumn = "created",
             startPartition = "20231106"
           )
