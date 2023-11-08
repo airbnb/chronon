@@ -2,6 +2,7 @@ package ai.chronon.spark
 
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -226,11 +227,13 @@ case class TableUtils(sparkSession: SparkSession) {
       try {
         sql(creationSql)
       } catch {
+        case _: TableAlreadyExistsException =>
+          println(s"Table $tableName already exists, skipping creation")
         case e: Exception =>
           println(s"Failed to create table $tableName with error: ${e.getMessage}")
           throw e
       }
-    } else {
+    }
       if (tableProperties != null && tableProperties.nonEmpty) {
         sql(alterTablePropertiesSql(tableName, tableProperties))
       }
@@ -238,7 +241,7 @@ case class TableUtils(sparkSession: SparkSession) {
       if (autoExpand) {
         expandTable(tableName, dfRearranged.schema)
       }
-    }
+
 
     val finalizedDf = if (autoExpand) {
       // reselect the columns so that an deprecated columns will be selected as NULL before write
