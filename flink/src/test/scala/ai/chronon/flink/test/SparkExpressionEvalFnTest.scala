@@ -1,9 +1,8 @@
 package ai.chronon.flink.test
 
 import ai.chronon.flink.SparkExpressionEvalFn
-import ai.chronon.flink.test.FlinkTestUtils.createExecutionEnvironment
 import org.apache.flink.api.scala._
-import org.apache.flink.streaming.api.scala.{DataStream, DataStreamUtils}
+import org.apache.flink.streaming.api.scala.{DataStream, DataStreamUtils, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoders
 import org.junit.Test
 
@@ -25,7 +24,7 @@ class SparkExpressionEvalFnTest {
       groupBy
     )
 
-    val env = createExecutionEnvironment()
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
     val source: DataStream[E2ETestEvent] = env.fromCollection(elements)
     val sparkExprEvalDS = source.flatMap(sparkExprEval)
 
@@ -52,7 +51,7 @@ class SparkExpressionEvalFnTest {
       groupBy
     )
 
-    val env = createExecutionEnvironment()
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
     val source: DataStream[E2ETestEvent] = env.fromCollection(elements)
     val sparkExprEvalDS = source.flatMap(sparkExprEval)
 
