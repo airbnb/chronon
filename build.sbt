@@ -348,16 +348,14 @@ lazy val spark_embedded = (project in file("spark"))
 lazy val flink = (project in file("flink"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
-    crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "avro",
-      "spark-all/provided",
-      "scala-parallel-collections"),
+    crossScalaVersions := List(scala212),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "avro", "spark-all/provided", "scala-parallel-collections"),
     libraryDependencies ++= Seq(
       "org.apache.flink" %% "flink-streaming-scala" % "1.16.1",
       "org.apache.flink" % "flink-metrics-dropwizard" % "1.16.1",
       "org.apache.flink" % "flink-clients" % "1.16.1",
-      "org.apache.flink" % "flink-test-utils" % "1.16.1",
-    ),
+      "org.apache.flink" % "flink-test-utils" % "1.16.1"
+    )
   )
 
 // Build Sphinx documentation
