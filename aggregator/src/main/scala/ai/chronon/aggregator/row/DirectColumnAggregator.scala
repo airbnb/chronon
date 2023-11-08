@@ -3,6 +3,8 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.{DataType, Row}
 
+import scala.collection.mutable
+
 class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
                                                 columnIndices: ColumnIndices,
                                                 dispatcher: Dispatcher[Input, Any])
@@ -17,6 +19,14 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
     // this is a critical assumption of the rest of the code
     if (ir1 == null) return agg.clone(ir2.asInstanceOf[IR])
     agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
+  }
+
+  def bulkMerge(irs: mutable.ArrayBuffer[Any]): Any = {
+    if (irs == null || irs.isEmpty) return null
+    val nonNullIrs = irs.filter(_ != null)
+    if (nonNullIrs.isEmpty) return null
+
+    agg.bulkMerge(nonNullIrs.map(_.asInstanceOf[IR]))
   }
 
   // non bucketed update

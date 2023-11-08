@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.mutable
 import scala.util.ScalaJavaConversions.IteratorOps
 
 abstract class ColumnAggregator extends Serializable {
@@ -18,6 +19,8 @@ abstract class ColumnAggregator extends Serializable {
 
   // ir1 is mutated, ir2 isn't
   def merge(ir1: Any, ir2: Any): Any
+
+  def bulkMerge(irs: mutable.ArrayBuffer[Any]): Any
 
   def finalize(ir: Any): Any
 

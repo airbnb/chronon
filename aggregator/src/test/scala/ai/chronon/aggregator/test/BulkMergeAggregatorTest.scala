@@ -7,44 +7,20 @@ import org.junit.Assert._
 
 import java.util
 import scala.collection.JavaConverters._
-
-class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
-  val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
-  override val length: Int = fields.size()
-
-  override def get(index: Int): Any = fields.get(index)
-
-  // just a convention for testing
-  lazy val timeStamp: Long = getAs[Long](tsIndex)
-
-  override def ts: Long = timeStamp
-
-  override def isBefore: Boolean = false
-
-  override def mutationTs: Long = timeStamp
-
-  def print(): Unit = println(fieldsSeq)
-
-  def set(index: Int, any: Any): Unit = fields.set(index, any)
-}
-
-object TestRow {
-  def apply(inputsArray: Any*): TestRow = new TestRow(inputsArray: _*)()
-}
-
-class RowAggregatorTest extends TestCase {
+import scala.collection.mutable
+class BulkMergeAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),
-      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null),
-      TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1)),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Map("A" -> 5, "B" -> 1, (null, 2))),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int])
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A")),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq()),
+      TestRow(3L, 5, 7.0f, "D", null, null),
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D")),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"))
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3)),
-      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3))
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H")),
+      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq())
     )
 
     val schema = List(
@@ -53,8 +29,7 @@ class RowAggregatorTest extends TestCase {
       "rating" -> FloatType,
       "title" -> StringType,
       "session_lengths" -> ListType(IntType),
-      "hist_input" -> ListType(StringType),
-      "hist_map" -> MapType(StringType, IntType)
+      "hist_input" -> ListType(StringType)
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
@@ -65,12 +40,6 @@ class RowAggregatorTest extends TestCase {
     val histogram = new java.util.HashMap[String, Int]()
     histogram.put("A", 4)
     histogram.put("B", 2)
-
-    val mapAvg = new java.util.HashMap[String, Double]()
-    mapAvg.put("A", 3.0)
-    mapAvg.put("B", 1.0)
-    mapAvg.put("D", 3.0)  // sum = -3 / count = -1
-    mapAvg.put(null, 2.0)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
@@ -89,15 +58,15 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.UNIQUE_COUNT, "title") -> 3L,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
-      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
-      Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg
+      Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip
 
     val rowAggregator = new RowAggregator(schema, specs)
 
-    val (firstRows, secondRows) = rows.splitAt(3)
+    val (firstRows, remainingRows) = rows.splitAt(1)
+    val (secondRows, thirdRows) = remainingRows.splitAt(2)
 
     val firstResult = firstRows.foldLeft(rowAggregator.init) {
       case (merged, input) =>
@@ -111,7 +80,13 @@ class RowAggregatorTest extends TestCase {
         merged
     }
 
-    rowAggregator.merge(firstResult, secondResult)
+    val thirdResult = thirdRows.foldLeft(rowAggregator.init) {
+      case (merged, input) =>
+        rowAggregator.update(merged, input)
+        merged
+    }
+
+    rowAggregator.bulkMerge(mutable.ArrayBuffer(firstResult, secondResult, thirdResult))
 
     val forDeletion = firstResult.clone()
 

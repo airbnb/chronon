@@ -4,7 +4,7 @@ import ai.chronon.aggregator.base.SimpleAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
 
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
@@ -96,6 +96,28 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
       i += 1
     }
     ir1
+  }
+
+  override def bulkMerge(irs: mutable.ArrayBuffer[Array[Any]]): Array[Any] = {
+    if (irs == null || irs.isEmpty) return null
+    val nonNullIrs = irs.filter(_ != null)
+    if (nonNullIrs.isEmpty) return null
+
+    val mergeBuffers = Array.fill(columnAggregators.length)(mutable.ArrayBuffer.empty[Any])
+    var i = 0
+    while (i < irs.length) {
+      val ir = irs(i)
+      var idx = 0
+      while (idx < ir.length) {
+        mergeBuffers(idx) += ir(idx)
+        idx += 1
+      }
+      i += 1
+    }
+    for (i <- mergeBuffers.indices) {
+      irs(0)(i) = columnAggregators(i).bulkMerge(mergeBuffers(i))
+    }
+    irs(0)
   }
 
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)

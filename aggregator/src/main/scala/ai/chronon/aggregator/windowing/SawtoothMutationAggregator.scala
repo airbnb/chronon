@@ -4,7 +4,7 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import java.util
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -121,16 +121,18 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
         val hopIndex = tailHopIndices(i)
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
         val hopIrs = batchIr.tailHops(hopIndex)
+        val relevantHops = mutable.ArrayBuffer[Any](ir(i))
         var idx: Int = 0
         while (idx < hopIrs.length) {
           val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
-            val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
-            ir.update(i, merged)
+            relevantHops += hopIr(baseIrIndices(i))
           }
           idx += 1
         }
+        val merged = windowedAggregator(i).bulkMerge(relevantHops)
+        ir.update(i, merged)
       }
       i += 1
     }
