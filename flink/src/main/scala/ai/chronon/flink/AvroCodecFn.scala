@@ -1,7 +1,15 @@
 package ai.chronon.flink
 
-import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{Constants, DataModel, GroupBy, GroupByServingInfo, Query, StructType => ChrononStructType}
+import ai.chronon.api.Extensions.{GroupByOps, WindowOps, WindowUtils}
+import ai.chronon.api.{
+  Constants,
+  DataModel,
+  GroupBy,
+  GroupByServingInfo,
+  PartitionSpec,
+  Query,
+  StructType => ChrononStructType
+}
 import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
 import ai.chronon.online.KVStore.PutRequest
@@ -79,7 +87,7 @@ case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchem
     )
     new GroupByServingInfoParsed(
       groupByServingInfo,
-      Constants.Partition
+      PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
     )
   }
 
