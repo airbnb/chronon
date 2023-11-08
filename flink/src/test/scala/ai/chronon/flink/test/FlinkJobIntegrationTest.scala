@@ -18,7 +18,8 @@ import java.util.Collections
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 class E2EEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSource[E2ETestEvent] {
-  override def getDataStream(topic: String, groupName: String)(env: StreamExecutionEnvironment, parallelism: Int): DataStream[E2ETestEvent] = {
+  override def getDataStream(topic: String, groupName: String)(env: StreamExecutionEnvironment,
+                                                               parallelism: Int): DataStream[E2ETestEvent] = {
     env.fromCollection(mockEvents)
   }
 }
@@ -36,10 +37,11 @@ object CollectSink {
 
 class FlinkJobIntegrationTest {
 
-  val flinkCluster = new MiniClusterWithClientResource(new MiniClusterResourceConfiguration.Builder()
-    .setNumberSlotsPerTaskManager(8)
-    .setNumberTaskManagers(1)
-    .build)
+  val flinkCluster = new MiniClusterWithClientResource(
+    new MiniClusterResourceConfiguration.Builder()
+      .setNumberSlotsPerTaskManager(8)
+      .setNumberTaskManagers(1)
+      .build)
 
   @Before
   def setup(): Unit = {
@@ -59,7 +61,7 @@ class FlinkJobIntegrationTest {
     val elements = Seq(
       E2ETestEvent("test1", 12, 1.5, 1699366993123L),
       E2ETestEvent("test2", 13, 1.6, 1699366993124L),
-      E2ETestEvent("test3", 14, 1.7, 1699366993125L),
+      E2ETestEvent("test3", 14, 1.7, 1699366993125L)
     )
 
     val source = new E2EEventSource(elements)

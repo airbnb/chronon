@@ -13,7 +13,8 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 case class E2ETestEvent(id: String, int_val: Int, double_val: Double, created: Long)
 
-class MockAsyncKVStoreWriter(mockResults: Seq[Boolean], onlineImpl: Api, featureGroup: String) extends AsyncKVStoreWriter(onlineImpl, featureGroup) {
+class MockAsyncKVStoreWriter(mockResults: Seq[Boolean], onlineImpl: Api, featureGroup: String)
+    extends AsyncKVStoreWriter(onlineImpl, featureGroup) {
   override def getKVStore: KVStore = {
     implicit val ec: ExecutionContextExecutor = ExecutionContext.global
     val mockKvStore = mock[KVStore](withSettings().serializable())

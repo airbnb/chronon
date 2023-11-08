@@ -14,7 +14,7 @@ class SparkExpressionEvalFnTest {
     val elements = Seq(
       E2ETestEvent("test1", 12, 1.5, 1699366993123L),
       E2ETestEvent("test2", 13, 1.6, 1699366993124L),
-      E2ETestEvent("test3", 14, 1.7, 1699366993125L),
+      E2ETestEvent("test3", 14, 1.7, 1699366993125L)
     )
 
     val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
@@ -41,7 +41,7 @@ class SparkExpressionEvalFnTest {
     val elements = Seq(
       E2ETestEvent("test1", 12, 1.5, 1699366993123L),
       E2ETestEvent("test2", 13, 1.6, 1699366993124L),
-      E2ETestEvent("test3", 14, 1.7, 1699366993125L),
+      E2ETestEvent("test3", 14, 1.7, 1699366993125L)
     )
 
     val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"), Seq("int_val % 2 == 0"))

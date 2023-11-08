@@ -8,7 +8,11 @@ import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 
-class FlinkJob[T](eventSrc: FlinkSource[T], sinkFn: RichAsyncFunction[PutRequest, WriteResponse], groupBy: GroupBy, encoder: Encoder[T], parallelism: Int) {
+class FlinkJob[T](eventSrc: FlinkSource[T],
+                  sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
+                  groupBy: GroupBy,
+                  encoder: Encoder[T],
+                  parallelism: Int) {
 
   protected val exprEval: SparkExpressionEvalFn[T] = new SparkExpressionEvalFn[T](encoder, groupBy)
   val featureGroupName: String = groupBy.getMetaData.getName

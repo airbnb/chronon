@@ -17,11 +17,11 @@ import org.apache.spark.sql.types.StructType
 import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
 
 /**
- * A Flink function that uses Chronon's CatalystUtil to evaluate the Spark SQL expression in a GroupBy.
- * @param encoder Spark Encoder for the input data type
- * @param groupBy The GroupBy to evaluate.
- * @tparam T The type of the input data.
- */
+  * A Flink function that uses Chronon's CatalystUtil to evaluate the Spark SQL expression in a GroupBy.
+  * @param encoder Spark Encoder for the input data type
+  * @param groupBy The GroupBy to evaluate.
+  * @tparam T The type of the input data.
+  */
 class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends RichFlatMapFunction[T, Map[String, Any]] {
 
   private val query: Query = groupBy.streamingSource.get.getEvents.query
@@ -43,10 +43,10 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
   // Chronon's CatalystUtil expects a Chronon `StructType` so we convert the
   // Encoder[T]'s schema to one.
   private val chrononSchema: ChrononStructType =
-  ChrononStructType.from(
-    s"${groupBy.metaData.cleanName}",
-    SparkConversions.toChrononSchema(encoder.schema)
-  )
+    ChrononStructType.from(
+      s"${groupBy.metaData.cleanName}",
+      SparkConversions.toChrononSchema(encoder.schema)
+    )
 
   def getOutputSchema: StructType = {
     // before we do anything, run our setup statements.

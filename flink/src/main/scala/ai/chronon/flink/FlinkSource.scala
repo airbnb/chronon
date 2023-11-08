@@ -5,10 +5,10 @@ import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironm
 abstract class FlinkSource[T] extends Serializable {
 
   /**
-   * Return a Flink DataStream for the given topic and feature group.
-   */
+    * Return a Flink DataStream for the given topic and feature group.
+    */
   def getDataStream(topic: String, groupName: String)(
-    env: StreamExecutionEnvironment,
-    parallelism: Int
+      env: StreamExecutionEnvironment,
+      parallelism: Int
   ): DataStream[T]
 }

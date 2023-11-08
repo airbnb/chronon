@@ -19,11 +19,10 @@ object AsyncKVStoreWriter {
   private val kvStoreConcurrency = 10
 
   def withUnorderedWaits(inputDS: DataStream[PutRequest],
-    kvStoreWriterFn: RichAsyncFunction[PutRequest, WriteResponse],
-    featureGroupName: String,
-    timeoutMillis: Long = 1000L,
-    capacity: Int = kvStoreConcurrency
-  ): DataStream[WriteResponse] = {
+                         kvStoreWriterFn: RichAsyncFunction[PutRequest, WriteResponse],
+                         featureGroupName: String,
+                         timeoutMillis: Long = 1000L,
+                         capacity: Int = kvStoreConcurrency): DataStream[WriteResponse] = {
     // We use the Java API here as we have encountered issues in integration tests in the
     // past using the Scala async datastream API.
     new DataStream(
@@ -42,8 +41,8 @@ object AsyncKVStoreWriter {
   }
 
   /**
-   * This was moved to flink-rpc-akka in Flink 1.16 and made private, so we reproduce the direct execution context here
-   */
+    * This was moved to flink-rpc-akka in Flink 1.16 and made private, so we reproduce the direct execution context here
+    */
   private class DirectExecutionContext extends ExecutionContext {
     override def execute(runnable: Runnable): Unit =
       runnable.run()
@@ -58,7 +57,7 @@ object AsyncKVStoreWriter {
 }
 
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
-  extends RichAsyncFunction[PutRequest, WriteResponse] {
+    extends RichAsyncFunction[PutRequest, WriteResponse] {
 
   @transient private var kvStore: KVStore = _
 

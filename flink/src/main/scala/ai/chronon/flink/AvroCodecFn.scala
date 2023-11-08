@@ -15,14 +15,14 @@ import scala.Console.println
 import scala.jdk.CollectionConverters._
 
 /**
- * A Flink function that is responsible for converting the Spark expr eval output and converting that to a form
- * that can be written out to the KV store (PutRequest object)
- * @param groupBy The GroupBy we are working with
- * @param outputSchema The output schema for the data
- * @tparam T The input data type
- */
+  * A Flink function that is responsible for converting the Spark expr eval output and converting that to a form
+  * that can be written out to the KV store (PutRequest object)
+  * @param groupBy The GroupBy we are working with
+  * @param outputSchema The output schema for the data
+  * @tparam T The input data type
+  */
 case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchema: StructType)
-  extends RichFlatMapFunction[Map[String, Any], PutRequest] {
+    extends RichFlatMapFunction[Map[String, Any], PutRequest] {
 
   @transient protected var avroConversionErrorCounter: Counter = _
 
@@ -84,8 +84,8 @@ case class AvroCodecFn[T](groupBy: GroupBy, inputSchema: StructType, outputSchem
   }
 
   private lazy val getKVSerializers = (
-                                        groupByServingInfoParsed: GroupByServingInfoParsed
-                                      ) => {
+    groupByServingInfoParsed: GroupByServingInfoParsed
+  ) => {
     val keyZSchema: ChrononStructType = groupByServingInfoParsed.keyChrononSchema
     val valueZSchema: ChrononStructType = groupBy.dataModel match {
       case DataModel.Events => groupByServingInfoParsed.valueChrononSchema
