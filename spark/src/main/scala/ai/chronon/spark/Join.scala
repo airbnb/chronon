@@ -25,7 +25,7 @@ case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
   def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
-    val coveringSetHashExpression = "array(" +
+    val coveringSetHashExpression = "(" +
       coveringSets
         .map { coveringSet =>
           val hashes = coveringSet.hashes.map("'" + _.trim + "'").mkString(", ")
@@ -436,7 +436,7 @@ class Join(joinConf: api.Join,
    */
   private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSets: Seq[CoveringSet]): DataFrame = {
 
-    if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+    if (coveringSets.isEmpty || !bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return bootstrapDf
     }
