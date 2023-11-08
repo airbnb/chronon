@@ -21,7 +21,7 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
  * isCovering: whether this combination of hashes fully covers the required fields of a join_part. the join_part
  *             reference itself is omitted here. but essentially each CoveringSet is pertinent to a specific join_part
  */
-private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
+case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
   def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
