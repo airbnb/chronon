@@ -103,24 +103,18 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     val nonNullIrs = irs.filter(_ != null)
     if (!nonNullIrs.hasNext) return null
 
-    val mergeBuffers = Array.fill(columnAggregators.length)(mutable.ArrayBuffer.empty[Any])
-    var firstIr: Array[Any] = Array.empty // mutate the first ir
-    var i = 0
-    while (nonNullIrs.hasNext) {
-      val ir: Array[Any] = nonNullIrs.next()
-      if (i == 0) firstIr = ir
-      var idx = 0
-      while (idx < ir.length) {
-        mergeBuffers(idx) += ir(idx)
-        idx += 1
-      }
-      i += 1
+    val firstIr: Array[Any] = nonNullIrs.next()
+    val allIrs = (Iterator(firstIr) ++ nonNullIrs).toList
+    val numVals: Int = firstIr.length
+
+    val iterators: Array[Iterator[Any]] = Array.range(0, numVals).map { i =>
+      allIrs.iterator.map(array => array(i))
     }
 
-    var mi = 0
-    while (mi < mergeBuffers.length) {
-      firstIr(mi) = columnAggregators(mi).bulkMerge(mergeBuffers(mi).iterator)
-      mi += 1
+    var i = 0
+    while (i < iterators.length) {
+      firstIr(i) = columnAggregators(i).bulkMerge(iterators(i))
+      i += 1
     }
     firstIr
   }
