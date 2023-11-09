@@ -343,8 +343,8 @@ class Runner:
             )
         else:
             self.conf_type = args.conf_type
-        self.ds = args.end_ds if hasattr(args, 'end_ds') else args.ds
-        self.parallelism = args.parallelism if hasattr(args, 'parallelism') else 1
+        self.ds = args.end_ds if hasattr(args, 'end_ds') and args.end_ds else args.ds
+        self.parallelism = args.parallelism if hasattr(args, 'parallelism') and args.parallelism else 1
         self.jar_path = jar_path
         self.args = args.args if args.args else ""
         self.online_class = args.online_class
@@ -474,8 +474,8 @@ if __name__ == "__main__":
         "--app-name", help="app name. Default to {}".format(APP_NAME_TEMPLATE)
     )
     parser.add_argument(
-        "--start-ds", help="overwrite the original start partition for a range backfill. "
-                           "It only supports staging query, group by backfill and join jobs"
+        "--start-ds", help="overwrite the original start partition for a range backfill. It only supports staging query, "
+                           "group by backfill and join jobs"
     )
     parser.add_argument(
         "--end-ds", help="the end ds for a range backfill"
