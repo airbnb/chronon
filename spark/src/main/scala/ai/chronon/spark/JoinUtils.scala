@@ -319,7 +319,11 @@ object JoinUtils {
 
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
-                        tableUtils: TableUtils): collection.Seq[String] = {
+                        tableUtils: TableUtils,
+                        forceOverwriteMetadata: Boolean = false): collection.Seq[String] = {
+    if (forceOverwriteMetadata) {
+      return collection.Seq.empty
+    }
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);

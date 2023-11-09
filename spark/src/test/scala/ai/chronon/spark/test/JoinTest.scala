@@ -791,6 +791,12 @@ class JoinTest {
       JoinUtils.tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
     println(leftChangeRecompute)
     assertEquals(leftChangeRecompute.size, 3)
+
+    val leftChangeNoRecompute =
+      JoinUtils.tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils, true)
+    println(leftChangeNoRecompute)
+    assertEquals(leftChangeNoRecompute.size, 0)
+
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,
                  Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
@@ -804,6 +810,7 @@ class JoinTest {
     val addPartRecompute =
       JoinUtils.tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils)
     assertEquals(addPartRecompute.size, 1)
+    assertEquals(JoinUtils.tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils,true).size, 0)
     assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable))
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
@@ -815,6 +822,7 @@ class JoinTest {
     val rightModRecompute =
       JoinUtils.tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils)
     assertEquals(rightModRecompute.size, 2)
+    assertEquals(JoinUtils.tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils,true).size, 0)
     val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
     assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
     // Modify both
@@ -1055,7 +1063,6 @@ class JoinTest {
 
   @Test
   def testMigration(): Unit = {
-
     // Left
     val itemQueriesTable = s"$namespace.item_queries"
     val ds = "2023-01-01"
