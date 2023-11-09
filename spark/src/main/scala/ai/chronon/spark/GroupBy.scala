@@ -646,11 +646,13 @@ object GroupBy {
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
-                      stepDays: Option[Int] = None): Unit = {
+                      stepDays: Option[Int] = None,
+                      overrideStartPartition: Option[String] = None): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
+    val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
@@ -660,13 +662,13 @@ object GroupBy {
       groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
+                                PartitionRange(overrideStart, endPartition)(tableUtils),
                                 if (isAnySourceCumulative) None else Some(inputTables))
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       println(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
-           |backfill start of ${groupByConf.backfillStartDate}
+           |backfill start of $overrideStart
            |Exiting...""".stripMargin)
       return
     }

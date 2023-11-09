@@ -234,14 +234,13 @@ case class TableUtils(sparkSession: SparkSession) {
           throw e
       }
     }
-      if (tableProperties != null && tableProperties.nonEmpty) {
-        sql(alterTablePropertiesSql(tableName, tableProperties))
-      }
+    if (tableProperties != null && tableProperties.nonEmpty) {
+      sql(alterTablePropertiesSql(tableName, tableProperties))
+    }
 
-      if (autoExpand) {
-        expandTable(tableName, dfRearranged.schema)
-      }
-
+    if (autoExpand) {
+      expandTable(tableName, dfRearranged.schema)
+    }
 
     val finalizedDf = if (autoExpand) {
       // reselect the columns so that an deprecated columns will be selected as NULL before write
