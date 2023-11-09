@@ -4,7 +4,6 @@ import ai.chronon.aggregator.base.TimeTuple.typ
 import ai.chronon.api._
 
 import java.util
-import scala.collection.mutable
 
 object TimeTuple extends Ordering[util.ArrayList[Any]] {
   type typ = util.ArrayList[Any]
@@ -74,9 +73,6 @@ class First(inputType: DataType) extends TimeOrdered(inputType) {
       ir2: util.ArrayList[Any]
   ): util.ArrayList[Any] =
     TimeTuple.min(ir1, ir2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[util.ArrayList[Any]]): util.ArrayList[Any] =
-    irs.reduce(TimeTuple.min)
 }
 
 class Last(inputType: DataType) extends TimeOrdered(inputType) {
@@ -97,10 +93,6 @@ class Last(inputType: DataType) extends TimeOrdered(inputType) {
       ir2: util.ArrayList[Any]
   ): util.ArrayList[Any] =
     TimeTuple.max(ir1, ir2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[util.ArrayList[Any]]): util.ArrayList[Any] = {
-    irs.reduce(TimeTuple.max)
-  }
 }
 
 // FIRSTK LASTK ==============================================================
@@ -135,10 +127,6 @@ class OrderByLimitTimed(
 
   override final def merge(state1: Container, state2: Container): Container =
     minHeap.merge(state1, state2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[Container]): Container = {
-    irs.reduce(minHeap.merge)
-  }
 
   override def finalize(state: Container): util.ArrayList[Any] = {
     val sorted = minHeap.sort(state)

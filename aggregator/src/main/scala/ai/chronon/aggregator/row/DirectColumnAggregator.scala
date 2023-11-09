@@ -21,7 +21,7 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
     agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
   }
 
-  def bulkMerge(irs: mutable.ArrayBuffer[Any]): Any = {
+  override def bulkMerge(irs: mutable.ArrayBuffer[Any]): Any = {
     if (irs == null || irs.isEmpty) return null
     val nonNullIrs = irs.filter(_ != null)
     if (nonNullIrs.isEmpty) return null

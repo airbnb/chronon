@@ -7,6 +7,7 @@ import org.junit.Assert._
 
 import java.util
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
   val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
@@ -33,8 +34,15 @@ object TestRow {
 }
 
 class RowAggregatorTest extends TestCase {
-  def testUpdate(): Unit = {
-    val rows = List(
+
+  var rowAggregator: RowAggregator = _
+  var rows: List[TestRow] = _
+  var rowsToDelete: List[TestRow] = _
+  var expectedVals: Array[Any] = _
+  var specs: Seq[AggregationPart] = _
+
+  override def setUp(): Unit = {
+    rows = List(
       TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),
       TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null),
       TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1)),
@@ -42,7 +50,7 @@ class RowAggregatorTest extends TestCase {
       TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int])
     )
 
-    val rowsToDelete = List(
+    rowsToDelete = List(
       TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3)),
       TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3))
     )
@@ -93,10 +101,14 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg
     )
 
-    val (specs, expectedVals) = specsAndExpected.unzip
+    val unzippedSpecsAndExpected = specsAndExpected.unzip
+    specs = unzippedSpecsAndExpected._1
+    expectedVals = unzippedSpecsAndExpected._2
 
-    val rowAggregator = new RowAggregator(schema, specs)
+    rowAggregator = new RowAggregator(schema, specs)
+  }
 
+  def testUpdateWithMerge(): Unit = {
     val (firstRows, secondRows) = rows.splitAt(3)
 
     val firstResult = firstRows.foldLeft(rowAggregator.init) {
@@ -112,6 +124,44 @@ class RowAggregatorTest extends TestCase {
     }
 
     rowAggregator.merge(firstResult, secondResult)
+
+    val forDeletion = firstResult.clone()
+
+    rowsToDelete.foldLeft(forDeletion) {
+      case (ir, inp) =>
+        rowAggregator.delete(ir, inp)
+        ir
+    }
+    val finalized = rowAggregator.finalize(forDeletion)
+
+    expectedVals.zip(finalized).zip(rowAggregator.outputSchema.map(_._1)).foreach {
+      case ((expected, actual), name) => assertEquals(expected, actual)
+    }
+  }
+
+  def testUpdateWithBulkMerge(): Unit = {
+    val (firstRows, remainingRows) = rows.splitAt(1)
+    val (secondRows, thirdRows) = remainingRows.splitAt(2)
+
+    val firstResult = firstRows.foldLeft(rowAggregator.init) {
+      case (merged, input) =>
+        rowAggregator.update(merged, input)
+        merged
+    }
+
+    val secondResult = secondRows.foldLeft(rowAggregator.init) {
+      case (merged, input) =>
+        rowAggregator.update(merged, input)
+        merged
+    }
+
+    val thirdResult = thirdRows.foldLeft(rowAggregator.init) {
+      case (merged, input) =>
+        rowAggregator.update(merged, input)
+        merged
+    }
+
+    rowAggregator.bulkMerge(mutable.ArrayBuffer(firstResult, secondResult, thirdResult))
 
     val forDeletion = firstResult.clone()
 

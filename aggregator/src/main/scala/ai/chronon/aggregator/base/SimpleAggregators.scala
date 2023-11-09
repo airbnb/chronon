@@ -30,8 +30,6 @@ class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
 
   override def merge(ir1: I, ir2: I): I = numericImpl.plus(ir1, ir2)
 
-  override def bulkMerge(irs: mutable.ArrayBuffer[I]): I = irs.reduce(numericImpl.plus)
-
   override def finalize(ir: I): I = ir
 
   override def delete(ir: I, input: I): I = numericImpl.minus(ir, input)
@@ -51,8 +49,6 @@ class Count extends SimpleAggregator[Any, Long, Long] {
   override def update(ir: Long, input: Any): Long = ir + 1
 
   override def merge(ir1: Long, ir2: Long): Long = ir1 + ir2
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[Long]): Long = irs.sum
 
   override def finalize(ir: Long): Long = ir
 
@@ -85,13 +81,6 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.HashS
     ir1.addAll(ir2)
     ir1
   }
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[util.HashSet[T]]): util.HashSet[T] = {
-    val result = new util.HashSet[T]()
-    irs.foreach(result.addAll)
-    result
-  }
-
 
   override def finalize(ir: util.HashSet[T]): Long = ir.size()
 
@@ -137,15 +126,6 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
     ir1.update(0, ir1(0).asInstanceOf[Double] + ir2(0).asInstanceOf[Double])
     ir1.update(1, ir1(1).asInstanceOf[Int] + ir2(1).asInstanceOf[Int])
     ir1
-  }
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[Array[Any]]): Array[Any] = {
-    val result: Array[Any] = Array(0.0, 0)
-    irs.foreach(ir => {
-      result.update(0, result(0).asInstanceOf[Double] + ir(0).asInstanceOf[Double])
-      result.update(1, result(1).asInstanceOf[Int] + ir(1).asInstanceOf[Int])
-    })
-    result
   }
 
   override def finalize(ir: Array[Any]): Double =
@@ -241,13 +221,6 @@ class Variance extends SimpleAggregator[Double, Array[Any], Double] {
     ir1
   }
 
-  override def bulkMerge(irs: mutable.ArrayBuffer[Array[Any]]): Array[Any] = {
-    val result = WelfordState.init
-    val resultState = new WelfordState(result)
-    irs.foreach(ir => resultState.merge(new WelfordState(ir)))
-    result
-  }
-
   override def finalize(ir: Array[Any]): Double =
     new WelfordState(ir).finalizeImpl()
 
@@ -298,12 +271,6 @@ class Histogram(k: Int = 0) extends SimpleAggregator[String, util.Map[String, In
       incrementInMap(ir1, key, value)
     }
     ir1
-  }
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[IrMap]): IrMap = {
-    val result = new util.HashMap[String, Int]()
-    irs.foreach(map => merge(result, map))
-    result
   }
 
   override def finalize(ir: IrMap): IrMap = {
@@ -402,12 +369,6 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
   override def merge(ir1: Sketch, ir2: Sketch): Sketch = {
     ir1.merge(ir2)
     ir1
-  }
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[ItemsSketch[T]]): ItemsSketch[T] = {
-    val result = new ItemsSketch[T](mapSize)
-    irs.foreach(sketch => result.merge(sketch))
-    result
   }
 
   // ItemsSketch doesn't have a proper copy method. So we serialize and deserialize.
@@ -542,8 +503,6 @@ class Max[I: Ordering](inputType: DataType) extends Order[I](inputType) {
     implicitly[Ordering[I]].max(ir, input)
 
   override def merge(ir1: I, ir2: I): I = implicitly[Ordering[I]].max(ir1, ir2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[I]): I = irs.max
 }
 
 class Min[I: Ordering](inputType: DataType) extends Order[I](inputType) {
@@ -551,8 +510,6 @@ class Min[I: Ordering](inputType: DataType) extends Order[I](inputType) {
     implicitly[Ordering[I]].min(ir, input)
 
   override def merge(ir1: I, ir2: I): I = implicitly[Ordering[I]].min(ir1, ir2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[I]): I = irs.min
 }
 
 // generalization of topK and bottomK
@@ -582,12 +539,6 @@ class OrderByLimit[I: ClassTag](
   // mutating 1
   override final def merge(state1: Container, state2: Container): Container =
     minHeap.merge(state1, state2)
-
-  override def bulkMerge(irs: mutable.ArrayBuffer[Container]): Container = {
-    val arr = new Container()
-    irs.foreach(minHeap.merge(arr, _))
-    arr
-  }
 
   override def finalize(state: Container): Container = minHeap.sort(state)
 
