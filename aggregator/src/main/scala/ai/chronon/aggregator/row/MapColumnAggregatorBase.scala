@@ -4,7 +4,6 @@ import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.{DataType, MapType, StringType}
 
 import java.util
-import scala.collection.mutable
 
 abstract class MapColumnAggregatorBase[Input, IR, Output](agg: BaseAggregator[Input, IR, Output])
     extends ColumnAggregator {
@@ -43,10 +42,6 @@ abstract class MapColumnAggregatorBase[Input, IR, Output](agg: BaseAggregator[In
       }
     }
     leftMap
-  }
-
-  final override def bulkMerge(irs: mutable.ArrayBuffer[Any]): Any = {
-    irs.reduce(merge)
   }
 
   private def guardedApply[ValueType, NewValueType](f: ValueType => NewValueType, ir: Any): Any = {
