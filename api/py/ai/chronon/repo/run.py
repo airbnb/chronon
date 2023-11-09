@@ -122,6 +122,13 @@ def retry_decorator(retries=3, backoff=20):
     return wrapper
 
 
+def custom_json(conf):
+    """ Extract the json stored in customJson for a conf. """
+    if conf.get("metaData", {}).get("customJson"):
+        return json.loads(conf["metaData"]["customJson"])
+    return {}
+
+
 def check_call(cmd):
     print("Running command: " + cmd)
     return subprocess.check_call(cmd.split(), bufsize=0)
@@ -262,14 +269,10 @@ def set_runtime_env(args):
                         .get(effective_mode, {})
                     )
                     # Load additional args used on backfill.
-                    if (
-                        conf_json.get("metaData", {}).get("customJson")
-                        and effective_mode == "backfill"
-                    ):
-                        customJson = json.loads(conf_json["metaData"]["customJson"])
+                    if custom_json(conf_json) and effective_mode == "backfill":
                         environment["conf_env"][
                             "CHRONON_CONFIG_ADDITIONAL_ARGS"
-                        ] = " ".join(customJson.get("additional_args", []))
+                        ] = " ".join(custom_json(conf_json).get("additional_args", []))
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
                         mode=effective_mode,
                         conf_type=conf_type,

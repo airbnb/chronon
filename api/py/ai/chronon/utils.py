@@ -146,7 +146,7 @@ def __set_name(obj, cls, mod_prefix):
     eo.import_module_set_name(module, cls)
 
 
-def metadata_clean_name(name):
+def sanitize(name):
     """
     From api.Extensions.scala
     Option(name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
@@ -157,7 +157,7 @@ def metadata_clean_name(name):
 
 
 def output_table_name(obj, full_name: bool):
-    table_name = metadata_clean_name(obj.metaData.name)
+    table_name = sanitize(obj.metaData.name)
     db = obj.metaData.outputNamespace
     db = db or "{{ db }}"
     if full_name:
@@ -180,7 +180,7 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
     return "_".join([component for component in [
         output_table_name(join, full_name),
         jp.prefix,
-        metadata_clean_name(jp.groupBy.metaData.name)
+        sanitize(jp.groupBy.metaData.name)
     ] if component is not None])
 
 
