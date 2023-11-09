@@ -14,7 +14,6 @@ import com.yahoo.sketches.{
 }
 
 import java.util
-import scala.collection.mutable
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -421,7 +420,7 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
     merger.getResult
   }
 
-  override def bulkMerge(irs: mutable.ArrayBuffer[CpcSketch]): CpcSketch = {
+  override def bulkMerge(irs: Iterator[CpcSketch]): CpcSketch = {
     val merger = new CpcUnion(lgK)
     irs.foreach(merger.update)
     merger.getResult
@@ -466,7 +465,7 @@ class ApproxPercentiles(k: Int = 128, percentiles: Array[Double] = Array(0.5))
     ir1
   }
 
-  override def bulkMerge(irs: mutable.ArrayBuffer[KllFloatsSketch]): KllFloatsSketch = {
+  override def bulkMerge(irs: Iterator[KllFloatsSketch]): KllFloatsSketch = {
     val result = new KllFloatsSketch(k)
     irs.foreach(result.merge)
     result

@@ -2,15 +2,13 @@ package ai.chronon.aggregator.base
 
 import ai.chronon.api.DataType
 
-import scala.collection.mutable
-
 trait BaseAggregator[Input, IR, Output] extends Serializable {
   def outputType: DataType
   def irType: DataType
 
   def merge(ir1: IR, ir2: IR): IR
 
-  def bulkMerge(irs: mutable.ArrayBuffer[IR]): IR = irs.reduce(merge)
+  def bulkMerge(irs: Iterator[IR]): IR = irs.reduce(merge)
 
   def finalize(ir: IR): Output
 

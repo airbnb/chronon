@@ -131,7 +131,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           }
           idx += 1
         }
-        val merged = windowedAggregator(i).bulkMerge(relevantHops)
+        val merged = windowedAggregator(i).bulkMerge(relevantHops.iterator)
         ir.update(i, merged)
       }
       i += 1

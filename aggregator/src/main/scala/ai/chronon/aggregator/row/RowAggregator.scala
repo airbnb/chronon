@@ -98,15 +98,17 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     ir1
   }
 
-  override def bulkMerge(irs: mutable.ArrayBuffer[Array[Any]]): Array[Any] = {
-    if (irs == null || irs.isEmpty) return null
+  override def bulkMerge(irs: Iterator[Array[Any]]): Array[Any] = {
+    if (irs == null || !irs.hasNext) return null
     val nonNullIrs = irs.filter(_ != null)
-    if (nonNullIrs.isEmpty) return null
+    if (!nonNullIrs.hasNext) return null
 
     val mergeBuffers = Array.fill(columnAggregators.length)(mutable.ArrayBuffer.empty[Any])
+    var firstIr: Array[Any] = Array.empty // mutate the first ir
     var i = 0
-    while (i < irs.length) {
-      val ir = irs(i)
+    while (nonNullIrs.hasNext) {
+      val ir: Array[Any] = nonNullIrs.next()
+      if (i == 0) firstIr = ir
       var idx = 0
       while (idx < ir.length) {
         mergeBuffers(idx) += ir(idx)
@@ -114,10 +116,13 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
       }
       i += 1
     }
-    for (i <- mergeBuffers.indices) {
-      irs(0)(i) = columnAggregators(i).bulkMerge(mergeBuffers(i))
+
+    var mi = 0
+    while (mi < mergeBuffers.length) {
+      firstIr(mi) = columnAggregators(mi).bulkMerge(mergeBuffers(mi).iterator)
+      mi += 1
     }
-    irs(0)
+    firstIr
   }
 
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)

@@ -161,7 +161,7 @@ class RowAggregatorTest extends TestCase {
         merged
     }
 
-    rowAggregator.bulkMerge(mutable.ArrayBuffer(firstResult, secondResult, thirdResult))
+    rowAggregator.bulkMerge(mutable.ArrayBuffer(firstResult, secondResult, thirdResult).iterator)
 
     val forDeletion = firstResult.clone()
 
