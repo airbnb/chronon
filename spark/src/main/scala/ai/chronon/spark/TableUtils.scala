@@ -400,6 +400,10 @@ case class TableUtils(sparkSession: SparkSession) {
     s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
   }
 
+  def unsetTablePropertiesSql(tableName: String, propertyKey: String): String = {
+    s"ALTER TABLE $tableName UNSET TBLPROPERTIES ('$propertyKey')"
+  }
+
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
     sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
