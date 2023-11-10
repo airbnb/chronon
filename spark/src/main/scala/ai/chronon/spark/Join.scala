@@ -217,8 +217,7 @@ class Join(joinConf: api.Join,
 
         // parallelize the computation of each of the parts
         val parBootstrapCoveringSets = bootstrapCoveringSets.parallel
-        val executor = Executors.newFixedThreadPool(tableUtils.joinPartParallelism)
-        parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(ExecutionContext.fromExecutor(executor))
+        parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(tableUtils.executorService)
 
         // compute join parts (GB) backfills
         // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.

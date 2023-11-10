@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import jnr.ffi.annotations.Synchronized
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -27,9 +28,23 @@ import org.apache.spark.storage.StorageLevel
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+import java.util.concurrent.{ExecutorService, Executors}
 import scala.collection.{Seq, mutable}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
+object TableUtilsThreadPool {
+  private var tpe: ExecutionContextExecutor = null
+
+  def init(parallelism: Int): ExecutionContextExecutor =
+    synchronized {
+      if (tpe == null) {
+        val executor: ExecutorService = Executors.newFixedThreadPool(parallelism)
+        tpe = ExecutionContext.fromExecutor(executor)
+      }
+      tpe
+    }
+}
 case class TableUtils(sparkSession: SparkSession) {
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
@@ -62,6 +77,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }.get
 
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
+  val executorService: ExecutionContextExecutor = TableUtilsThreadPool.init(joinPartParallelism)
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
