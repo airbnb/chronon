@@ -112,7 +112,7 @@ abstract class JoinBase(joinConf: api.Join,
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame,
+  def computeRightTable(leftDf: DfWithStats,
                         joinPart: JoinPart,
                         leftRange: PartitionRange,
                         joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
@@ -149,7 +149,7 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart, joinLevelBloomMapOpt)
+              val filledDf = computeJoinPart(leftDf.prunePartitions(leftUnfilledRange), joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -175,20 +175,14 @@ abstract class JoinBase(joinConf: api.Join,
     }
   }
 
-  def computeJoinPart(leftDf: DataFrame,
+  def computeJoinPart(leftDfWithStats: DfWithStats,
                       joinPart: JoinPart,
                       joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
 
-    val stats = leftDf
-      .select(
-        count(lit(1)),
-        min(tableUtils.partitionColumn),
-        max(tableUtils.partitionColumn)
-      )
-      .head()
-    val rowCount = stats.getLong(0)
+    val leftDf = leftDfWithStats.df
+    val rowCount = leftDfWithStats.count
+    val unfilledRange = leftDfWithStats.partitionRange
 
-    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))(tableUtils)
     if (rowCount == 0) {
       // happens when all rows are already filled by bootstrap tables
       println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")

@@ -54,8 +54,38 @@ object Extensions {
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
+  // helper class to maintain datafram stats that are necessary for downstream operations
+  case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
+    assert(!df.isEmpty)
+    private val minPartition: String = partitionCounts.keys.min
+    private val maxPartition: String = partitionCounts.keys.max
+    val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
+    val count: Long = partitionCounts.values.sum
+
+    def prunePartitions(range: PartitionRange): DfWithStats = {
+      val intersected = partitionRange.intersect(range)
+      val intersectedCounts = partitionCounts.filter(intersected.partitions contains _._1)
+      DfWithStats(df.prunePartition(range), intersectedCounts)
+    }
+  }
+
+  object DfWithStats {
+    def apply(dataFrame: DataFrame)(implicit tableUtils: TableUtils): DfWithStats = {
+      val partitionCounts = dataFrame
+        .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
+        .count()
+        .collect()
+        .map(row => row.getString(0) -> row.getLong(1))
+        .toMap
+      DfWithStats(dataFrame, partitionCounts)
+    }
+  }
+
   implicit class DataframeOps(df: DataFrame) {
     private implicit val tableUtils = TableUtils(df.sparkSession)
+
+    // This is safe to call on dataframes that are un-shuffled from their disk sources -
+    // like tables read without shuffling with row level projections or filters.
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
@@ -75,6 +105,8 @@ object Extensions {
       val (start, end) = df.range[String](tableUtils.partitionColumn)
       PartitionRange(start, end)
     }
+
+    def withStats: DfWithStats = DfWithStats(df)
 
     def range[T](columnName: String): (T, T) = {
       val viewName = s"${columnName}_range_input_${(math.random * 100000).toInt}"
