@@ -226,7 +226,7 @@ class Join(joinConf: api.Join,
         // we do this by utilizing the per-record metadata computed during the bootstrap process.
         // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
         // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
-        val rightResults = parBootstrapCoveringSets.flatMap {
+        val rightResults = bootstrapCoveringSets.flatMap {
           case (partMetadata, coveringSets) =>
             val unfilledLeftDf = findUnfilledRecords(bootStrapWithStats, coveringSets.filter(_.isCovering))
             val joinPart = partMetadata.joinPart
@@ -243,7 +243,7 @@ class Join(joinConf: api.Join,
             computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
         }.toArray
 
-        executor.shutdown()
+        // executor.shutdown()
         // combine bootstrap table and join part tables
         // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
         // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
