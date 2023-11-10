@@ -98,22 +98,6 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     ir1
   }
 
-  override def bulkMerge(irs: Iterator[Array[Any]]): Array[Any] = {
-    if (irs == null || !irs.hasNext) return null
-    val nonNullIrs: Iterator[Array[Any]] = irs.filter(_ != null)
-    if (!nonNullIrs.hasNext) return null
-
-    val firstIr: Array[Any] = nonNullIrs.next()
-    val numVals: Int = firstIr.length
-
-    nonNullIrs.foldLeft(firstIr) { (acc, array) =>
-      for (i <- 0 until numVals) {
-        acc(i) = columnAggregators(i).bulkMerge(Iterator(acc(i), array(i)))
-      }
-      acc
-    }
-  }
-
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)
 
   override def delete(ir: Array[Any], inputRow: Row): Array[Any] = {
