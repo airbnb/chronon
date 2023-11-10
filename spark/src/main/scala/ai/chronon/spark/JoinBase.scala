@@ -301,15 +301,7 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     // First run command to archive tables that have changed semantically since the last run
-    val archivedAtTs = Instant.now()
-    val tablesAfterVersionCheck = tablesToRecompute(joinConf, outputTable, tableUtils, forceOverwriteMetadata)
-    tablesAfterVersionCheck.foreach { table =>
-      if (forceOverwriteMetadata) {
-        tableUtils.sql(tableUtils.unsetTablePropertiesSql(table, Constants.SemanticHashKey))
-      } else {
-        tableUtils.archiveOrDropTableIfExists(table, Some(archivedAtTs))
-      }
-    }
+    tablesToRecompute(joinConf, outputTable, tableUtils, forceOverwriteMetadata)
 
     // detect holes and chunks to fill
     // OverrideStartPartition is used to replace the start partition of the join config. This is useful when
