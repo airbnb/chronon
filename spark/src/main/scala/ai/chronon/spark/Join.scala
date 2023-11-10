@@ -21,7 +21,22 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
  * isCovering: whether this combination of hashes fully covers the required fields of a join_part. the join_part
  *             reference itself is omitted here. but essentially each CoveringSet is pertinent to a specific join_part
  */
-private case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
+case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
+
+object CoveringSet {
+  def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
+    val coveringSetHashExpression = "(" +
+      coveringSets
+        .map { coveringSet =>
+          val hashes = coveringSet.hashes.map("'" + _.trim + "'").mkString(", ")
+          s"array($hashes)"
+        }
+        .mkString(", ") +
+      ")"
+
+    s"( ${Constants.MatchedHashes} IS NULL ) OR ( ${Constants.MatchedHashes} NOT IN $coveringSetHashExpression )"
+  }
+}
 
 class Join(joinConf: api.Join,
            endPartition: String,
@@ -419,22 +434,14 @@ class Join(joinConf: api.Join,
    * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
    * full schema information.
    */
-  private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSet: Seq[CoveringSet]): DataFrame = {
+  private def findUnfilledRecords(bootstrapDf: DataFrame, coveringSets: Seq[CoveringSet]): DataFrame = {
 
-    if (!bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+    if (coveringSets.isEmpty || !bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return bootstrapDf
     }
-
-    // Unfilled records are those that do NOT have a covering set, and thus require backfill
-    bootstrapDf.filter { row =>
-      val matchedHashes = if (row.isNullAt(row.fieldIndex(Constants.MatchedHashes))) {
-        Seq()
-      } else {
-        row.getAs[mutable.WrappedArray[String]](Constants.MatchedHashes).toSeq
-      }
-      val isCovering = coveringSet.map(_.hashes).contains(matchedHashes)
-      !isCovering
-    }
+    val filterExpr = CoveringSet.toFilterExpression(coveringSets)
+    println(s"Using covering set filter: $filterExpr")
+    bootstrapDf.where(filterExpr)
   }
 }
