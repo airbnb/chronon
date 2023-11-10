@@ -466,20 +466,23 @@ class Join(joinConf: api.Join,
    * need to run backfill again. this is possible because the hashes in the metadata columns can be mapped back to
    * full schema information.
    */
-  private def findUnfilledRecords(bootstrapDfWithStats: DfWithStats, coveringSets: Seq[CoveringSet]): DfWithStats = {
+  private def findUnfilledRecords(bootstrapDfWithStats: DfWithStats,
+                                  coveringSets: Seq[CoveringSet]): Option[DfWithStats] = {
     val bootstrapDf = bootstrapDfWithStats.df
     if (coveringSets.isEmpty || !bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
-      return bootstrapDfWithStats
+      return Some(bootstrapDfWithStats)
     }
     val filterExpr = CoveringSet.toFilterExpression(coveringSets)
     println(s"Using covering set filter: $filterExpr")
     val filteredDf = bootstrapDf.where(filterExpr)
-
-    if (bootstrapDfWithStats.count == filteredDf.count()) { // counting is faster than computing stats
-      bootstrapDfWithStats
+    val filteredCount = filteredDf.count()
+    if (bootstrapDfWithStats.count == filteredCount) { // counting is faster than computing stats
+      Some(bootstrapDfWithStats)
+    } else if (filteredCount == 0) {
+      None
     } else {
-      DfWithStats(filteredDf)(bootstrapDfWithStats.tableUtils)
+      Some(DfWithStats(filteredDf)(bootstrapDfWithStats.tableUtils))
     }
   }
 }

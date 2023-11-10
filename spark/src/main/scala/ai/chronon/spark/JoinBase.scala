@@ -112,7 +112,7 @@ abstract class JoinBase(joinConf: api.Join,
     joinedDf
   }
 
-  def computeRightTable(leftDf: DfWithStats,
+  def computeRightTable(leftDf: Option[DfWithStats],
                         joinPart: JoinPart,
                         leftRange: PartitionRange,
                         joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
@@ -149,7 +149,8 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val filledDf = computeJoinPart(leftDf.prunePartitions(leftUnfilledRange), joinPart, joinLevelBloomMapOpt)
+              val filledDf =
+                computeJoinPart(leftDf.map(_.prunePartitions(leftUnfilledRange)), joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -175,19 +176,19 @@ abstract class JoinBase(joinConf: api.Join,
     }
   }
 
-  def computeJoinPart(leftDfWithStats: DfWithStats,
+  def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
                       joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
 
-    val leftDf = leftDfWithStats.df
-    val rowCount = leftDfWithStats.count
-    val unfilledRange = leftDfWithStats.partitionRange
-
-    if (rowCount == 0) {
+    if (leftDfWithStats.isEmpty) {
       // happens when all rows are already filled by bootstrap tables
       println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
       return None
     }
+
+    val leftDf = leftDfWithStats.get.df
+    val rowCount = leftDfWithStats.get.count
+    val unfilledRange = leftDfWithStats.get.partitionRange
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
     val rightBloomMap =

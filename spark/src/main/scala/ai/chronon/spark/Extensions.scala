@@ -56,7 +56,6 @@ object Extensions {
 
   // helper class to maintain datafram stats that are necessary for downstream operations
   case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
-    assert(!df.isEmpty)
     private val minPartition: String = partitionCounts.keys.min
     private val maxPartition: String = partitionCounts.keys.max
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
