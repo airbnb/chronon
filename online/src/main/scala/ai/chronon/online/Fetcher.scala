@@ -251,8 +251,7 @@ class Fetcher(val kvStore: KVStore,
           println(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
           val gson = new Gson()
           val valuesFormatted = values.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
-          println(
-            s"""Sampled join fetch
+          println(s"""Sampled join fetch
                |Key Map: ${resp.request.keys}
                |Value Map: [${valuesFormatted}]
                |""".stripMargin)
@@ -325,9 +324,9 @@ class Fetcher(val kvStore: KVStore,
           getJoinConf(joinRequest.name).get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().asScala.map { part =>
           val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
-            case Success(mappedKeys) => Left(Request(part.source.metadata.name, mappedKeys))
+            case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
             case Failure(exception: KeyMissingException) => Right(exception)
-            case Failure(otherException) => throw otherException
+            case Failure(otherException)                 => throw otherException
           }
           ExternalToJoinRequest(externalRequest, joinRequest, part)
         }
@@ -340,7 +339,7 @@ class Fetcher(val kvStore: KVStore,
 
     val context =
       Metrics.Context(environment = Environment.JoinFetching,
-        join = validRequests.iterator.map(_.name.sanitize).toSeq.distinct.mkString(","))
+                      join = validRequests.iterator.map(_.name.sanitize).toSeq.distinct.mkString(","))
     context.distribution("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.count("response.external_invalid_joins.count", invalidCount)
     val responseFutures = externalSourceRegistry.fetchRequests(validExternalRequestToJoinRequestMap.keys.toSeq, context)
@@ -430,11 +429,12 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-   * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the time
-   * series for each statistic.
-   */
-  private def convertStatsResponseToSeriesResponse(joinRequest: StatsRequest,
-                                           rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the time
+    * series for each statistic.
+    */
+  private def convertStatsResponseToSeriesResponse(
+      joinRequest: StatsRequest,
+      rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
     rawResponses.map { responseFuture =>
       val convertedValue = responseFuture
         .flatMap { response =>
@@ -455,12 +455,14 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-   * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift for
-   * the approx percentile metrics.
-   * TODO: Extend to larger periods of time by merging the Sketches from a larger slice.
-   * TODO: Allow for non sequential time intervals. i.e. this week against the same week last year.
-   */
-  private def convertStatsResponseToDriftResponse(joinRequest: StatsRequest, rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] =
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift for
+    * the approx percentile metrics.
+    * TODO: Extend to larger periods of time by merging the Sketches from a larger slice.
+    * TODO: Allow for non sequential time intervals. i.e. this week against the same week last year.
+    */
+  private def convertStatsResponseToDriftResponse(
+      joinRequest: StatsRequest,
+      rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] =
     rawResponses.map { response =>
       val driftMap = response
         .sortBy(_.millis)
@@ -489,11 +491,13 @@ class Fetcher(val kvStore: KVStore,
     }
 
   /**
-   * Main helper for fetching statistics over time available.
-   * It takes a function that will get the stats for the specific dataset (OOC, LOG, Backfill stats) and then operates
-   * on it to either return a time series of the features or drift between the approx percentile features.
-   */
-  private def fetchDriftOrStatsTimeseries(joinRequest: StatsRequest, fetchFunc: StatsRequest => Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
+    * Main helper for fetching statistics over time available.
+    * It takes a function that will get the stats for the specific dataset (OOC, LOG, Backfill stats) and then operates
+    * on it to either return a time series of the features or drift between the approx percentile features.
+    */
+  private def fetchDriftOrStatsTimeseries(
+      joinRequest: StatsRequest,
+      fetchFunc: StatsRequest => Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
     if (joinRequest.name.endsWith("/drift")) {
       // In the case of drift we only find the percentile keys and do a shifted distance.
       val rawResponses = fetchFunc(
@@ -502,7 +506,7 @@ class Fetcher(val kvStore: KVStore,
     }
     convertStatsResponseToSeriesResponse(joinRequest, fetchFunc(joinRequest))
   }
-  
+
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],
                                            joinRequest: Request,
                                            part: ExternalPart) {

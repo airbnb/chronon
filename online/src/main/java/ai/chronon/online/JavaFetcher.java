@@ -115,12 +115,6 @@ public class JavaFetcher {
     return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
   }
 
-  public CompletableFuture<List<JavaStatsResponse>> fetchStats(JavaStatsRequest request) {
-    Future<Seq<Fetcher.StatsResponse>> responses = this.fetcher.fetchStats(request.toScalaRequest());
-    // Convert responses to CompletableFuture
-    return convertStatsResponses(responses);
-  }
-
   public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {
     Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchStatsTimeseries(request.toScalaRequest());
     // Convert responses to CompletableFuture
