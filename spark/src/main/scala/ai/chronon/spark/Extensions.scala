@@ -113,10 +113,11 @@ object Extensions {
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
-      val minMaxDf: DataFrame = df.sqlContext
+      val minMaxRows = df.sqlContext
         .sql(s"select min($columnName), max($columnName) from $viewName")
-      assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
-      val minMaxRow = minMaxDf.collect()(0)
+        .collect()
+      assert(minMaxRows.size == 1, "Logic error! There needs to be exactly one row")
+      val minMaxRow = minMaxRows(0)
       df.sparkSession.catalog.dropTempView(viewName)
       val (min, max) = (minMaxRow.getAs[T](0), minMaxRow.getAs[T](1))
       println(s"Computed Range for $columnName - min: $min, max: $max")

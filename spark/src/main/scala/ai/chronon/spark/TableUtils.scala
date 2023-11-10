@@ -77,7 +77,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }.get
 
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
-  val executorService: ExecutionContextExecutor = TableUtilsThreadPool.init(joinPartParallelism)
+  @transient lazy val executorService: ExecutionContextExecutor = TableUtilsThreadPool.init(joinPartParallelism)
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
