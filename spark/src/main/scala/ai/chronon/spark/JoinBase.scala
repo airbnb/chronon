@@ -21,7 +21,8 @@ abstract class JoinBase(joinConf: api.Join,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
                         mutationScan: Boolean = true,
-                        showDf: Boolean = false) {
+                        showDf: Boolean = false,
+                        forceOverwriteMetadata: Boolean = false) {
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -300,9 +301,7 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     // First run command to archive tables that have changed semantically since the last run
-    val archivedAtTs = Instant.now()
-    tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
-      tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    tablesToRecompute(joinConf, outputTable, tableUtils, forceOverwriteMetadata)
 
     // detect holes and chunks to fill
     // OverrideStartPartition is used to replace the start partition of the join config. This is useful when

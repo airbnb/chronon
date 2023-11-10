@@ -213,6 +213,10 @@ object Driver {
         opt[String](required = false,
                     descr =
                       "Start date to compute join backfill, this start date will override start partition in conf.")
+      val forceOverwriteMetadata: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     default = Some(false),
+                     descr = "Force overwrite metadata in the table properties if it already exists.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }

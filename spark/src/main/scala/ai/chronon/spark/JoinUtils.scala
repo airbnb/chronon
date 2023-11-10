@@ -10,6 +10,7 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
 
+import java.time.Instant
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.MapOps
 
@@ -319,9 +320,10 @@ object JoinUtils {
 
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
-                        tableUtils: TableUtils): collection.Seq[String] = {
+                        tableUtils: TableUtils,
+                        forceOverwriteMetadata: Boolean = false): collection.Seq[String] = {
     val gson = new Gson()
-    (for (
+    val tablesAfterVersionCheck = (for (
       props <- tableUtils.getTableProperties(outputTable);
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
       oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
@@ -329,5 +331,18 @@ object JoinUtils {
       println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
     }).getOrElse(collection.Seq.empty)
+
+    if (forceOverwriteMetadata) {
+      tablesAfterVersionCheck.foreach { table =>
+        tableUtils.sql(tableUtils.unsetTablePropertiesSql(table, Constants.SemanticHashKey))
+      }
+      collection.Seq.empty
+    } else {
+      val archivedAtTs = Instant.now()
+      tablesAfterVersionCheck.foreach { table =>
+        tableUtils.archiveOrDropTableIfExists(table, Some(archivedAtTs))
+      }
+      tablesAfterVersionCheck
+    }
   }
 }
