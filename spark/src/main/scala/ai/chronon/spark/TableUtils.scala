@@ -16,12 +16,14 @@
 
 package ai.chronon.spark
 
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.storage.StorageLevel
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
@@ -39,10 +41,25 @@ case class TableUtils(sparkSession: SparkSession) {
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
-  val backfillValidationEnforced = sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
+  val backfillValidationEnforced: Boolean =
+    sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
   // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
   // default threshold is 100K rows
-  val bloomFilterThreshold = sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
+  val bloomFilterThreshold: Long =
+    sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
+
+  // see what's allowed and explanations here: https://sparkbyexamples.com/spark/spark-persistence-storage-levels/
+  val cacheLevelString: String = sparkSession.conf.get("spark.chronon.table_write.cache.level", "NONE").toUpperCase()
+  val blockingCacheEviction: Boolean =
+    sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
+  val cacheLevel: Option[StorageLevel] = Try {
+    if (cacheLevelString == "NONE") None
+    else Some(StorageLevel.fromString(cacheLevelString))
+  }.recover {
+    case (ex: Throwable) =>
+      new RuntimeException(s"Failed to create cache level from string: $cacheLevelString", ex).printStackTrace()
+      None
+  }.get
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -310,8 +327,32 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  def wrapWithCache(opString: String)(func: DataFrame => Unit): Unit = { df: DataFrame =>
+    val start = System.currentTimeMillis()
+    cacheLevel.foreach { level =>
+      println(s"Starting to cache dataframe before $opString - start @ ${TsUtils.toStr(start)}")
+      df.persist(level)
+    }
+    try {
+      func(df)
+    } catch {
+      case ex: Exception =>
+        new RuntimeException(s"Failed to $opString", ex).printStackTrace()
+    } finally {
+      cacheLevel.foreach(_ => df.unpersist(blockingCacheEviction))
+      val end = System.currentTimeMillis()
+      println(
+        s"Cleared the dataframe cache after $opString - start @ ${TsUtils.toStr(start)} end @ ${TsUtils.toStr(end)}")
+    }
+  }
 
+  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+    wrapWithCache(s"repartition & write to $tableName") { df =>
+      repartitionAndWriteInternal(df, tableName, saveMode)
+    }
+  }
+
+  private def repartitionAndWriteInternal(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
