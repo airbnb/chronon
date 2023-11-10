@@ -27,6 +27,13 @@ object ScalaVersionSpecificCollectionsConverter {
 }
 
 object ScalaJavaConversions {
+
+  implicit class SeqOps[T](seq: Seq[T]) {
+    def par: ParSeq[T] = {
+      seq.par
+    }
+  }
+
   implicit class IteratorOps[T](iterator: java.util.Iterator[T]) {
     def toScala: Iterator[T] = {
       iterator.asScala
