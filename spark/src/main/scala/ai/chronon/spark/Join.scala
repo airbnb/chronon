@@ -26,14 +26,12 @@ import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import java.util.concurrent.{Executors, ThreadPoolExecutor}
-import scala.util.ScalaJavaConversions.SeqOps
+import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.collection.mutable
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
-import scala.util.Try
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
