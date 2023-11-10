@@ -2,6 +2,7 @@ from collections import Counter
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
+from ai.chronon.group_by import validate_group_by
 import copy
 import gc
 import importlib
@@ -537,6 +538,7 @@ def Join(left: api.Source,
             join_part_name = "{}{}".format(
                 join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
             join_part_tags[join_part_name] = join_part.tags
+        validate_group_by(join_part.groupBy)
     custom_json["join_part_tags"] = join_part_tags
 
     consistency_sample_percent = consistency_sample_percent if check_consistency else None
