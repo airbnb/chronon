@@ -28,7 +28,7 @@ import org.apache.spark.storage.StorageLevel
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import scala.collection.{Seq, mutable}
-import scala.util.{Success, Try}
+import scala.util.{Failure, Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -60,6 +60,8 @@ case class TableUtils(sparkSession: SparkSession) {
       new RuntimeException(s"Failed to create cache level from string: $cacheLevelString", ex).printStackTrace()
       None
   }.get
+
+  val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -327,29 +329,33 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def wrapWithCache(opString: String)(func: DataFrame => Unit): Unit = { df: DataFrame =>
+  def wrapWithCache[T](opString: String, dataFrame: DataFrame)(func: => T): Try[T] = {
     val start = System.currentTimeMillis()
     cacheLevel.foreach { level =>
       println(s"Starting to cache dataframe before $opString - start @ ${TsUtils.toStr(start)}")
-      df.persist(level)
+      dataFrame.persist(level)
     }
-    try {
-      func(df)
-    } catch {
-      case ex: Exception =>
-        new RuntimeException(s"Failed to $opString", ex).printStackTrace()
-    } finally {
-      cacheLevel.foreach(_ => df.unpersist(blockingCacheEviction))
+    def clear(): Unit = {
+      cacheLevel.foreach(_ => dataFrame.unpersist(blockingCacheEviction))
       val end = System.currentTimeMillis()
       println(
         s"Cleared the dataframe cache after $opString - start @ ${TsUtils.toStr(start)} end @ ${TsUtils.toStr(end)}")
     }
+    Try {
+      val t = func
+      clear()
+      t
+    }.recoverWith {
+      case ex: Exception =>
+        clear()
+        Failure(new RuntimeException(s"Failed to $opString", ex))
+    }
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
-    wrapWithCache(s"repartition & write to $tableName") { df =>
+    wrapWithCache(s"repartition & write to $tableName", df) {
       repartitionAndWriteInternal(df, tableName, saveMode)
-    }
+    }.get
   }
 
   private def repartitionAndWriteInternal(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
