@@ -22,11 +22,12 @@ import ai.chronon.api._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
+import ai.chronon.spark.TableUtilsThreadPool.tpe
 import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{ExecutorService, Executors}
 import scala.collection.Seq
 import scala.collection.mutable
 import scala.collection.parallel.ExecutionContextTaskSupport
@@ -217,7 +218,9 @@ class Join(joinConf: api.Join,
 
         // parallelize the computation of each of the parts
         val parBootstrapCoveringSets = bootstrapCoveringSets.parallel
-        parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(tableUtils.executorService)
+        val executor: ExecutorService = Executors.newFixedThreadPool(tableUtils.joinPartParallelism)
+        val executionContext = ExecutionContext.fromExecutor(executor)
+        parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(executionContext)
 
         // compute join parts (GB) backfills
         // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
@@ -239,8 +242,9 @@ class Join(joinConf: api.Join,
                 s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
             }
             computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
-        }
+        }.toArray
 
+        executor.shutdown()
         // combine bootstrap table and join part tables
         // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
         // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
@@ -473,7 +477,7 @@ class Join(joinConf: api.Join,
     println(s"Using covering set filter: $filterExpr")
     val filteredDf = bootstrapDf.where(filterExpr)
 
-    if (bootstrapDf.count() == filteredDf.count()) { // counting is faster than computing stats
+    if (bootstrapDfWithStats.count == filteredDf.count()) { // counting is faster than computing stats
       bootstrapDfWithStats
     } else {
       DfWithStats(filteredDf)(bootstrapDfWithStats.tableUtils)
