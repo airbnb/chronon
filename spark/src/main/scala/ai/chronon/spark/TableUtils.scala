@@ -351,7 +351,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }.recoverWith {
       case ex: Exception =>
         clear()
-        Failure(new RuntimeException(s"Failed to $opString", ex))
+        Failure(ex)
     }
   }
 
