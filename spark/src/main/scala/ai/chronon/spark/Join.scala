@@ -27,9 +27,9 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
 import java.util.concurrent.{Executors, ThreadPoolExecutor}
+import scala.util.ScalaJavaConversions.SeqOps
 import scala.collection.Seq
 import scala.collection.mutable
-import scala.collection.parallel.CollectionConverters.seqIsParallelizable
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
@@ -218,7 +218,7 @@ class Join(joinConf: api.Join,
         val bootStrapWithStats = bootstrapDf.withStats
 
         // parallelize the computation of each of the parts
-        val parBootstrapCoveringSets = bootstrapCoveringSets.par
+        val parBootstrapCoveringSets = bootstrapCoveringSets.parallel
         val executor = Executors.newFixedThreadPool(tableUtils.joinPartParallelism)
         parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(ExecutionContext.fromExecutor(executor))
 
@@ -243,8 +243,6 @@ class Join(joinConf: api.Join,
             }
             computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
         }
-
-        executor.shutdown()
 
         // combine bootstrap table and join part tables
         // sequentially join bootstrap table and each join part table. some column may exist both on left and right because

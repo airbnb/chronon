@@ -82,7 +82,7 @@ object Extensions {
   }
 
   implicit class DataframeOps(df: DataFrame) {
-    private implicit val tableUtils = TableUtils(df.sparkSession)
+    private implicit val tableUtils: TableUtils = TableUtils(df.sparkSession)
 
     // This is safe to call on dataframes that are un-shuffled from their disk sources -
     // like tables read without shuffling with row level projections or filters.
