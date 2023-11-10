@@ -26,11 +26,12 @@ import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import java.util.concurrent.{ExecutorService, Executors}
+import java.util.concurrent.{Callable, ExecutorCompletionService, ExecutorService, Executors}
 import scala.collection.Seq
 import scala.collection.mutable
 import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 
 /*
@@ -216,34 +217,34 @@ class Join(joinConf: api.Join,
         val bootStrapWithStats = bootstrapDf.withStats
 
         // parallelize the computation of each of the parts
-        val parBootstrapCoveringSets = bootstrapCoveringSets.parallel
         val executor: ExecutorService = Executors.newFixedThreadPool(tableUtils.joinPartParallelism)
-        val executionContext = ExecutionContext.fromExecutor(executor)
-        parBootstrapCoveringSets.tasksupport = new ExecutionContextTaskSupport(executionContext)
+        implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
 
         // compute join parts (GB) backfills
         // for each GB, we first find out the unfilled subset of bootstrap table which still requires the backfill.
         // we do this by utilizing the per-record metadata computed during the bootstrap process.
         // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
         // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
-        val rightResults = bootstrapCoveringSets.flatMap {
+        val rightResultsFuture = Future.sequence(bootstrapCoveringSets.map {
           case (partMetadata, coveringSets) =>
-            val unfilledLeftDf = findUnfilledRecords(bootStrapWithStats, coveringSets.filter(_.isCovering))
-            val joinPart = partMetadata.joinPart
-            // if the join part contains ChrononRunDs macro, then we need to make sure the join is for a single day
-            val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
-            if (
-              selects.isDefined && selects.get.nonEmpty && selects.get.exists(selectsMap =>
-                Option(selectsMap).isDefined && selectsMap.values.exists(_.contains(Constants.ChrononRunDs)))
-            ) {
-              assert(
-                leftRange.isSingleDay,
-                s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
+            Future {
+              val unfilledLeftDf = findUnfilledRecords(bootStrapWithStats, coveringSets.filter(_.isCovering))
+              val joinPart = partMetadata.joinPart
+              // if the join part contains ChrononRunDs macro, then we need to make sure the join is for a single day
+              val selects = Option(joinPart.groupBy.sources.toScala.map(_.query.selects).map(_.toScala))
+              if (
+                selects.isDefined && selects.get.nonEmpty && selects.get.exists(selectsMap =>
+                  Option(selectsMap).isDefined && selectsMap.values.exists(_.contains(Constants.ChrononRunDs)))
+              ) {
+                assert(
+                  leftRange.isSingleDay,
+                  s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
+              }
+              computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
             }
-            computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
-        }.toArray
+        })
+        val rightResults = Await.result(rightResultsFuture, 10.hour).flatten
 
-        // executor.shutdown()
         // combine bootstrap table and join part tables
         // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
         // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
