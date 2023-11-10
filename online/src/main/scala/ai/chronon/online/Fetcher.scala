@@ -502,8 +502,7 @@ class Fetcher(val kvStore: KVStore,
     }
     convertStatsResponseToSeriesResponse(joinRequest, fetchFunc(joinRequest))
   }
-
-
+  
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],
                                            joinRequest: Request,
                                            part: ExternalPart) {
