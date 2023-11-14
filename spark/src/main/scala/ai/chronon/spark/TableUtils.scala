@@ -20,10 +20,11 @@ import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import jnr.ffi.annotations.Synchronized
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
 import java.time.format.DateTimeFormatter
@@ -65,9 +66,18 @@ case class TableUtils(sparkSession: SparkSession) {
   }.get
 
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
+  val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
+
+  def preAggRepartition(rdd: RDD[Row]): RDD[Row] =
+    if (rdd.getNumPartitions < aggregationParallelism) {
+      rdd.repartition(aggregationParallelism)
+    } else {
+      rdd
+    }
+
   def parsePartition(pstring: String): Map[String, String] = {
     pstring
       .split("/")
