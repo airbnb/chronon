@@ -204,6 +204,8 @@ def group_by_output_table_name(obj, full_name: bool = False):
     Group by backfill output table name
     To be synced with api.Extensions.scala
     """
+    if not obj.metaData.name:
+        __set_name(obj, api.GroupBy, "group_bys")
     return output_table_name(obj, full_name)
 
 
