@@ -192,6 +192,8 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
     """
     if jp.groupBy is None:
         raise NotImplementedError("Join Part names for non group bys is not implemented.")
+    if not jp.groupBy.metaData.name:
+        __set_name(jp.groupBy, api.GroupBy, "group_bys")
     return "_".join([component for component in [
         output_table_name(join, full_name),
         jp.prefix,
