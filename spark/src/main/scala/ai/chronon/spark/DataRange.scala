@@ -115,8 +115,10 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
       .toSeq
   }
 
+  // no nulls in start or end and start <= end - used as a pre-check before the `partitions` function
+  def wellDefined: Boolean = start != null && end != null && start <= end
   def partitions: Seq[String] = {
-    assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
+    assert(wellDefined, s"Invalid partition range ${this}")
     Stream
       .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)

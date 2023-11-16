@@ -149,12 +149,13 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
+              val prunedLeft = leftDf.map(_.prunePartitions(leftUnfilledRange))
               val filledDf =
-                computeJoinPart(leftDf.map(_.prunePartitions(leftUnfilledRange)), joinPart, joinLevelBloomMapOpt)
+                computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps)
+                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
