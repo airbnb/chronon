@@ -192,6 +192,8 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
     """
     if jp.groupBy is None:
         raise NotImplementedError("Join Part names for non group bys is not implemented.")
+    if not jp.groupBy.metaData.name:
+        __set_name(jp.groupBy, api.GroupBy, "group_bys")
     return "_".join([component for component in [
         output_table_name(join, full_name),
         jp.prefix,
@@ -204,6 +206,8 @@ def group_by_output_table_name(obj, full_name: bool = False):
     Group by backfill output table name
     To be synced with api.Extensions.scala
     """
+    if not obj.metaData.name:
+        __set_name(obj, api.GroupBy, "group_bys")
     return output_table_name(obj, full_name)
 
 

@@ -1,7 +1,3 @@
-"""
-Sample Join
-"""
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +13,7 @@ Sample Join
 #     limitations under the License.
 
 from sources import test_sources
-from group_bys.sample_team import sample_group_by
+from group_bys.sample_team import sample_group_by, sample_group_by_group_by
 from ai.chronon.join import (
     Join,
     JoinPart,
@@ -45,6 +41,12 @@ never = Join(
     output_namespace="sample_namespace",
     tags={"business_relevance": "personalization"},
     offline_schedule='@never',
+)
+
+group_by_of_group_by = Join(
+    left=test_sources.staging_entities,
+    right_parts=[JoinPart(group_by=sample_group_by_group_by.v1)],
+    output_namespace="sample_namespace",
 )
 
 consistency_check = Join(

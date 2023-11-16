@@ -22,6 +22,21 @@ from ai.chronon.api import ttypes
 
 from staging_queries.sample_team import sample_staging_query
 
+
+def basic_event_source(table):
+    return ttypes.Source(events=ttypes.EventSource(
+        table=table,
+        query=Query(
+            selects=select(
+                event="event_expr",
+                group_by_subject="group_by_expr",
+            ),
+            start_partition="2021-04-09",
+            time_column="ts",
+        ),
+    ))
+
+
 # Sample Event Source used in tests.
 event_source = ttypes.Source(events=ttypes.EventSource(
     table="sample_namespace.sample_table_group_by",
