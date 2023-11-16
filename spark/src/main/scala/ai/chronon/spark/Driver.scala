@@ -740,11 +740,22 @@ object Driver {
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
       implicit val apiImpl = args.impl(args.serializableProps)
-      val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
-        new JoinSourceRunner(groupByConf,
-                             args.serializableProps,
-                             args.debug(),
-                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
+      if (groupByConf.streamingSource.get.isSetJoinSource) {
+        val chainedStreamingJob = new JoinSourceRunner(groupByConf,
+                                                       args.serializableProps,
+                                                       args.debug(),
+                                                       args.lagMillis.getOrElse(2000)).chainedStreamingQuery
+        val times = 500
+        val jobItem = Seq(chainedStreamingJob)
+        val jobSeq = jobItem ++ Seq.fill(times)(chainedStreamingJob)
+        for (job <- jobSeq) {
+          try {
+            val runningJob = job.start()
+            runningJob.awaitTermination()
+          } catch {
+            case e: Exception => println("Caught exception for JoinSourceRunner: " + e.getMessage)
+          }
+        }
       } else {
         val streamingSource = groupByConf.streamingSource
         assert(streamingSource.isDefined,
@@ -757,9 +768,11 @@ object Driver {
             "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
         val inputStream: DataFrame =
           dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
+        val runningJob =
+          new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
+            .run()
+        runningJob.awaitTermination()
       }
-      query.awaitTermination()
     }
   }
 
