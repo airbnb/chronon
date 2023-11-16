@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import jnr.ffi.annotations.Synchronized
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
@@ -67,10 +68,17 @@ case class TableUtils(sparkSession: SparkSession) {
 
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
+  val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
+  def preAggRepartition(df: DataFrame): DataFrame =
+    if (df.rdd.getNumPartitions < aggregationParallelism) {
+      df.repartition(aggregationParallelism)
+    } else {
+      df
+    }
   def preAggRepartition(rdd: RDD[Row]): RDD[Row] =
     if (rdd.getNumPartitions < aggregationParallelism) {
       rdd.repartition(aggregationParallelism)
@@ -260,7 +268,8 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(partitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
-                       autoExpand: Boolean = false): Unit = {
+                       autoExpand: Boolean = false,
+                       stats: Option[DfStats] = None): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -304,7 +313,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, stats)
   }
 
   def sql(query: String): DataFrame = {
@@ -329,7 +338,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode)
+    repartitionAndWrite(df, tableName, saveMode, None)
   }
 
   def columnSizeEstimator(dataType: DataType): Long = {
@@ -355,7 +364,7 @@ case class TableUtils(sparkSession: SparkSession) {
         s"Cleared the dataframe cache after $opString - start @ ${TsUtils.toStr(start)} end @ ${TsUtils.toStr(end)}")
     }
     Try {
-      val t = func
+      val t: T = func
       clear()
       t
     }.recoverWith {
@@ -365,18 +374,28 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  private def repartitionAndWrite(df: DataFrame,
+                                  tableName: String,
+                                  saveMode: SaveMode,
+                                  stats: Option[DfStats]): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
-      repartitionAndWriteInternal(df, tableName, saveMode)
+      repartitionAndWriteInternal(df, tableName, saveMode, stats)
     }.get
   }
 
-  private def repartitionAndWriteInternal(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  private def repartitionAndWriteInternal(df: DataFrame,
+                                          tableName: String,
+                                          saveMode: SaveMode,
+                                          stats: Option[DfStats]): Unit = {
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
-        val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
-        (result.getAs[Long](0), result.getAs[Long](1).toInt)
+        if (stats.isDefined && stats.get.partitionRange.wellDefined) {
+          stats.get.count -> stats.get.partitionRange.partitions.length
+        } else {
+          val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
+          (result.getAs[Long](0), result.getAs[Long](1).toInt)
+        }
       } else {
         (df.count(), 1)
       }

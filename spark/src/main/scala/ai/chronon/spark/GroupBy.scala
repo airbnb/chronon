@@ -96,7 +96,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
-    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ tableUtils.partitionColumn).toArray, inputDf.schema)
+    val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
+    val keyBuilder = FastHashing.generateKeyBuilder(keys, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
@@ -121,7 +122,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     println("prepped input schema")
     println(preppedInputDf.schema.pretty)
 
-    tableUtils.preAggRepartition(preppedInputDf.rdd)
+    tableUtils
+      .preAggRepartition(preppedInputDf)
+      .rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
       .map { case (keyWithHash, ir) => keyWithHash.data -> normalizeOrFinalize(ir) }

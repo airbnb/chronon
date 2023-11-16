@@ -232,8 +232,8 @@ object ColumnAggregator {
     }
 
     val mapElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
-      case (true, MapType(StringType, elementType)) if DataType.isScalar(elementType) => Some(elementType)
-      case _                                                                          => None
+      case (true, MapType(StringType, elementType)) => Some(elementType)
+      case _                                        => None
     }
     val inputType = (mapElementType ++ vectorElementType ++ Some(baseInputType)).head
 

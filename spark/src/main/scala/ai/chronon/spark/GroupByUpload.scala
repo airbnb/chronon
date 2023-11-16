@@ -79,11 +79,16 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
         |""".stripMargin)
 
     val outputRdd = tableUtils
-      .preAggRepartition(groupBy.inputDf.rdd)
+      .preAggRepartition(groupBy.inputDf)
+      .rdd
       .keyBy(keyBuilder)
-      .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update, combOp = sawtoothOnlineAggregator.merge)
+        seqOp = {
+          case (batchIr, row) =>
+            sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row, groupBy.tsIndex))
+        },
+        combOp = sawtoothOnlineAggregator.merge
+      )
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
@@ -100,7 +105,9 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 object GroupByUpload {
 
   // TODO - remove this if spark streaming can't reach hive tables
-  private def buildServingInfo(groupByConf: api.GroupBy, session: SparkSession, endDs: String): GroupByServingInfoParsed = {
+  private def buildServingInfo(groupByConf: api.GroupBy,
+                               session: SparkSession,
+                               endDs: String): GroupByServingInfoParsed = {
     val groupByServingInfo = new GroupByServingInfo()
     implicit val tableUtils: TableUtils = TableUtils(session)
     val nextDay = tableUtils.partitionSpec.after(endDs)

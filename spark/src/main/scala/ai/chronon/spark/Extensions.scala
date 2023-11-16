@@ -54,6 +54,7 @@ object Extensions {
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
+  case class DfStats(count: Long, partitionRange: PartitionRange)
   // helper class to maintain datafram stats that are necessary for downstream operations
   case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
     private val minPartition: String = partitionCounts.keys.min
@@ -66,6 +67,7 @@ object Extensions {
       val intersectedCounts = partitionCounts.filter(intersected.partitions contains _._1)
       DfWithStats(df.prunePartition(range), intersectedCounts)
     }
+    def stats: DfStats = DfStats(count, partitionRange)
   }
 
   object DfWithStats {
@@ -128,12 +130,14 @@ object Extensions {
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
              partitionColumns: Seq[String] = Seq(tableUtils.partitionColumn),
-             autoExpand: Boolean = false): Unit = {
+             autoExpand: Boolean = false,
+             stats: Option[DfStats] = None): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    tableName,
                                                    tableProperties,
                                                    partitionColumns,
-                                                   autoExpand = autoExpand)
+                                                   autoExpand = autoExpand,
+                                                   stats = stats)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
