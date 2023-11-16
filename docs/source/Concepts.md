@@ -109,7 +109,7 @@ The document below goes into a bit more detail about each of the concepts.
 You can find examples [here](https://github.com/airbnb/chronon/tree/master/api/py/test/sample) instead.
 
 ## Source
-Source in chronon refers to a logical group of underlying physical data sources. There are two types of sources
+Source in chronon refers to a logical group of underlying physical data sources. There are three types of sources
 - Events
 - Entities 
 - Cumulative 
