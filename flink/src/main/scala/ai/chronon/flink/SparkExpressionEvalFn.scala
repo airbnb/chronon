@@ -48,7 +48,7 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
       SparkConversions.toChrononSchema(encoder.schema)
     )
 
-  def getOutputSchema: StructType = {
+  private[flink] def getOutputSchema: StructType = {
     // before we do anything, run our setup statements.
     // in order to create the output schema, we'll evaluate expressions
     // TODO handle UDFs

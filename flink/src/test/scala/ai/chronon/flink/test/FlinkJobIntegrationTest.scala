@@ -1,13 +1,16 @@
 package ai.chronon.flink.test
 
-import ai.chronon.flink.{FlinkJob, FlinkSource, WriteResponse}
-import ai.chronon.online.Api
+import ai.chronon.api.{Constants, GroupBy, GroupByServingInfo}
+import ai.chronon.flink.{FlinkJob, FlinkSource, SparkExpressionEvalFn, WriteResponse}
+import ai.chronon.online.Extensions.StructTypeOps
+import ai.chronon.online.{Api, GroupByServingInfoParsed}
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.sink.SinkFunction
 import org.apache.flink.test.util.MiniClusterWithClientResource
 import org.apache.spark.sql.Encoders
+import org.apache.spark.sql.types.StructType
 import org.junit.Assert.assertEquals
 import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
@@ -54,6 +57,45 @@ class FlinkJobIntegrationTest {
     flinkCluster.after()
   }
 
+  private def makeTestGroupByServingInfoParsed(groupBy: GroupBy,
+                                               inputSchema: StructType,
+                                               outputSchema: StructType): GroupByServingInfoParsed = {
+    val groupByServingInfo = new GroupByServingInfo()
+    groupByServingInfo.setGroupBy(groupBy)
+
+    // Set input avro schema for groupByServingInfo
+    groupByServingInfo.setInputAvroSchema(
+      inputSchema.toAvroSchema("Input").toString(true)
+    )
+
+    // Set key avro schema for groupByServingInfo
+    groupByServingInfo.setKeyAvroSchema(
+      StructType(
+        groupBy.keyColumns.asScala.map { keyCol =>
+          val keyColStructType = outputSchema.fields.find(field => field.name == keyCol)
+          keyColStructType match {
+            case Some(col) => col
+            case None =>
+              throw new IllegalArgumentException(s"Missing key col from output schema: $keyCol")
+          }
+        }
+      ).toAvroSchema("Key")
+        .toString(true)
+    )
+
+    // Set value avro schema for groupByServingInfo
+    val aggInputColNames = groupBy.aggregations.asScala.map(_.inputColumn).toList
+    groupByServingInfo.setSelectedAvroSchema(
+      StructType(outputSchema.fields.filter(field => aggInputColNames.contains(field.name)))
+        .toAvroSchema("Value")
+        .toString(true)
+    )
+    new GroupByServingInfoParsed(
+      groupByServingInfo,
+      Constants.Partition
+    )
+  }
+
   @Test
   def testFlinkJobEndToEnd(): Unit = {
     implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
@@ -67,9 +109,13 @@ class FlinkJobIntegrationTest {
     val source = new E2EEventSource(elements)
     val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
     val encoder = Encoders.product[E2ETestEvent]
+
+    val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
+
+    val groupByServingInfoParsed = makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
     val mockApi = mock[Api](withSettings().serializable())
     val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFG")
-    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupBy, encoder, 2)
+    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
 
     job.runGroupByJob(env).addSink(new CollectSink)
 
