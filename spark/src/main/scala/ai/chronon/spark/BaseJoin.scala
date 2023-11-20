@@ -105,6 +105,14 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
         }
       val rightRange = leftRange.shift(shiftDays)
       try {
+
+        val tableToPartitionOverrideMap: Map[String, String] = Map(
+          joinConf.left.table -> {
+            if (joinConf.left.query.selects != null) joinConf.left.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
+            else Constants.PartitionColumn
+          }
+        )
+
         val unfilledRanges = tableUtils
           .unfilledRanges(
             partTable,
@@ -114,7 +122,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
             // never skip hole during partTable's range determination logic because we don't want partTable
             // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
             skipFirstHole = false,
-            joinConf = Some(joinConf)
+            joinConf = Some(joinConf),
+            tableToPartitionOverrideMap = tableToPartitionOverrideMap
           )
           .getOrElse(Seq())
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
@@ -280,8 +289,23 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
     val leftEnd = Option(joinConf.left.query.endPartition).getOrElse(endPartition)
     val rangeToFill = PartitionRange(leftStart, leftEnd)(tableUtils)
     println(s"Join range to fill $rangeToFill")
+
+    val tableToPartitionOverrideMap: Map[String, String] = Map(
+      joinConf.left.table -> {
+        if (joinConf.left.query != null && joinConf.left.query.selects != null) joinConf.left.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
+        else Constants.PartitionColumn
+      }
+    )
+
+
     val unfilledRanges = tableUtils
-      .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole, joinConf = Some(joinConf))
+      .unfilledRanges(
+        outputTable,
+        rangeToFill, Some(Seq(joinConf.left.table)),
+        skipFirstHole = skipFirstHole,
+        joinConf = Some(joinConf),
+        tableToPartitionOverrideMap = tableToPartitionOverrideMap
+      )
       .getOrElse(Seq.empty)
 
     stepDays.foreach(metrics.gauge("step_days", _))

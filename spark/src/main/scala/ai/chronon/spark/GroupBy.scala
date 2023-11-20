@@ -592,19 +592,26 @@ object GroupBy {
       .orNull
     val dataProfile: SourceDataProfile = source.dataModel match {
       case Entities => SourceDataProfile(queryStart, source.query.startPartition, effectiveEnd)
-      case Events =>
+      case Events => {
+
+        val partitionColumnOverride: String = {
+          if (source.query != null && source.query.selects != null) source.query.selects.getOrDefault(tableUtils.partitionColumn, tableUtils.partitionColumn)
+          else tableUtils.partitionColumn
+        }
+
         if (Option(source.getEvents.isCumulative).getOrElse(false)) {
           lazy val latestAvailable: Option[String] =
-            tableUtils.lastAvailablePartition(source.table, source.subPartitionFilters)
+            tableUtils.lastAvailablePartition(source.table, source.subPartitionFilters, partitionColumnOverride)
           val latestValid: String = Option(source.query.endPartition).getOrElse(latestAvailable.orNull)
           SourceDataProfile(latestValid, latestValid, latestValid)
         } else {
           val minQuery = tableUtils.partitionSpec.before(queryStart)
           val windowStart: String = window.map(tableUtils.partitionSpec.minus(minQuery, _)).orNull
-          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters)
+          lazy val firstAvailable = tableUtils.firstAvailablePartition(source.table, source.subPartitionFilters,  partitionColumnOverride)
           val sourceStart = Option(source.query.startPartition).getOrElse(firstAvailable.orNull)
           SourceDataProfile(windowStart, sourceStart, effectiveEnd)
         }
+      }
     }
 
     val sourceRange = PartitionRange(dataProfile.earliestPresent, dataProfile.latestAllowed)(tableUtils)
@@ -733,10 +740,23 @@ object GroupBy {
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
+
+    val tableToPartitionOverrideMap: Map[String, String] = groupByConf.sources.toScala.map(s => {
+      val value = {
+        if (s.query != null && s.query.selects != null) s.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
+        else Constants.PartitionColumn
+      }
+      s.table -> value
+    }
+    ).toMap
+
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
-                                Some(inputTables))
+      tableUtils.unfilledRanges(
+        outputTable,
+        PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
+        Some(inputTables),
+        tableToPartitionOverrideMap = tableToPartitionOverrideMap
+      )
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition

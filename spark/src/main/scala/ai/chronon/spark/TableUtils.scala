@@ -77,7 +77,12 @@ trait BaseTableUtils {
       }
   }
 
-  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
+  // IF the partition column on the datasource is not in the same format as Constants.Partition then we will need to perform logic on the column to get in the desired format.
+  // Users can do this by setting the partition column in the selects
+  // For example, if the ds column on our table did not have dashes:
+  // selects = Map("ds" -> "from_unixtime(unix_timestamp(ds, 'yyyyMMdd'), 'yyyy-MM-dd')")
+  // Which will result in us performing a `SELECT DISTINCT from_unixtime(unix_timestamp(ds, 'yyyyMMdd'), 'yyyy-MM-dd') as ds FROM table` instead of a `SHOW PARTITIONS`
+  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty, partitionColumnOverride: String = partitionColumn): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     if (isIcebergTable(tableName)) {
       if (subPartitionsFilter.nonEmpty) {
@@ -85,12 +90,18 @@ trait BaseTableUtils {
       }
       return getIcebergPartitions(tableName)
     }
-    sparkSession.sqlContext
-      .sql(s"SHOW PARTITIONS $tableName")
-      .collect()
-      .flatMap { row =>
-        {
-          val partitionMap = parsePartition(row.getString(0))
+
+
+    if(partitionColumnOverride != partitionColumn){
+      val fetchPartitionsWithOverridesSql: String = subPartitionsFilter.keys.foldLeft(s"SELECT DISTINCT ${partitionColumnOverride} as `$partitionColumn` ") {
+        case (result, key) => result + s", $key"
+      } + s" FROM $tableName"
+
+      sparkSession
+        .sql(fetchPartitionsWithOverridesSql)
+        .collect()
+        .flatMap( row => {
+          val partitionMap = row.schema.fieldNames.map(field => field -> row.getString(row.schema.fieldIndex(field))).toMap
           if (
             subPartitionsFilter.forall {
               case (k, v) => partitionMap.get(k).contains(v)
@@ -100,8 +111,26 @@ trait BaseTableUtils {
           } else {
             None
           }
+        })
+    }
+    else{
+        sparkSession.sqlContext
+          .sql(s"SHOW PARTITIONS $tableName")
+          .collect()
+          .flatMap { row => {
+            val partitionMap = parsePartition(row.getString(0))
+            if (
+              subPartitionsFilter.forall {
+                case (k, v) => partitionMap.get(k).contains(v)
+              }
+            ) {
+              partitionMap.get(partitionColumn)
+            } else {
+              None
+            }
+          }
         }
-      }
+    }
   }
 
   def isIcebergTable(tableName: String): Boolean =
@@ -160,11 +189,11 @@ trait BaseTableUtils {
     sql(s"SELECT * FROM $tableName LIMIT 1").schema
   }
 
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
+  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnOverride: String = partitionColumn): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColumnOverride).reduceOption((x, y) => Ordering[String].max(x, y))
 
-  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
+  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnOverride: String = partitionColumn): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColumnOverride).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
@@ -382,7 +411,9 @@ trait BaseTableUtils {
                      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
                      inputToOutputShift: Int = 0,
                      skipFirstHole: Boolean = true,
-                     joinConf: Option[api.Join] = None): Option[Seq[PartitionRange]] = {
+                     joinConf: Option[api.Join] = None,
+                     tableToPartitionOverrideMap: Map[String, String] = Map.empty
+                    ): Option[Seq[PartitionRange]] = {
     if (joinConf.map(j => !isPartitioned(j.left.table)).getOrElse(false)) {
       // If the left is unpartitioned, we fall back to just using the passed-in range.
       return Some(Seq(outputPartitionRange))
@@ -421,7 +452,11 @@ trait BaseTableUtils {
       .map { tables =>
         tables
           .flatMap { table =>
-            partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+            partitions(
+              table,
+              inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
+              tableToPartitionOverrideMap.getOrElse(table, partitionColumn)
+            )
           }
           .map(partitionSpec.shift(_, inputToOutputShift))
       }

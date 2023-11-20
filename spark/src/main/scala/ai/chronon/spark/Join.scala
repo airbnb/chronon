@@ -313,8 +313,15 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
     // verify left table does not have reserved columns
     validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
 
+    val bootstrapTablePartitionOverrideMap: Map[String, String] = Map(
+      bootstrapInfo.joinConf.left.table -> {
+        if (bootstrapInfo.joinConf.left.query != null && bootstrapInfo.joinConf.left.query.selects != null) bootstrapInfo.joinConf.left.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
+        else Constants.PartitionColumn
+      }
+    )
+
     tableUtils
-      .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole)
+      .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole, tableToPartitionOverrideMap = bootstrapTablePartitionOverrideMap)
       .getOrElse(Seq())
       .foreach(unfilledRange => {
         val parts = Option(joinConf.bootstrapParts)
@@ -340,8 +347,14 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
               println(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
+
+              val partitionColumnOverride: String = {
+                if (part.query != null && part.query.selects != null) part.query.selects.getOrDefault(Constants.Partition, Constants.PartitionColumn)
+                else Constants.PartitionColumn
+              }
+
               var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
+                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null), partitionColumnOverride)
               )
 
               // attach semantic_hash for either log or regular table bootstrap

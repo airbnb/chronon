@@ -1,12 +1,14 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
+import ai.chronon.aggregator.test.Column
+import ai.chronon.api
+import ai.chronon.api.{StructField, _}
 import ai.chronon.spark._
 import ai.chronon.spark.test.TestUtils.makeDf
-import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, regexp_replace}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
@@ -126,6 +128,29 @@ class TableUtilsTest {
     testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
+  @Test
+  def testPartitionColumnOverride(): Unit = {
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    val df = DataFrameGen
+      .events(spark, viewsSchema, count = 10000, partitions = 200)
+
+    val dfWithAlteredPartitionColumn = df.withColumn("ds", regexp_replace(col("ds"),"-", ""))
+
+    df.save("db.views_table_with_dash")
+    dfWithAlteredPartitionColumn.save("db.views_table_no_dash")
+
+    val partitionsFromNoDash = tableUtils.partitions("db.views_table_no_dash", partitionColumnOverride = "from_unixtime(unix_timestamp(ds, 'yyyyMMdd'), 'yyyy-MM-dd')").sorted
+    val expected = tableUtils.partitions("db.views_table_with_dash").sorted
+
+    assertEquals(partitionsFromNoDash, expected)
+  }
   @Test
   def testInsertPartitionsRemoveColumns(): Unit = {
     val tableName = "db.test_table_2"
