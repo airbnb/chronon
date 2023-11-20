@@ -161,6 +161,17 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("1.8.2"),
     Some("1.10.2")
   ),
+  "flink" -> VersionDependency(
+    Seq(
+      "org.apache.flink" %% "flink-streaming-scala",
+      "org.apache.flink" % "flink-metrics-dropwizard",
+      "org.apache.flink" % "flink-clients",
+      "org.apache.flink" % "flink-test-utils"
+    ),
+    None,
+    Some("1.16.1"),
+    None
+  ),
   "netty-buffer" -> VersionDependency(
     Seq(
       "io.netty" % "netty-buffer"
@@ -349,13 +360,11 @@ lazy val flink = (project in file("flink"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     crossScalaVersions := List(scala212),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "avro", "spark-all/provided", "scala-parallel-collections"),
-    libraryDependencies ++= Seq(
-      "org.apache.flink" %% "flink-streaming-scala" % "1.16.1",
-      "org.apache.flink" % "flink-metrics-dropwizard" % "1.16.1",
-      "org.apache.flink" % "flink-clients" % "1.16.1",
-      "org.apache.flink" % "flink-test-utils" % "1.16.1"
-    )
+    libraryDependencies ++= fromMatrix(scalaVersion.value,
+                                       "avro",
+                                       "spark-all/provided",
+                                       "scala-parallel-collections",
+                                       "flink")
   )
 
 // Build Sphinx documentation
