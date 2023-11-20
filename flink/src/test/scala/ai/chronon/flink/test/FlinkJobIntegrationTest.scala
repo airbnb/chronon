@@ -1,6 +1,7 @@
 package ai.chronon.flink.test
 
-import ai.chronon.api.{Constants, GroupBy, GroupByServingInfo}
+import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
+import ai.chronon.api.{GroupBy, GroupByServingInfo, PartitionSpec}
 import ai.chronon.flink.{FlinkJob, FlinkSource, SparkExpressionEvalFn, WriteResponse}
 import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.online.{Api, GroupByServingInfoParsed}
@@ -92,7 +93,7 @@ class FlinkJobIntegrationTest {
     )
     new GroupByServingInfoParsed(
       groupByServingInfo,
-      Constants.Partition
+      PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
     )
   }
 
