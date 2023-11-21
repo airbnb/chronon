@@ -230,7 +230,7 @@ Keys {unselected_keys}, are unselected in source
     if aggregations is None:
         is_events = any([s.events for s in sources])
         has_mutations = any([(s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
-                             for s in sources])
+                             for s in sources if s.entities is not None]) if not is_events else False
         assert not (is_events or has_mutations), \
             "You can only set aggregations=None in an EntitySource without mutations"
     else:
