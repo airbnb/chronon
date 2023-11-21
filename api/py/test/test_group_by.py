@@ -59,6 +59,27 @@ def event_source(table):
     )
 
 
+def entity_source(snapshotTable, mutationTable):
+    """
+    Sample source
+    """
+    return ttypes.EntitySource(
+        snapshotTable=snapshotTable,
+        mutationTable=mutationTable,
+        query=ttypes.Query(
+            startPartition="2020-04-09",
+            selects={
+                "subject": "subject_sql",
+                "event_id": "event_sql",
+                "cnt": 1
+            },
+            timeColumn="CAST(ts AS DOUBLE)",
+            mutationTimeColumn="__mutationTs",
+            reversalColumn="is_reverse",
+        ),
+    )
+
+
 def test_pretty_window_str(days_unit, hours_unit):
     """
     Test pretty window utils.
@@ -141,6 +162,17 @@ def test_validator_ok():
             keys=["subject"],
             aggregations=None,
         )
+    with pytest.raises(AssertionError):
+        fail_gb = group_by.GroupBy(
+            sources=entity_source("table", "mutationTable"),
+            keys=["subject"],
+            aggregations=None,
+        )
+    noagg_gb = group_by.GroupBy(
+        sources=entity_source("table", None),
+        keys=["subject"],
+        aggregations=None,
+    )
 
 
 def test_generic_collector():
