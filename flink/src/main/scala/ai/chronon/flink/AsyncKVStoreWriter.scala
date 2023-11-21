@@ -53,7 +53,7 @@ object AsyncKVStoreWriter {
     override def prepare: ExecutionContext = this
   }
 
-  private val EXECUTION_CONTEXT_INSTANCE: ExecutionContext = new DirectExecutionContext
+  private val ExecutionContextInstance: ExecutionContext = new DirectExecutionContext
 }
 
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
@@ -65,7 +65,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   @transient private var successCounter: Counter = _
 
   // The context used for the future callbacks
-  implicit lazy val executor: ExecutionContext = AsyncKVStoreWriter.EXECUTION_CONTEXT_INSTANCE
+  implicit lazy val executor: ExecutionContext = AsyncKVStoreWriter.ExecutionContextInstance
 
   protected def getKVStore: KVStore = {
     onlineImpl.genKvStore
@@ -90,14 +90,15 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   override def asyncInvoke(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
     val resultFutureRequested: Future[Seq[Boolean]] = kvStore.multiPut(Seq(input))
     resultFutureRequested.onComplete {
-      case Success(l) if l.forall(c => c) =>
-        successCounter.inc()
-        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = true)))
-      case Success(l) if !l.forall(c => c) =>
-        // we got a response that was marked as false (write failure)
-        errorCounter.inc()
-        println(s"Failed to write to KVStore for object: $input")
-        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
+      case Success(l) =>
+        val succeeded = l.forall(identity)
+        if (succeeded) {
+          successCounter.inc()
+        } else {
+          errorCounter.inc()
+          println(s"Failed to write to KVStore for object: $input")
+        }
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = succeeded)))
       case Failure(exception) =>
         // this should be rare and indicates we have an uncaught exception
         // in the KVStore - we log the exception and skip the object to
