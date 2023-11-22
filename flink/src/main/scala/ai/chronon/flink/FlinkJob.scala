@@ -8,6 +8,26 @@ import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 
+/**
+  * Flink job that processes a single streaming GroupBy and writes out the results
+  * (raw events in untiled, pre-aggregates in case of tiled) to the KV store.
+  *  At a high level, the operators are structured as follows:
+  *  Kafka source -> Spark expression eval -> Avro conversion -> KV store writer
+  *  Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
+  *  Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
+  *  Avro conversion - Converts the Spark expr eval output to a form that can be written out to the KV store (PutRequest object)
+  *  KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
+  *
+  *  In the untiled version there are no-shuffles and thus this ends up being a single node in the Flink DAG
+  *  (with the above 4 operators and parallelism as injected by the user)
+  *
+  * @param eventSrc - Provider of a Flink Datastream[T] for the given topic and feature group
+  * @param sinkFn - Async Flink writer function to help us write to the KV store
+  * @param groupByServingInfoParsed - The GroupBy we are working with
+  * @param encoder - Spark Encoder for the input data type
+  * @param parallelism - Parallelism to use for the Flink job
+  * @tparam T - The input data type
+  */
 class FlinkJob[T](eventSrc: FlinkSource[T],
                   sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
                   groupByServingInfoParsed: GroupByServingInfoParsed,

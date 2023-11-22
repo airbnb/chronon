@@ -36,6 +36,8 @@ class AsyncKVStoreWriterTest {
     assert(result.map(_.putRequest.tsMillis).forall(_.contains(eventTs)))
   }
 
+  // ensure that if we get an event that would cause the operator to throw an exception,
+  // we don't crash the app
   @Test
   def testAsyncWriterHandlesPoisonPillWrites(): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment

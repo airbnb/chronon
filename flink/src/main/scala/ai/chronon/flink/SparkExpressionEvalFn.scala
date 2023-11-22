@@ -18,6 +18,10 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
 
 /**
   * A Flink function that uses Chronon's CatalystUtil to evaluate the Spark SQL expression in a GroupBy.
+  * This function is instantiated for a given type T (specific case class object, Thrift / Proto object).
+  * Based on the selects and where clauses in the GroupBy, this function projects and filters the input data and
+  * emits a Map which contains the relevant fields & values that are needed to compute the aggregated values for the
+  * GroupBy.
   * @param encoder Spark Encoder for the input data type
   * @param groupBy The GroupBy to evaluate.
   * @tparam T The type of the input data.

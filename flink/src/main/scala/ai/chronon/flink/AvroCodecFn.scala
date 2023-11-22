@@ -9,7 +9,6 @@ import org.apache.flink.configuration.Configuration
 import org.apache.flink.metrics.Counter
 import org.apache.flink.util.Collector
 
-import scala.Console.println
 import scala.jdk.CollectionConverters._
 
 /**

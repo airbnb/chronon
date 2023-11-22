@@ -17,11 +17,12 @@ case class WriteResponse(putRequest: PutRequest, status: Boolean)
 
 object AsyncKVStoreWriter {
   private val kvStoreConcurrency = 10
+  private val defaultTimeoutMillis = 1000L
 
   def withUnorderedWaits(inputDS: DataStream[PutRequest],
                          kvStoreWriterFn: RichAsyncFunction[PutRequest, WriteResponse],
                          featureGroupName: String,
-                         timeoutMillis: Long = 1000L,
+                         timeoutMillis: Long = defaultTimeoutMillis,
                          capacity: Int = kvStoreConcurrency): DataStream[WriteResponse] = {
     // We use the Java API here as we have encountered issues in integration tests in the
     // past using the Scala async datastream API.
@@ -56,6 +57,11 @@ object AsyncKVStoreWriter {
   private val ExecutionContextInstance: ExecutionContext = new DirectExecutionContext
 }
 
+/**
+  * Async Flink writer function to help us write to the KV store.
+  * @param onlineImpl - Instantiation of the Chronon API to help create KV store objects
+  * @param featureGroupName Name of the FG we're writing to
+  */
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
     extends RichAsyncFunction[PutRequest, WriteResponse] {
 
@@ -82,7 +88,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   }
 
   override def timeout(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
-    println(s"Timed out writing to Memento for object: $input")
+    println(s"Timed out writing to KV Store for object: $input")
     errorCounter.inc()
     resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
   }
