@@ -52,6 +52,7 @@ case class BootstrapInfo(
 }
 
 object BootstrapInfo {
+  private val ignoredTimeColumns = List("ts", "_internal_time_column")
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
   def from(joinConf: api.Join, range: PartitionRange, tableUtils: BaseTableUtils): BootstrapInfo = {
@@ -167,7 +168,7 @@ object BootstrapInfo {
         val valueFields = SparkConversions
           .toChrononSchema(schema)
           .filterNot {
-            case (name, _) => part.keys(joinConf, tableUtils.partitionColumn).contains(name) || name == "ts"
+            case (name, _) => part.keys(joinConf, tableUtils.partitionColumn).contains(name) || ignoredTimeColumns.contains(name)
           }
           .map(field => StructField(field._1, field._2))
 
