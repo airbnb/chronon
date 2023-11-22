@@ -325,7 +325,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def addJoinBreak(dataFrame: DataFrame): DataFrame =
-    dataFrame.(sparkSession)
+    dataFrame.cache()
 
   def insertUnPartitioned(df: DataFrame,
                           tableName: String,
