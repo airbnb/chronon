@@ -68,6 +68,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
+  val finalJoinParallelism: Int = sparkSession.conf.get("spark.chronon.join.final_join_parallelism", "8").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
 
   sparkSession.sparkContext.setLogLevel("ERROR")
@@ -325,7 +326,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def addJoinBreak(dataFrame: DataFrame): DataFrame =
-    dataFrame.cache()
+    dataFrame.persist(cacheLevel.getOrElse(StorageLevel.MEMORY_AND_DISK))
 
   def insertUnPartitioned(df: DataFrame,
                           tableName: String,

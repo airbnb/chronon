@@ -67,7 +67,6 @@ class Join(joinConf: api.Join,
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
-  private val joinsAtATime = 8
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {
@@ -262,12 +261,17 @@ class Join(joinConf: api.Join,
           // combine bootstrap table and join part tables
           // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
+          var previous: Option[DataFrame] = None
           rightResults
             .foldLeft(bootstrapDf) {
               case (partialDf, ((rightPart, rightDf), i)) =>
                 val next = joinWithLeft(partialDf, rightDf, rightPart)
-                if (((i + 1) % joinsAtATime) == 0) {
+                // Join breaks are added to prevent the Spark app from stalling on a Join that involves too many
+                // rightParts.
+                if (((i + 1) % tableUtils.finalJoinParallelism) == 0 && (i != (rightResults.size - 1))) {
                   tableUtils.addJoinBreak(next)
+                  previous.map(_.unpersist())
+                  previous = Some(next)
                 } else {
                   next
                 }
