@@ -137,10 +137,16 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
 
   def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    val resultRowMaybe = transformFunc(internalRow)
+    performSql(internalRow)
+  }
+
+  def performSql(row: InternalRow): Option[Map[String, Any]] = {
+    val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
+
+  def getOutputSparkSchema: types.StructType = outputSparkSchema
 
   private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
