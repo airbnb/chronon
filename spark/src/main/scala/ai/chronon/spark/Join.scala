@@ -67,6 +67,7 @@ class Join(joinConf: api.Join,
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
+  private val joinsAtATime = 8
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {
@@ -263,7 +264,13 @@ class Join(joinConf: api.Join,
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
           rightResults
             .foldLeft(bootstrapDf) {
-              case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
+              case (partialDf, ((rightPart, rightDf), i)) =>
+                val next = joinWithLeft(partialDf, rightDf, rightPart)
+                if (((i + 1) % joinsAtATime) == 0) {
+                  tableUtils.addJoinBreak(next)
+                } else {
+                  next
+                }
             }
             // drop all processing metadata columns
             .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
