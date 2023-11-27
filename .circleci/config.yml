@@ -9,12 +9,7 @@ executors:
         resource_class: xlarge
         working_directory: /chronon
         docker:
-            - image: |
-                if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                    houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
-                else
-                    houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER}
-                fi
+            - image: houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master}
 
 jobs:
     "Docker Base Build":
@@ -33,23 +28,17 @@ jobs:
             - run:
                 name: Build docker image
                 command: |
-                    set +o pipefail
-                    if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                        docker build -t houpy0829/chronon-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
-                    else
-                        docker build -t houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
-                    fi                        
+                    set +o pipefail                    
+                    docker build -t houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .                    
             - deploy:
                 name: Push docker image
                 command: |
                     set +euxo pipefail
-                    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}                    
-                    if [ "${CIRCLE_BRANCH}" == "master" ]; then                        
-                        docker push houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
+                    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+                    docker push houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master}
+                    if [ "${CIRCLE_BRANCH}" == "master" ]; then
                         docker tag houpy0829/chronon-ci:base--${CIRCLE_BRANCH} houpy0829/chronon-ci:base
-                        docker push houpy0829/chronon-ci:base
-                    else
-                        docker push houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER}
+                        docker push houpy0829/chronon-ci:base                
                     fi
 
 
