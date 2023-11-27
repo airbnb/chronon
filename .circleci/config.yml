@@ -9,7 +9,12 @@ executors:
         resource_class: xlarge
         working_directory: /chronon
         docker:
-            - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
+            - image: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+                houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
+            else
+                houpy0829/chronon-ci:base--${CIRCLE_PR_NUMBER}
+            fi
 
 jobs:
     "Docker Base Build":
