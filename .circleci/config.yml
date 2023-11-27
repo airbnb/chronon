@@ -28,8 +28,8 @@ jobs:
             - run:
                 name: Build docker image
                 command: |
-                    set +o pipefail                    
-                    docker build -t houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .                    
+                    set +o pipefail
+                    docker build -t houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
             - deploy:
                 name: Push docker image
                 command: |
@@ -38,7 +38,7 @@ jobs:
                     docker push houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master}
                     if [ "${CIRCLE_BRANCH}" == "master" ]; then
                         docker tag houpy0829/chronon-ci:base--${CIRCLE_BRANCH} houpy0829/chronon-ci:base
-                        docker push houpy0829/chronon-ci:base                
+                        docker push houpy0829/chronon-ci:base
                     fi
 
 
