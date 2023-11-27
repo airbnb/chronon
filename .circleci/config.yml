@@ -9,7 +9,7 @@ executors:
         resource_class: xlarge
         working_directory: /chronon
         docker:
-            - image: houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master}
+            - image: "houpy0829/chronon-ci:base--${${CIRCLE_PULL_REQUEST##*/}:-master}"
 
 jobs:
     "Docker Base Build":
