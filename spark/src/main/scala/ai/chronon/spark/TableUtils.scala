@@ -322,6 +322,7 @@ case class TableUtils(sparkSession: SparkSession) {
       val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
       val dailyFileCountUpperBound = 2000
       val dailyFileCountLowerBound = if (isLocal) 1 else 10
+      // add one to tablePartitionCount to avoid division by zero
       val dailyFileCountEstimate = totalFileCountEstimate / (tablePartitionCount + 1) + 1
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
