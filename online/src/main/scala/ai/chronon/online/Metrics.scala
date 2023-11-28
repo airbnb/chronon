@@ -90,16 +90,20 @@ object Metrics {
       )
     }
 
-    val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
+    val statsPort: Int = Option(System.getProperty("ai.chronon.metrics.port"))
+      .orElse(Option(System.getenv("ai.chronon.metrics.port")))
+      .orElse(Some("8125")).get.toInt
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
-        println(s"Building new stats cache for ${ctx.toString}".stripMargin)
+        val statsPrefix = "ai.chronon." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse("")
+        println(s"Building new stats cache for ${ctx.toString} on port $statsPort with prefix '$statsPrefix".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
         new NonBlockingStatsDClientBuilder()
-          .prefix("ai.zipline." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse(""))
+          .prefix(statsPrefix)
           .hostname("localhost")
           .port(statsPort)
           .constantTags(ctx.toTags: _*)
+          .originDetectionEnabled(false)
           .build()
       },
       { ctx => ctx },
