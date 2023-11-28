@@ -18,8 +18,6 @@ from ai.chronon.query import Query, select
 from ai.chronon.group_by import (
     GroupBy,
 )
-from ai.chronon.utils import get_staging_query_output_table_name
-from staging_queries.kaggle.outbrain import base_table
 
 """
 The primary key for this GroupBy is the same as the primary key of the source table. Therefore,
@@ -27,8 +25,8 @@ it doesn't perform any aggregation, but just extracts user fields as features.
 """
 
 source = Source(
-    events=EntitySource(
-        table="products", # This points to a table that contains daily snapshots of the entire product catalog
+    entities=EntitySource(
+        snapshotTable="products", # This points to a table that contains daily snapshots of the entire product catalog
         query=Query(
             selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
             time_column="ts") # The event time
@@ -37,4 +35,5 @@ source = Source(
 v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # Primary key is the same as the primary key for the source table
-) # In this case, there are no aggregations or windows to define
+    aggregations=None # In this case, there are no aggregations or windows to define
+) 

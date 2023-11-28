@@ -44,8 +44,8 @@
             }
         }
     },
-    "kaggle": {
-        "description": "Workspace for kaggle compeitions",
+    "retail_example": {
+        "description": "Example config",
         "namespace": "default"
     }
 }

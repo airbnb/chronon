@@ -22,8 +22,6 @@ from ai.chronon.group_by import (
     Window,
     TimeUnit
 )
-from ai.chronon.utils import get_staging_query_output_table_name
-from staging_queries.kaggle.outbrain import base_table
 
 """
 This GroupBy aggregates metrics about a user's previous purchases in various windows.
@@ -32,7 +30,7 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 source = Source(
     events=EventSource(
         table="purchases", # This points to the log table with historical purchase events
-        topic="purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        topic="events/purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
@@ -57,6 +55,6 @@ v1 = GroupBy(
             input_column="purchase_price",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        )
+        ) # The average purchases by user in various windows
     ],
 )

@@ -29,8 +29,8 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 
 source = Source(
     events=EventSource(
-        table="refunds", # This points to the log table with historical refund events
-        topic="refund_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        table="returns", # This points to the log table with historical return events
+        topic="return_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
         query=Query(
             selects=select("user_id","refund_amt"), # Select the fields we care about
             time_column="ts") # The event time

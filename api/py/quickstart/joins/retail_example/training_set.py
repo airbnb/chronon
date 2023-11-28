@@ -27,13 +27,14 @@ and timestamps for which features will be computed.
 """
 source = Source(
     events=EventSource(
-        table="refunds", 
+        table="checkout", 
         query=Query(
-            selects=select("user_id"), # For the le
-            time_column="ts") # The event time
+            selects=select("user_id"), # The primary key used to join various GroupBys together
+            time_column="ts") # The event time used to compute feature values as-of
     ))
 
 v1 = Join(  
     left=source,
     right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1, users]] # Include the three GroupBys
+    start_date="2023-01-01"
 )

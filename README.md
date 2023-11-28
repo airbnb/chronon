@@ -82,60 +82,122 @@ These aggregations can all be configured to be computed over arbitrary window si
 
 ## Examples
 
-Below are some simple code examples meant to illustrate the main APIs that Chronon offers. These examples are based off the code in Getting Started, please see that section for more details on how to actually run these.
+Below are some simple code examples meant to illustrate the main APIs that Chronon offers. These examples are based off the code in (the Quickstart Guide)[api/py/quickstart], please see that section for more details on how to actually run these.
 
 ### Streaming features
 
-Input data source: Purchases
-Input data
+Here is an example streaming feature based off of a "purchases" event for a theoretical online retailer. This data source is comprised of a kafka topic as well as a corresponding log table in Hive:
 
+```python
+source = Source(
+    events=EventSource(
+        table="purchases", # This points to the log table with historical purchase events
+        topic="events/purchase_events", # The streaming source topic
+        query=Query(
+            selects=select("user_id","purchase_price"), # Select the fields we care about, in this case just the user_id (pk for aggregation), and purchase price (field for aggregation)
+            time_column="ts") # The event time
+    ))
+
+window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 30, 90]] # Define some window sizes
+
+GroupBy(
+    sources=[source],
+    keys=["user_id"], # We are aggregating by user
+    aggregations=[Aggregation(
+            input_column="purchase_price",
+            operation=Operation.SUM,
+            windows=window_sizes
+        ), # The sum of purchases prices by user in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.COUNT,
+            windows=window_sizes
+        ), # The count of purchases by user in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.AVERAGE,
+            windows=window_sizes
+        ) # The average purchases by user in various windows
+    ],
+)
 ```
 
+This `GroupBy` would create a total of 9 different features -- 3, 30 and 90 day aggregations across the three different operations.
+
+### Batch features
+
+Here is an example batch feature based off of a "user" table, again for a theoretical online retailer. This data source is Hive table that contains snapshots of all users on the platform, with some relevant information about each user that we simply wish to extract as features.
+
+The primary key for this GroupBy is the same as the primary key of the source table. Therefore,
+it doesn't perform any aggregation.
+
+```python
+source = Source(
+    entities=EntitySource(
+        snapshotTable="products", # This points to a table that contains daily snapshots of the entire product catalog
+        query=Query(
+            selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
+            time_column="ts") # The event time
+    ))
+
+GroupBy(
+    sources=[source],
+    keys=["user_id"], # Primary key is the same as the primary key for the source table
+    aggregations=None # In this case, there are no aggregations or windows to define
+) 
 ```
 
+This `GroupBy` creates two features which are extracted directly from the underlying table: `"account_created_ds", "email_verified"`.
 
-### Defining some batch features
+### Combining these features together and backfilling
 
+The `Join` API is responsible for:
 
-### Combining these features together
+1. Combining many features together into a wide view (hence the name Join).
+2. Defining the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
+3. Performing scalabe backfills
 
-Here 
+Here is an example that joins the above `GroupBy`s using the `checkout` event as the left source. Using checkouts means that every row of output in the backfill corresponds to a checkout event, and features are all computed for the user and the exact timestamp of that checkout event. 
 
-### Backfilling Data
+```python
+source = Source(
+    events=EventSource(
+        table="checkout", 
+        query=Query(
+            selects=select("user_id"), # The primary key used to join various GroupBys together
+            time_column="ts") # The event time used to compute feature values as-of
+    ))
+
+Join(  
+    left=source,
+    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, users]] # Include the GroupBys defined above
+    start_date="2023-01-01"
+)
+```
+
+This join can now be run with a simple CLI call. See (Quickstart)[api/py/quickstart] for more details.
+
+The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the two GroupBys.
+
+Feature values would be computed for each user_id and ts on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
 
 ### Fetching Data
 
+With the above entities defined, users can now easily fetch feature vectors with a simple API call.
 
+This is an example of using the python CLI which calls the Java fetcher under the hood, intended for manual testing. For production, the Java client is usually embedded directly into services.
 
+```bash
+python3 run.py --mode=fetch -k '{"user_id":"123"}' -n retail_example/training_set -t join
 
-Getting Started
-Prerequisites
-[List any prerequisites required before installation, e.g., specific software, environment setup.]
-Installation
-Clone the Chronon repository:
-bash
-Copy code
-git clone [repository-url]
-Navigate to the Chronon directory and install dependencies:
-bash
-Copy code
-cd chronon
-[installation commands]
-Usage
-[Provide a basic example of how to use Chronon. Include code snippets and explanations.]
+> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_30d":11.89352, ...}'
+```
 
-Documentation
-[Link to the comprehensive documentation for Chronon, including detailed usage guides, API references, and development guides.]
+## Contributing
 
-Contributing
-We welcome contributions to the Chronon project! Please read our CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
+We welcome contributions to the Chronon project! Please read our (CONTRIBUTING.md)[CONTRIBUTING.md] for details.
 
-Support
-Issue Tracker: Use the GitHub issue tracker for reporting bugs or feature requests.
-Community Support: Join our community channels for discussions, tips, and support.
-License
-Chronon is open-source software licensed under [specify license type, e.g., Apache 2.0, MIT, etc.].
+## Support
 
-Acknowledgments
-Thanks to the Airbnb engineering team for developing and maintaining Chronon.
-[Any other acknowledgments.]
+Use the GitHub issue tracker for reporting bugs or feature requests.
+Join our community channels for discussions, tips, and support. TODO: create and link channel here.
