@@ -59,7 +59,9 @@ trait KVStore {
   }
 
   // Method for taking the set of keys and constructing the byte array sent to the KVStore
-  def createKeyBytes(keys: Map[String, AnyRef], groupByServingInfo: GroupByServingInfoParsed, dataset: String): Array[Byte] = {
+  def createKeyBytes(keys: Map[String, AnyRef],
+                     groupByServingInfo: GroupByServingInfoParsed,
+                     dataset: String): Array[Byte] = {
     groupByServingInfo.keyCodec.encode(keys)
   }
 }
@@ -146,7 +148,11 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   private var timeoutMillis: Long = 10000
 
+  private var asyncLogging: Boolean = false
+
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
+
+  def setAsyncLogging(enabled: Boolean): Unit = { asyncLogging = enabled }
 
   /** logged responses should be made available to an offline log table in Hive
     *  with columns
@@ -169,10 +175,16 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 logFunc = responseConsumer,
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
-                timeoutMillis = timeoutMillis)
+                timeoutMillis = timeoutMillis,
+                asyncLogging = asyncLogging)
 
   final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+    new JavaFetcher(genKvStore,
+                    Constants.ChrononMetadataKey,
+                    timeoutMillis,
+                    responseConsumer,
+                    externalRegistry,
+                    asyncLogging)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {

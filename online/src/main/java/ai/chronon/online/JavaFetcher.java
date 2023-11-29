@@ -31,8 +31,8 @@ import static java.util.Map.*;
 public class JavaFetcher {
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean asyncLogging) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, asyncLogging);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

@@ -68,4 +68,8 @@ object Constants {
   val LabelColumnPrefix: String = "label"
   val LabelViewPropertyFeatureTable: String = "feature_table"
   val LabelViewPropertyKeyLabelTable: String = "label_table"
+  val AsyncLoggingCorePoolSize = 0
+  val AsyncLoggingMaximumPoolSize = 10
+  val AsyncLoggingThreadKeepAliveTime = 60L
+  val AsyncLoggingQueueSize = 25
 }

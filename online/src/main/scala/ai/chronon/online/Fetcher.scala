@@ -10,11 +10,12 @@ import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
+import java.util.concurrent.{LinkedBlockingQueue, RejectedExecutionException, ThreadPoolExecutor}
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 object Fetcher {
@@ -35,15 +36,29 @@ object Fetcher {
 
 private[online] case class FetcherResponseWithTs(responses: scala.collection.Seq[Response], endTs: Long)
 
-
 // BaseFetcher + Logging + External service calls
 class Fetcher(val kvStore: KVStore,
               metaDataSet: String,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null)
+              val externalSourceRegistry: ExternalSourceRegistry = null,
+              asyncLogging: Boolean = false)
     extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
+
+  // Set up a separate thread pool for async feature logging.
+  // Since there is no harm in just throwing away an arbitrary log,
+  // this uses a queue with a bounded size to prevent the queue
+  // size from getting too large and degrading service performance.
+  private val loggingExecutionContext = ExecutionContext.fromExecutor(
+    new ThreadPoolExecutor(
+      Constants.AsyncLoggingCorePoolSize,
+      Constants.AsyncLoggingMaximumPoolSize,
+      Constants.AsyncLoggingThreadKeepAliveTime,
+      java.util.concurrent.TimeUnit.SECONDS,
+      new LinkedBlockingQueue[Runnable](Constants.AsyncLoggingQueueSize),
+    )
+  )
 
   // key and value schemas
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>
@@ -165,7 +180,26 @@ class Fetcher(val kvStore: KVStore,
     }
 
     combinedResponsesF
-      .map(_.iterator.map(logResponse(_, ts)).toSeq)
+      .map { combinedResponse =>
+        combinedResponse.iterator.map(resp => {
+          if (asyncLogging) {
+            Future {
+              logResponse(resp, ts)
+            }(loggingExecutionContext)
+              .recover {
+                case e: RejectedExecutionException =>
+                  resp.request.context.foreach(context => context.increment("logging_request_async_failed_to_queue.count"))
+                  if (debug) {
+                    println("Failed to schedule async log. Response will not be logged.", e.getMessage)
+                  }
+              }
+
+            Response(resp.request, Success(resp.derivedValues))
+          } else {
+            logResponse(resp, ts)
+          }
+        }).toSeq
+      }
   }
 
   private def encode(schema: StructType,
