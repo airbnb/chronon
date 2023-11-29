@@ -743,14 +743,31 @@ object Driver {
       statuses.find(_._2 == true).map(_._1)
     }
 
+    def getTopicPartitions(groupByConf: api.GroupBy, bootstrap: Option[String] = None): Int = {
+      val streamingSource = groupByConf.streamingSource
+      assert(streamingSource.isDefined,
+        "There is no valid streaming source - with a valid topic, and endDate < today")
+      lazy val tokens = streamingSource.get.topicTokens
+      lazy val topic = streamingSource.get.cleanTopic
+      lazy val host = tokens.get("host")
+      lazy val port = tokens.get("port")
+      if (bootstrap.isEmpty) {
+        assert(
+          host.isDefined && port.isDefined,
+          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+      }
+
+    }
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
       implicit val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
+
 
       val confFile = findFile(args.confPath())
       val groupByConf = confFile
         .map(ThriftJsonCodec.fromJsonFile[api.GroupBy](_, check = false))
         .getOrElse(args.metaDataStore.getConf[api.GroupBy](args.confPath()).get)
+
 
       val onlineJar = findFile(args.onlineJar())
       if (args.debug())
@@ -773,6 +790,8 @@ object Driver {
             "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
         val inputStream: DataFrame =
           dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+
+
         new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
       }
       query.awaitTermination()

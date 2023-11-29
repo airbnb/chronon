@@ -58,7 +58,7 @@ object LocalIOCache {
   }
 }
 
-class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
+class JoinSourceRunner(groupByConf: api.GroupBy, cliProps: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
     implicit
     session: SparkSession,
     apiImpl: Api)
@@ -257,23 +257,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     dataStream.copy(df = des)
   }
 
-  private def internalStreamBuilder(streamType: String): StreamBuilder = {
-    val suppliedBuilder = apiImpl.generateStreamBuilder(streamType)
-    if (suppliedBuilder == null) {
-      if (streamType == "kafka") {
-        KafkaStreamBuilder
-      } else {
-        throw new RuntimeException(
-          s"Couldn't access builder for type $streamType. Please implement one by overriding Api.generateStreamBuilder")
-      }
-    } else {
-      suppliedBuilder
-    }
-  }
-
-  private def buildStream(topic: TopicInfo): DataStream =
-    internalStreamBuilder(topic.topicType).from(topic)(session, conf)
-
   def percentile(arr: Array[Long], p: Double): Option[Long] = {
     if (arr == null || arr.length == 0) return None
     val sorted = arr.sorted
@@ -284,9 +267,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
-    val topic = TopicInfo.parse(left.topic)
-
-    val stream = buildStream(topic)
+    val stream = StreamBuilderUtil(apiImpl, cliProps, session).buildStream(left.topic)
     val decoded = decode(stream)
 
     val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
