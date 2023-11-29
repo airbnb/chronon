@@ -93,7 +93,7 @@ git.useGitDescribe := true
 git.gitTagToVersionNumber := { tag: String =>
   // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
   val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
-  val branchTag = git.gitCurrentBranch.value
+  val branchTag = git.gitCurrentBranch.value.replace("/", "-")
   if (branchTag == "master") {
     // For master branches, we tag the packages as <package-name>-<build-version>
     Some(s"${versionStr}")
@@ -239,7 +239,7 @@ python_api := {
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
-  val branchStr = git.gitCurrentBranch.value
+  val branchStr = git.gitCurrentBranch.value.replace("/", "-")
   s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
   if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
