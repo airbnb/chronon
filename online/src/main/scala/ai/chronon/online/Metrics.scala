@@ -31,6 +31,8 @@ object Metrics {
     val Production = "production"
     val Accuracy = "accuracy"
     val Team = "team"
+    val PriorityTier = "priority_tier" // Stripe-specific
+    val FlinkCluster = "flink_cluster" // Stripe-specific
   }
 
   object Name {
@@ -182,6 +184,11 @@ object Metrics {
       addTag(Tag.Environment, environment)
       addTag(Tag.JoinPartPrefix, joinPartPrefix)
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)
+
+      // Priority tier is a Stripe-specific concept http://go/trailhead/trh_doc_OgdDcZyyZHHVuP.
+      Option(System.getProperty("ai.chronon.metrics.priority_tier")).foreach(addTag(Tag.PriorityTier, _))
+      Option(System.getProperty("ai.chronon.metrics.flink_cluster")).foreach(addTag(Tag.FlinkCluster, _))
+
       buffer
     }
   }
