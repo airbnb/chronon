@@ -124,7 +124,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
     val tilingDS: DataStream[TimestampedTile] =
     sparkExprEvalDS
-      .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed))
+      .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
       .window(window)
       .trigger(trigger)
       .sideOutputLateData(tilingLateEventsTag)

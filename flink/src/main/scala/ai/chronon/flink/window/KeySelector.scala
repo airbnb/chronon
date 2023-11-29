@@ -1,6 +1,7 @@
 package ai.chronon.flink.window
 
-import ai.chronon.online.GroupByServingInfoParsed
+import ai.chronon.api.GroupBy
+
 import scala.jdk.CollectionConverters._
 
 // TODO: add comment on what a key selector is
@@ -13,13 +14,11 @@ object KeySelector {
    * SparkExprEval DataStream by color and size, so all events with the same (color, size) are sent to the same
    * operator.
    */
-  def getKeySelectionFunction(
-                                                 groupByServingInfoParsed: GroupByServingInfoParsed
-                                               ): Map[String, Any] => List[Any] = {
+  def getKeySelectionFunction(groupBy: GroupBy): Map[String, Any] => List[Any] = {
     // List uses MurmurHash.seqHash for its .hashCode(), which gives us hashing based on content.
     // (instead of based on the instance, which is the case for Array).
     // See Scala's "scala/src/library/scala/util/hashing/MurmurHash3.scala"
-    val groupByKeys: List[String] = groupByServingInfoParsed.groupBy.keyColumns.asScala.toList
+    val groupByKeys: List[String] = groupBy.keyColumns.asScala.toList
     println(
       f"Creating key selection function for Flink app. groupByKeys=$groupByKeys"
     )
