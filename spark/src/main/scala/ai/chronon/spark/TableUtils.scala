@@ -400,6 +400,9 @@ case class TableUtils(sparkSession: SparkSession) {
         (df.count(), 1)
       }
 
+    // set to one if tablePartitionCount=0 to avoid division by zero
+    val nonZeroTablePartitionCount = if (tablePartitionCount == 0) 1 else tablePartitionCount
+
     println(s"$rowCount rows requested to be written into table $tableName")
     if (rowCount > 0) {
       val columnSizeEstimate = columnSizeEstimator(df.schema)
@@ -417,8 +420,7 @@ case class TableUtils(sparkSession: SparkSession) {
       val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
       val dailyFileCountUpperBound = 2000
       val dailyFileCountLowerBound = if (isLocal) 1 else 10
-      // add one to tablePartitionCount to avoid division by zero
-      val dailyFileCountEstimate = totalFileCountEstimate / (tablePartitionCount + 1) + 1
+      val dailyFileCountEstimate = totalFileCountEstimate / nonZeroTablePartitionCount + 1
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
 
@@ -433,12 +435,12 @@ case class TableUtils(sparkSession: SparkSession) {
       val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
 
       // finalized shuffle parallelism
-      val shuffleParallelism = dailyFileCount * tablePartitionCount
+      val shuffleParallelism = dailyFileCount * nonZeroTablePartitionCount
       val saltCol = "random_partition_salt"
       val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
 
       println(
-        s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
+        s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $nonZeroTablePartitionCount table partitions and $dailyFileCount files per partition")
       val repartitionCols =
         if (df.schema.fieldNames.contains(partitionColumn)) {
           Seq(partitionColumn, saltCol)
