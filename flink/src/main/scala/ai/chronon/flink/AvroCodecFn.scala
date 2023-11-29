@@ -2,7 +2,7 @@ package ai.chronon.flink
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{Constants, DataModel, GroupBy, Query, StructType => ChrononStructType}
+import ai.chronon.api.{Constants, DataModel, Query, StructType => ChrononStructType}
 import ai.chronon.flink.window.TimestampedTile
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed, KVStore}
 import ai.chronon.online.KVStore.PutRequest
@@ -117,7 +117,6 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
  * @tparam T The input data type
  */
 case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed,
-                               kvstore: KVStore,
                                debug: Boolean = false)
   extends RichFlatMapFunction[TimestampedTile, PutRequest] with AvroCodecFnUtility {
   override def open(configuration: Configuration): Unit = {
@@ -145,12 +144,10 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
   def avroConvertTileToPutRequest(in: TimestampedTile): PutRequest = {
     val tsMills = in.latestTsMillis
 
-    // 'keys' is a map of key name in schema -> key value, e.g. Map("card_number" -> "4242-4242-4242-4242")
-    // We don't need to sort 'keyColumns' as the ordering is handled in the AvroCodec.encodeBytes code called in TiledKvStoreUtils.createKeyBytesForStreamingData
-    // We convert to AnyRef because Chronon expects an AnyRef. This is likely a scala <> java interoperability thing;
-    // all Java objects are AnyRef's in Scala.
+    // 'keys' is a map of (key name in schema -> key value), e.g. Map("card_number" -> "4242-4242-4242-4242")
+    // We convert to AnyRef because Chronon expects an AnyRef (for scala <> java interoperability reasons).
     val keys: Map[String, AnyRef] = keyColumns.zip(in.keys.map(_.asInstanceOf[AnyRef])).toMap
-    val keyBytes = kvstore.createKeyBytes(keys, groupByServingInfoParsed, streamingDataset)
+    val keyBytes = keyToBytes(in.keys)
     val valueBytes = in.tileBytes
 
     if(debug) {

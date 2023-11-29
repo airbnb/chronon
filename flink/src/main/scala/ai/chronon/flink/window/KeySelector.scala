@@ -13,7 +13,7 @@ object KeySelector {
    * SparkExprEval DataStream by color and size, so all events with the same (color, size) are sent to the same
    * operator.
    */
-  protected[window] def getKeySelectionFunction(
+  def getKeySelectionFunction(
                                                  groupByServingInfoParsed: GroupByServingInfoParsed
                                                ): Map[String, Any] => List[Any] = {
     // List uses MurmurHash.seqHash for its .hashCode(), which gives us hashing based on content.
