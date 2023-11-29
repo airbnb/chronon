@@ -2,7 +2,7 @@ package ai.chronon.flink
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{Constants, DataModel, Query, StructType => ChrononStructType}
+import ai.chronon.api.{Constants, DataModel, GroupBy, Query, StructType => ChrononStructType}
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.api.common.functions.RichFlatMapFunction
@@ -12,17 +12,12 @@ import org.apache.flink.util.Collector
 
 import scala.jdk.CollectionConverters._
 
-/**
-  * A Flink function that is responsible for converting the Spark expr eval output and converting that to a form
-  * that can be written out to the KV store (PutRequest object)
-  * @param groupByServingInfoParsed The GroupBy we are working with
-  * @tparam T The input data type
-  */
-case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
-    extends RichFlatMapFunction[Map[String, Any], PutRequest] {
+
+sealed trait AvroCodec {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  @transient protected var avroConversionErrorCounter: Counter = _
+  // Should be overriden
+  val groupByServingInfoParsed: GroupByServingInfoParsed
 
   protected val query: Query = groupByServingInfoParsed.groupBy.streamingSource.get.getEvents.query
   protected val streamingDataset: String = groupByServingInfoParsed.groupBy.streamingDataset
@@ -40,8 +35,8 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
   }
 
   private lazy val getKVSerializers = (
-    groupByServingInfoParsed: GroupByServingInfoParsed
-  ) => {
+                                        groupByServingInfoParsed: GroupByServingInfoParsed
+                                      ) => {
     val keyZSchema: ChrononStructType = groupByServingInfoParsed.keyChrononSchema
     val valueZSchema: ChrononStructType = groupByServingInfoParsed.groupBy.dataModel match {
       case DataModel.Events => groupByServingInfoParsed.valueChrononSchema
@@ -70,6 +65,18 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
     val valueColumns = groupByServingInfoParsed.groupBy.aggregationInputs ++ additionalColumns
     (keyColumns, valueColumns)
   }
+}
+
+/**
+  * A Flink function that is responsible for converting the Spark expr eval output and converting that to a form
+  * that can be written out to the KV store (PutRequest object)
+  * @param groupByServingInfoParsed The GroupBy we are working with
+  * @tparam T The input data type
+  */
+case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
+    extends RichFlatMapFunction[Map[String, Any], PutRequest] with AvroCodec {
+
+  @transient protected var avroConversionErrorCounter: Counter = _
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
@@ -94,8 +101,8 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
 
   def avroConvertMapToPutRequest(in: Map[String, Any]): PutRequest = {
     val tsMills = in(timeColumnAlias).asInstanceOf[Long]
-    val keyBytes = keyToBytes(keyColumns.map(in.get(_).get))
-    val valueBytes = valueToBytes(valueColumns.map(in.get(_).get))
+    val keyBytes = keyToBytes(keyColumns.map(in(_)))
+    val valueBytes = valueToBytes(valueColumns.map(in(_)))
     PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))
   }
 
