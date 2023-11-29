@@ -1,4 +1,4 @@
-package ai.chronon.flink.tiling
+package ai.chronon.flink.window
 
 import ai.chronon.online.GroupByServingInfoParsed
 import scala.jdk.CollectionConverters._
@@ -13,7 +13,7 @@ object KeySelector {
    * SparkExprEval DataStream by color and size, so all events with the same (color, size) are sent to the same
    * operator.
    */
-  protected[tiling] def getKeySelectionFunction(
+  protected[window] def getKeySelectionFunction(
                                                  groupByServingInfoParsed: GroupByServingInfoParsed
                                                ): Map[String, Any] => List[Any] = {
     // List uses MurmurHash.seqHash for its .hashCode(), which gives us hashing based on content.
