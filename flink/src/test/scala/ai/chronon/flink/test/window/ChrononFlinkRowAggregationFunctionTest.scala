@@ -93,7 +93,7 @@ class ChrononFlinkRowAggregationFunctionTest {
     assert(finalResult sameElements expectedResult)
   }
 
-
+  @Test
   def testChrononFlinkAggregatorResultsCanBeMergedWithOtherPreAggregates(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
@@ -158,6 +158,7 @@ class ChrononFlinkRowAggregationFunctionTest {
     assert(finalResult sameElements expectedResult)
   }
 
+  @Test
   def testChrononFlinkAggregatorProducesCorrectResultsIfInputIsInIncorrectOrder(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
@@ -181,6 +182,7 @@ class ChrononFlinkRowAggregationFunctionTest {
         fail(s"An exception was thrown by the aggregator when it should not have been. " +
           s"The aggregator should fix the order without failing. $e")
       }
+      case _ =>
     }
 
     val result = aggregateFunc.getResult(acc)
