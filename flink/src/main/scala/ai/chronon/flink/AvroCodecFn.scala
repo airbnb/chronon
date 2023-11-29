@@ -3,7 +3,8 @@ package ai.chronon.flink
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataModel, GroupBy, Query, StructType => ChrononStructType}
-import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
+import ai.chronon.flink.window.TimestampedTile
+import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed, KVStore}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.configuration.Configuration
@@ -13,11 +14,14 @@ import org.apache.flink.util.Collector
 import scala.jdk.CollectionConverters._
 
 
-sealed trait AvroCodec {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
-
+sealed trait AvroCodecFnUtility {
   // Should be overriden
   val groupByServingInfoParsed: GroupByServingInfoParsed
+
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient protected var avroConversionErrorCounter: Counter = _
+  @transient protected var eventProcessingErrorCounter
+  : Counter = _ // Shared metric for errors across the entire Flink app.
 
   protected val query: Query = groupByServingInfoParsed.groupBy.streamingSource.get.getEvents.query
   protected val streamingDataset: String = groupByServingInfoParsed.groupBy.streamingDataset
@@ -74,9 +78,7 @@ sealed trait AvroCodec {
   * @tparam T The input data type
   */
 case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
-    extends RichFlatMapFunction[Map[String, Any], PutRequest] with AvroCodec {
-
-  @transient protected var avroConversionErrorCounter: Counter = _
+    extends RichFlatMapFunction[Map[String, Any], PutRequest] with AvroCodecFnUtility {
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
@@ -96,6 +98,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
         // To improve availability, we don't rethrow the exception. We just drop the event
         // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
         logger.error(s"Error converting to Avro bytes - $e")
+        eventProcessingErrorCounter.inc()
         avroConversionErrorCounter.inc()
     }
 
@@ -105,5 +108,61 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
     val valueBytes = valueToBytes(valueColumns.map(in(_)))
     PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))
   }
+}
 
+/**
+ * A Flink function that is responsible for converting an array of pre-aggregates (aka a tile) to a form
+ * that can be written out to the KV store (PutRequest object).
+ * @param groupByServingInfoParsed The GroupBy we are working with
+ * @tparam T The input data type
+ */
+case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed,
+                               kvstore: KVStore,
+                               debug: Boolean = false)
+  extends RichFlatMapFunction[TimestampedTile, PutRequest] with AvroCodecFnUtility {
+  override def open(configuration: Configuration): Unit = {
+    super.open(configuration)
+    val metricsGroup = getRuntimeContext.getMetricGroup
+      .addGroup("chronon")
+      .addGroup("feature_group", groupByServingInfoParsed.groupBy.getMetaData.getName)
+    avroConversionErrorCounter = metricsGroup.counter("avro_conversion_errors")
+    eventProcessingErrorCounter = metricsGroup.counter("event_processing_error")
+  }
+  override def close(): Unit = super.close()
+
+  override def flatMap(value: TimestampedTile, out: Collector[PutRequest]): Unit =
+    try {
+      out.collect(avroConvertTileToPutRequest(value))
+    } catch {
+      case e: Exception =>
+        // To improve availability, we don't rethrow the exception. We just drop the event
+        // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
+        println(s"Error converting to Avro bytes - ", e)
+        eventProcessingErrorCounter.inc()
+        avroConversionErrorCounter.inc()
+    }
+
+  def avroConvertTileToPutRequest(in: TimestampedTile): PutRequest = {
+    val tsMills = in.latestTsMillis
+
+    // 'keys' is a map of key name in schema -> key value, e.g. Map("card_number" -> "4242-4242-4242-4242")
+    // We don't need to sort 'keyColumns' as the ordering is handled in the AvroCodec.encodeBytes code called in TiledKvStoreUtils.createKeyBytesForStreamingData
+    // We convert to AnyRef because Chronon expects an AnyRef. This is likely a scala <> java interoperability thing;
+    // all Java objects are AnyRef's in Scala.
+    val keys: Map[String, AnyRef] = keyColumns.zip(in.keys.map(_.asInstanceOf[AnyRef])).toMap
+    val keyBytes = kvstore.createKeyBytes(keys, groupByServingInfoParsed, streamingDataset)
+    val valueBytes = in.tileBytes
+
+    if(debug) {
+      println(
+        f"Avro converting tile to PutRequest - tile=${in}  " +
+          f"groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys " +
+          f"keyBytes=${java.util.Base64.getEncoder.encodeToString(keyBytes)} " +
+          f"valueBytes=${java.util.Base64.getEncoder.encodeToString(valueBytes)} " +
+          f"streamingDataset=$streamingDataset"
+      )
+    }
+
+    PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))
+  }
 }
