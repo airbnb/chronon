@@ -1,6 +1,7 @@
 package ai.chronon.aggregator.windowing
 
 import scala.collection.Seq
+import scala.concurrent.{Future, ExecutionContext}
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
 
@@ -62,73 +63,88 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   //   - we would need to cache (tailHops, collapsed,  cumulative_streamingRows, latestStreamingTs)
   //   - upon a cache hit we would need to
   //        1. Scan everything from streaming only after latestStreamingTs
-  def lambdaAggregateIr(finalBatchIr: FinalBatchIr,
+  def lambdaAggregateIr(futureFinalBatchIr: Future[FinalBatchIr],
                         streamingRows: Iterator[Row],
                         queryTs: Long,
-                        hasReversal: Boolean = false): Array[Any] = {
-    // null handling
-    if (finalBatchIr == null && streamingRows == null) return null
-    val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
-    val headRows = Option(streamingRows).getOrElse(Array.empty[Row].iterator)
+                        hasReversal: Boolean = false)
+                       (implicit ec: ExecutionContext): Future[Array[Any]] = {
+    futureFinalBatchIr.map { finalBatchIr =>
+      // null handling
+      if (finalBatchIr == null && streamingRows == null) return Future.successful(null)
+      val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
+      val headRows = Option(streamingRows).getOrElse(Array.empty[Row].iterator)
 
-    if (batchEndTs > queryTs) {
-      throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
-    }
-
-    // initialize with collapsed
-    val resultIr = windowedAggregator.clone(batchIr.collapsed)
-
-    // add head events
-    while (headRows.hasNext) {
-      val row = headRows.next()
-      val rowTs = row.ts // unbox long only once
-      if (queryTs > rowTs && rowTs >= batchEndTs) {
-        // When a request with afterTsMillis is passed, we don't consider mutations with mutationTs past the tsMillis
-        if ((hasReversal && queryTs >= row.mutationTs) || !hasReversal)
-          updateIr(resultIr, row, queryTs, hasReversal)
+      if (batchEndTs > queryTs) {
+        throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
       }
+
+      // initialize with collapsed
+      val resultIr = windowedAggregator.clone(batchIr.collapsed)
+
+      // add head events
+      while (headRows.hasNext) {
+        val row = headRows.next()
+        val rowTs = row.ts // unbox long only once
+        if (queryTs > rowTs && rowTs >= batchEndTs) {
+          // When a request with afterTsMillis is passed, we don't consider mutations with mutationTs past the tsMillis
+          if ((hasReversal && queryTs >= row.mutationTs) || !hasReversal)
+            updateIr(resultIr, row, queryTs, hasReversal)
+        }
+      }
+      mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
+      resultIr
     }
-    mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
-    resultIr
   }
 
-  def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
-                        streamingTiledIrs: Iterator[TiledIr],
-                        queryTs: Long): Array[Any] = {
-    // null handling
-    if (finalBatchIr == null && streamingTiledIrs == null) return null
-    val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
-    val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Array.empty[TiledIr].iterator)
-
-    if (batchEndTs > queryTs) {
-      throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
+  def lambdaAggregateIrTiled(futureFinalBatchIr: Future[FinalBatchIr],
+                             futureStreamingTiledIrs: Future[Iterator[TiledIr]],
+                             queryTs: Long)
+                            (implicit ec: ExecutionContext): Future[Array[Any]] = {
+    // allow batch ir processing as soon as it's ready
+    val normalizedBatchIrFuture = futureFinalBatchIr.map { finalBatchIr =>
+      Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
     }
+    for {
+      batchIr <- normalizedBatchIrFuture
+      streamingTiledIrs <- futureStreamingTiledIrs
+      result <- Future {
+        // null handling
+        if (batchIr == null && streamingTiledIrs == null) Future.successful(null)
 
-    // initialize with collapsed
-    val resultIr = windowedAggregator.clone(batchIr.collapsed)
+        val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Array.empty[TiledIr].iterator)
 
-    // add head events
-    while (headStreamingTiledIrs.hasNext) {
-      val streamingTiledIr = headStreamingTiledIrs.next()
-      val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
-      if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
-        updateIrTiled(resultIr, streamingTiledIr, queryTs)
+        if (batchEndTs > queryTs) {
+          throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
+        }
+
+        // initialize with collapsed
+        val resultIr = windowedAggregator.clone(batchIr.collapsed)
+
+        // add head events
+        while (headStreamingTiledIrs.hasNext) {
+          val streamingTiledIr = headStreamingTiledIrs.next()
+          val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
+          if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
+            updateIrTiled(resultIr, streamingTiledIr, queryTs)
+          }
+        }
+        mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
+        resultIr
       }
-    }
-    mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
-    resultIr
+    } yield result
   }
 
-  def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
+  def lambdaAggregateFinalized(finalBatchIr: Future[FinalBatchIr],
                                streamingRows: Iterator[Row],
                                ts: Long,
-                               hasReversal: Boolean = false): Array[Any] = {
+                               hasReversal: Boolean = false)(implicit ec: ExecutionContext): Future[Array[Any]] = {
     windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
   }
 
-  def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
-                               streamingTiledIrs: Iterator[TiledIr],
-                               ts: Long): Array[Any] = {
+  // implicitly uses Api.scala KVStore thread pool
+  def lambdaAggregateFinalizedTiled(finalBatchIr: Future[FinalBatchIr],
+                                    streamingTiledIrs: Future[Iterator[TiledIr]],
+                                    ts: Long)(implicit ec: ExecutionContext): Future[Array[Any]] = {
     // TODO: Add support for mutations / hasReversal to the tiled implementation
     windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
   }
