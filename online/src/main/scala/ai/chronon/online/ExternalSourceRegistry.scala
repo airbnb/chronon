@@ -35,11 +35,11 @@ class ExternalSourceRegistry extends Serializable {
     }
   }
 
-  val handlerMap: mutable.Map[String, ExternalSourceHandler] = {
-    val result = new mutable.HashMap[String, ExternalSourceHandler]()
-    result.put(Constants.ContextualSourceName, new ContextualHandler())
-    result
-  }
+    val handlerMap: mutable.Map[String, ExternalSourceHandler] = {
+      val result = new mutable.HashMap[String, ExternalSourceHandler]()
+      result.put(Constants.ContextualSourceName, new ContextualHandler())
+      result
+    }
 
   def add(name: String, handler: ExternalSourceHandler): Unit = {
     assert(!handlerMap.contains(name),
