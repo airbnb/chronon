@@ -33,9 +33,9 @@ To keep this tutorial brief, we'll only use these datasets. However, you could a
 #### 2. Download and setup spark (assuming you have a jdk already setup)
 ```shell
 cd ~
-curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
-tar xf spark-2.4.8-bin-hadoop2.7.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
+curl -O https://archive.apache.org/dist/spark/spark-3.2.4/spark-3.2.4-bin-hadoop3.2.tgz
+tar xf spark-3.2.4-bin-hadoop3.2.tgz
+export SPARK_SUBMIT_PATH=/Users/$USER/spark-3.2.4-bin-hadoop3.2/bin/spark-submit
 export SPARK_LOCAL_IP="127.0.0.1"
 ```
 

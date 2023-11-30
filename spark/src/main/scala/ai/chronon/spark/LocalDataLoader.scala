@@ -19,8 +19,9 @@ package ai.chronon.spark
 import ai.chronon.spark.Extensions.StructTypeOps
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.FailFastMode
-import org.apache.spark.sql.functions.{col, unix_timestamp}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.functions.{col, unix_timestamp, date_format}
+import org.apache.spark.sql.types.{StringType, TimestampType}
+
 
 import java.io.File
 
@@ -49,9 +50,20 @@ object LocalDataLoader {
     if (schema.fieldNames.contains("ts") && schema(schema.fieldIndex("ts")).dataType == StringType) {
       df = df
         .withColumnRenamed("ts", "ts_string")
-        .withColumn("ts", unix_timestamp(col("ts_string")) * 1000)
+        .withColumn("ts", date_format(col("ts_string"), "yyyy-MM-dd") * 1000)
         .drop("ts_string")
     }
+
+    // Spark schema inference converts ds yyyy-MM-dd to timestamps.
+    // We need these to be read as strings
+    if (schema.fieldNames.contains("ds") && schema(schema.fieldIndex("ds")).dataType ==
+      TimestampType) {
+      df = df
+        .withColumnRenamed("ds", "ds_time")
+        .withColumn("ds", unix_timestamp(col("ts_string")) * 1000)
+        .drop("ds_time")
+    }
+
 
     println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
     df.show(100)
