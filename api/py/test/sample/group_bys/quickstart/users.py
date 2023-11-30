@@ -26,10 +26,10 @@ it doesn't perform any aggregation, but just extracts user fields as features.
 
 source = Source(
     entities=EntitySource(
-        snapshotTable="products", # This points to a table that contains daily snapshots of the entire product catalog
+        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
         query=Query(
             selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
-            time_column="ts") # The event time
+        )
     ))
 
 v1 = GroupBy(

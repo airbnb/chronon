@@ -17,9 +17,9 @@ from ai.chronon.join import Join, JoinPart
 from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 
-from group_bys.retail_example.purchases import v1 as purchases_v1
-from group_bys.retail_example.refunds import v1 as refunds_v1
-from group_bys.retail_example.users import v1 as users
+from group_bys.quickstart.purchases import v1 as purchases_v1
+from group_bys.quickstart.returns import v1 as refunds_v1
+from group_bys.quickstart.users import v1 as users
 
 """
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys
@@ -27,14 +27,14 @@ and timestamps for which features will be computed.
 """
 source = Source(
     events=EventSource(
-        table="checkout", 
+        table="data.checkouts", 
         query=Query(
             selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts") # The event time used to compute feature values as-of
+            time_column="ts",
+            ) # The event time used to compute feature values as-of
     ))
 
 v1 = Join(  
     left=source,
     right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1, users]] # Include the three GroupBys
-    start_date="2023-01-01"
 )

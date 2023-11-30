@@ -20,7 +20,7 @@ from ai.chronon.group_by import (
     Aggregation,
     Operation,
     Window,
-    TimeUnit
+    TimeUnit,
 )
 
 """
@@ -29,10 +29,10 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 
 source = Source(
     events=EventSource(
-        table="purchases", # This points to the log table with historical purchase events
-        topic="events/purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        table="data.returns", # This points to the log table with historical return events
+        topic="return_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
         query=Query(
-            selects=select("user_id","purchase_price"), # Select the fields we care about
+            selects=select("user_id","refund_amt"), # Select the fields we care about
             time_column="ts") # The event time
     ))
 
@@ -42,19 +42,19 @@ v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
     aggregations=[Aggregation(
-            input_column="purchase_price",
+            input_column="refund_amt",
             operation=Operation.SUM,
             windows=window_sizes
         ), # The sum of purchases prices in various windows
         Aggregation(
-            input_column="purchase_price",
+            input_column="refund_amt",
             operation=Operation.COUNT,
             windows=window_sizes
         ), # The count of purchases in various windows
         Aggregation(
-            input_column="purchase_price",
+            input_column="refund_amt",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        ) # The average purchases by user in various windows
+        )
     ],
 )

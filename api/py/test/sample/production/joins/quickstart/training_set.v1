@@ -1,0 +1,65 @@
+{
+  "metaData": {
+    "name": "quickstart.training_set.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_data.checkouts_ds\", \"spec\": \"data.checkouts/ds={{ ds }}\", \"start\": null, \"end\": null}",
+      "{\"name\": \"wait_for_data.users_ds\", \"spec\": \"data.users/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "quickstart",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "data.checkouts",
+      "query": {
+        "selects": {
+          "user_id": "user_id",
+          "ts": "ts"
+        },
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "quickstart.users.v1",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_data.users_ds\", \"spec\": \"data.users/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "quickstart",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "data.users",
+              "query": {
+                "selects": {
+                  "user_id": "user_id",
+                  "account_created_ds": "account_created_ds",
+                  "email_verified": "email_verified"
+                },
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "user_id"
+        ]
+      }
+    }
+  ]
+}

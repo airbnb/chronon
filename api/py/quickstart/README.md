@@ -40,6 +40,16 @@ cd ~
 curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
 tar xf spark-2.4.8-bin-hadoop2.7.tgz
 export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
+export SPARK_LOCAL_IP="127.0.0.1"
+```
+
+#### 2. Download and setup spark (assuming you have a jdk already setup)
+
+```shell
+cd ~
+curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
+tar xf spark-2.4.8-bin-hadoop2.7.tgz
+export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
 ```
 
 #### 3. Now switch to the config repo (within the project)
@@ -87,7 +97,7 @@ This converts it into a thrift definition that we can submit to spark with the f
 DRIVER_MEMORY=1G EXECUTOR_MEMORY=1G EXECUTOR_CORES=2 PARALLELISM=10 MAX_EXECUTORS=1 \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
 --conf=production/joins/retail_example/training_set.v1 \
---local-data-path ~/repos/chronon/api/py/quickstart --local-warehouse-location ~/quickstart_output \
+--local-data-path ~/repos/chronon/api/py/quickstart/data --local-warehouse-location ~/quickstart_output \
 --ds=2023-11-01 --step-days=1
 ```
 
