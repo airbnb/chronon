@@ -38,7 +38,8 @@ class SawtoothOnlineAggregatorTest extends TestCase {
           new Window(14, TimeUnit.DAYS), // hop = 1 day
           new Window(20, TimeUnit.HOURS), // hop = 1hr
           new Window(6, TimeUnit.DAYS), // hop = 1hr
-          new Window(7, TimeUnit.DAYS) // hop = 1hr,
+          new Window(7, TimeUnit.DAYS), // hop = 1hr,
+          new Window(10, TimeUnit.MINUTES) // hop = 5min
         )
       ),
       Builders.Aggregation(
@@ -48,19 +49,28 @@ class SawtoothOnlineAggregatorTest extends TestCase {
           new Window(14, TimeUnit.DAYS), // hop = 1 day
           new Window(20, TimeUnit.HOURS), // hop = 1hr
           new Window(6, TimeUnit.DAYS), // hop = 1hr
-          new Window(7, TimeUnit.DAYS) // hop = 1hr,
-        )
+          new Window(7, TimeUnit.DAYS), // hop = 1hr,
+          new Window(10, TimeUnit.MINUTES) // hop = 5min
+    )
       ),
       Builders.Aggregation(
         Operation.FIRST,
         "ts_col",
-        Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        Seq(
+          new Window(23, TimeUnit.HOURS),
+          new Window(14, TimeUnit.DAYS),
+          new Window(10, TimeUnit.MINUTES)
+        ),
         argMap = Map("k" -> "4")
       ),
       Builders.Aggregation(
         Operation.LAST,
         "ts_col",
-        Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        Seq(
+          new Window(23, TimeUnit.HOURS),
+          new Window(14, TimeUnit.DAYS),
+          new Window(10, TimeUnit.MINUTES)
+        )
       ),
       Builders.Aggregation(Operation.SUM, "num", null)
     )

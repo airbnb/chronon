@@ -240,7 +240,9 @@ class GroupByTest {
       Builders.Aggregation(
         Operation.AVERAGE,
         "session_length",
-        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS), new Window(30, TimeUnit.DAYS))))
+        Seq(new Window(1, TimeUnit.DAYS), new Window(1, TimeUnit.HOURS),
+          new Window(10, TimeUnit.MINUTES),
+          new Window(30, TimeUnit.DAYS))))
 
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)

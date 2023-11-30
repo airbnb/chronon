@@ -163,6 +163,7 @@ enum Operation {
 enum TimeUnit {
     HOURS = 0
     DAYS = 1
+    MINUTES = 2
 }
 
 struct Window {

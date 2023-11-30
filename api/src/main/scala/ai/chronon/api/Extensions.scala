@@ -19,12 +19,14 @@ object Extensions {
       timeUnit match {
         case TimeUnit.HOURS => "h"
         case TimeUnit.DAYS  => "d"
+        case TimeUnit.MINUTES => "min"
       }
 
     def millis: Long =
       timeUnit match {
-        case TimeUnit.HOURS => 3600 * 1000
-        case TimeUnit.DAYS  => 24 * 3600 * 1000
+        case TimeUnit.HOURS => 60 * 60 * 1000
+        case TimeUnit.DAYS  => 24 * 60 * 60 * 1000
+        case TimeUnit.MINUTES => 60 * 1000
       }
   }
 

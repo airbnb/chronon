@@ -353,7 +353,7 @@ lazy val spark_uber = (project in file("spark"))
   )
 
 lazy val spark_embedded = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded, online)
   .settings(
     sparkBaseSettings,
     crossScalaVersions := supportedVersions,

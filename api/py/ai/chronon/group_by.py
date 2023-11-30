@@ -97,6 +97,7 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
 class TimeUnit():
     HOURS = ttypes.TimeUnit.HOURS
     DAYS = ttypes.TimeUnit.DAYS
+    MINUTES = ttypes.TimeUnit.MINUTES
 
 
 def window_to_str_pretty(window: ttypes.Window):
@@ -144,7 +145,12 @@ def Aggregation(input_column: str = None,
     return agg
 
 
-def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
+def Window(length: int, timeUnit: ttypes.TimeUnit, coarseShortWindows=False) -> ttypes.Window:
+    if timeUnit == ttypes.TimeUnit.MINUTES:
+        assert length % 5 == 0, "Sub-1 hr window lengths must be a multiple of 5 min, as they use 5 min hops." \
+            f"Found window of length {length} minutes."
+        assert coarseShortWindows == True, "Warning: Sub-1 hr windows will use 5 min hops, meaning windowed aggregation " \
+            "values will be coarse. Acknowledge this by setting coarseShortWindows=True in the window."
     return ttypes.Window(length, timeUnit)
 
 
@@ -241,6 +247,12 @@ Keys {unselected_keys}, are unselected in source
                     "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot "
                     "accuracy is not fine enough to allow hourly group bys. Consider removing the `backfill start "
                     "date` param if set or adjusting the aggregation window. "
+                    f"input_column: {agg.inputColumn}, windows: {agg.windows}"
+                )
+                assert not (
+                    any([window.timeUnit == TimeUnit.MINUTES and window.length % 5 != 0 for window in agg.windows])
+                ), (
+                    "Minute-length windows must be multiples of 5 minutes. Chronon uses 5 minute hops for sawtooth resolution. "
                     f"input_column: {agg.inputColumn}, windows: {agg.windows}"
                 )
 

@@ -117,6 +117,7 @@ class SawtoothAggregatorTest extends TestCase {
                            Seq(
                              new Window(1, TimeUnit.DAYS),
                              new Window(1, TimeUnit.HOURS),
+                             new Window(10, TimeUnit.MINUTES),
                              new Window(30, TimeUnit.DAYS)
                            ),
                            buckets = Seq("bucket1", "bucket2")),
@@ -124,6 +125,7 @@ class SawtoothAggregatorTest extends TestCase {
       Builders.Aggregation(Operation.AVERAGE,
                            "age",
                            Seq(
+                             new Window(10, TimeUnit.MINUTES),
                              new Window(1, TimeUnit.DAYS),
                              new Window(1, TimeUnit.HOURS),
                              new Window(30, TimeUnit.DAYS)
