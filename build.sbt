@@ -203,7 +203,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    sourceGenerators in Compile += python_api_build.taskValue,
+    // Compile / sourceGenerators += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++
@@ -331,7 +331,7 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     val art = (assembly / artifact).value
     art.withClassifier(Some("assembly"))
   },
-  mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
+  Compile / run / mainClass := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
@@ -380,6 +380,26 @@ sphinx := {
   } else {
     throw new IllegalStateException("Sphinx build failed!")
   }
+}
+
+lazy val printTests = taskKey[Unit]("Print all tests for CI")
+
+printTests := {
+  import java.io._
+  val pw = new PrintWriter(new File("/tmp/test-full-class-names.log"))
+  (spark_uber / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (aggregator / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (api / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  (online / Test / definedTests).value.sortBy(_.name).foreach { t =>
+    pw.println(t.name)
+  }
+  pw.close()
 }
 
 ThisBuild / assemblyMergeStrategy := {

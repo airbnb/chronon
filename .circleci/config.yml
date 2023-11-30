@@ -44,20 +44,24 @@ jobs:
 
     "Scala 11 -- Spark 2 Tests":
         executor: docker_baseimg_executor
+        parallelism: 4
         steps:
             - checkout
             - run:
                   name: Run Spark 2.4.0 tests
                   shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate chronon_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.11.12 test"
+                  command: sbt printTests
+            - run:
+                  name: sbt Tests
+                  command: sbt "testOnly  $(circleci tests split --split-by=timings --timings-type=classname /tmp/test-full-class-names.log | tr '\n' ' ')"
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
                   path: /chronon/aggregator/target/test-reports
+            - store_test_results:
+                  path: /chronon/online/target/test-reports
+            - store_test_results:
+                  path: /chronon/api/target/test-reports
             - run:
                   name: Compress spark-warehouse
                   command: |
