@@ -14,7 +14,7 @@ import org.apache.flink.util.Collector
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Combines the IR (intermediate result) with the timestamp of the event being processed.
+  * TimestampedIR combines the current IR (intermediate result) with the timestamp of the event being processed.
   * We need the timestamp of the event processed so we can calculate processing lag down the line.
   *
   * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
@@ -47,9 +47,9 @@ class ChrononFlinkRowAggregationFunction(
 
   /*
    * Initialize the transient rowAggregator.
-   * This method is idempotent:
+   * Running this method is an idempotent operation:
    *   1. The initialized RowAggregator is always the same given a `groupBy` and `inputSchema`.
-   *   2. The RowAggregator doens't hold state; we (Flink) keep track of the state of the IRs.
+   *   2. The RowAggregator doens't hold state; Flink keeps track of the state of the IRs.
    */
   private def initializeRowAggregator(): Unit =
     rowAggregator = TileCodec.buildRowAggregator(groupBy, inputSchema)
@@ -63,7 +63,7 @@ class ChrononFlinkRowAggregationFunction(
       element: Map[String, Any],
       accumulatorIr: TimestampedIR
   ): TimestampedIR = {
-    // Most times, the time column is a Long, but sometimes it's a Double.
+    // Most times, the time column is a Long, but it could be a Double.
     val tsMills = Try(element(timeColumnAlias).asInstanceOf[Long])
       .getOrElse(element(timeColumnAlias).asInstanceOf[Double].toLong)
     val row = toChrononRow(element, tsMills)
@@ -124,14 +124,15 @@ class ChrononFlinkRowAggregationFunction(
 
   def toChrononRow(value: Map[String, Any], tsMills: Long): Row = {
     // The row values need to be in the same order as the input schema columns
-    // The reason they are out of order in the first place is because the CatalystUtil does not return values in the same order as the schema
+    // The reason they are out of order in the first place is because the CatalystUtil does not return values in the
+    // same order as the schema
     val values: Array[Any] = valueColumns.map(value(_))
     new ArrayRow(values, tsMills)
   }
 }
 
 /**
-  * Combines the entity keys, the encoded IR (intermediate result), and the timestamp of the event being processed.
+  * TimestampedTile combines the entity keys, the encoded Intermediate Result, and the timestamp of the event being processed.
   *
   * We need the timestamp of the event processed so we can calculate processing lag down the line.
   *

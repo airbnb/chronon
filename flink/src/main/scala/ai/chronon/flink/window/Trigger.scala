@@ -48,8 +48,8 @@ class AlwaysFireOnElementTrigger extends Trigger[Map[String, Any], TimeWindow] {
 }
 
 /**
-  * Custom Trigger that fires at most every 'bufferSizeMillis' within a window. This Trigger intended for incremental
-  * window aggregations using event-time semantics.
+  * BufferedProcessingTimeTrigger is a custom Trigger that fires at most every 'bufferSizeMillis' within a window.
+  * It is intended for incremental window aggregations using event-time semantics.
   *
   * Purpose: This trigger exists as an optimization to reduce the number of writes to our online store and better handle
   * contention that arises from having hot keys.

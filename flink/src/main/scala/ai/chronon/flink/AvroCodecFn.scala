@@ -13,6 +13,7 @@ import org.apache.flink.util.Collector
 
 import scala.jdk.CollectionConverters._
 
+// This utility contains common code for AvroCodecFn and TiledAvroCodecFn
 sealed trait AvroCodecFnUtility {
   // Should be overriden
   val groupByServingInfoParsed: GroupByServingInfoParsed

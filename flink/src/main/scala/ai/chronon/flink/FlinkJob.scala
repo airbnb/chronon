@@ -23,12 +23,13 @@ import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 /**
   * Flink job that processes a single streaming GroupBy and writes out the results
   * (raw events in untiled, pre-aggregates in case of tiled) to the KV store.
+  *
   *  At a high level, the operators are structured as follows:
-  *  Kafka source -> Spark expression eval -> Avro conversion -> KV store writer
-  *  Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
-  *  Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
-  *  Avro conversion - Converts the Spark expr eval output to a form that can be written out to the KV store (PutRequest object)
-  *  KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
+  *   Kafka source -> Spark expression eval -> Avro conversion -> KV store writer
+  *   Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
+  *   Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
+  *   Avro conversion - Converts the Spark expr eval output to a form that can be written out to the KV store (PutRequest object)
+  *   KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
   *
   *  In the untiled version there are no-shuffles and thus this ends up being a single node in the Flink DAG
   *  (with the above 4 operators and parallelism as injected by the user)
@@ -86,6 +87,22 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     )
   }
 
+  /**
+    * The "tiled" version of the Flink app.
+    *
+    * The operators are structured as follows:
+    *  1. Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
+    *  2. Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
+    *  3. Window/tiling - This window aggregates incoming events, keeps track of the IRs, and sends them forward so
+    *      they are written out to the KV store
+    *  4. Avro conversion - Finishes converting the output of the window (the IRs) to a form that can be written out
+    *      to the KV store (PutRequest object)
+    *  5. KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
+    *
+    *  The window causes a split in the Flink DAG, so there are two nodes, (1+2) and (3+4+5).
+    *
+    * TODO: write proper documentation on how tiling works with examples (markdown file)
+    */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
     println(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=ON.")
 
