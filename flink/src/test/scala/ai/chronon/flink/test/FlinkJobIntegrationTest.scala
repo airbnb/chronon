@@ -44,7 +44,7 @@ class FlinkJobIntegrationTest {
   val flinkCluster = new MiniClusterWithClientResource(
     new MiniClusterResourceConfiguration.Builder()
       .setNumberSlotsPerTaskManager(8)
-      .setNumberTaskManagers(1)
+      .setNumberTaskManagers(2)
       .build)
 
   @Before
@@ -121,6 +121,43 @@ class FlinkJobIntegrationTest {
     job.runGroupByJob(env).addSink(new CollectSink)
 
     env.execute("FlinkJobIntegrationTest")
+
+    // capture the datastream of the 'created' timestamps of all the written out events
+    val writeEventCreatedDS = CollectSink.values.asScala
+
+    assert(writeEventCreatedDS.size == elements.size)
+    // check that the timestamps of the written out events match the input events
+    // we use a Set as we can have elements out of order given we have multiple tasks
+    assertEquals(writeEventCreatedDS.map(_.putRequest.tsMillis).map(_.get).toSet, elements.map(_.created).toSet)
+    // check that all the writes were successful
+    assertEquals(writeEventCreatedDS.map(_.status), Seq(true, true, true))
+  }
+
+  @Test
+  def testTiledFlinkJobEndToEnd(): Unit = {
+    implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+
+    val elements = Seq(
+      E2ETestEvent("test1", 12, 1.5, 1L),
+      E2ETestEvent("test2", 13, 1.6, 2L),
+      E2ETestEvent("test3", 14, 1.7, 3L)
+    )
+
+    val source = new E2EEventSource(elements)
+    val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
+    val encoder = Encoders.product[E2ETestEvent]
+
+    val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
+
+    val groupByServingInfoParsed = makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
+    val mockApi = mock[Api](withSettings().serializable())
+    val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFG")
+    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
+
+    job.runTiledGroupByJob(env).addSink(new CollectSink)
+
+    env.execute("FlinkJobIntegrationTest")
+
 
     // capture the datastream of the 'created' timestamps of all the written out events
     val writeEventCreatedDS = CollectSink.values.asScala
