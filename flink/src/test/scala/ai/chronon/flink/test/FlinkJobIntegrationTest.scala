@@ -158,7 +158,6 @@ class FlinkJobIntegrationTest {
 
     env.execute("FlinkJobIntegrationTest")
 
-
     // capture the datastream of the 'created' timestamps of all the written out events
     val writeEventCreatedDS = CollectSink.values.asScala
 

@@ -13,15 +13,14 @@ import org.apache.flink.util.Collector
 
 import scala.jdk.CollectionConverters._
 
-
 sealed trait AvroCodecFnUtility {
   // Should be overriden
   val groupByServingInfoParsed: GroupByServingInfoParsed
 
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   @transient protected var avroConversionErrorCounter: Counter = _
-  @transient protected var eventProcessingErrorCounter
-  : Counter = _ // Shared metric for errors across the entire Flink app.
+  @transient protected var eventProcessingErrorCounter: Counter =
+    _ // Shared metric for errors across the entire Flink app.
 
   protected val query: Query = groupByServingInfoParsed.groupBy.streamingSource.get.getEvents.query
   protected val streamingDataset: String = groupByServingInfoParsed.groupBy.streamingDataset
@@ -39,8 +38,8 @@ sealed trait AvroCodecFnUtility {
   }
 
   private lazy val getKVSerializers = (
-                                        groupByServingInfoParsed: GroupByServingInfoParsed
-                                      ) => {
+    groupByServingInfoParsed: GroupByServingInfoParsed
+  ) => {
     val keyZSchema: ChrononStructType = groupByServingInfoParsed.keyChrononSchema
     val valueZSchema: ChrononStructType = groupByServingInfoParsed.groupBy.dataModel match {
       case DataModel.Events => groupByServingInfoParsed.valueChrononSchema
@@ -78,7 +77,8 @@ sealed trait AvroCodecFnUtility {
   * @tparam T The input data type
   */
 case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
-    extends RichFlatMapFunction[Map[String, Any], PutRequest] with AvroCodecFnUtility {
+    extends RichFlatMapFunction[Map[String, Any], PutRequest]
+    with AvroCodecFnUtility {
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
@@ -111,14 +111,14 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
 }
 
 /**
- * A Flink function that is responsible for converting an array of pre-aggregates (aka a tile) to a form
- * that can be written out to the KV store (PutRequest object).
- * @param groupByServingInfoParsed The GroupBy we are working with
- * @tparam T The input data type
- */
-case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed,
-                               debug: Boolean = false)
-  extends RichFlatMapFunction[TimestampedTile, PutRequest] with AvroCodecFnUtility {
+  * A Flink function that is responsible for converting an array of pre-aggregates (aka a tile) to a form
+  * that can be written out to the KV store (PutRequest object).
+  * @param groupByServingInfoParsed The GroupBy we are working with
+  * @tparam T The input data type
+  */
+case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed, debug: Boolean = false)
+    extends RichFlatMapFunction[TimestampedTile, PutRequest]
+    with AvroCodecFnUtility {
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
     val metricsGroup = getRuntimeContext.getMetricGroup
@@ -150,7 +150,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
     val keyBytes = keyToBytes(in.keys)
     val valueBytes = in.tileBytes
 
-    if(debug) {
+    if (debug) {
       println(
         f"Avro converting tile to PutRequest - tile=${in}  " +
           f"groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys " +

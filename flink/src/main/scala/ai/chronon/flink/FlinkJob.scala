@@ -3,7 +3,13 @@ package ai.chronon.flink
 import ai.chronon.aggregator.windowing.ResolutionUtils
 import ai.chronon.api.{Constants, DataType}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.flink.window.{AlwaysFireOnElementTrigger, ChrononFlinkRowAggProcessFunction, ChrononFlinkRowAggregationFunction, KeySelector, TimestampedTile}
+import ai.chronon.flink.window.{
+  AlwaysFireOnElementTrigger,
+  ChrononFlinkRowAggProcessFunction,
+  ChrononFlinkRowAggregationFunction,
+  KeySelector,
+  TimestampedTile
+}
 import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
@@ -123,20 +129,20 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     //    - The only purpose of this window function is to mark tiles as closed so we can do client-side caching in SFS
     // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
     val tilingDS: DataStream[TimestampedTile] =
-    sparkExprEvalDS
-      .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
-      .window(window)
-      .trigger(trigger)
-      .sideOutputLateData(tilingLateEventsTag)
-      .aggregate(
-        // See Flink's "ProcessWindowFunction with Incremental Aggregation"
-        preAggregator = new ChrononFlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
-        windowFunction = new ChrononFlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
-      )
-      .uid(s"tiling-01-$featureGroupName")
-      .name(s"Tiling for $featureGroupName")
-      .slotSharingGroup(featureGroupName)
-      .setParallelism(sourceStream.parallelism)
+      sparkExprEvalDS
+        .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
+        .window(window)
+        .trigger(trigger)
+        .sideOutputLateData(tilingLateEventsTag)
+        .aggregate(
+          // See Flink's "ProcessWindowFunction with Incremental Aggregation"
+          preAggregator = new ChrononFlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
+          windowFunction = new ChrononFlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
+        )
+        .uid(s"tiling-01-$featureGroupName")
+        .name(s"Tiling for $featureGroupName")
+        .slotSharingGroup(featureGroupName)
+        .setParallelism(sourceStream.parallelism)
 
     // Track late events
     val sideOutputStream: DataStream[Map[String, Any]] =

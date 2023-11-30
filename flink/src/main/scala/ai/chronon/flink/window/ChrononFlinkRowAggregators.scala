@@ -14,27 +14,27 @@ import org.apache.flink.util.Collector
 import scala.util.{Failure, Success, Try}
 
 /**
- * Combines the IR (intermediate result) with the timestamp of the event being processed.
- * We need the timestamp of the event processed so we can calculate processing lag down the line.
- *
- * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
- *
- * @param ir the array of partial aggregates
- * @param latestTsMillis timestamp of the current event being processed
- */
+  * Combines the IR (intermediate result) with the timestamp of the event being processed.
+  * We need the timestamp of the event processed so we can calculate processing lag down the line.
+  *
+  * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
+  *
+  * @param ir the array of partial aggregates
+  * @param latestTsMillis timestamp of the current event being processed
+  */
 case class TimestampedIR(
     ir: Array[Any],
     latestTsMillis: Option[Long]
 )
 
 /**
- * Wrapper Flink aggregator around Chronon's RowAggregator. Relies on Flink to pass in
- * the correct set of events for the tile. As the aggregates produced by this function
- * are used on the serving side along with other pre-aggregates, we don't 'finalize' the
- * Chronon RowAggregator and instead return the intermediate representation.
- *
- * This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.
- */
+  * Wrapper Flink aggregator around Chronon's RowAggregator. Relies on Flink to pass in
+  * the correct set of events for the tile. As the aggregates produced by this function
+  * are used on the serving side along with other pre-aggregates, we don't 'finalize' the
+  * Chronon RowAggregator and instead return the intermediate representation.
+  *
+  * This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.
+  */
 class ChrononFlinkRowAggregationFunction(
     groupBy: GroupBy,
     inputSchema: Seq[(String, DataType)],
@@ -131,14 +131,14 @@ class ChrononFlinkRowAggregationFunction(
 }
 
 /**
- * Combines the entity keys, the encoded IR (intermediate result), and the timestamp of the event being processed.
- *
- * We need the timestamp of the event processed so we can calculate processing lag down the line.
- *
- * @param keys the GroupBy entity keys
- * @param tileBytes encoded tile IR
- * @param latestTsMillis timestamp of the current event being processed
- */
+  * Combines the entity keys, the encoded IR (intermediate result), and the timestamp of the event being processed.
+  *
+  * We need the timestamp of the event processed so we can calculate processing lag down the line.
+  *
+  * @param keys the GroupBy entity keys
+  * @param tileBytes encoded tile IR
+  * @param latestTsMillis timestamp of the current event being processed
+  */
 case class TimestampedTile(
     keys: List[Any],
     tileBytes: Array[Byte],
@@ -155,8 +155,8 @@ class ChrononFlinkRowAggProcessFunction(
   @transient private[flink] var tileCodec: TileCodec = _
 
   @transient private var rowProcessingErrorCounter: Counter = _
-  @transient private var eventProcessingErrorCounter
-      : Counter = _ // Shared metric for errors across the entire Flink app.
+  @transient private var eventProcessingErrorCounter: Counter =
+    _ // Shared metric for errors across the entire Flink app.
 
   override def open(parameters: Configuration): Unit = {
     super.open(parameters)
@@ -170,9 +170,9 @@ class ChrononFlinkRowAggProcessFunction(
   }
 
   /**
-   * Process events emitted from the aggregate function.
-   * Output format: (keys, encoded tile IR, timestamp of the event being processed)
-   * */
+    * Process events emitted from the aggregate function.
+    * Output format: (keys, encoded tile IR, timestamp of the event being processed)
+    * */
   override def process(
       keys: List[Any],
       context: Context,
@@ -189,7 +189,7 @@ class ChrononFlinkRowAggProcessFunction(
 
     tileBytes match {
       case Success(v) => {
-        if(debug) {
+        if (debug) {
           println(
             f"Flink aggregator processed element irEntry=$irEntry " +
               f"tileBytes=${java.util.Base64.getEncoder.encodeToString(v)} " +
