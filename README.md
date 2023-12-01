@@ -1,8 +1,8 @@
-# Chronon: A Feature Platform for AI/ML
+# Chronon: A Data Platform for AI/ML
 
 Chronon is a platform that abstracts away the complexity of data computation and serving for AI/ML applications. Users define features as transformation of raw data, then Chronon can perform batch and streaming computation, scalable backfills, low-latency serving, guaranteed correctness and consistency, as well as a host of observability and monitoring tools.
 
-It allows you to utilize all of the data within your organization to power your AI/ML projects, without needing to worry about all the complex orchestration that this would usually entail.
+It allows you to utilize all of the data within your organization, from batch tables, event streams or services to power your AI/ML projects, without needing to worry about all the complex orchestration that this would usually entail.
 
 ![High Level](https://chronon.ai/_images/chronon_high_level.png)
 
