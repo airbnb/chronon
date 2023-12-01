@@ -65,7 +65,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           logger.info(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
           val joinOutputDf = tableUtils.sql(s"""
                |SELECT *
-               |FROM ${inputTable}
+               |FROM $inputTable
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
           val inputDf = if (columns.isDefined) {
