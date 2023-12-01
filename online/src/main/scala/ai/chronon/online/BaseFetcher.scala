@@ -15,8 +15,7 @@ import java.io.{PrintWriter, StringWriter}
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -46,7 +45,7 @@ class BaseFetcher(kvStore: KVStore,
                                        startTimeMs: Long,
                                        overallLatency: Long,
                                        context: Metrics.Context,
-                                       totalResponseValueBytes: Int): Future[Map[String, AnyRef]] = {
+                                       totalResponseValueBytes: Int): Map[String, AnyRef] = {
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
@@ -59,18 +58,17 @@ class BaseFetcher(kvStore: KVStore,
       .filter(_.millis >= servingInfo.batchEndTsMillis)
       .map(_.bytes)
       .getOrElse(null)
-    val responseMap: Future[Map[String, AnyRef]] = if (servingInfo.groupBy.aggregations == null) { // no-agg
-      Future(servingInfo.selectedCodec.decodeMap(batchBytes))
-    } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate, no streaming info needed
-      // parallelize in the case of large batch payloads
-      Future(servingInfo.outputCodec.decodeMap(batchBytes))
+    val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
+      servingInfo.selectedCodec.decodeMap(batchBytes)
+    } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
+      servingInfo.outputCodec.decodeMap(batchBytes)
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) println("Both batch and streaming data are null")
-        Future.successful(null)
+        null
       } else {
         reportKvResponse(context.withSuffix("streaming"),
           streamingResponses,
@@ -78,51 +76,39 @@ class BaseFetcher(kvStore: KVStore,
           overallLatency,
           totalResponseValueBytes)
 
-        val futureBatchIr: Future[FinalBatchIr] = Future { toBatchIr(batchBytes, servingInfo) }
+        val batchIr = toBatchIr(batchBytes, servingInfo)
 
-        val outputFuture: Future[Array[Any]] = if (servingInfo.isTilingEnabled) {
-          val futureStreamingIrs: Future[Iterator[TiledIr]] = Future.sequence(streamingResponses.iterator
+        val output: Array[Any] = if (servingInfo.isTilingEnabled) {
+          val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map { tVal =>
-              // parallelize decoding of streaming tiles
-              Future {
-                try {
-                  val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-                  TiledIr(tVal.millis, tile)
-                } catch {
-                  case e: Throwable =>
-                    // capture additional info we need and rethrow so that we can log upstream
-                    val base64Bytes = java.util.Base64.getEncoder.encodeToString(tVal.bytes)
-                    val avroSchema = servingInfo.tiledCodec.tileAvroSchema
-                    throw new RuntimeException(
-                      s"Failed to decode tile for ${servingInfo.groupBy.metaData.getName} at ${tVal.millis}. " +
-                        s"Avro schema: $avroSchema. Base64 bytes: $base64Bytes",
-                      e)
-                }
+              try {
+                val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+                TiledIr(tVal.millis, tile)
+              } catch {
+                case e: Throwable =>
+                  // capture additional info we need and rethrow so that we can log upstream
+                  val base64Bytes = java.util.Base64.getEncoder.encodeToString(tVal.bytes)
+                  val avroSchema = servingInfo.tiledCodec.tileAvroSchema
+                  throw new RuntimeException(
+                    s"Failed to decode tile for ${servingInfo.groupBy.metaData.getName} at ${tVal.millis}. " +
+                      s"Avro schema: $avroSchema. Base64 bytes: $base64Bytes",
+                    e)
               }
-            }).map(iterator => iterator)
+            }
+
           if (debug) {
             val gson = new Gson()
-            val futureResult = for {
-              batchIrResult <- futureBatchIr
-              streamingIrsResult <- futureStreamingIrs
-            } yield (batchIrResult, streamingIrsResult)
-            futureResult.map {
-              case (batchIr, streamingIrs) =>
-                println(
-                  s"""
-                     |batch ir: ${gson.toJson(batchIr)}
-                     |streamingIrs: ${gson.toJson(streamingIrs)}
-                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                     |queryTime in millis: $queryTimeMs
-                     |""".stripMargin)
-            }.recover {
-              case e: Exception =>
-                println(s"Error occurred in retrieving batch/streaming irs: ${e.getMessage}")
-            }
+            println(
+              s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingIrs: ${gson.toJson(streamingIrs)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
           }
 
-          aggregator.lambdaAggregateFinalizedTiled(futureBatchIr, futureStreamingIrs, queryTimeMs)
+          aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
         } else {
           val selectedCodec = servingInfo.groupByOps.dataModel match {
             case DataModel.Events => servingInfo.valueAvroCodec
@@ -136,26 +122,18 @@ class BaseFetcher(kvStore: KVStore,
 
           if (debug) {
             val gson = new Gson()
-            futureBatchIr.map {
-              batchIr =>
-                println(
-                  s"""
-                     |batch ir: ${gson.toJson(batchIr)}
-                     |streamingRows: ${gson.toJson(streamingRows)}
-                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                     |queryTime in millis: $queryTimeMs
-                     |""".stripMargin)
-            }.recover {
-              case e: Exception =>
-                println(s"Error occurred in retrieving batch ir: ${e.getMessage}")
-            }
+            println(
+              s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingRows: ${gson.toJson(streamingRows)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
           }
 
-          aggregator.lambdaAggregateFinalized(futureBatchIr, streamingRows.iterator, queryTimeMs, mutations)
+          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
         }
-        outputFuture.map { arr =>
-          servingInfo.outputCodec.fieldNames.iterator.zip(arr.iterator.map(_.asInstanceOf[AnyRef])).toMap
-        }
+        servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
     }
     context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
@@ -270,64 +248,57 @@ class BaseFetcher(kvStore: KVStore,
     }
 
     kvResponseFuture
-      .flatMap { kvResponses: Seq[GetResponse] =>
-      val multiGetMillis = System.currentTimeMillis() - startTimeMs
-      val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = kvResponses.map { response =>
-        response.request -> response.values
-      }.toMap
-      val totalResponseValueBytes =
-        responsesMap.iterator
-          .map(_._2)
-          .filter(_.isSuccess)
-          .flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0)))
-          .sum
-      val responsesFuture: Seq[Future[Response]] = groupByRequestToKvRequest.iterator.map {
+      .map { kvResponses: Seq[GetResponse] =>
+        val multiGetMillis = System.currentTimeMillis() - startTimeMs
+        val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = kvResponses.map { response =>
+          response.request -> response.values
+        }.toMap
+        val totalResponseValueBytes =
+          responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
+        val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
-            Future {
-              requestMetaTry match {
-                case Success(requestMeta) =>
-                  val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
-                  context.count("multi_get.batch.size", allRequests.length)
-                  context.histogram("multi_get.bytes", totalResponseValueBytes)
-                  context.histogram("multi_get.response.length", kvResponses.length)
-                  context.histogram("multi_get.latency.millis", multiGetMillis)
-                  // pick the batch version with highest timestamp
-                  val batchResponseTryAll = responsesMap
-                    .getOrElse(batchRequest,
-                      Failure(
-                        new IllegalStateException(
-                          s"Couldn't find corresponding response for $batchRequest in responseMap")))
-                  val streamingResponsesOpt =
-                    streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
-                  val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-
-                  if (debug)
-                    println(
-                      s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
-                        s"for keys: ${request.keys}")
-                  constructGroupByResponse(batchResponseTryAll,
-                    streamingResponsesOpt,
-                    groupByServingInfo,
-                    queryTs,
-                    startTimeMs,
-                    multiGetMillis,
-                    context,
-                    totalResponseValueBytes)
-                    .map(values => Response(request, Success(values)))
-                    .recoverWith { case ex: Exception =>
-                      // not all exceptions are due to stale schema, so we want to control how often we hit kv store
-                      getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
-                      context.incrementException(ex)
-                      ex.printStackTrace()
-                      Future(Response(request, Failure(ex)))
-                    }
-                case Failure(e) =>
-                  Future(Response(request, Failure(e)))
+            val responseMapTry = requestMetaTry.map { requestMeta =>
+              val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
+              context.count("multi_get.batch.size", allRequests.length)
+              context.histogram("multi_get.bytes", totalResponseValueBytes)
+              context.histogram("multi_get.response.length", kvResponses.length)
+              context.histogram("multi_get.latency.millis", multiGetMillis)
+              // pick the batch version with highest timestamp
+              val batchResponseTryAll = responsesMap
+                .getOrElse(batchRequest,
+                           Failure(
+                             new IllegalStateException(
+                               s"Couldn't find corresponding response for $batchRequest in responseMap")))
+              val streamingResponsesOpt =
+                streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
+              val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
+              try {
+                if (debug)
+                  println(
+                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                      s"for keys: ${request.keys}")
+                constructGroupByResponse(batchResponseTryAll,
+                                         streamingResponsesOpt,
+                                         groupByServingInfo,
+                                         queryTs,
+                                         startTimeMs,
+                                         multiGetMillis,
+                                         context,
+                                         totalResponseValueBytes)
+              } catch {
+                case ex: Exception =>
+                  // not all exceptions are due to stale schema, so we want to control how often we hit kv store
+                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
+                  context.incrementException(ex)
+                  ex.printStackTrace()
+                  throw ex
               }
-            }.flatten
+            }
+
+            Response(request, responseMapTry)
         }.toList
-      Future.sequence(responsesFuture)
-    }
+        responses
+      }
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {

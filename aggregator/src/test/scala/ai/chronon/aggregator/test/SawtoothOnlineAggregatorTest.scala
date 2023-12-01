@@ -11,14 +11,10 @@ import org.junit.Assert.assertEquals
 import java.time.{Instant, ZoneOffset}
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.Executors
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration._
 
 class SawtoothOnlineAggregatorTest extends TestCase {
 
   def testConsistency(): Unit = {
-    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val queryEndTs = TsUtils.round(System.currentTimeMillis(), WindowUtils.Day.millis)
     val batchEndTs = queryEndTs - WindowUtils.Day.millis
     val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
@@ -87,8 +83,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val batchIr = onlineAggregator.normalizeBatchIr(onlineAggregator.merge(batchIr1, batchIr2))
     val denormBatchIr = onlineAggregator.denormalizeBatchIr(batchIr)
     val windowHeadEvents = events.filter(_.ts >= batchEndTs)
-    val futureOnlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(Future(denormBatchIr), windowHeadEvents.iterator, _))
-    val onlineIrs: List[Array[Any]] = Await.result(Future.sequence(futureOnlineIrs.toList), 10.seconds)
+    val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(denormBatchIr, windowHeadEvents.iterator, _))
 
     val gson = new Gson()
     for (i <- queries.indices) {
