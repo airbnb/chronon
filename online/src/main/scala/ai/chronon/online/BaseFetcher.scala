@@ -9,6 +9,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.api.Extensions.ThrowableOps
+import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
@@ -27,6 +28,7 @@ class BaseFetcher(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
+  import BaseFetcher._
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
@@ -45,14 +47,20 @@ class BaseFetcher(kvStore: KVStore,
                                        startTimeMs: Long,
                                        overallLatency: Long,
                                        context: Metrics.Context,
-                                       totalResponseValueBytes: Int): Map[String, AnyRef] = {
-    val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
+                                       totalResponseValueBytes: Int,
+                                       keys: Map[String, Any] // The keys is used only for caching
+                                      ): Map[String, AnyRef] = {
+    // Check if the batch value returned by the kv store is ahead of the one we have in the MetadataStore.
+    // If so, update the MetadataStore so that future requests start fetching streaming data > this new batch data.
+    val latestBatchValue: Try[TimedValue] = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
+
     batchResponsesTry.map {
       reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
     }
-    // bulk upload didn't remove an older batch value - so we manually discard
+
+    // The bulk upload may not have removed an older batch values. We manually discard all but the latest one.
     val batchBytes: Array[Byte] = batchResponsesTry
       .map(_.maxBy(_.millis))
       .filter(_.millis >= servingInfo.batchEndTsMillis)
@@ -76,7 +84,19 @@ class BaseFetcher(kvStore: KVStore,
           overallLatency,
           totalResponseValueBytes)
 
-        val batchIr = toBatchIr(batchBytes, servingInfo)
+        // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
+        val batchIr: FinalBatchIr = maybeBatchIrCache match {
+          case Some(batchIrCache) =>
+            val batchRequestCacheKey = BatchIrCacheKey(
+              servingInfo.groupByOps.batchDataset,
+              keys,
+              servingInfo.batchEndTsMillis)
+
+            batchIrCache.get(batchRequestCacheKey, (key: BatchIrCacheKey) => {
+              toBatchIr(batchBytes, servingInfo)
+            })
+          case None => toBatchIr(batchBytes, servingInfo)
+        }
 
         val output: Array[Any] = if (servingInfo.isTilingEnabled) {
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
@@ -158,6 +178,15 @@ class BaseFetcher(kvStore: KVStore,
                       (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
+  /**
+   * If `batchEndTs` is ahead of `groupByServingInfo.batchEndTsMillis`, update the MetadataStore with the new timestamp.
+   *
+   * In practice, this means new batch data has landed, and future kvstore requests should fetch streaming data after
+   * this new batchEndTsMillis.
+   *
+   * @param batchEndTs the new batchEndTs from the latest batch data
+   * @param groupByServingInfo the current GroupByServingInfo
+   */
   private def updateServingInfo(batchEndTs: Long,
                                 groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
@@ -193,6 +222,10 @@ class BaseFetcher(kvStore: KVStore,
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
+
+          // Collect cache metrics once per `fetchGroupBys` call.
+          maybeBatchIrCache.foreach((cache) => Cache.collectCaffeineCacheMetrics(context, cache, batchIrCacheName))
+
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
@@ -255,14 +288,17 @@ class BaseFetcher(kvStore: KVStore,
         }.toMap
         val totalResponseValueBytes =
           responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
+
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
+
               context.count("multi_get.batch.size", allRequests.length)
               context.histogram("multi_get.bytes", totalResponseValueBytes)
               context.histogram("multi_get.response.length", kvResponses.length)
               context.histogram("multi_get.latency.millis", multiGetMillis)
+
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
                 .getOrElse(batchRequest,
@@ -273,6 +309,7 @@ class BaseFetcher(kvStore: KVStore,
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
+
                 if (debug)
                   println(
                     s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
@@ -284,7 +321,8 @@ class BaseFetcher(kvStore: KVStore,
                                          startTimeMs,
                                          multiGetMillis,
                                          context,
-                                         totalResponseValueBytes)
+                                         totalResponseValueBytes,
+                                         request.keys)
               } catch {
                 case ex: Exception =>
                   // not all exceptions are due to stale schema, so we want to control how often we hit kv store
@@ -303,6 +341,7 @@ class BaseFetcher(kvStore: KVStore,
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
     if (bytes == null) return null
+
     val batchRecord =
       AvroConversions
         .toChrononRow(gbInfo.irCodec.decode(bytes), gbInfo.irChrononSchema)
@@ -413,4 +452,17 @@ class BaseFetcher(kvStore: KVStore,
         responses
       }
   }
+}
+
+object BaseFetcher {
+  case class BatchIrCacheKey(dataset: String, keys: Map[String, Any], batchEndTsMillis: Long)
+
+  private val enableBatchIrCaching: Boolean = Option(System.getProperty("ai.chronon.fetcher.enableBatchIrCaching"))
+    .orElse(Option(System.getenv("ai.chronon.fetcher.enableBatchIrCaching")))
+    .orElse(Some("false")).get.toBoolean
+  private val batchIrCacheName = "batchIrCache"
+
+  // Caching is an optional optimization to reduce the amount of CPU time spent decoding batch data.
+  lazy val maybeBatchIrCache: Option[CaffeineCache[BatchIrCacheKey, FinalBatchIr]] = if (enableBatchIrCaching)
+    Some(Cache[BatchIrCacheKey, FinalBatchIr](batchIrCacheName)) else None
 }

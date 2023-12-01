@@ -283,7 +283,8 @@ lazy val online = project
       // [TODO: stripe] Upstream this change as we're on 4.1.0 internally
       "com.datadoghq" % "java-dogstatsd-client" % "4.1.0",
       "org.rogach" %% "scallop" % "4.0.1",
-      "net.jodah" % "typetools" % "0.4.1"
+      "net.jodah" % "typetools" % "0.4.1",
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all/provided", "scala-parallel-collections", "netty-buffer")
   )
@@ -299,7 +300,8 @@ lazy val online_unshaded = (project in file("online"))
       // statsd 3.0 has local aggregation - TODO: upgrade
       "com.datadoghq" % "java-dogstatsd-client" % "4.1.0",
       "org.rogach" %% "scallop" % "4.0.1",
-      "net.jodah" % "typetools" % "0.4.1"
+      "net.jodah" % "typetools" % "0.4.1",
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "jackson",

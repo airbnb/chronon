@@ -158,7 +158,7 @@ object Metrics {
     def histogram(metric: String, value: Double): Unit = stats.histogram(metric, value, Context.sampleRate)
     def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
-    def gauge(metric: String, value: Long): Unit = stats.gauge(metric, value)
+    def gauge(metric: String, value: Double): Unit = stats.gauge(metric, value)
 
     // There can be multiple joins - when issued as a batch request
     lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
