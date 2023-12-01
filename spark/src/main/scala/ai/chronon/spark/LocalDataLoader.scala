@@ -19,8 +19,8 @@ package ai.chronon.spark
 import ai.chronon.spark.Extensions.StructTypeOps
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.FailFastMode
-import org.apache.spark.sql.functions.{col, unix_timestamp}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.functions.{col, unix_timestamp, date_format}
+import org.apache.spark.sql.types.{StringType, TimestampType}
 
 import java.io.File
 
@@ -49,7 +49,7 @@ object LocalDataLoader {
     if (schema.fieldNames.contains("ts") && schema(schema.fieldIndex("ts")).dataType == StringType) {
       df = df
         .withColumnRenamed("ts", "ts_string")
-        .withColumn("ts", unix_timestamp(col("ts_string")) * 1000)
+        .withColumn("ts", unix_timestamp(date_format(col("ts_string"), "yyyy-MM-dd HH:mm:ss")) * 1000)
         .drop("ts_string")
     }
 
