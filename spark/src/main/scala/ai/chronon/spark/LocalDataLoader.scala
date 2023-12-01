@@ -22,7 +22,6 @@ import org.apache.spark.sql.catalyst.util.FailFastMode
 import org.apache.spark.sql.functions.{col, unix_timestamp, date_format}
 import org.apache.spark.sql.types.{StringType, TimestampType}
 
-
 import java.io.File
 
 object LocalDataLoader {
