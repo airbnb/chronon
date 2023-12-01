@@ -110,7 +110,7 @@ class FetchStatsTest extends TestCase {
         ),
         Builders.Derivation(
           name = "last_copy",
-          expression = "COALESCE(user_ut_fetch_stats_item_views__fetch_stats_test_value_max, 0)",
+          expression = "COALESCE(user_ut_fetch_stats_item_views__fetch_stats_test_value_max, 0)"
         )
       ),
       metaData = Builders.MetaData(name = s"ut_fetch_stats.item_temporal_features.$nameSuffix",
