@@ -37,26 +37,17 @@ export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/
 
 ```shell
 cd ~
-curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
-tar xf spark-2.4.8-bin-hadoop2.7.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
+curl -O https://archive.apache.org/dist/spark/spark-3.2.4/spark-3.2.4-bin-hadoop3.2.tgz
+tar xf spark-3.2.4-bin-hadoop3.2.tgz
+export SPARK_SUBMIT_PATH=/Users/$USER/spark-3.2.4-bin-hadoop3.2/bin/spark-submit
 export SPARK_LOCAL_IP="127.0.0.1"
-```
-
-#### 2. Download and setup spark (assuming you have a jdk already setup)
-
-```shell
-cd ~
-curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
-tar xf spark-2.4.8-bin-hadoop2.7.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
 ```
 
 #### 3. Now switch to the config repo (within the project)
 
 This is where we will do the bulk of development iterations from:
 ```shell
-cd api/py/quickstart
+cd api/py/test/sample
 ```
 
 ## Chronon Development
@@ -88,36 +79,38 @@ See the (training_set Join)[joins/training_set.py] for how this defined. The `le
 Once the join is defined, we compile it using this command:
 
 ```shell
-PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/retail_example/training_set.py
+PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/quickstart/training_set.py
 ```
 
 This converts it into a thrift definition that we can submit to spark with the following command:
 
 ```shell
+mkdir ~/quickstart_output
+
 DRIVER_MEMORY=1G EXECUTOR_MEMORY=1G EXECUTOR_CORES=2 PARALLELISM=10 MAX_EXECUTORS=1 \
 python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
---conf=production/joins/retail_example/training_set.v1 \
---local-data-path ~/repos/chronon/api/py/quickstart/data --local-warehouse-location ~/quickstart_output \
---ds=2023-11-01 --step-days=1
+--conf=production/joins/quickstart/training_set.v1 \
+--local-data-path ~/repos/chronon/api/py/test/sample/data --local-warehouse-location ~/quickstart_output \
+--ds=2023-11-30
 ```
 
 #### Access the data
 You can now see the parquet data here.
 ```shell
-tree -h ~/quickstart_output/data/retail_example_training_set/
+tree -h ~/quickstart_output/data/quickstart_training_set_v1/
 ``` 
 
 You can also query it using the spark sql shell:
 
 ```aidl
 cd ~/quickstart_output 
-~/spark-2.4.8-bin-hadoop2.7/bin/spark-sql
+~/spark-3.2.4-bin-hadoop3.2/bin/spark-sql
 ```
 
 And then: 
 
 ```
-spark-sql> SELECT * FROM retail_example_training_set LIMIT 100;
+spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
 ```
 
 **Note that if you have a spark-sql session active, it will likely put a transaction lock on your local metastore which will cause an error if you try to run other spark jobs.** So just close the sql session if you want to go back and modify the join.
