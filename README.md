@@ -7,48 +7,6 @@ It allows you to utilize all of the data within your organization, from batch ta
 ![High Level](https://chronon.ai/_images/chronon_high_level.png)
 
 
-## Benefits of Chronon over other approaches
-
-Chronon offers the most value to AI/ML practitioners who are trying to build "online" models that are serving requests in real-time as opposed to batch workflows.
-
-Without Chronon, engineers working on these projects need to figure out how to get data to their models for training/eval as well as production inference. As the complexity of data going into these models increases (multiple sources, complex transformation such as windowed aggregations, etc), so does the infrastructure challenge of supporting this data plumbing.
-
-Generally, we observed ML practitioners taking one of two approaches:
-
-### The log-and-wait approach
-
-With this approach, users start with the data that is available in the online serving environment from which the model inference will run. Log relevant features to the data warehouse. Once enough data has accumulated, train the model on the logs, and serve with the same data.
-
-Pros:
-- Features used to train the model are guaranteed to be available at serving time
-- The model can access service call features 
-- The model can access data from the the request context
-
-
-Cons:
-- It might take a long to accumulate enough data to train the model
-- Performing windowed aggregations is not always possible (running large range queries against production databases doesn't scale, same for event streams)
-- Cannot utilize the wealth of data already in the data warehouse
-- Maintaining data transformation logic in the application layer is messy
-
-### The replicate offline-online approach
-
-With this approach, users train the model with data from the data warehouse, then figure out ways to replicate those features in the online environment.
-
-Pros:
-- You can use a broad set of data for training
-- The data warehouse is well suited for large aggregations and other computationally intensive transformation
-
-Cons:
-- Often very error prone, resulting in inconsistent data between training and serving
-- Requires maintaining a lot of complicated infrastructure to even get started with this approach, 
-- Serving features with realtime updates gets even more complicated, especially with large windowed aggregations
-- Unlikely to scale well to many models
-
-**The Chronon approach** 
-
-With Chronon you can use any data available in your organization, including everything in the data warehouse, any streaming source, service calls, etc, with guaranteed consistency between online and offline environments. It abstracts away the infrastructure complexity of orchestrating and maintining this data plumbing, so that users can simply define features in a simple API, and trust Chronon to handle the rest.
-
 ## Platform Features
 
 ### Online Serving
@@ -76,43 +34,103 @@ Chronon offers visibility into:
 
 ### Complex transformations and windowed aggregations
 
-Chronon supports a range of aggregation types. For a full list see the documentation (here)[https://chronon.ai/Aggregations.html].
+Chronon supports a range of aggregation types. For a full list see the documentation [here](https://chronon.ai/Aggregations.html).
 
 These aggregations can all be configured to be computed over arbitrary window sizes.
 
-## Examples
+# Quickstart
 
-Below are some simple code examples meant to illustrate the main APIs that Chronon offers. These examples are based off the code in (the Quickstart Guide)[api/py/quickstart], please see that section for more details on how to actually run these.
+This section walks you through the steps to create a training dataset with Chronon, using a fabricated underlying raw dataset.
 
-### Streaming features
+Includes:
+- Example implementation of the main API components for defining features - `GroupBy` and `Join`.
+- The workflow for authoring these entities.
+- The workflow for backfilling training data.
 
-Here is an example streaming feature based off of a "purchases" event for a theoretical online retailer. This data source is comprised of a kafka topic as well as a corresponding log table in Hive:
+Does not include:
+- A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
+- Running streaming jobs and online serving of data (this only covers offline training data).
+
+
+## Introduction
+
+In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences, that will predict whether this transaction is likely to result in a fraudulent return.
+
+## Raw data sources
+
+Fabricated raw data is included in the [data](api/py/test/sample/data) directory. It includes four tables:
+
+1. Users - includes basic information about users such as account created date; modeled as a batch data source that updates daily
+2. Purchases - a log of all purchases by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
+3. Returns - a log of all returns made by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
+4. Checkouts - a log of all checkout events; **this is the event that drives our model predictions**
+
+## Setup
+One time steps to get up and running with Chronon.
+
+### 1. Setup the chronon repo
+```shell
+cd ~/repos
+git clone git@github.com:airbnb/chronon.git
+export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
+```
+
+#### 2. Download and setup spark (assuming you have a jdk already setup)
+
+```shell
+cd ~
+curl -O https://archive.apache.org/dist/spark/spark-3.2.4/spark-3.2.4-bin-hadoop3.2.tgz
+tar xf spark-3.2.4-bin-hadoop3.2.tgz
+export SPARK_SUBMIT_PATH=/Users/$USER/spark-3.2.4-bin-hadoop3.2/bin/spark-submit
+export SPARK_LOCAL_IP="127.0.0.1"
+```
+
+#### 3. Now switch to the config repo (within the project)
+
+This is where we will do the bulk of development iterations from:
+```shell
+cd api/py/test/sample
+```
+
+## Chronon Development
+
+Now that the setup steps are complete, we can start creating and testing various Chronon objects to define transformation and aggregations, and generate data.
+
+### Step 1 - Define some features
+
+Let's start with three feature sets, built on top of our raw input sources.
+
+**Feature set 1: Purchases data features**
+
+We can aggregate the purchases log data to the user level, to give us a view into this user's previous activity on our platform. Specifically, we can compute `SUM`s `COUNT`s and `AVERAGE`s of their previous purchase amounts over various windows.
+
+Becuase this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
 
 ```python
 source = Source(
     events=EventSource(
-        table="purchases", # This points to the log table with historical purchase events
+        table="data.purchases", # This points to the log table with historical purchase events
         topic="events/purchase_events", # The streaming source topic
         query=Query(
-            selects=select("user_id","purchase_price"), # Select the fields we care about, in this case just the user_id (pk for aggregation), and purchase price (field for aggregation)
+            selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
     ))
 
-window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 30, 90]] # Define some window sizes
+window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
-GroupBy(
+v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
     aggregations=[Aggregation(
             input_column="purchase_price",
             operation=Operation.SUM,
             windows=window_sizes
-        ), # The sum of purchases prices by user in various windows
+        ), # The sum of purchases prices in various windows
         Aggregation(
             input_column="purchase_price",
             operation=Operation.COUNT,
             windows=window_sizes
-        ), # The count of purchases by user in various windows
+        ), # The count of purchases in various windows
         Aggregation(
             input_column="purchase_price",
             operation=Operation.AVERAGE,
@@ -122,82 +140,192 @@ GroupBy(
 )
 ```
 
-This `GroupBy` would create a total of 9 different features -- 3, 30 and 90 day aggregations across the three different operations.
+Taken from the [purchases GroupBy](api/py/test/sample/group_bys/purchases.py) for this definition.
 
-### Batch features
+**Feature set 2: Returns data features**
 
-Here is an example batch feature based off of a "user" table, again for a theoretical online retailer. This data source is Hive table that contains snapshots of all users on the platform, with some relevant information about each user that we simply wish to extract as features.
+We perform a similar set of aggregations on returns data in the [returns GroupBy](api/py/test/sample/group_bys/returns.py).
 
-The primary key for this GroupBy is the same as the primary key of the source table. Therefore,
-it doesn't perform any aggregation.
+**Feature set 3: User data features**
+
+Turning User data into features is a littler simpler, primarily because there are no aggregations to include. In this case, the primary key of the source data is the same as the primary key of the feature, so we're simple extracting column values rather than perform aggregations over rows:
 
 ```python
 source = Source(
     entities=EntitySource(
-        snapshotTable="products", # This points to a table that contains daily snapshots of the entire product catalog
+        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
         query=Query(
             selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
-            time_column="ts") # The event time
+        )
     ))
 
-GroupBy(
+v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # Primary key is the same as the primary key for the source table
     aggregations=None # In this case, there are no aggregations or windows to define
 ) 
 ```
 
-This `GroupBy` creates two features which are extracted directly from the underlying table: `"account_created_ds", "email_verified"`.
+Taken from the [users GroupBy](api/py/test/sample/group_bys/users.py).
 
-### Combining these features together and backfilling
 
-The `Join` API is responsible for:
+### Step 2 - Join the features together
 
-1. Combining many features together into a wide view (hence the name Join).
-2. Defining the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
-3. Performing scalabe backfills
+Next, we need the features that we previously defined backfilled in a single table for model training. This can be achieved using the Join API.
 
-Here is an example that joins the above `GroupBy`s using the `checkout` event as the left source. Using checkouts means that every row of output in the backfill corresponds to a checkout event, and features are all computed for the user and the exact timestamp of that checkout event. 
+For our use case, it's very important that features are computed as of the correct timestamp. Because our model runs when the checkout flow begins, we'll want to be sure to use the corresponding timestamp in our backfill, such that features values for model training logically match what the model will see in online inference.
+
+`Join` is the API that drives feature backfills for training data. It primarilly performs the following functions:
+
+1. Combines many features together into a wide view (hence the name Join).
+2. Defines the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
+3. Performs scalabe backfills
+
+Here is the definition that we would use.
 
 ```python
 source = Source(
     events=EventSource(
-        table="checkout", 
+        table="data.checkouts", 
         query=Query(
             selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts") # The event time used to compute feature values as-of
+            time_column="ts",
+            ) # The event time used to compute feature values as-of
     ))
 
-Join(  
+v1 = Join(  
     left=source,
-    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, users]] # Include the GroupBys defined above
-    start_date="2023-01-01"
+    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1, users]] # Include the three GroupBys
 )
 ```
 
-This join can now be run with a simple CLI call. See (Quickstart)[api/py/quickstart] for more details.
+Taken from the (training_set Join)[joins/training_set.py]. 
 
-The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the two GroupBys.
+The `left` side of the join is what defines the timestamps and primary keys for the backfill (notice that it is built on top of the `checkout` event, as dictated by our use case).
+
+### Step 3 - Backfilling Data
+
+Once the join is defined, we compile it using this command:
+
+```shell
+PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/quickstart/training_set.py
+```
+
+This converts it into a thrift definition that we can submit to spark with the following command:
+
+
+```shell
+mkdir ~/quickstart_output
+
+DRIVER_MEMORY=1G EXECUTOR_MEMORY=1G EXECUTOR_CORES=2 PARALLELISM=10 MAX_EXECUTORS=1 \
+python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
+--conf=production/joins/quickstart/training_set.v1 \
+--local-data-path ~/repos/chronon/api/py/test/sample/data --local-warehouse-location ~/quickstart_output \
+--ds=2023-11-30
+```
+
+
+The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
 
 Feature values would be computed for each user_id and ts on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
+
+You can now query the backfilled data using the spark sql shell:
+
+```aidl
+cd ~/quickstart_output 
+~/spark-3.2.4-bin-hadoop3.2/bin/spark-sql
+```
+
+And then: 
+
+```sql
+spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
+```
 
 ### Fetching Data
 
 With the above entities defined, users can now easily fetch feature vectors with a simple API call.
 
-This is an example of using the python CLI which calls the Java fetcher under the hood, intended for manual testing. For production, the Java client is usually embedded directly into services.
+For production, the Java client is usually embedded directly into services.
 
-```bash
-python3 run.py --mode=fetch -k '{"user_id":"123"}' -n retail_example/training_set -t join
+```Java
+Map<String, String> keyMap = new HashMap<>();
+keyMap.put("user_id", "123");
+Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 
-> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_30d":11.89352, ...}'
+> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
-## Contributing
+There is also a CLI fetcher util available for easy testing and debugging.
+
+```python
+python3 run.py --mode=fetch -k '{"user_id":"123"}' -n retail_example/training_set -t join
+
+> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
+```
+
+**Note that for these fetcher calls to work, you would need to configure your online integration. That is outside the bounds of this quickstart guide, although you can read more about what that entails [in the documentation here](https://chronon.ai/Getting_Started.html#online-modes).**
+
+
+## Conclusion
+
+Using chronon for your feature engineering work simplifies and improves your ML Workflow in a number of ways:
+
+1. You can define features in one place, and use those definitions bot for training data backfills and for online serving.
+2. Backfills are automatically point-in-time correct, which avoids label leakage and inconsistencies between training data and online inference.
+3. (not covered in quickstart demo, requires further integration) Orchestration for batchbatch and 
+4. (not covered in quickstart demo, requires further integration)
+
+
+For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon section](#benefits-of-chronon-over-other-approaches) below.
+
+# Benefits of Chronon over other approaches
+
+Chronon offers the most value to AI/ML practitioners who are trying to build "online" models that are serving requests in real-time as opposed to batch workflows.
+
+Without Chronon, engineers working on these projects need to figure out how to get data to their models for training/eval as well as production inference. As the complexity of data going into these models increases (multiple sources, complex transformation such as windowed aggregations, etc), so does the infrastructure challenge of supporting this data plumbing.
+
+Generally, we observed ML practitioners taking one of two approaches:
+
+## The log-and-wait approach
+
+With this approach, users start with the data that is available in the online serving environment from which the model inference will run. Log relevant features to the data warehouse. Once enough data has accumulated, train the model on the logs, and serve with the same data.
+
+Pros:
+- Features used to train the model are guaranteed to be available at serving time
+- The model can access service call features 
+- The model can access data from the the request context
+
+
+Cons:
+- It might take a long to accumulate enough data to train the model
+- Performing windowed aggregations is not always possible (running large range queries against production databases doesn't scale, same for event streams)
+- Cannot utilize the wealth of data already in the data warehouse
+- Maintaining data transformation logic in the application layer is messy
+
+## The replicate offline-online approach
+
+With this approach, users train the model with data from the data warehouse, then figure out ways to replicate those features in the online environment.
+
+Pros:
+- You can use a broad set of data for training
+- The data warehouse is well suited for large aggregations and other computationally intensive transformation
+
+Cons:
+- Often very error prone, resulting in inconsistent data between training and serving
+- Requires maintaining a lot of complicated infrastructure to even get started with this approach, 
+- Serving features with realtime updates gets even more complicated, especially with large windowed aggregations
+- Unlikely to scale well to many models
+
+**The Chronon approach** 
+
+With Chronon you can use any data available in your organization, including everything in the data warehouse, any streaming source, service calls, etc, with guaranteed consistency between online and offline environments. It abstracts away the infrastructure complexity of orchestrating and maintining this data plumbing, so that users can simply define features in a simple API, and trust Chronon to handle the rest.
+
+# Contributing
 
 We welcome contributions to the Chronon project! Please read our (CONTRIBUTING.md)[CONTRIBUTING.md] for details.
 
-## Support
+# Support
 
 Use the GitHub issue tracker for reporting bugs or feature requests.
-Join our community channels for discussions, tips, and support. TODO: create and link channel here.
+Join our community [Slack Channel](https://chrononworkspace.slack.com/archives/C04K2SLPZU7) for discussions, tips, and support.

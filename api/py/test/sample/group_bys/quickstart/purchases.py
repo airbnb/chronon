@@ -36,7 +36,7 @@ source = Source(
             time_column="ts") # The event time
     ))
 
-window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 30, 90]] # Define some window sizes to use below
+window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
 v1 = GroupBy(
     sources=[source],
