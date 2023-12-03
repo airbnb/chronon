@@ -251,6 +251,9 @@ object Driver {
         val keys = CompareJob.getJoinKeys(args.joinConf, tableUtils)
         args.validateResult(df, keys, tableUtils)
       }
+
+      df.show(numRows = 3, truncate = 0, vertical = true)
+      println(s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
     }
   }
 
