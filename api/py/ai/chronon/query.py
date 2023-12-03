@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,14 +16,16 @@ import ai.chronon.api.ttypes as api
 from typing import List, Dict
 
 
-def Query(selects: Dict[str, str] = None,
-          wheres: List[str] = None,
-          start_partition: str = None,
-          end_partition: str = None,
-          time_column: str = None,
-          setups: List[str] = [],
-          mutation_time_column: str = None,
-          reversal_column: str = None) -> api.Query:
+def Query(
+    selects: Dict[str, str] = None,
+    wheres: List[str] = None,
+    start_partition: str = None,
+    end_partition: str = None,
+    time_column: str = None,
+    setups: List[str] = [],
+    mutation_time_column: str = None,
+    reversal_column: str = None,
+) -> api.Query:
     """
     Create a query object that is used to scan data from various data sources.
     This contains partition ranges, row level transformations and filtering logic.
@@ -38,6 +39,7 @@ def Query(selects: Dict[str, str] = None,
                 "alias": "built_in_function(col1) * my_udf(col2)",
                 "alias1": "aggregate(array_col, 0, (acc, x) -> acc + x)"
             }
+
         See: https://spark.apache.org/docs/latest/api/sql/#built-in-functions
         When none, we will assume that no transformations are needed and will pick columns necessary for aggregations.
     :type selects: List[str], optional
@@ -77,7 +79,8 @@ def Query(selects: Dict[str, str] = None,
         time_column,
         setups,
         mutation_time_column,
-        reversal_column)
+        reversal_column,
+    )
 
 
 def select(*args, **kwargs):

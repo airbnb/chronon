@@ -22,9 +22,9 @@
 #     limitations under the License.
 
 project = 'Chronon'
-copyright = '2022, Airbnb'
-author = 'Airbnb'
-release = '0.0.22'
+copyright = 'The Chronon Authors'
+author = 'Nikhil Simha'
+release = '0.0.60'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -35,7 +35,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
-    'sphinx_design',
+    'sphinx_design'
 ]
 
 source_parsers = {
@@ -46,6 +46,9 @@ source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown',
 }
+
+#-- Options for myst parser --------------------------------------------------
+myst_heading_anchors = 3
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -65,14 +68,14 @@ html_theme_options = {
             "href": "favicon_64_light_bg.png",
         }
     ],
-    "navbar_align": "right"
+    # "navbar_align": "right"
 }
 
-html_title = "Feature Framework"
+html_title = "Chronon"
 html_static_path = ['_static']
-html_css_files = ["chronon.css"]
+# html_css_files = ["chronon.css"]
 html_context = {"default_mode": "light"}
 html_use_modindex = True
-html_copy_source = False
+html_copy_source = True
 html_domain_indices = False
 html_file_suffix = '.html'

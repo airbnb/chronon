@@ -10,12 +10,13 @@
    Getting_Started
    Concepts
    Aggregations
+   Bootstrap
    Python_API
    Kaggle_Outbrain
    Online_Offline_Consistency
    Code_Guidelines
 
-What ?
+What is Chronon?
 =====================
 Chronon is a feature engineering framework is being used to power Machine Learning in every 
 organization within Airbnb. Chronon makes developing production-grade, 

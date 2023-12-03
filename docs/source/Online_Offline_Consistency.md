@@ -1,6 +1,6 @@
 # Online Offline Consistency
 
-### Problem
+## Problem
 Chronon produces data in two contexts. **Offline** as hive tables and 
 **Online** via a low latency kv-store. In the context of a machine learning
 application, training uses offline data and inference uses online data. To
@@ -10,7 +10,7 @@ performance while training vs. inference, usually in a bad way.
 This framework allows users to measure inconsistency automatically.
 
 
-### Causes of inconsistencies
+## Causes of inconsistencies
 
 While 100% consistency is desirable, it is not always possible.
 
@@ -28,7 +28,7 @@ the order of minutes or hours. This inconsistency is usually centered around
 midnight until the bulk upload of new features to kv store finishes - for 
 features that need to refreshed daily.     
 
-### Design
+## Design
 
 We log inference queries, the chronon's responses along with their timestamps.
 
@@ -60,7 +60,7 @@ scanning source data.
 Filtering in fetcher using: 
   `hash(key_bytes) % 100 * 1000 <= sample_percent * 1000`
 
-#### Spark job logic
+### Spark job logic
   1. Filter on 
      - `join_name = '<join_name>' and `
      - `ds between earliest_unavailable_ds AND run_ds`  
@@ -101,7 +101,7 @@ Filtering in fetcher using:
   
  
 
-### Choosing the right quantile sketch
+## Choosing the right quantile sketch
 
 "Compressing" a series of values into a histogram is what we want - 
 to "summarize" inconsistencies across various data points. There are several available
@@ -116,7 +116,7 @@ Since we are going to ever hold one sketch per feature name per executor, space 
 than accuracy during aggregation than the speed of update.
 
 
-### Choosing the right aggregation strategy
+## Choosing the right aggregation strategy
 
 Merge-combine shuffles deltas across all machines in the combine stage to all machines in the merge stage.
 Tree aggregates rolls up deltas (imagine a binary tree). Tree aggregate, mandates that all data eventually
@@ -127,7 +127,7 @@ Pessimistically assuming that each join has 1000 features and feature has 10 met
 We will have at most 30MB of consistency summary data (as deltas) per machine. 
 
 
-### Estimating size of consistency summary 
+## Estimating size of consistency summary 
 Once we have the final merged sketch for distribution, we will "bin" the quantiles 
 into float values. So for min, p5, p25, p50, p75, p95, max - 28 bytes. 
 
