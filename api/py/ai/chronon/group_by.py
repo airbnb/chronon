@@ -1,3 +1,18 @@
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import ai.chronon.api.ttypes as ttypes
 import ai.chronon.utils as utils
 import logging
@@ -215,7 +230,7 @@ Keys {unselected_keys}, are unselected in source
     if aggregations is None:
         is_events = any([s.events for s in sources])
         has_mutations = any([(s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
-                             for s in sources])
+                             for s in sources if s.entities is not None]) if not is_events else False
         assert not (is_events or has_mutations), \
             "You can only set aggregations=None in an EntitySource without mutations"
     else:

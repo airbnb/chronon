@@ -1,16 +1,39 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
+import jnr.ffi.annotations.Synchronized
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.storage.StorageLevel
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
+import java.util.concurrent.{ExecutorService, Executors}
 import scala.collection.{Seq, mutable}
-import scala.util.{Success, Try}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.util.{Failure, Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
 
@@ -23,13 +46,46 @@ case class TableUtils(sparkSession: SparkSession) {
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
-  val backfillValidationEnforced = sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
+  val backfillValidationEnforced: Boolean =
+    sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
   // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
   // default threshold is 100K rows
-  val bloomFilterThreshold = sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
+  val bloomFilterThreshold: Long =
+    sparkSession.conf.get("spark.chronon.backfill.bloomfilter.threshold", "1000000").toLong
+
+  // see what's allowed and explanations here: https://sparkbyexamples.com/spark/spark-persistence-storage-levels/
+  val cacheLevelString: String = sparkSession.conf.get("spark.chronon.table_write.cache.level", "NONE").toUpperCase()
+  val blockingCacheEviction: Boolean =
+    sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
+  val cacheLevel: Option[StorageLevel] = Try {
+    if (cacheLevelString == "NONE") None
+    else Some(StorageLevel.fromString(cacheLevelString))
+  }.recover {
+    case (ex: Throwable) =>
+      new RuntimeException(s"Failed to create cache level from string: $cacheLevelString", ex).printStackTrace()
+      None
+  }.get
+
+  val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
+  val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
+  val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
+
+  def preAggRepartition(df: DataFrame): DataFrame =
+    if (df.rdd.getNumPartitions < aggregationParallelism) {
+      df.repartition(aggregationParallelism)
+    } else {
+      df
+    }
+  def preAggRepartition(rdd: RDD[Row]): RDD[Row] =
+    if (rdd.getNumPartitions < aggregationParallelism) {
+      rdd.repartition(aggregationParallelism)
+    } else {
+      rdd
+    }
+
   def parsePartition(pstring: String): Map[String, String] = {
     pstring
       .split("/")
@@ -212,7 +268,8 @@ case class TableUtils(sparkSession: SparkSession) {
                        partitionColumns: Seq[String] = Seq(partitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
-                       autoExpand: Boolean = false): Unit = {
+                       autoExpand: Boolean = false,
+                       stats: Option[DfStats] = None): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -256,7 +313,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, stats)
   }
 
   def sql(query: String): DataFrame = {
@@ -281,7 +338,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
 
-    repartitionAndWrite(df, tableName, saveMode)
+    repartitionAndWrite(df, tableName, saveMode, None)
   }
 
   def columnSizeEstimator(dataType: DataType): Long = {
@@ -294,13 +351,51 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode): Unit = {
+  def wrapWithCache[T](opString: String, dataFrame: DataFrame)(func: => T): Try[T] = {
+    val start = System.currentTimeMillis()
+    cacheLevel.foreach { level =>
+      println(s"Starting to cache dataframe before $opString - start @ ${TsUtils.toStr(start)}")
+      dataFrame.persist(level)
+    }
+    def clear(): Unit = {
+      cacheLevel.foreach(_ => dataFrame.unpersist(blockingCacheEviction))
+      val end = System.currentTimeMillis()
+      println(
+        s"Cleared the dataframe cache after $opString - start @ ${TsUtils.toStr(start)} end @ ${TsUtils.toStr(end)}")
+    }
+    Try {
+      val t: T = func
+      clear()
+      t
+    }.recoverWith {
+      case ex: Exception =>
+        clear()
+        Failure(ex)
+    }
+  }
 
+  private def repartitionAndWrite(df: DataFrame,
+                                  tableName: String,
+                                  saveMode: SaveMode,
+                                  stats: Option[DfStats]): Unit = {
+    wrapWithCache(s"repartition & write to $tableName", df) {
+      repartitionAndWriteInternal(df, tableName, saveMode, stats)
+    }.get
+  }
+
+  private def repartitionAndWriteInternal(df: DataFrame,
+                                          tableName: String,
+                                          saveMode: SaveMode,
+                                          stats: Option[DfStats]): Unit = {
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
-        val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
-        (result.getAs[Long](0), result.getAs[Long](1).toInt)
+        if (stats.isDefined && stats.get.partitionRange.wellDefined) {
+          stats.get.count -> stats.get.partitionRange.partitions.length
+        } else {
+          val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
+          (result.getAs[Long](0), result.getAs[Long](1).toInt)
+        }
       } else {
         (df.count(), 1)
       }
@@ -322,7 +417,8 @@ case class TableUtils(sparkSession: SparkSession) {
       val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
       val dailyFileCountUpperBound = 2000
       val dailyFileCountLowerBound = if (isLocal) 1 else 10
-      val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
+      // add one to tablePartitionCount to avoid division by zero
+      val dailyFileCountEstimate = totalFileCountEstimate / (tablePartitionCount + 1) + 1
       val dailyFileCountBounded =
         math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
 

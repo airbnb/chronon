@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online
 
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
@@ -399,22 +415,17 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  /**
-    * Fetch all stats IRs available between startTs and endTs.
-    *
-    * Stats are stored in a single dataname for all joins. For each join TimedValues are obtained and filtered as needed.
-    */
-  def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] =
-    fetchMetricsTimeseriesFromDataset(joinRequest, Constants.StatsBatchDataset)
+  /** Main endpoint for fetching backfill tables stats or drifts. */
+  def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
+    fetchDriftOrStatsTimeseries(joinRequest, fetchMetricsTimeseriesFromDataset(_, Constants.StatsBatchDataset))
 
+  /** Main endpoint for fetching OOC metrics stats or drifts. */
   def fetchConsistencyMetricsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
-    convertStatsResponseToSeriesResponse(
-      joinRequest,
-      fetchMetricsTimeseriesFromDataset(joinRequest, Constants.ConsistencyMetricsDataset))
+    fetchDriftOrStatsTimeseries(joinRequest, fetchMetricsTimeseriesFromDataset(_, Constants.ConsistencyMetricsDataset))
 
+  /** Main endpoint for fetching logging stats or drifts. */
   def fetchLogStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] =
-    convertStatsResponseToSeriesResponse(joinRequest,
-                                         fetchMetricsTimeseriesFromDataset(joinRequest, Constants.LogStatsBatchDataset))
+    fetchDriftOrStatsTimeseries(joinRequest, fetchMetricsTimeseriesFromDataset(_, Constants.LogStatsBatchDataset))
 
   private def fetchMetricsTimeseriesFromDataset(joinRequest: StatsRequest,
                                                 dataset: String): Future[Seq[StatsResponse]] = {
@@ -434,11 +445,12 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-    *  Given a sequence of stats responses for different time intervals, re arrange it into a map containing the time
-    *  series for each statistic.
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the time
+    * series for each statistic.
     */
-  def convertStatsResponseToSeriesResponse(joinRequest: StatsRequest,
-                                           rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
+  private def convertStatsResponseToSeriesResponse(
+      joinRequest: StatsRequest,
+      rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
     rawResponses.map { responseFuture =>
       val convertedValue = responseFuture
         .flatMap { response =>
@@ -459,41 +471,56 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-    * Main endpoint for fetching statistics over time available.
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift for
+    * the approx percentile metrics.
+    * TODO: Extend to larger periods of time by merging the Sketches from a larger slice.
+    * TODO: Allow for non sequential time intervals. i.e. this week against the same week last year.
     */
-  def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
+  private def convertStatsResponseToDriftResponse(
+      joinRequest: StatsRequest,
+      rawResponses: Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] =
+    rawResponses.map { response =>
+      val driftMap = response
+        .sortBy(_.millis)
+        .sliding(2)
+        .collect {
+          case Seq(prev, curr) =>
+            val commonKeys = prev.values.get.keySet.intersect(curr.values.get.keySet.filter(_.endsWith("percentile")))
+            commonKeys
+              .map { key =>
+                val previousValue = prev.values.get(key)
+                val currentValue = curr.values.get(key)
+                key -> Map(
+                  "millis" -> curr.millis.asInstanceOf[AnyRef],
+                  "value" -> StatsGenerator.PSIKllSketch(previousValue, currentValue)
+                ).asJava
+              }
+              .filter(_._2.get("value") != None)
+              .toMap
+        }
+        .toSeq
+        .flatMap(_.toSeq)
+        .groupBy(_._1)
+        .mapValues(_.map(_._2).toList.asJava)
+        .toMap
+      SeriesStatsResponse(joinRequest, Try(driftMap))
+    }
+
+  /**
+    * Main helper for fetching statistics over time available.
+    * It takes a function that will get the stats for the specific dataset (OOC, LOG, Backfill stats) and then operates
+    * on it to either return a time series of the features or drift between the approx percentile features.
+    */
+  private def fetchDriftOrStatsTimeseries(
+      joinRequest: StatsRequest,
+      fetchFunc: StatsRequest => Future[Seq[StatsResponse]]): Future[SeriesStatsResponse] = {
     if (joinRequest.name.endsWith("/drift")) {
       // In the case of drift we only find the percentile keys and do a shifted distance.
-      val rawResponses = fetchStats(
+      val rawResponses = fetchFunc(
         StatsRequest(joinRequest.name.dropRight("/drift".length), joinRequest.startTs, joinRequest.endTs))
-      return rawResponses.map { response =>
-        val driftMap = response
-          .sortBy(_.millis)
-          .sliding(2)
-          .collect {
-            case Seq(prev, curr) =>
-              val commonKeys = prev.values.get.keySet.intersect(curr.values.get.keySet.filter(_.endsWith("percentile")))
-              commonKeys
-                .map { key =>
-                  val previousValue = prev.values.get(key)
-                  val currentValue = curr.values.get(key)
-                  key -> Map(
-                    "millis" -> curr.millis.asInstanceOf[AnyRef],
-                    "value" -> StatsGenerator.PSIKllSketch(previousValue, currentValue)
-                  ).asJava
-                }
-                .filter(_._2.get("value") != None)
-                .toMap
-          }
-          .toSeq
-          .flatMap(_.toSeq)
-          .groupBy(_._1)
-          .mapValues(_.map(_._2).toList.asJava)
-          .toMap
-        SeriesStatsResponse(joinRequest, Try(driftMap))
-      }
+      return convertStatsResponseToDriftResponse(joinRequest, rawResponses)
     }
-    convertStatsResponseToSeriesResponse(joinRequest, fetchStats(joinRequest))
+    convertStatsResponseToSeriesResponse(joinRequest, fetchFunc(joinRequest))
   }
 
   private case class ExternalToJoinRequest(externalRequest: Either[Request, KeyMissingException],

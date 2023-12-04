@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.api
@@ -38,8 +54,39 @@ object Extensions {
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
+  case class DfStats(count: Long, partitionRange: PartitionRange)
+  // helper class to maintain datafram stats that are necessary for downstream operations
+  case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
+    private val minPartition: String = partitionCounts.keys.min
+    private val maxPartition: String = partitionCounts.keys.max
+    val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
+    val count: Long = partitionCounts.values.sum
+
+    def prunePartitions(range: PartitionRange): DfWithStats = {
+      val intersected = partitionRange.intersect(range)
+      val intersectedCounts = partitionCounts.filter(intersected.partitions contains _._1)
+      DfWithStats(df.prunePartition(range), intersectedCounts)
+    }
+    def stats: DfStats = DfStats(count, partitionRange)
+  }
+
+  object DfWithStats {
+    def apply(dataFrame: DataFrame)(implicit tableUtils: TableUtils): DfWithStats = {
+      val partitionCounts = dataFrame
+        .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
+        .count()
+        .collect()
+        .map(row => row.getString(0) -> row.getLong(1))
+        .toMap
+      DfWithStats(dataFrame, partitionCounts)
+    }
+  }
+
   implicit class DataframeOps(df: DataFrame) {
-    private implicit val tableUtils = TableUtils(df.sparkSession)
+    private implicit val tableUtils: TableUtils = TableUtils(df.sparkSession)
+
+    // This is safe to call on dataframes that are un-shuffled from their disk sources -
+    // like tables read without shuffling with row level projections or filters.
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
@@ -60,15 +107,18 @@ object Extensions {
       PartitionRange(start, end)
     }
 
+    def withStats: DfWithStats = DfWithStats(df)
+
     def range[T](columnName: String): (T, T) = {
       val viewName = s"${columnName}_range_input_${(math.random * 100000).toInt}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
-      val minMaxDf: DataFrame = df.sqlContext
+      val minMaxRows = df.sqlContext
         .sql(s"select min($columnName), max($columnName) from $viewName")
-      assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
-      val minMaxRow = minMaxDf.collect()(0)
+        .collect()
+      assert(minMaxRows.size == 1, "Logic error! There needs to be exactly one row")
+      val minMaxRow = minMaxRows(0)
       df.sparkSession.catalog.dropTempView(viewName)
       val (min, max) = (minMaxRow.getAs[T](0), minMaxRow.getAs[T](1))
       println(s"Computed Range for $columnName - min: $min, max: $max")
@@ -80,12 +130,14 @@ object Extensions {
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
              partitionColumns: Seq[String] = Seq(tableUtils.partitionColumn),
-             autoExpand: Boolean = false): Unit = {
+             autoExpand: Boolean = false,
+             stats: Option[DfStats] = None): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    tableName,
                                                    tableProperties,
                                                    partitionColumns,
-                                                   autoExpand = autoExpand)
+                                                   autoExpand = autoExpand,
+                                                   stats = stats)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {

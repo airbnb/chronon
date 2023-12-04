@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
@@ -14,7 +30,7 @@ import org.junit.Test
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
 
@@ -305,8 +321,8 @@ class GroupByUploadTest {
     val responses = Await.result(responseF, 10.seconds)
     val results = responses.map(r => r.values.get("rating_average"))
     val categoryRatingResults = responses.map(r => r.values.get("category_ratings_average")).toArray
-    def cRating(location: Double, cleanliness: Double): Map[String, Double] =
-      Map("location" -> location, "cleanliness" -> cleanliness)
+    def cRating(location: Double, cleanliness: Double): java.util.Map[String, Double] =
+      Map("location" -> location, "cleanliness" -> cleanliness).toJava
     val gson = new Gson()
     assertEquals(results, requestResponse.map(_._2))
 
@@ -321,8 +337,7 @@ class GroupByUploadTest {
     println(gson.toJson(expectedCategoryRatings))
     categoryRatingResults.zip(expectedCategoryRatings).foreach {
       case (actual, expected) =>
-        assertEquals(actual.asInstanceOf[java.util.Map[String, Int]].toScala, expected)
+        assertEquals(actual, expected)
     }
-    println(gson.toJson(categoryRatingResults))
   }
 }

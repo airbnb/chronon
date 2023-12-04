@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online
 
 import ai.chronon.api.{DataType, StructType}
@@ -121,10 +137,16 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
 
   def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    val resultRowMaybe = transformFunc(internalRow)
+    performSql(internalRow)
+  }
+
+  def performSql(row: InternalRow): Option[Map[String, Any]] = {
+    val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
+
+  def getOutputSparkSchema: types.StructType = outputSparkSchema
 
   private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
