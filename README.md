@@ -71,6 +71,7 @@ Fabricated raw data is included in the [data](api/py/test/sample/data) directory
 
 ```shell
 curl -s https://chronon.ai/init.sh | $SHELL
+source $SHELL_FILE
 cd ./chronon
 ```
 
