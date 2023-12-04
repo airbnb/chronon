@@ -40,6 +40,8 @@ These aggregations can all be configured to be computed over arbitrary window si
 
 # Quickstart
 
+**Note: The following is only intended to work on recent versions of MacOS.**
+
 This section walks you through the steps to create a training dataset with Chronon, using a fabricated underlying raw dataset.
 
 Includes:
@@ -65,32 +67,14 @@ Fabricated raw data is included in the [data](api/py/test/sample/data) directory
 3. Returns - a log of all returns made by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
 4. Checkouts - a log of all checkout events; **this is the event that drives our model predictions**
 
-## Setup
-One time steps to get up and running with Chronon.
-
-### 1. Setup the chronon repo
-```shell
-cd ~/repos
-git clone git@github.com:airbnb/chronon.git
-export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
-```
-
-#### 2. Download and setup spark (assuming you have a jdk already setup)
+### 1. Setup the sample chronon repo and cd into the directory
 
 ```shell
-cd ~
-curl -O https://archive.apache.org/dist/spark/spark-3.2.4/spark-3.2.4-bin-hadoop3.2.tgz
-tar xf spark-3.2.4-bin-hadoop3.2.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-3.2.4-bin-hadoop3.2/bin/spark-submit
-export SPARK_LOCAL_IP="127.0.0.1"
+curl -s https://chronon.ai/init.sh | $SHELL
+cd ./chronon
 ```
 
-#### 3. Now switch to the config repo (within the project)
-
-This is where we will do the bulk of development iterations from:
-```shell
-cd api/py/test/sample
-```
+This will create a directory that is pre-populated with some fake data and a functional chronon environment.
 
 ## Chronon Development
 
