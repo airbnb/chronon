@@ -56,9 +56,9 @@ Then, before making a batch GET request, we check if it is already in cache. If 
 
 Currently, every time we perform a batch KV store request, we also get back the latest `batchEndTsMillis`. Then, in `FetcherBase`, we update the serving info if the new `batchEndTsMillis` is ahead of the current one stored in memory (i.e. new batch data has landed!) – see `updateServingInfo`.
 
-Once we start caching batch `GetRequest`s, it could happen that no batch KV store requests are made, and we never receive the updated `batchEndTsMillis` after batch data lands (or delay it). To address that the following change is necessary: we will call `MetadataStore.refresh` once for every `FetcherBase.constructGroupByResponse` call. 
+Once we start caching batch `GetRequest`s, it could happen that no batch KV store requests are made, and we never receive the updated `batchEndTsMillis` after batch data lands (or delay it). To address that, the following change is necessary: we will call `MetadataStore.refresh` once for every `FetcherBase.constructGroupByResponse` call. 
 
-In practice, this means that `groupByServingInfo` will be updated at most 8 seconds after new batch data has landed. When new batch data lands, the groupByServingInfo.batchEndTsMillis will be updated and we will start using the new batch data right away.
+In practice, this means that `groupByServingInfo` will be updated at most 8 seconds after new batch data has landed. When new batch data lands, the `groupByServingInfo.batchEndTsMillis` will be updated and we will start using the new batch data right away.
 
 
 #### Cache invalidation (edge case)
@@ -76,17 +76,18 @@ We'll also add `batchDataLandingTime` to `GroupByServingInfo` and have it be pop
 This cache will consist of:
 
 - Key: a combination of (`streamingDataset`, `keyBytes`, `batchEndTsMillis`).
-- Value: (`TiledIr`, “`streamingCacheEndTsMillis`”)
+- Value: (`TiledIr`, "`streamingCacheEndTsMillis`")
 
 #### Populating and using the cache
 
-When a streaming GetRequest is performed, it may return a number of tiles. For example, a request for the range [0:00, 3:00) could return three tiles, [0:00, 1:00) + [1:00, 2:00) + [2:00, 3:00). Here, `batchEndTsMillis` = 0:00. Each tile contains a field called isComplete, which indicates whether that tile is complete. This field is set to True when the event-processing side of Chronon (Flink, in our case) decides that a tile is completed and will no longer be changed.
+When a streaming GetRequest is performed, it may return a number of tiles. For example, a request for the range [0:00, 3:00) could return three tiles, [0:00, 1:00) + [1:00, 2:00) + [2:00, 3:00). Here, `batchEndTsMillis` = 0:00. Each tile contains a field called `isComplete`, which indicates whether that tile is complete. This field is set to True when the event-processing side of Chronon (Flink, in our case) decides that a tile is completed and will no longer be changed.
 
 If consecutive tiles starting from `batchEndTsMillis` are all completed, then we combine them into a single TiledIr and cache them with `streamingCacheEndTsMillis` set to the end time of the last cached tile. Caffeine takes care of storing only the most used values.
 
 - Example: if  [0:00, 1:00) and [1:00, 2:00) are both complete, we will cache a single TiledIr for the range [0:00, 2:00) with `streamingCacheEndTsMillis` = 2:00.
 
-GroupBys with windows shorter than one day should be handled slightly differently so caching works.
+- GroupBys with windows shorter than one day should be handled slightly differently so caching works.
+
 Then, when creating a streaming GetRequest, we check if that (`streamingDataset`, `keyBytes`, ``batchEndTsMillis``) is in cache. If so, we modify the `batchEndTsMillis` of the outgoing GetRequest to be `streamingCacheEndTsMillis`. So, for example, if it’s 17:00 UTC, and your cache contains streaming data for [0:00, 13:00), we modify the `GetRequest` to fetch only [13:00, ...). This reduces the number of tiles that need to be fetched.
 
 Cache invalidation is not necessary on the online side. If a tile is marked as complete, it is not expected to change. Cached values would only need to be invalidated if you changed your GroupBy definition and restarted Flink without state. If that’s the case, you would also need to restart your feature serving app which would then restart the cache.
@@ -123,17 +124,16 @@ In this step, we add Caffeine as a dependency and set up:
 - A `Cache` class that can be used for all the following steps
 - Cache metrics
 - Unit tests
-- Appropriate sizing
 
 The size of the cache should ideally be set in terms of maximum memory usage (e.g., 2GB) instead of in terms of maximum number of elements. Estimating memory usage is a [tricky problem](https://stackoverflow.com/questions/258120/what-is-the-memory-consumption-of-an-object-in-java?noredirect=1&lq=1) and [not something Caffeine provides out-of-the-box](https://stackoverflow.com/questions/73139235/how-to-set-maximum-memory-usage-in-caffeine#comment129179258_73139235). To achieve that, we can use the [Java Instrumentation library](https://docs.oracle.com/javase/8/docs/api/java/lang/instrument/package-summary.html) or [JAMM](https://github.com/jbellis/jamm), a library which is [commonly used alongside Caffeine](https://openjdk.org/jeps/8249196#:~:text=JAMM%20is%20routinely%20used%20with%20Caffeine%20to%20weigh%20the%20cache%20entries). If that proves difficult and we must stick with a maximum number of elements, the creator of Caffeine suggests sizing by [guessing, measuring, and repeating](https://stackoverflow.com/questions/39503105/caffeine-how-to-come-up-with-an-appropriate-cache-size#:~:text=best%20answer%20for%20sizing%20is%20to%20guess%2C%20measure%2C%20and%20repeat).
 
 ### Step 1: BatchIr Caching
 
-We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102).
+We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102)).
 
 To make testing easier, we'll disable this feature by default and enable it via Java Args.
 
-Results: I tested this in our QA environment. The QA environment has an end-to-end test that uses a small keyspace (only ~2.7K possible entity keys). The cache was able to store all possible batch IRs. CPU usage for `toBatchIr` went from 10-14% to 0% and latency decreased by around 12%.
+Results: I tested this in our QA environment. The QA environment has an end-to-end test that uses a small keyspace and the cache was able to store all possible batch IRs. CPU usage for `toBatchIr` went from 10-14% to 0% and latency decreased by around 12%.
 
 ### Step 2: Batch GetRequest Caching
 
@@ -145,21 +145,19 @@ In this step, we will:
 
 For the first point, in code, we will 1) check if the `GetRequest` is cached 2) if so, store it in a variable in memory so it's not lost due to race conditions 3) make any necessary, uncached get requests 4) use the cached values.
 
-We won't worry add about edge case invalidation just yet (the aforementioned “latest batch data landing time” stuff).
+We won't worry add about edge case invalidation just yet (the aforementioned "latest batch data landing time" stuff).
 
 ### Step 3: `TiledIr` Caching
 
-The second step is caching [tile bytes to TiledIr](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/TileCodec.scala#L77C67-L77C67). This is only possible if the tile bytes contain information about whether a tile is complete (i.e. it won’t be updated anymore). Flink side mark tiles as complete.
+The second step is caching [tile bytes to TiledIr](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/TileCodec.scala#L77C67-L77C67). This is only possible if the tile bytes contain information about whether a tile is complete (i.e. it won’t be updated anymore). The Flink side marks tiles as complete.
 
-This cache can be “monoid-aware”. Instead of storing multiple consecutive tiles for a given time range, we combine the tiles and store a single, larger tile in memory. For example, we combine two tiles, [0, 1) and [1, 2), into one, [0, 2).
-
-Additionally, we have the option of generalizing the cache from Step 1 and Step 2 into a single cache with values of type Avro.GenericRecord.
+This cache can be "monoid-aware". Instead of storing multiple consecutive tiles for a given time range, we combine the tiles and store a single, larger tile in memory. For example, we combine two tiles, [0, 1) and [1, 2), into one, [0, 2).
 
 Results: <will add>
 
 ### Step 4: Streaming GetRequest Caching.
 
-Add the rest of the logic described in “Streaming Caching Details” so that the `batchEndTsMillis` in the outgoing GetRequest is modified and the KV store ends up fetching fewer tiles.
+Add the rest of the logic described in "Streaming Caching Details" so that the `batchEndTsMillis` in the outgoing GetRequest is modified and the KV store ends up fetching fewer tiles.
 
 Results: <will add>
 
@@ -167,7 +165,7 @@ Results: <will add>
 The final step is to
 - Add memory-based cache size
 - Handle edge cases; add batchDataLandingTime stuff.
-- Add per-GroupBy caching
+- Add per-GroupBy caching (we might actually do this earlier on)
 
 
 ## Rejected Alternatives
@@ -180,7 +178,7 @@ In the Proposed Changes, I am suggesting that we add the logic for caching `GetR
 
 The advantage of this alternative is that it keeps the changes to FetcherBase very simple.
 
-The issue is that caching Avro conversions may save us a good amount of CPU (say, up to 28% in our example at the top of the document), but it wouldn’t save any time fetching from the KV stores. Additionally, Chronon contains the knowledge of whether a tile/batch ir can be cached, so it make the decision of whether to cache or not.
+The issue is that caching Avro conversions may save us a good amount of CPU (say, up to 28% in our example at the top of the document), but it wouldn’t save any time fetching from the KV stores. Additionally, Chronon contains the knowledge of whether a tile/batch ir can be cached, so it makes sense for it to make the decision of whether to cache or not.
 
 Ultimately, I’m rejecting this alternative because the Proposed Changes will cache GetRequests in a way that is applicable to everyone regardless of KV store. If Chronon developers want, they could still add their own layer of caching in their KV store.
 
@@ -194,9 +192,9 @@ The alternative would be to use a single cache with `GetRequest`s as keys (or so
 
 This alternative is conceptually simpler – one cache instead of two –  but
 
-It is not as tuneable. For example, for some users, the batch fetching and decoding work may take up the majority of time, so they would likely want their batch cache to be larger than their streaming cache.
+- It is not as tuneable. For example, for some users, the batch fetching and decoding work may take up the majority of time, so they would likely want their batch cache to be larger than their streaming cache.
 
-We would still need to parse `Avro.GenericRecord` into `FinalBatchIr` and `TiledIr`. This doesn’t take up a huge amount of time but is worth noting.
+- We would still need to parse `Avro.GenericRecord` into `FinalBatchIr` and `TiledIr`. This doesn’t take up a huge amount of time but is worth noting.
 
 Personally, I am still on the fence about this one, but leaning towards two caches. Opinions are very welcome.
 
@@ -231,4 +229,5 @@ None
 ## Migration Plan and Compatibility
 
 Online caching is an optional feature that is disabled by default. Chronon users who need to decrease serving latency can enable caching. No migration is required.
-Before enabling caching in production, user/developerss should decide on a size for the cache based on their deployment. Setting the size too high may result in significantly increased GC time.
+
+Before enabling caching in production, user/developers should decide on a size for the cache based on their deployment. Setting the size too high may result in significantly increased GC time.
