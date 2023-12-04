@@ -114,7 +114,7 @@ For more advanced users, with stringent latency requirements, we (the developers
 
 Within Stripe, we are implementing and testing these changes incrementally so we can measure the effect of each of them. Once we have developed and tested all the different Steps listed here, and assuming the CHIP is accepted, we will open source the changes as two PRs (one for batch IR caching, and one for tile IR caching). Chronon users can then opt-in to one or both the caching strategies.
 
-### ✅ Step 0: Add caching library (Caffeine) [PR]
+### Step 0: Add caching library (Caffeine)
 
 For the caching library, we'll use Caffeine. It's a rewrite of Google’s Guava, and it's very popular.
 
@@ -127,7 +127,7 @@ In this step, we add Caffeine as a dependency and set up:
 
 The size of the cache should ideally be set in terms of maximum memory usage (e.g., 2GB) instead of in terms of maximum number of elements. Estimating memory usage is a [tricky problem](https://stackoverflow.com/questions/258120/what-is-the-memory-consumption-of-an-object-in-java?noredirect=1&lq=1) and [not something Caffeine provides out-of-the-box](https://stackoverflow.com/questions/73139235/how-to-set-maximum-memory-usage-in-caffeine#comment129179258_73139235). To achieve that, we can use the [Java Instrumentation library](https://docs.oracle.com/javase/8/docs/api/java/lang/instrument/package-summary.html) or [JAMM](https://github.com/jbellis/jamm), a library which is [commonly used alongside Caffeine](https://openjdk.org/jeps/8249196#:~:text=JAMM%20is%20routinely%20used%20with%20Caffeine%20to%20weigh%20the%20cache%20entries). If that proves difficult and we must stick with a maximum number of elements, the creator of Caffeine suggests sizing by [guessing, measuring, and repeating](https://stackoverflow.com/questions/39503105/caffeine-how-to-come-up-with-an-appropriate-cache-size#:~:text=best%20answer%20for%20sizing%20is%20to%20guess%2C%20measure%2C%20and%20repeat).
 
-### ✅ Step 1: BatchIr Caching [PR]
+### Step 1: BatchIr Caching
 
 We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102).
 
