@@ -457,10 +457,8 @@ class BaseFetcher(kvStore: KVStore,
 object BaseFetcher {
   case class BatchIrCacheKey(dataset: String, keys: Map[String, Any], batchEndTsMillis: Long)
 
-  private val enableBatchIrCaching: Boolean = Option(System.getProperty("ai.chronon.fetcher.enableBatchIrCaching"))
-    .orElse(Option(System.getenv("ai.chronon.fetcher.enableBatchIrCaching")))
-    .orElse(Some("false")).get.toBoolean
-  private val batchIrCacheName = "batchIrCache"
+  private val enableBatchIrCaching: Boolean = Config.getEnvConfig("ai.chronon.fetcher.enableBatchIrCaching", false)
+  private val batchIrCacheName = "batch_ir_cache"
 
   // Caching is an optional optimization to reduce the amount of CPU time spent decoding batch data.
   lazy val maybeBatchIrCache: Option[CaffeineCache[BatchIrCacheKey, FinalBatchIr]] = if (enableBatchIrCaching)

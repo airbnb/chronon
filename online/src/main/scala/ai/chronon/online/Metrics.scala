@@ -92,13 +92,12 @@ object Metrics {
       )
     }
 
-    val statsPort: Int = Option(System.getProperty("ai.chronon.metrics.port"))
-      .orElse(Option(System.getenv("ai.chronon.metrics.port")))
-      .orElse(Some("8125")).get.toInt
+    val statsPort: Int = Config.getEnvConfig("ai.chronon.metrics.port", 8125)
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
         val statsPrefix = "ai.chronon." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse("")
-        println(s"Building new stats cache for ${ctx.toString} on port $statsPort with prefix '$statsPrefix".stripMargin)
+        println(
+          s"Building new stats cache for ${ctx.toString} on port $statsPort with prefix '$statsPrefix".stripMargin)
         assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
         new NonBlockingStatsDClientBuilder()
           .prefix(statsPrefix)
@@ -186,8 +185,8 @@ object Metrics {
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)
 
       // Priority tier is a Stripe-specific concept http://go/trailhead/trh_doc_OgdDcZyyZHHVuP.
-      Option(System.getProperty("ai.chronon.metrics.priority_tier")).foreach(addTag(Tag.PriorityTier, _))
-      Option(System.getProperty("ai.chronon.metrics.flink_cluster")).foreach(addTag(Tag.FlinkCluster, _))
+      Config.getEnvConfig("ai.chronon.metrics.priority_tier").foreach(addTag(Tag.PriorityTier, _))
+      Config.getEnvConfig("ai.chronon.metrics.flink_cluster").foreach(addTag(Tag.FlinkCluster, _))
 
       buffer
     }
