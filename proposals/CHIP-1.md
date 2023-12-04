@@ -1,21 +1,21 @@
 # CHIP-1 – Online IR and GetRequest Caching
-_By Caio Camatta | Dec 4, 2023_
+_By Caio Camatta (Stripe) | Dec 4, 2023_
 
 This CHIP introduces IR caching in Chronon's online/Fetcher side. We're currently trying out caching at Stripe and will update this doc with benchmarks and findings.
 
 ## Motivation
 
-The primary goal of this CHIP is to reduce Chronon feature serving latency. It will also help reduce RPS to KV stores.
+The primary goal of this CHIP is to decrease Chronon feature serving latency and reduce RPS to KV stores.
 
 During our latest load tests, we observed that our feature serving app spends 20% of the time performing GET requests and the remaining 80% processing that data and constructing the GroupBy responses. A significant amount of the work necessary to process the data comes from `AvroCodec.decode` (the function that decodes bytes stored in the KV store). This function takes up 28% of total CPU time: ~21.5% is spent decoding batch IRs, and ~6.5% decoding tile IRs.
 
 We hope to decrease serving latency by
 
-- Caching the work to decode batch bytes into batch IRs (~21.5% of CPU).
-- Caching the work to decode streaming bytes into tile IRs (~6.5% of CPU).
-- Caching KV store requests (~20% of request latency).
+- Caching the work to decode batch bytes into batch IRs (up to ~21.5% of CPU).
+- Caching the work to decode streaming bytes into tile IRs (up to ~6.5% of CPU).
+- Caching KV store requests (up to ~20% of request latency).
 
-This CHIP does not discuss optimizing to the un-tiled version of Chronon, which is the default. At Stripe, we use a tiled implementation of Chronon, which we are open-sourcing [#523](https://github.com/airbnb/chronon/pull/523), [#531](https://github.com/airbnb/chronon/pull/523). So, for un-tiled app, only the batch caching portion of this CHIP applies.
+This CHIP does not discuss optimizing to the un-tiled version of Chronon, which is the default. Only the batch caching portion of this CHIP applies to that version. (At Stripe, we use a tiled implementation of Chronon, which we are open-sourcing [#523](https://github.com/airbnb/chronon/pull/523), [#531](https://github.com/airbnb/chronon/pull/523).)
 
 ## Proposed Change
 
@@ -26,12 +26,12 @@ We will be caching four different operations:
 3. Avro decoding of streaming bytes
 4. Avro decoding of batch bytes
 
-To do that, I’m proposing we use two Caffeine caches to store:
+To do that, I’m proposing we use two types of Caffeine caches to store:
 
 - Key: batch get requests → Value: batch IRs
 - Key: streaming get requests → Value: streaming IRs
 
-The caches will be configured on a per-GroupBy basis, i.e. two caches per GroupBy. This enables us to enable caching only for features with very skewed access patterns (when the top few keys correspond to a significant percentage of traffic). See _Rejected Alternative #4_ and _UX Considerations_ for more details.
+The caches will be configured on a per-GroupBy basis, i.e. two caches per GroupBy. This allows us to enable caching only for features with very skewed access patterns (when the top few keys correspond to a significant percentage of traffic). See _Rejected Alternative #4_ and _UX Considerations_ for more details.
 
 Caching will be an opt-in feature that can be enabled by Chronon developers.
 
@@ -159,11 +159,11 @@ Results: <will add>
 
 ### Step 4: Streaming GetRequest Caching.
 
-The final part is left to Chronon developers to implement because KV store implementations can vary a lot.
+Add the rest of the logic described in “Streaming Caching Details” so that the `batchEndTsMillis` in the outgoing GetRequest is modified and the KV store ends up fetching fewer tiles.
 
 Results: <will add>
 
-### Step 5: Final polishing
+### Step 5: Final Polishing
 The final step is to
 - Add memory-based cache size
 - Handle edge cases; add batchDataLandingTime stuff.
