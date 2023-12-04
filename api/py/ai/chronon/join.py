@@ -451,15 +451,22 @@ def Join(
     :param table_properties:
         Specifies the properties on output hive tables. Can be specified in teams.json.
     :param env:
-        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
-        These vars are set in run.py and the underlying spark_submit.sh.
-        There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is::
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
-            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
-            var set here in Join's env param
-            var set in team.json/<team>/<production>/<MODE NAME>
-            var set in team.json/default/<production>/<MODE NAME>
+            {
+                'backfill' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'upload' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'streaming' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+            }
+
+        These vars then flow into run.py and the underlying spark_submit.sh.
+        These vars can be set in other places as well. The priority order (descending) is as below
+
+        1. env vars set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+        2. env vars set here in Join's env param
+        3. env vars set in `team.json['team.production.<MODE NAME>']`
+        4. env vars set in `team.json['default.production.<MODE NAME>']`
+
     :type env: Dict[str, Dict[str, str]]
     :param lag:
         Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"

@@ -423,15 +423,21 @@ def GroupBy(
         Typically used by engines like airflow to create partition sensors.
     :type dependencies: List[str]
     :param env:
-        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
-        These vars are set in run.py and the underlying spark_submit.sh.
-        There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
-        1. var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
-        2. var set here in Join's env param
-        3. var set in team.json/<team>/<production>/<MODE NAME>
-        4. var set in team.json/default/<production>/<MODE NAME>
+            {
+                'backfill' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'upload' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+                'streaming' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+            }
+
+        These vars then flow into run.py and the underlying spark_submit.sh.
+        These vars can be set in other places as well. The priority order (descending) is as below
+
+        1. env vars set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+        2. env vars set here in Join's env param
+        3. env vars set in `team.json['team.production.<MODE NAME>']`
+        4. env vars set in `team.json['default.production.<MODE NAME>']`
 
     :type env: Dict[str, Dict[str, str]]
     :param table_properties:

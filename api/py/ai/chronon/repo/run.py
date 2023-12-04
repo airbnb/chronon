@@ -568,7 +568,7 @@ if __name__ == "__main__":
             args.version,
             jar_type=jar_type,
             release_tag=args.release_tag,
-            spark_version=args.spark_version,
+            spark_version=os.environ.get("SPARK_VERSION", args.spark_version),
         )
     )
     Runner(args, os.path.expanduser(jar_path)).run()

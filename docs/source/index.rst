@@ -86,7 +86,7 @@ run the command below in an airflow repository.
 
 .. code-block:: bash
 
-   source <(curl -s https://chronon.ai/init.sh)
+   curl -s https://chronon.ai/init.sh | $SHELL
 
 Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
 Find more details in the Getting Started section.

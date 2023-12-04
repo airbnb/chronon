@@ -64,8 +64,8 @@ html_theme_options = {
     "favicons": [
         {
             "rel": "icon",
-            "sizes": "64x64",
-            "href": "favicon_64_light_bg.png",
+            "sizes": "32x32",
+            "href": "favicon_32_light_bg.png",
         }
     ],
     # "navbar_align": "right"
