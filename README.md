@@ -192,7 +192,7 @@ The `left` side of the join is what defines the timestamps and primary keys for 
 Once the join is defined, we compile it using this command:
 
 ```shell
-PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/ python3 ~/repos/chronon/api/py/ai/chronon/repo/compile.py --conf=joins/quickstart/training_set.py
+compile.py --conf=joins/quickstart/training_set.py
 ```
 
 This converts it into a thrift definition that we can submit to spark with the following command:
@@ -201,10 +201,9 @@ This converts it into a thrift definition that we can submit to spark with the f
 ```shell
 mkdir ~/quickstart_output
 
-DRIVER_MEMORY=1G EXECUTOR_MEMORY=1G EXECUTOR_CORES=2 PARALLELISM=10 MAX_EXECUTORS=1 \
-python3 ~/repos/chronon/api/py/ai/chronon/repo/run.py --mode=backfill \
+run.py --mode=backfill \
 --conf=production/joins/quickstart/training_set.v1 \
---local-data-path ~/repos/chronon/api/py/test/sample/data --local-warehouse-location ~/quickstart_output \
+--local-data-path data --local-warehouse-location ~/quickstart_output \
 --ds=2023-11-30
 ```
 
