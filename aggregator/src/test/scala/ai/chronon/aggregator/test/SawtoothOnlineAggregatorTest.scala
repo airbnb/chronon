@@ -21,9 +21,9 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val eventCount = 10000
 
     val columns = Seq(Column("ts", LongType, 60),
-                      Column("num", LongType, 100),
-                      Column("user", StringType, 6000),
-                      Column("ts_col", StringType, 60))
+      Column("num", LongType, 100),
+      Column("user", StringType, 6000),
+      Column("ts_col", StringType, 60))
     val formatter = DateTimeFormatter
       .ofPattern("MM-dd HH:mm:ss", Locale.US)
       .withZone(ZoneOffset.UTC)
@@ -32,47 +32,69 @@ class SawtoothOnlineAggregatorTest extends TestCase {
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(
-        Operation.COUNT,
-        "num",
-        Seq(
-          new Window(14, TimeUnit.DAYS), // hop = 1 day
-          new Window(20, TimeUnit.HOURS), // hop = 1hr
-          new Window(6, TimeUnit.DAYS), // hop = 1hr
-          new Window(7, TimeUnit.DAYS), // hop = 1hr,
-          new Window(10, TimeUnit.MINUTES) // hop = 5min
-        )
+        operation     = Operation.COUNT,
+        inputColumn   = "num",
+        windows       = Seq(new Window(14, TimeUnit.DAYS), new Window(20, TimeUnit.HOURS), new Window(6, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        Operation.AVERAGE,
-        "num",
-        Seq(
-          new Window(14, TimeUnit.DAYS), // hop = 1 day
-          new Window(20, TimeUnit.HOURS), // hop = 1hr
-          new Window(6, TimeUnit.DAYS), // hop = 1hr
-          new Window(7, TimeUnit.DAYS), // hop = 1hr,
-          new Window(10, TimeUnit.MINUTES) // hop = 5min
-    )
+        operation     = Operation.AVERAGE,
+        inputColumn   = "num",
+        windows       = Seq(new Window(14, TimeUnit.DAYS), new Window(20, TimeUnit.HOURS), new Window(6, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        Operation.FIRST,
-        "ts_col",
-        Seq(
-          new Window(23, TimeUnit.HOURS),
-          new Window(14, TimeUnit.DAYS),
-          new Window(10, TimeUnit.MINUTES)
-        ),
-        argMap = Map("k" -> "4")
+        operation     = Operation.FIRST,
+        inputColumn   = "ts_col",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap        = Map("k" -> "4")
       ),
       Builders.Aggregation(
-        Operation.LAST,
-        "ts_col",
-        Seq(
-          new Window(23, TimeUnit.HOURS),
-          new Window(14, TimeUnit.DAYS),
-          new Window(10, TimeUnit.MINUTES)
-        )
+        operation     = Operation.LAST,
+        inputColumn   = "ts_col",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       ),
-      Builders.Aggregation(Operation.SUM, "num", null)
+      Builders.Aggregation(
+        operation     = Operation.SUM,
+        inputColumn   = "num",
+        windows       = null
+      ),
+      Builders.Aggregation(
+        operation     = Operation.UNIQUE_COUNT,
+        inputColumn   = "user",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+      ),
+      Builders.Aggregation(
+        operation     = Operation.APPROX_UNIQUE_COUNT,
+        inputColumn   = "user",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+      ),
+      Builders.Aggregation(
+        operation     = Operation.LAST_K,
+        inputColumn   = "user",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap        = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation     = Operation.FIRST_K,
+        inputColumn   = "user",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap        = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation     = Operation.TOP_K,
+        inputColumn   = "num",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap        = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation     = Operation.MIN,
+        inputColumn   = "num",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+      ),
+      Builders.Aggregation(
+        operation     = Operation.MAX,
+        inputColumn   = "num",
+        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+      )
     )
 
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)

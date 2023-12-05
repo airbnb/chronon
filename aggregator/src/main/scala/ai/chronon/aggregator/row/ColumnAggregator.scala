@@ -18,6 +18,8 @@ abstract class ColumnAggregator extends Serializable {
   // ir1 is mutated, ir2 isn't
   def merge(ir1: Any, ir2: Any): Any
 
+  def bulkMerge(irs: Iterator[Any]): Any = irs.reduce(merge)
+
   def finalize(ir: Any): Any
 
   def delete(ir: Array[Any], inputRow: Row): Unit

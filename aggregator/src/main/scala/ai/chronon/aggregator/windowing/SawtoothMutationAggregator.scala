@@ -4,7 +4,7 @@ import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import java.util
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -110,16 +110,35 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     }
   }
 
-  def updateIrTiled(ir: Array[Any], otherIr: TiledIr, queryTs: Long) = {
-    var i: Int = 0
-    while (i < windowedAggregator.length) {
-      val window = windowMappings(i).aggregationPart.window
-      val hopIndex = tailHopIndices(i)
-      val irInWindow = (otherIr.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && otherIr.ts < queryTs)
-      if (window == null || irInWindow) {
-        ir(i) = windowedAggregator(i).merge(ir(i), otherIr.ir(i))
+  def updateIrTiled(ir: Array[Any], headStreamingTiledIrs: Iterator[TiledIr], queryTs: Long, batchEndTs: Long) = {
+    // fill 2D array where each entry corresponds to the windowedAggregator column aggregators, and contains an array of
+    // the streaming tiles we need to aggregate
+    // ex) mergeBuffers = [ [1,2,3], [2,4] ]
+    //     windowedAggregators.columnAggregators = [ Sum, Average ]
+    //     resultIr = [ 6, 3 ]
+    val mergeBuffers = Array.fill(windowedAggregator.length)(mutable.ArrayBuffer.empty[Any])
+    while (headStreamingTiledIrs.hasNext) {
+      val streamingTiledIr = headStreamingTiledIrs.next()
+      val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
+      if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
+        var i: Int = 0
+        while (i < windowedAggregator.length) {
+          val window = windowMappings(i).aggregationPart.window
+          val hopIndex = tailHopIndices(i)
+          val irInWindow = (streamingTiledIr.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && streamingTiledIr.ts < queryTs)
+          if (window == null || irInWindow) {
+            mergeBuffers(i) += streamingTiledIr.ir(i)
+          }
+          i += 1
+        }
       }
-      i += 1
+    }
+    var idx: Int = 0
+    while (idx < mergeBuffers.length) {
+      // include collapsed batchIr in bulkMerge computation
+      mergeBuffers(idx) += ir(idx)
+      ir(idx) = windowedAggregator(idx).bulkMerge(mergeBuffers(idx).iterator)
+      idx += 1
     }
   }
 
@@ -134,16 +153,18 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
         val hopIndex = tailHopIndices(i)
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
         val hopIrs = batchIr.tailHops(hopIndex)
+        val relevantHops = mutable.ArrayBuffer[Any](ir(i))
         var idx: Int = 0
         while (idx < hopIrs.length) {
           val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
-            val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
-            ir.update(i, merged)
+            relevantHops += hopIr(baseIrIndices(i))
           }
           idx += 1
         }
+        val merged = windowedAggregator(i).bulkMerge(relevantHops.iterator)
+        ir.update(i, merged)
       }
       i += 1
     }
