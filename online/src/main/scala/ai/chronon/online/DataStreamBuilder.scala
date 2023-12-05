@@ -28,8 +28,6 @@ import scala.util.{Failure, Success, Try}
 
 case class TopicInfo(name: String, topicType: String, params: Map[String, String])
 object TopicInfo {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   // default topic type is kafka
   // kafka://topic_name/schema=my_schema/host=X/port=Y should parse into TopicInfo(topic_name, kafka, {schema: my_schema, host: X, port Y})
   def parse(topic: String): TopicInfo = {
@@ -75,7 +73,6 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
       case DataModel.Events   => Map.empty
     })
     val selectsOption: Option[Map[String, String]] = for {
-  private val logger = LoggerFactory.getLogger(getClass)
       selectMap <- Option(query.selects).map(_.toScala.toMap)
       keyMap = Option(keys).map(_.map(k => k -> k).toMap).getOrElse(Map.empty)
     } yield (keyMap ++ selectMap ++ timeSelects)

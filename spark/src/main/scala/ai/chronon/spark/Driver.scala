@@ -51,7 +51,6 @@ import scala.util.{Failure, Success, Try}
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
 // so we give it dummy extensions
 class DummyExtensions extends (SparkSessionExtensions => Unit) {
-  private val logger = LoggerFactory.getLogger(getClass)
   override def apply(extensions: SparkSessionExtensions): Unit = {}
 }
 
@@ -221,7 +220,6 @@ object Driver {
         with OfflineSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -269,7 +267,6 @@ object Driver {
         with OfflineSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -299,9 +296,7 @@ object Driver {
   }
 
   object LabelJoin {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("label-join") with OfflineSubcommand with LocalExportTableAbility {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs label join in steps, step-days at a time. Default is 30 days",
@@ -326,9 +321,7 @@ object Driver {
   }
 
   object Analyzer {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("analyze") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val startDate: ScallopOption[String] =
         opt[String](required = false,
                     descr = "Finds heavy hitters & time-distributions until a specified start date",
@@ -368,9 +361,7 @@ object Driver {
   }
 
   object MetadataExport {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-export") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val inputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
@@ -384,9 +375,7 @@ object Driver {
   }
 
   object StagingQueryBackfill {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand with LocalExportTableAbility {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -415,9 +404,7 @@ object Driver {
   }
 
   object DailyStats {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -437,9 +424,7 @@ object Driver {
   }
 
   object LogStats {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("log-summary") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val stepDays: ScallopOption[Int] =
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
@@ -458,9 +443,7 @@ object Driver {
   }
 
   object GroupByUploader {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("group-by-upload") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       override def subcommandName() = "group-by-upload"
     }
 
@@ -470,9 +453,7 @@ object Driver {
   }
 
   object ConsistencyMetricsCompute {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       override def subcommandName() = "consistency-metrics-compute"
     }
 
@@ -487,9 +468,7 @@ object Driver {
   }
 
   object CompareJoinQuery {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("compare-join-query") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val queryConf: ScallopOption[String] =
         opt[String](required = true, descr = "Conf to the Staging Query to compare with")
       val startDate: ScallopOption[String] =
@@ -527,7 +506,6 @@ object Driver {
 
     // hashmap implements serializable
     def serializableProps: Map[String, String] = {
-  private val logger = LoggerFactory.getLogger(getClass)
       val map = new mutable.HashMap[String, String]()
       propsInner.foreach { case (key, value) => map.update(key, value) }
       map.toMap
@@ -550,7 +528,6 @@ object Driver {
   private val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
       val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
@@ -669,7 +646,6 @@ object Driver {
   object MetadataUploader {
   private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
     }
@@ -683,9 +659,7 @@ object Driver {
   }
 
   object LogFlattener {
-  private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("log-flattener") with OfflineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
       val logTable: ScallopOption[String] =
         opt[String](required = true, descr = "Hive table with partitioned raw logs")
 
@@ -817,7 +791,6 @@ object Driver {
   }
 
   class Args(args: Array[String]) extends ScallopConf(args) {
-  private val logger = LoggerFactory.getLogger(getClass)
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
     object LogFlattenerArgs extends LogFlattener.Args
@@ -853,21 +826,6 @@ object Driver {
   }
 
   def onlineBuilder(userConf: Map[String, String], onlineJar: String, onlineClass: String): Api = {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
     val urls = Array(new File(onlineJar).toURI.toURL)
     val cl = ScalaClassLoader.fromURLs(urls, this.getClass.getClassLoader)
     val cls = cl.loadClass(onlineClass)

@@ -32,7 +32,6 @@ import java.util
 // t
 class HopsAggregatorBase(aggregations: Seq[Aggregation], inputSchema: Seq[(String, DataType)], resolution: Resolution)
     extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   @transient lazy val rowAggregator =
     new RowAggregator(inputSchema, aggregations.flatMap(_.unWindowed))
@@ -157,7 +156,6 @@ class HopsAggregator(minQueryTs: Long,
 }
 
 object HopsAggregator {
-  private val logger = LoggerFactory.getLogger(getClass)
   // [IR1, IR2, IR3,.... IRN, ts_millis_long]
   // hops have timestamps attached to the end
   type HopIr = Array[Any]

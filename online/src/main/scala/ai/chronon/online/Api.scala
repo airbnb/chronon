@@ -28,15 +28,11 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 object KVStore {
-  private val logger = LoggerFactory.getLogger(getClass)
   // a scan request essentially for the keyBytes
   // afterTsMillis - is used to limit the scan to more recent data
   case class GetRequest(keyBytes: Array[Byte], dataset: String, afterTsMillis: Option[Long] = None)
   case class TimedValue(bytes: Array[Byte], millis: Long)
   case class GetResponse(request: GetRequest, values: Try[Seq[TimedValue]]) {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
     def latest: Try[TimedValue] = values.map(_.maxBy(_.millis))
   }
   case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None)
@@ -129,10 +125,6 @@ case class LoggableResponseBase64(keyBase64: String,
                                   schemaHash: String)
 
 abstract class StreamDecoder extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   def decode(bytes: Array[Byte]): Mutation
   def schema: StructType
 }
@@ -142,7 +134,6 @@ trait StreamBuilder {
 }
 
 object ExternalSourceHandler {
-  private val logger = LoggerFactory.getLogger(getClass)
   private[ExternalSourceHandler] val executor = FlexibleExecutionContext.buildExecutionContext
 }
 
@@ -151,8 +142,6 @@ object ExternalSourceHandler {
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
 abstract class ExternalSourceHandler extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
 }
@@ -160,9 +149,6 @@ abstract class ExternalSourceHandler extends Serializable {
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   lazy val fetcher: Fetcher = {
     if (fetcherObj == null)
       fetcherObj = buildFetcher()

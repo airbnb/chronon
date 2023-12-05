@@ -42,7 +42,6 @@ import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapO
 // micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
 // this allows for re-use
 object LocalIOCache {
-  private val logger = LoggerFactory.getLogger(getClass)
   private var fetcher: Fetcher = null
   private var kvStore: KVStore = null
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
@@ -76,7 +75,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       extends Serializable
 
   val valueZSchema: api.StructType = groupByConf.dataModel match {
-  private val logger = LoggerFactory.getLogger(getClass)
     case api.DataModel.Events   => servingInfoProxy.valueChrononSchema
     case api.DataModel.Entities => servingInfoProxy.mutationValueChrononSchema
   }

@@ -36,7 +36,6 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 object Fetcher {
-  private val logger = LoggerFactory.getLogger(getClass)
   case class Request(name: String,
                      keys: Map[String, AnyRef],
                      atMillis: Option[Long] = None,
@@ -50,13 +49,6 @@ object Fetcher {
   case class ResponseWithContext(request: Request,
                                  derivedValues: Map[String, AnyRef],
                                  baseValues: Map[String, AnyRef]) {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
   case class ColumnSpec(groupByName: String,
@@ -65,7 +57,6 @@ object Fetcher {
                         keyMapping: Option[Map[String, AnyRef]])
 
   def logResponseStats(response: Response, context: Metrics.Context): Unit = {
-  private val logger = LoggerFactory.getLogger(getClass)
     val responseMap = response.values.get
     var exceptions = 0
     var nulls = 0
@@ -90,7 +81,6 @@ class Fetcher(val kvStore: KVStore,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
-  private val logger = LoggerFactory.getLogger(getClass)
   private val logger = LoggerFactory.getLogger(getClass)
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
@@ -173,8 +163,8 @@ class Fetcher(val kvStore: KVStore,
         internalResponses.zip(externalResponses).map {
           case (internalResponse, externalResponse) =>
             if (debug) {
-              logger.info(internalResponse.values.get.keys.toSeq)
-              logger.info(externalResponse.values.get.keys.toSeq)
+              logger.info(internalResponse.values.get.keys.toSeq.mkString(","))
+              logger.info(externalResponse.values.get.keys.toSeq.mkString(","))
             }
             val cleanInternalRequest = internalResponse.request.copy(context = None)
             assert(

@@ -33,10 +33,8 @@ import scala.collection.Seq
 import scala.reflect.ClassTag
 
 object Extensions {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   implicit class StructTypeOps(schema: StructType) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def pretty: String = {
       val schemaTuples = schema.fields.map { field =>
         field.dataType.simpleString -> field.name
@@ -60,9 +58,6 @@ object Extensions {
   case class DfStats(count: Long, partitionRange: PartitionRange)
   // helper class to maintain datafram stats that are necessary for downstream operations
   case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
     private val minPartition: String = partitionCounts.keys.min
     private val maxPartition: String = partitionCounts.keys.max
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
@@ -77,7 +72,6 @@ object Extensions {
   }
 
   object DfWithStats {
-  private val logger = LoggerFactory.getLogger(getClass)
     def apply(dataFrame: DataFrame)(implicit tableUtils: TableUtils): DfWithStats = {
       val partitionCounts = dataFrame
         .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
@@ -286,7 +280,6 @@ object Extensions {
   }
 
   implicit class ArrayOps[T: ClassTag](arr: Array[T]) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def uniqSort(ordering: Ordering[T]): Array[T] = {
       val tree = new util.TreeSet[T](ordering)
       for (i <- arr.indices) {
@@ -304,7 +297,6 @@ object Extensions {
   }
 
   implicit class InternalRowOps(internalRow: InternalRow) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def toRow(schema: StructType): Row = {
       new Row() {
         override def length: Int = {

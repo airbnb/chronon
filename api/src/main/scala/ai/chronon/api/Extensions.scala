@@ -32,10 +32,8 @@ import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
 object Extensions {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   implicit class TimeUnitOps(timeUnit: TimeUnit) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def str: String =
       timeUnit match {
         case TimeUnit.HOURS => "h"
@@ -50,7 +48,6 @@ object Extensions {
   }
 
   implicit class OperationOps(operation: Operation) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def isSimple: Boolean =
       operation match {
         case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
@@ -62,7 +59,6 @@ object Extensions {
   }
 
   implicit class WindowOps(window: Window) {
-  private val logger = LoggerFactory.getLogger(getClass)
     private def unbounded: Boolean = window.length == Int.MaxValue || window.length <= 0
 
     def str: String =
@@ -75,7 +71,6 @@ object Extensions {
   }
 
   object WindowUtils {
-  private val logger = LoggerFactory.getLogger(getClass)
     val Unbounded: Window = new Window(Int.MaxValue, TimeUnit.DAYS)
     val Hour: Window = new Window(1, TimeUnit.HOURS)
     val Day: Window = new Window(1, TimeUnit.DAYS)
@@ -99,7 +94,6 @@ object Extensions {
   }
 
   implicit class MetadataOps(metaData: MetaData) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
@@ -157,7 +151,6 @@ object Extensions {
   // one per output column - so single window
   // not exposed to users
   implicit class AggregationPartOps(aggregationPart: AggregationPart) {
-  private val logger = LoggerFactory.getLogger(getClass)
 
     def getInt(arg: String, default: Option[Int] = None): Int = {
       val argOpt = Option(aggregationPart.argMap)
@@ -185,7 +178,6 @@ object Extensions {
   }
 
   implicit class AggregationOps(aggregation: Aggregation) {
-  private val logger = LoggerFactory.getLogger(getClass)
 
     // one agg part per bucket per window
     // unspecified windows are translated to one unbounded window
@@ -241,9 +233,6 @@ object Extensions {
   case class UnpackedAggregations(perBucket: Array[AggregationPart], perWindow: Array[WindowMapping])
 
   object UnpackedAggregations {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
     def from(aggregations: Seq[Aggregation]): UnpackedAggregations = {
       var counter = 0
       val perBucket = new mutable.ArrayBuffer[AggregationPart]
@@ -289,7 +278,6 @@ object Extensions {
   }
 
   implicit class AggregationsOps(aggregations: Seq[Aggregation]) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def hasTimedAggregations: Boolean =
       aggregations.exists(_.operation match {
         case LAST_K | FIRST_K | LAST | FIRST => true
@@ -313,7 +301,6 @@ object Extensions {
   }
 
   implicit class SourceOps(source: Source) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def dataModel: DataModel = {
       assert(source.isSetEntities || source.isSetEvents || source.isSetJoinSource, "Source type is not specified")
       if (source.isSetEntities) Entities
@@ -426,7 +413,6 @@ object Extensions {
   }
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
         .flatMap(_.toScala.toSeq.allWindowsOpt)
@@ -547,7 +533,6 @@ object Extensions {
     case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
 
     def buildQueryParts(query: Query): QueryParts = {
-  private val logger = LoggerFactory.getLogger(getClass)
       val selects = query.getQuerySelects
       val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
 
@@ -628,14 +613,12 @@ object Extensions {
   }
 
   implicit class StringOps(string: String) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
-  private val logger = LoggerFactory.getLogger(getClass)
     private def schemaNames(schema: TDataType): Array[String] = schemaFields(schema).map(_.name)
 
     private def schemaFields(schema: TDataType): Array[StructField] =
@@ -652,7 +635,6 @@ object Extensions {
   }
 
   object KeyMappingHelper {
-  private val logger = LoggerFactory.getLogger(getClass)
     // key mapping is defined as {left_col1: right_col1}, on the right there can be two keys [right_col1, right_col2]
     // Left is implicitly assumed to have right_col2
     // We need to convert a map {left_col1: a, right_col2: b, irrelevant_col: c} into {right_col1: a, right_col2: b}
@@ -668,7 +650,6 @@ object Extensions {
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
-  private val logger = LoggerFactory.getLogger(getClass)
     lazy val fullName: String =
       Constants.ExternalPrefix + "_" +
         Option(externalPart.prefix).map(_ + "_").getOrElse("") +
@@ -710,7 +691,6 @@ object Extensions {
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
-  private val logger = LoggerFactory.getLogger(getClass)
     lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
@@ -740,7 +720,6 @@ object Extensions {
   }
 
   implicit class LabelPartOps(val labelPart: LabelPart) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
     def leftKeyCols: Array[String] = {
       labelPart.labels.toScala
         .flatMap {
@@ -769,7 +748,6 @@ object Extensions {
   }
 
   implicit class BootstrapPartOps(val bootstrapPart: BootstrapPart) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
 
     /**
       * Compress the info such that the hash can be stored at record and
@@ -801,7 +779,6 @@ object Extensions {
   }
 
   object JoinOps {
-  private val logger = LoggerFactory.getLogger(getClass)
     private val identifierRegex: Pattern = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*")
     def isIdentifier(s: String): Boolean = identifierRegex.matcher(s).matches()
   }
@@ -1010,7 +987,6 @@ object Extensions {
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def pretty: String = {
       if (strs.nonEmpty)
         "\n    " + strs.mkString(",\n    ") + "\n"
@@ -1022,7 +998,6 @@ object Extensions {
   }
 
   implicit class QueryOps(query: Query) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def setupsSeq: Seq[String] = {
       Option(query.setups)
         .map(
@@ -1035,7 +1010,6 @@ object Extensions {
   }
 
   implicit class ThrowableOps(throwable: Throwable) {
-  private val logger = LoggerFactory.getLogger(getClass)
     def traceString: String = {
       val sw = new StringWriter()
       val pw = new PrintWriter(sw)
@@ -1045,7 +1019,6 @@ object Extensions {
   }
 
   implicit class DerivationOps(derivations: List[Derivation]) {
-  private val logger = LoggerFactory.getLogger(getClass)
     lazy val derivationsContainStar: Boolean = derivations.iterator.exists(_.name == "*")
     lazy val derivationsWithoutStar: List[Derivation] = derivations.filterNot(_.name == "*")
     lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))

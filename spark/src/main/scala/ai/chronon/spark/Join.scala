@@ -45,8 +45,6 @@ import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
     val coveringSetHashExpression = "(" +
       coveringSets

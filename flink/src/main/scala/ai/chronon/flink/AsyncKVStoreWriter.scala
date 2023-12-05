@@ -17,8 +17,6 @@ import scala.util.{Failure, Success}
 case class WriteResponse(putRequest: PutRequest, status: Boolean)
 
 object AsyncKVStoreWriter {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   private val kvStoreConcurrency = 10
   private val defaultTimeoutMillis = 1000L
 
@@ -48,7 +46,6 @@ object AsyncKVStoreWriter {
     * This was moved to flink-rpc-akka in Flink 1.16 and made private, so we reproduce the direct execution context here
     */
   private class DirectExecutionContext extends ExecutionContext {
-  private val logger = LoggerFactory.getLogger(getClass)
     override def execute(runnable: Runnable): Unit =
       runnable.run()
 

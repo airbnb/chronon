@@ -53,9 +53,6 @@ case class BootstrapInfo(
     derivations: Array[StructField],
     hashToSchema: Map[String, Array[StructField]]
 ) {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
 
   lazy val fieldNames: Set[String] = fields.map(_.name).toSet
 

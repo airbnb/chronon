@@ -38,7 +38,6 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
   private val CONF_BATCH_SIZE = 50
 

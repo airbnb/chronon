@@ -46,7 +46,6 @@ class Timer {
 }
 
 class SawtoothAggregatorTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   def testTailAccuracy(): Unit = {
     val timer = new Timer
@@ -178,7 +177,6 @@ class SawtoothAggregatorTest extends TestCase {
 }
 
 object SawtoothAggregatorTest {
-  private val logger = LoggerFactory.getLogger(getClass)
   // the result is irs in sorted order of queries
   // with head real-time accuracy and tail hop accuracy
   // NOTE: This provides a sketch for a distributed topology
