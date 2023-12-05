@@ -436,6 +436,12 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
     merger.getResult
   }
 
+  override def bulkMerge(irs: Iterator[CpcSketch]): CpcSketch = {
+    val merger = new CpcUnion(lgK)
+    irs.foreach(merger.update)
+    merger.getResult
+  }
+
   // CPC sketch has a non-public copy() method, which is what we want
   // CPCUnion has access to that copy() method - so we kind of hack that
   // mechanism to get a proper copy without any overhead.
@@ -473,6 +479,12 @@ class ApproxPercentiles(k: Int = 128, percentiles: Array[Double] = Array(0.5))
   override def merge(ir1: KllFloatsSketch, ir2: KllFloatsSketch): KllFloatsSketch = {
     ir1.merge(ir2)
     ir1
+  }
+
+  override def bulkMerge(irs: Iterator[KllFloatsSketch]): KllFloatsSketch = {
+    val result = new KllFloatsSketch(k)
+    irs.foreach(result.merge)
+    result
   }
 
   // KLLFloatsketch doesn't have a proper copy method. So we serialize and deserialize.

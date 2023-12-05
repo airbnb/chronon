@@ -90,6 +90,7 @@ class RowAggregatorTest extends TestCase {
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
       Builders.AggregationPart(Operation.AVERAGE, "views") -> 19.0 / 3,
+      Builders.AggregationPart(Operation.COUNT, "views") -> 3L,
       Builders.AggregationPart(Operation.SUM, "rating") -> 15.0,
       Builders.AggregationPart(Operation.LAST, "title") -> "B",
       Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").asJava,

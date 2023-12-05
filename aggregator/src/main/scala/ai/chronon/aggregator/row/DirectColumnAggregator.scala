@@ -35,6 +35,14 @@ class DirectColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, O
     agg.merge(ir1.asInstanceOf[IR], ir2.asInstanceOf[IR])
   }
 
+  override def bulkMerge(irs: Iterator[Any]): Any = {
+    if (irs == null || !irs.hasNext) return null
+    val nonNullIrs = irs.filter(_ != null)
+    if (!nonNullIrs.hasNext) return null
+
+    agg.bulkMerge(nonNullIrs.map(_.asInstanceOf[IR]))
+  }
+
   // non bucketed update
   override def update(ir: Array[Any], inputRow: Row): Unit = {
     val inputVal = inputRow.get(columnIndices.input)
