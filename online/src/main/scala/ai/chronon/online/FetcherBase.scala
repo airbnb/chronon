@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
@@ -42,6 +43,7 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
@@ -61,6 +63,7 @@ class FetcherBase(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
+  private val logger = LoggerFactory.getLogger(getClass)
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
@@ -87,7 +90,7 @@ class FetcherBase(kvStore: KVStore,
         case DataModel.Entities => servingInfo.mutationValueAvroCodec
       }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
-        if (debug) println("Both batch and streaming data are null")
+        if (debug) logger.info("Both batch and streaming data are null")
         null
       } else {
         val streamingRows: Array[Row] = streamingResponses.iterator
@@ -103,7 +106,7 @@ class FetcherBase(kvStore: KVStore,
         val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
         if (debug) {
           val gson = new Gson()
-          println(s"""
+          logger.info(s"""
                      |batch ir: ${gson.toJson(batchIr)}
                      |streamingRows: ${gson.toJson(streamingRows)}
                      |batchEnd in millis: ${servingInfo.batchEndTsMillis}
@@ -139,14 +142,14 @@ class FetcherBase(kvStore: KVStore,
                                 groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
-      println(s"""$name's value's batch timestamp of $batchEndTs is
+      logger.info(s"""$name's value's batch timestamp of $batchEndTs is
            |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
            |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
         .force(name)
         .recover {
           case ex: Throwable =>
-            println(
+            logger.info(
               s"Couldn't update GroupByServingInfo of $name due to ${ex.getMessage}. Proceeding with the old one.")
             ex.printStackTrace()
             groupByServingInfo
@@ -255,7 +258,7 @@ class FetcherBase(kvStore: KVStore,
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               try {
                 if (debug)
-                  println(
+                  logger.info(
                     s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
                       s"for keys: ${request.keys}")
                 constructGroupByResponse(batchResponseTryAll,
@@ -369,7 +372,7 @@ class FetcherBase(kvStore: KVStore,
                     .recover { // capture exception as a key
                       case ex: Throwable =>
                         if (debug || Math.random() < 0.001) {
-                          println(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
+                          logger.info(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
                         }
                         Map(groupByRequest.name + "_exception" -> ex.traceString)
                     }
@@ -448,7 +451,7 @@ class FetcherBase(kvStore: KVStore,
             .recoverWith { // capture exception as a key
               case ex: Throwable =>
                 if (debug || Math.random() < 0.001) {
-                  println(s"Failed to fetch $request with \n${ex.traceString}")
+                  logger.info(s"Failed to fetch $request with \n${ex.traceString}")
                 }
                 Failure(ex)
             }

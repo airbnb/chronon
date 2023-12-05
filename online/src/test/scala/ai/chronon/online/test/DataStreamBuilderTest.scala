@@ -16,6 +16,7 @@
 
 package ai.chronon.online.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.{Builders, DataModel, LongType, StringType, StructField, StructType}
 import ai.chronon.online.{DataStream, SparkConversions, TopicInfo}
 import ai.chronon.online.TopicInfo.parse
@@ -26,6 +27,7 @@ import org.junit.Test
 import scala.util.ScalaJavaConversions.JListOps
 
 class DataStreamBuilderTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = {
     System.setSecurityManager(null)
     val spark = SparkSession
@@ -64,7 +66,7 @@ class DataStreamBuilderTest {
 
   def checkTopicInfo(actual: TopicInfo, expected: TopicInfo): Unit = {
     if (actual != expected) {
-      println(s"Actual topicInfo != expected topicInfo. Actual: $actual, expected: $expected")
+      logger.info(s"Actual topicInfo != expected topicInfo. Actual: $actual, expected: $expected")
     }
     assert(actual == expected)
   }

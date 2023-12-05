@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.streaming
 
+import org.slf4j.LoggerFactory
 import ai.chronon.online.KVStore.PutRequest
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.commons.io.FileUtils
@@ -24,6 +25,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 
 class StreamingStats(val publishDelaySeconds: Int) {
+  private val logger = LoggerFactory.getLogger(getClass)
   private var latencyHistogram: KllFloatsSketch = new KllFloatsSketch()
   private var latencyMsTotal: Long = 0
   private var writesTotal: Long = 0
@@ -43,7 +45,7 @@ class StreamingStats(val publishDelaySeconds: Int) {
       val medianLatency = latencyHistogram.getQuantile(.5)
       val p95Latency = latencyHistogram.getQuantile(.95)
       val p99Latency = latencyHistogram.getQuantile(.99)
-      println(s"""
+      logger.info(s"""
          |[$threadName][${timeString(utc, now)}] Wrote $writesTotal records in last ${now - startMs} ms.         
          | Latency ms: ${latencyMsTotal / writesTotal} (avg) / $medianLatency (median) / $p95Latency (p95) / $p99Latency (p99) 
          |   Key Size: ${keyBytesTotal / writesTotal} bytes (avg) / ${readable(keyBytesTotal)} (total)
@@ -56,7 +58,7 @@ class StreamingStats(val publishDelaySeconds: Int) {
       latencyHistogram = new KllFloatsSketch()
       startMs = now
     } else {
-      println("No writes registered")
+      logger.info("No writes registered")
     }
   }
 

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
@@ -52,6 +53,9 @@ case class BootstrapInfo(
     derivations: Array[StructField],
     hashToSchema: Map[String, Array[StructField]]
 ) {
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
 
   lazy val fieldNames: Set[String] = fields.map(_.name).toSet
 
@@ -68,6 +72,7 @@ case class BootstrapInfo(
 }
 
 object BootstrapInfo {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
   def from(joinConf: api.Join,
@@ -77,7 +82,7 @@ object BootstrapInfo {
            mutationScan: Boolean = true): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
-    println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
@@ -110,7 +115,7 @@ object BootstrapInfo {
       })
 
     // Enrich each external part with the expected output schema
-    println(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
@@ -166,7 +171,7 @@ object BootstrapInfo {
     val exceptionList = mutable.ListBuffer[Throwable]()
     def collectException(assertion: => Unit): Unit = Try(assertion).failed.foreach(exceptionList += _)
 
-    println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the log table
     logBootstrapParts
       .foreach(part => {
@@ -188,7 +193,7 @@ object BootstrapInfo {
         .toSeq
     }.toMap
 
-    println(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the bootstrap source table
     val tableHashes = tableBootstrapParts
       .map(part => {
@@ -293,13 +298,13 @@ object BootstrapInfo {
     }
 
     if (exceptionList.nonEmpty) {
-      exceptionList.foreach(t => println(t.traceString))
+      exceptionList.foreach(t => logger.info(t.traceString))
       throw new Exception(s"Validation failed for bootstrapInfo construction for join ${joinConf.metaData.name}")
     }
 
-    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
+    logger.info(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
     joinParts.foreach { metadata =>
-      println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
+      logger.info(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
@@ -307,7 +312,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
     externalParts.foreach { metadata =>
-      println(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
+      logger.info(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
@@ -315,16 +320,16 @@ object BootstrapInfo {
            |""".stripMargin)
     }
     if (derivedSchema.nonEmpty) {
-      println(s"""Bootstrap Info for Derivations
+      logger.info(s"""Bootstrap Info for Derivations
                  |${stringify(derivedSchema.map(_._1))}
                  |""".stripMargin)
     }
-    println(s"""Bootstrap Info for Log Bootstraps
+    logger.info(s"""Bootstrap Info for Log Bootstraps
          |Log Hashes: ${logHashes.keys.prettyInline}
          |""".stripMargin)
     tableHashes.foreach {
       case (hash, (schema, _, query)) =>
-        println(s"""Bootstrap Info for Table Bootstraps
+        logger.info(s"""Bootstrap Info for Table Bootstraps
            |Table Hash: ${hash}
            |Bootstrap Query:
            |\n${query}\n
@@ -333,7 +338,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
 
-    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
+    logger.info(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
 
     bootstrapInfo
   }

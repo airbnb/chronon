@@ -16,11 +16,13 @@
 
 package ai.chronon.aggregator.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.Variance
 import junit.framework.TestCase
 import org.junit.Assert._
 
 class VarianceTest extends TestCase {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def mean(elems: Seq[Double]): Double = elems.sum / elems.length
   def naive(elems: Seq[Double]): Double = {
@@ -52,8 +54,8 @@ class VarianceTest extends TestCase {
     val nums = (0 until cardinality).map { _ => min + math.random * (max - min) }
     val naiveResult = naive(nums)
     val welfordResult = welford(nums)
-    println(s"naive $naiveResult - welford $welfordResult - sum of squares ${sumOfSquares(nums)}")
-    println((naiveResult - welfordResult) / naiveResult)
+    logger.info(s"naive $naiveResult - welford $welfordResult - sum of squares ${sumOfSquares(nums)}")
+    logger.info((naiveResult - welfordResult) / naiveResult)
     assertTrue((naiveResult - welfordResult) / naiveResult < 0.0000001)
   }
 

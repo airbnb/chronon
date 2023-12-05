@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
@@ -38,6 +39,7 @@ import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.Success
 
 class MockDecoder(inputSchema: StructType) extends StreamDecoder {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private def byteArrayToAvro(avro: Array[Byte], schema: Schema): GenericRecord = {
     val reader = new SpecificDatumReader[GenericRecord](schema)
@@ -65,9 +67,10 @@ class MockDecoder(inputSchema: StructType) extends StreamDecoder {
 }
 
 class MockStreamBuilder extends StreamBuilder {
+  private val logger = LoggerFactory.getLogger(getClass)
   override def from(topicInfo: TopicInfo)(implicit session: SparkSession, props: Map[String, String]): DataStream = {
     val tableUtils = TableUtils(session)
-    println(s"""building stream from topic: ${topicInfo.name}""")
+    logger.info(s"""building stream from topic: ${topicInfo.name}""")
     val ds = topicInfo.params("ds")
     val df = tableUtils.sql(s"select * from ${topicInfo.name} where ds >= '$ds'")
     val encodedDf = (new InMemoryStream).getContinuousStreamDF(session, df.drop("ds"))
@@ -77,7 +80,9 @@ class MockStreamBuilder extends StreamBuilder {
 }
 
 class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
+  private val logger = LoggerFactory.getLogger(getClass)
   class PlusOneExternalHandler extends ExternalSourceHandler {
+  private val logger = LoggerFactory.getLogger(getClass)
     override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
       Future(
         requests.map(req =>
@@ -87,6 +92,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   }
 
   class AlwaysFailsHandler extends JavaExternalSourceHandler {
+  private val logger = LoggerFactory.getLogger(getClass)
     override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
       CompletableFuture.completedFuture[util.List[JavaResponse]](
         requests
@@ -106,6 +112,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   }
 
   class JavaPlusOneExternalHandler extends JavaExternalSourceHandler {
+  private val logger = LoggerFactory.getLogger(getClass)
     override def fetchJava(requests: util.List[JavaRequest]): CompletableFuture[util.List[JavaResponse]] = {
       CompletableFuture.completedFuture(
         requests
@@ -132,7 +139,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
     new ConcurrentLinkedQueue[LoggableResponseBase64]
 
   override def streamDecoder(parsedInfo: GroupByServingInfoParsed): StreamDecoder = {
-    println(
+    logger.info(
       s"decoding stream ${parsedInfo.groupBy.streamingSource.get.topic} with " +
         s"schema: ${SparkConversions.fromChrononSchema(parsedInfo.streamChrononSchema).catalogString}")
     new MockDecoder(parsedInfo.streamChrononSchema)

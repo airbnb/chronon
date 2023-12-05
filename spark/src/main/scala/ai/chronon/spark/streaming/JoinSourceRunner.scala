@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.streaming
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api._
@@ -41,6 +42,7 @@ import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapO
 // micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
 // this allows for re-use
 object LocalIOCache {
+  private val logger = LoggerFactory.getLogger(getClass)
   private var fetcher: Fetcher = null
   private var kvStore: KVStore = null
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
@@ -63,6 +65,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     session: SparkSession,
     apiImpl: Api)
     extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
 
@@ -73,6 +76,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       extends Serializable
 
   val valueZSchema: api.StructType = groupByConf.dataModel match {
+  private val logger = LoggerFactory.getLogger(getClass)
     case api.DataModel.Events   => servingInfoProxy.valueChrononSchema
     case api.DataModel.Entities => servingInfoProxy.mutationValueChrononSchema
   }
@@ -105,6 +109,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "1000").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
     private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
     private val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)
@@ -131,7 +136,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         val gson = new Gson()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
         val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))
-        println(s"""
+        logger.info(s"""
              |dataset: $streamingDataset
              |keys: ${gson.toJson(keys)}
              |values: ${gson.toJson(values)}
@@ -194,7 +199,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     // GroupBy -> JoinSource (Join + outer_query)
     // Join ->
     //   Join.left -> (left.(table, mutation_stream, etc) + inner_query)
-    println(s"""
+    logger.info(s"""
        |Schemas across chain of transformations
        |leftSchema:
        |  ${leftSchema.catalogString}
@@ -230,7 +235,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            println(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}")
+            logger.info(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}")
             ex.printStackTrace()
             ingressContext.incrementException(ex)
             null
@@ -242,7 +247,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         (mutation != null) && (!bothNull || !bothSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
-    println(s"""
+    logger.info(s"""
          | streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
          | stream schema: ${streamSchema.catalogString}
@@ -293,7 +298,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
       val queryParts = groupByConf.buildQueryParts(query)
-      println(s"""
+      logger.info(s"""
            |decoded schema: ${decoded.df.schema.catalogString}
            |queryParts: $queryParts
            |df schema: ${df.schema.prettyJson}
@@ -307,7 +312,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query)
     // key format joins/<team>/join_name
     val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
-    println(s"Upstream join request name: $joinRequestName")
+    logger.info(s"Upstream join request name: $joinRequestName")
 
     val tableUtils = TableUtils(session)
     // the decoded schema is in lower case
@@ -329,7 +334,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
     val leftColumns = schemas.leftSourceSchema.fieldNames
-    println(s"""
+    logger.info(s"""
          |left columns ${leftColumns.mkString(",")}
          |reqColumns ${reqColumns.mkString(",")}
          |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
@@ -342,7 +347,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
           val shouldSample = Math.random() <= 0.1
           val fetcher = LocalIOCache.getOrSetFetcher { () =>
-            println(s"Initializing Fetcher. ${System.currentTimeMillis()}")
+            logger.info(s"Initializing Fetcher. ${System.currentTimeMillis()}")
             context.increment("chain.fetcher.init")
             apiImpl.buildFetcher(debug = debug)
           }
@@ -370,7 +375,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           if (debug && shouldSample) {
-            requests.foreach(request => println(s"request: ${request.keys}, ts: ${request.atMillis}"))
+            requests.foreach(request => logger.info(s"request: ${request.keys}, ts: ${request.atMillis}"))
           }
 
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
@@ -379,9 +384,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val responses = Await.result(responsesFuture, 5.second)
 
           if (debug && shouldSample) {
-            println(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
+            logger.info(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
             responses.foreach(response =>
-              println(
+              logger.info(
                 s"request: ${response.request.keys}, ts: ${response.request.atMillis}, values: ${response.values}"))
           }
           responses.iterator.map { response =>
@@ -419,8 +424,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val data = df.collect()
           val putRequests = data.map(putRequestHelper.toPutRequest)
           if (debug) {
-            println(s" Final df size to write: ${data.length}")
-            println(s" Size of putRequests to kv store- ${putRequests.length}")
+            logger.info(s" Final df size to write: ${data.length}")
+            logger.info(s" Size of putRequests to kv store- ${putRequests.length}")
           } else {
             putRequests.foreach(request => emitRequestMetric(request, context.withSuffix("egress")))
             kvStore.multiPut(putRequests)

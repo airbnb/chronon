@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.{AvroConversions, Mutation, SparkConversions}
 import ai.chronon.online.Extensions.StructTypeOps
@@ -34,6 +35,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSe
 import java.util.Base64
 
 class InMemoryStream {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private def encode(schema: org.apache.avro.Schema)(row: Row): Array[Byte] = {
     val gr: GenericRecord = new GenericData.Record(schema)
@@ -61,7 +63,7 @@ class InMemoryStream {
   // encode input as avro byte array and insert into memory stream.
   def getInMemoryStreamDF(spark: SparkSession, inputDf: Dataset[Row]): DataFrame = {
     val schema: StructType = StructType.from("input", SparkConversions.toChrononSchema(inputDf.schema))
-    println(s"Creating in-memory stream with schema: ${SparkConversions.fromChrononSchema(schema).catalogString}")
+    logger.info(s"Creating in-memory stream with schema: ${SparkConversions.fromChrononSchema(schema).catalogString}")
     val avroSchema = AvroConversions.fromChrononSchema(schema)
     import spark.implicits._
     val input: MemoryStream[Array[Byte]] =
@@ -83,7 +85,7 @@ class InMemoryStream {
     val inputDf = noDs.selectExpr(baseFields ++ mutationFields: _*)
 
     // encode and write
-    println(s"encoding stream with schema: ${inputDf.schema.catalogString}")
+    logger.info(s"encoding stream with schema: ${inputDf.schema.catalogString}")
     inputDf.show()
     val schema: StructType = StructType.from("input", SparkConversions.toChrononSchema(inputDf.schema))
     val avroSchema = AvroConversions.fromChrononSchema(schema)

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.spark.Extensions.StructTypeOps
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.FailFastMode
@@ -25,12 +26,13 @@ import org.apache.spark.sql.types.{StringType, TimestampType}
 import java.io.File
 
 object LocalDataLoader {
+  private val logger = LoggerFactory.getLogger(getClass)
   def writeTableFromFile(file: File, tableName: String, session: SparkSession): Unit = {
-    println(s"Checking table: ${tableName}")
+    logger.info(s"Checking table: ${tableName}")
     if (session.catalog.tableExists(tableName)) return
     val extension = file.getName.split("\\.").last
     if (!Seq("csv", "json", "jsonl").contains(extension)) {
-      println(s"Unable to load file due to invalid extension from file: ${file.getPath}")
+      logger.info(s"Unable to load file due to invalid extension from file: ${file.getPath}")
       return
     }
 
@@ -53,9 +55,9 @@ object LocalDataLoader {
         .drop("ts_string")
     }
 
-    println(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
+    logger.info(s"Loading data from ${file.getPath} into $tableName. Sample data and schema shown below")
     df.show(100)
-    println(df.schema.pretty)
+    logger.info(df.schema.pretty)
 
     if (df.schema.map(_.name).contains("ds")) {
       df.write.partitionBy("ds").saveAsTable(tableName)
@@ -100,7 +102,7 @@ object LocalDataLoader {
   ): Unit = {
     assert(file.exists(), s"Non existent file: ${file.getPath}")
     assert(file.isFile, s"Cannot load a directory as a local table: ${file.getPath}")
-    println(s"Loading file(${file.getPath}) as $namespace.$tableName")
+    logger.info(s"Loading file(${file.getPath}) as $namespace.$tableName")
 
     if (!session.catalog.databaseExists(namespace))
       session.sql(s"CREATE DATABASE $namespace")

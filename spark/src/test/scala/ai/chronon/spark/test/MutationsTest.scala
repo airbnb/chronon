@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
@@ -32,6 +33,7 @@ import org.junit.Test
   * Join is the events and the entity value at the exact timestamp of the ts.
   */
 class MutationsTest {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build(
     "MutationsTest",
@@ -124,15 +126,15 @@ class MutationsTest {
     }
     val joinRdd = expectedRdd.join(computedRdd)
     if (totalExpectedRows == joinRdd.count()) return true
-    println("Failed to assert equality!")
-    println("== Joined RDD (listing_id, ts, rating_average)")
+    logger.info("Failed to assert equality!")
+    logger.info("== Joined RDD (listing_id, ts, rating_average)")
     val readableRDD = joinRdd.map {
       case ((id, ts, event, avg, ds), _) => Row(id, ts, event, avg, ds)
     }
     spark.createDataFrame(readableRDD, expectedSchema).show()
-    println("== Expected")
+    logger.info("== Expected")
     df.replaceWithReadableTime(Seq("ts"), false).show()
-    println("== Computed")
+    logger.info("== Computed")
     computed.replaceWithReadableTime(Seq("ts"), false).show()
     false
   }
@@ -990,15 +992,15 @@ class MutationsTest {
     val expected = computeSimpleAverageThroughSql(testNamespace)
     val diff = Comparison.sideBySide(result, expected, List("listing_id", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${result.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${result.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
       val recomputedResult = computeJoinFromTables(suffix, minDs, maxDs, null, Operation.AVERAGE)
       val recomputedDiff = Comparison.sideBySide(recomputedResult, expected, List("listing_id", "ts", "ds"))
-      println("Checking second run of the same data.")
-      println(s"recomputed diff result rows")
+      logger.info("Checking second run of the same data.")
+      logger.info(s"recomputed diff result rows")
       recomputedDiff.show()
       assert(recomputedDiff.count() == 0)
     }

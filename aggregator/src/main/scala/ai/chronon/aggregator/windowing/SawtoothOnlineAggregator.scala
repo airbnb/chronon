@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.windowing
 
+import org.slf4j.LoggerFactory
 import scala.collection.Seq
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
@@ -31,6 +32,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
                                        inputSchema: Seq[(String, DataType)],
                                        resolution: Resolution,
                                        tailBufferMillis: Long) {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   // logically, batch response is arranged like so
   // sum-90d =>  sum_ir_88d, [(sum_ir_1d, ts)] -> 1d is the hopSize for 90d
@@ -46,10 +48,10 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
 
   val batchTailTs: Array[Option[Long]] = tailTs(batchEndTs)
 
-  println(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
-  println("Window Tails: ")
+  logger.info(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
+  logger.info("Window Tails: ")
   for (i <- windowMappings.indices) {
-    println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
+    logger.info(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
   }
 
   def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row, batchTailTs)

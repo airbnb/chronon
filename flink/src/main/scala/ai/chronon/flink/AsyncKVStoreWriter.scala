@@ -1,5 +1,6 @@
 package ai.chronon.flink
 
+import org.slf4j.LoggerFactory
 import ai.chronon.online.{Api, KVStore}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.configuration.Configuration
@@ -16,6 +17,8 @@ import scala.util.{Failure, Success}
 case class WriteResponse(putRequest: PutRequest, status: Boolean)
 
 object AsyncKVStoreWriter {
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
   private val kvStoreConcurrency = 10
   private val defaultTimeoutMillis = 1000L
 
@@ -45,6 +48,7 @@ object AsyncKVStoreWriter {
     * This was moved to flink-rpc-akka in Flink 1.16 and made private, so we reproduce the direct execution context here
     */
   private class DirectExecutionContext extends ExecutionContext {
+  private val logger = LoggerFactory.getLogger(getClass)
     override def execute(runnable: Runnable): Unit =
       runnable.run()
 
@@ -64,6 +68,7 @@ object AsyncKVStoreWriter {
   */
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
     extends RichAsyncFunction[PutRequest, WriteResponse] {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   @transient private var kvStore: KVStore = _
 
@@ -88,7 +93,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   }
 
   override def timeout(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
-    println(s"Timed out writing to KV Store for object: $input")
+    logger.info(s"Timed out writing to KV Store for object: $input")
     errorCounter.inc()
     resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
   }
@@ -102,7 +107,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
           successCounter.inc()
         } else {
           errorCounter.inc()
-          println(s"Failed to write to KVStore for object: $input")
+          logger.info(s"Failed to write to KVStore for object: $input")
         }
         resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = succeeded)))
       case Failure(exception) =>
@@ -110,7 +115,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
         // in the KVStore - we log the exception and skip the object to
         // not fail the app
         errorCounter.inc()
-        println(s"Caught exception writing to KVStore for object: $input - $exception")
+        logger.info(s"Caught exception writing to KVStore for object: $input - $exception")
         resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
     }
   }

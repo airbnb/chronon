@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
@@ -46,6 +47,7 @@ import scala.concurrent.{Await, ExecutionContext}
   * Fetch stats.
   */
 class FetchStatsTest extends TestCase {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("FetchStatsTest", local = true)
   val tableUtils = TableUtils(spark)
@@ -138,17 +140,17 @@ class FetchStatsTest extends TestCase {
     // Stats
     fetchStatsSeries(request, mockApi, true)
     val fetchedSeries = fetchStatsSeries(request, mockApi)
-    println(gson.toJson(fetchedSeries.values.get))
+    logger.info(gson.toJson(fetchedSeries.values.get))
 
     // LogStats
     fetchLogStatsSeries(request, mockApi, true)
     val fetchedLogSeries = fetchLogStatsSeries(request, mockApi)
-    println(gson.toJson(fetchedLogSeries.values.get))
+    logger.info(gson.toJson(fetchedLogSeries.values.get))
 
     // Online Offline Consistency
     fetchOOCSeries(request, mockApi, true)
     val fetchedOOCSeries = fetchOOCSeries(request, mockApi)
-    println(gson.toJson(fetchedOOCSeries.values.get))
+    logger.info(gson.toJson(fetchedOOCSeries.values.get))
 
     // Appendix: Incremental run to check incremental updates for summary job.
     OnlineUtils.serveStats(tableUtils, inMemoryKvStore, today, joinConf)
@@ -160,7 +162,7 @@ class FetchStatsTest extends TestCase {
     // Request drifts
     val driftRequest = StatsRequest(joinConf.metaData.nameToFilePath + "/drift", None, None)
     val fetchedDriftSeries = fetchStatsSeries(driftRequest, mockApi)
-    println(gson.toJson(fetchedDriftSeries.values.get))
+    logger.info(gson.toJson(fetchedDriftSeries.values.get))
   }
 
   def fetchStatsSeries(request: StatsRequest,

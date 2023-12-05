@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.streaming
 
+import org.slf4j.LoggerFactory
 import ai.chronon
 import ai.chronon.api
 import ai.chronon.api.{Row => _, _}
@@ -40,6 +41,7 @@ class GroupBy(inputStream: DataFrame,
               onlineImpl: Api,
               debug: Boolean = false)
     extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
@@ -102,7 +104,7 @@ class GroupBy(inputStream: DataFrame,
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            println(
+            logger.info(
               s"Error while decoding streaming events for ${groupByConf.getMetaData.getName} with "
                 + s"schema ${streamDecoder.schema.catalogString}"
                 + s" \n${ex.traceString}")
@@ -114,7 +116,7 @@ class GroupBy(inputStream: DataFrame,
         mutation != null && (!(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after)))
 
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
-    println(s"""
+    logger.info(s"""
         | group by serving info: $groupByServingInfo
         | Streaming source: $streamingSource
         | streaming Query: $streamingQuery
@@ -171,7 +173,7 @@ class GroupBy(inputStream: DataFrame,
           val gson = new Gson()
           val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.from(ZoneOffset.UTC))
           val pstFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME.withZone(ZoneId.of("America/Los_Angeles"))
-          println(s"""
+          logger.info(s"""
                |streaming dataset: $streamingDataset
                |keys: ${gson.toJson(keys)}
                |values: ${gson.toJson(values)}

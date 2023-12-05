@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -26,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class StagingQueryTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   implicit private val tableUtils: TableUtils = TableUtils(spark)
 
@@ -44,7 +46,7 @@ class StagingQueryTest {
     val df = DataFrameGen
       .events(spark, schema, count = 100000, partitions = 100)
       .dropDuplicates("ts") // duplicates can create issues in comparisons
-    println("Generated staging query data:")
+    logger.info("Generated staging query data:")
     df.show()
     val viewName = s"$namespace.test_staging_query_compare"
     df.save(viewName)
@@ -68,12 +70,12 @@ class StagingQueryTest {
     val computed = tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${expected.count()}")
-      println(expected.show())
-      println(s"Computed count: ${computed.count()}")
-      println(computed.show())
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${expected.count()}")
+      logger.info(expected.show())
+      logger.info(s"Computed count: ${computed.count()}")
+      logger.info(computed.show())
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -112,7 +114,7 @@ class StagingQueryTest {
     val df = DataFrameGen
       .events(spark, schema, count = 30, partitions = 8)
       .dropDuplicates("ts") // duplicates can create issues in comparisons
-    println("Generated staging query data:")
+    logger.info("Generated staging query data:")
     df.show()
     val viewName = s"$namespace.test_staging_query_view"
     df.save(viewName)
@@ -162,12 +164,12 @@ class StagingQueryTest {
 
     val diffV2 = Comparison.sideBySide(expectedUpdated, computedUpdated, List("user", "ts", "ds"))
     if (diffV2.count() > 0) {
-      println(s"Actual count: ${expectedUpdated.count()}")
-      println(expectedUpdated.show())
-      println(s"Computed count: ${computedUpdated.count()}")
-      println(computedUpdated.show())
-      println(s"Diff count: ${diffV2.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${expectedUpdated.count()}")
+      logger.info(expectedUpdated.show())
+      logger.info(s"Computed count: ${computedUpdated.count()}")
+      logger.info(computedUpdated.show())
+      logger.info(s"Diff count: ${diffV2.count()}")
+      logger.info(s"diff result rows")
       diffV2.show()
     }
     assertEquals(0, diffV2.count())
@@ -218,12 +220,12 @@ class StagingQueryTest {
       |""".stripMargin)
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${expected.count()}")
-      println(expected.show())
-      println(s"Computed count: ${computed.count()}")
-      println(computed.show())
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${expected.count()}")
+      logger.info(expected.show())
+      logger.info(s"Computed count: ${computed.count()}")
+      logger.info(computed.show())
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -270,12 +272,12 @@ class StagingQueryTest {
                                      |""".stripMargin)
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${expected.count()}")
-      println(expected.show())
-      println(s"Computed count: ${computed.count()}")
-      println(computed.show())
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${expected.count()}")
+      logger.info(expected.show())
+      logger.info(s"Computed count: ${computed.count()}")
+      logger.info(computed.show())
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())

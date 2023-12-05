@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.stats
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.DataModel.Events
@@ -38,6 +39,7 @@ class CompareJob(
     startDate: String,
     endDate: String
 ) extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)
     .orNull
@@ -68,21 +70,21 @@ class CompareJob(
       CompareBaseJob.compare(leftDf, rightDf, getJoinKeys(joinConf, tableUtils), tableUtils, migrationCheck = true)
 
     // Save the comparison table
-    println("Saving comparison output..")
-    println(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    logger.info("Saving comparison output..")
+    logger.info(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
     tableUtils.insertUnPartitioned(compareDf, comparisonTableName, tableProps, saveMode = SaveMode.Overwrite)
 
     // Save the metrics table
-    println("Saving metrics output..")
+    logger.info("Saving metrics output..")
     val metricsDf = metricsTimedKvRdd.toFlatDf
-    println(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    logger.info(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
     tableUtils.insertUnPartitioned(metricsDf, metricsTableName, tableProps, saveMode = SaveMode.Overwrite)
 
-    println("Printing basic comparison results..")
-    println("(Note: This is just an estimation and not a detailed analysis of results)")
+    logger.info("Printing basic comparison results..")
+    logger.info("(Note: This is just an estimation and not a detailed analysis of results)")
     CompareJob.printAndGetBasicMetrics(metrics, tableUtils.partitionSpec)
 
-    println("Finished compare stats.")
+    logger.info("Finished compare stats.")
     (compareDf, metricsDf, metrics)
   }
 
@@ -104,6 +106,7 @@ class CompareJob(
 }
 
 object CompareJob {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   /**
     * Extract the discrepancy metrics (like missing records, data mismatch) from the hourly compare metrics, consolidate
@@ -150,13 +153,13 @@ object CompareJob {
     val consolidatedData = getConsolidatedData(metrics, partitionSpec)
 
     if (consolidatedData.size == 0) {
-      println(
+      logger.info(
         s"No discrepancies found for data mismatches and missing counts. " +
           s"It is highly recommended to explore the full metrics.")
     } else {
       consolidatedData.foreach {
         case (date, mismatchCount) =>
-          println(s"Found ${mismatchCount} mismatches on date '${date}'")
+          logger.info(s"Found ${mismatchCount} mismatches on date '${date}'")
       }
     }
     consolidatedData
