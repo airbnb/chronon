@@ -750,7 +750,6 @@ case class TableUtils(sparkSession: SparkSession) {
 }
 
 sealed case class IncompatibleSchemaException(inconsistencies: Seq[(String, DataType, DataType)]) extends Exception {
-  private val logger = LoggerFactory.getLogger(getClass)
   override def getMessage: String = {
     val inconsistenciesStr =
       inconsistencies.map(tuple => s"columnName: ${tuple._1} existingType: ${tuple._2} newType: ${tuple._3}")

@@ -16,13 +16,11 @@
 
 package ai.chronon.aggregator.test
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.ApproxDistinctCount
 import junit.framework.TestCase
 import org.junit.Assert._
 
 class ApproxDistinctTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
   def testErrorBound(uniques: Int, errorBound: Int, lgK: Int): Unit = {
     val uniqueElems = 1 to uniques
     val duplicates = uniqueElems ++ uniqueElems ++ uniqueElems
@@ -30,7 +28,7 @@ class ApproxDistinctTest extends TestCase {
     val ir = counter.prepare(duplicates.head)
     duplicates.tail.foreach { elem => counter.update(ir, elem) }
     val estimated = counter.finalize(ir)
-    // logger.info(s"estimated - $estimated, actual - $uniques, bound - $errorBound")
+    // println(s"estimated - $estimated, actual - $uniques, bound - $errorBound")
     assertTrue(Math.abs(estimated - uniques) < errorBound)
   }
 
@@ -48,7 +46,7 @@ class ApproxDistinctTest extends TestCase {
     }
     val ir = irList.reduceLeft(counter.merge)
     val estimated = counter.finalize(ir)
-    // logger.info(s"estimated - $estimated, actual - $uniques, bound - $errorBound")
+    // println(s"estimated - $estimated, actual - $uniques, bound - $errorBound")
     assertTrue(Math.abs(estimated - uniques) < errorBound)
   }
 

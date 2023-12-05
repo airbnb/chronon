@@ -90,7 +90,6 @@ object ThriftJsonCodec {
   }
 
   def fromJsonFile[T <: TBase[_, _]: Manifest: ClassTag](fileName: String, check: Boolean): T = {
-  private val logger = LoggerFactory.getLogger(getClass)
     val src = fromFile(fileName)
     val jsonStr =
       try src.mkString

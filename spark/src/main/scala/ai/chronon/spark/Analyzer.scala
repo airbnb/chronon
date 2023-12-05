@@ -1,7 +1,7 @@
 /*
  *    Copyright (C) 2023 The Chronon Authors.
  *
- *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    `L`icensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
  *    You may obtain a copy of the License at
  *
@@ -37,10 +37,8 @@ import scala.util.ScalaJavaConversions.ListOps
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
-  private val logger = LoggerFactory.getLogger(getClass)
 
 class ItemSketchSerializable extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
   var sketch: ItemsSketch[String] = null
   def init(mapSize: Int): ItemSketchSerializable = {
     sketch = new ItemsSketch[String](mapSize)
@@ -160,7 +158,6 @@ class Analyzer(tableUtils: TableUtils,
                                  window: String = null,
                                  inputColumn: String = null,
                                  groupByName: String = null) {
-  private val logger = LoggerFactory.getLogger(getClass)
 
     def asMap: Map[String, String] = {
       Map(

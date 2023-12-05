@@ -27,7 +27,6 @@ import java.nio.charset.Charset
 // TODO: drop data and hashInt, iff we see OOMs on executors for small IRs and large keys
 // That is the only case where key size would be a problem
 case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
   // 16-byte hash from murmur_128
   // P(one collision) ~ 10^-6 when key count ~ 2.6×10^16
   // in-comparison with a 8-byte hash (long)

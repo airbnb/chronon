@@ -29,7 +29,6 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
   */
 class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends RichFlatMapFunction[T, Map[String, Any]] {
   private val logger = LoggerFactory.getLogger(getClass)
-  private val logger = LoggerFactory.getLogger(getClass)
 
   private val query: Query = groupBy.streamingSource.get.getEvents.query
 

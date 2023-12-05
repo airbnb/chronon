@@ -27,7 +27,6 @@ import org.apache.spark.sql.types.{BinaryType, LongType, StringType, StructField
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 object GenericRowHandler {
-  private val logger = LoggerFactory.getLogger(getClass)
   val func: Any => Array[Any] = {
     case x: GenericRowWithSchema => {
       val result = new Array[Any](x.length)

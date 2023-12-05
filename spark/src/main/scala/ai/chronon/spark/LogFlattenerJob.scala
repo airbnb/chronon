@@ -248,7 +248,6 @@ class LogFlattenerJob(session: SparkSession,
 }
 
 object LogFlattenerJob {
-  private val logger = LoggerFactory.getLogger(getClass)
 
   def readSchemaTableProperties(tableUtils: TableUtils, logTable: String): Map[String, String] = {
     val curTblProps = tableUtils.getTableProperties(logTable).getOrElse(Map.empty)
