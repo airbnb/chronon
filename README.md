@@ -236,7 +236,7 @@ For production, the Java client is usually embedded directly into services.
 Map<String, String> keyMap = new HashMap<>();
 keyMap.put("user_id", "123");
 Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
-
+// sample response 
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
