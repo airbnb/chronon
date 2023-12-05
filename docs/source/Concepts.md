@@ -106,7 +106,7 @@ Full code [example](https://gist.github.com/nikhilsimha/13cf46b93116bc3b0b08b4ad
 ## More Examples
 
 The document below goes into a bit more detail about each of the concepts. 
-You can find examples [here](../../api/py/test/sample/) instead.
+You can find examples [here](https://github.com/airbnb/chronon/tree/master/api/py/test/sample) instead.
 
 ## Source
 Source in chronon refers to a logical group of underlying physical data sources. There are two types of sources
@@ -233,7 +233,7 @@ The above example illustrates the computation of aggregates in several contexts.
 - **backfilled against another source** - see [Join](#join) below. Most commonly used to enrich labelled data with aggregates coming from many different sources & GroupBy's at once.
 
 **selecting the right Source for your `GroupBy`** is a crucial first step to correctly defining a `GroupBy`. 
-See the [Sources](#Source) section above for more info on the options and when to use each.
+See the [Sources](#source) section above for more info on the options and when to use each.
 
 Often, you might want to chain together aggregations (i.e., first run `LAST` then run `SUM` on the output). 
 This can be achieved by using the output of one `GroupBy` as the input to the next.
@@ -266,11 +266,9 @@ your_gb = GroupBy(
 
 #### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys)
 
----
-
 ## Join
 
-A join can pull data from GroupBy's that are keyed on different entities. As you saw in the [example section](#Example) 
+A join can pull data from GroupBy's that are keyed on different entities. As you saw in the [example section](#example) 
 above, `view_features` are keyed by `item` & `user` and `ratings_features` are keyed only by `item`.
 Key feature of a join is that it can operate both online and offline with consistency. Meaning the offline back-filled 
 values are the same as online served values, and there is a single definition governing both.
@@ -297,9 +295,8 @@ Chronon runs daily pipelines that measure inconsistency between an offline join,
 
 > NOTE: The production flag in a Join states that the join is not in development anymore and critical alerting and 
 > monitoring are expected. If a Join is marked as production it cannot reference any non-production GroupBys.
-#### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins)
+### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins)
 
----
 
 ## Staging Query
 A StagingQuery can be used to express free form ETL (including joins/group by) within Chronon. They are typically used
@@ -334,4 +331,4 @@ v1 = Join(
 Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
 metadata is extracted from [teams.json](../../api/py/test/sample/teams.json) in (or default team if one is not set).
 
-#### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)
+### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)

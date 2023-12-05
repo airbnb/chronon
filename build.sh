@@ -41,14 +41,20 @@ ${VIRTUAL_ENV}/bin/sphinx-build -b html docs/source/ ${DOC_BUILD}/html
 # Exit the virtualenv
 deactivate
 
-sbt spark_uber/assembly
-SBT_JAR=$(ls -rt spark/target/scala-2.11/ | grep ".*uber-assembly.*\.jar$" |tail -n 1 | awk '{print $(NF)}')
-
+sbt +spark_uber/assembly
+SBT_JAR_11=$(ls -rt spark/target/scala-2.11/ | grep ".*uber-assembly.*\.jar$" |tail -n 1 | awk '{print $(NF)}')
+SBT_JAR_12=$(ls -rt spark/target/scala-2.12/ | grep ".*uber-assembly.*\.jar$" |tail -n 1 | awk '{print $(NF)}')
+SBT_JAR_13=$(ls -rt spark/target/scala-2.13/ | grep ".*uber-assembly.*\.jar$" |tail -n 1 | awk '{print $(NF)}')
 rm -rf releases
 mkdir releases
+mkdir -p releases/jar_scala_11
+mkdir -p releases/jar_scala_12
+mkdir -p releases/jar_scala_13
 mv ${DOC_BUILD}/html/* releases/
 tar -zcf releases/repo.tar.gz -C api/py/test/sample .
-mv "spark/target/scala-2.11/${SBT_JAR}" releases/
+mv "spark/target/scala-2.11/${SBT_JAR_11}" releases/jar_scala_11/
+mv "spark/target/scala-2.12/${SBT_JAR_12}" releases/jar_scala_12/
+mv "spark/target/scala-2.13/${SBT_JAR_13}" releases/jar_scala_13/
 cp init.sh releases/init.sh
 
 echo "Wrote release artifacts into ./releases"

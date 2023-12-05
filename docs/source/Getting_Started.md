@@ -8,14 +8,14 @@ and how to understand the data that is in your kafka message bus. This is a one 
 
 This article contains information required to setup and use Chronon.
 
-### Initial Setup
+## Initial Setup
 1. If you wish to work in an existing chronon repo, simply run
 ```shell
 pip install chronon-ai
 ```
 2. If you wish to setup the chronon repo and install the package, simply run the command below and fill out the spark path in `./chronon/teams.json`
 ```shell
-source <(curl -s https://chronon.ai/init.sh)
+curl -s https://chronon.ai/init.sh | $SHELL
 ```
 
 At this point you will have a repo starting point and three tools on your path.
@@ -26,7 +26,7 @@ The repo contains three folders - `group_bys`, `joins` and `staging_queries` whe
 1. `run.py` - which can take your compiled *conf* and runs it in a *mode* of your choosing.
 1. `explore.py` - which allows you to keyword or lineage search all the existing definitions.
 
-### Compile
+## Compile
 
 Compilation to JSON is done via `compile.py`. Chronon can interpret the compiled artifacts
 for managing metadata, creating data processing pipelines, online serving etc.
@@ -39,7 +39,7 @@ compile.py --conf=<conf_type>/<team>/<conf_name>.py
 - `team` is your team name as registered in [teams.json](../../api/py/test/sample/teams.json)
 - `conf_name.py` is the python file where you put your compute definition.
 
-### Run
+## Run
 
 There are three main API concepts that can be executed in Chronon - GroupBy, Join & StagingQuery.
 Please familiarize yourself with the Python API.
@@ -61,7 +61,7 @@ Each of these modes take the compiled json of the python API and do a specific a
 - **streaming** - reads data from kafka and adds into KVStore.
 - **fetch** - reads values from kv store, does some compute if necessary and return a result.
 - **consistency** - runs the job to compare online served values against backfilled values.
-  See [Online-Offline Consistency doc](./Online%20Offline%20Consistency.md)
+  See [Online-Offline Consistency doc](./Online_Offline_Consistency)
 
 You can run the configs in their modes using run command
 
@@ -78,7 +78,7 @@ EXECUTOR_MEMORY=16G PARALLELISM=2000 run.py --mode=backfill --conf=production/jo
 EXECUTOR_MEMORY=2G PARALLELISM=8 run.py --mode=streaming --conf=production/group_bys/<your_team>/<your_group_by>
 ```
 
-### Explore
+## Explore
 
 Finally, if you want to explore *existing* feature definitions in Chronon, use `explore.py` with any key word like `user`, `views` etc.,
 This will list out instances where, source table, group_by name, aggregate column name or join name *contains* the keyword.
@@ -105,7 +105,7 @@ There are essentially four integration points:
 - Airflow - for scheduling spark pipelines that periodically checks and triggers missing tasks, join backfills, group by uploads, meta data uploads, etc.
 
 
-### KV Store API
+## KV Store API
 KVStore API has three methods for you to implement (once per company).
 - `multiPut` of a series of triples `keys, value, time` called `TimedValue`.
 - `multiGet` of a series of tuples `keys, Option[time]` - which return `TimedValue`.
@@ -142,7 +142,7 @@ trait KVStore {
 }
 ```
 
-### Stream Decoder API
+## Stream Decoder API
 Simple deserializer API to decode bytes in a kafka stream into java values.
 Java values are expected to be a `Mutation` - which capture two kinds of data.
 1. Events - Eg., Bank transactions - `source_account`, `target_account`, `amount`, `timestamp`
