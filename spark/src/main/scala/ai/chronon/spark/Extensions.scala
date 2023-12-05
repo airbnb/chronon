@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
@@ -32,8 +33,10 @@ import scala.collection.Seq
 import scala.reflect.ClassTag
 
 object Extensions {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   implicit class StructTypeOps(schema: StructType) {
+  private val logger = LoggerFactory.getLogger(getClass)
     def pretty: String = {
       val schemaTuples = schema.fields.map { field =>
         field.dataType.simpleString -> field.name
@@ -57,6 +60,9 @@ object Extensions {
   case class DfStats(count: Long, partitionRange: PartitionRange)
   // helper class to maintain datafram stats that are necessary for downstream operations
   case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
     private val minPartition: String = partitionCounts.keys.min
     private val maxPartition: String = partitionCounts.keys.max
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
@@ -71,6 +77,7 @@ object Extensions {
   }
 
   object DfWithStats {
+  private val logger = LoggerFactory.getLogger(getClass)
     def apply(dataFrame: DataFrame)(implicit tableUtils: TableUtils): DfWithStats = {
       val partitionCounts = dataFrame
         .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
@@ -83,6 +90,7 @@ object Extensions {
   }
 
   implicit class DataframeOps(df: DataFrame) {
+  private val logger = LoggerFactory.getLogger(getClass)
     private implicit val tableUtils: TableUtils = TableUtils(df.sparkSession)
 
     // This is safe to call on dataframes that are un-shuffled from their disk sources -
@@ -98,7 +106,7 @@ object Extensions {
 
     def prunePartition(partitionRange: PartitionRange): DataFrame = {
       val pruneFilter = partitionRange.whereClauses().mkString(" AND ")
-      println(s"Pruning using $pruneFilter")
+      logger.info(s"Pruning using $pruneFilter")
       df.filter(pruneFilter)
     }
 
@@ -121,7 +129,7 @@ object Extensions {
       val minMaxRow = minMaxRows(0)
       df.sparkSession.catalog.dropTempView(viewName)
       val (min, max) = (minMaxRow.getAs[T](0), minMaxRow.getAs[T](1))
-      println(s"Computed Range for $columnName - min: $min, max: $max")
+      logger.info(s"Computed Range for $columnName - min: $min, max: $max")
       (min, max)
     }
 
@@ -188,10 +196,10 @@ object Extensions {
       val approxCount =
         df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
       if (approxCount == 0) {
-        println(
+        logger.info(
           s"Warning: approxCount for col ${col} from table ${tableName} is 0. Please double check your input data.")
       }
-      println(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
+      logger.info(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
            |""".stripMargin)
@@ -200,7 +208,7 @@ object Extensions {
         .stat
         .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
 
-      println(s"""
+      logger.info(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
@@ -210,7 +218,7 @@ object Extensions {
     }
 
     def removeNulls(cols: Seq[String]): DataFrame = {
-      println(s"filtering nulls from columns: [${cols.mkString(", ")}]")
+      logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
       // do not use != or <> operator with null, it doesn't return false ever!
       df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
     }
@@ -272,12 +280,13 @@ object Extensions {
 
     def prettyPrint(timeColumns: Seq[String] = Seq(Constants.TimeColumn, Constants.MutationTimeColumn)): Unit = {
       val availableColumns = timeColumns.filter(df.schema.names.contains)
-      println(s"schema: ${df.schema.fieldNames.mkString("Array(", ", ", ")")}")
+      logger.info(s"schema: ${df.schema.fieldNames.mkString("Array(", ", ", ")")}")
       df.replaceWithReadableTime(availableColumns, dropOriginal = true).show(truncate = false)
     }
   }
 
   implicit class ArrayOps[T: ClassTag](arr: Array[T]) {
+  private val logger = LoggerFactory.getLogger(getClass)
     def uniqSort(ordering: Ordering[T]): Array[T] = {
       val tree = new util.TreeSet[T](ordering)
       for (i <- arr.indices) {
@@ -295,6 +304,7 @@ object Extensions {
   }
 
   implicit class InternalRowOps(internalRow: InternalRow) {
+  private val logger = LoggerFactory.getLogger(getClass)
     def toRow(schema: StructType): Row = {
       new Row() {
         override def length: Int = {

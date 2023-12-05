@@ -16,12 +16,14 @@
 
 package ai.chronon.aggregator.base
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.TimeTuple.typ
 import ai.chronon.api._
 
 import java.util
 
 object TimeTuple extends Ordering[util.ArrayList[Any]] {
+  private val logger = LoggerFactory.getLogger(getClass)
   type typ = util.ArrayList[Any]
 
   def `type`(inputType: DataType): DataType =
@@ -53,6 +55,7 @@ object TimeTuple extends Ordering[util.ArrayList[Any]] {
 }
 
 abstract class TimeOrdered(inputType: DataType) extends TimedAggregator[Any, TimeTuple.typ, Any] {
+  private val logger = LoggerFactory.getLogger(getClass)
   override def outputType: DataType = inputType
 
   override def irType: DataType = TimeTuple.`type`(inputType)
@@ -72,6 +75,7 @@ abstract class TimeOrdered(inputType: DataType) extends TimedAggregator[Any, Tim
 }
 
 class First(inputType: DataType) extends TimeOrdered(inputType) {
+  private val logger = LoggerFactory.getLogger(getClass)
   //mutating
   override def update(
       ir: util.ArrayList[Any],
@@ -92,6 +96,7 @@ class First(inputType: DataType) extends TimeOrdered(inputType) {
 }
 
 class Last(inputType: DataType) extends TimeOrdered(inputType) {
+  private val logger = LoggerFactory.getLogger(getClass)
   //mutating
   override def update(
       ir: util.ArrayList[Any],
@@ -119,6 +124,7 @@ class OrderByLimitTimed(
     limit: Int,
     ordering: Ordering[TimeTuple.typ]
 ) extends TimedAggregator[Any, util.ArrayList[TimeTuple.typ], util.ArrayList[Any]] {
+  private val logger = LoggerFactory.getLogger(getClass)
   type Container = util.ArrayList[TimeTuple.typ]
   private val minHeap = new MinHeap[TimeTuple.typ](limit, ordering)
 
@@ -129,7 +135,7 @@ class OrderByLimitTimed(
   override final def prepare(input: Any, ts: Long): Container = {
 //    val gson = new Gson()
     val tuple = TimeTuple.make(ts, input)
-//    println(s"init: ${gson.toJson(tuple)}")
+//    logger.info(s"init: ${gson.toJson(tuple)}")
     val arr = new Container()
     arr.add(tuple)
     arr
@@ -145,6 +151,7 @@ class OrderByLimitTimed(
     minHeap.merge(state1, state2)
 
   override def finalize(state: Container): util.ArrayList[Any] = {
+  private val logger = LoggerFactory.getLogger(getClass)
     val sorted = minHeap.sort(state)
     val result = new util.ArrayList[Any](state.size())
     val it = sorted.iterator

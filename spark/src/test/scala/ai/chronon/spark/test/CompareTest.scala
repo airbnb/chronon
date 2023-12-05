@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.online.DataMetrics
 import ai.chronon.spark.stats.CompareBaseJob
@@ -24,6 +25,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Test
 
 class CompareTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("CompareTest", local = true)
 
   private val tableUtils = TableUtils(spark)
@@ -62,7 +64,7 @@ class CompareTest {
       CompareBaseJob.compare(leftDf, rightDf, keys, tableUtils)
     val metricsDf = metricsKvRdd.toFlatDf
     metricsDf.show()
-    println(result)
+    logger.info(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {
       for ((colName, index) <- leftColumns.zipWithIndex) {
@@ -99,7 +101,7 @@ class CompareTest {
     )
     val metricsDf = metricsKvRdd.toFlatDf
     metricsDf.show()
-    println(result)
+    logger.info(result)
     assert(result.series.length == 4, "Invalid result length")
     for (rowIndex <- 0 until leftData.length) {
       for ((colName, index) <- leftColumns.zipWithIndex) {

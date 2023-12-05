@@ -1,5 +1,6 @@
 package ai.chronon.flink
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api.{Constants, GroupBy, Query, StructType => ChrononStructType}
 import ai.chronon.online.{CatalystUtil, SparkConversions}
@@ -27,6 +28,8 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
   * @tparam T The type of the input data.
   */
 class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends RichFlatMapFunction[T, Map[String, Any]] {
+  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private val query: Query = groupBy.streamingSource.get.getEvents.query
 
@@ -100,7 +103,7 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
       case e: Exception =>
         // To improve availability, we don't rethrow the exception. We just drop the event
         // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
-        println(s"Error evaluating Spark expression - $e")
+        logger.info(s"Error evaluating Spark expression - $e")
         exprEvalErrorCounter.inc()
     }
   }

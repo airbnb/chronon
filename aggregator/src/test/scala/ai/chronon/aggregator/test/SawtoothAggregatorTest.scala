@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.chronon.aggregator.windowing._
@@ -30,6 +31,7 @@ import scala.collection.mutable
 import scala.collection.Seq
 
 class Timer {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   var ts: Long = System.currentTimeMillis()
 
@@ -38,12 +40,13 @@ class Timer {
   // TODO: Write this out into a file checked into git
   // or incorporate proper benchmarks
   def publish(name: String, reset: Boolean = true): Unit = {
-    println(s"${name.padTo(25, ' ')} ${System.currentTimeMillis() - ts} ms")
+    logger.info(s"${name.padTo(25, ' ')} ${System.currentTimeMillis() - ts} ms")
     if (reset) ts = System.currentTimeMillis()
   }
 }
 
 class SawtoothAggregatorTest extends TestCase {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def testTailAccuracy(): Unit = {
     val timer = new Timer
@@ -175,6 +178,7 @@ class SawtoothAggregatorTest extends TestCase {
 }
 
 object SawtoothAggregatorTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   // the result is irs in sorted order of queries
   // with head real-time accuracy and tail hop accuracy
   // NOTE: This provides a sketch for a distributed topology

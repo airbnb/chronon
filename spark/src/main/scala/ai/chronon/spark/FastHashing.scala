@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.spark.Extensions._
 import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
@@ -26,6 +27,7 @@ import java.nio.charset.Charset
 // TODO: drop data and hashInt, iff we see OOMs on executors for small IRs and large keys
 // That is the only case where key size would be a problem
 case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
   // 16-byte hash from murmur_128
   // P(one collision) ~ 10^-6 when key count ~ 2.6×10^16
   // in-comparison with a 8-byte hash (long)
@@ -41,11 +43,12 @@ case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extend
 }
 
 object FastHashing {
+  private val logger = LoggerFactory.getLogger(getClass)
   // function to generate a fast-ish hasher
   // the approach tries to accumulate several tiny closures to compute the final hash
   def generateKeyBuilder(keys: Array[String], schema: StructType): Row => KeyWithHash = {
     val keySchema = StructType(schema.filter { sf => keys.contains(sf.name) })
-    println(s"Generating key builder over keys:\n${keySchema.pretty}\n")
+    logger.info(s"Generating key builder over keys:\n${keySchema.pretty}\n")
     val keyIndices: Array[Int] = keys.map(schema.fieldIndex)
     // the hash function generation won't be in the hot path - so its okay to
     val hashFunctions: Array[(Hasher, Row) => Unit] = keys.zip(keyIndices).map {

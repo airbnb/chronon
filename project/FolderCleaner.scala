@@ -1,9 +1,11 @@
+import org.slf4j.LoggerFactory
 import java.io.File
 import scala.reflect.io.Directory
 
 object Folder {
+  private val logger = LoggerFactory.getLogger(getClass)
   def clean(files: File*): Unit = {
-    println(s"Removing folders ${files.map(_.getAbsolutePath)}")
+    logger.info(s"Removing folders ${files.map(_.getAbsolutePath)}")
     files.foreach { file =>
       if (file.exists() && file.isDirectory) {
         val directory = new Directory(file)

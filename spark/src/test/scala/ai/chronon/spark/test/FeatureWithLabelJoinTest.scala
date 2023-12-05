@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.{LabelPartOps, MetadataOps}
 import ai.chronon.api.{Builders, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder, TableUtils}
@@ -25,6 +26,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FeatureWithLabelJoinTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("FeatureWithLabelJoinTest", local = true)
 
   private val namespace = "final_join"
@@ -52,11 +54,11 @@ class FeatureWithLabelJoinTest {
 
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val labelDf = runner.computeLabelJoin()
-    println(" == First Run Label version 2022-10-30 == ")
+    logger.info(" == First Run Label version 2022-10-30 == ")
     prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
                                                         .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
-    println(" == Features == ")
+    logger.info(" == Features == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
     val expectedFinal = featureDf.join(prefixColumnName(labelDf,
@@ -69,7 +71,7 @@ class FeatureWithLabelJoinTest {
     // add another label version
     val secondRun = new LabelJoin(joinConf, tableUtils, "2022-11-11")
     val secondLabel = secondRun.computeLabelJoin()
-    println(" == Second Run Label version 2022-11-11 == ")
+    logger.info(" == Second Run Label version 2022-11-11 == ")
     secondLabel.show()
     val view = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView} order by label_ds")
     view.show()
@@ -137,11 +139,11 @@ class FeatureWithLabelJoinTest {
 
     val runner = new LabelJoin(joinConf, tableUtils, "2022-10-06")
     val labelDf = runner.computeLabelJoin()
-    println(" == Label DF == ")
+    logger.info(" == Label DF == ")
     prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
                                                         .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
-    println(" == Features DF == ")
+    logger.info(" == Features DF == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
     val expectedFinal = featureDf.join(prefixColumnName(labelDf,
@@ -179,16 +181,16 @@ class FeatureWithLabelJoinTest {
   }
 
   private def assertResult(computed: DataFrame, expected: DataFrame): Unit = {
-    println(" == Computed == ")
+    logger.info(" == Computed == ")
     computed.show()
-    println(" == Expected == ")
+    logger.info(" == Expected == ")
     expected.show()
     val diff = Comparison.sideBySide(computed, expected, List("listing", "ds", "label_ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -197,8 +199,8 @@ class FeatureWithLabelJoinTest {
   private def prefixColumnName(df: DataFrame,
                                prefix: String = "label_",
                                exceptions: Array[String] = null): DataFrame = {
-    println("exceptions")
-    println(exceptions.mkString(", "))
+    logger.info("exceptions")
+    logger.info(exceptions.mkString(", "))
     val renamedColumns = df.columns
       .map(col => {
         if (exceptions.contains(col) || col.startsWith(prefix)) {

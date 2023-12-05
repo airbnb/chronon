@@ -16,6 +16,7 @@
 
 package ai.chronon.api.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api._
 import org.apache.thrift.TSerializer
 import org.apache.thrift.protocol.TSimpleJSONProtocol
@@ -23,6 +24,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 class DataTypeConversionTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   @Test
   def testDataTypeToThriftAndBack(): Unit = {
     // build some complex type
@@ -45,7 +47,7 @@ class DataTypeConversionTest {
     // serialize with TSimpleJson - this is what python code will do
     val jsonSerializer = new TSerializer(new TSimpleJSONProtocol.Factory())
     val json = new String(jsonSerializer.serialize(thriftType))
-    println(json)
+    logger.info(json)
 
     val reversedTType = ThriftJsonCodec.fromJsonStr[TDataType](json, check = true, classOf[TDataType])
     val reversed = DataType.fromTDataType(reversedTType)

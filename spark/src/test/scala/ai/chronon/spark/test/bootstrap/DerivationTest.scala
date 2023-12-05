@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Builders.Derivation
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -35,6 +36,7 @@ import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions.JListOps
 
 class DerivationTest {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
   private val tableUtils = TableUtils(spark)
@@ -277,10 +279,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -351,10 +353,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(outputDf, bootstrapDf, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${outputDf.count()}")
-      println(s"Expected count: ${bootstrapDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${outputDf.count()}")
+      logger.info(s"Expected count: ${bootstrapDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -485,10 +487,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(computedDf, expectedDf, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computedDf.count()}")
-      println(s"Expected count: ${expectedDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computedDf.count()}")
+      logger.info(s"Expected count: ${expectedDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -656,10 +658,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${actualDf.count()}")
-      println(s"Expected count: ${expectedDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${actualDf.count()}")
+      logger.info(s"Expected count: ${expectedDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())

@@ -16,6 +16,7 @@
 
 package ai.chronon.api
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.StringsOps
 import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
 import org.apache.thrift.protocol.{TCompactProtocol, TSimpleJSONProtocol}
@@ -28,6 +29,7 @@ import scala.reflect.ClassTag
 import scala.util.ScalaJavaConversions.ListOps
 
 object ThriftJsonCodec {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
 
@@ -63,7 +65,7 @@ object ThriftJsonCodec {
       base
     } catch {
       case e: Exception => {
-        println("Failed to deserialize using compact protocol, trying Json.")
+        logger.info("Failed to deserialize using compact protocol, trying Json.")
         fromJsonStr(new String(bytes), check = false, base.getClass)
       }
     }
@@ -88,6 +90,7 @@ object ThriftJsonCodec {
   }
 
   def fromJsonFile[T <: TBase[_, _]: Manifest: ClassTag](fileName: String, check: Boolean): T = {
+  private val logger = LoggerFactory.getLogger(getClass)
     val src = fromFile(fileName)
     val jsonStr =
       try src.mkString

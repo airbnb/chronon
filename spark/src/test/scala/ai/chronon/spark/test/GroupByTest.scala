@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
@@ -45,6 +46,7 @@ import org.junit.Test
 import scala.collection.mutable
 
 class GroupByTest {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest", local = true)
   implicit val tableUtils = TableUtils(spark)
@@ -78,7 +80,7 @@ class GroupByTest {
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
-      println("diff result rows")
+      logger.info("diff result rows")
     }
     assertEquals(0, diff.count())
   }
@@ -130,7 +132,7 @@ class GroupByTest {
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
-      println("diff result rows")
+      logger.info("diff result rows")
     }
     assertEquals(0, diff.count())
   }
@@ -177,10 +179,10 @@ class GroupByTest {
 
     val diff = Comparison.sideBySide(computed, expected, List("user", "ts"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows last_k_test")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows last_k_test")
       diff.show()
       diff.rdd.foreach { row =>
         val gson = new Gson()
@@ -195,7 +197,7 @@ class GroupByTest {
         val computedStr = gson.toJson(computed)
         val expectedStr = gson.toJson(expected)
         if (computedStr != expectedStr) {
-          println(s"""
+          logger.info(s"""
                      |computed [$computedCount]: ${gson.toJson(computed)}
                      |expected [$expectedCount]: ${gson.toJson(expected)}
                      |""".stripMargin)
@@ -263,7 +265,7 @@ class GroupByTest {
     val diff = Comparison.sideBySide(naiveDf, resultDf, List("user", Constants.TimeColumn))
     if (diff.count() > 0) {
       diff.show()
-      println("diff result rows")
+      logger.info("diff result rows")
     }
     assertEquals(0, diff.count())
   }
@@ -544,16 +546,16 @@ class GroupByTest {
          |    latestB.listing = COALESCE(C.listing, '--null--') AND latestB.ts = C.ts
          |""".stripMargin
     val expectedInputDf = spark.sql(expectedSQL)
-    println("Expected input DF: ")
+    logger.info("Expected input DF: ")
     expectedInputDf.show()
-    println("Computed input DF: ")
+    logger.info("Computed input DF: ")
     newGroupBy.inputDf.show()
 
     val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${newGroupBy.inputDf.count()}")
-      println(s"Expected count: ${expectedInputDf.count()}")
-      println(s"Diff count: ${diff.count()}")
+      logger.info(s"Actual count: ${newGroupBy.inputDf.count()}")
+      logger.info(s"Expected count: ${expectedInputDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
       diff.show()
     }
     assertEquals(0, diff.count())

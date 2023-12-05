@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api._
 import junit.framework.TestCase
@@ -25,6 +26,7 @@ import java.util
 import scala.collection.JavaConverters._
 
 class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
+  private val logger = LoggerFactory.getLogger(getClass)
   val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
   override val length: Int = fields.size()
 
@@ -39,16 +41,18 @@ class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
 
   override def mutationTs: Long = timeStamp
 
-  def print(): Unit = println(fieldsSeq)
+  def print(): Unit = logger.info(fieldsSeq)
 
   def set(index: Int, any: Any): Unit = fields.set(index, any)
 }
 
 object TestRow {
+  private val logger = LoggerFactory.getLogger(getClass)
   def apply(inputsArray: Any*): TestRow = new TestRow(inputsArray: _*)()
 }
 
 class RowAggregatorTest extends TestCase {
+  private val logger = LoggerFactory.getLogger(getClass)
   def testUpdate(): Unit = {
     val rows = List(
       TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),

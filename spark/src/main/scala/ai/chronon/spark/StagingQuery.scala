@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.ParametricMacro
 import ai.chronon.api.Extensions._
@@ -25,6 +26,7 @@ import scala.collection.mutable
 import scala.util.ScalaJavaConversions._
 
 class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
+  private val logger = LoggerFactory.getLogger(getClass)
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
@@ -48,31 +50,31 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition)(tableUtils))
 
     if (unfilledRanges.isEmpty) {
-      println(s"""No unfilled range for $outputTable given
+      logger.info(s"""No unfilled range for $outputTable given
            |start partition of ${stagingQueryConf.startPartition}
            |end partition of $endPartition
            |""".stripMargin)
       return
     }
     val stagingQueryUnfilledRanges = unfilledRanges.get
-    println(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
+    logger.info(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]
     stagingQueryUnfilledRanges.foreach { stagingQueryUnfilledRange =>
       try {
         val stepRanges = stepDays.map(stagingQueryUnfilledRange.steps).getOrElse(Seq(stagingQueryUnfilledRange))
-        println(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+        logger.info(s"Staging query ranges to compute: ${stepRanges.map { _.toString }.pretty}")
         stepRanges.zipWithIndex.foreach {
           case (range, index) =>
             val progress = s"| [${index + 1}/${stepRanges.size}]"
-            println(s"Computing staging query for range: $range  $progress")
+            logger.info(s"Computing staging query for range: $range  $progress")
             val renderedQuery =
               StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
-            println(s"Rendered Staging Query to run is:\n$renderedQuery")
+            logger.info(s"Rendered Staging Query to run is:\n$renderedQuery")
             val df = tableUtils.sql(renderedQuery)
             tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
-            println(s"Wrote to table $outputTable, into partitions: $range $progress")
+            logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
         }
-        println(s"Finished writing Staging Query data to $outputTable")
+        logger.info(s"Finished writing Staging Query data to $outputTable")
       } catch {
         case err: Throwable =>
           exceptions.append(s"Error handling range $stagingQueryUnfilledRange : ${err.getMessage}\n${err.traceString}")
@@ -91,6 +93,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 }
 
 object StagingQuery {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def substitute(tu: TableUtils, query: String, start: String, end: String, latest: String): String = {
     val macros: Array[ParametricMacro] = Array(

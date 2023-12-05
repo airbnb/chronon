@@ -15,6 +15,7 @@
  */
 
 package ai.chronon.spark.test
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
@@ -27,6 +28,7 @@ import ai.chronon.spark.stats.StatsCompute
 import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
+  private val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
   implicit val tableUtils = TableUtils(spark)
   val namespace: String = "stats_compute_test"
@@ -85,18 +87,18 @@ class StatsComputeTest {
       StructType.from("generatedTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats
       .dailySummary(aggregator)
       .toFlatDf
       .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 
@@ -115,15 +117,15 @@ class StatsComputeTest {
       StructType.from("noTsTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats.dailySummary(aggregator).toFlatDf
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 
@@ -147,18 +149,18 @@ class StatsComputeTest {
       StructType.from("byteTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats
       .dailySummary(aggregator)
       .toFlatDf
       .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 }

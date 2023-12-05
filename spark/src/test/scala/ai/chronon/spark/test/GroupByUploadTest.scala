@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions._
@@ -33,6 +34,7 @@ import scala.concurrent.Await
 import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
   private val namespace = "group_by_upload_test"
@@ -333,8 +335,8 @@ class GroupByUploadTest {
       null,
       cRating(4.0, 2.0)
     )
-    println(gson.toJson(categoryRatingResults))
-    println(gson.toJson(expectedCategoryRatings))
+    logger.info(gson.toJson(categoryRatingResults))
+    logger.info(gson.toJson(expectedCategoryRatings))
     categoryRatingResults.zip(expectedCategoryRatings).foreach {
       case (actual, expected) =>
         assertEquals(actual, expected)

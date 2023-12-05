@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark._
 import org.apache.spark.sql.{Row, SparkSession}
@@ -23,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LabelJoinTest {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
 
@@ -47,7 +49,7 @@ class LabelJoinTest {
     )
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == Computed == ")
+    logger.info(" == Computed == ")
     computed.show()
     val expected = tableUtils.sql(s"""
                                      SELECT v.listing_id as listing,
@@ -58,7 +60,7 @@ class LabelJoinTest {
                                      LEFT OUTER JOIN label_join.listing_attributes as a
                                      ON v.listing_id = a.listing_id
                                      WHERE a.ds = '2022-10-30'""".stripMargin)
-    println(" == Expected == ")
+    logger.info(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), labelDS)
@@ -67,9 +69,9 @@ class LabelJoinTest {
       expected,
       List("listing", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -88,7 +90,7 @@ class LabelJoinTest {
     )
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == Computed == ")
+    logger.info(" == Computed == ")
     computed.show()
     val expected = tableUtils.sql(s"""
                                      |SELECT listing,
@@ -113,16 +115,16 @@ class LabelJoinTest {
                                      |) b
                                      |ON aa.listing = b.listing_id
                                     """.stripMargin)
-    println(" == Expected == ")
+    logger.info(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), labelDS)
 
     val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -141,7 +143,7 @@ class LabelJoinTest {
     // label ds does not exist in label table, labels should be null
     val runner = new LabelJoin(joinConf, tableUtils, "2022-11-01")
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == Computed == ")
+    logger.info(" == Computed == ")
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
     assertEquals(computed
@@ -164,7 +166,7 @@ class LabelJoinTest {
 
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == Computed == ")
+    logger.info(" == Computed == ")
     computed.show()
     assertEquals(computed.count(), 6)
     val computedRows = computed.collect()
@@ -175,7 +177,7 @@ class LabelJoinTest {
 
     val runner2 = new LabelJoin(joinConf, tableUtils, labelDS)
     val refreshed = runner2.computeLabelJoin(skipFinalJoin = true)
-    println(" == Refreshed == ")
+    logger.info(" == Refreshed == ")
     refreshed.show()
     assertEquals(refreshed.count(), 6)
     val refreshedRows = refreshed.collect()
@@ -195,7 +197,7 @@ class LabelJoinTest {
     )
     val runner = new LabelJoin(joinConf, tableUtils, labelDS)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == First Run == ")
+    logger.info(" == First Run == ")
     computed.show()
     assertEquals(computed.count(), 6)
 
@@ -216,7 +218,7 @@ class LabelJoinTest {
     )
     val runner2 = new LabelJoin(updatedJoinConf, tableUtils, "2022-11-01")
     val updated = runner2.computeLabelJoin(skipFinalJoin = true)
-    println(" == Updated Run == ")
+    logger.info(" == Updated Run == ")
     updated.show()
     assertEquals(updated.count(), 12)
     assertEquals(updated.where(updated("label_ds") === "2022-11-01").count(), 6)
@@ -337,7 +339,7 @@ class LabelJoinTest {
     )
     val runner = new LabelJoin(joinConf, tableUtils, "2022-10-06")
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == computed == ")
+    logger.info(" == computed == ")
     computed.show()
     val expected =
       tableUtils.sql(
@@ -354,16 +356,16 @@ class LabelJoinTest {
            | WHERE v.ds == '2022-10-02'
            | GROUP BY v.listing_id, v.ds)
            |""".stripMargin)
-    println(" == Expected == ")
+    logger.info(" == Expected == ")
     expected.show()
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), "2022-10-06")
 
     val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -394,7 +396,7 @@ class LabelJoinTest {
     val today = tableUtils.partitionSpec.at(now)
     val runner = new LabelJoin(joinConf, tableUtils, today)
     val computed = runner.computeLabelJoin(skipFinalJoin = true)
-    println(" == computed == ")
+    logger.info(" == computed == ")
     computed.show()
 
     // For window based label, given specific label_ds and window, only one ds will be updated with label.
@@ -414,13 +416,13 @@ class LabelJoinTest {
            | WHERE v.ds == DATE_SUB(from_unixtime(round($now / 1000), 'yyyy-MM-dd'), 4)
            | GROUP BY v.listing_id, v.ds)
            |""".stripMargin)
-    println(" == Expected == ")
+    logger.info(" == Expected == ")
     expected.show()
     val diff = Comparison.sideBySide(computed, expected, List("listing_id", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
       diff.show()
     }
     assertEquals(0, diff.count())

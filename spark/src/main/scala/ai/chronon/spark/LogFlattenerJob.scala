@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -50,6 +51,7 @@ class LogFlattenerJob(session: SparkSession,
                       schemaTable: String,
                       stepDays: Option[Int] = None)
     extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
   implicit val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)
@@ -69,13 +71,13 @@ class LogFlattenerJob(session: SparkSession,
 
     val ranges = unfilledRangeTry match {
       case Failure(_: AssertionError) => {
-        println(s"""
+        logger.info(s"""
              |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
              |Please double check your logging status""".stripMargin)
         Seq()
       }
       case Success(None) => {
-        println(
+        logger.info(
           s"$outputTable seems to be caught up - to either " +
             s"$inputTable(latest ${tableUtils.lastAvailablePartition(inputTable)}) or $endDate.")
         Seq()
@@ -196,7 +198,7 @@ class LogFlattenerJob(session: SparkSession,
 
   def buildLogTable(): Unit = {
     if (!joinConf.metaData.isSetSamplePercent) {
-      println(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
+      logger.info(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
       return
     }
     val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable)
@@ -216,8 +218,8 @@ class LogFlattenerJob(session: SparkSession,
       val flattenedDf = flattenKeyValueBytes(rawDf, schemaMap)
 
       val schemaTblProps = buildTableProperties(schemaStringsMap)
-      println("======= Log table schema =======")
-      println(flattenedDf.schema.pretty)
+      logger.info("======= Log table schema =======")
+      logger.info(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
                                   tableProperties =
@@ -237,7 +239,7 @@ class LogFlattenerJob(session: SparkSession,
     val failureCount = totalInputRowCount - totalOutputRowCount
     metrics.gauge(Metrics.Name.RowCount, totalOutputRowCount)
     metrics.gauge(Metrics.Name.FailureCount, failureCount)
-    println(s"Processed logs: ${totalOutputRowCount} rows success, ${failureCount} rows failed.")
+    logger.info(s"Processed logs: ${totalOutputRowCount} rows success, ${failureCount} rows failed.")
     metrics.gauge(Metrics.Name.ColumnBeforeCount, columnBeforeCount)
     metrics.gauge(Metrics.Name.ColumnAfterCount, columnAfterCount)
     val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -246,6 +248,7 @@ class LogFlattenerJob(session: SparkSession,
 }
 
 object LogFlattenerJob {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def readSchemaTableProperties(tableUtils: TableUtils, logTable: String): Map[String, String] = {
     val curTblProps = tableUtils.getTableProperties(logTable).getOrElse(Map.empty)

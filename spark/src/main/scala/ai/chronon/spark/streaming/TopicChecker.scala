@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.streaming
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.BottomK
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
@@ -34,6 +35,7 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 object TopicChecker {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   def getPartitions(topic: String, bootstrap: String): Int = {
     val props = new Properties()
@@ -76,7 +78,7 @@ object TopicChecker {
                                       | ------ End ------
                                       |""".stripMargin)
       } else {
-        println(s"Found topic $topic in bootstrap $bootstrap.")
+        logger.info(s"Found topic $topic in bootstrap $bootstrap.")
       }
     } catch {
       case ex: Exception => throw new RuntimeException(s"Failed to check for topic ${topic} in ${bootstrap}", ex)
@@ -84,6 +86,7 @@ object TopicChecker {
   }
 
   class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
+  private val logger = LoggerFactory.getLogger(getClass)
     val conf: ScallopOption[String] = opt[String](descr = "Conf to pull topic and bootstrap server information")
     val bootstrap: ScallopOption[String] = opt[String](descr = "Kafka bootstrap server in host:port format")
     val topic: ScallopOption[String] = opt[String](descr = "kafka topic to check metadata for")
@@ -106,7 +109,7 @@ object TopicChecker {
     } else {
       args.topic() -> args.bootstrap()
     }
-    println(getPartitions(topic, bootstrap))
+    logger.info(getPartitions(topic, bootstrap))
     System.exit(0)
   }
 }

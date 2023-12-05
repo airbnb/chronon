@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
@@ -34,6 +35,7 @@ import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
+  private val logger = LoggerFactory.getLogger(getClass)
   implicit val sparkSession: SparkSession = groupBy.sparkSession
   implicit private val tableUtils: TableUtils = TableUtils(sparkSession)
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
@@ -62,7 +64,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
   // Shared between events and mutations (temporal entities).
   def temporalEvents(resolution: Resolution = FiveMinuteResolution): KvRdd = {
     val endTs = tableUtils.partitionSpec.epochMillis(endPartition)
-    println(s"TemporalEvents upload end ts: $endTs")
+    logger.info(s"TemporalEvents upload end ts: $endTs")
     val sawtoothOnlineAggregator = new SawtoothOnlineAggregator(
       endTs,
       groupBy.aggregations,
@@ -71,7 +73,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
     val irSchema = SparkConversions.fromChrononSchema(sawtoothOnlineAggregator.batchIrSchema)
     val keyBuilder = FastHashing.generateKeyBuilder(groupBy.keyColumns.toArray, groupBy.inputDf.schema)
 
-    println(s"""
+    logger.info(s"""
         |BatchIR Element Size: ${SparkEnv.get.serializer
       .newInstance()
       .serialize(sawtoothOnlineAggregator.init)
@@ -103,6 +105,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   // TODO - remove this if spark streaming can't reach hive tables
   private def buildServingInfo(groupByConf: api.GroupBy,
@@ -151,12 +154,12 @@ object GroupByUpload {
         }
       groupByServingInfo.setInputAvroSchema(inputSchema.toAvroSchema(name = "Input").toString(true))
     } else {
-      println("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
+      logger.info("Not setting InputAvroSchema to GroupByServingInfo as there is no streaming source defined.")
     }
 
     val result = new GroupByServingInfoParsed(groupByServingInfo, tableUtils.partitionSpec)
     val firstSource = groupByConf.sources.get(0)
-    println(s"""
+    logger.info(s"""
         |Built GroupByServingInfo for ${groupByConf.metaData.name}:
         |table: ${firstSource.table} / data-model: ${firstSource.dataModel}
         |     keySchema: ${Try(result.keyChrononSchema.catalogString)}
@@ -206,7 +209,7 @@ object GroupByUpload {
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
 
-    println(s"""
+    logger.info(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
          |Data Model: ${groupByConf.dataModel}

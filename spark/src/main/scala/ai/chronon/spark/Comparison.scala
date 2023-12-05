@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.online.Extensions.StructTypeOps
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
@@ -24,6 +25,7 @@ import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
 import java.util
 
 object Comparison {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   // used for comparison
   def sortedJson(m: Map[String, Any]): String = {
@@ -58,8 +60,8 @@ object Comparison {
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
 
-    println("====== side-by-side comparison ======")
-    println(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
+    logger.info("====== side-by-side comparison ======")
+    logger.info(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
 
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
@@ -98,7 +100,7 @@ object Comparison {
           } else { s"($left <> $right)" }
         Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
       }
-    println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
+    logger.info(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
     if (comparisonFilters.nonEmpty) {
       finalDf.filter(comparisonFilters.mkString(" or "))
     } else {
