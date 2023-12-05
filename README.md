@@ -215,7 +215,7 @@ Feature values would be computed for each user_id and ts on the left side, with 
 
 You can now query the backfilled data using the spark sql shell:
 
-```aidl
+```shell
 cd ~/quickstart_output 
 ~/spark-3.2.4-bin-hadoop3.2/bin/spark-sql
 ```
