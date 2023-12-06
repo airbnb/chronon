@@ -39,7 +39,6 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.Console.logger.info
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -568,7 +567,6 @@ class FetcherTest extends TestCase {
     val responseMap = responses.head.values.get
 
     logger.info("====== Empty request response map ======")
-    logger.info(responseMap)
     assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
   }

@@ -36,7 +36,6 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.Seq
-import scala.Console.logger.info
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 
