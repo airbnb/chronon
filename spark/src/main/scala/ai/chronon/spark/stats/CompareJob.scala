@@ -71,7 +71,8 @@ class CompareJob(
 
     // Save the comparison table
     logger.info("Saving comparison output..")
-    logger.info(s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
+    logger.info(
+      s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
     tableUtils.insertUnPartitioned(compareDf, comparisonTableName, tableProps, saveMode = SaveMode.Overwrite)
 
     // Save the metrics table

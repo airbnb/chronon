@@ -86,7 +86,7 @@ object TopicChecker {
   }
 
   class Args(arguments: Seq[String]) extends ScallopConf(arguments) {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     val conf: ScallopOption[String] = opt[String](descr = "Conf to pull topic and bootstrap server information")
     val bootstrap: ScallopOption[String] = opt[String](descr = "Kafka bootstrap server in host:port format")
     val topic: ScallopOption[String] = opt[String](descr = "kafka topic to check metadata for")

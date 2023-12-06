@@ -94,7 +94,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       labelTable
     } else {
       // creating final join view with feature join output table
-      logger.info(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
+      logger.info(
+        s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
       JoinUtils.createOrReplaceView(
         joinConf.metaData.outputFinalView,
         leftTable = joinConf.metaData.outputTable,

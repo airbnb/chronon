@@ -784,7 +784,7 @@ object Extensions {
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
       join.joinParts.toScala

@@ -214,7 +214,7 @@ object Driver {
   }
 
   object JoinBackfill {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("join")
         with OfflineSubcommand
@@ -256,12 +256,13 @@ object Driver {
       }
 
       df.show(numRows = 3, truncate = 0, vertical = true)
-      logger.info(s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+      logger.info(
+        s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
     }
   }
 
   object GroupByBackfill {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("group-by-backfill")
         with OfflineSubcommand
@@ -541,7 +542,7 @@ object Driver {
   }
 
   object FetcherCli {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
@@ -581,7 +582,8 @@ object Driver {
         )
           series.get(keyMap("statsKey").asInstanceOf[String])
         else series
-      logger.info(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
+      logger.info(
+        s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
     }
 
     def run(args: Args): Unit = {
@@ -660,7 +662,7 @@ object Driver {
   }
 
   object MetadataUploader {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
@@ -705,7 +707,7 @@ object Driver {
   }
 
   object GroupByStreaming {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
@@ -729,7 +731,7 @@ object Driver {
     }
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
-  private val logger = LoggerFactory.getLogger(getClass)
+      private val logger = LoggerFactory.getLogger(getClass)
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
       val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =

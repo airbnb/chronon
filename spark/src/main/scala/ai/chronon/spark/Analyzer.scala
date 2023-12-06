@@ -336,7 +336,8 @@ class Analyzer(tableUtils: TableUtils,
       logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
       val keyErrorSet: Set[(String, String)] = keysWithError.toSet
       logger.info(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
-      logger.info(s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
+      logger.info(
+        s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
       logger.info(noAccessTables.mkString("\n"))
       logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
       dataAvailabilityErrors.foreach(error =>
