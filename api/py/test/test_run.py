@@ -1,12 +1,30 @@
 """
 Basic tests for namespace and breaking changes in run.py
 """
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 from ai.chronon.repo import run
 import argparse
 import pytest
 import json
 import time
 import os
+
+
+DEFAULT_ENVIRONMENT = os.environ.copy()
 
 
 @pytest.fixture
@@ -30,7 +48,7 @@ def reset_env(default_env):
     set_keys = os.environ.keys()
     for key in set_keys:
         os.environ.pop(key)
-    for k, v in default_env:
+    for k, v in default_env.items():
         os.environ[k] = v
 
 
@@ -49,7 +67,7 @@ def test_download_jar(monkeypatch, sleepless):
 
 
 def test_environment(teams_json, repo, parser, test_conf_location):
-    default_environment = os.environ
+    default_environment = DEFAULT_ENVIRONMENT.copy()
     # If nothing is passed.
     run.set_runtime_env(parser.parse_args(args=[]))
 
@@ -90,6 +108,8 @@ def test_environment(teams_json, repo, parser, test_conf_location):
     assert os.environ['VERSION'] == 'latest'
     # derived from args.
     assert os.environ['APP_NAME'] == 'chronon_joins_backfill_production_sample_team.sample_online_join.v1'
+    # from additional_args
+    assert os.environ['CHRONON_CONFIG_ADDITIONAL_ARGS'] == '--step-days 14'
 
     # Check conf set environment overrides most.
     reset_env(default_environment)
@@ -131,6 +151,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
 
 
 def test_property_default_update(repo, parser, test_conf_location):
+    reset_env(DEFAULT_ENVIRONMENT.copy())
     assert 'VERSION' not in os.environ
     args, _ = parser.parse_known_args(args=[
         '--mode', 'backfill',
@@ -151,7 +172,7 @@ def test_property_default_update(repo, parser, test_conf_location):
 
 
 def test_render_info_setting_update(repo, parser, test_conf_location):
-    default_environment = os.environ
+    default_environment = DEFAULT_ENVIRONMENT.copy()
 
     run.set_defaults(parser)
     args, _ = parser.parse_known_args(args=[

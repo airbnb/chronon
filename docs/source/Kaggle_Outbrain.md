@@ -14,14 +14,14 @@ Does not include:
 ## Setup
 One time steps to get up and running with Chronon.
 
-#### 0.0 Setup the chronon repo
+### Setup the chronon repo
 ```shell
 cd ~/repos
 git clone git@github.com:airbnb/chronon.git
 export PYTHONPATH=/Users/$USER/repos/chronon/api/py/:/Users/$USER/repos/chronon/api/py/test/sample/:$PYTHONPATH
 ```
 
-#### 1. Download Kaggle data
+### Download Kaggle data
 
 Download `clicks_train.csv` and `events.csv` from the following location, and put them into `~/kaggle_outbrain` directory.
 
@@ -30,16 +30,17 @@ https://www.kaggle.com/competitions/outbrain-click-prediction/data
 To keep this tutorial brief, we'll only use these datasets. However, you could always download more data and experiment with joining it in.
 
 
-#### 2. Download and setup spark (assuming you have a jdk already setup)
+### Download and setup spark (assuming you have a jdk already setup)
 ```shell
 cd ~
-curl -O https://archive.apache.org/dist/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz
-tar xf spark-2.4.8-bin-hadoop2.7.tgz
-export SPARK_SUBMIT_PATH=/Users/$USER/spark-2.4.8-bin-hadoop2.7/bin/spark-submit
+curl -O https://archive.apache.org/dist/spark/spark-3.2.4/spark-3.2.4-bin-hadoop3.2.tgz
+tar xf spark-3.2.4-bin-hadoop3.2.tgz
+export SPARK_SUBMIT_PATH=/Users/$USER/spark-3.2.4-bin-hadoop3.2/bin/spark-submit
+export SPARK_LOCAL_IP="127.0.0.1"
 ```
 
 
-#### 3. Now switch to the config repo (within the project)
+### Now switch to the config repo (within the project)
 This is where we will do the bulk of development iterations from
 ```shell
 cd api/py/test/sample/
@@ -160,7 +161,7 @@ tree -h ~/kaggle_outbrain_parquet/data/kaggle_outbrain_training_set/
 
 You can also query it using the spark sql shell:
 
-```aidl
+```shell
 cd ~/kaggle_outbrain_parquet 
 ~/spark-2.4.8-bin-hadoop2.7/bin/spark-sql
 ```

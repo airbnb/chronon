@@ -1,6 +1,21 @@
-import os
 
-from ai.chronon.repo.serializer import json2thrift
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
+import os
+import json
+from ai.chronon.repo.serializer import json2thrift, file2thrift
 from ai.chronon import utils
 import ai.chronon.api.ttypes as api
 import pytest
@@ -247,3 +262,28 @@ def test_get_related_table_names_for_bootstrap_joins():
         assert not any(table.endswith("_labeled_latest") for table in tables)
         assert not any(table.endswith("_upload") for table in tables)
         assert not any(table.endswith("_consistency") for table in tables)
+
+
+@pytest.mark.parametrize(
+    "materialized_group_by,table_name", [
+        ("entity_sample_group_by_from_module.v1", "chronon_db.sample_team_entity_sample_group_by_from_module_v1"),
+        ("event_sample_group_by.v1", "sample_namespace.sample_team_event_sample_group_by_v1"),
+        ("group_by_with_kwargs.v1", "chronon_db.sample_team_group_by_with_kwargs_v1"),
+        ("sample_chaining_group_by", "sample_namespace.sample_team_sample_chaining_group_by"),
+    ],
+)
+def test_group_by_table_names(repo, materialized_group_by, table_name):
+    gb = file2thrift(os.path.join(repo, "production/group_bys/sample_team", materialized_group_by), api.GroupBy)
+    assert utils.group_by_output_table_name(gb, True) == table_name
+
+
+@pytest.mark.parametrize(
+    "materialized_join,table_name", [
+        ("sample_chaining_join.v1",
+         "chronon_db.sample_team_sample_chaining_join_v1_sample_team_sample_chaining_group_by"),
+        ("sample_join.v1", "sample_namespace.sample_team_sample_join_v1_sample_team_sample_group_by_v1"),
+    ],
+)
+def test_join_part_table_names(repo, materialized_join, table_name):
+    join = file2thrift(os.path.join(repo, "production/joins/sample_team", materialized_join), api.Join)
+    assert utils.join_part_output_table_name(join, join.joinParts[0], True) == table_name

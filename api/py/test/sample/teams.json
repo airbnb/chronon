@@ -47,5 +47,9 @@
     "kaggle": {
         "description": "Workspace for kaggle compeitions",
         "namespace": "default"
+    },
+    "quickstart": {
+        "description": "Used for the quickstart example",
+        "namespace": "default"
     }
 }

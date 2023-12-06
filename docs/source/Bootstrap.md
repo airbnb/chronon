@@ -1,10 +1,10 @@
-# Concept
+# Bootstrap
 
 We support feature **bootstrap** as a primitive as part of Chronon Join in order to support various kinds of feature experimentation workflows that are manually done by clients previously outside of Chronon.
 
 Bootstrap is a preprocessing step in the **Join** job that enriches the left side with precomputed feature data, before running the regular group by backfills if necessary. 
 
-# Scenarios
+## Scenarios
 1. Log stitching: Use online serving log as the source for production features instead of continuously recomputing it offline to ensure online/offline consistency and reduce computation cost
 2. External feature backfills: backfill external features from custom hive table before they are logged from online fetching
 3. Data sharing across Joins:
@@ -15,7 +15,7 @@ Bootstrap is a preprocessing step in the **Join** job that enriches the left sid
 5. Data recovery: fix broken log data during periods of serving outage using manual backfill
 6. Data migration: migrate training data from legacy system
 
-# Bootstrap Table
+## Bootstrap Table
 
 Bootstrap table is a precomputed table which contains precomputed feature values for (subsets of) left table.
 
@@ -24,7 +24,7 @@ Bootstrap table is a precomputed table which contains precomputed feature values
 - Bootstrap can contain only a subset of rows, and Chronon will compute the rest of the rows from scratch
 - Bootstrap can contain only a subset of columns, and Chronon will compute the rest of the columns  from scratch
 
-# API w/ Examples
+## API w/ Examples
 
 `payments_driver.v1` is a StagingQuery based on the log table of v1 Join, optionally unioned with historical data before logging is available source_v1 is a HiveEventSource based on this StagingQuery, used as `left` of v1 Join
 
@@ -147,7 +147,7 @@ v2 = Join(
 )
 ```
 
-# Clarifications
+## Clarifications
 
 **When should I put bootstrap_parts into the join definition?**
 

@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+"""
+run.py needs to only depend in python standard library to simplify execution requirements.
+"""
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
 
 import argparse
 import time
@@ -118,6 +135,13 @@ def retry_decorator(retries=3, backoff=20):
         return wrapped
 
     return wrapper
+
+
+def custom_json(conf):
+    """ Extract the json stored in customJson for a conf. """
+    if conf.get("metaData", {}).get("customJson"):
+        return json.loads(conf["metaData"]["customJson"])
+    return {}
 
 
 def check_call(cmd):
@@ -259,6 +283,11 @@ def set_runtime_env(args):
                         .get("modeToEnvMap", {})
                         .get(effective_mode, {})
                     )
+                    # Load additional args used on backfill.
+                    if custom_json(conf_json) and effective_mode == "backfill":
+                        environment["conf_env"][
+                            "CHRONON_CONFIG_ADDITIONAL_ARGS"
+                        ] = " ".join(custom_json(conf_json).get("additional_args", []))
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
                         mode=effective_mode,
                         conf_type=conf_type,
@@ -426,11 +455,14 @@ class Runner:
                             "Attempting to submit an application in client mode, but there's already"
                             " an existing one running."
                         )
-            command = "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args}".format(
+            command = (
+                "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
+            ).format(
                 script=self.spark_submit,
                 jar=self.jar_path,
                 subcommand=ROUTES[self.conf_type][self.mode],
                 args=final_args,
+                additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
             )
         check_call(command)
 
@@ -548,7 +580,7 @@ if __name__ == "__main__":
             args.version,
             jar_type=jar_type,
             release_tag=args.release_tag,
-            spark_version=args.spark_version,
+            spark_version=os.environ.get("SPARK_VERSION", args.spark_version),
         )
     )
     Runner(args, os.path.expanduser(jar_path)).run()

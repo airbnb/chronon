@@ -30,6 +30,7 @@ object ScalaVersionSpecificCollectionsConverter {
 }
 
 object ScalaJavaConversions {
+
   implicit class IteratorOps[T](iterator: java.util.Iterator[T]) {
     def toScala: Iterator[T] = {
       iterator.asScala

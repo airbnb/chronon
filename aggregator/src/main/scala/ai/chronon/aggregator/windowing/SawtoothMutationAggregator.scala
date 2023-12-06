@@ -1,10 +1,26 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.windowing
 
 import ai.chronon.api.Extensions.WindowOps
 import ai.chronon.api._
 
 import java.util
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 
 case class BatchIr(collapsed: Array[Any], tailHops: HopsAggregator.IrMapType)
 case class FinalBatchIr(collapsed: Array[Any], tailHops: HopsAggregator.OutputArrayType)
@@ -121,16 +137,18 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
         val hopIndex = tailHopIndices(i)
         val queryTail = TsUtils.round(queryTs - window.millis, hopSizes(hopIndex))
         val hopIrs = batchIr.tailHops(hopIndex)
+        val relevantHops = mutable.ArrayBuffer[Any](ir(i))
         var idx: Int = 0
         while (idx < hopIrs.length) {
           val hopIr = hopIrs(idx)
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
-            val merged = windowedAggregator(i).merge(ir(i), hopIr(baseIrIndices(i)))
-            ir.update(i, merged)
+            relevantHops += hopIr(baseIrIndices(i))
           }
           idx += 1
         }
+        val merged = windowedAggregator(i).bulkMerge(relevantHops.iterator)
+        ir.update(i, merged)
       }
       i += 1
     }

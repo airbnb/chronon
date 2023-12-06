@@ -1,3 +1,18 @@
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import gc
@@ -146,14 +161,54 @@ def __set_name(obj, cls, mod_prefix):
     eo.import_module_set_name(module, cls)
 
 
+def sanitize(name):
+    """
+    From api.Extensions.scala
+    Option(name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
+    """
+    if name is not None:
+        return re.sub("[^a-zA-Z0-9_]", "_", name)
+    return None
+
+
 def output_table_name(obj, full_name: bool):
-    table_name = obj.metaData.name.replace('.', '_')
+    table_name = sanitize(obj.metaData.name)
     db = obj.metaData.outputNamespace
     db = db or "{{ db }}"
     if full_name:
         return db + "." + table_name
     else:
         return table_name
+
+
+def join_part_output_table_name(join, jp, full_name: bool = False):
+    """
+    From api.Extensions.scala
+
+    Join Part output table name.
+    To be synced with Scala API.
+    def partOutputTable(jp: JoinPart): String = (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+
+      jp.groupBy.metaData.cleanName).mkString("_")
+    """
+    if jp.groupBy is None:
+        raise NotImplementedError("Join Part names for non group bys is not implemented.")
+    if not jp.groupBy.metaData.name:
+        __set_name(jp.groupBy, api.GroupBy, "group_bys")
+    return "_".join([component for component in [
+        output_table_name(join, full_name),
+        jp.prefix,
+        sanitize(jp.groupBy.metaData.name)
+    ] if component is not None])
+
+
+def group_by_output_table_name(obj, full_name: bool = False):
+    """
+    Group by backfill output table name
+    To be synced with api.Extensions.scala
+    """
+    if not obj.metaData.name:
+        __set_name(obj, api.GroupBy, "group_bys")
+    return output_table_name(obj, full_name)
 
 
 def log_table_name(obj, full_name: bool = False):

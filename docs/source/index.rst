@@ -10,12 +10,13 @@
    Getting_Started
    Concepts
    Aggregations
+   Bootstrap
    Python_API
    Kaggle_Outbrain
    Online_Offline_Consistency
    Code_Guidelines
 
-What ?
+What is Chronon?
 =====================
 Chronon is a feature engineering framework is being used to power Machine Learning in every 
 organization within Airbnb. Chronon makes developing production-grade, 
@@ -85,7 +86,7 @@ run the command below in an airflow repository.
 
 .. code-block:: bash
 
-   source <(curl -s https://chronon.ai/init.sh)
+   curl -s https://chronon.ai/init.sh | $SHELL
 
 Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
 Find more details in the Getting Started section.

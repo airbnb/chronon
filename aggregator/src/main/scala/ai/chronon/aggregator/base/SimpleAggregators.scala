@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.base
 
 import ai.chronon.api._
@@ -420,6 +436,12 @@ class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggreg
     merger.getResult
   }
 
+  override def bulkMerge(irs: Iterator[CpcSketch]): CpcSketch = {
+    val merger = new CpcUnion(lgK)
+    irs.foreach(merger.update)
+    merger.getResult
+  }
+
   // CPC sketch has a non-public copy() method, which is what we want
   // CPCUnion has access to that copy() method - so we kind of hack that
   // mechanism to get a proper copy without any overhead.
@@ -457,6 +479,12 @@ class ApproxPercentiles(k: Int = 128, percentiles: Array[Double] = Array(0.5))
   override def merge(ir1: KllFloatsSketch, ir2: KllFloatsSketch): KllFloatsSketch = {
     ir1.merge(ir2)
     ir1
+  }
+
+  override def bulkMerge(irs: Iterator[KllFloatsSketch]): KllFloatsSketch = {
+    val result = new KllFloatsSketch(k)
+    irs.foreach(result.merge)
+    result
   }
 
   // KLLFloatsketch doesn't have a proper copy method. So we serialize and deserialize.

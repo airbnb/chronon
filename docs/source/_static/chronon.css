@@ -1,143 +1,159 @@
-@import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');
+/*!**/
+/* *    Copyright (C) 2023 The Chronon Authors.*/
+/* **/
+/* *    Licensed under the Apache License, Version 2.0 (the "License");*/
+/* *    you may not use this file except in compliance with the License.*/
+/* *    You may obtain a copy of the License at*/
+/* **/
+/* *        http://www.apache.org/licenses/LICENSE-2.0*/
+/* **/
+/* *    Unless required by applicable law or agreed to in writing, software*/
+/* *    distributed under the License is distributed on an "AS IS" BASIS,*/
+/* *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.*/
+/* *    See the License for the specific language governing permissions and*/
+/* *    limitations under the License.*/
+/* *!*/
 
-.navbar-brand img {
-   height: 60px;
-}
-.navbar-brand {
-   height: 60px;
-}
+/*@import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');*/
 
-body {
-  font-family: 'Open Sans', sans-serif;
-}
+/*!*.navbar-brand img {*!*/
+/*!*   height: 60px;*!*/
+/*!*}*!*/
+/*!*.navbar-brand {*!*/
+/*!*   height: 60px;*!*/
+/*!*}*!*/
 
-pre, code {
-  font-size: 100%;
-  line-height: 155%;
-}
+/*body {*/
+/*  font-family: Verdana, Geneva, sans-serif;*/
+/*}*/
 
-h1 {
-  font-family: "Lato", sans-serif;
-  color: #013243; /* warm black */
-}
+/*pre, code {*/
+/*  font-size: 100%;*/
+/*  line-height: 155%;*/
+/*}*/
 
-h2 {
-  color: #4d77cf; /* han blue */
-  letter-spacing: -.03em;
-}
+/*h1 {*/
+/*  font-family: Verdana, Geneva, sans-serif;*/
+/*  color: #013243; !* warm black *!*/
+/*}*/
 
-h3 {
-  color: #013243; /* warm black */
-  letter-spacing: -.03em;
-}
+/*h2 {*/
+/*  color: #4d77cf; !* han blue *!*/
+/*  letter-spacing: -.03em;*/
+/*}*/
 
-/* Style the active version button.
+/*h3 {*/
+/*  color: #013243; !* warm black *!*/
+/*  letter-spacing: -.03em;*/
+/*}*/
 
-- dev: orange
-- stable: green
-- old, PR: red
+/*!* Style the active version button.*/
 
-Colors from:
+/*- dev: orange*/
+/*- stable: green*/
+/*- old, PR: red*/
 
-Wong, B. Points of view: Color blindness.
-Nat Methods 8, 441 (2011). https://doi.org/10.1038/nmeth.1618
-*/
+/*Colors from:*/
 
-/* If the active version has the name "dev", style it orange */
-#version_switcher_button[data-active-version-name*="dev"] {
-  background-color: #E69F00;
-  border-color: #E69F00;
-  color:#000000;
-}
+/*Wong, B. Points of view: Color blindness.*/
+/*Nat Methods 8, 441 (2011). https://doi.org/10.1038/nmeth.1618*/
+/**!*/
 
-/* green for `stable` */
-#version_switcher_button[data-active-version-name*="stable"] {
-  background-color: #009E73;
-  border-color: #009E73;
-}
+/*!* If the active version has the name "dev", style it orange *!*/
+/*#version_switcher_button[data-active-version-name*="dev"] {*/
+/*  background-color: #E69F00;*/
+/*  border-color: #E69F00;*/
+/*  color:#000000;*/
+/*}*/
 
-/* red for `old` */
-#version_switcher_button:not([data-active-version-name*="stable"], [data-active-version-name*="dev"], [data-active-version-name=""]) {
-  background-color: #980F0F;
-  border-color: #980F0F;
-}
+/*!* green for `stable` *!*/
+/*#version_switcher_button[data-active-version-name*="stable"] {*/
+/*  background-color: #009E73;*/
+/*  border-color: #009E73;*/
+/*}*/
 
-/* Main page overview cards */
+/*!* red for `old` *!*/
+/*#version_switcher_button:not([data-active-version-name*="stable"], [data-active-version-name*="dev"], [data-active-version-name=""]) {*/
+/*  background-color: #980F0F;*/
+/*  border-color: #980F0F;*/
+/*}*/
 
-.sd-card {
-  background: #fff;
-  border-radius: 0;
-  padding: 30px 10px 20px 10px;
-  margin: 10px 0px;
-}
+/*!* Main page overview cards *!*/
 
-.sd-card .sd-card-header {
-  text-align: center;
-}
+/*.sd-card {*/
+/*  background: #fff;*/
+/*  border-radius: 0;*/
+/*  padding: 30px 10px 20px 10px;*/
+/*  margin: 10px 0px;*/
+/*}*/
 
-.sd-card .sd-card-header .sd-card-text {
-  margin: 0px;
-}
+/*.sd-card .sd-card-header {*/
+/*  text-align: center;*/
+/*}*/
 
-.sd-card .sd-card-img-top {
-  height: 52px;
-  width: 52px;
-  margin-left: auto;
-  margin-right: auto;
-}
+/*.sd-card .sd-card-header .sd-card-text {*/
+/*  margin: 0px;*/
+/*}*/
 
-.bd-content {
-  flex-grow: 1;
-  max-width: 100%;
-}
+/*.sd-card .sd-card-img-top {*/
+/*  height: 52px;*/
+/*  width: 52px;*/
+/*  margin-left: auto;*/
+/*  margin-right: auto;*/
+/*}*/
 
-.sd-card .sd-card-header {
-  border: none;
-  background-color: white;
-  color: #150458 !important;
-  font-size: var(--pst-font-size-h5);
-  font-weight: bold;
-  padding: 2.5rem 0rem 0.5rem 0rem;
-}
+/*.bd-content {*/
+/*  flex-grow: 1;*/
+/*  max-width: 100%;*/
+/*}*/
 
-.sd-card .sd-card-footer {
-  border: none;
-  background-color: white;
-}
+/*.sd-card .sd-card-header {*/
+/*  border: none;*/
+/*  background-color: white;*/
+/*  color: #150458 !important;*/
+/*  font-size: var(--pst-font-size-h5);*/
+/*  font-weight: bold;*/
+/*  padding: 2.5rem 0rem 0.5rem 0rem;*/
+/*}*/
 
-.sd-card .sd-card-footer .sd-card-text {
-  max-width: 220px;
-  margin-left: auto;
-  margin-right: auto;
-}
+/*.sd-card .sd-card-footer {*/
+/*  border: none;*/
+/*  background-color: white;*/
+/*}*/
 
-/* Dark theme tweaking */
-html[data-theme=dark] .sd-card img[src*='.svg'] {
-    filter: invert(0.82) brightness(0.8) contrast(1.2);
-}
+/*.sd-card .sd-card-footer .sd-card-text {*/
+/*  max-width: 220px;*/
+/*  margin-left: auto;*/
+/*  margin-right: auto;*/
+/*}*/
 
-/* Main index page overview cards */
-html[data-theme=dark] .sd-card {
-  background-color:var(--pst-color-background);
-}
+/*!* Dark theme tweaking *!*/
+/*html[data-theme=dark] .sd-card img[src*='.svg'] {*/
+/*    filter: invert(0.82) brightness(0.8) contrast(1.2);*/
+/*}*/
 
-html[data-theme=dark] .sd-shadow-sm {
-    box-shadow: 0 .1rem 1rem rgba(250, 250, 250, .6) !important
-}
+/*!* Main index page overview cards *!*/
+/*html[data-theme=dark] .sd-card {*/
+/*  background-color:var(--pst-color-background);*/
+/*}*/
 
-html[data-theme=dark] .sd-card .sd-card-header {
-  background-color:var(--pst-color-background);
-  color: #150458 !important;
-}
+/*html[data-theme=dark] .sd-shadow-sm {*/
+/*    box-shadow: 0 .1rem 1rem rgba(250, 250, 250, .6) !important*/
+/*}*/
 
-html[data-theme=dark] .sd-card .sd-card-footer {
-  background-color:var(--pst-color-background);
-}
+/*html[data-theme=dark] .sd-card .sd-card-header {*/
+/*  background-color:var(--pst-color-background);*/
+/*  color: #150458 !important;*/
+/*}*/
 
-html[data-theme=dark] h1 {
-  color: var(--pst-color-primary);
-}
+/*html[data-theme=dark] .sd-card .sd-card-footer {*/
+/*  background-color:var(--pst-color-background);*/
+/*}*/
 
-html[data-theme=dark] h3 {
-  color: #0a6774;
-}
+/*html[data-theme=dark] h1 {*/
+/*  color: var(--pst-color-primary);*/
+/*}*/
+
+/*html[data-theme=dark] h3 {*/
+/*  color: #0a6774;*/
+/*}*/

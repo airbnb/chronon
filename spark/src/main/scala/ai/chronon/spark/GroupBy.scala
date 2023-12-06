@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
@@ -80,7 +96,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
-    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ tableUtils.partitionColumn).toArray, inputDf.schema)
+    val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
+    val keyBuilder = FastHashing.generateKeyBuilder(keys, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
@@ -105,7 +122,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     println("prepped input schema")
     println(preppedInputDf.schema.pretty)
 
-    preppedInputDf.rdd
+    tableUtils
+      .preAggRepartition(preppedInputDf)
+      .rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
       .map { case (keyWithHash, ir) => keyWithHash.data -> normalizeOrFinalize(ir) }
@@ -626,7 +645,8 @@ object GroupBy {
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(queryRange.isSingleDay, s"ChrononRunDs is only supported for single day queries")
+          assert(intersectedRange.isDefined && intersectedRange.get.isSingleDay,
+                 s"ChrononRunDs is only supported for single day queries")
           val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {

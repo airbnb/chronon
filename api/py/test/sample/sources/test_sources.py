@@ -1,3 +1,18 @@
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 from ai.chronon.query import (
     Query,
     select,
@@ -6,6 +21,21 @@ from ai.chronon.utils import get_staging_query_output_table_name
 from ai.chronon.api import ttypes
 
 from staging_queries.sample_team import sample_staging_query
+
+
+def basic_event_source(table):
+    return ttypes.Source(events=ttypes.EventSource(
+        table=table,
+        query=Query(
+            selects=select(
+                event="event_expr",
+                group_by_subject="group_by_expr",
+            ),
+            start_partition="2021-04-09",
+            time_column="ts",
+        ),
+    ))
+
 
 # Sample Event Source used in tests.
 event_source = ttypes.Source(events=ttypes.EventSource(

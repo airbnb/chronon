@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.api
@@ -96,7 +112,7 @@ abstract class JoinBase(joinConf: api.Join,
     joinedDf
   }
 
-  def computeRightTable(leftDf: DataFrame,
+  def computeRightTable(leftDf: Option[DfWithStats],
                         joinPart: JoinPart,
                         leftRange: PartitionRange,
                         joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
@@ -133,11 +149,13 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val filledDf = computeJoinPart(leftDf.prunePartition(leftUnfilledRange), joinPart, joinLevelBloomMapOpt)
+              val prunedLeft = leftDf.map(_.prunePartitions(leftUnfilledRange))
+              val filledDf =
+                computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 println(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps)
+                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -159,25 +177,19 @@ abstract class JoinBase(joinConf: api.Join,
     }
   }
 
-  def computeJoinPart(leftDf: DataFrame,
+  def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
                       joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[DataFrame] = {
 
-    val stats = leftDf
-      .select(
-        count(lit(1)),
-        min(tableUtils.partitionColumn),
-        max(tableUtils.partitionColumn)
-      )
-      .head()
-    val rowCount = stats.getLong(0)
-
-    val unfilledRange = PartitionRange(stats.getString(1), stats.getString(2))(tableUtils)
-    if (rowCount == 0) {
+    if (leftDfWithStats.isEmpty) {
       // happens when all rows are already filled by bootstrap tables
       println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
       return None
     }
+
+    val leftDf = leftDfWithStats.get.df
+    val rowCount = leftDfWithStats.get.count
+    val unfilledRange = leftDfWithStats.get.partitionRange
 
     println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
     val rightBloomMap =

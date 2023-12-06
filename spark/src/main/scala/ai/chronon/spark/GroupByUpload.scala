@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, Resolution, SawtoothOnlineAggregator}
@@ -12,13 +28,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}
 import org.apache.spark.sql.{Row, SparkSession, types}
 
+import scala.annotation.tailrec
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
   implicit val sparkSession: SparkSession = groupBy.sparkSession
-  implicit private val tableUtils = TableUtils(sparkSession)
+  implicit private val tableUtils: TableUtils = TableUtils(sparkSession)
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
     KvRdd(rdd.map { case (keyAndDs, values) => keyAndDs.init -> values }, groupBy.keySchema, groupBy.postAggSchema)
   }
@@ -60,11 +77,18 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       .serialize(sawtoothOnlineAggregator.init)
       .capacity()}
         |""".stripMargin)
-    val outputRdd = groupBy.inputDf.rdd
+
+    val outputRdd = tableUtils
+      .preAggRepartition(groupBy.inputDf)
+      .rdd
       .keyBy(keyBuilder)
-      .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
       .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update, combOp = sawtoothOnlineAggregator.merge)
+        seqOp = {
+          case (batchIr, row) =>
+            sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row, groupBy.tsIndex))
+        },
+        combOp = sawtoothOnlineAggregator.merge
+      )
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map {
         case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
@@ -81,7 +105,9 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 object GroupByUpload {
 
   // TODO - remove this if spark streaming can't reach hive tables
-  def buildServingInfo(groupByConf: api.GroupBy, session: SparkSession, endDs: String): GroupByServingInfoParsed = {
+  private def buildServingInfo(groupByConf: api.GroupBy,
+                               session: SparkSession,
+                               endDs: String): GroupByServingInfoParsed = {
     val groupByServingInfo = new GroupByServingInfo()
     implicit val tableUtils: TableUtils = TableUtils(session)
     val nextDay = tableUtils.partitionSpec.after(endDs)
@@ -100,6 +126,7 @@ object GroupByUpload {
       val streamingSource = groupByConf.streamingSource.get
 
       // TODO: move this to SourceOps
+      @tailrec
       def getInfo(source: api.Source): (String, api.Query, Boolean) = {
         if (source.isSetEvents) {
           (source.getEvents.getTable, source.getEvents.getQuery, false)
@@ -185,12 +212,12 @@ object GroupByUpload {
          |Data Model: ${groupByConf.dataModel}
          |""".stripMargin)
 
-    val kvRdd = ((groupByConf.inferredAccuracy, groupByConf.dataModel) match {
+    val kvRdd = (groupByConf.inferredAccuracy, groupByConf.dataModel) match {
       case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
-    })
+    }
 
     val kvDf = kvRdd.toAvroDf(jsonPercent = jsonPercent)
     if (showDf) {

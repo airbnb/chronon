@@ -80,7 +80,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded, flink)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -93,7 +93,7 @@ git.useGitDescribe := true
 git.gitTagToVersionNumber := { tag: String =>
   // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
   val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
-  val branchTag = git.gitCurrentBranch.value
+  val branchTag = git.gitCurrentBranch.value.replace("/", "-")
   if (branchTag == "master") {
     // For master branches, we tag the packages as <package-name>-<build-version>
     Some(s"${versionStr}")
@@ -160,6 +160,17 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("1.8.2"),
     Some("1.8.2"),
     Some("1.10.2")
+  ),
+  "flink" -> VersionDependency(
+    Seq(
+      "org.apache.flink" %% "flink-streaming-scala",
+      "org.apache.flink" % "flink-metrics-dropwizard",
+      "org.apache.flink" % "flink-clients",
+      "org.apache.flink" % "flink-test-utils"
+    ),
+    None,
+    Some("1.16.1"),
+    None
   ),
   "netty-buffer" -> VersionDependency(
     Seq(
@@ -228,7 +239,7 @@ python_api := {
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
-  val branchStr = git.gitCurrentBranch.value
+  val branchStr = git.gitCurrentBranch.value.replace("/", "-")
   s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
   if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
@@ -343,6 +354,17 @@ lazy val spark_embedded = (project in file("spark"))
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
+  )
+
+lazy val flink = (project in file("flink"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .settings(
+    crossScalaVersions := List(scala212),
+    libraryDependencies ++= fromMatrix(scalaVersion.value,
+                                       "avro",
+                                       "spark-all/provided",
+                                       "scala-parallel-collections",
+                                       "flink")
   )
 
 // Build Sphinx documentation
