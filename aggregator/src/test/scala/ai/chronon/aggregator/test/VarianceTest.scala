@@ -55,7 +55,7 @@ class VarianceTest extends TestCase {
     val naiveResult = naive(nums)
     val welfordResult = welford(nums)
     logger.info(s"naive $naiveResult - welford $welfordResult - sum of squares ${sumOfSquares(nums)}")
-    logger.info((naiveResult - welfordResult) / naiveResult)
+    logger.info(((naiveResult - welfordResult) / naiveResult).toString)
     assertTrue((naiveResult - welfordResult) / naiveResult < 0.0000001)
   }
 

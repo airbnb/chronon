@@ -149,7 +149,7 @@ class JoinTest {
       dropStart,
       dropEnd
     )
-    logger.info(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
+    logger.info(tableUtils.partitions(s"$namespace.test_user_transaction_features").mkString("\n"))
 
     joinConf.joinParts.toScala
       .map(jp => joinConf.partOutputTable(jp))
@@ -231,7 +231,7 @@ class JoinTest {
     val endMinus2 = tableUtils.partitionSpec.minus(end, new Window(2, TimeUnit.DAYS))
 
     tableUtils.dropPartitionRange(s"$namespace.test_user_transaction_features", endMinus1, endMinus1)
-    logger.info(tableUtils.partitions(s"$namespace.test_user_transaction_features"))
+    logger.info(tableUtils.partitions(s"$namespace.test_user_transaction_features").mkString("\n"))
 
     joinConf.joinParts.asScala
       .map(jp => joinConf.partOutputTable(jp))
@@ -807,7 +807,7 @@ class JoinTest {
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute =
       JoinUtils.tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
-    logger.info(leftChangeRecompute)
+    logger.info(leftChangeRecompute.mkString(", "))
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
     assertEquals(leftChangeRecompute,
