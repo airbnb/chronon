@@ -19,6 +19,7 @@ object Metrics {
 
     val JoinLogFlatten = "join.log_flatten"
     val LabelJoin = "label_join"
+    val ThreadPool = "thread_pool"
   }
   import Environment._
 
@@ -92,6 +93,10 @@ object Metrics {
       )
     }
 
+    def apply(environment: Environment): Context = {
+      new Context(environment = environment)
+    }
+
     val statsPort: Int = Config.getEnvConfig("ai.chronon.metrics.port", 8125)
     val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
       { ctx =>
@@ -155,6 +160,7 @@ object Metrics {
     }
 
     def histogram(metric: String, value: Double): Unit = stats.histogram(metric, value, Context.sampleRate)
+    def histogram(metric: String, value: Double, tags: String): Unit = stats.histogram(metric, value, Context.sampleRate, tags)
     def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
     def count(metric: String, value: Long): Unit = stats.count(metric, value)
     def gauge(metric: String, value: Double): Unit = stats.gauge(metric, value)
@@ -163,7 +169,8 @@ object Metrics {
     lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
 
     private[Metrics] def toTags: Array[String] = {
-      assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
+      if (environment != ThreadPool)
+        assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")

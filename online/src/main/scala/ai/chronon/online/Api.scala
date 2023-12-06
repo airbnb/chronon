@@ -23,7 +23,12 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext
+
+  private val metrics = Metrics.Context(Metrics.Environment.ThreadPool)
+
+  implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildInstrumentedExecutionContext(
+    "chronon_kvstore", metrics
+  )
 
   def create(dataset: String): Unit
 
