@@ -109,7 +109,7 @@ object TopicChecker {
     } else {
       args.topic() -> args.bootstrap()
     }
-    logger.info(getPartitions(topic, bootstrap))
+    logger.info(getPartitions(topic, bootstrap).toString)
     System.exit(0)
   }
 }

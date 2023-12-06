@@ -180,7 +180,6 @@ class Join(joinConf: api.Join,
           logger.info(
             s"CoveringSet(hash=${coveringSet.hashes.prettyInline}, rowCount=${coveringSet.rowCount}, isCovering=${coveringSet.isCovering})")
         }
-        logger.info()
     }
 
     coveringSetsPerJoinPart

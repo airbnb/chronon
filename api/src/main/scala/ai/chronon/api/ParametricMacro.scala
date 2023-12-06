@@ -40,7 +40,7 @@ case class ParametricMacro(value: String, func: Map[String, String] => String) {
               argSeq.tail :+ (argSeq.head + "," + token)
             }
         }
-        logger.info(parsed)
+        logger.info(parsed.mkString(","))
         parsed.map(_.split("=").map(_.trim)).map(x => x(0) -> x(1)).toMap
       }
       val result = func(argMap.getOrElse(Map.empty[String, String]))
