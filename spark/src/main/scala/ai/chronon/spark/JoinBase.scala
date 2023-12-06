@@ -167,7 +167,8 @@ abstract class JoinBase(joinConf: api.Join,
         }
       } catch {
         case e: Exception =>
-          logger.info(s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
+          logger.info(
+            s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
           throw e
       }
       if (tableUtils.tableExists(partTable)) {
@@ -193,7 +194,8 @@ abstract class JoinBase(joinConf: api.Join,
     val rowCount = leftDfWithStats.get.count
     val unfilledRange = leftDfWithStats.get.partitionRange
 
-    logger.info(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
+    logger.info(
+      s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
     val rightBloomMap =
       JoinUtils.genBloomFilterIfNeeded(leftDf,
                                        joinPart,

@@ -107,7 +107,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "1000").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+    private val logger = LoggerFactory.getLogger(getClass)
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
     private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
     private val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)
