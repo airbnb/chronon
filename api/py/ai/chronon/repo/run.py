@@ -507,7 +507,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--start-ds", help="override the original start partition for a range backfill. "
-                           "It only supports staging query, group by backfill and join jobs"
+                           "It only supports staging query, group by backfill and join jobs. "
+                           "It could leave holes in your final output table due to the override date range."
     )
     parser.add_argument(
         "--end-ds", help="the end ds for a range backfill"
