@@ -281,7 +281,7 @@ class BaseFetcher(kvStore: KVStore,
     }
 
     kvResponseFuture
-      .map { kvResponses: Seq[GetResponse] =>
+      .flatMap { kvResponses: Seq[GetResponse] =>
         val multiGetMillis = System.currentTimeMillis() - startTimeMs
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = kvResponses.map { response =>
           response.request -> response.values
@@ -289,53 +289,54 @@ class BaseFetcher(kvStore: KVStore,
         val totalResponseValueBytes =
           responsesMap.iterator.map(_._2).filter(_.isSuccess).flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0))).sum
 
-        val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
+        val futureResponses: Seq[Future[Response]] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
-            val responseMapTry = requestMetaTry.map { requestMeta =>
-              val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
+            Future {
+              val responseMapTry = requestMetaTry.map { requestMeta =>
+                val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
 
-              context.count("multi_get.batch.size", allRequests.length)
-              context.histogram("multi_get.bytes", totalResponseValueBytes)
-              context.histogram("multi_get.response.length", kvResponses.length)
-              context.histogram("multi_get.latency.millis", multiGetMillis)
+                context.count("multi_get.batch.size", allRequests.length)
+                context.histogram("multi_get.bytes", totalResponseValueBytes)
+                context.histogram("multi_get.response.length", kvResponses.length)
+                context.histogram("multi_get.latency.millis", multiGetMillis)
 
-              // pick the batch version with highest timestamp
-              val batchResponseTryAll = responsesMap
-                .getOrElse(batchRequest,
-                           Failure(
-                             new IllegalStateException(
-                               s"Couldn't find corresponding response for $batchRequest in responseMap")))
-              val streamingResponsesOpt =
-                streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
-              val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              try {
+                // pick the batch version with highest timestamp
+                val batchResponseTryAll = responsesMap
+                  .getOrElse(batchRequest,
+                    Failure(
+                      new IllegalStateException(
+                        s"Couldn't find corresponding response for $batchRequest in responseMap")))
+                val streamingResponsesOpt =
+                  streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
+                val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
+                try {
 
-                if (debug)
-                  println(
-                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
-                      s"for keys: ${request.keys}")
-                constructGroupByResponse(batchResponseTryAll,
-                                         streamingResponsesOpt,
-                                         groupByServingInfo,
-                                         queryTs,
-                                         startTimeMs,
-                                         multiGetMillis,
-                                         context,
-                                         totalResponseValueBytes,
-                                         request.keys)
-              } catch {
-                case ex: Exception =>
-                  // not all exceptions are due to stale schema, so we want to control how often we hit kv store
-                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
-                  context.incrementException(ex)
-                  ex.printStackTrace()
-                  throw ex
+                  if (debug)
+                    println(
+                      s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                        s"for keys: ${request.keys}")
+                  constructGroupByResponse(batchResponseTryAll,
+                    streamingResponsesOpt,
+                    groupByServingInfo,
+                    queryTs,
+                    startTimeMs,
+                    multiGetMillis,
+                    context,
+                    totalResponseValueBytes,
+                    request.keys)
+                } catch {
+                  case ex: Exception =>
+                    // not all exceptions are due to stale schema, so we want to control how often we hit kv store
+                    getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
+                    context.incrementException(ex)
+                    ex.printStackTrace()
+                    throw ex
+                }
               }
+              Response(request, responseMapTry)
             }
-
-            Response(request, responseMapTry)
         }.toList
-        responses
+        Future.sequence(futureResponses)
       }
   }
 
