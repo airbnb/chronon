@@ -372,10 +372,14 @@ object Extensions {
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
         .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq.allWindowsOpt)
-      allWindowsOpt.flatMap { windows =>
-        if (windows.contains(null)) None
-        else Some(windows.maxBy(_.millis))
+
+      if (allWindowsOpt.isDefined && allWindowsOpt.get.nonEmpty) {
+        allWindowsOpt.flatMap { windows =>
+          if (windows.contains(null)) None
+          else Some(windows.maxBy(_.millis))
+        }
       }
+      else None
     }
 
     def semanticHash: String = {
