@@ -34,7 +34,7 @@ import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions._
 
 class LogBootstrapTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"

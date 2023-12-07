@@ -39,7 +39,6 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.Console.logger.info
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -48,7 +47,7 @@ import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "FetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)
@@ -568,14 +567,13 @@ class FetcherTest extends TestCase {
     val responseMap = responses.head.values.get
 
     logger.info("====== Empty request response map ======")
-    logger.info(responseMap)
     assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
   }
 }
 
 object FetcherTestUtil {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def joinResponses(spark: SparkSession,
                     requests: Array[Request],
                     mockApi: MockApi,

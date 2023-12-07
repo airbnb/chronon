@@ -39,7 +39,7 @@ abstract class JoinBase(joinConf: api.Join,
                         skipFirstHole: Boolean,
                         mutationScan: Boolean = true,
                         showDf: Boolean = false) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable

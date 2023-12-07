@@ -27,7 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class StagingQueryTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   implicit private val tableUtils: TableUtils = TableUtils(spark)
 
@@ -70,9 +70,9 @@ class StagingQueryTest {
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
       logger.info(s"Actual count: ${expected.count()}")
-      logger.info(expected.show())
+      expected.show()
       logger.info(s"Computed count: ${computed.count()}")
-      logger.info(computed.show())
+      computed.show()
       logger.info(s"Diff count: ${diff.count()}")
       logger.info(s"diff result rows")
       diff.show()
@@ -144,9 +144,9 @@ class StagingQueryTest {
     val diffV2 = Comparison.sideBySide(expectedUpdated, computedUpdated, List("user", "ts", "ds"))
     if (diffV2.count() > 0) {
       logger.info(s"Actual count: ${expectedUpdated.count()}")
-      logger.info(expectedUpdated.show())
+      expectedUpdated.show()
       logger.info(s"Computed count: ${computedUpdated.count()}")
-      logger.info(computedUpdated.show())
+      computedUpdated.show()
       logger.info(s"Diff count: ${diffV2.count()}")
       logger.info(s"diff result rows")
       diffV2.show()
@@ -200,9 +200,9 @@ class StagingQueryTest {
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
       logger.info(s"Actual count: ${expected.count()}")
-      logger.info(expected.show())
+      expected.show()
       logger.info(s"Computed count: ${computed.count()}")
-      logger.info(computed.show())
+      computed.show()
       logger.info(s"Diff count: ${diff.count()}")
       logger.info(s"diff result rows")
       diff.show()
@@ -252,9 +252,9 @@ class StagingQueryTest {
     val diff = Comparison.sideBySide(expected, computed, List("user", "ts", "ds"))
     if (diff.count() > 0) {
       logger.info(s"Actual count: ${expected.count()}")
-      logger.info(expected.show())
+      expected.show()
       logger.info(s"Computed count: ${computed.count()}")
-      logger.info(computed.show())
+      computed.show()
       logger.info(s"Diff count: ${diff.count()}")
       logger.info(s"diff result rows")
       diff.show()

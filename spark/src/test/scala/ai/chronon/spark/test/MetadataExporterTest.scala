@@ -31,7 +31,7 @@ import scala.io.Source
 import java.io.File
 
 class MetadataExporterTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val sessionName = "MetadataExporter"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)

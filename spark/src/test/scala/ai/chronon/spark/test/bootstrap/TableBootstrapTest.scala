@@ -29,7 +29,7 @@ import org.junit.Test
 import scala.util.ScalaJavaConversions.JListOps
 
 class TableBootstrapTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   private val tableUtils = TableUtils(spark)

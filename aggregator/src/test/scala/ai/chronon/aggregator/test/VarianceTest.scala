@@ -22,7 +22,7 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 class VarianceTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def mean(elems: Seq[Double]): Double = elems.sum / elems.length
   def naive(elems: Seq[Double]): Double = {
@@ -55,7 +55,7 @@ class VarianceTest extends TestCase {
     val naiveResult = naive(nums)
     val welfordResult = welford(nums)
     logger.info(s"naive $naiveResult - welford $welfordResult - sum of squares ${sumOfSquares(nums)}")
-    logger.info((naiveResult - welfordResult) / naiveResult)
+    logger.info(((naiveResult - welfordResult) / naiveResult).toString)
     assertTrue((naiveResult - welfordResult) / naiveResult < 0.0000001)
   }
 

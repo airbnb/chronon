@@ -36,12 +36,11 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.Seq
-import scala.Console.logger.info
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 
 class ChainingFetcherTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "ChainingFetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)

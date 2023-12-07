@@ -36,7 +36,7 @@ import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions.JListOps
 
 class DerivationTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
   private val tableUtils = TableUtils(spark)

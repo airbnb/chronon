@@ -41,7 +41,7 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext
 
   def create(dataset: String): Unit

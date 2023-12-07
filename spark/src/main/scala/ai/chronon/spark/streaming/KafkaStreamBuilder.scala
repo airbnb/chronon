@@ -27,7 +27,7 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 }
 
 object KafkaStreamBuilder extends StreamBuilder {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   override def from(topicInfo: TopicInfo)(implicit session: SparkSession, conf: Map[String, String]): DataStream = {
     val conf = topicInfo.params
     val bootstrap = conf.getOrElse("bootstrap", conf("host") + conf.get("port").map(":" + _).getOrElse(""))

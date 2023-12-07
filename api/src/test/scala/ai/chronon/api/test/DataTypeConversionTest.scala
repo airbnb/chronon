@@ -24,7 +24,7 @@ import org.junit.Assert._
 import org.junit.Test
 
 class DataTypeConversionTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   @Test
   def testDataTypeToThriftAndBack(): Unit = {
     // build some complex type

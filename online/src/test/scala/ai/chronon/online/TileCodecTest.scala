@@ -23,7 +23,7 @@ import org.junit.Test
 import scala.collection.JavaConverters._
 
 class TileCodecTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   private val histogram = Map[String, Int]("A" -> 3, "B" -> 2).asJava
 
   private val aggregationsAndExpected: Array[(Aggregation, Seq[Any])] = Array(

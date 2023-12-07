@@ -31,7 +31,7 @@ import scala.collection.Seq
 import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   /***
     * Util methods for join computation

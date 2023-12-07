@@ -25,7 +25,7 @@ import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
 import java.util
 
 object Comparison {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // used for comparison
   def sortedJson(m: Map[String, Any]): String = {

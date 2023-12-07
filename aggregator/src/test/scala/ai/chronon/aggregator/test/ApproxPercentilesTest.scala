@@ -26,7 +26,7 @@ import org.junit.Assert._
 import scala.util.Random
 
 class ApproxPercentilesTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def testBasicImpl(nums: Int, slide: Int, k: Int, percentiles: Array[Double], errorPercent: Float): Unit = {
     val sorted = (0 to nums).map(_.toFloat)
     val elems = Random.shuffle(sorted.toList).toArray

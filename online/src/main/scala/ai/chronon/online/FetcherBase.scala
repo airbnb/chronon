@@ -43,7 +43,7 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
@@ -63,7 +63,7 @@ class FetcherBase(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
-    val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)

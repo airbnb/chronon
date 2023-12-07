@@ -29,7 +29,7 @@ import java.nio.file.Paths
 import scala.collection.immutable.Map
 
 object MetadataExporter {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
