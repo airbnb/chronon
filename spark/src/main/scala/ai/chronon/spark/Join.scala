@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -65,6 +66,7 @@ class Join(joinConf: api.Join,
            mutationScan: Boolean = true,
            showDf: Boolean = false)
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
+  private val logger = LoggerFactory.getLogger(getClass)
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -169,16 +171,15 @@ class Join(joinConf: api.Join,
         (joinPartMetadata, coveringSets)
     }
 
-    println(
+    logger.info(
       s"\n======= CoveringSet for JoinPart ${joinConf.metaData.name} for PartitionRange(${leftRange.start}, ${leftRange.end}) =======\n")
     coveringSetsPerJoinPart.foreach {
       case (joinPartMetadata, coveringSets) =>
-        println(s"Bootstrap sets for join part ${joinPartMetadata.joinPart.groupBy.metaData.name}")
+        logger.info(s"Bootstrap sets for join part ${joinPartMetadata.joinPart.groupBy.metaData.name}")
         coveringSets.foreach { coveringSet =>
-          println(
+          logger.info(
             s"CoveringSet(hash=${coveringSet.hashes.prettyInline}, rowCount=${coveringSet.rowCount}, isCovering=${coveringSet.isCovering})")
         }
-        println()
     }
 
     coveringSetsPerJoinPart
@@ -344,7 +345,7 @@ class Join(joinConf: api.Join,
 
     val result = baseDf.select(finalOutputColumns: _*)
     if (showDf) {
-      println(s"printing results for join: ${joinConf.metaData.name}")
+      logger.info(s"printing results for join: ${joinConf.metaData.name}")
       result.prettyPrint()
     }
     result
@@ -422,7 +423,7 @@ class Join(joinConf: api.Join,
         val joinedDf = parts.foldLeft(initDf) {
           case (partialDf, part) => {
 
-            println(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
+            logger.info(s"\nProcessing Bootstrap from table ${part.table} for range ${unfilledRange}")
 
             val bootstrapRange = if (part.isSetQuery) {
               unfilledRange.intersect(PartitionRange(part.startPartition, part.endPartition)(tableUtils))
@@ -430,7 +431,7 @@ class Join(joinConf: api.Join,
               unfilledRange
             }
             if (!bootstrapRange.valid) {
-              println(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
+              logger.info(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
               var bootstrapDf = tableUtils.sql(
@@ -476,7 +477,7 @@ class Join(joinConf: api.Join,
       })
 
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
-    println(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
+    logger.info(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
 
     tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
   }
@@ -495,7 +496,7 @@ class Join(joinConf: api.Join,
       return Some(bootstrapDfWithStats)
     }
     val filterExpr = CoveringSet.toFilterExpression(coveringSets)
-    println(s"Using covering set filter: $filterExpr")
+    logger.info(s"Using covering set filter: $filterExpr")
     val filteredDf = bootstrapDf.where(filterExpr)
     val filteredCount = filteredDf.count()
     if (bootstrapDfWithStats.count == filteredCount) { // counting is faster than computing stats
