@@ -35,7 +35,7 @@ import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
-  val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   implicit val sparkSession: SparkSession = groupBy.sparkSession
   implicit private val tableUtils: TableUtils = TableUtils(sparkSession)
   private def fromBase(rdd: RDD[(Array[Any], Array[Any])]): KvRdd = {
@@ -105,7 +105,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
 }
 
 object GroupByUpload {
-  val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // TODO - remove this if spark streaming can't reach hive tables
   private def buildServingInfo(groupByConf: api.GroupBy,

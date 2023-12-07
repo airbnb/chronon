@@ -62,7 +62,7 @@ class FetcherBase(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
-    val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
