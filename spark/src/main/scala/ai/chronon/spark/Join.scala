@@ -66,7 +66,6 @@ class Join(joinConf: api.Join,
            mutationScan: Boolean = true,
            showDf: Boolean = false)
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
