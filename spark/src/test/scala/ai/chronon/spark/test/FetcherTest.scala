@@ -47,7 +47,7 @@ import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "FetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)
@@ -573,7 +573,7 @@ class FetcherTest extends TestCase {
 }
 
 object FetcherTestUtil {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def joinResponses(spark: SparkSession,
                     requests: Array[Request],
                     mockApi: MockApi,

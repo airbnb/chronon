@@ -28,7 +28,7 @@ import ai.chronon.spark.stats.StatsCompute
 import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
   implicit val tableUtils = TableUtils(spark)
   val namespace: String = "stats_compute_test"

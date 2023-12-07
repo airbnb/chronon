@@ -65,7 +65,7 @@ object AsyncKVStoreWriter {
   */
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
     extends RichAsyncFunction[PutRequest, WriteResponse] {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient private var kvStore: KVStore = _
 

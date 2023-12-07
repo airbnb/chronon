@@ -20,7 +20,7 @@ import scala.jdk.CollectionConverters._
   */
 case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
     extends RichFlatMapFunction[Map[String, Any], PutRequest] {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient protected var avroConversionErrorCounter: Counter = _
 

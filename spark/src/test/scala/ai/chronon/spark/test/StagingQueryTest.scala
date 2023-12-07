@@ -27,7 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class StagingQueryTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
   implicit private val tableUtils: TableUtils = TableUtils(spark)
 

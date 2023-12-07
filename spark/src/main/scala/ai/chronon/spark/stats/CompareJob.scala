@@ -39,7 +39,7 @@ class CompareJob(
     startDate: String,
     endDate: String
 ) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val tableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)
     .orNull
@@ -107,7 +107,7 @@ class CompareJob(
 }
 
 object CompareJob {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   /**
     * Extract the discrepancy metrics (like missing records, data mismatch) from the hourly compare metrics, consolidate

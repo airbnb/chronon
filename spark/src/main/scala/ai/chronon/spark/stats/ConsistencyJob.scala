@@ -29,7 +29,7 @@ import java.util
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val tblProperties: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)

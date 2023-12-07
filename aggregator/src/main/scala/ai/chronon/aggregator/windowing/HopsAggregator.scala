@@ -94,7 +94,7 @@ class HopsAggregator(minQueryTs: Long,
                      inputSchema: Seq[(String, DataType)],
                      resolution: Resolution)
     extends HopsAggregatorBase(aggregations, inputSchema, resolution) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val leftBoundaries: Array[Option[Long]] = {
     // Nikhil is pretty confident we won't call this when aggregations is empty

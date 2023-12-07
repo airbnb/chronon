@@ -32,7 +32,7 @@ import org.apache.spark.sql.SparkSession
   * Follow pattern of OOC for computing offline and uploading online as well.
   */
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val tableUtils: TableUtils = TableUtils(session)
   private val loggingStatsTable = joinConf.metaData.loggingStatsTable

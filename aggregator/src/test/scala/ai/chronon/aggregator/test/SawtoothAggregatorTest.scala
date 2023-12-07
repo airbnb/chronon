@@ -31,7 +31,7 @@ import scala.collection.mutable
 import scala.collection.Seq
 
 class Timer {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   var ts: Long = System.currentTimeMillis()
 

@@ -32,7 +32,7 @@ import scala.collection.Seq
 import scala.util.ScalaJavaConversions.IterableOps
 
 class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   assert(

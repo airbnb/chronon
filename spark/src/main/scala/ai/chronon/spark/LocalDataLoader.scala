@@ -26,7 +26,7 @@ import org.apache.spark.sql.types.{StringType, TimestampType}
 import java.io.File
 
 object LocalDataLoader {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def writeTableFromFile(file: File, tableName: String, session: SparkSession): Unit = {
     logger.info(s"Checking table: ${tableName}")
     if (session.catalog.tableExists(tableName)) return

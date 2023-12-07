@@ -84,7 +84,7 @@ object Extensions {
   }
 
   implicit class DataframeOps(df: DataFrame) {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     private implicit val tableUtils: TableUtils = TableUtils(df.sparkSession)
 
     // This is safe to call on dataframes that are un-shuffled from their disk sources -

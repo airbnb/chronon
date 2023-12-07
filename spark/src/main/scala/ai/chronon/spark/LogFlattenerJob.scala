@@ -51,7 +51,7 @@ class LogFlattenerJob(session: SparkSession,
                       schemaTable: String,
                       stepDays: Option[Int] = None)
     extends Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   implicit val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
     .map(_.toScala)

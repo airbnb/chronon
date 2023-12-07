@@ -25,7 +25,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Test
 
 class CompareTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("CompareTest", local = true)
 
   private val tableUtils = TableUtils(spark)

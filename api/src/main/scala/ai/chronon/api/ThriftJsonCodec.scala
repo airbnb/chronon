@@ -29,7 +29,7 @@ import scala.reflect.ClassTag
 import scala.util.ScalaJavaConversions.ListOps
 
 object ThriftJsonCodec {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
 

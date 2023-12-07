@@ -71,7 +71,7 @@ sealed trait BaseKvRdd {
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession)
     extends BaseKvRdd {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val withTime = false
 
   def toAvroDf(jsonPercent: Int = 1): DataFrame = {
@@ -113,7 +113,7 @@ case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)],
                       valueSchema: StructType,
                       storeSchemasPrefix: Option[String] = None)(implicit sparkSession: SparkSession)
     extends BaseKvRdd {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val withTime = true
 
   // TODO make json percent configurable
