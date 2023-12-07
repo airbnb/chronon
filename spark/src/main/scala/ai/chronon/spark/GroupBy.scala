@@ -44,7 +44,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
-  val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   protected val selectedSchema: Array[(String, api.DataType)] = SparkConversions.toChrononSchema(inputDf.schema)
@@ -392,7 +392,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
 // TODO: truncate queryRange for caching
 object GroupBy {
-  val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // Need to use a case class here to allow null matching
   case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
