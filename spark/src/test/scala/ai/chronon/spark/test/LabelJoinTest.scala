@@ -24,7 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LabelJoinTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
 

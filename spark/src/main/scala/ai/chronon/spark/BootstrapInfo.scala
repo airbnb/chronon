@@ -69,7 +69,7 @@ case class BootstrapInfo(
 }
 
 object BootstrapInfo {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
   def from(joinConf: api.Join,

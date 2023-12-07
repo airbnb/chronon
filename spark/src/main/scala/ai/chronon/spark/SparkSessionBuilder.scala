@@ -26,7 +26,7 @@ import scala.reflect.io.Path
 import scala.util.Properties
 
 object SparkSessionBuilder {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
 

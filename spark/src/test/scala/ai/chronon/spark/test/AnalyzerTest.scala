@@ -27,7 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnalyzerTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
   private val tableUtils = TableUtils(spark)
 

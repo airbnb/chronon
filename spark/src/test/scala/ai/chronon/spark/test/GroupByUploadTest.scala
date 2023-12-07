@@ -34,7 +34,7 @@ import scala.concurrent.Await
 import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
   private val namespace = "group_by_upload_test"

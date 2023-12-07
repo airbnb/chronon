@@ -33,7 +33,7 @@ import org.junit.Test
   * Join is the events and the entity value at the exact timestamp of the ts.
   */
 class MutationsTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build(
     "MutationsTest",

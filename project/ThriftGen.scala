@@ -4,7 +4,7 @@ import sbt._
 import sys.process._
 
 object Thrift {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def gen(inputPath: String, outputPath: String, language: String, cleanupSuffixPath: String = "", extension: String = null): Seq[File] = {
     s"""echo "Generating files from thrift file: $outputPath \ninto folder $inputPath" """ !;
     s"rm -rf $outputPath/$cleanupSuffixPath" !;

@@ -35,7 +35,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSe
 import java.util.Base64
 
 class InMemoryStream {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private def encode(schema: org.apache.avro.Schema)(row: Row): Array[Byte] = {
     val gr: GenericRecord = new GenericData.Record(schema)

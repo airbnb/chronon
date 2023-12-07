@@ -30,7 +30,7 @@ import scala.concurrent.Future
 import scala.util.Try
 
 class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Serializable {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
@@ -139,7 +139,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
 }
 
 object InMemoryKvStore {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext

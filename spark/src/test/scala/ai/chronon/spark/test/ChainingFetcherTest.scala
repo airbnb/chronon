@@ -40,7 +40,7 @@ import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 
 class ChainingFetcherTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "ChainingFetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)

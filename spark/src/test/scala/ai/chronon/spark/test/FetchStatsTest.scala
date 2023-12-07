@@ -47,7 +47,7 @@ import scala.concurrent.{Await, ExecutionContext}
   * Fetch stats.
   */
 class FetchStatsTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("FetchStatsTest", local = true)
   val tableUtils = TableUtils(spark)

@@ -27,7 +27,7 @@ import org.apache.spark.sql.types.DataType
 import scala.collection.mutable.ListBuffer
 
 object CompareBaseJob {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def checkConsistency(
       leftFields: Map[String, DataType],

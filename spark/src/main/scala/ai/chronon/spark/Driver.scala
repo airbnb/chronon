@@ -56,7 +56,7 @@ class DummyExtensions extends (SparkSessionExtensions => Unit) {
 
 // The mega chronon cli
 object Driver {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
@@ -214,7 +214,7 @@ object Driver {
   }
 
   object JoinBackfill {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("join")
         with OfflineSubcommand
@@ -262,7 +262,7 @@ object Driver {
   }
 
   object GroupByBackfill {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("group-by-backfill")
         with OfflineSubcommand
@@ -542,7 +542,7 @@ object Driver {
   }
 
   object FetcherCli {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
@@ -662,7 +662,7 @@ object Driver {
   }
 
   object MetadataUploader {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
@@ -707,7 +707,7 @@ object Driver {
   }
 
   object GroupByStreaming {
-    private val logger = LoggerFactory.getLogger(getClass)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
@@ -731,7 +731,7 @@ object Driver {
     }
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
-      private val logger = LoggerFactory.getLogger(getClass)
+      @transient lazy val logger = LoggerFactory.getLogger(getClass)
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
       val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =

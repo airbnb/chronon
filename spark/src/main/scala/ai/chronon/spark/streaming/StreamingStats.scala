@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 
 class StreamingStats(val publishDelaySeconds: Int) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   private var latencyHistogram: KllFloatsSketch = new KllFloatsSketch()
   private var latencyMsTotal: Long = 0
   private var writesTotal: Long = 0

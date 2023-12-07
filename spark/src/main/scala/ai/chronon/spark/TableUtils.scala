@@ -38,7 +38,7 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
 case class TableUtils(sparkSession: SparkSession) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   private lazy val archiveTimestampFormatter = DateTimeFormatter

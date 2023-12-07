@@ -49,7 +49,7 @@ object TopicInfo {
 }
 
 case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // apply a query to a given data stream
   def apply(query: api.Query, keys: Seq[String] = null, dataModel: DataModel = DataModel.Events): DataStream = {

@@ -42,7 +42,7 @@ case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extend
 }
 
 object FastHashing {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // function to generate a fast-ish hasher
   // the approach tries to accumulate several tiny closures to compute the final hash
   def generateKeyBuilder(keys: Array[String], schema: StructType): Row => KeyWithHash = {

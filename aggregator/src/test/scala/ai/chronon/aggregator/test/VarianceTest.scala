@@ -22,7 +22,7 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 class VarianceTest extends TestCase {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def mean(elems: Seq[Double]): Double = elems.sum / elems.length
   def naive(elems: Seq[Double]): Double = {

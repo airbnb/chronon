@@ -27,7 +27,7 @@ import org.junit.Test
 import scala.util.ScalaJavaConversions.JListOps
 
 class DataStreamBuilderTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = {
     System.setSecurityManager(null)
     val spark = SparkSession

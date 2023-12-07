@@ -3,7 +3,7 @@ import java.io.File
 import scala.reflect.io.Directory
 
 object Folder {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def clean(files: File*): Unit = {
     logger.info(s"Removing folders ${files.map(_.getAbsolutePath)}")
     files.foreach { file =>

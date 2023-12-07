@@ -26,7 +26,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FeatureWithLabelJoinTest {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("FeatureWithLabelJoinTest", local = true)
 
   private val namespace = "final_join"
