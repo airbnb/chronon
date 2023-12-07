@@ -44,6 +44,8 @@ services:
     environment:
       - USER=root
       - SPARK_SUBMIT_PATH=spark-submit
+      - PYTHONPATH=/srv/chronon
+      - SPARK_VERSION=3.1.1
     depends_on:
       - spark-master
       - spark-worker-1
