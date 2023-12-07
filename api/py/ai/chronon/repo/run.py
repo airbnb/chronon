@@ -372,7 +372,8 @@ class Runner:
             )
         else:
             self.conf_type = args.conf_type
-        self.ds = args.ds
+        self.ds = args.end_ds if hasattr(args, 'end_ds') and args.end_ds else args.ds
+        self.parallelism = args.parallelism if hasattr(args, 'parallelism') and args.parallelism else 1
         self.jar_path = jar_path
         self.args = args.args if args.args else ""
         self.online_class = args.online_class
@@ -500,9 +501,20 @@ if __name__ == "__main__":
         help="Conf param - required for every mode except fetch",
     )
     parser.add_argument("--mode", choices=MODE_ARGS.keys())
-    parser.add_argument("--ds")
+    parser.add_argument("--ds", help="the end partition to backfill the data")
     parser.add_argument(
         "--app-name", help="app name. Default to {}".format(APP_NAME_TEMPLATE)
+    )
+    parser.add_argument(
+        "--start-ds", help="override the original start partition for a range backfill. "
+                           "It only supports staging query, group by backfill and join jobs. "
+                           "It could leave holes in your final output table due to the override date range."
+    )
+    parser.add_argument(
+        "--end-ds", help="the end ds for a range backfill"
+    )
+    parser.add_argument(
+        "--parallelism", help="break down the backfill range into this number of tasks in parallel"
     )
     parser.add_argument("--repo", help="Path to chronon repo")
     parser.add_argument(
@@ -560,7 +572,8 @@ if __name__ == "__main__":
     args, unknown_args = parser.parse_known_args()
     jar_type = "embedded" if args.mode in MODES_USING_EMBEDDED else "uber"
     extra_args = (" " + args.online_args) if args.mode in ONLINE_MODES else ""
-    args.args = " ".join(unknown_args) + extra_args
+    override_start_partition_arg = "--start-partition-override=" + args.start_ds if args.start_ds else ""
+    args.args = " ".join(unknown_args) + extra_args + override_start_partition_arg
     jar_path = (
         args.chronon_jar
         if args.chronon_jar

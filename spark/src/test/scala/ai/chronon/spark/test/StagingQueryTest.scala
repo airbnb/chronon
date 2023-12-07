@@ -49,10 +49,11 @@ class StagingQueryTest {
     val viewName = s"$namespace.test_staging_query_compare"
     df.save(viewName)
 
+    val function = "temp_replace_a"
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
       startPartition = ninetyDaysAgo,
-      setups = Seq("create temporary function temp_replace_a as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
+      setups = Seq(s"create temporary function $function as 'org.apache.hadoop.hive.ql.udf.UDFRegExpReplace'"),
       metaData = Builders.MetaData(name = "test.user_session_features",
                                    namespace = namespace,
                                    tableProperties = Map("key" -> "val"),
@@ -76,6 +77,26 @@ class StagingQueryTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+
+    // reset for overrideStartPartition test
+    spark.sql(s"DROP TABLE IF EXISTS ${stagingQueryConf.metaData.outputTable}")
+    spark.sql(s"DROP TEMPORARY FUNCTION IF EXISTS $function")
+    stagingQuery.computeStagingQuery(stepDays = Option(30), overrideStartPartition = Option(today))
+    val expectedWithOverrideStartPartition =
+      tableUtils.sql(s"select * from $viewName where ds = '$today' AND user IS NOT NULL")
+
+    val computedWithOverrideStartPartition = tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
+    val diffWithOverrideStartPartition = Comparison.sideBySide(expectedWithOverrideStartPartition, computedWithOverrideStartPartition, List("user", "ts", "ds"))
+    if (diffWithOverrideStartPartition.count() > 0) {
+      println(s"Actual count: ${expectedWithOverrideStartPartition.count()}")
+      println(expectedWithOverrideStartPartition.show())
+      println(s"Computed count: ${computedWithOverrideStartPartition.count()}")
+      println(computedWithOverrideStartPartition.show())
+      println(s"Diff count: ${diffWithOverrideStartPartition.count()}")
+      println(s"diffWithOverrideStartPartition result rows")
+      diffWithOverrideStartPartition.show()
+    }
+    assertEquals(0, diffWithOverrideStartPartition.count())
   }
 
   /** Test Staging Query update with new feature/column added to the query.

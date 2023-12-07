@@ -37,23 +37,27 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       .asInstanceOf[java.util.ArrayList[String]]
       .toScala
 
-  def computeStagingQuery(stepDays: Option[Int] = None, enableAutoExpand: Option[Boolean] = Some(true)): Unit = {
+  def computeStagingQuery(stepDays: Option[Int] = None,
+                          enableAutoExpand: Option[Boolean] = Some(true),
+                          overrideStartPartition: Option[String] = None): Unit = {
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
       tableUtils.sql(stagingQueryConf.query).save(outputTable)
       return
     }
+    val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
     val unfilledRanges =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition)(tableUtils))
+      tableUtils.unfilledRanges(outputTable, PartitionRange(overrideStart, endPartition)(tableUtils))
 
     if (unfilledRanges.isEmpty) {
       println(s"""No unfilled range for $outputTable given
-           |start partition of ${stagingQueryConf.startPartition}
+           |start partition of $overrideStart
            |end partition of $endPartition
            |""".stripMargin)
       return
     }
+    System.exit(0)
     val stagingQueryUnfilledRanges = unfilledRanges.get
     println(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]

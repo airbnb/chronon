@@ -267,6 +267,12 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
+      val startPartitionOverride: ScallopOption[String] =
+        opt[String](
+          required = false,
+          descr = "Start date to compute group by backfill, this start date will override backfill start date in conf.")
+      val parallelism: ScallopOption[Int] =
+        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
       override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
@@ -277,7 +283,8 @@ object Driver {
         args.groupByConf,
         args.endDate(),
         tableUtils,
-        args.stepDays.toOption
+        args.stepDays.toOption,
+        args.startPartitionOverride.toOption
       )
 
       if (args.shouldExport()) {
@@ -380,6 +387,13 @@ object Driver {
         opt[Boolean](required = false,
                      descr = "Auto expand hive table if new columns added in staging query",
                      default = Option(true))
+      val startPartitionOverride: ScallopOption[String] =
+        opt[String](
+          required = false,
+          descr =
+            "Start date to compute staging query backfill, this start date will override start partition in conf.")
+      val parallelism: ScallopOption[Int] =
+        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
@@ -391,7 +405,9 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption, args.enableAutoExpand.toOption)
+      stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
+                                          args.enableAutoExpand.toOption,
+                                          args.startPartitionOverride.toOption)
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)

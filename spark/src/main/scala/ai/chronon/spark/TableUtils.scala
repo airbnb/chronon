@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import jnr.ffi.annotations.Synchronized
 import org.apache.spark.rdd.RDD
@@ -283,18 +284,19 @@ case class TableUtils(sparkSession: SparkSession) {
       try {
         sql(creationSql)
       } catch {
+        case _: TableAlreadyExistsException =>
+          println(s"Table $tableName already exists, skipping creation")
         case e: Exception =>
           println(s"Failed to create table $tableName with error: ${e.getMessage}")
           throw e
       }
-    } else {
-      if (tableProperties != null && tableProperties.nonEmpty) {
-        sql(alterTablePropertiesSql(tableName, tableProperties))
-      }
+    }
+    if (tableProperties != null && tableProperties.nonEmpty) {
+      sql(alterTablePropertiesSql(tableName, tableProperties))
+    }
 
-      if (autoExpand) {
-        expandTable(tableName, dfRearranged.schema)
-      }
+    if (autoExpand) {
+      expandTable(tableName, dfRearranged.schema)
     }
 
     val finalizedDf = if (autoExpand) {
