@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions.{JoinOps, _}
@@ -30,6 +31,7 @@ import scala.collection.Seq
 import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   /***
     * Util methods for join computation
@@ -53,12 +55,12 @@ object JoinUtils {
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
       .map(sf => {
-        println(s"left skew filter: $sf")
+        logger.info(s"left skew filter: $sf")
         df.filter(sf)
       })
       .getOrElse(df)
     if (result.isEmpty) {
-      println(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
+      logger.info(s"Left side query below produced 0 rows in range $range. Query:\n$scanQuery")
       if (!allowEmpty) {
         return None
       }
@@ -103,7 +105,7 @@ object JoinUtils {
     val overrideStart = if (historicalBackfill) {
       overrideStartPartition
     } else {
-      println(s"Historical backfill is set to false. Backfill latest single partition only: $endPartition")
+      logger.info(s"Historical backfill is set to false. Backfill latest single partition only: $endPartition")
       Some(endPartition)
     }
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
@@ -294,12 +296,12 @@ object JoinUtils {
       unfilledRange: PartitionRange,
       tableUtils: TableUtils,
       joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[Map[String, BloomFilter]] = {
-    println(
+    logger.info(
       s"\nRow count to be filled for ${joinPart.groupBy.metaData.name}. BloomFilter Threshold: ${tableUtils.bloomFilterThreshold}")
 
     // apply bloom filter when left row count is below threshold
     if (leftRowCount > tableUtils.bloomFilterThreshold) {
-      println("Row count is above threshold. Skip gen bloom filter.")
+      logger.info("Row count is above threshold. Skip gen bloom filter.")
       Option.empty
     } else {
 
@@ -312,7 +314,7 @@ object JoinUtils {
 
       val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
       val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-      println(s"""
+      logger.info(s"""
            Generating bloom filter for joinPart:
            |  part name : ${joinPart.groupBy.metaData.name},
            |  left type : ${joinConf.left.dataModel},
@@ -342,7 +344,7 @@ object JoinUtils {
       oldSemanticJson <- props.get(Constants.SemanticHashKey);
       oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
     ) yield {
-      println(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
+      logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
     }).getOrElse(collection.Seq.empty)
   }

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
@@ -38,7 +39,6 @@ import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
-import scala.Console.println
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
@@ -47,6 +47,7 @@ import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "FetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)
@@ -183,7 +184,7 @@ class FetcherTest extends TestCase {
           .save(s"$namespace.${schema.name}")
 
     }
-    println("saved all data hand written for fetcher test")
+    logger.info("saved all data hand written for fetcher test")
 
     val startPartition = "2021-04-08"
     val endPartition = "2021-04-10"
@@ -459,7 +460,7 @@ class FetcherTest extends TestCase {
         .withColumn("ts_lagged", laggedResponseDf.col("ts_millis") + lagMs)
         .withColumn("ts_millis", col("ts_lagged"))
         .drop("ts_lagged")
-      println("corrected lagged response")
+      logger.info("corrected lagged response")
       correctedLaggedResponse.show()
       correctedLaggedResponse.save(mockApi.logTable, partitionColumns = Seq(tableUtils.partitionColumn, "name"))
 
@@ -471,14 +472,14 @@ class FetcherTest extends TestCase {
       // build consistency metrics
       val consistencyJob = new ConsistencyJob(spark, joinConf, today)
       val metrics = consistencyJob.buildConsistencyMetrics()
-      println(s"ooc metrics: $metrics".stripMargin)
+      logger.info(s"ooc metrics: $metrics".stripMargin)
       OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
       val fetcher = mockApi.buildFetcher()
       val consistencyFetch =
         fetcher.fetchConsistencyMetricsTimeseries(StatsRequest(joinConf.metaData.nameToFilePath, None, None))
       val response = Await.result(consistencyFetch, Duration.Inf)
       val gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create()
-      println(s"""
+      logger.info(s"""
           |
           | Fetched Consistency Metrics
           | ${gson.toJson(response.values.get)}
@@ -503,7 +504,7 @@ class FetcherTest extends TestCase {
           .asInstanceOf[GenericRow]
       }
 
-    println(endDsExpected.schema.pretty)
+    logger.info(endDsExpected.schema.pretty)
 
     val keyishColumns = keys.toList ++ List(tableUtils.partitionColumn, Constants.TimeColumn)
     val responseRdd = tableUtils.sparkSession.sparkContext.parallelize(responseRows.toSeq)
@@ -511,19 +512,19 @@ class FetcherTest extends TestCase {
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
     }
-    println("expected:")
+    logger.info("expected:")
     endDsExpected.show()
-    println("response:")
+    logger.info("response:")
     responseDf.show()
 
     val diff = Comparison.sideBySide(responseDf, endDsExpected, keyishColumns, aName = "online", bName = "offline")
     assertEquals(endDsQueries.count(), responseDf.count())
     if (diff.count() > 0) {
-      println("queries:")
+      logger.info("queries:")
       endDsQueries.show()
-      println(s"Total count: ${responseDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows:")
+      logger.info(s"Total count: ${responseDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows:")
       diff
         .withTimeBasedColumn("ts_string", "ts", "yy-MM-dd HH:mm")
         .select("ts_string", diff.schema.fieldNames: _*)
@@ -565,14 +566,14 @@ class FetcherTest extends TestCase {
     val (responses, _) = FetcherTestUtil.joinResponses(spark, Array(request), mockApi)
     val responseMap = responses.head.values.get
 
-    println("====== Empty request response map ======")
-    println(responseMap)
+    logger.info("====== Empty request response map ======")
     assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
   }
 }
 
 object FetcherTestUtil {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def joinResponses(spark: SparkSession,
                     requests: Array[Request],
                     mockApi: MockApi,
@@ -639,7 +640,7 @@ object FetcherTestUtil {
     }
     val fetcherNameString = if (useJavaFetcher) "Java" else "Scala"
 
-    println(s"""
+    logger.info(s"""
          |Averaging fetching stats for $fetcherNameString Fetcher over ${requests.length} requests $runCount times
          |with batch size: $chunkSize
          |average qps: ${qpsSum / runCount}
@@ -654,7 +655,7 @@ object FetcherTestUtil {
       )
     }
     if (samplePercent > 0) {
-      println(s"logged count: ${loggedDf.count()}")
+      logger.info(s"logged count: ${loggedDf.count()}")
       loggedDf.show()
     }
     result -> loggedDf

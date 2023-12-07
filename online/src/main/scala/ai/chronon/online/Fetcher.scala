@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
@@ -80,6 +81,7 @@ class Fetcher(val kvStore: KVStore,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
@@ -161,8 +163,8 @@ class Fetcher(val kvStore: KVStore,
         internalResponses.zip(externalResponses).map {
           case (internalResponse, externalResponse) =>
             if (debug) {
-              println(internalResponse.values.get.keys.toSeq)
-              println(externalResponse.values.get.keys.toSeq)
+              logger.info(internalResponse.values.get.keys.toSeq.mkString(","))
+              logger.info(externalResponse.values.get.keys.toSeq.mkString(","))
             }
             val cleanInternalRequest = internalResponse.request.copy(context = None)
             assert(
@@ -264,10 +266,10 @@ class Fetcher(val kvStore: KVStore,
         }
 
         if (debug) {
-          println(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
+          logger.info(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
           val gson = new Gson()
           val valuesFormatted = values.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
-          println(s"""Sampled join fetch
+          logger.info(s"""Sampled join fetch
                |Key Map: ${resp.request.keys}
                |Value Map: [${valuesFormatted}]
                |""".stripMargin)
@@ -291,7 +293,7 @@ class Fetcher(val kvStore: KVStore,
             context.distribution("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
 
           if (debug) {
-            println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
+            logger.info(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
           }
         }
       }
@@ -300,7 +302,7 @@ class Fetcher(val kvStore: KVStore,
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
       joinContext.foreach(_.incrementException(exception))
-      println(s"logging failed due to ${exception.traceString}")
+      logger.info(s"logging failed due to ${exception.traceString}")
     }
     Response(resp.request, Success(resp.derivedValues))
   }
@@ -410,7 +412,7 @@ class Fetcher(val kvStore: KVStore,
     if (logFunc != null) {
       logFunc.accept(controlEvent)
       if (debug) {
-        println(s"schema data logged successfully with schema_hash ${enc.loggingSchemaHash}")
+        logger.info(s"schema data logged successfully with schema_hash ${enc.loggingSchemaHash}")
       }
     }
   }

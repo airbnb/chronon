@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
@@ -28,6 +29,7 @@ import org.junit.Test
 import scala.util.ScalaJavaConversions.JListOps
 
 class TableBootstrapTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   private val tableUtils = TableUtils(spark)
@@ -136,7 +138,7 @@ class TableBootstrapTest {
     val overlapBaseBootstrap1 = baseOutput.join(bootstrapDf1, Seq("request_id", "ds")).count()
     val overlapBaseBootstrap2 = baseOutput.join(bootstrapDf2, Seq("request_id", "ds")).count()
     val overlapBootstrap12 = bootstrapDf1.join(bootstrapDf2, Seq("request_id", "ds")).count()
-    println(s"""Debug information:
+    logger.info(s"""Debug information:
          |base count: ${baseOutput.count()}
          |overlap keys between base and bootstrap1 count: ${overlapBaseBootstrap1}
          |overlap keys between base and bootstrap2 count: ${overlapBaseBootstrap2}
@@ -145,10 +147,10 @@ class TableBootstrapTest {
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 

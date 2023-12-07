@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.chronon.aggregator.windowing._
@@ -30,6 +31,7 @@ import scala.collection.mutable
 import scala.collection.Seq
 
 class Timer {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   var ts: Long = System.currentTimeMillis()
 
@@ -38,7 +40,7 @@ class Timer {
   // TODO: Write this out into a file checked into git
   // or incorporate proper benchmarks
   def publish(name: String, reset: Boolean = true): Unit = {
-    println(s"${name.padTo(25, ' ')} ${System.currentTimeMillis() - ts} ms")
+    logger.info(s"${name.padTo(25, ' ')} ${System.currentTimeMillis() - ts} ms")
     if (reset) ts = System.currentTimeMillis()
   }
 }

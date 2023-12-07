@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.stats
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api._
 import ai.chronon.online.{SparkConversions, _}
 import ai.chronon.spark.Extensions._
@@ -26,6 +27,7 @@ import org.apache.spark.sql.types.DataType
 import scala.collection.mutable.ListBuffer
 
 object CompareBaseJob {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def checkConsistency(
       leftFields: Map[String, DataType],
@@ -132,10 +134,10 @@ object CompareBaseJob {
     } else {
       leftDf
     }
-    println(s"Pruning fields from the left source for equivalent comparison - ${prunedColumns.mkString(",")}")
+    logger.info(s"Pruning fields from the left source for equivalent comparison - ${prunedColumns.mkString(",")}")
 
     // 3. Build comparison dataframe
-    println(s"""Join keys: ${keys.mkString(", ")}
+    logger.info(s"""Join keys: ${keys.mkString(", ")}
         |Left Schema:
         |${prunedLeftDf.schema.pretty}
         |

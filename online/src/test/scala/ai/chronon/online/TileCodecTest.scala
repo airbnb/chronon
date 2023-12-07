@@ -16,12 +16,14 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.{Aggregation, Builders, FloatType, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import scala.collection.JavaConverters._
 
 class TileCodecTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   private val histogram = Map[String, Int]("A" -> 3, "B" -> 2).asJava
 
   private val aggregationsAndExpected: Array[(Aggregation, Seq[Any])] = Array(
@@ -105,7 +107,7 @@ class TileCodecTest {
     val windowedRowAggregator = TileCodec.buildWindowedRowAggregator(groupBy, schema)
     expectedFlattenedVals.zip(finalResults).zip(windowedRowAggregator.outputSchema.map(_._1)).foreach {
       case ((expected, actual), name) =>
-        println(s"Checking: $name")
+        logger.info(s"Checking: $name")
         assertEquals(expected, actual)
     }
   }
@@ -138,7 +140,7 @@ class TileCodecTest {
     val windowedRowAggregator = TileCodec.buildWindowedRowAggregator(groupBy, schema)
     expectedBucketedResults.zip(finalResults).zip(windowedRowAggregator.outputSchema.map(_._1)).foreach {
       case ((expected, actual), name) =>
-        println(s"Checking: $name")
+        logger.info(s"Checking: $name")
         assertEquals(expected, actual)
     }
   }

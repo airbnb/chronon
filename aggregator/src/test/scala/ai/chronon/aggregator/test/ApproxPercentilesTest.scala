@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.ApproxPercentiles
 import ai.chronon.aggregator.row.StatsGenerator
 import com.yahoo.sketches.kll.KllFloatsSketch
@@ -25,6 +26,7 @@ import org.junit.Assert._
 import scala.util.Random
 
 class ApproxPercentilesTest extends TestCase {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   def testBasicImpl(nums: Int, slide: Int, k: Int, percentiles: Array[Double], errorPercent: Float): Unit = {
     val sorted = (0 to nums).map(_.toFloat)
     val elems = Random.shuffle(sorted.toList).toArray
@@ -42,7 +44,7 @@ class ApproxPercentilesTest extends TestCase {
     val expected = result.indices.map(_ * step).map(_.toFloat).toArray
     val diffs = result.indices.map(i => Math.abs(result(i) - expected(i)))
     val errorMargin = (nums.toFloat * errorPercent) / 100.0
-    println(s"""
+    logger.info(s"""
          |sketch size: ${merged.getSerializedSizeBytes}
          |result: ${result.toVector}
          |result size: ${result.size}
@@ -66,7 +68,7 @@ class ApproxPercentilesTest extends TestCase {
     sample1.map(sketch1.update)
     sample2.map(sketch2.update)
     val drift = StatsGenerator.PSIKllSketch(sketch1.toByteArray, sketch2.toByteArray).asInstanceOf[Double]
-    println(s"PSI drift: $drift")
+    logger.info(s"PSI drift: $drift")
     drift
   }
 
