@@ -30,7 +30,6 @@ import scala.concurrent.Future
 import scala.util.Try
 
 class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Serializable {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
