@@ -32,7 +32,7 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
                                        inputSchema: Seq[(String, DataType)],
                                        resolution: Resolution,
                                        tailBufferMillis: Long) {
-  private val logger = LoggerFactory.getLogger(getClass)
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // logically, batch response is arranged like so
   // sum-90d =>  sum_ir_88d, [(sum_ir_1d, ts)] -> 1d is the hopSize for 90d
