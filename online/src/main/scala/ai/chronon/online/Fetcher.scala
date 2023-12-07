@@ -81,7 +81,6 @@ class Fetcher(val kvStore: KVStore,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]

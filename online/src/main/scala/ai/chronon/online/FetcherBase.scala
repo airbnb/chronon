@@ -43,7 +43,6 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
