@@ -5,7 +5,6 @@ import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
 
 import scala.collection.Seq
-import scala.concurrent.{ExecutionContext, Future}
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
@@ -93,10 +92,6 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
   }
 
   def finalize(ir: Array[Any]): Array[Any] = map(ir, _.finalize)
-
-  def finalize(futureIr: Future[Array[Any]])(implicit ec: ExecutionContext): Future[Array[Any]] = {
-    futureIr.map(ir => map(ir, _.finalize))
-  }
 
   override def delete(ir: Array[Any], inputRow: Row): Array[Any] = {
     if (!isNotDeletable) {
