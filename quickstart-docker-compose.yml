@@ -14,6 +14,12 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_CONF_DIR=/opt/bitnami/spark/conf
+      - SPARK_HISTORY_FS_LOGDIRECTORY=/tmp/spark-events
+      - SPARK_CONF_SPARK_SQL_WAREHOUSE_DIR=/tmp/chronon/spark-warehouse/data
+      - SPARK_CONF_SPARK_SQL_METASTORE_URI=jdbc:derby:/tmp/chronon/spark-warehouse/metastore;create=true
+    volumes:
+      - hive_data:/tmp/chronon/spark-warehouse
 
   spark-history-server:
     image: bitnami/spark:3.1.1
@@ -53,7 +59,9 @@ services:
       - mongodb
     volumes:
       - ./api/py/test/sample:/srv/chronon
+      - hive_data:/tmp/chronon/spark-warehouse
 
 volumes:
   mongodb_data:
   spark_history_logs:  # Define the volume for history logs
+  hive_data:

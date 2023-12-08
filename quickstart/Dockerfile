@@ -94,5 +94,8 @@ ENV PATH=$PATH:$SPARK_HOME/bin
 # Copy your chronon-ai code into the container
 RUN pip install chronon-ai
 
+# Build the tables.
+COPY data_loader.scala /usr/local/src/data_loader.scala
+
 # Set the entry point for the container
 CMD ["tail", "-f", "/dev/null"]
