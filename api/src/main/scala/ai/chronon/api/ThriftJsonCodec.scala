@@ -65,7 +65,7 @@ object ThriftJsonCodec {
       base
     } catch {
       case e: Exception => {
-        logger.info("Failed to deserialize using compact protocol, trying Json.")
+        logger.error("Failed to deserialize using compact protocol, trying Json.")
         fromJsonStr(new String(bytes), check = false, base.getClass)
       }
     }
