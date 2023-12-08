@@ -234,7 +234,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         .map(_.asInstanceOf[String])
     } catch {
       case ex: Throwable =>
-        logger.error(s"Failed to parse Chronon config file at $path as JSON with error: ${ex.getMessage}")
+        logger.error(s"Failed to parse Chronon config file at $path as JSON", ex)
         ex.printStackTrace()
         None
     }

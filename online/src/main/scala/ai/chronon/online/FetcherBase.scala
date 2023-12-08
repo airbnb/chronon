@@ -149,7 +149,7 @@ class FetcherBase(kvStore: KVStore,
         .recover {
           case ex: Throwable =>
             logger.error(
-              s"Couldn't update GroupByServingInfo of $name due to ${ex.getMessage}. Proceeding with the old one.")
+              s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
             ex.printStackTrace()
             groupByServingInfo
         }
@@ -371,7 +371,7 @@ class FetcherBase(kvStore: KVStore,
                     .recover { // capture exception as a key
                       case ex: Throwable =>
                         if (debug || Math.random() < 0.001) {
-                          logger.error(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
+                          logger.error(s"Failed to fetch $groupByRequest", ex)
                         }
                         Map(groupByRequest.name + "_exception" -> ex.traceString)
                     }
@@ -450,7 +450,7 @@ class FetcherBase(kvStore: KVStore,
             .recoverWith { // capture exception as a key
               case ex: Throwable =>
                 if (debug || Math.random() < 0.001) {
-                  logger.error(s"Failed to fetch $request with \n${ex.traceString}")
+                  logger.error(s"Failed to fetch $request", ex)
                 }
                 Failure(ex)
             }
