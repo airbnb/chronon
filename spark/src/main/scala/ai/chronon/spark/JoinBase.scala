@@ -167,7 +167,7 @@ abstract class JoinBase(joinConf: api.Join,
         }
       } catch {
         case e: Exception =>
-          logger.info(
+          logger.error(
             s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
           throw e
       }

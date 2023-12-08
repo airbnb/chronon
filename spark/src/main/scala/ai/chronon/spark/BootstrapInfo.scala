@@ -295,7 +295,7 @@ object BootstrapInfo {
     }
 
     if (exceptionList.nonEmpty) {
-      exceptionList.foreach(t => logger.info(t.traceString))
+      exceptionList.foreach(t => logger.error(t.traceString))
       throw new Exception(s"Validation failed for bootstrapInfo construction for join ${joinConf.metaData.name}")
     }
 
