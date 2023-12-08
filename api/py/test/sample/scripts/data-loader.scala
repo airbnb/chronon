@@ -1,4 +1,5 @@
 // Create tables from csv and load them into spark.
+// spark-shell -i data-loader.scala --master spark://spark-master:7077
 import java.io.File
 import org.apache.spark.sql.types._
 

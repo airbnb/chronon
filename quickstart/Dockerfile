@@ -95,10 +95,4 @@ ENV PATH=$PATH:$SPARK_HOME/bin
 # Copy your chronon-ai code into the container
 RUN pip install chronon-ai
 
-RUN pip install jupyter
-
-# Expose the port for Jupyter Notebook
-EXPOSE 8888
-
-# Set the default command to run Jupyter Notebook when the container starts
-CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+CMD ["tail", "-f", "/dev/null"]
