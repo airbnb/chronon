@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
 import ai.chronon.api.{DataType, ThriftJsonCodec}
@@ -28,6 +29,7 @@ import java.nio.file.Paths
 import scala.collection.immutable.Map
 
 object MetadataExporter {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
@@ -63,7 +65,7 @@ object MetadataExporter {
         }
       } catch {
         case exception: Throwable =>
-          println(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
+          logger.info(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
           configData
       }
     mapper.writeValueAsString(enrichedData)
@@ -76,7 +78,7 @@ object MetadataExporter {
     val writer = new BufferedWriter(new FileWriter(file))
     writer.write(data)
     writer.close()
-    println(s"${path} : Wrote to output directory successfully")
+    logger.info(s"${path} : Wrote to output directory successfully")
   }
 
   def processEntities(inputPath: String, outputPath: String, suffix: String): Unit = {
@@ -90,7 +92,7 @@ object MetadataExporter {
       }
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
-    println(
+    logger.info(
       s"Successfully processed ${processSuccess.filter(_._2).length} from $suffix \n " +
         s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
   }

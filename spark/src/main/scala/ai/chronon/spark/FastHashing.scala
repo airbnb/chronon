@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.spark.Extensions._
 import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
@@ -41,11 +42,12 @@ case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extend
 }
 
 object FastHashing {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // function to generate a fast-ish hasher
   // the approach tries to accumulate several tiny closures to compute the final hash
   def generateKeyBuilder(keys: Array[String], schema: StructType): Row => KeyWithHash = {
     val keySchema = StructType(schema.filter { sf => keys.contains(sf.name) })
-    println(s"Generating key builder over keys:\n${keySchema.pretty}\n")
+    logger.info(s"Generating key builder over keys:\n${keySchema.pretty}\n")
     val keyIndices: Array[Int] = keys.map(schema.fieldIndex)
     // the hash function generation won't be in the hot path - so its okay to
     val hashFunctions: Array[(Hasher, Row) => Unit] = keys.zip(keyIndices).map {

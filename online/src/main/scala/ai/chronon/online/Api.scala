@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
@@ -40,6 +41,7 @@ object KVStore {
 // the main system level api for key value storage
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext
 
   def create(dataset: String): Unit
@@ -69,7 +71,7 @@ trait KVStore {
       .map(_.head)
       .recover {
         case e: java.util.NoSuchElementException =>
-          println(
+          logger.error(
             s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
           throw e
       }

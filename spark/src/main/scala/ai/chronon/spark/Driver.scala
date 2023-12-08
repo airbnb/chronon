@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
@@ -55,6 +56,7 @@ class DummyExtensions extends (SparkSessionExtensions => Unit) {
 
 // The mega chronon cli
 object Driver {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
@@ -202,16 +204,17 @@ object Driver {
       val result = CompareJob.getConsolidatedData(metrics, tableUtils.partitionSpec)
 
       if (result.nonEmpty) {
-        println("[Validation] Failed. Please try exporting the result and investigate.")
+        logger.info("[Validation] Failed. Please try exporting the result and investigate.")
         false
       } else {
-        println("[Validation] Success.")
+        logger.info("[Validation] Success.")
         true
       }
     }
   }
 
   object JoinBackfill {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("join")
         with OfflineSubcommand
@@ -253,11 +256,13 @@ object Driver {
       }
 
       df.show(numRows = 3, truncate = 0, vertical = true)
-      println(s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+      logger.info(
+        s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
     }
   }
 
   object GroupByBackfill {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args
         extends Subcommand("group-by-backfill")
         with OfflineSubcommand
@@ -537,6 +542,7 @@ object Driver {
   }
 
   object FetcherCli {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
@@ -576,7 +582,8 @@ object Driver {
         )
           series.get(keyMap("statsKey").asInstanceOf[String])
         else series
-      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
+      logger.info(
+        s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
     }
 
     def run(args: Args): Unit = {
@@ -598,19 +605,19 @@ object Driver {
         if (args.keyJson.isDefined) {
           Try(readMapList(args.keyJson())).toOption.getOrElse(Seq(readMap(args.keyJson())))
         } else {
-          println(s"Reading requests from ${args.keyJsonFile()}")
+          logger.info(s"Reading requests from ${args.keyJsonFile()}")
           val file = Source.fromFile(args.keyJsonFile())
           val mapList = file.getLines().map(json => readMap(json)).toList
           file.close()
           mapList
         }
       if (keyMapList.length > 1) {
-        println(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
+        logger.info(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
       }
       val fetcher = args.impl(args.serializableProps).buildFetcher(true)
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
-          println(s"--- [START FETCHING for ${keyMap}] ---")
+          logger.info(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
@@ -630,13 +637,13 @@ object Driver {
               r.values match {
                 case Success(valMap) => {
                   if (valMap == null) {
-                    println("No data present for the provided key.")
+                    logger.info("No data present for the provided key.")
                   } else {
                     valMap.foreach { case (k, v) => tMap.put(k, v) }
-                    println(
+                    logger.info(
                       s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
                   }
-                  println(s"Fetched in: $awaitTimeMs ms")
+                  logger.info(s"Fetched in: $awaitTimeMs ms")
                 }
                 case Failure(exception) => {
                   exception.printStackTrace()
@@ -648,13 +655,14 @@ object Driver {
       }
       iterate()
       while (args.loop()) {
-        println("loop is set to true, start next iteration. will only exit if manually killed.")
+        logger.info("loop is set to true, start next iteration. will only exit if manually killed.")
         iterate()
       }
     }
   }
 
   object MetadataUploader {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
@@ -663,7 +671,7 @@ object Driver {
     def run(args: Args): Unit = {
       val putRequest = args.metaDataStore.putConf(args.confPath())
       val res = Await.result(putRequest, 1.hour)
-      println(
+      logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }
   }
@@ -699,17 +707,18 @@ object Driver {
   }
 
   object GroupByStreaming {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
         override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
-          println("Query started: " + queryStarted.id)
+          logger.info("Query started: " + queryStarted.id)
         }
         override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
-          println("Query terminated: " + queryTerminated.id)
+          logger.info("Query terminated: " + queryTerminated.id)
         }
         override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
-          println("Query made progress: " + queryProgress.progress)
+          logger.info("Query made progress: " + queryProgress.progress)
         }
       })
       session.readStream
@@ -722,6 +731,7 @@ object Driver {
     }
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
+      @transient lazy val logger = LoggerFactory.getLogger(getClass)
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
       val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =
@@ -758,7 +768,7 @@ object Driver {
           }
           s"$file $suffix"
       }
-      println(s"File Statuses:\n  ${messages.mkString("\n  ")}")
+      logger.info(s"File Statuses:\n  ${messages.mkString("\n  ")}")
       statuses.find(_._2 == true).map(_._1)
     }
 
@@ -866,9 +876,9 @@ object Driver {
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
-          case _                           => println(s"Unknown subcommand: $x")
+          case _                           => logger.info(s"Unknown subcommand: $x")
         }
-      case None => println(s"specify a subcommand please")
+      case None => logger.info(s"specify a subcommand please")
     }
     if (shouldExit) {
       System.exit(0)

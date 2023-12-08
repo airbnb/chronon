@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
@@ -38,6 +39,7 @@ abstract class JoinBase(joinConf: api.Join,
                         skipFirstHole: Boolean,
                         mutationScan: Boolean = true,
                         showDf: Boolean = false) {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   private val outputTable = joinConf.metaData.outputTable
@@ -98,14 +100,14 @@ abstract class JoinBase(joinConf: api.Join,
       keyRenamedRightDf
     }
 
-    println(s"""
+    logger.info(s"""
                |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                |Left Schema:
                |${leftDf.schema.pretty}
                |Right Schema:
                |${joinableRightDf.schema.pretty}""".stripMargin)
     val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
-    println(s"""Final Schema:
+    logger.info(s"""Final Schema:
                |${joinedDf.schema.pretty}
                |""".stripMargin)
 
@@ -154,18 +156,19 @@ abstract class JoinBase(joinConf: api.Join,
                 computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
-                println(s"Writing to join part table: $partTable for partition range $unfilledRange")
+                logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
                 filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
           partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           partMetrics.gauge(Metrics.Name.PartitionCount, partitionCount)
-          println(s"Wrote ${partitionCount} partitions to join part table: $partTable in $elapsedMins minutes")
+          logger.info(s"Wrote ${partitionCount} partitions to join part table: $partTable in $elapsedMins minutes")
         }
       } catch {
         case e: Exception =>
-          println(s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
+          logger.error(
+            s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
           throw e
       }
       if (tableUtils.tableExists(partTable)) {
@@ -183,7 +186,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     if (leftDfWithStats.isEmpty) {
       // happens when all rows are already filled by bootstrap tables
-      println(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
+      logger.info(s"\nBackfill is NOT required for ${joinPart.groupBy.metaData.name} since all rows are bootstrapped.")
       return None
     }
 
@@ -191,7 +194,8 @@ abstract class JoinBase(joinConf: api.Join,
     val rowCount = leftDfWithStats.get.count
     val unfilledRange = leftDfWithStats.get.partitionRange
 
-    println(s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
+    logger.info(
+      s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
     val rightBloomMap =
       JoinUtils.genBloomFilterIfNeeded(leftDf,
                                        joinPart,
@@ -216,7 +220,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     lazy val unfilledTimeRange = {
       val timeRange = leftDf.timeRange
-      println(s"left unfilled time range: $timeRange")
+      logger.info(s"left unfilled time range: $timeRange")
       timeRange
     }
 
@@ -226,7 +230,7 @@ abstract class JoinBase(joinConf: api.Join,
     lazy val skewFilteredLeft = leftSkewFilter
       .map { sf =>
         val filtered = leftDf.filter(sf)
-        println(s"""Skew filtering left-df for
+        logger.info(s"""Skew filtering left-df for
                    |GroupBy: ${joinPart.groupBy.metaData.name}
                    |filterClause: $sf
                    |""".stripMargin)
@@ -276,7 +280,7 @@ abstract class JoinBase(joinConf: api.Join,
       rightDf
     }
     if (showDf) {
-      println(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
+      logger.info(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
       rightDfWithDerivations.prettyPrint()
     }
     Some(rightDfWithDerivations)
@@ -300,15 +304,15 @@ abstract class JoinBase(joinConf: api.Join,
     try {
       analyzer.analyzeJoin(joinConf, validationAssert = true)
       metrics.gauge(Metrics.Name.validationSuccess, 1)
-      println("Join conf validation succeeded. No error found.")
+      logger.info("Join conf validation succeeded. No error found.")
     } catch {
       case ex: AssertionError =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
-        println(s"Validation failed. Please check the validation error in log.")
+        logger.info(s"Validation failed. Please check the validation error in log.")
         if (tableUtils.backfillValidationEnforced) throw ex
       case e: Throwable =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
-        println(s"An unexpected error occurred during validation. ${e.getMessage}")
+        logger.info(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
 
     // First run command to archive tables that have changed semantically since the last run
@@ -325,14 +329,14 @@ abstract class JoinBase(joinConf: api.Join,
                                                 endPartition,
                                                 overrideStartPartition,
                                                 joinConf.historicalBackfill)
-    println(s"Join range to fill $rangeToFill")
+    logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
       .getOrElse(Seq.empty)
 
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (unfilledRanges.isEmpty) {
-      println(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
+      logger.info(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
       return finalResult
     }
 
@@ -345,12 +349,12 @@ abstract class JoinBase(joinConf: api.Join,
     // build bootstrap info once for the entire job
     val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
 
-    println(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    logger.info(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing join for range: $range  $progress")
+        logger.info(s"Computing join for range: ${range.toString}  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
@@ -358,10 +362,10 @@ abstract class JoinBase(joinConf: api.Join,
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          println(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
+          logger.info(s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
         }
     }
-    println(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
+    logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
     finalResult
   }
 }

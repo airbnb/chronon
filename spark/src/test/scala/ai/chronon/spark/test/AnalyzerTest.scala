@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
@@ -26,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnalyzerTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
   private val tableUtils = TableUtils(spark)
 
@@ -68,8 +70,8 @@ class AnalyzerTest {
     val join = new Join(joinConf = joinConf, endPartition = oneMonthAgo, tableUtils)
     val computed = join.computeJoin()
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
-    println("=== expected schema =====")
-    println(expectedSchema.mkString("\n"))
+    logger.info("=== expected schema =====")
+    logger.info(expectedSchema.mkString("\n"))
 
     assertTrue(expectedSchema sameElements analyzerSchema)
   }

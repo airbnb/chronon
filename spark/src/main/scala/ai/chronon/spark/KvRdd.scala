@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions._
@@ -70,6 +71,7 @@ sealed trait BaseKvRdd {
 case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, valueSchema: StructType)(implicit
     sparkSession: SparkSession)
     extends BaseKvRdd {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val withTime = false
 
   def toAvroDf(jsonPercent: Int = 1): DataFrame = {
@@ -85,7 +87,7 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
         val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson)
         new GenericRow(result)
     }
-    println(s"""
+    logger.info(s"""
           |key schema:
           |  ${AvroConversions.fromChrononSchema(keyZSchema).toString(true)}
           |value schema:
@@ -111,6 +113,7 @@ case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)],
                       valueSchema: StructType,
                       storeSchemasPrefix: Option[String] = None)(implicit sparkSession: SparkSession)
     extends BaseKvRdd {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val withTime = true
 
   // TODO make json percent configurable
@@ -127,7 +130,7 @@ case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)],
     }
 
     val schemasStr = Seq(keyZSchema, valueZSchema).map(AvroConversions.fromChrononSchema(_).toString(true))
-    println(s"""
+    logger.info(s"""
          |key schema:
          |  ${schemasStr(0)}
          |value schema:

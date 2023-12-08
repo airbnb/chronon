@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.{Constants, DataModel}
 import ai.chronon.api.DataModel.DataModel
@@ -48,6 +49,7 @@ object TopicInfo {
 }
 
 case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // apply a query to a given data stream
   def apply(query: api.Query, keys: Seq[String] = null, dataModel: DataModel = DataModel.Events): DataStream = {
@@ -55,9 +57,9 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
     Option(query.setups).map(_.toScala.map { setup =>
       Try(df.sparkSession.sql(setup)) match {
         case Failure(ex) =>
-          println(s"[Failure] Setup command: ($setup) failed with exception: ${ex.toString}")
+          logger.error(s"[Failure] Setup command: ($setup) failed with exception: ${ex.toString}")
           ex.printStackTrace(System.out)
-        case Success(value) => println(s"[SUCCESS] Setup command: $setup")
+        case Success(value) => logger.info(s"[SUCCESS] Setup command: $setup")
       }
     })
 
@@ -76,7 +78,7 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
     } yield (keyMap ++ selectMap ++ timeSelects)
     val selectClauses = selectsOption.map { _.map { case (name, expr) => s"($expr) AS `$name`" }.toSeq }
 
-    println(s"Applying select clauses: $selectClauses")
+    logger.info(s"Applying select clauses: $selectClauses")
     val selectedDf = selectClauses.map { selects => df.selectExpr(selects: _*) }.getOrElse(df)
 
     // enrich where clauses
@@ -93,7 +95,7 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
     val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
     val whereClauses = baseWheres ++ atLeastOneKeyIsPresent :+ timeIsPresent
 
-    println(s"Applying where clauses: $whereClauses")
+    logger.info(s"Applying where clauses: $whereClauses")
     val filteredDf = whereClauses.foldLeft(selectedDf)(_.where(_))
     DataStream(filteredDf, partitions, topicInfo)
   }

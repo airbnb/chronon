@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.{PutRequest, TimedValue}
@@ -129,7 +130,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
         val value = tableEntry.getValue
         value.foreach {
           case (version, data) =>
-            println(s"table: $tableName, key: $key, value: $data, version: $version")
+            logger.info(s"table: $tableName, key: $key, value: $data, version: $version")
         }
       }
     }
@@ -137,6 +138,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
 }
 
 object InMemoryKvStore {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
@@ -147,7 +149,7 @@ object InMemoryKvStore {
       testName,
       new function.Function[String, InMemoryKvStore] {
         override def apply(name: String): InMemoryKvStore = {
-          println(s"Missing in-memory store for name: $name. Creating one")
+          logger.info(s"Missing in-memory store for name: $name. Creating one")
           new InMemoryKvStore(tableUtils)
         }
       }

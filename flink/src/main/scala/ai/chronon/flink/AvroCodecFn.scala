@@ -1,5 +1,6 @@
 package ai.chronon.flink
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataModel, Query, StructType => ChrononStructType}
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
@@ -19,6 +20,7 @@ import scala.jdk.CollectionConverters._
   */
 case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
     extends RichFlatMapFunction[Map[String, Any], PutRequest] {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient protected var avroConversionErrorCounter: Counter = _
 
@@ -86,7 +88,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
       case e: Exception =>
         // To improve availability, we don't rethrow the exception. We just drop the event
         // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
-        println(s"Error converting to Avro bytes - $e")
+        logger.error(s"Error converting to Avro bytes - $e")
         avroConversionErrorCounter.inc()
     }
 

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
@@ -33,6 +34,7 @@ import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions._
 
 class LogBootstrapTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"
@@ -170,17 +172,17 @@ class LogBootstrapTest {
     val computed = joinJob.computeJoin()
 
     val overlapCount = baseOutput.join(logDf, Seq("request_id", "ds")).count()
-    println(s"""Debugging information:
+    logger.info(s"""Debugging information:
          |base count: ${baseOutput.count()}
          |overlap keys between base and log: ${overlapCount}
          |""".stripMargin)
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 

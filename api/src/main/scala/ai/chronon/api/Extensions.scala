@@ -16,6 +16,7 @@
 
 package ai.chronon.api
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
@@ -783,6 +784,7 @@ object Extensions {
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
       join.joinParts.toScala
@@ -923,7 +925,7 @@ object Extensions {
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
-        println(s"Generated join left side skew filter:\n    $result")
+        logger.info(s"Generated join left side skew filter:\n    $result")
         result
       }
     }
@@ -943,7 +945,7 @@ object Extensions {
           .mkString(joiner)
 
         if (result.nonEmpty) {
-          println(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+          logger.info(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
           Some(result)
         } else None
       }

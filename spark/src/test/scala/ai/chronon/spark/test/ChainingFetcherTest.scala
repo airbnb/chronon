@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
@@ -35,11 +36,11 @@ import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.collection.Seq
-import scala.Console.println
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 
 class ChainingFetcherTest extends TestCase {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "ChainingFetcherTest"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
   private val tableUtils = TableUtils(spark)
@@ -103,7 +104,7 @@ class ChainingFetcherTest extends TestCase {
           .save(s"$namespace.${schema.name}")
 
     }
-    println("saved all data hand written for fetcher test")
+    logger.info("saved all data hand written for fetcher test")
 
     val startPartition = "2021-04-13"
     val endPartition = "2021-04-16"
@@ -169,7 +170,7 @@ class ChainingFetcherTest extends TestCase {
     ).toList
 
     TestUtils.makeDf(spark, searchSchema, searchData).save(s"$namespace.${searchSchema.name}")
-    println("Created user search table.")
+    logger.info("Created user search table.")
 
     // construct chaining join
     val startPartition = "2021-04-14"
@@ -217,7 +218,7 @@ class ChainingFetcherTest extends TestCase {
     val joinedDf = new ai.chronon.spark.Join(joinConf, endDs, tableUtils).computeJoin()
     val joinTable = s"$namespace.join_test_expected_${joinConf.metaData.cleanName}"
     joinedDf.save(joinTable)
-    println("=== Expected join table computed: === " + joinTable)
+    logger.info("=== Expected join table computed: === " + joinTable)
     joinedDf.show()
 
     val endDsExpected = tableUtils.sql(s"SELECT * FROM $joinTable WHERE ds='$endDs'")
@@ -230,7 +231,7 @@ class ChainingFetcherTest extends TestCase {
         s"SELECT * FROM $joinTable WHERE ts >= unix_timestamp('$endDs', '${tableUtils.partitionSpec.format}')")
     }
     val endDsQueries = endDsEvents.drop(endDsEvents.schema.fieldNames.filter(_.contains("fetcher")): _*)
-    println("Queries:")
+    logger.info("Queries:")
     endDsQueries.show()
 
     val keys = joinConf.leftKeyCols
@@ -268,7 +269,7 @@ class ChainingFetcherTest extends TestCase {
           .asInstanceOf[GenericRow]
       }
 
-    println(endDsExpected.schema.pretty)
+    logger.info(endDsExpected.schema.pretty)
     (endDsExpected, responseRows)
   }
 
@@ -286,9 +287,9 @@ class ChainingFetcherTest extends TestCase {
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
     }
-    println("expected:")
+    logger.info("expected:")
     expectedDf.show()
-    println("response:")
+    logger.info("response:")
     responseDf.show()
 
     // remove user during comparison since `user` is not the key
@@ -299,9 +300,9 @@ class ChainingFetcherTest extends TestCase {
                                      bName = "offline")
     assertEquals(expectedDf.count(), responseDf.count())
     if (diff.count() > 0) {
-      println(s"Total count: ${responseDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows:")
+      logger.info(s"Total count: ${responseDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows:")
       diff
         .withTimeBasedColumn("ts_string", "ts", "yy-MM-dd HH:mm")
         .select("ts_string", diff.schema.fieldNames: _*)

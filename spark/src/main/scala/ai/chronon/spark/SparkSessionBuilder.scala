@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SPARK_VERSION
 
@@ -25,6 +26,7 @@ import scala.reflect.io.Path
 import scala.util.Properties
 
 object SparkSessionBuilder {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
 
@@ -67,7 +69,7 @@ object SparkSessionBuilder {
     }
 
     val builder = if (local) {
-      println(s"Building local spark session with warehouse at $warehouseDir")
+      logger.info(s"Building local spark session with warehouse at $warehouseDir")
       val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
       baseBuilder
       // use all threads - or the tests will be slow

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.stats
 
+import org.slf4j.LoggerFactory
 import ai.chronon.online.SparkConversions
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
@@ -31,6 +32,7 @@ import org.apache.spark.sql.SparkSession
   * Follow pattern of OOC for computing offline and uploading online as well.
   */
 class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val tableUtils: TableUtils = TableUtils(session)
   private val loggingStatsTable = joinConf.metaData.loggingStatsTable
@@ -50,17 +52,17 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       .unfilledRanges(outputTable, PartitionRange(null, endDate)(tableUtils), Some(Seq(inputTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) {
-      println(s"No data to compute for $outputTable")
+      logger.info(s"No data to compute for $outputTable")
       return
     }
     unfilledRanges.foreach { computeRange =>
-      println(s"Daily output statistics table $outputTable unfilled range: $computeRange")
+      logger.info(s"Daily output statistics table $outputTable unfilled range: $computeRange")
       val stepRanges = stepDays.map(computeRange.steps).getOrElse(Seq(computeRange))
-      println(s"Ranges to compute: ${stepRanges.map(_.toString).pretty}")
+      logger.info(s"Ranges to compute: ${stepRanges.map(_.toString).pretty}")
       // We are going to build the aggregator to denormalize sketches for hive.
       stepRanges.zipWithIndex.foreach {
         case (range, index) =>
-          println(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
+          logger.info(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
           val joinOutputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM ${inputTable}
@@ -82,10 +84,10 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
             .save(outputTable, tableProps)
-          println(s"Finished range [${index + 1}/${stepRanges.size}].")
+          logger.info(s"Finished range [${index + 1}/${stepRanges.size}].")
       }
     }
-    println("Finished writing stats.")
+    logger.info("Finished writing stats.")
   }
 
   /**

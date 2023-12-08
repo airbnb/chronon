@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.spark.Extensions._
@@ -30,6 +31,7 @@ import scala.io.Source
 import java.io.File
 
 class MetadataExporterTest extends TestCase {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val sessionName = "MetadataExporter"
   val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
@@ -39,22 +41,22 @@ class MetadataExporterTest extends TestCase {
     val directory = new File(directoryPath)
 
     if (directory.exists && directory.isDirectory) {
-      println("Valid Directory")
+      logger.info("Valid Directory")
       val files = directory.listFiles
 
       for (file <- files) {
-        println(file.getPath)
+        logger.info(file.getPath)
         if (file.isFile) {
-          println(s"File: ${file.getName}")
+          logger.info(s"File: ${file.getName}")
           val source = Source.fromFile(file)
           val fileContents = source.getLines.mkString("\n")
           source.close()
-          println(fileContents)
-          println("----------------------------------------")
+          logger.info(fileContents)
+          logger.info("----------------------------------------")
         }
       }
     } else {
-      println("Invalid directory path!")
+      logger.info("Invalid directory path!")
     }
   }
 
