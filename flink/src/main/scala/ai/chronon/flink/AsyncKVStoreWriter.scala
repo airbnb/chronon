@@ -112,7 +112,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
         // in the KVStore - we log the exception and skip the object to
         // not fail the app
         errorCounter.inc()
-        logger.info(s"Caught exception writing to KVStore for object: $input - $exception")
+        logger.error(s"Caught exception writing to KVStore for object: $input - $exception")
         resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
     }
   }
