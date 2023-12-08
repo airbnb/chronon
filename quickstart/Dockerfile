@@ -36,6 +36,7 @@ RUN apt-get update && apt-get -y -q install \
     python3-pip \
     python3-setuptools \
     sbt \
+    vim \
     && apt-get clean
 
 # Install thrift
