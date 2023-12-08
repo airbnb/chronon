@@ -1,13 +1,7 @@
 // Create tables from csv and load them into spark.
 import java.io.File
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types._
 
-
-val spark = SparkSession.builder()
-  .appName("CSVs to Hive Tables")
-  .enableHiveSupport() // Enable Hive support
-  .getOrCreate()
 
 spark.sql("CREATE DATABASE IF NOT EXISTS data;")
 // Directory containing CSV files
