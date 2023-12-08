@@ -90,7 +90,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   }
 
   override def timeout(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
-    logger.info(s"Timed out writing to KV Store for object: $input")
+    logger.error(s"Timed out writing to KV Store for object: $input")
     errorCounter.inc()
     resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
   }
