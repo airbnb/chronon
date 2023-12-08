@@ -57,7 +57,7 @@ case class DataStream(df: DataFrame, partitions: Int, topicInfo: TopicInfo) {
     Option(query.setups).map(_.toScala.map { setup =>
       Try(df.sparkSession.sql(setup)) match {
         case Failure(ex) =>
-          logger.info(s"[Failure] Setup command: ($setup) failed with exception: ${ex.toString}")
+          logger.error(s"[Failure] Setup command: ($setup) failed with exception: ${ex.toString}")
           ex.printStackTrace(System.out)
         case Success(value) => logger.info(s"[SUCCESS] Setup command: $setup")
       }
