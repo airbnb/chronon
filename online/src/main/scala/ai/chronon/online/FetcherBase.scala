@@ -148,8 +148,7 @@ class FetcherBase(kvStore: KVStore,
         .force(name)
         .recover {
           case ex: Throwable =>
-            logger.error(
-              s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
+            logger.error(s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
             ex.printStackTrace()
             groupByServingInfo
         }
