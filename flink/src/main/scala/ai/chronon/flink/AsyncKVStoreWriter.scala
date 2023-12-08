@@ -104,7 +104,7 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
           successCounter.inc()
         } else {
           errorCounter.inc()
-          logger.info(s"Failed to write to KVStore for object: $input")
+          logger.error(s"Failed to write to KVStore for object: $input")
         }
         resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = succeeded)))
       case Failure(exception) =>
