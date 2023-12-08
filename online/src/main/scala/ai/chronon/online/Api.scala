@@ -71,7 +71,7 @@ trait KVStore {
       .map(_.head)
       .recover {
         case e: java.util.NoSuchElementException =>
-          logger.info(
+          logger.error(
             s"Failed request against ${request.dataset} check the related task to the upload of the dataset (GroupByUpload or MetadataUpload)")
           throw e
       }
