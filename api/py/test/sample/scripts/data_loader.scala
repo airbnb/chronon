@@ -9,7 +9,7 @@ val spark = SparkSession.builder()
   .enableHiveSupport() // Enable Hive support
   .getOrCreate()
 
-spark.sql("CREATE DATABASE IF NOT EXISTS data;").show()
+spark.sql("CREATE DATABASE IF NOT EXISTS data;")
 // Directory containing CSV files
 val folderPath = "/srv/chronon/data/"
 
@@ -39,11 +39,12 @@ files.foreach { file =>
       StructField(columnName, dataType, nullable = true)
     }
   )
+  val dfWithSchema = spark.read.schema(customSchema).option("header", "true").csv(s"$folderPath/$fileName")
   // Create a table name based on the file name (without the extension)
   val tableName = s"data.${fileName.split('.')(0)}"
 
   // Save DataFrame as a Hive table
-  df.write.partitionBy("ds").mode("overwrite").saveAsTable(tableName)
+  dfWithSchema.write.partitionBy("ds").mode("overwrite").saveAsTable(tableName)
 }
 
 // Query one of the tables
@@ -51,3 +52,4 @@ spark.sql("SHOW TABLES IN DATA").show()
 
 // Stop Spark session
 spark.stop()
+System.exit(0)
