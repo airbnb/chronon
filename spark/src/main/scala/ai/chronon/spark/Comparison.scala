@@ -65,7 +65,7 @@ object Comparison {
         |====== side-by-side comparison ======
         |keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}
         |""".stripMargin
-      )
+    )
 
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")

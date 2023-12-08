@@ -121,8 +121,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       inputDf -> updateFunc
     }
 
-    logger.info(
-      s"""
+    logger.info(s"""
         |Prepped input schema
         |${preppedInputDf.schema.pretty}
         |""".stripMargin)
