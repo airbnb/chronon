@@ -354,7 +354,7 @@ abstract class JoinBase(joinConf: api.Join,
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
-        logger.info(s"Computing join for range: $range  $progress")
+        logger.info(s"Computing join for range: ${range.toString}  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
@@ -362,7 +362,7 @@ abstract class JoinBase(joinConf: api.Join,
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          logger.info(s"Wrote to table $outputTable, into partitions: $range $progress in $elapsedMins mins")
+          logger.info(s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
         }
     }
     logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")

@@ -569,7 +569,7 @@ case class TableUtils(sparkSession: SparkSession) {
                |   Input tables: ${inputTables.getOrElse(Seq("None")).mkString(", ")}
                |   Missing input partitions: ${inputMissing.toSeq.sorted.prettyInline}
                |   Unfilled Partitions: ${missingPartitions.toSeq.sorted.prettyInline}
-               |   Unfilled ranges: ${missingChunks.sorted}
+               |   Unfilled ranges: ${missingChunks.sorted.mkString("")}
                |""".stripMargin)
     if (missingPartitions.isEmpty) return None
     Some(missingChunks)
