@@ -243,14 +243,14 @@ case class TableUtils(sparkSession: SparkSession) {
     } catch {
       case e: RuntimeException =>
         if (e.getMessage.contains("ACCESS DENIED"))
-          logger.info(s"[Error] No access to table: $tableName ")
+          logger.error(s"[Error] No access to table: $tableName ")
         else {
-          logger.info(s"[Error] Encountered exception when reading table: $tableName.")
+          logger.error(s"[Error] Encountered exception when reading table: $tableName.")
           e.printStackTrace()
         }
         false
       case ex: Exception =>
-        logger.info(s"[Error] Encountered exception when reading table: $tableName.")
+        logger.error(s"[Error] Encountered exception when reading table: $tableName.")
         ex.printStackTrace()
         true
     }
@@ -287,9 +287,9 @@ case class TableUtils(sparkSession: SparkSession) {
         sql(creationSql)
       } catch {
         case _: TableAlreadyExistsException =>
-          println(s"Table $tableName already exists, skipping creation")
+          logger.info(s"Table $tableName already exists, skipping creation")
         case e: Exception =>
-          logger.info(s"Failed to create table $tableName with error: ${e.getMessage}")
+          logger.error(s"Failed to create table $tableName", e)
           throw e
       }
     }

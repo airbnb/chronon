@@ -75,7 +75,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       val result = getConf[Join](s"joins/$name")
         .recover {
           case e: java.util.NoSuchElementException =>
-            logger.info(
+            logger.error(
               s"Failed to fetch conf for join $name at joins/$name, please check metadata upload to make sure the join metadata for $name has been uploaded")
             throw e
         }
@@ -106,7 +106,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       .getString(key, dataset, timeoutMillis)
       .recover {
         case e: java.util.NoSuchElementException =>
-          logger.info(s"Failed to retrieve $key for $dataset. Is it possible that hasn't been uploaded?")
+          logger.error(s"Failed to retrieve $key for $dataset. Is it possible that hasn't been uploaded?")
           throw e
       }
       .map(AvroCodec.of(_))
@@ -127,7 +127,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         val metaData =
           kvStore.getString(Constants.GroupByServingInfoKey, batchDataset, timeoutMillis).recover {
             case e: java.util.NoSuchElementException =>
-              logger.info(
+              logger.error(
                 s"Failed to fetch metadata for $batchDataset, is it possible Group By Upload for $name has not succeeded?")
               throw e
           }
@@ -217,7 +217,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       Some(ThriftJsonCodec.toJsonStr(configConf))
     } catch {
       case e: Throwable =>
-        logger.info(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
+        logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
         None
     }
   }
@@ -234,7 +234,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         .map(_.asInstanceOf[String])
     } catch {
       case ex: Throwable =>
-        logger.info(s"Failed to parse Chronon config file at $path as JSON with error: ${ex.getMessage}")
+        logger.error(s"Failed to parse Chronon config file at $path as JSON", ex)
         ex.printStackTrace()
         None
     }

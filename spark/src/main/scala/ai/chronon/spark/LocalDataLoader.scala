@@ -32,7 +32,7 @@ object LocalDataLoader {
     if (session.catalog.tableExists(tableName)) return
     val extension = file.getName.split("\\.").last
     if (!Seq("csv", "json", "jsonl").contains(extension)) {
-      logger.info(s"Unable to load file due to invalid extension from file: ${file.getPath}")
+      logger.error(s"Unable to load file due to invalid extension from file: ${file.getPath}")
       return
     }
 

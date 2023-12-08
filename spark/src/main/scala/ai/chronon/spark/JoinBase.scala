@@ -308,11 +308,11 @@ abstract class JoinBase(joinConf: api.Join,
     } catch {
       case ex: AssertionError =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
-        logger.info(s"Validation failed. Please check the validation error in log.")
+        logger.error(s"Validation failed. Please check the validation error in log.")
         if (tableUtils.backfillValidationEnforced) throw ex
       case e: Throwable =>
         metrics.gauge(Metrics.Name.validationFailure, 1)
-        logger.info(s"An unexpected error occurred during validation. ${e.getMessage}")
+        logger.error(s"An unexpected error occurred during validation. ${e.getMessage}")
     }
 
     // First run command to archive tables that have changed semantically since the last run
