@@ -287,9 +287,9 @@ case class TableUtils(sparkSession: SparkSession) {
         sql(creationSql)
       } catch {
         case _: TableAlreadyExistsException =>
-          println(s"Table $tableName already exists, skipping creation")
+          logger.info(s"Table $tableName already exists, skipping creation")
         case e: Exception =>
-          logger.error(s"Failed to create table $tableName with error: ${e.getMessage}")
+          logger.error(s"Failed to create table $tableName", e)
           throw e
       }
     }
