@@ -2,7 +2,10 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
+import ai.chronon.online.Metrics.{Context, Environment}
 import com.timgroup.statsd.{NonBlockingStatsDClient, NonBlockingStatsDClientBuilder}
+
+import scala.util.ScalaJavaConversions.ListOps
 
 object Metrics {
   object Environment extends Enumeration {
@@ -21,6 +24,7 @@ object Metrics {
     val LabelJoin = "label_join"
     val ThreadPool = "thread_pool"
   }
+
   import Environment._
 
   object Tag {
@@ -93,28 +97,24 @@ object Metrics {
       )
     }
 
-    def apply(environment: Environment): Context = {
-      new Context(environment = environment)
-    }
-
-    val statsPort: Int = Config.getEnvConfig("ai.chronon.metrics.port", 8125)
-    val statsCache: TTLCache[Context, NonBlockingStatsDClient] = new TTLCache[Context, NonBlockingStatsDClient](
+    val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
+    val tagCache: TTLCache[Context, String] = new TTLCache[Context, String](
       { ctx =>
-        val statsPrefix = "ai.chronon." + ctx.environment + Option(ctx.suffix).map("." + _).getOrElse("")
-        println(
-          s"Building new stats cache for ${ctx.toString} on port $statsPort with prefix '$statsPrefix".stripMargin)
-        assert(ctx.environment != null && ctx.environment.nonEmpty, "Please specify a proper context")
-        new NonBlockingStatsDClientBuilder()
-          .prefix(statsPrefix)
-          .hostname("localhost")
-          .port(statsPort)
-          .constantTags(ctx.toTags: _*)
-          .originDetectionEnabled(false)
-          .build()
+        println(s"Building new tag cache entry for ${ctx.toString}")
+        ctx.toTags.reverse.mkString(",")
       },
       { ctx => ctx },
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
+
+    val prefix = "ai.chronon"
+    println(s"Building new stats cache on port $statsPort with prefix '$prefix".stripMargin)
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClientBuilder()
+      .prefix("ai.chronon")
+      .hostname("localhost")
+      .port(statsPort)
+      .originDetectionEnabled(false)
+      .build()
   }
 
   case class Context(environment: Environment,
@@ -125,10 +125,11 @@ object Metrics {
                      accuracy: Accuracy = null,
                      team: String = null,
                      joinPartPrefix: String = null,
-                     suffix: String = null)
+                     suffix: String = "")
       extends Serializable {
 
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
+
     // Tagging happens to be the most expensive part(~40%) of reporting stats.
     // And reporting stats is about 30% of overall fetching latency.
     // So we do array packing directly instead of regular string interpolation.
@@ -142,9 +143,16 @@ object Metrics {
       new String(charBuf)
     }
 
-    @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsCache(this)
+    private lazy val tags = Metrics.Context.tagCache(this)
+    private val prefixString = environment + Option(suffix).map("." + _).getOrElse("")
 
-    def increment(metric: String): Unit = stats.increment(metric)
+    private def prefix(s: String): String =
+      new java.lang.StringBuilder(prefixString.length + s.length).append(prefixString).append(s).toString
+
+    @transient private lazy val stats: NonBlockingStatsDClient = Metrics.Context.statsClient
+
+    def increment(metric: String): Unit = stats.increment(prefix(metric), tags)
+
     def incrementException(exception: Throwable): Unit = {
       val stackTrace = exception.getStackTrace
       val exceptionSignature = if (stackTrace.isEmpty) {
@@ -156,32 +164,37 @@ object Metrics {
         val method = stackRoot.getMethodName
         s"[$method@$file:$line]${exception.getClass.toString}"
       }
-      stats.increment(Name.Exception, s"${Metrics.Name.Exception}:${exceptionSignature}")
+      stats.increment(prefix(Name.Exception), s"$tags,${Metrics.Name.Exception}:${exceptionSignature}")
     }
 
-    def histogram(metric: String, value: Double): Unit = stats.histogram(metric, value, Context.sampleRate)
-    def histogram(metric: String, value: Double, tags: String): Unit = stats.histogram(metric, value, Context.sampleRate, tags)
-    def histogram(metric: String, value: Long): Unit = stats.histogram(metric, value, Context.sampleRate)
-    def count(metric: String, value: Long): Unit = stats.count(metric, value)
-    def gauge(metric: String, value: Double): Unit = stats.gauge(metric, value)
+    def histogram(metric: String, value: Double): Unit = stats.histogram(prefix(metric), value, Context.sampleRate)
+    def histogram(metric: String, value: Double, tags: String): Unit =
+      stats.histogram(prefix(metric), value, Context.sampleRate, tags)
+    def histogram(metric: String, value: Long): Unit = stats.histogram(prefix(metric), value, Context.sampleRate)
+    def gauge(metric: String, value: Double): Unit = stats.gauge(prefix(metric), value)
 
-    // There can be multiple joins - when issued as a batch request
-    lazy val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
+    def distribution(metric: String, value: Long): Unit =
+      stats.distribution(prefix(metric), value, Context.sampleRate, tags)
 
-    private[Metrics] def toTags: Array[String] = {
-      if (environment != ThreadPool)
-        assert(join != null || groupBy != null, "Either Join, groupBy should be set.")
+    def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags)
+
+    def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
+
+    def toTags: Array[String] = {
+      val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String])
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
       val buffer = new Array[String](7 + joinNames.length)
       var counter = 0
+
       def addTag(key: String, value: String): Unit = {
         if (value == null) return
         assert(counter < buffer.length, "array overflow")
         buffer.update(counter, buildTag(key, value))
         counter += 1
       }
+
       joinNames.foreach(addTag(Tag.Join, _))
       addTag(Tag.GroupBy, groupBy)
       addTag(Tag.StagingQuery, stagingQuery)
