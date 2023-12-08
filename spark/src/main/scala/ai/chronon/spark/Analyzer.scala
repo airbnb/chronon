@@ -1,7 +1,7 @@
 /*
  *    Copyright (C) 2023 The Chronon Authors.
  *
- *    `L`icensed under the Apache License, Version 2.0 (the "License");
+ *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
  *    You may obtain a copy of the License at
  *
@@ -271,7 +271,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val rangeToFill =
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
-    logger.info(s"[Analyzer] Join range to fill $rangeToFill")
+    logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
       .getOrElse(Seq.empty)

@@ -37,6 +37,7 @@ case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) ex
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
+  override def toString(): String = s"[${TsUtils.toStr(start)}-${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
 case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
@@ -152,4 +153,5 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
       compareDate(this.end, that.end)
     }
   }
+  override def toString(): String = s"[$start...$end]"
 }

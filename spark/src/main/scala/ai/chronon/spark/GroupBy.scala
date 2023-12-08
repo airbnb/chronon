@@ -121,8 +121,11 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       inputDf -> updateFunc
     }
 
-    logger.info("prepped input schema")
-    logger.info(preppedInputDf.schema.pretty)
+    logger.info(
+      s"""
+        |Prepped input schema
+        |${preppedInputDf.schema.pretty}
+        |""".stripMargin)
 
     tableUtils
       .preAggRepartition(preppedInputDf)

@@ -60,8 +60,12 @@ object Comparison {
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
 
-    logger.info("====== side-by-side comparison ======")
-    logger.info(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
+    logger.info(
+      s"""
+        |====== side-by-side comparison ======
+        |keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}
+        |""".stripMargin
+      )
 
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
