@@ -66,8 +66,10 @@ case class JoinCodec(conf: JoinOps,
             .map(sf => sf.name -> sf.name)
         } else { Seq.empty }
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
-        val catalystUtil =
-          new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray))
+        val catalystUtil = {
+          // StructType(Seq(StructField("ts", LongtType)))
+          new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray ++ Array(JoinCodec.timeFields.head)))
+        }
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {

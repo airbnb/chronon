@@ -184,7 +184,8 @@ class Fetcher(val kvStore: KVStore,
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-            val baseMap = internalMap ++ externalMap
+            println(s"request time ${internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())}")
+            val baseMap = internalMap ++ externalMap ++ Map("ts" -> (internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())).asInstanceOf[AnyRef])
             val derivedMap: Map[String, AnyRef] = Try(
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap)
