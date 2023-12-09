@@ -1,74 +1,68 @@
-FROM cimg/base:2020.01 
-USER root
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
-ENV THRIFT_VERSION 0.13.0
+# Start from a Debian base image
+FROM openjdk:8-jre-slim
 
-WORKDIR /img-build
-
-
-# Add sbt repo to sources list
-RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | sudo tee /etc/apt/sources.list.d/sbt_old.list
-RUN curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | sudo apt-key add
-
-# Install prereqs
-RUN apt-get update && apt-get -y -q install \
-    automake \
-    bison \
-    cmake \
+# Update package lists and install necessary tools
+RUN apt-get update && apt-get install -y \
     curl \
-    flex \
-    g++ \
-    git \
-    libboost-dev \
-    libboost-filesystem-dev \
-    libboost-program-options-dev \
-    libboost-system-dev \
-    libboost-test-dev \
-    libevent-dev \
-    libssl-dev \
-    libtool \
-    make \
-    openjdk-8-jdk \
-    pkg-config \
-    python3.7 \
-    python3-pip \
+    python3 \
+    python3-dev \
     python3-setuptools \
-    sbt \
     vim \
-    && apt-get clean
+    wget \
+    python3-pip
+
+ENV THRIFT_VERSION 0.13.0
+ENV SCALA_VERSION 2.12.12
 
 # Install thrift
 RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THRIFT_VERSION.tar.gz" -o thrift.tar.gz \
-	&& mkdir -p /usr/src/thrift \
-	&& tar zxf thrift.tar.gz -C /usr/src/thrift --strip-components=1 \
-	&& rm thrift.tar.gz \
-	&& cd /usr/src/thrift \
-	&& ./configure  --without-python --without-cpp \
-	&& make \
-	&& make install \
-	&& cd / \
-	&& rm -rf /usr/src/thrift
+       && mkdir -p /usr/src/thrift \
+       && tar zxf thrift.tar.gz -C /usr/src/thrift --strip-components=1 \
+       && rm thrift.tar.gz \
+       && cd /usr/src/thrift \
+       && ./configure  --without-python --without-cpp \
+       && make \
+       && make install \
+       && cd / \
+       && rm -rf /usr/src/thrift
 
-# Install Scala
-ENV SCALA_VERSION 2.12.12
-ENV SCALA_DEB http://www.scala-lang.org/files/archive/scala-$SCALA_VERSION.deb
+RUN curl https://downloads.lightbend.com/scala/${SCALA_VERSION}/scala-${SCALA_VERSION}.deb -k -o scala.deb && \
+    apt install -y ./scala.deb && \
+    rm -rf scala.deb /var/lib/apt/lists/*
 
-RUN wget --quiet --output-document=scala.deb $SCALA_DEB && \
-    dpkg -i scala.deb && \
-    rm -f *.deb
+ENV SCALA_HOME="/usr/bin/scala"
+ENV PATH=${PATH}:${SCALA_HOME}/bin
 
-RUN rm -rf /img-build
+## Download spark and hadoop dependencies and install
 
-# Download and install Apache Spark
-RUN wget -qO- https://archive.apache.org/dist/spark/spark-3.1.1/spark-3.1.1-bin-hadoop3.2.tgz | tar xvz -C /opt \
-    && mv /opt/spark-3.1.1-bin-hadoop3.2 /opt/spark
+# Optional env variables
+ENV SPARK_HOME=${SPARK_HOME:-"/opt/spark"}
+ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
+ENV SPARK_VERSION=${SPARK_VERSION:-"3.1.1"}
+ENV HADOOP_VERSION=${HADOOP_VERSION:-"3.2"}
+RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
+WORKDIR ${SPARK_HOME}
 
-# Set environment variables for Spark
-ENV SPARK_HOME=/opt/spark
-ENV PATH=$PATH:$SPARK_HOME/bin
 
-# Copy your chronon-ai code into the container
-RUN pip install chronon-ai
+RUN curl https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz -o spark.tgz \
+ && tar xvzf spark.tgz --directory /opt/spark --strip-components 1 \
+ && rm -rf spark.tgz
 
-CMD ["tail", "-f", "/dev/null"]
+
+# Install python deps
+COPY requirements.txt .
+RUN pip3 install -r requirements.txt
+
+ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
+ENV SPARK_HOME="/opt/spark"
+ENV SPARK_MASTER="spark://spark-master:7077"
+ENV SPARK_MASTER_HOST="spark-master"
+ENV SPARK_MASTER_PORT="7077"
+
+COPY conf/spark-defaults.conf "$SPARK_HOME/conf"
+
+RUN chmod u+x /opt/spark/sbin/* && \
+    chmod u+x /opt/spark/bin/*
+
+ENV PYTHONPATH=$SPARK_HOME/python/:/srv/chronon/:$PYTHONPATH
+WORKDIR ${SPARK_HOME}

@@ -4,61 +4,46 @@ services:
   spark-master:
     build:
       context: quickstart
-      dockerfile: SparkDockerfile
-    ports:
-      - "8080:8080" # Spark Master UI
-    environment:
-      - USER=root
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - SPARK_USER=root
+    command: "bin/spark-class org.apache.spark.deploy.master.Master >> logs/spark-master.out"
     volumes:
-      - hive_data:/spark-warehouse
+      - ./api/py/test/sample/data:/srv/chronon/data
+      - spark-logs:/opt/spark/spark-events
+    env_file:
+      - quickstart/.env.spark
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+
 
   spark-worker:
     build:
       context: quickstart
-      dockerfile: SparkDockerfile
+    command: "bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 >> logs/spark-worker.out"
     ports:
-      - "8081:8081" # Spark Worker UI
-    environment:
-      - USER=root
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1G
-      - SPARK_WORKER_CORES=1
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - SPARK_USER=root
+      - '9091:8081'
+    depends_on:
+      - spark-master
+    env_file:
+      - quickstart/.env.spark
     volumes:
-      - hive_data:/spark-warehouse
       - ./api/py/test/sample/data:/srv/chronon/data
+      - spark-logs:/opt/spark/spark-events
 
   main:
     build:
       context: quickstart
-      dockerfile: Dockerfile
-    ports:
-      - "8888:8888" # Jupyter
+    command: "tail -f /dev/null"
     environment:
       - USER=root
       - SPARK_SUBMIT_PATH=spark-submit
       - PYTHONPATH=/srv/chronon
       - SPARK_VERSION=3.1.1
       - JOB_MODE=spark://spark-master:7077
-      - PARALLELISM=2
-      - EXECUTOR_MEMORY=1G
     depends_on:
       - spark-master
       - spark-worker
     volumes:
       - ./api/py/test/sample:/srv/chronon
-      - hive_data:/spark-warehouse
 
 volumes:
-  hive_data:
+  spark-logs:
