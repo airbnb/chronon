@@ -54,6 +54,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.reducer.maxSizeInFlight=256M \
 --conf spark.shuffle.file.buffer=1M \
 --conf spark.shuffle.service.enabled=true \
+--conf spark.shuffle.service.host=localhost \
 --conf spark.shuffle.service.index.cache.entries=2048 \
 --conf spark.shuffle.io.serverThreads=128 \
 --conf spark.shuffle.io.backLog=1024 \

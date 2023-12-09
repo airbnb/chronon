@@ -2,51 +2,42 @@ version: '3.8'
 
 services:
   spark-master:
-    image: bitnami/spark:3.1.1
+    build:
+      context: quickstart
+      dockerfile: SparkDockerfile
     ports:
       - "8080:8080" # Spark Master UI
-      - "7077:7077" # Spark Master
     environment:
+      - USER=root
       - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=root
+    volumes:
+      - hive_data:/spark-warehouse
 
-  spark-worker-1:
-    image: bitnami/spark:3.1.1
+  spark-worker:
+    build:
+      context: quickstart
+      dockerfile: SparkDockerfile
     ports:
-      - "7337:7337" # Shuffle service port
       - "8081:8081" # Spark Worker UI
     environment:
+      - USER=root
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_CONF_DIR=/opt/bitnami/spark/conf
-      - SPARK_HISTORY_FS_LOGDIRECTORY=/tmp/spark-events
-      - SPARK_CONF_SPARK_SQL_WAREHOUSE_DIR=/tmp/chronon/spark-warehouse/data
-      - SPARK_CONF_SPARK_SQL_METASTORE_URI=jdbc:derby:/tmp/chronon/spark-warehouse/metastore;create=true
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=root
     volumes:
-      - hive_data:/tmp/chronon/spark-warehouse
+      - hive_data:/spark-warehouse
       - ./api/py/test/sample/data:/srv/chronon/data
-
-  spark-history-server:
-    image: bitnami/spark:3.1.1
-    ports:
-      - "18080:18080" # Spark History Server UI
-    environment:
-      - SPARK_MODE=history_server
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_CONF_DIR=/opt/bitnami/spark/conf # Specify the configuration directory
-      - SPARK_HISTORY_FS_LOGDIRECTORY=/tmp/spark-events # Set the log directory
-    command: bin/spark-class org.apache.spark.deploy.history.HistoryServer
-    volumes:
-      - spark_history_logs:/tmp/spark-events # Mount volume for history logs
-
-  mongodb:
-    image: mongo:latest
-    ports:
-      - "27017:27017" # MongoDB default port
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
-    volumes:
-      - mongodb_data:/data/db
 
   main:
     build:
@@ -59,21 +50,15 @@ services:
       - SPARK_SUBMIT_PATH=spark-submit
       - PYTHONPATH=/srv/chronon
       - SPARK_VERSION=3.1.1
-      - SPARK_CONF_SPARK_SQL_WAREHOUSE_DIR=/tmp/chronon/spark-warehouse/data
-      - SPARK_CONF_SPARK_SQL_METASTORE_URI=jdbc:derby:/tmp/chronon/spark-warehouse/metastore;create=true
       - JOB_MODE=spark://spark-master:7077
       - PARALLELISM=2
       - EXECUTOR_MEMORY=1G
     depends_on:
       - spark-master
-      - spark-worker-1
-      - spark-history-server
-      - mongodb
+      - spark-worker
     volumes:
       - ./api/py/test/sample:/srv/chronon
-      - hive_data:/tmp/chronon/spark-warehouse
+      - hive_data:/spark-warehouse
 
 volumes:
-  mongodb_data:
-  spark_history_logs:  # Define the volume for history logs
   hive_data:

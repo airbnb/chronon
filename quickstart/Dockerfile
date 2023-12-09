@@ -1,8 +1,7 @@
 FROM cimg/base:2020.01 
 USER root
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
-ENV PATH /opt/conda/bin:$PATH
-ENV THRIFT_VERSION 0.11.0
+ENV THRIFT_VERSION 0.13.0
 
 WORKDIR /img-build
 
@@ -52,36 +51,13 @@ RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THR
 	&& rm -rf /usr/src/thrift
 
 # Install Scala
-ENV SCALA_VERSION 2.11.7
+ENV SCALA_VERSION 2.12.12
 ENV SCALA_DEB http://www.scala-lang.org/files/archive/scala-$SCALA_VERSION.deb
 
 RUN wget --quiet --output-document=scala.deb $SCALA_DEB && \
     dpkg -i scala.deb && \
     rm -f *.deb
 
-# Install sbt
-RUN apt-get update && apt-get -y -q install \
-    sbt \
-    && apt-get clean
-
-# Install conda
-RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
-    wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
-    bash ~/miniconda.sh -b -p /opt/conda && \
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    # clean up
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    rm ~/*.sh
-
-RUN conda create -y -n chronon_py python=3.7
-RUN conda install -y -q -n chronon_py --no-deps virtualenv
-RUN  /opt/conda/envs/chronon_py/bin/pip install \
-   flake8==5.0.4 flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7
-
-# Install python build dependencies
-RUN  /opt/conda/envs/chronon_py/bin/pip install build
-
-WORKDIR /
 RUN rm -rf /img-build
 
 # Download and install Apache Spark
