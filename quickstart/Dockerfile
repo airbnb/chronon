@@ -64,4 +64,8 @@ RUN chmod u+x /opt/spark/sbin/* && \
     chmod u+x /opt/spark/bin/*
 
 ENV PYTHONPATH=$SPARK_HOME/python/:/srv/chronon/:$PYTHONPATH
+# If trying a standalone docker cluster
 WORKDIR ${SPARK_HOME}
+# If doing a regular local spark box.
+WORKDIR /srv/chronon
+
