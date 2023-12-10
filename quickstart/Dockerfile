@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     python3-setuptools \
     vim \
     wget \
+    procps \
     python3-pip
 
 ENV THRIFT_VERSION 0.13.0
@@ -53,11 +54,9 @@ RUN curl https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SP
 COPY requirements.txt .
 RUN pip3 install -r requirements.txt
 
+
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
 ENV SPARK_HOME="/opt/spark"
-ENV SPARK_MASTER="spark://spark-master:7077"
-ENV SPARK_MASTER_HOST="spark-master"
-ENV SPARK_MASTER_PORT="7077"
 
 COPY conf/spark-defaults.conf "$SPARK_HOME/conf"
 

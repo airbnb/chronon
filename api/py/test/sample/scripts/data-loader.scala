@@ -39,12 +39,9 @@ files.foreach { file =>
   val tableName = s"data.${fileName.split('.')(0)}"
 
   // Save DataFrame as a Hive table
+  dfWithSchema.show()
   dfWithSchema.write.partitionBy("ds").mode("overwrite").saveAsTable(tableName)
 }
 
-// Query one of the tables
-spark.sql("SHOW TABLES IN DATA").show()
-
 // Stop Spark session
-spark.stop()
 System.exit(0)

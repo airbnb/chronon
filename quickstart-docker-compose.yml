@@ -1,49 +1,26 @@
 version: '3.8'
 
 services:
-  spark-master:
-    build:
-      context: quickstart
-    command: "bin/spark-class org.apache.spark.deploy.master.Master >> logs/spark-master.out"
-    volumes:
-      - ./api/py/test/sample/data:/srv/chronon/data
-      - spark-logs:/opt/spark/spark-events
-    env_file:
-      - quickstart/.env.spark
-    ports:
-      - '9090:8080'
-      - '7077:7077'
-
-
-  spark-worker:
-    build:
-      context: quickstart
-    command: "bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 >> logs/spark-worker.out"
-    ports:
-      - '9091:8081'
-    depends_on:
-      - spark-master
-    env_file:
-      - quickstart/.env.spark
-    volumes:
-      - ./api/py/test/sample/data:/srv/chronon/data
-      - spark-logs:/opt/spark/spark-events
-
   main:
     build:
       context: quickstart
     command: "tail -f /dev/null"
+    ports:
+      - "4040:4040"
     environment:
       - USER=root
       - SPARK_SUBMIT_PATH=spark-submit
       - PYTHONPATH=/srv/chronon
       - SPARK_VERSION=3.1.1
-      - JOB_MODE=spark://spark-master:7077
-    depends_on:
-      - spark-master
-      - spark-worker
+      - JOB_MODE=local[*]
+      - PARALLELISM=2
+      - EXECUTOR_MEMORY=2G
+      - EXECUTOR_CORES=4
+      - DRIVER_MEMORY=1G
     volumes:
       - ./api/py/test/sample:/srv/chronon
+      - spark-logs:/opt/spark/spark-events
 
 volumes:
   spark-logs:
+  spark-data:
