@@ -14,10 +14,10 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
                                inputSchema: Seq[(String, DataType)],
                                resolution: Resolution = FiveMinuteResolution,
                                tailBufferMillis: Long = new Window(2, TimeUnit.DAYS).millis)
-  extends SawtoothMutationAggregator(aggregations: Seq[Aggregation],
-    inputSchema: Seq[(String, DataType)],
-    resolution: Resolution,
-    tailBufferMillis: Long) {
+    extends SawtoothMutationAggregator(aggregations: Seq[Aggregation],
+                                       inputSchema: Seq[(String, DataType)],
+                                       resolution: Resolution,
+                                       tailBufferMillis: Long) {
 
   // logically, batch response is arranged like so
   // sum-90d =>  sum_ir_88d, [(sum_ir_1d, ts)] -> 1d is the hopSize for 90d
@@ -33,11 +33,13 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
 
   val batchTailTs: Array[Option[Long]] = tailTs(batchEndTs)
 
-  println(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
-  println("Window Tails: ")
-  for (i <- windowMappings.indices) {
-    println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
-  }
+  // Yank these printlns to see if they help us get around the issues we're seeing in #ir-song-subside
+  // Due to ArrayIndexOutOfBounds exceptions thrown in the TsUtils.toStr calls (as SimpleDateFormat isn't thread safe)
+  //println(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
+  //println("Window Tails: ")
+  //for (i <- windowMappings.indices) {
+  //  println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
+  //}
 
   def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row, batchTailTs)
 
@@ -93,8 +95,8 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
-                        streamingTiledIrs: Iterator[TiledIr],
-                        queryTs: Long): Array[Any] = {
+                             streamingTiledIrs: Iterator[TiledIr],
+                             queryTs: Long): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingTiledIrs == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
@@ -122,8 +124,8 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
-                               streamingTiledIrs: Iterator[TiledIr],
-                               ts: Long): Array[Any] = {
+                                    streamingTiledIrs: Iterator[TiledIr],
+                                    ts: Long): Array[Any] = {
     // TODO: Add support for mutations / hasReversal to the tiled implementation
     windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
   }
