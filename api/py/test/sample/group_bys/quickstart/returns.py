@@ -41,6 +41,7 @@ window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30
 v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
+    online=True,
     aggregations=[Aggregation(
             input_column="refund_amt",
             operation=Operation.SUM,

@@ -36,6 +36,7 @@
       "groupBy": {
         "metaData": {
           "name": "quickstart.purchases.v1",
+          "online": 1,
           "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_data.purchases_ds\", \"spec\": \"data.purchases/ds={{ ds }}\", \"start\": null, \"end\": null}"
@@ -127,6 +128,7 @@
       "groupBy": {
         "metaData": {
           "name": "quickstart.returns.v1",
+          "online": 1,
           "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_data.returns_ds\", \"spec\": \"data.returns/ds={{ ds }}\", \"start\": null, \"end\": null}"
@@ -218,6 +220,7 @@
       "groupBy": {
         "metaData": {
           "name": "quickstart.users.v1",
+          "online": 1,
           "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
             "{\"name\": \"wait_for_data.users_ds\", \"spec\": \"data.users/ds={{ ds }}\", \"start\": null, \"end\": null}"

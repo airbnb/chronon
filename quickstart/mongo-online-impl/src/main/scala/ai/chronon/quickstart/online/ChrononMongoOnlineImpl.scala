@@ -38,7 +38,7 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   @transient lazy val registry: ExternalSourceRegistry = new ExternalSourceRegistry()
 
   @Transient val logger: Logger = LoggerFactory.getLogger("ChrononMongoOnlineImpl")
-  
+
   @transient lazy val mongoClient = MongoClient(s"mongodb://${userConf("user")}:${userConf("password")}@${userConf("host")}:${userConf("port")}")
   override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder = ???
 

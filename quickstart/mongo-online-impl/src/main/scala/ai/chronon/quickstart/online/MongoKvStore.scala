@@ -55,7 +55,7 @@ class MongoKvStore(mongoClient: MongoClient, databaseName: String) extends KVSto
 
     try {
       // Read data from the specified table using Spark
-      val df: DataFrame = spark.table(sourceOfflineTable).where(s"ds = '$partition'")
+      val df: DataFrame = spark.table(sourceOfflineTable)
 
       // Transform DataFrame to a format suitable for MongoDB insertion
       val documents: Seq[Document] = df.collect().map { row =>

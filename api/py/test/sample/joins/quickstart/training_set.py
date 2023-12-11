@@ -38,3 +38,9 @@ v1 = Join(
     left=source,
     right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1, users]] # Include the three GroupBys
 )
+
+v2 = Join(
+    left=source,
+    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1]], # Include the two online GroupBys
+    online=True,
+)
