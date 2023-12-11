@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"  # Mapping the MongoDB default port to host machine
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin 
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - mongodb_data:/opt/mongo/data/db  # Persist MongoDB data to a volume
+
+volumes:
+  mongodb_data:  # Named volume for MongoDB data persistence
   main:
     build:
       context: quickstart
