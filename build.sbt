@@ -213,7 +213,7 @@ lazy val api = project
           "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
           "com.novocode" % "junit-interface" % "0.11" % "test",
           "org.scalatest" %% "scalatest" % "3.2.15" % "test",
-          "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test",
+          "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test"
         )
   )
 
