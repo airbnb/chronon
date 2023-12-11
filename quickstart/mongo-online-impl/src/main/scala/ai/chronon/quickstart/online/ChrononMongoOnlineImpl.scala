@@ -1,4 +1,4 @@
-package ai.chronon.quickstart.mongo.online
+package ai.chronon.quickstart.online
 
 import ai.chronon.online.{
   Api,
