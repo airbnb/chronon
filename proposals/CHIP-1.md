@@ -1,5 +1,5 @@
 # CHIP-1 – Online IR and GetRequest Caching
-_By Caio Camatta (Stripe) | Dec 4, 2023_
+_By Caio Camatta (Stripe) | Dec 11, 2023_
 
 This CHIP introduces IR caching in Chronon's online/Fetcher side. We're currently trying out caching at Stripe and will update this doc with benchmarks and findings.
 
