@@ -12,6 +12,6 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "ai.chronon" %% "online" % "0.0.57" % Provided,
       "org.mongodb.spark" %% "mongo-spark-connector" % "10.2.1", // Batch upload + structured streaming
-      "org.mongodb.scala" %% "mongo-scala-driver" % "4.4.1"      // Fetching
+      "org.mongodb.scala" %% "mongo-scala-driver" % "4.11.0" % Provided,    // Fetching
     ),
   )
