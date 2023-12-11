@@ -12,6 +12,7 @@ import ai.chronon.flink.window.{
 }
 import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
 import ai.chronon.online.KVStore.PutRequest
+import org.apache.flink.api.common.operators.SlotSharingGroup
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
@@ -48,6 +49,12 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
                   parallelism: Int) {
   val featureGroupName: String = groupByServingInfoParsed.groupBy.getMetaData.getName
   println(f"Creating Flink job. featureGroupName=${featureGroupName}")
+
+  val slotSharingGroup: SlotSharingGroup = SlotSharingGroup
+    .newBuilder(featureGroupName)
+    .setCpuCores(2.0)
+    .setTaskHeapMemoryMB(2000)
+    .build()
 
   protected val exprEval: SparkExpressionEvalFn[T] =
     new SparkExpressionEvalFn[T](encoder, groupByServingInfoParsed.groupBy)
@@ -158,7 +165,6 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         )
         .uid(s"tiling-01-$featureGroupName")
         .name(s"Tiling for $featureGroupName")
-        .slotSharingGroup(featureGroupName)
         .setParallelism(sourceStream.parallelism)
 
     // Track late events
@@ -168,14 +174,12 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .flatMap(new LateEventCounter(featureGroupName, Constants.TimeColumn))
         .uid(s"tiling-side-output-01-$featureGroupName")
         .name(s"Tiling Side Output Late Data for $featureGroupName")
-        .slotSharingGroup(featureGroupName)
         .setParallelism(sourceStream.parallelism)
 
     val putRecordDS: DataStream[PutRequest] = tilingDS
       .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed))
       .uid(s"avro-conversion-01-$featureGroupName")
       .name(s"Avro conversion for $featureGroupName")
-      .slotSharingGroup(featureGroupName)
       .setParallelism(sourceStream.parallelism)
 
     AsyncKVStoreWriter.withUnorderedWaits(
