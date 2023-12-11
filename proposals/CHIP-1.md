@@ -19,17 +19,32 @@ This CHIP does not discuss optimizing to the un-tiled version of Chronon, which 
 
 ## Proposed Change
 
-We will be caching four different operations:
+Here's a diagram of how the Chronon Fetcher works currently.
 
-1. Performing streaming GET requests
-2. Performing batch GET requests
-3. Avro decoding of streaming bytes
-4. Avro decoding of batch bytes
+![Chronon Fetcher before changes](./images/CHIP-1-current-fetcher-sequence.png)
+_Simplified Chronon Fetcher before proposed changes. The numbers represent what we will change in each Step of the Implementation ("2" = "Step 2")_.
+
+We will be caching four different operations:
+ - Performing streaming GET requests
+ - Performing batch GET requests
+ - Avro decoding of streaming bytes
+ - Avro decoding of batch bytes
 
 To do that, I’m proposing we use two types of Caffeine caches to store:
 
 - Key: batch get requests → Value: batch IRs
 - Key: streaming get requests → Value: streaming IRs
+
+After this CHIP is implemented, the Fetcher would work the following way: 
+
+![Chronon Fetcher after changes](./images/CHIP-1-new-fetcher-sequence.png)
+_Simplified Chronon Fetcher after this CHIP._
+
+For reference, here's how data is currently stored in the KV store on the tiled version of Chronon:
+
+![Chronon Fetcher after changes](./images/CHIP-1-data-in-kv-store.png)
+_Data stored in the KV store._
+
 
 The caches will be configured on a per-GroupBy basis, i.e. two caches per GroupBy. This allows us to enable caching only for features with very skewed access patterns (when the top few keys correspond to a significant percentage of traffic). See _Rejected Alternative #4_ and _UX Considerations_ for more details.
 
