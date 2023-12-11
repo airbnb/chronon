@@ -10,9 +10,6 @@ import ai.chronon.online.{
 }
 
 import org.mongodb.scala._
-import org.mongodb.scala.model.Filters._
-import org.mongodb.scala.model.Sorts._
-
 
 import jnr.ffi.annotations.Transient
 import org.slf4j.{Logger, LoggerFactory}
@@ -41,55 +38,26 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   @transient lazy val registry: ExternalSourceRegistry = new ExternalSourceRegistry()
 
   @Transient val logger: Logger = LoggerFactory.getLogger("ChrononMongoOnlineImpl")
-
-  def buildMongoApiClientConfig() = ???
-
+  
+  @transient lazy val mongoClient = MongoClient(s"mongodb://${userConf("user")}:${userConf("password")}@${userConf("host")}:${userConf("port")}")
   override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder = ???
 
-  override def genKvStore: KVStore = ???
+  override def genKvStore: KVStore = {
+    val databaseName = "chronon"
+    val dataset = "chronon_kvstore"
+    new MongoKvStore(mongoClient, databaseName)
+  }
 
-    /*
-    val musselHostOpt = userConf.get(MUSSEL_HOST)
-    assert(musselHostOpt.isDefined, s"$MUSSEL_HOST is not defined")
-    val musselPortOpt = userConf.get(MUSSEL_PORT)
-    assert(musselPortOpt.isDefined, s"$MUSSEL_PORT is not defined")
-    assert(musselPortOpt.get.forall(Character.isDigit), s"$MUSSEL_PORT is not a number")
-    val debug = userConf.getOrElse("debug", "false").toBoolean
-    val maxThreadPoolSize = userConf.getOrElse("max-thread-pool-size", "10").toInt
-
-    val musselConfig = new MusselClientConfiguration()
-    val apiClientConfig = new ApiClientConfig()
-    apiClientConfig.setClientName(MusselClientName)
-    apiClientConfig.setSynapseName(musselHostOpt.get)
-    apiClientConfig.setSynapsePort(musselPortOpt.get.toInt)
-    apiClientConfig.setRequestTimeoutMs(MusselRequestTimeoutMs)
-    apiClientConfig.setTotalAttempt(MusselTotalAttempt)
-    apiClientConfig.setMaxResponseBytes(MAX_RESPONSE_BYTES)
-    apiClientConfig.setMaxThreadPoolSize(maxThreadPoolSize)
-    musselConfig.setApiClientConfig(apiClientConfig)
-    MusselZiplineKvStore(MusselClientName, musselConfig, debug)
-    */
-
-  override def logResponse(resp: LoggableResponse): Unit = ???
-  /*{
-    // construct zipline prediction event
-    val ziplinePredictionEvent = new ZiplinePredictionEvent()
-    ziplinePredictionEvent.setName(resp.joinName)
-    ziplinePredictionEvent.setKeyBase64(Base64.getEncoder.encodeToString(resp.keyBytes))
-    ziplinePredictionEvent.setValueBase64(Base64.getEncoder.encodeToString(resp.valueBytes))
-    ziplinePredictionEvent.setTsMillis(resp.tsMillis)
-    ziplinePredictionEvent.setSchemaHash(resp.schemaHash)
-    // Publish the event
-    try {
-      omnesProducer.publishAsync(ziplinePredictionEvent)
-    } catch {
-      case e: Exception =>
-        logger.error(
-          s"Error publishing zipline prediction event to jitney: $e,  cause = ${e.getCause}, message = ${e.getMessage} stack trace = ${e.getStackTrace
-            .mkString("Array(", ", ", ")")}"
-        )
-    }
-  }*/
+  @transient lazy val loggingClient = mongoClient.getDatabase("chronon").getCollection("chronon_logging")
+  override def logResponse(resp: LoggableResponse): Unit =
+    loggingClient.insertOne(Document(
+      "joinName" -> resp.joinName,
+      "keyBytes" -> resp.keyBytes,
+      "schemaHash" -> resp.schemaHash,
+      "valueBytes" -> resp.valueBytes,
+      "atMillis" -> resp.tsMillis,
+      "ts" -> System.currentTimeMillis(),
+    )).toFuture()
 
   override def externalRegistry: ExternalSourceRegistry = registry
 }
