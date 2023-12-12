@@ -1,10 +1,11 @@
 package ai.chronon.flink.test
 
-import ai.chronon.flink.{FlinkJob, FlinkSource, SparkExpressionEvalFn}
+import ai.chronon.flink.{FlinkJob, FlinkSource, SparkExpressionEvalFn, WriteResponse}
 import ai.chronon.online.Api
+import org.apache.flink.api.common.eventtime.{SerializableTimestampAssigner, WatermarkStrategy}
+import org.apache.flink.api.scala._
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
-import org.apache.flink.api.scala._
 import org.apache.flink.test.util.MiniClusterWithClientResource
 import org.apache.spark.sql.Encoders
 import org.junit.Assert.assertEquals
@@ -12,16 +13,24 @@ import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
 import org.scalatestplus.mockito.MockitoSugar.mock
 
+import java.time.Duration
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
-class E2EEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSource[E2ETestEvent] {
+class E2EWatermarkedEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSource[E2ETestEvent] {
+  def watermarkStrategy: WatermarkStrategy[E2ETestEvent] =
+    WatermarkStrategy
+      .forBoundedOutOfOrderness[E2ETestEvent](Duration.ofSeconds(5))
+      .withTimestampAssigner(new SerializableTimestampAssigner[E2ETestEvent] {
+        override def extractTimestamp(event: E2ETestEvent, previousElementTimestamp: Long): Long =
+          event.created
+      })
   override def getDataStream(topic: String, groupName: String)(env: StreamExecutionEnvironment,
                                                                parallelism: Int): DataStream[E2ETestEvent] = {
-    env.fromCollection(mockEvents)
+    env.fromCollection(mockEvents).assignTimestampsAndWatermarks(watermarkStrategy)
   }
 }
 
-class FlinkJobIntegrationTest {
+class TiledFlinkJobIntegrationTest {
 
   val flinkCluster = new MiniClusterWithClientResource(
     new MiniClusterResourceConfiguration.Builder()
@@ -41,16 +50,16 @@ class FlinkJobIntegrationTest {
   }
 
   @Test
-  def testFlinkJobEndToEnd(): Unit = {
+  def testTiledFlinkJobEndToEnd(): Unit = {
     implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
 
     val elements = Seq(
-      E2ETestEvent("test1", 12, 1.5, 1699366993123L),
-      E2ETestEvent("test2", 13, 1.6, 1699366993124L),
-      E2ETestEvent("test3", 14, 1.7, 1699366993125L)
+      E2ETestEvent("test1", 12, 1.5, 1L),
+      E2ETestEvent("test2", 13, 1.6, 2L),
+      E2ETestEvent("test3", 14, 1.7, 3L)
     )
 
-    val source = new E2EEventSource(elements)
+    val source = new E2EWatermarkedEventSource(elements)
     val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
     val encoder = Encoders.product[E2ETestEvent]
 
@@ -62,9 +71,9 @@ class FlinkJobIntegrationTest {
     val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFG")
     val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
 
-    job.runGroupByJob(env).addSink(new CollectSink)
+    job.runTiledGroupByJob(env).addSink(new CollectSink)
 
-    env.execute("FlinkJobIntegrationTest")
+    env.execute("TiledFlinkJobIntegrationTest")
 
     // capture the datastream of the 'created' timestamps of all the written out events
     val writeEventCreatedDS = CollectSink.values.asScala
