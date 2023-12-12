@@ -30,7 +30,7 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 source = Source(
     events=EventSource(
         table="data.purchases", # This points to the log table with historical purchase events
-        topic="events/purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        topic= None, # "events/purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
@@ -56,6 +56,10 @@ v1 = GroupBy(
             input_column="purchase_price",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        ) # The average purchases by user in various windows
+        ), # The average purchases by user in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.LAST_K(10),
+        ),
     ],
 )

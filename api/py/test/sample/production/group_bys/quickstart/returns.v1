@@ -17,7 +17,6 @@
     {
       "events": {
         "table": "data.returns",
-        "topic": "return_events",
         "query": {
           "selects": {
             "user_id": "user_id",
@@ -89,6 +88,14 @@
           "timeUnit": 1
         }
       ]
+    },
+    {
+      "inputColumn": "refund_amt",
+      "operation": 13,
+      "argMap": {
+        "k": "2"
+      }
     }
-  ]
+  ],
+  "accuracy": 1
 }

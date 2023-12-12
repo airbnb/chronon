@@ -21,6 +21,7 @@ from ai.chronon.group_by import (
     Operation,
     Window,
     TimeUnit,
+    Accuracy,
 )
 
 """
@@ -30,7 +31,7 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 source = Source(
     events=EventSource(
         table="data.returns", # This points to the log table with historical return events
-        topic="return_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        topic=None, # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
         query=Query(
             selects=select("user_id","refund_amt"), # Select the fields we care about
             time_column="ts") # The event time
@@ -42,6 +43,7 @@ v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
     online=True,
+    accuracy=Accuracy.SNAPSHOT,
     aggregations=[Aggregation(
             input_column="refund_amt",
             operation=Operation.SUM,
@@ -56,6 +58,10 @@ v1 = GroupBy(
             input_column="refund_amt",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        )
+        ),
+        Aggregation(
+            input_column="refund_amt",
+            operation=Operation.LAST_K(2),
+        ),
     ],
 )

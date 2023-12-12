@@ -17,15 +17,13 @@ object Spark2MongoLoader {
       .config("spark.mongodb.write.connection.uri", uri)
       .getOrCreate()
 
-    val ts = System.currentTimeMillis()
-
     val df = spark.sql(s"""
     | SELECT
-    |   ${Constants.tableKey} AS ${Constants.mongoKey},
-    |   ${Constants.tableValue} as ${Constants.mongoValue},
-    |   CAST($ts AS BIGINT) as ${Constants.mongoTs}
+    |   BASE64(${Constants.tableKey}) AS ${Constants.mongoKey},
+    |   BASE64(${Constants.tableValue}) as ${Constants.mongoValue},
+    |   UNIX_TIMESTAMP(DATE_ADD(ds, -1)) * 1000 as ${Constants.mongoTs}
     | FROM $tableName""".stripMargin)
-
+    df.show()
     df.write
       .format("mongodb")
       .mode("overwrite")

@@ -17,7 +17,6 @@
     {
       "events": {
         "table": "data.purchases",
-        "topic": "events/purchase_events",
         "query": {
           "selects": {
             "user_id": "user_id",
@@ -89,6 +88,13 @@
           "timeUnit": 1
         }
       ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 13,
+      "argMap": {
+        "k": "10"
+      }
     }
   ]
 }
