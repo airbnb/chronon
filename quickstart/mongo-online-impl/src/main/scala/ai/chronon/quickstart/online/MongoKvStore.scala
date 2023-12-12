@@ -31,7 +31,7 @@ class MongoKvStore(mongoClient: MongoClient, databaseName: String) extends KVSto
             documents.map(document =>
               TimedValue(
                 document.get("valueBytes").get.asBinary().getData,
-                document.getOrElse("ts", System.currentTimeMillis()).asInstanceOf[Long])
+                document.get("ts").get.asNumber().longValue())
             )))
         }
       }

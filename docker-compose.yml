@@ -36,6 +36,7 @@ services:
       - EXECUTOR_CORES=4
       - DRIVER_MEMORY=1G
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+      - CHRONON_ONLINE_ARGS="-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin"
     volumes:
       - ./api/py/test/sample:/srv/chronon
       - spark-logs:/opt/spark/spark-events

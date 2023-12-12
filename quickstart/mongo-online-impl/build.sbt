@@ -13,5 +13,7 @@ lazy val root = (project in file("."))
       "ai.chronon" %% "online" % "0.0.57" % Provided,
       "org.mongodb.spark" %% "mongo-spark-connector" % "10.2.1", // Batch upload + structured streaming
       "org.mongodb.scala" %% "mongo-scala-driver" % "4.8.1",    // Fetching
+          "ch.qos.logback" % "logback-classic" % "1.2.3",
+          "org.slf4j" % "slf4j-api" % "1.7.32"
     ),
   )
