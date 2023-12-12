@@ -17,11 +17,11 @@ object Cache {
    * @tparam VALUE The type of the value stored in the cache
    * @return Caffeine cache
    */
-  def apply[KEY <: Object, VALUE <: Object](cacheName: String, maximumSize: Int = 20000): CaffeineCache[KEY, VALUE] = {
+  def apply[KEY <: Object, VALUE <: Object](cacheName: String, maximumSize: Int = 10000): CaffeineCache[KEY, VALUE] = {
     buildCaffeineCache[KEY, VALUE](cacheName, maximumSize)
   }
 
-  private def buildCaffeineCache[KEY <: Object, VALUE <: Object](cacheName: String, maximumSize: Int = 20000): CaffeineCache[KEY, VALUE] = {
+  private def buildCaffeineCache[KEY <: Object, VALUE <: Object](cacheName: String, maximumSize: Int = 10000): CaffeineCache[KEY, VALUE] = {
     println(s"Chronon Cache build started. cacheName=$cacheName")
     val cache: CaffeineCache[KEY, VALUE] = Caffeine.newBuilder()
       .maximumSize(maximumSize)
