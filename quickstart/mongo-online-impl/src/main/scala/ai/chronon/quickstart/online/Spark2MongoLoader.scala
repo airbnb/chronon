@@ -9,20 +9,28 @@ object Spark2MongoLoader {
     }
 
     val tableName = args(0)
+    val batch_dataset = tableName.stripSuffix("_upload").split("\\.").lastOption.getOrElse(tableName).toUpperCase + "_BATCH"
     val uri = args(1)
 
     val spark = SparkSession.builder()
-      .appName("TableDataLoader")
-      .config("spark.mongodb.output.uri", uri)
+      .appName(s"Spark2MongoLoader-${tableName}")
+      .config("spark.mongodb.write.connection.uri", uri)
       .getOrCreate()
 
     val ts = System.currentTimeMillis()
 
-    val df = spark.sql(s"SELECT key_bytes as keyBytes, value_bytes as valueBytes, $ts as ts FROM $tableName")
+    val df = spark.sql(s"""
+    | SELECT
+    |   ${Constants.tableKey} AS ${Constants.mongoKey},
+    |   ${Constants.tableValue} as ${Constants.mongoValue},
+    |   CAST($ts AS BIGINT) as ${Constants.mongoTs}
+    | FROM $tableName""".stripMargin)
 
     df.write
-      .format("com.mongodb.spark.sql.DefaultSource")
+      .format("mongodb")
       .mode("overwrite")
+      .option("database", Constants.mongoDatabase)
+      .option("collection", batch_dataset)
       .save()
 
     spark.stop()

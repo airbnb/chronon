@@ -23,10 +23,10 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   @transient lazy val mongoClient = MongoClient(s"mongodb://${userConf("user")}:${userConf("password")}@${userConf("host")}:${userConf("port")}")
   override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder = ???
 
-  override def genKvStore: KVStore = new MongoKvStore(mongoClient, userConf("database"))
+  override def genKvStore: KVStore = new MongoKvStore(mongoClient, Constants.mongoDatabase)
 
 
-  @transient lazy val loggingClient = mongoClient.getDatabase(userConf("database")).getCollection("chronon_logging")
+  @transient lazy val loggingClient = mongoClient.getDatabase(Constants.mongoDatabase).getCollection("chronon_logging")
   override def logResponse(resp: LoggableResponse): Unit =
     loggingClient.insertOne(Document(
       "joinName" -> resp.joinName,

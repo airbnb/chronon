@@ -30,11 +30,14 @@ services:
       - EXECUTOR_CORES=4
       - DRIVER_MEMORY=1G
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
-      - CHRONON_ONLINE_ARGS="-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin"
+      - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
     volumes:
       - ./api/py/test/sample:/srv/chronon                # Main working dir and repo for samples
       - ./quickstart/mongo-online-impl:/srv/onlineImpl   # KV Store implementation
       - ./quickstart/jars:/srv/jars                      # Driver connectors and other spark required jars
+      - spark_events:/opt/spark/spark-events
 
 volumes:
   mongodb_data:  # Named volume for MongoDB data persistence
+  spark_events:
+  spark_data:
