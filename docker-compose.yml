@@ -1,3 +1,4 @@
+# Quickstart Docker containers to run chronon commands with MongoDB as the KV Store.
 version: '3.8'
 
 services:
@@ -5,19 +6,12 @@ services:
   mongodb:
     image: mongo:latest
     ports:
-      - "27017:27017"  # Mapping the MongoDB default port to host machine
+      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin
     volumes:
-      - mongodb_data:/opt/mongo/data/db  # Persist MongoDB data to a volume
-
-  spark-history-server:
-    build:
-      context: quickstart
-    command: "/opt/spark/sbin/start-history-server.sh"
-    volumes:
-      - spark-logs:/opt/spark/spark-events
+      - mongodb_data:/opt/mongo/data/db
 
   main:
     build:
@@ -38,11 +32,9 @@ services:
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
       - CHRONON_ONLINE_ARGS="-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin"
     volumes:
-      - ./api/py/test/sample:/srv/chronon
-      - spark-logs:/opt/spark/spark-events
-      - ./quickstart/mongo-online-impl:/srv/onlineImpl
-      - ./quickstart/jars:/srv/jars
+      - ./api/py/test/sample:/srv/chronon                # Main working dir and repo for samples
+      - ./quickstart/mongo-online-impl:/srv/onlineImpl   # KV Store implementation
+      - ./quickstart/jars:/srv/jars                      # Driver connectors and other spark required jars
 
 volumes:
-  spark-logs:
   mongodb_data:  # Named volume for MongoDB data persistence
