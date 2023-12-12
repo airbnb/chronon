@@ -31,7 +31,7 @@ class MongoKvStore(mongoClient: MongoClient, databaseName: String) extends KVSto
             documents.map(document =>
               TimedValue(
                 document.get("valueBytes").get.asBinary().getData,
-                document.getOrElse("timestamp", System.currentTimeMillis()).asInstanceOf[Long])
+                document.getOrElse("ts", System.currentTimeMillis()).asInstanceOf[Long])
             )))
         }
       }
@@ -44,7 +44,7 @@ class MongoKvStore(mongoClient: MongoClient, databaseName: String) extends KVSto
     val futures = putRequests.map { putRequest =>
       val collection = mongoClient.getDatabase(databaseName).getCollection(putRequest.dataset)
       val document = Document(
-        "keyBytes" -> putRequest.keyBytes, "valueBytes" -> putRequest.valueBytes, "timestamp" -> putRequest.dataset)
+        "keyBytes" -> putRequest.keyBytes, "valueBytes" -> putRequest.valueBytes, "ts" -> putRequest.dataset)
       collection.insertOne(document).toFuture().map(_ => true).recover { case _ => false }
     }
     Future.sequence(futures)
@@ -62,11 +62,11 @@ class MongoKvStore(mongoClient: MongoClient, databaseName: String) extends KVSto
         // Map DataFrame columns to MongoDB document fields
         val keyBytes: Array[Byte] = row.getAs[Array[Byte]]("keyBytes")
         val valueBytes: Array[Byte] = row.getAs[Array[Byte]]("valueBytes")
-        val timestamp: Long = row.getAs[Long]("timestamp")
+        val timestamp: Long = row.getAs[Long]("ts")
         Document(
           "keyBytes" -> keyBytes,
           "valueBytes" -> valueBytes,
-          "timestamp" -> timestamp
+          "ts" -> timestamp
         )
       }
 

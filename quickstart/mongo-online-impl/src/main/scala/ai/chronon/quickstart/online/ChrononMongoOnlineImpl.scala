@@ -44,7 +44,6 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
 
   override def genKvStore: KVStore = {
     val databaseName = "chronon"
-    val dataset = "chronon_kvstore"
     new MongoKvStore(mongoClient, databaseName)
   }
 

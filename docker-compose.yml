@@ -7,10 +7,18 @@ services:
     ports:
       - "27017:27017"  # Mapping the MongoDB default port to host machine
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin 
+      MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin
     volumes:
       - mongodb_data:/opt/mongo/data/db  # Persist MongoDB data to a volume
+
+  spark-history-server:
+    build:
+      context: quickstart
+    command: "/opt/spark/sbin/start-history-server.sh"
+    volumes:
+      - spark-logs:/opt/spark/spark-events
+
   main:
     build:
       context: quickstart
@@ -32,8 +40,8 @@ services:
       - ./api/py/test/sample:/srv/chronon
       - spark-logs:/opt/spark/spark-events
       - ./quickstart/mongo-online-impl:/srv/onlineImpl
+      - ./quickstart/jars:/srv/jars
 
 volumes:
   spark-logs:
-  spark-data:
   mongodb_data:  # Named volume for MongoDB data persistence
