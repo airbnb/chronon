@@ -8,11 +8,9 @@ import org.apache.flink.util.Collector
 /**
   * Function to count late events.
   *
-  * All events received by this function are assumed to be late. It is meant to consume
-  * the Side Output late data of a window.
+  * This function should consume the Side Output of the main tiling window.
   * */
-class LateEventCounter(featureGroupName: String, timeColumnName: String)
-    extends RichFlatMapFunction[Map[String, Any], Map[String, Any]] {
+class LateEventCounter(featureGroupName: String) extends RichFlatMapFunction[Map[String, Any], Map[String, Any]] {
   @transient private var lateEventCounter: Counter = _
 
   override def open(parameters: Configuration): Unit = {

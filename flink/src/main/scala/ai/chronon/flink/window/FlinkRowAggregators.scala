@@ -14,8 +14,8 @@ import org.apache.flink.util.Collector
 import scala.util.{Failure, Success, Try}
 
 /**
-  * TimestampedIR combines the current IR (intermediate result) with the timestamp of the event being processed.
-  * We need the timestamp of the event processed so we can calculate processing lag down the line.
+  * TimestampedIR combines the current Intermediate Result with the timestamp of the event being processed.
+  * We need to keep track of the timestamp of the event processed so we can calculate processing lag down the line.
   *
   * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
   *
@@ -33,9 +33,9 @@ case class TimestampedIR(
   * are used on the serving side along with other pre-aggregates, we don't 'finalize' the
   * Chronon RowAggregator and instead return the intermediate representation.
   *
-  * This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.
+  * (This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.)
   */
-class ChrononFlinkRowAggregationFunction(
+class FlinkRowAggregationFunction(
     groupBy: GroupBy,
     inputSchema: Seq[(String, DataType)],
     debug: Boolean = false
@@ -49,7 +49,7 @@ class ChrononFlinkRowAggregationFunction(
    * Initialize the transient rowAggregator.
    * Running this method is an idempotent operation:
    *   1. The initialized RowAggregator is always the same given a `groupBy` and `inputSchema`.
-   *   2. The RowAggregator doens't hold state; Flink keeps track of the state of the IRs.
+   *   2. The RowAggregator itself doens't hold state; Flink keeps track of the state of the IRs.
    */
   private def initializeRowAggregator(): Unit =
     rowAggregator = TileCodec.buildRowAggregator(groupBy, inputSchema)
@@ -147,7 +147,7 @@ case class TimestampedTile(
 )
 
 // This process function is only meant to be used downstream of the ChrononFlinkAggregationFunction
-class ChrononFlinkRowAggProcessFunction(
+class FlinkRowAggProcessFunction(
     groupBy: GroupBy,
     inputSchema: Seq[(String, DataType)],
     debug: Boolean = false

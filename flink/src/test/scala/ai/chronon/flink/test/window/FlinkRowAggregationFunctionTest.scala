@@ -1,14 +1,14 @@
 package ai.chronon.flink.test.window
 
 import ai.chronon.api._
-import ai.chronon.flink.window.ChrononFlinkRowAggregationFunction
+import ai.chronon.flink.window.FlinkRowAggregationFunction
 import ai.chronon.online.TileCodec
 import org.junit.Assert.fail
 import org.junit.Test
 
 import scala.util.{Failure, Try}
 
-class ChrononFlinkRowAggregationFunctionTest {
+class FlinkRowAggregationFunctionTest {
   private val aggregations: Seq[Aggregation] = Seq(
     Builders.Aggregation(
       Operation.AVERAGE,
@@ -51,10 +51,10 @@ class ChrononFlinkRowAggregationFunctionTest {
   )
 
   @Test
-  def testChrononFlinkAggregatorProducesCorrectResults(): Unit = {
+  def testFlinkAggregatorProducesCorrectResults(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
-    val aggregateFunc = new ChrononFlinkRowAggregationFunction(groupBy, schema)
+    val aggregateFunc = new FlinkRowAggregationFunction(groupBy, schema)
 
     var acc = aggregateFunc.createAccumulator()
     val rows = Seq(
@@ -94,10 +94,10 @@ class ChrononFlinkRowAggregationFunctionTest {
   }
 
   @Test
-  def testChrononFlinkAggregatorResultsCanBeMergedWithOtherPreAggregates(): Unit = {
+  def testFlinkAggregatorResultsCanBeMergedWithOtherPreAggregates(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
-    val aggregateFunc = new ChrononFlinkRowAggregationFunction(groupBy, schema)
+    val aggregateFunc = new FlinkRowAggregationFunction(groupBy, schema)
 
     // create partial aggregate 1
     var acc1 = aggregateFunc.createAccumulator()
@@ -159,10 +159,10 @@ class ChrononFlinkRowAggregationFunctionTest {
   }
 
   @Test
-  def testChrononFlinkAggregatorProducesCorrectResultsIfInputIsInIncorrectOrder(): Unit = {
+  def testFlinkAggregatorProducesCorrectResultsIfInputIsInIncorrectOrder(): Unit = {
     val groupByMetadata = Builders.MetaData(name = "my_group_by")
     val groupBy = Builders.GroupBy(metaData = groupByMetadata, aggregations = aggregations)
-    val aggregateFunc = new ChrononFlinkRowAggregationFunction(groupBy, schema)
+    val aggregateFunc = new FlinkRowAggregationFunction(groupBy, schema)
 
     var acc = aggregateFunc.createAccumulator()
 
@@ -175,12 +175,13 @@ class ChrononFlinkRowAggregationFunctionTest {
     )
 
     // If the aggregator fails to fix the order, we'll get a ClassCastException
-     Try {
-       acc = aggregateFunc.add(outOfOrderRow, acc)
-     } match {
+    Try {
+      acc = aggregateFunc.add(outOfOrderRow, acc)
+    } match {
       case Failure(e) => {
-        fail(s"An exception was thrown by the aggregator when it should not have been. " +
-          s"The aggregator should fix the order without failing. $e")
+        fail(
+          s"An exception was thrown by the aggregator when it should not have been. " +
+            s"The aggregator should fix the order without failing. $e")
       }
       case _ =>
     }

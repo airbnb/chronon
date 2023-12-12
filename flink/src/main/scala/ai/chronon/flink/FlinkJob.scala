@@ -5,8 +5,8 @@ import ai.chronon.api.{Constants, DataType}
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.flink.window.{
   AlwaysFireOnElementTrigger,
-  ChrononFlinkRowAggProcessFunction,
-  ChrononFlinkRowAggregationFunction,
+  FlinkRowAggProcessFunction,
+  FlinkRowAggregationFunction,
   KeySelector,
   TimestampedTile
 }
@@ -160,8 +160,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .sideOutputLateData(tilingLateEventsTag)
         .aggregate(
           // See Flink's "ProcessWindowFunction with Incremental Aggregation"
-          preAggregator = new ChrononFlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
-          windowFunction = new ChrononFlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
+          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
+          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
         )
         .uid(s"tiling-01-$featureGroupName")
         .name(s"Tiling for $featureGroupName")
@@ -171,7 +171,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     val sideOutputStream: DataStream[Map[String, Any]] =
       tilingDS
         .getSideOutput(tilingLateEventsTag)
-        .flatMap(new LateEventCounter(featureGroupName, Constants.TimeColumn))
+        .flatMap(new LateEventCounter(featureGroupName))
         .uid(s"tiling-side-output-01-$featureGroupName")
         .name(s"Tiling Side Output Late Data for $featureGroupName")
         .setParallelism(sourceStream.parallelism)
