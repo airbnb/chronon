@@ -151,7 +151,6 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
   private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
 
-    println(s"Initializing CatalystUtil with inputSchema: ${inputSchema}")
     // create dummy df with sql query and schema
     val emptyRowRdd = session.emptyDataFrame.rdd
     val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
