@@ -148,7 +148,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
     // 'keys' is a map of (key name in schema -> key value), e.g. Map("card_number" -> "4242-4242-4242-4242")
     // We convert to AnyRef because Chronon expects an AnyRef (for scala <> java interoperability reasons).
     val keys: Map[String, AnyRef] = keyColumns.zip(in.keys.map(_.asInstanceOf[AnyRef])).toMap
-    val keyBytes = keyToBytes(in.keys)
+    val keyBytes = keyToBytes(in.keys.toArray)
     val valueBytes = in.tileBytes
 
     if (debug) {
