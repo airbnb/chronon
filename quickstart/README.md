@@ -7,9 +7,11 @@ Docker
 
 ### Getting Started
 
-To build the containers run `docker-compose up` in the repo root.
-To get started iterating with chronon run `docker-compose exec bash main` to enter a shell environment with all the
-requirements set up.
+To build the containers run `docker-compose up` in the repo root and let it run in a terminal window (when you kill this
+process all the data generated should get cleaned and containers will stop).
+
+To get started iterating with chronon in a new terminal window run `docker-compose exec bash main` to enter a shell environment with all the
+requirements set up. If you want to automatically run all steps there's a run.sh script.
 
 
 ### Step 1: Run your first backfill
@@ -29,12 +31,20 @@ You can explore the table by running `spark-shell --master local`.
 
 It's time to move to the online world. We want to be able to query the features in different clients. For this we need
 to upload batch data into a KVStore.
-1. Run your first batch upload KV table: `run.py --mode upload --conf production/group_bys/quickstart/purchases.v1`
-2. Upload this table into MongoDB: `spark-submit ...`
-3. Fetch data from the KVStore: `run.py --mode fetch --type group-by --name quickstart`
+0. Compile your online jar: from the repo root go to quickstart/mongo-online-impl and run `sbt assembly`.
+1. Run your first batch upload KV table: `run.py --mode upload --conf production/group_bys/quickstart/purchases.v1 --ds  2023-12-01`
+2. Upload this table into MongoDB: `spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin`
+3. Fetch data from the KVStore: `run.py --mode fetch --type group-by --name quickstart/purchases.v1 -k '{"user_id":"5"}'`
 
 Feel free to explore more on the data being uploaded by looking at the onlineImpl provided in the quickstart directory
 as well as the resulting upload KV table that can be viewed in spark-shell.
+
+### Step 3: Fetch a join.
+
+Follow step 2 for all your group bys. In the case of `training_set.v2` this includes purchases.v1 and returns.v1.
+
+1. Run the metadata-upload job for the joins. `run.py --mode metadata-upload --conf production/joins//`
+2. Fetch the join: `run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'`
 
 
 ### Future Extensions
