@@ -29,7 +29,8 @@ import org.slf4j.LoggerFactory
   *   Kafka source -> Spark expression eval -> Avro conversion -> KV store writer
   *   Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
   *   Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
-  *   Avro conversion - Converts the Spark expr eval output to a form that can be written out to the KV store (PutRequest object)
+  *   Avro conversion - Converts the Spark expr eval output to a form that can be written out to the KV store
+  *      (PutRequest object)
   *   KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
   *
   *  In the untiled version there are no-shuffles and thus this ends up being a single node in the Flink DAG
@@ -65,8 +66,9 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
   val kafkaTopic: String = groupByServingInfoParsed.groupBy.streamingSource.get.topic
 
   def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
-      f"Tiling is disabled.")
+    logger.info(
+      f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
+        f"Tiling is disabled.")
 
     val sourceStream: DataStream[T] =
       eventSrc
@@ -96,7 +98,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     *
     * The operators are structured as follows:
     *  1. Kafka source - Reads objects of type T (specific case class, Thrift / Proto) from a Kafka topic
-    *  2. Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data
+    *  2. Spark expression eval - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input
+    *      data
     *  3. Window/tiling - This window aggregates incoming events, keeps track of the IRs, and sends them forward so
     *      they are written out to the KV store
     *  4. Avro conversion - Finishes converting the output of the window (the IRs) to a form that can be written out
@@ -106,8 +109,9 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     *  The window causes a split in the Flink DAG, so there are two nodes, (1+2) and (3+4+5).
     */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
-      f"Tiling is enabled.")
+    logger.info(
+      f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
+        f"Tiling is enabled.")
 
     val tilingWindowSizeInMillis: Option[Long] =
       ResolutionUtils.getSmallestWindowResolutionInMillis(groupByServingInfoParsed.groupBy)
