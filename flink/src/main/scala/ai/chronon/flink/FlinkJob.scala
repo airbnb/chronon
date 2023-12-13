@@ -160,8 +160,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .sideOutputLateData(tilingLateEventsTag)
         .aggregate(
           // See Flink's "ProcessWindowFunction with Incremental Aggregation"
-          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema, debug = true),
-          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema, debug = true)
+          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
+          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
         )
         .uid(s"tiling-01-$featureGroupName")
         .name(s"Tiling for $featureGroupName")
