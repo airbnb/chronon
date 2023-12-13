@@ -110,8 +110,6 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     *  5. KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
     *
     *  The window causes a split in the Flink DAG, so there are two nodes, (1+2) and (3+4+5).
-    *
-    * TODO: write proper documentation on how tiling works with examples (markdown file)
     */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
     logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=ON.")
