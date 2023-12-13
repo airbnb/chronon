@@ -206,7 +206,7 @@ class FlinkRowAggProcessFunction(
       }
       case Failure(e) =>
         // To improve availability, we don't rethrow the exception. We just drop the event
-        // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
+        // and track the errors in a metric. Alerts should be set up on this metric.
         logger.error(s"Flink process error making tile IR", e)
         eventProcessingErrorCounter.inc()
         rowProcessingErrorCounter.inc()

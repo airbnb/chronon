@@ -26,7 +26,7 @@ class FlinkJobIntegrationTest {
   val flinkCluster = new MiniClusterWithClientResource(
     new MiniClusterResourceConfiguration.Builder()
       .setNumberSlotsPerTaskManager(8)
-      .setNumberTaskManagers(2)
+      .setNumberTaskManagers(1)
       .build)
 
   @Before

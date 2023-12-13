@@ -12,7 +12,6 @@ import ai.chronon.flink.window.{
 }
 import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
 import ai.chronon.online.KVStore.PutRequest
-import org.apache.flink.api.common.operators.SlotSharingGroup
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
@@ -53,12 +52,6 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
   val featureGroupName: String = groupByServingInfoParsed.groupBy.getMetaData.getName
   logger.info(f"Creating Flink job. featureGroupName=${featureGroupName}")
 
-  val slotSharingGroup: SlotSharingGroup = SlotSharingGroup
-    .newBuilder(featureGroupName)
-    .setCpuCores(2.0)
-    .setTaskHeapMemoryMB(2000)
-    .build()
-
   protected val exprEval: SparkExpressionEvalFn[T] =
     new SparkExpressionEvalFn[T](encoder, groupByServingInfoParsed.groupBy)
 
@@ -72,7 +65,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
   val kafkaTopic: String = groupByServingInfoParsed.groupBy.streamingSource.get.topic
 
   def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=OFF.")
+    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
+      f"Tiling is disabled.")
 
     val sourceStream: DataStream[T] =
       eventSrc
@@ -112,7 +106,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     *  The window causes a split in the Flink DAG, so there are two nodes, (1+2) and (3+4+5).
     */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=ON.")
+    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
+      f"Tiling is enabled.")
 
     val tilingWindowSizeInMillis: Option[Long] =
       ResolutionUtils.getSmallestWindowResolutionInMillis(groupByServingInfoParsed.groupBy)
