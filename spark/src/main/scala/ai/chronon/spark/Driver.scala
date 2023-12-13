@@ -276,8 +276,6 @@ object Driver {
         opt[String](
           required = false,
           descr = "Start date to compute group by backfill, this start date will override backfill start date in conf.")
-      val parallelism: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
       override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
@@ -397,8 +395,6 @@ object Driver {
           required = false,
           descr =
             "Start date to compute staging query backfill, this start date will override start partition in conf.")
-      val parallelism: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
