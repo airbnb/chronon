@@ -31,7 +31,7 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
     loggingClient.insertOne(Document(
       "joinName" -> resp.joinName,
       "keyBytes" -> resp.keyBytes,
-      "schemaHash" -> resp.schemaHash,
+      "schemaHash" -> Option(resp.schemaHash).getOrElse("SCHEMA_PUBLISHED"),
       "valueBytes" -> resp.valueBytes,
       "atMillis" -> resp.tsMillis,
       "ts" -> System.currentTimeMillis(),

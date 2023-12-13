@@ -38,6 +38,5 @@ services:
       - spark_events:/opt/spark/spark-events
 
 volumes:
-  mongodb_data:  # Named volume for MongoDB data persistence
+  mongodb_data:
   spark_events:
-  spark_data:
