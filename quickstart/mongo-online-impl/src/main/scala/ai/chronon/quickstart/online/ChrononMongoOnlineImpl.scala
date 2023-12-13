@@ -19,7 +19,9 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   @transient val logger: Logger = LoggerFactory.getLogger("ChrononMongoOnlineImpl")
 
   @transient lazy val mongoClient = MongoClient(s"mongodb://${userConf("user")}:${userConf("password")}@${userConf("host")}:${userConf("port")}")
-  override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder = ???
+  override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder =
+    new QuickstartMutationDecoder(groupByServingInfoParsed)
+
 
   override def genKvStore: KVStore = new MongoKvStore(mongoClient, Constants.mongoDatabase)
 

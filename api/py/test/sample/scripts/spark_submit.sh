@@ -29,25 +29,12 @@
 set -euxo pipefail
 CHRONON_WORKING_DIR=${CHRONON_TMPDIR:-/tmp}/${USER}
 mkdir -p ${CHRONON_WORKING_DIR}
-export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j_file"
-cat > ${LOG4J_FILE} << EOF
-log4j.rootLogger=INFO, stdout
-log4j.appender.stdout=org.apache.log4j.ConsoleAppender
-log4j.appender.stdout.Target=System.out
-log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
-log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n
-
-log4j.logger.org.apache.spark=WARN
-log4j.logger.org.apache.spark.util=ERROR
-EOF
-
 export TEST_NAME="${APP_NAME}_${USER}_test"
 unset PYSPARK_DRIVER_PYTHON
 unset PYSPARK_PYTHON
 unset SPARK_HOME
 unset SPARK_CONF_DIR
 $SPARK_SUBMIT_PATH \
---driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
 --conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
 --conf spark.sql.shuffle.partitions=${PARALLELISM:-4000} \
 --conf spark.dynamicAllocation.maxExecutors=${MAX_EXECUTORS:-1000} \
@@ -63,6 +50,7 @@ $SPARK_SUBMIT_PATH \
 --executor-memory "${EXECUTOR_MEMORY:-2G}" \
 --driver-memory "${DRIVER_MEMORY:-1G}" \
 --conf spark.app.name=${APP_NAME} \
+--verbose \
 --conf spark.chronon.outputParallelismOverride=${OUTPUT_PARALLELISM:--1} \
 --conf spark.chronon.rowCountPerPartition=${ROW_COUNT_PER_PARTITION:--1} \
 --jars "${CHRONON_ONLINE_JAR:-}" \
