@@ -13,6 +13,7 @@ object Spark2MongoLoader {
     val dataset = tableName match {
       case tableName if tableName.endsWith("_logged_daily_stats_upload") => ApiConstants.LogStatsBatchDataset
       case tableName if tableName.endsWith("_daily_stats_upload") => ApiConstants.StatsBatchDataset
+      case tableName if tableName.endsWith("_consistency_upload") => ApiConstants.ConsistencyMetricsDataset
       case tableName if tableName.endsWith("_upload") => tableName.stripSuffix("_upload").split("\\.").lastOption.getOrElse(tableName).toUpperCase + "_BATCH"
       case _ => tableName.toUpperCase + "_BATCH"
     }
