@@ -20,6 +20,7 @@ import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 import org.apache.flink.streaming.api.windowing.assigners.{TumblingEventTimeWindows, WindowAssigner}
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
+import org.slf4j.LoggerFactory
 
 /**
   * Flink job that processes a single streaming GroupBy and writes out the results
@@ -47,8 +48,10 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
                   groupByServingInfoParsed: GroupByServingInfoParsed,
                   encoder: Encoder[T],
                   parallelism: Int) {
+  private[this] val logger = LoggerFactory.getLogger(getClass)
+
   val featureGroupName: String = groupByServingInfoParsed.groupBy.getMetaData.getName
-  println(f"Creating Flink job. featureGroupName=${featureGroupName}")
+  logger.info(f"Creating Flink job. featureGroupName=${featureGroupName}")
 
   val slotSharingGroup: SlotSharingGroup = SlotSharingGroup
     .newBuilder(featureGroupName)
@@ -69,7 +72,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
   val kafkaTopic: String = groupByServingInfoParsed.groupBy.streamingSource.get.topic
 
   def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    println(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=OFF.")
+    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=OFF.")
 
     val sourceStream: DataStream[T] =
       eventSrc
@@ -111,7 +114,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     * TODO: write proper documentation on how tiling works with examples (markdown file)
     */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
-    println(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=ON.")
+    logger.info(f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}, window=ON.")
 
     val tilingWindowSizeInMillis: Option[Long] =
       ResolutionUtils.getSmallestWindowResolutionInMillis(groupByServingInfoParsed.groupBy)

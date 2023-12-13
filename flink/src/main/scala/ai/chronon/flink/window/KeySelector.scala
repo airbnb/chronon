@@ -3,6 +3,7 @@ package ai.chronon.flink.window
 import ai.chronon.api.GroupBy
 
 import scala.jdk.CollectionConverters._
+import org.slf4j.LoggerFactory
 
 /**
   * A KeySelector is what Flink uses to determine how to partition a DataStream. In a distributed environment, the
@@ -10,6 +11,7 @@ import scala.jdk.CollectionConverters._
   * If invoked multiple times on the same object, the returned key must be the same.
   */
 object KeySelector {
+  private[this] lazy val logger = LoggerFactory.getLogger(getClass)
 
   /**
     * Given a GroupBy, create a function to key the output of a SparkExprEval operator by the entities defined in the
@@ -23,7 +25,7 @@ object KeySelector {
     // List uses MurmurHash.seqHash for its .hashCode(), which gives us hashing based on content.
     // (instead of based on the instance, which is the case for Array).
     val groupByKeys: List[String] = groupBy.keyColumns.asScala.toList
-    println(
+    logger.info(
       f"Creating key selection function for Flink app. groupByKeys=$groupByKeys"
     )
     (sparkEvalOutput: Map[String, Any]) => groupByKeys.collect(sparkEvalOutput)

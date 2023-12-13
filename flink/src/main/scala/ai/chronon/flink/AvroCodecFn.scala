@@ -137,7 +137,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
       case e: Exception =>
         // To improve availability, we don't rethrow the exception. We just drop the event
         // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
-        println(s"Error converting to Avro bytes - ", e)
+        logger.error(s"Error converting to Avro bytes - ", e)
         eventProcessingErrorCounter.inc()
         avroConversionErrorCounter.inc()
     }
@@ -152,7 +152,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
     val valueBytes = in.tileBytes
 
     if (debug) {
-      println(
+      logger.info(
         f"Avro converting tile to PutRequest - tile=${in}  " +
           f"groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys " +
           f"keyBytes=${java.util.Base64.getEncoder.encodeToString(keyBytes)} " +

@@ -10,6 +10,7 @@ import org.apache.flink.metrics.Counter
 import org.apache.flink.streaming.api.scala.function.ProcessWindowFunction
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.util.Collector
+import org.slf4j.LoggerFactory
 
 import scala.util.{Failure, Success, Try}
 
@@ -41,6 +42,7 @@ class FlinkRowAggregationFunction(
     debug: Boolean = false
 ) extends AggregateFunction[Map[String, Any], TimestampedIR, TimestampedIR] {
   @transient private[flink] var rowAggregator: RowAggregator = _
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val valueColumns: Array[String] = inputSchema.map(_._1).toArray // column order matters
   private val timeColumnAlias: String = Constants.TimeColumn
@@ -71,7 +73,7 @@ class FlinkRowAggregationFunction(
     // Given that the rowAggregator is transient, it may be null when a job is restored from a checkpoint
     if (rowAggregator == null) {
       if (debug) {
-        println(
+        logger.debug(
           f"The Flink RowAggregator was null for groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills"
         )
       }
@@ -79,7 +81,7 @@ class FlinkRowAggregationFunction(
     }
 
     if (debug) {
-      println(
+      logger.debug(
         f"Flink pre-aggregates BEFORE adding new element: accumulatorIr=[${accumulatorIr.ir
           .mkString(", ")}] groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
       )
@@ -92,7 +94,7 @@ class FlinkRowAggregationFunction(
     partialAggregates match {
       case Success(v) => {
         if (debug) {
-          println(
+          logger.debug(
             f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
               f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
           )
@@ -100,7 +102,7 @@ class FlinkRowAggregationFunction(
         TimestampedIR(v, Some(tsMills))
       }
       case Failure(e) =>
-        println(
+        logger.error(
           s"Flink error calculating partial row aggregate. " +
             s"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element",
           e
@@ -154,6 +156,7 @@ class FlinkRowAggProcessFunction(
 ) extends ProcessWindowFunction[TimestampedIR, TimestampedTile, List[Any], TimeWindow] {
 
   @transient private[flink] var tileCodec: TileCodec = _
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient private var rowProcessingErrorCounter: Counter = _
   @transient private var eventProcessingErrorCounter: Counter =
@@ -191,7 +194,7 @@ class FlinkRowAggProcessFunction(
     tileBytes match {
       case Success(v) => {
         if (debug) {
-          println(
+          logger.debug(
             f"Flink aggregator processed element irEntry=$irEntry " +
               f"tileBytes=${java.util.Base64.getEncoder.encodeToString(v)} " +
               f"windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName} " +
@@ -204,7 +207,7 @@ class FlinkRowAggProcessFunction(
       case Failure(e) =>
         // To improve availability, we don't rethrow the exception. We just drop the event
         // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
-        print(s"Flink process error making tile IR", e)
+        logger.error(s"Flink process error making tile IR", e)
         eventProcessingErrorCounter.inc()
         rowProcessingErrorCounter.inc()
     }
