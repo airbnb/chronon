@@ -94,6 +94,17 @@ actual logs. There's also an upload table that can be uploaded to the KVStore fo
 spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_training_set_v2_consistency_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 ```
 
+### Use case: Fetch a realtime feature.
+
+To fetch a realtime feature we need to send some data to the kafka topic. The format of the kafka topic is...
+The way to send messages to the topic is via the kafka-console-producer. Example:
+```
+local $ docker-compose exec kafka bash
+kafka $ kafka-console-producer --topic <topic> --bootstrap-server localhost:9092
+> This is a message...
+```
+
+
 ### Future Extensions
 
 There are other flows to explore with Chronon.
