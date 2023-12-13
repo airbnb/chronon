@@ -1,5 +1,6 @@
 package ai.chronon.quickstart.online
 import org.apache.spark.sql.SparkSession
+import ai.chronon.api.{Constants => ApiConstants}
 
 object Spark2MongoLoader {
   def main(args: Array[String]): Unit = {
@@ -9,7 +10,12 @@ object Spark2MongoLoader {
     }
 
     val tableName = args(0)
-    val batch_dataset = tableName.stripSuffix("_upload").split("\\.").lastOption.getOrElse(tableName).toUpperCase + "_BATCH"
+    val dataset = tableName match {
+      case tableName if tableName.endsWith("_logged_daily_stats_upload") => ApiConstants.LogStatsBatchDataset
+      case tableName if tableName.endsWith("_daily_stats_upload") => ApiConstants.StatsBatchDataset
+      case tableName if tableName.endsWith("_upload") => tableName.stripSuffix("_upload").split("\\.").lastOption.getOrElse(tableName).toUpperCase + "_BATCH"
+      case _ => tableName.toUpperCase + "_BATCH"
+    }
     val uri = args(1)
 
     val spark = SparkSession.builder()
@@ -17,20 +23,22 @@ object Spark2MongoLoader {
       .config("spark.mongodb.write.connection.uri", uri)
       .getOrCreate()
 
+    val baseDf = spark.read.table(tableName)
+    val timeColumn = if (baseDf.columns.contains("ts")) "ts" else "UNIX_TIMESTAMP(DATE_ADD(ds, 0)) * 1000"
+
     val df = spark.sql(s"""
     | SELECT
     |   ${Constants.tableKey} AS ${Constants.mongoKey},
-    |   ${Constants.tableValue} as ${Constants.mongoValue},
-    |   UNIX_TIMESTAMP(DATE_ADD(ds, 0)) * 1000 as ${Constants.mongoTs}
+    |   ${Constants.tableValue} AS ${Constants.mongoValue},
+    |   $timeColumn AS ${Constants.mongoTs}
     | FROM $tableName""".stripMargin)
     df.show()
     df.write
       .format("mongodb")
       .mode("overwrite")
       .option("database", Constants.mongoDatabase)
-      .option("collection", batch_dataset)
+      .option("collection", dataset)
       .save()
-
     spark.stop()
   }
 }

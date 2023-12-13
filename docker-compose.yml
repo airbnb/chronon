@@ -29,6 +29,7 @@ services:
       - EXECUTOR_MEMORY=2G
       - EXECUTOR_CORES=4
       - DRIVER_MEMORY=1G
+      - CHRONON_LOG_TABLE=default.chronon_log_table
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
       - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
     volumes:

@@ -10,15 +10,13 @@ import ai.chronon.online.{
 }
 
 import org.mongodb.scala._
-
-import jnr.ffi.annotations.Transient
 import org.slf4j.{Logger, LoggerFactory}
 
 class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf) {
 
   @transient lazy val registry: ExternalSourceRegistry = new ExternalSourceRegistry()
 
-  @Transient val logger: Logger = LoggerFactory.getLogger("ChrononMongoOnlineImpl")
+  @transient val logger: Logger = LoggerFactory.getLogger("ChrononMongoOnlineImpl")
 
   @transient lazy val mongoClient = MongoClient(s"mongodb://${userConf("user")}:${userConf("password")}@${userConf("host")}:${userConf("port")}")
   override def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder = ???
@@ -26,7 +24,7 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   override def genKvStore: KVStore = new MongoKvStore(mongoClient, Constants.mongoDatabase)
 
 
-  @transient lazy val loggingClient = mongoClient.getDatabase(Constants.mongoDatabase).getCollection("logging")
+  @transient lazy val loggingClient = mongoClient.getDatabase(Constants.mongoDatabase).getCollection(Constants.mongoLoggingCollection)
   override def logResponse(resp: LoggableResponse): Unit =
     loggingClient.insertOne(Document(
       "joinName" -> resp.joinName,
