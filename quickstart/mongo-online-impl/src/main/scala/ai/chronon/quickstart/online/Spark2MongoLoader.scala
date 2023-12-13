@@ -19,9 +19,9 @@ object Spark2MongoLoader {
 
     val df = spark.sql(s"""
     | SELECT
-    |   BASE64(${Constants.tableKey}) AS ${Constants.mongoKey},
-    |   BASE64(${Constants.tableValue}) as ${Constants.mongoValue},
-    |   UNIX_TIMESTAMP(DATE_ADD(ds, -1)) * 1000 as ${Constants.mongoTs}
+    |   ${Constants.tableKey} AS ${Constants.mongoKey},
+    |   ${Constants.tableValue} as ${Constants.mongoValue},
+    |   UNIX_TIMESTAMP(DATE_ADD(ds, 0)) * 1000 as ${Constants.mongoTs}
     | FROM $tableName""".stripMargin)
     df.show()
     df.write

@@ -26,7 +26,7 @@ class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf
   override def genKvStore: KVStore = new MongoKvStore(mongoClient, Constants.mongoDatabase)
 
 
-  @transient lazy val loggingClient = mongoClient.getDatabase(Constants.mongoDatabase).getCollection("chronon_logging")
+  @transient lazy val loggingClient = mongoClient.getDatabase(Constants.mongoDatabase).getCollection("logging")
   override def logResponse(resp: LoggableResponse): Unit =
     loggingClient.insertOne(Document(
       "joinName" -> resp.joinName,
