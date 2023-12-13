@@ -73,7 +73,7 @@ class FlinkRowAggregationFunction(
     // Given that the rowAggregator is transient, it may be null when a job is restored from a checkpoint
     if (rowAggregator == null) {
       if (debug) {
-        logger.debug(
+        logger.info(
           f"The Flink RowAggregator was null for groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills"
         )
       }
@@ -81,7 +81,7 @@ class FlinkRowAggregationFunction(
     }
 
     if (debug) {
-      logger.debug(
+      logger.info(
         f"Flink pre-aggregates BEFORE adding new element: accumulatorIr=[${accumulatorIr.ir
           .mkString(", ")}] groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
       )
@@ -94,7 +94,7 @@ class FlinkRowAggregationFunction(
     partialAggregates match {
       case Success(v) => {
         if (debug) {
-          logger.debug(
+          logger.info(
             f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
               f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
           )
@@ -194,7 +194,7 @@ class FlinkRowAggProcessFunction(
     tileBytes match {
       case Success(v) => {
         if (debug) {
-          logger.debug(
+          logger.info(
             f"Flink aggregator processed element irEntry=$irEntry " +
               f"tileBytes=${java.util.Base64.getEncoder.encodeToString(v)} " +
               f"windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName} " +
