@@ -15,8 +15,8 @@
 **/__pycache__/
 **/.DS_Store/
 api/py/ai/chronon/api/
-api/py/test/samples/production/group_bys/quickstart/
-api/py/test/samples/production/joins/quickstart/
+api/py/test/sample/production/group_bys/quickstart/
+api/py/test/sample/production/joins/quickstart/
 api/py/.coverage
 api/py/htmlcov/
 **/derby.log
