@@ -41,13 +41,15 @@ import org.slf4j.LoggerFactory
   * @param groupByServingInfoParsed - The GroupBy we are working with
   * @param encoder - Spark Encoder for the input data type
   * @param parallelism - Parallelism to use for the Flink job
+  * @param debug whether to enable debug logs
   * @tparam T - The input data type
   */
 class FlinkJob[T](eventSrc: FlinkSource[T],
                   sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
                   groupByServingInfoParsed: GroupByServingInfoParsed,
                   encoder: Encoder[T],
-                  parallelism: Int) {
+                  parallelism: Int,
+                  debug: Boolean = false) {
   private[this] val logger = LoggerFactory.getLogger(getClass)
 
   val featureGroupName: String = groupByServingInfoParsed.groupBy.getMetaData.getName
@@ -160,8 +162,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .sideOutputLateData(tilingLateEventsTag)
         .aggregate(
           // See Flink's "ProcessWindowFunction with Incremental Aggregation"
-          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
-          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
+          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema, debug),
+          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema, debug)
         )
         .uid(s"tiling-01-$featureGroupName")
         .name(s"Tiling for $featureGroupName")
@@ -177,7 +179,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .setParallelism(sourceStream.parallelism)
 
     val putRecordDS: DataStream[PutRequest] = tilingDS
-      .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed))
+      .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed, debug))
       .uid(s"avro-conversion-01-$featureGroupName")
       .name(s"Avro conversion for $featureGroupName")
       .setParallelism(sourceStream.parallelism)
