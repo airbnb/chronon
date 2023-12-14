@@ -3,7 +3,8 @@
 
 ### Requirements
 
-Docker
+- Docker
+- Build online implentation if doing online flows (in `quickstart/mongo-online-impl/` run `sbt assembly`
 
 ### Getting Started
 
