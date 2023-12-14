@@ -201,7 +201,8 @@ trait BaseTableUtils {
                        partitionColumns: Seq[String] = Seq(partitionColumn),
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
-                       autoExpand: Boolean = false): Unit = {
+                       autoExpand: Boolean = false,
+                       allowEmpty: Boolean = false): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -245,7 +246,7 @@ trait BaseTableUtils {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode, partition = true, tableProperties)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, partition = true, tableProperties, allowEmpty = allowEmpty)
   }
 
   def sql(query: String): DataFrame = {
@@ -284,7 +285,7 @@ trait BaseTableUtils {
   }
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true,
-                                  tableProperties: Map[String, String] = null): Unit = {
+                                  tableProperties: Map[String, String] = null, allowEmpty: Boolean = false): Unit = {
     // get row count and table partition count statistics
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
@@ -295,7 +296,10 @@ trait BaseTableUtils {
       }
 
     println(s"$rowCount rows requested to be written into table $tableName")
-    if (rowCount > 0) {
+    if (rowCount == 0 && allowEmpty) {
+      writeDf(df, tableName, saveMode, partition, tableProperties) // side-effecting- this actually writes the table
+      println(s"Finished writing to $tableName")
+    } else if (rowCount > 0) {
       val columnSizeEstimate = columnSizeEstimator(df.schema)
 
       // check if spark is running in local mode or cluster mode

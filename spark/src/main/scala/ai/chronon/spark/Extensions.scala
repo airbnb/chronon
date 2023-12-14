@@ -89,9 +89,10 @@ object Extensions {
 
     def saveWithTableUtils(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null,
                            partitionColumns: Seq[String] = Seq(Constants.PartitionColumn),
-                           autoExpand: Boolean = false): Unit = {
+                           autoExpand: Boolean = false,
+                           allowEmpty: Boolean = false): Unit = {
       tableUtils.insertPartitions(df, tableName, tableProperties, partitionColumns,
-        autoExpand = autoExpand)
+        autoExpand = autoExpand, allowEmpty = allowEmpty)
     }
 
     def saveUnPartitioned(tableUtils: BaseTableUtils, tableName: String, tableProperties: Map[String, String] = null): Unit = {

@@ -30,6 +30,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
   protected val tableProps =
     confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
 
+  val allowEmpty: Boolean =
+    tableUtils.sparkSession.conf.get("spark.chronon.leftdf.allowempty", "true").toBoolean
+
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
@@ -328,9 +331,9 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
         println(s"Computing join for range: $range  $progress")
-        leftDf(joinConf, range, tableUtils, maybeSampleNumRows = maybeSampleNumRows).map { leftDfInRange =>
+        leftDf(joinConf, range, tableUtils, maybeSampleNumRows = maybeSampleNumRows, allowEmpty = allowEmpty).map { leftDfInRange =>
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range, bootstrapInfo).saveWithTableUtils(tableUtils, outputTable, tableProps, autoExpand = true)
+          computeRange(leftDfInRange, range, bootstrapInfo).saveWithTableUtils(tableUtils, outputTable, tableProps, autoExpand = true, allowEmpty = allowEmpty)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
