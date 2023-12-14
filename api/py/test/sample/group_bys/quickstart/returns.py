@@ -31,7 +31,7 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 source = Source(
     events=EventSource(
         table="data.returns", # This points to the log table with historical return events
-        topic="events.returns/fields=ts,return_id,user_id,product_id,refund_amt/host=kafka/port=29092",
+        topic="events.returns/fields=ts,return_id,user_id,product_id,refund_amt/host=kafka/port=9092",
         query=Query(
             selects=select("user_id","refund_amt"), # Select the fields we care about
             time_column="ts") # The event time
