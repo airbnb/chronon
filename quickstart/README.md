@@ -101,15 +101,41 @@ The way to send messages to the topic is via the kafka-console-producer. Example
 ```
 local $ docker-compose exec kafka bash
 kafka $ kafka-console-producer --topic <topic> --bootstrap-server localhost:9092
-> This is a message...
+> [comma separated value that mimics the input csv (without ds)]
 ```
 
+For example to see the local streaming processing of data:
+
+1. run local streaming: `run.py --mode local-streaming --conf production/group_bys/quickstart/refunds.v1`
+1. Submit an event: In a separate terminal, run `docker-compose exec kafka bash`, then submit events by providing comma
+   separated values by running `kafka-console-producer --topic <topic> --bootstrap-server localhost:9092` and for
+   example submitting: `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`
+
+Kafka bash window:
+```
+(crf-quickstart-end2end)cristian_figueroa@cristiaeroasmbp: chronon $ docker-compose exec kafka bash
+[appuser@896857eb8c75 ~]$ kafka-console-producer --topic events.returns --bootstrap-server localhost:9092
+>1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356
+>1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356
+>1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356
+>1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356
+>1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356
+```
+
+Main bash window:
+```
+streaming dataset: QUICKSTART_RETURNS_V1_STREAMING
+keys: ["91"]
+values: [356]
+keyBytes: AgQ5MQ==
+valueBytes: AsgF
+ts: 1701475200000  |  UTC: 2023-12-02T00:00:00 | PST: 2023-12-01T16:00:00
+```
 
 ### Future Extensions
 
 There are other flows to explore with Chronon.
 
-1. Stream data from a host and compute a realtime feature.
 1. Build derived features.
 1. Chain two joins together.
 1. Bootstrap your feature with log data.
