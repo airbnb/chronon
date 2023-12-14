@@ -261,9 +261,20 @@ class Join(joinConf: api.Join,
           // combine bootstrap table and join part tables
           // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
+          var previous: Option[DataFrame] = None
           rightResults
             .foldLeft(bootstrapDf) {
-              case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
+              case (partialDf, ((rightPart, rightDf), i)) =>
+                val next = joinWithLeft(partialDf, rightDf, rightPart)
+                // Join breaks are added to prevent the Spark app from stalling on a Join that involves too many
+                // rightParts.
+                if (((i + 1) % tableUtils.finalJoinParallelism) == 0 && (i != (rightResults.size - 1))) {
+                  tableUtils.addJoinBreak(next)
+                  previous.map(_.unpersist())
+                  previous = Some(next)
+                } else {
+                  next
+                }
             }
             // drop all processing metadata columns
             .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
