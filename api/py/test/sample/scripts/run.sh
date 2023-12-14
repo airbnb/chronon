@@ -11,6 +11,7 @@ printf "\n=> Online Group bys\n\n"
 run.py --conf production/group_bys/quickstart/purchases.v1 --mode upload --ds 2023-12-01
 run.py --conf production/group_bys/quickstart/returns.v1 --mode upload --ds 2023-12-01
 # Upload tables to KV Store
+# run sbt assembly under quickstart/mongo-online-impl outside of docker container to build jars for this step
 spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*]  /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_returns_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 # Do a simple group by fetch
