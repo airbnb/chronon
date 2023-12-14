@@ -38,7 +38,7 @@ services:
   main:
     build:
       context: quickstart
-    command: "tail -f /dev/null"
+    command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
     ports:
       - "4040:4040"
     environment:

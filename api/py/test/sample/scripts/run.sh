@@ -1,8 +1,5 @@
 #!/bin/bash
 set -x
-printf "\n=> LOADING DATA INTO LOCAL HIVE\n\n"
-spark-shell -i scripts/data-loader.scala --master local[*]
-
 printf "\n=> OFFLINE BACKFILL\n\n"
 # Compile a config.
 compile.py --conf joins/quickstart/training_set.py --force-overwrite
