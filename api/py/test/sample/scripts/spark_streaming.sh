@@ -63,6 +63,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.app.name=${APP_NAME} \
 --conf spark.chronon.outputParallelismOverride=${OUTPUT_PARALLELISM:--1} \
 --conf spark.chronon.rowCountPerPartition=${ROW_COUNT_PER_PARTITION:--1} \
+--packages "org.apache.spark:spark-streaming-kafka-0-10_2.12:3.1.1" \
 --jars "${CHRONON_ONLINE_JAR:-}" \
 "$@" 2>&1                                                  |
 grep --line-buffered -v "YarnScheduler:70"                 |
