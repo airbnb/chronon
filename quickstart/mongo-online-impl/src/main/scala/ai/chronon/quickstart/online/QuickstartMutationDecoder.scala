@@ -13,7 +13,7 @@ import java.util.HashSet
  *  For mutations we require three additional columns, to be implemented later.
  */
 class QuickstartMutationDecoder(groupByServingInfoParsed: GroupByServingInfoParsed) extends StreamDecoder {
-  private val eventPrefix = "event."
+  private val eventPrefix = "events."
   val groupByConf: api.GroupBy = groupByServingInfoParsed.groupBy
   private val source = {
     val opt = groupByConf.streamingSource
