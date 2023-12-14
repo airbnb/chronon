@@ -11,7 +11,7 @@
 To build the containers run `docker-compose up` in the repo root and let it run in a terminal window (when you kill this
 process all the data generated should get cleaned and containers will stop).
 
-To get started iterating with chronon in a new terminal window run `docker-compose exec bash main` to enter a shell environment with all the
+To get started iterating with chronon in a new terminal window run `docker-compose exec main bash` to enter a shell environment with all the
 requirements set up. If you want to automatically run all steps there's a run.sh script.
 
 Some of the steps require an online jar. This is an implementation for communication with the KV Store. We provide an
