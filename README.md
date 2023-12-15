@@ -263,31 +263,36 @@ Upload the purchases GroupBy:
 
 ```shell
 run.py --mode upload --conf production/group_bys/quickstart/purchases.v1 --ds  2023-12-01
+
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 ```
 
-Upload the purchases GroupBy:
+Upload the returns GroupBy:
 
 ```shell
 run.py --mode upload --conf production/group_bys/quickstart/returns.v1 --ds  2023-12-01
+
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_returns_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 ```
 
 
-TODO: Make these actually work, right now you need to build the jar with the local repo, then run `spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin` can we bake this into the image somehow?
+TODO: Can wrap these into one command? I guess airflow orchestrates this currently. Maybe not worth it here.
+
+TODO: Tight now you need to build the jar with the local repo, can we bake this into the image somehow? In general, do we need to remove mounted volumes for this to work without the local repo?
 
 ### Upload Join Metadata
 
 If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also need to upload the join metadata:
 
-
 ```bash
 run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2
 ```
 
-TODO: Make this work as well
+This makes it so that the online fetcher knows how to take a requests for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
 
 ### Fetching Data
 
-With the above entities defined, users can now easily fetch feature vectors with a simple API call.
+With the above entities defined, you can now easily fetch feature vectors with a simple API call.
 
 Fetching a join:
 
@@ -313,6 +318,21 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 
 ## Realtime Features
 
+The `returns.v1` GroupBy is setup to process realtime features from the `events.returns` kafka topic. In this section we simulate this topic by publishing events from the command line.
+
+1. Setup kafka topic.
+   1. In a new terminal session, run: `docker-compose exec kafka bash`
+   2. In the resulting session, run: `kafka-console-producer --topic events.returns --bootstrap-server localhost:9092`
+2. Start the GroupBy streaming job.
+   1. In your original docker bash session, run: `run.py --mode local-streaming --conf production/group_bys/quickstart/returns.v1`
+   2. Leave this running.
+3. Send some data to the kafka topic.
+   1. Navigate back to the terminal session that is running Kafka, and enter some lines of data such as:
+   2. `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`
+
+You should see this event be processed in your docker bash session.
+
+TODO: debug `org.apache.kafka.common.errors.InvalidReplicationFactorException: Replication factor: 3 larger than available brokers: 1.`
 
 
 ## Conclusion

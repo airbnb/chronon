@@ -106,7 +106,7 @@ kafka $ kafka-console-producer --topic <topic> --bootstrap-server localhost:9092
 
 For example to see the local streaming processing of data:
 
-1. run local streaming: `run.py --mode local-streaming --conf production/group_bys/quickstart/refunds.v1`
+1. run local streaming: `run.py --mode local-streaming --conf production/group_bys/quickstart/returns.v1`
 1. Submit an event: In a separate terminal, run `docker-compose exec kafka bash`, then submit events by providing comma
    separated values by running `kafka-console-producer --topic <topic> --bootstrap-server localhost:9092` and for
    example submitting: `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`
