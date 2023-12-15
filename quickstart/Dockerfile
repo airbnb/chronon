@@ -65,9 +65,6 @@ RUN chmod u+x /opt/spark/sbin/* && \
 
 ENV PYTHONPATH=$SPARK_HOME/python/:/srv/chronon/:$PYTHONPATH
 
-# Copy mongo online impl jar
-COPY mongo-online-impl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar .
-
 # If trying a standalone docker cluster
 WORKDIR ${SPARK_HOME}
 # If doing a regular local spark box.
