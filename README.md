@@ -330,20 +330,55 @@ The `returns.v1` GroupBy is setup to process realtime features from the `events.
    1. Navigate back to the terminal session that is running Kafka, and enter some lines of data such as:
    2. `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`
 
-You should see this event be processed in your docker bash session.
+You should see this event be processed in your docker bash session. The GroupBy is now listening to and processing incoming events, and using them to update feature values in realtime. You can also fetch the new values 
+
+```bash
+run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"91"}'
+```
+
+In this case we're fetching results for user `91`, the same key that we passed into the kafka stream in the above `kafka-console-producer` command.
 
 TODO: debug `org.apache.kafka.common.errors.InvalidReplicationFactorException: Replication factor: 3 larger than available brokers: 1.`
+
+
+## Log fetches and measure online/offline consistency
+
+As discussed in the introductory sections of this README, one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
+
+A key element of this is temporal accuracy. This can be phrased as: **when backfilling features, the value that is produced for any given `timestamp` provided by the left side of the join should be the same as what would have been returned online if that feature was fetched at that particular `timestamp`**.
+
+Chronon not only guarantees this temporal accuracy, but also offers a way to measure it.
+
+The measurement pipeline starts with the logs of the online fetch requests. These logs include the primary keys and timestamp of the request, along with the fetched feature values. Chronon then passes the keys and timestamps to a Join backfill as the left side, asking the compute engine to backfill the feature values. It then compares the backfilled values to actual fetched values to measure consistency.
+
+Step 1: log fetches
+
+First, make sure you've ran a few fetch requests. If you ran the `run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'` in the Fetch Data section above, then you're all set. If not, run it at least once now.
+
+With that complete, you can run this to create a usable log table:
+
+```
+spark-submit --class ai.chronon.quickstart.online.MongoLoggingDumper --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.chronon_log_table mongodb://admin:admin@mongodb:27017/?authSource=admin
+```
+
+
+Compute consistency metrics tables: `run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2`
+
+
+TODO: Fix the bug ```Either partition range needs to have a valid start or
+an input table with valid data needs to be present
+inputTables: Some(List(default.quickstart_training_set_v2_logged)), partitionRange: [null...2023-12-15]```
 
 
 ## Conclusion
 
 Using chronon for your feature engineering work simplifies and improves your ML Workflow in a number of ways:
 
-1. You can define features in one place, and use those definitions bot for training data backfills and for online serving.
+1. You can define features in one place, and use those definitions both for training data backfills and for online serving.
 2. Backfills are automatically point-in-time correct, which avoids label leakage and inconsistencies between training data and online inference.
-3. (not covered in quickstart demo, requires further integration) Orchestration for batchbatch and 
-4. (not covered in quickstart demo, requires further integration)
-
+3. Orchestration for batch and streaming pipelines to keep features up to date is made simple.
+4. Chronon exposes easy endpoints for feature fetching.
+5. Consistency is guaranteed and measurable.
 
 For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon section](#benefits-of-chronon-over-other-approaches) below.
 
