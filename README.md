@@ -53,6 +53,21 @@ Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
 - Running streaming jobs and online serving of data (this only covers offline training data).
 
+## Requirements
+
+- Docker
+
+## Setup
+
+To get started with the Chronon docker image, run:
+
+```bash
+docker pull airbnb/chronon
+docker-compose up
+```
+TODO: How do we push an image to the official airbnb account
+
+You're now ready to proceed with the tutorial.
 
 ## Introduction
 
@@ -69,13 +84,13 @@ Fabricated raw data is included in the [data](api/py/test/sample/data) directory
 
 ### 1. Setup the sample chronon repo and cd into the directory
 
+In a new terminal window, run:
+
 ```shell
-curl -s https://chronon.ai/init.sh | $SHELL
-source "$HOME/.$(echo $SHELL | awk -F/ '{print $NF}')rc"
-cd ./chronon
+docker-compose exec main bash
 ```
 
-This will create a directory that is pre-populated with some fake data and a functional chronon environment.
+This will open a shell within the chronon docker container.
 
 ## Chronon Development
 
@@ -85,7 +100,7 @@ Now that the setup steps are complete, we can start creating and testing various
 
 Let's start with three feature sets, built on top of our raw input sources.
 
-**Note: These python definitions are already downloaded in your `chronon` directory by the `init.sh` script that you ran to get setup. There's nothing for you to run until [Step 3 - Backfilling Data](#step-3---backfilling-data) when you'll run these definitions.**
+**Note: These python definitions are already in your `chronon` image. There's nothing for you to run until [Step 3 - Backfilling Data](#step-3---backfilling-data) when you'll run computation for these definitions.**
 
 **Feature set 1: Purchases data features**
 
@@ -204,12 +219,7 @@ This converts it into a thrift definition that we can submit to spark with the f
 
 
 ```shell
-mkdir ~/quickstart_output
-
-run.py --mode=backfill \
---conf=production/joins/quickstart/training_set.v1 \
---local-data-path data --local-warehouse-location ~/quickstart_output \
---ds=2023-11-30
+run.py --conf production/joins/quickstart/training_set.v1
 ```
 
 
@@ -220,8 +230,7 @@ Feature values would be computed for each user_id and ts on the left side, with 
 You can now query the backfilled data using the spark sql shell:
 
 ```shell
-cd ~/quickstart_output 
-~/spark-3.2.4-bin-hadoop3.2/bin/spark-sql
+spark-sql
 ```
 
 And then: 
@@ -230,11 +239,69 @@ And then:
 spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
 ```
 
+You can run:
+
+```shell
+quit;
+```
+
+To exit the sql shell.
+
+## Online Flows
+
+Now that we've created a join and backfilled data, the next step would be to train a model. That is not part of this tutorial, but assuming it was complete, the next step after that would be to productionize the model online. To do this, we need to be able to fetch feature vectors for model inference. That's what this next section covers.
+
+### Uploading data
+
+In order to serve online flows, we first need the data uploaded to the online KV store. This is different than the backfill that we ran in the previous step in two ways:
+
+1. The data is not a historic backfill, but rather the most up-to-date feature values for each primary key.
+2. The datastore is a transactional KV store suitable for point lookups. We use MongoDB in the docker image, however you are free to integrate with a database of your choice.
+
+
+Upload the purchases GroupBy:
+
+```shell
+run.py --mode upload --conf production/group_bys/quickstart/purchases.v1 --ds  2023-12-01
+```
+
+Upload the purchases GroupBy:
+
+```shell
+run.py --mode upload --conf production/group_bys/quickstart/returns.v1 --ds  2023-12-01
+```
+
+
+TODO: Make these actually work, right now you need to build the jar with the local repo, then run `spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin` can we bake this into the image somehow?
+
+### Upload Join Metadata
+
+If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also need to upload the join metadata:
+
+
+```bash
+run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2
+```
+
+TODO: Make this work as well
+
 ### Fetching Data
 
 With the above entities defined, users can now easily fetch feature vectors with a simple API call.
 
-For production, the Java client is usually embedded directly into services.
+Fetching a join:
+
+```bash
+run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'
+```
+
+You can also fetch a single GroupBy (this would not require the Join metadata upload step performed earlier):
+
+```bash
+run.py --mode fetch --type group-by --name quickstart/purchases.v1 -k '{"user_id":"5"}'
+```
+
+For production, the Java client is usually embedded directly into services (this is not runnable in the docker env, but just an illustrative example):
 
 ```Java
 Map<String, String> keyMap = new HashMap<>();
@@ -244,15 +311,8 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
-There is also a CLI fetcher util available for easy testing and debugging.
+## Realtime Features
 
-```python
-python3 run.py --mode=fetch -k '{"user_id":"123"}' -n retail_example/training_set -t join
-
-> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
-```
-
-**Note that for these fetcher calls to work, you would need to configure your online integration. That is outside the bounds of this quickstart guide, although you can read more about what that entails [in the documentation here](https://chronon.ai/Getting_Started.html#online-modes).**
 
 
 ## Conclusion
