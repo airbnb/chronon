@@ -65,7 +65,6 @@ To get started with the Chronon docker image, run:
 docker pull airbnb/chronon
 docker-compose up
 ```
-TODO: How do we push an image to the official airbnb account
 
 You're now ready to proceed with the tutorial.
 
@@ -275,11 +274,6 @@ run.py --mode upload --conf production/group_bys/quickstart/returns.v1 --ds  202
 spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_returns_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 ```
 
-
-TODO: Can wrap these into one command? I guess airflow orchestrates this currently. Maybe not worth it here.
-
-TODO: Tight now you need to build the jar with the local repo, can we bake this into the image somehow? In general, do we need to remove mounted volumes for this to work without the local repo?
-
 ### Upload Join Metadata
 
 If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also need to upload the join metadata:
@@ -338,7 +332,12 @@ run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id"
 
 In this case we're fetching results for user `91`, the same key that we passed into the kafka stream in the above `kafka-console-producer` command.
 
-TODO: debug `org.apache.kafka.common.errors.InvalidReplicationFactorException: Replication factor: 3 larger than available brokers: 1.`
+TODO: debug-
+
+```
+org.apache.kafka.common.errors.InvalidReplicationFactorException: Replication factor: 3 larger than available brokers: 1.
+kafka-1      | [2023-12-16 02:54:26,164] INFO [Admin Manager on Broker 1001]: Error processing create topic request CreatableTopic(name='__consumer_offsets', numPartitions=50, replicationFactor=3, assignments=[], configs=[CreateableTopicConfig(name='compression.type', value='producer'), CreateableTopicConfig(name='cleanup.policy', value='compact'), CreateableTopicConfig(name='segment.bytes', value='104857600')]) (kafka.server.ZkAdminManager)
+```
 
 
 ## Log fetches and measure online/offline consistency
@@ -364,10 +363,11 @@ spark-submit --class ai.chronon.quickstart.online.MongoLoggingDumper --master lo
 
 Compute consistency metrics tables: `run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2`
 
+This job produces two output tables:
 
-TODO: Fix the bug ```Either partition range needs to have a valid start or
-an input table with valid data needs to be present
-inputTables: Some(List(default.quickstart_training_set_v2_logged)), partitionRange: [null...2023-12-15]```
+1. `default.quickstart_training_set_v2_consistency`: A human readable table that you can query to see the results of the consistency checks.
+   1. You can enter a sql shell by running `spark-sql` from your docker bash sesion, then query the table, but note that it has many columns (multiple metrics per feature).
+2. `quickstart_training_set_v2_consistency_upload`: A list of KV bytes that is uploaded to the online KV store, that can be used to power online data quality monitoring flows.
 
 
 ## Conclusion
