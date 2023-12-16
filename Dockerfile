@@ -42,6 +42,7 @@ ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
 ENV SPARK_VERSION=${SPARK_VERSION:-"3.1.1"}
 ENV HADOOP_VERSION=${HADOOP_VERSION:-"3.2"}
 RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
+RUN mkdir -p /opt/spark/spark-events
 WORKDIR ${SPARK_HOME}
 
 
@@ -75,6 +76,5 @@ ENV DRIVER_JAR_PATH="/srv/spark/spark_embedded.jar"
 COPY api/py/test/sample ./
 COPY quickstart/mongo-online-impl /srv/onlineImpl
 COPY spark/target-embedded/scala-2.12/spark_embedded-assembly-vz--update_main_readme_to_use_docker_flow-0.0.62-SNAPSHOT.jar "$DRIVER_JAR_PATH"
-COPY spark_events /opt/spark/spark-events
 
 ENV CHRONON_DRIVER_JAR="$DRIVER_JAR_PATH"

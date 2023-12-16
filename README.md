@@ -59,10 +59,10 @@ Does not include:
 
 ## Setup
 
-To get started with the Chronon docker image, run:
+To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
 
 ```bash
-docker pull airbnb/chronon
+curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-compose.yml
 docker-compose up
 ```
 
@@ -241,7 +241,7 @@ spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
 You can run:
 
 ```shell
-quit;
+spark-sql> quit;
 ```
 
 To exit the sql shell.
@@ -300,7 +300,7 @@ You can also fetch a single GroupBy (this would not require the Join metadata up
 run.py --mode fetch --type group-by --name quickstart/purchases.v1 -k '{"user_id":"5"}'
 ```
 
-For production, the Java client is usually embedded directly into services (this is not runnable in the docker env, but just an illustrative example):
+For production, the Java client is usually embedded directly into services.
 
 ```Java
 Map<String, String> keyMap = new HashMap<>();
@@ -310,35 +310,7 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
-## Realtime Features
-
-The `returns.v1` GroupBy is setup to process realtime features from the `events.returns` kafka topic. In this section we simulate this topic by publishing events from the command line.
-
-1. Setup kafka topic.
-   1. In a new terminal session, run: `docker-compose exec kafka bash`
-   2. In the resulting session, run: `kafka-console-producer --topic events.returns --bootstrap-server localhost:9092`
-2. Start the GroupBy streaming job.
-   1. In your original docker bash session, run: `run.py --mode local-streaming --conf production/group_bys/quickstart/returns.v1`
-   2. Leave this running.
-3. Send some data to the kafka topic.
-   1. Navigate back to the terminal session that is running Kafka, and enter some lines of data such as:
-   2. `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`
-
-You should see this event be processed in your docker bash session. The GroupBy is now listening to and processing incoming events, and using them to update feature values in realtime. You can also fetch the new values 
-
-```bash
-run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"91"}'
-```
-
-In this case we're fetching results for user `91`, the same key that we passed into the kafka stream in the above `kafka-console-producer` command.
-
-TODO: debug-
-
-```
-org.apache.kafka.common.errors.InvalidReplicationFactorException: Replication factor: 3 larger than available brokers: 1.
-kafka-1      | [2023-12-16 02:54:26,164] INFO [Admin Manager on Broker 1001]: Error processing create topic request CreatableTopic(name='__consumer_offsets', numPartitions=50, replicationFactor=3, assignments=[], configs=[CreateableTopicConfig(name='compression.type', value='producer'), CreateableTopicConfig(name='cleanup.policy', value='compact'), CreateableTopicConfig(name='segment.bytes', value='104857600')]) (kafka.server.ZkAdminManager)
-```
-
+**Note: This java code is not runnable in the docker env, it is just an illustrative example.**
 
 ## Log fetches and measure online/offline consistency
 
@@ -352,16 +324,26 @@ The measurement pipeline starts with the logs of the online fetch requests. Thes
 
 Step 1: log fetches
 
-First, make sure you've ran a few fetch requests. If you ran the `run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'` in the Fetch Data section above, then you're all set. If not, run it at least once now.
+First, make sure you've ran a few fetch requests. Run:
 
-With that complete, you can run this to create a usable log table:
+`run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'` 
 
-```
+A few times to generate some fetches.
+
+With that complete, you can run this to create a usable log table (these commands produce a logging hive table with the correct schema):
+
+```bash
 spark-submit --class ai.chronon.quickstart.online.MongoLoggingDumper --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.chronon_log_table mongodb://admin:admin@mongodb:27017/?authSource=admin
+compile.py --conf group_bys/quickstart/schema.py
+run.py --mode backfill --conf production/group_bys/quickstart/schema.v1
+run.py --mode log-flattener --conf production/joins/quickstart/training_set.v2 --log-table default.chronon_log_table --schema-table default.quickstart_schema_v1
 ```
 
+Now you can compute consistency metrics with this command:
 
-Compute consistency metrics tables: `run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2`
+```bash
+run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2
+```
 
 This job produces two output tables:
 
