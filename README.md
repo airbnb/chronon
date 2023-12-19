@@ -62,7 +62,7 @@ Does not include:
 To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
 
 ```bash
-curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/airbnb/chronon/master/docker-compose.yml?token=GHSAT0AAAAAACI7NIDGLHTNEECJAZJPUX4UZMB7MWA
 docker-compose up
 ```
 
