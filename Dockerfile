@@ -1,6 +1,10 @@
 # Start from a Debian base image
 FROM openjdk:8-jre-slim
 
+# Set this manually before building the image, requires a local build of the jar
+
+ENV CHRONON_JAR_PATH=spark/target-embedded/scala-2.12/your_build.jar
+
 # Update package lists and install necessary tools
 RUN apt-get update && apt-get install -y \
     curl \
@@ -75,6 +79,6 @@ ENV DRIVER_JAR_PATH="/srv/spark/spark_embedded.jar"
 
 COPY api/py/test/sample ./
 COPY quickstart/mongo-online-impl /srv/onlineImpl
-COPY spark/target-embedded/scala-2.12/spark_embedded-assembly-vz--update_main_readme_to_use_docker_flow-0.0.62-SNAPSHOT.jar "$DRIVER_JAR_PATH"
+COPY $CHRONON_JAR_PATH "$DRIVER_JAR_PATH"
 
 ENV CHRONON_DRIVER_JAR="$DRIVER_JAR_PATH"
