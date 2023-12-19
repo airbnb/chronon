@@ -8,8 +8,7 @@
 
 ### Getting Started
 
-To build the containers run `docker-compose up` in the repo root and let it run in a terminal window (when you kill this
-process all the data generated should get cleaned and containers will stop).
+To build the containers run `docker-compose up` in the repo root and let it run in a terminal window (when you kill this process all the data generated should get cleaned and containers will stop).
 
 To get started iterating with chronon in a new terminal window run `docker-compose exec main bash` to enter a shell environment with all the
 requirements set up. If you want to automatically run all steps there's a run.sh script.
@@ -47,7 +46,7 @@ as well as the resulting upload KV table that can be viewed in spark-shell.
 
 Follow step 2 for all your group bys. In the case of `training_set.v2` this includes purchases.v1 and returns.v1.
 
-1. Run the metadata-upload job for the joins. `run.py --mode metadata-upload --conf production/joins//`
+1. Run the metadata-upload job for the joins. `run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2`
 2. Fetch the join: `run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'`
 
 
@@ -107,7 +106,7 @@ kafka $ kafka-console-producer --topic <topic> --bootstrap-server localhost:9092
 
 For example to see the local streaming processing of data:
 
-1. run local streaming: `run.py --mode local-streaming --conf production/group_bys/quickstart/refunds.v1`
+1. run local streaming: `run.py --mode local-streaming --conf production/group_bys/quickstart/returns.v1`
 1. Submit an event: In a separate terminal, run `docker-compose exec kafka bash`, then submit events by providing comma
    separated values by running `kafka-console-producer --topic <topic> --bootstrap-server localhost:9092` and for
    example submitting: `1701475200000,F8E3E287-EA5D-6C4B-915D-A5E51A5557EC,91,81,356`

@@ -53,6 +53,20 @@ Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
 - Running streaming jobs and online serving of data (this only covers offline training data).
 
+## Requirements
+
+- Docker
+
+## Setup
+
+To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
+
+```bash
+curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-compose.yml
+docker-compose up
+```
+
+You're now ready to proceed with the tutorial.
 
 ## Introduction
 
@@ -69,13 +83,13 @@ Fabricated raw data is included in the [data](api/py/test/sample/data) directory
 
 ### 1. Setup the sample chronon repo and cd into the directory
 
+In a new terminal window, run:
+
 ```shell
-curl -s https://chronon.ai/init.sh | $SHELL
-source "$HOME/.$(echo $SHELL | awk -F/ '{print $NF}')rc"
-cd ./chronon
+docker-compose exec main bash
 ```
 
-This will create a directory that is pre-populated with some fake data and a functional chronon environment.
+This will open a shell within the chronon docker container.
 
 ## Chronon Development
 
@@ -85,7 +99,7 @@ Now that the setup steps are complete, we can start creating and testing various
 
 Let's start with three feature sets, built on top of our raw input sources.
 
-**Note: These python definitions are already downloaded in your `chronon` directory by the `init.sh` script that you ran to get setup. There's nothing for you to run until [Step 3 - Backfilling Data](#step-3---backfilling-data) when you'll run these definitions.**
+**Note: These python definitions are already in your `chronon` image. There's nothing for you to run until [Step 3 - Backfilling Data](#step-3---backfilling-data) when you'll run computation for these definitions.**
 
 **Feature set 1: Purchases data features**
 
@@ -204,12 +218,7 @@ This converts it into a thrift definition that we can submit to spark with the f
 
 
 ```shell
-mkdir ~/quickstart_output
-
-run.py --mode=backfill \
---conf=production/joins/quickstart/training_set.v1 \
---local-data-path data --local-warehouse-location ~/quickstart_output \
---ds=2023-11-30
+run.py --conf production/joins/quickstart/training_set.v1
 ```
 
 
@@ -220,8 +229,7 @@ Feature values would be computed for each user_id and ts on the left side, with 
 You can now query the backfilled data using the spark sql shell:
 
 ```shell
-cd ~/quickstart_output 
-~/spark-3.2.4-bin-hadoop3.2/bin/spark-sql
+spark-sql
 ```
 
 And then: 
@@ -230,9 +238,67 @@ And then:
 spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
 ```
 
+You can run:
+
+```shell
+spark-sql> quit;
+```
+
+To exit the sql shell.
+
+## Online Flows
+
+Now that we've created a join and backfilled data, the next step would be to train a model. That is not part of this tutorial, but assuming it was complete, the next step after that would be to productionize the model online. To do this, we need to be able to fetch feature vectors for model inference. That's what this next section covers.
+
+### Uploading data
+
+In order to serve online flows, we first need the data uploaded to the online KV store. This is different than the backfill that we ran in the previous step in two ways:
+
+1. The data is not a historic backfill, but rather the most up-to-date feature values for each primary key.
+2. The datastore is a transactional KV store suitable for point lookups. We use MongoDB in the docker image, however you are free to integrate with a database of your choice.
+
+
+Upload the purchases GroupBy:
+
+```shell
+run.py --mode upload --conf production/group_bys/quickstart/purchases.v1 --ds  2023-12-01
+
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_purchases_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
+```
+
+Upload the returns GroupBy:
+
+```shell
+run.py --mode upload --conf production/group_bys/quickstart/returns.v1 --ds  2023-12-01
+
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_returns_v1_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
+```
+
+### Upload Join Metadata
+
+If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also need to upload the join metadata:
+
+```bash
+run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2
+```
+
+This makes it so that the online fetcher knows how to take a requests for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
+
 ### Fetching Data
 
-With the above entities defined, users can now easily fetch feature vectors with a simple API call.
+With the above entities defined, you can now easily fetch feature vectors with a simple API call.
+
+Fetching a join:
+
+```bash
+run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'
+```
+
+You can also fetch a single GroupBy (this would not require the Join metadata upload step performed earlier):
+
+```bash
+run.py --mode fetch --type group-by --name quickstart/purchases.v1 -k '{"user_id":"5"}'
+```
 
 For production, the Java client is usually embedded directly into services.
 
@@ -244,26 +310,57 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
-There is also a CLI fetcher util available for easy testing and debugging.
+**Note: This java code is not runnable in the docker env, it is just an illustrative example.**
 
-```python
-python3 run.py --mode=fetch -k '{"user_id":"123"}' -n retail_example/training_set -t join
+## Log fetches and measure online/offline consistency
 
-> '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
+As discussed in the introductory sections of this README, one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
+
+A key element of this is temporal accuracy. This can be phrased as: **when backfilling features, the value that is produced for any given `timestamp` provided by the left side of the join should be the same as what would have been returned online if that feature was fetched at that particular `timestamp`**.
+
+Chronon not only guarantees this temporal accuracy, but also offers a way to measure it.
+
+The measurement pipeline starts with the logs of the online fetch requests. These logs include the primary keys and timestamp of the request, along with the fetched feature values. Chronon then passes the keys and timestamps to a Join backfill as the left side, asking the compute engine to backfill the feature values. It then compares the backfilled values to actual fetched values to measure consistency.
+
+Step 1: log fetches
+
+First, make sure you've ran a few fetch requests. Run:
+
+`run.py --mode fetch --type join --name quickstart/training_set.v2 -k '{"user_id":"5"}'` 
+
+A few times to generate some fetches.
+
+With that complete, you can run this to create a usable log table (these commands produce a logging hive table with the correct schema):
+
+```bash
+spark-submit --class ai.chronon.quickstart.online.MongoLoggingDumper --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.chronon_log_table mongodb://admin:admin@mongodb:27017/?authSource=admin
+compile.py --conf group_bys/quickstart/schema.py
+run.py --mode backfill --conf production/group_bys/quickstart/schema.v1
+run.py --mode log-flattener --conf production/joins/quickstart/training_set.v2 --log-table default.chronon_log_table --schema-table default.quickstart_schema_v1
 ```
 
-**Note that for these fetcher calls to work, you would need to configure your online integration. That is outside the bounds of this quickstart guide, although you can read more about what that entails [in the documentation here](https://chronon.ai/Getting_Started.html#online-modes).**
+Now you can compute consistency metrics with this command:
+
+```bash
+run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2
+```
+
+This job produces two output tables:
+
+1. `default.quickstart_training_set_v2_consistency`: A human readable table that you can query to see the results of the consistency checks.
+   1. You can enter a sql shell by running `spark-sql` from your docker bash sesion, then query the table, but note that it has many columns (multiple metrics per feature).
+2. `quickstart_training_set_v2_consistency_upload`: A list of KV bytes that is uploaded to the online KV store, that can be used to power online data quality monitoring flows.
 
 
 ## Conclusion
 
 Using chronon for your feature engineering work simplifies and improves your ML Workflow in a number of ways:
 
-1. You can define features in one place, and use those definitions bot for training data backfills and for online serving.
+1. You can define features in one place, and use those definitions both for training data backfills and for online serving.
 2. Backfills are automatically point-in-time correct, which avoids label leakage and inconsistencies between training data and online inference.
-3. (not covered in quickstart demo, requires further integration) Orchestration for batchbatch and 
-4. (not covered in quickstart demo, requires further integration)
-
+3. Orchestration for batch and streaming pipelines to keep features up to date is made simple.
+4. Chronon exposes easy endpoints for feature fetching.
+5. Consistency is guaranteed and measurable.
 
 For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon section](#benefits-of-chronon-over-other-approaches) below.
 
