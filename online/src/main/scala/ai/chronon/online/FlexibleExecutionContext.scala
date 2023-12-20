@@ -51,7 +51,7 @@ object FlexibleExecutionContext {
   def buildInstrumentedExecutionContext(name: String,
                                         metrics: Metrics.Context,
                                         corePoolSize: Int = 20,
-                                        maxPoolSize: Int = 1000,
+                                        maxPoolSize: Int = 100,
                                         keepAliveTime: Int = 600,
                                         keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
                                         queue: ArrayBlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)
