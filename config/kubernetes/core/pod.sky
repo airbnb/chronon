@@ -83,6 +83,7 @@ def _update_resource(ctx, plugin, resource_def):
         "shared_msp": resource_def.get("shared_msp", False), # inherit from the parent resource
         "host_aliases": None,
         "tolerations": None,
+        "enable_shared_msp_experimental_job_support": None,
     }
 
 def _validate_pod_grace_period_seconds(ctx, pod):
@@ -158,6 +159,8 @@ def _render_pod(ctx, pod_def):
     if pod.scheduler_name != None:
         pod_template["spec"]["schedulerName"] = pod.scheduler_name
 
+    if hasattr(pod, "priority_class_name"):
+        pod_template["spec"]["priorityClassName"] = pod.priority_class_name
 
     return pod_template
 

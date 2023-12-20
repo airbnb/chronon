@@ -77,6 +77,10 @@ def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable
         "plugin_overrides":[],
     }
 
+    # If we're performing an isolated deployment, hard-code the replica count to 1
+    if is_isolated_deploy(ctx):
+        kwargs["replicas"] = 1
+
     # Let's recompute the desired count for the non-graviton deployment
     if graviton_migration_enabled:
         replicas, graviton_replicas =  calculate_multi_arch_replica_split(

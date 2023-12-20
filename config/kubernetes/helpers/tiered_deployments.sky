@@ -1,6 +1,6 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priority_routing")
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config_legacy")
 load("config/kubernetes/helpers/context.sky", "get_compute_config")
 
 SUBSET_HEADER_NAME = "X-Stripe-Routing-Context-Priority-Tier"
@@ -33,7 +33,7 @@ def tiered_deployments(ctx, deployment_supplier):
         v1_compute = get_compute_config(ctx)
         priority_tiers = v1_compute.priority_tiers
     elif ctx.vars.get("service.config.compute_v2"):
-        v2_compute = get_merged_compute_v2_config(ctx)
+        v2_compute = get_merged_compute_v2_config_legacy(ctx)
         priority_tiers = v2_compute.priority_tiers
 
     if not priority_tiers or not priority_tiers.enable_host_isolation:

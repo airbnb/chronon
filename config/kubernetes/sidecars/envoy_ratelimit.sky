@@ -9,6 +9,7 @@ load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/networking/internal/helpers.sky", "host_mount_stripe_cas")
+load("config/kubernetes/sidecars/variables.sky", "ENVOY_RATELIMIT_SRV_CONTAINER_FALLBACK_DIGEST", "ENVOY_RATELIMIT_SRV_CONTAINER_ENV")
 load(
     "config/kubernetes/helpers/security.sky",
     "mount_credentials_proxy",
@@ -130,7 +131,8 @@ def ratelimit_sidecar(ctx, label, host_type, enable = True, namespace_override="
                 fallback = image(
                     ctx,
                     "stripe/traffic/envoy-ratelimit-srv",
-                    label = "latest",
+                    label = ENVOY_RATELIMIT_SRV_CONTAINER_FALLBACK_DIGEST,
+                    env = ENVOY_RATELIMIT_SRV_CONTAINER_ENV,
                 ),
             ),
             command = command,

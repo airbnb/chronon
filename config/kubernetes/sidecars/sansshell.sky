@@ -11,7 +11,8 @@ SIDECAR_NAME = "sansshell-sidecar"
 
 ALLOWED_CLIENTS = {
     "qa": ["forserversbox.global.prod.deploy.stripe.net", "forserversbox.global.qa.deploy.stripe.net", "java-restart-manager.global.qa.stripe.io:/Process.Process/Kill|/OS.OS/ListProcesses"],
-    None: ["forserversbox.global.prod.deploy.stripe.net"],  # default
+    "preprod": ["forserversbox.global.prod.deploy.stripe.net", "java-restart-manager.global.preprod.stripe.io:/Process.Process/Kill|/OS.OS/ListProcesses"],
+    None: ["forserversbox.global.prod.deploy.stripe.net", "java-restart-manager.global.prod.stripe.io:/Process.Process/Kill|/OS.OS/ListProcesses"],  # default
 }
 
 def sansshell_sidecar(ctx):

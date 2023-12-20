@@ -28,7 +28,9 @@ ROLLING_UPDATE_STRATEGIES = {
     "default_high_replica": {"max_unavailable_percent": 10, "max_surge_percent": 50},
     # For services that need higher availability
     "ha_low_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
-    "ha_high_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100}
+    "ha_high_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
+    # special case
+    "prod_general_consume": {"max_unavailable_percent": 0, "max_surge_percent": 50},
 }
 
 def generate_consul_name(monster_isolation_group, monster_service):

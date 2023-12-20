@@ -3,6 +3,7 @@
 Functions for creating and configuring Workflow engine workers to run on MSP.
 """
 
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 load("config/kubernetes/apps/deployment.sky", "deployment")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
@@ -10,8 +11,12 @@ load("config/kubernetes/core/lifecycle.sky", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGAT
 load("config/kubernetes/core/probe.sky", "command_probe", "probes")
 load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
+load("config/kubernetes/helpers/context.sky", "get_env")
 load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/helpers/external_scaling_control.sky", "external_scaling_control")
+load("henson/kube/_ruby-common.sky", "ruby_canary_suffix")
+load("config/kubernetes/meta/metadata.sky", "labels")
 
 # Can't be overriden because the canary is always one node.
 def deployment_strategy_canary_func(ctx):
@@ -27,6 +32,7 @@ def deployment_strategy_func(ctx):
     max_unavailable = 1,
     max_surge = 1,
   )
+
 
 def ruby_workflow_worker_shared_msp(
         *,
@@ -49,7 +55,9 @@ def ruby_workflow_worker_shared_msp(
         cpu = None,
         memory = None,
         requires_consul = None,
-        image = None):
+        image = None,
+        resource_requirements_spec = None,
+    ):
     """
     Create deployments for a Ruby Workflow Engine worker that runs on Shared MSP.
 
@@ -106,6 +114,9 @@ def ruby_workflow_worker_shared_msp(
             instructions.
         image: (Only for shared MSP) the artifact name of the container image the pod should run for its main
                container. Defaults to the default pay-server image when not passed in.
+        resource_requirements_spec: Specifies the resource limits for the main container (usually only the main container specifies
+            limit values). These resource limits will override any values in the 'cpu' and 'memory' parameters. These
+            limits will be provided by the Orchestration team through rightsizing recommendations.
 
     Returns:
         A struct with two members, canary and main. These are functions
@@ -114,13 +125,18 @@ def ruby_workflow_worker_shared_msp(
         single-element array of deployments.
     """
 
-    def _canary(ctx):
+    def _canary(ctx, replicas = 1):
         plugins = []
         if plugins_func:
             plugins = plugins_func(ctx)
 
         if type(plugins) == 'struct':
             plugins = plugins.canary
+
+        if serverless:
+            _validate_serverless_canary_replicas(ctx, replicas)
+        elif replicas != 1:
+            fail("Cannot set canary replicas to anything besides 1 when serverless is not enabled.")
 
         return _service_shared_msp(
             ctx,
@@ -134,7 +150,7 @@ def ruby_workflow_worker_shared_msp(
             workers_per_replica = workers_per_replica,
             startup_timeout = startup_timeout,
             drain_timeout = drain_timeout,
-            replicas = 1,
+            replicas = replicas,
             is_canary = True,
             manage_workers = manage_workers,
             separate_canary_by_name = separate_canary_by_name,
@@ -144,6 +160,7 @@ def ruby_workflow_worker_shared_msp(
             memory = memory,
             requires_consul = requires_consul,
             image = image,
+            resource_requirements_spec = resource_requirements_spec,
         )
 
     # Opt-out until RUN_WOFLO-1522 is resolved
@@ -159,12 +176,15 @@ def ruby_workflow_worker_shared_msp(
         if type(plugins) == 'struct':
             plugins = plugins.main
 
+        if serverless:
+            plugins = plugins + [external_scaling_control()]
+
         if not strict_packaging and namespace not in TEMPORARY_PACKAGING_VALIDATION_OPT_OUT:
             memory_mib = aws_instance_size(instance_type.name).memory_mib
             _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib)
 
         replicas = replicas_func(ctx)
-        _validate_replicas(replicas)
+        _validate_replicas(ctx, replicas)
         _validate_drain_timeout(drain_timeout)
 
         if availability_tier == A100:
@@ -190,7 +210,9 @@ def ruby_workflow_worker_shared_msp(
             serverless = serverless,
             cpu = cpu,
             memory = memory,
+            requires_consul = requires_consul,
             image = image,
+            resource_requirements_spec = resource_requirements_spec,
         )
 
     return struct(
@@ -282,7 +304,7 @@ def ruby_workflow_worker_dedicated_msp(
             plugins = plugins_func(ctx)
 
         replicas = replicas_func(ctx)
-        _validate_replicas(replicas)
+        _validate_replicas(ctx, replicas)
         _validate_drain_timeout(drain_timeout)
 
         return _service_dedicated_msp(
@@ -328,15 +350,17 @@ def _service_shared_msp(
         cpu = None,
         memory = None,
         requires_consul = None,
-        image = None):
+        image = None,
+        resource_requirements_spec = None,
+    ):
     envs = {}
     file_to_wait_for = "/tmp/workflowworker-alive"
     consul_name = name
     container_name = name
     drain_timeout = _compensate_drain_timeout(drain_timeout)
 
-    if is_canary and not serverless:
-        name = name + "-canary"
+    if is_canary:
+        name = name + ruby_canary_suffix(ctx)
         if separate_canary_by_name:
             container_name = name
 
@@ -370,6 +394,7 @@ def _service_shared_msp(
             memory = memory,
             requires_consul = requires_consul,
             image = image,
+            resource_requirements_spec = resource_requirements_spec,
         ),
         einhorn_service(
             ctx,
@@ -392,7 +417,10 @@ def _service_shared_msp(
             # the server back to itself.
             startup = _startup_command_probe(ctx, startup_timeout = startup_timeout, path = file_to_wait_for),
         ),
-        grace_period(drain_timeout)
+        grace_period(drain_timeout),
+        labels({
+            "stripe.io/platform": "workflow",
+        })
     ]
     all_plugins.extend(*plugins)
 
@@ -486,6 +514,17 @@ def _startup_command_probe(ctx, *, startup_timeout, path):
     period = 10  # seconds
     iterations = startup_timeout // period
 
+    compute_config = ctx.vars.get("service.config.compute_v2")
+    if compute_config:
+        compute_config = get_merged_compute_v2_config(ctx)
+
+    if (
+        compute_config and
+        compute_config["platform_options"] and
+        compute_config["platform_options"]["startup_probe_failure_threshold"]
+    ):
+        iterations = compute_config["platform_options"]["startup_probe_failure_threshold"]
+
     return command_probe(
         ctx,
         command = ["/bin/bash", "-c", "test -f " + path],
@@ -498,9 +537,13 @@ def _startup_command_probe(ctx, *, startup_timeout, path):
         failureThreshold = iterations,
     )
 
-def _validate_replicas(replicas):
-    if not replicas or replicas <= 1:
+def _validate_replicas(ctx, replicas):
+    if get_env(ctx) != "preprod" and (not replicas or replicas <= 1):
         fail("Workers should be deployed with at least 2 replicas (%s replicas specified), to ensure no downtime when deploying workers." % (replicas))
+
+def _validate_serverless_canary_replicas(ctx, canary_replicas):
+    if canary_replicas == None or canary_replicas < 0 or canary_replicas > 1:
+        fail("Serverless workers must be deployed with either 0 or 1 canary replicas (%s canary replicas specified)." % (canary_replicas))
 
 def _validate_drain_timeout(timeout):
     if timeout < 10 or timeout > 300:

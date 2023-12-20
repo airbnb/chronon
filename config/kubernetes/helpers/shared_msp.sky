@@ -1,0 +1,14 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/volume.sky", "pod_volume", "volume_mount_all_containers")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+
+def shared_msp_experimental_job_support():
+    return compose_plugins(
+        pod_plugin(_shared_msp_experimental_job_support),
+        pod_volume("/shared_msp_signal"),
+        volume_mount_all_containers("/shared_msp_signal", read_only = False),
+    )
+
+def _shared_msp_experimental_job_support(_ctx, _plugin, pod_def):
+    pod_def["enable_shared_msp_experimental_job_support"] = True

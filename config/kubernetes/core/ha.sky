@@ -3,10 +3,11 @@
 Plugins for making Kubernetes configurations highly available
 """
 
-load("config/kubernetes/helpers/context.sky", "get_henson_git_commit", "get_name")
+load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_name")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "TopologySpreadConstraint")
 load("config/kubernetes/meta/metadata.sky", "render_selector")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
+load("config/kubernetes/helpers/warning.sky", "warn")
 
 
 def spread_across_zones(selected_zones=()):
@@ -120,6 +121,12 @@ def render_topology_spreading(ctx, pod):
     Returns:
         A list of TopologySpreadConstraints to apply to the pod.
     """
+
+    # Skip setting topology spreading for isolated deployements as they're always single replicas
+    if is_isolated_deploy(ctx):
+        warn(ctx, "skipping applying topology spreading plugin due to isolated deployments")
+        return None
+
     plugins = getattr(pod, "topology_spreading", None)
     if plugins == None:
         return None
@@ -131,9 +138,12 @@ def render_topology_spreading(ctx, pod):
 def _render_topology_spreading(ctx, plugin, pod):
 
     selector = render_selector(ctx, pod.resource["metadata"])
+    # Copy the selectors over so that we dont unintentionally mutate the
+    # original selector.
+    selector_copy = json.unmarshal(json.marshal(selector))
     # Spread pods by Henson service name instead of deployment name
     # if requested by the caller
-    selector_match_labels = selector.get("matchLabels", {})
+    selector_match_labels = selector_copy.get("matchLabels", {})
     if plugin.by_service and selector_match_labels.get("stripe.io/service-name"):
         selector_match_labels.pop("stripe.io/service-name")
         selector_match_labels["stripe.io/henson-service"] = get_name(ctx)
@@ -141,8 +151,8 @@ def _render_topology_spreading(ctx, plugin, pod):
     # Include the current henson-git-commit in the selector to address
     # https://github.com/kubernetes/kubernetes/issues/98215.
     if hasattr(pod.resource["metadata"], "henson_git_commit"):
-        if selector.get("matchLabels"):
-            selector["matchLabels"]["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
+        if selector_copy.get("matchLabels"):
+            selector_copy["matchLabels"]["stripe.io/henson-git-commit"] = pod.resource["metadata"].henson_git_commit
 
     when_unsatisfiable = "DoNotSchedule"
     if not plugin.strict_constraint:
@@ -150,7 +160,7 @@ def _render_topology_spreading(ctx, plugin, pod):
 
     return [TopologySpreadConstraint(
         ctx,
-        labelSelector = selector,
+        labelSelector = selector_copy,
         maxSkew = plugin.max_skew,
         topologyKey = plugin.topology_key,
         whenUnsatisfiable = when_unsatisfiable,

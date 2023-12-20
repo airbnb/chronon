@@ -212,6 +212,13 @@ def generate_fqe_mongo_connection_pool_max_size(ctx, config):
 
     return ["--fqe-mongo-connection-pool-max-size", str(fqe_mongo_connection_pool_max_size)]
 
+def generate_max_response_bytes(config):
+    if config.monster_isolation_group == "general":
+        max_response_bytes = 40 * 1024 * 1024
+    else:
+        max_response_bytes = 20 * 1024 * 1024
+
+    return ["--max-response-bytes", str(max_response_bytes)]
 
 def monster_fanout_deployment(ctx, config):
     """Generates a Fanout deployment for a specific isolation group
@@ -249,7 +256,7 @@ def monster_fanout_deployment(ctx, config):
         generate_delay_consumer_ms(config),
         generate_kproxy_service(config),
         ["--poll-timeout-ms", str(500)],
-        ["--max-response-bytes", str(20 * 1024 * 1024)],
+        generate_max_response_bytes(config),
         ["--healthcheck-port", str(port)],
         ["--fqe-mongo-app-name", name],
         ["--fqe-mongo-address", mongo_address],

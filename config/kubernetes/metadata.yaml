@@ -54,6 +54,8 @@ review_requirements:
   - codeowners-service-networking
   - codeowners-orchestration
 
+  reviewers_in_training:
+  - acamer
 - files:
   - sidecars/metrics.sky
   - sidecars/metrics_test.sky

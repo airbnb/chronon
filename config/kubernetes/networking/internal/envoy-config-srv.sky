@@ -10,12 +10,14 @@ load(
     "get_env",
     "get_henson_config",
     "get_inbound_rate_limits",
+    "get_service_variant",
+    "get_workspace_id",
     "is_bin_packing_enabled",
+    "is_isolated_deploy",
 )
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load(
     "config/kubernetes/networking/internal/helpers.sky",
-    "mount_splunk_forwarded_basedir",
     "host_mount_stripe_cas",
     "pod_mount",
 )
@@ -32,8 +34,8 @@ load(
     "ENVOY_LOGS_DIR",
     "ENVOY_OUTBOUND_UNIX_SOCKETS_DIR",
     "ENVOY_RUNTIME_DIR",
-    "ENVOY_SYSTEM_FLAGS_PATH",
     "LDS_PORT",
+    "PROXYLESS_ADMIN_SERVER_DIR",
     "UNPRIVILEGED_ENVOY_PORT",
     "XDS_DEBUG_BASEDIR",
     "apply_user_config_ratchets",
@@ -56,7 +58,6 @@ load(
 load(
     "config/kubernetes/networking/internal/config/envoy-sidecar-config.sky",
     "generate_cli_args",
-    "generate_envoy_bootstrap_opts",
 )
 
 ENVOY_MONITOR_PORT = 18300
@@ -116,13 +117,13 @@ def envoy_config_srv_sidecar(ctx, namespace, local_consul_services, config_targe
             volume_args = {"type": "DirectoryOrCreate"},
         ),
         pod_mount(name, ENVOY_CONFIG_SRV_SERVICE_REGISTRATIONS_DIR),
-        mount_splunk_forwarded_basedir(container_name = name),
         # When `use_envoy_admin_healthcheck: true`, envoy-config-srv writes the
         # system flags here, to be consumed exactly-once by the next boot of envoy
         pod_mount(name, ENVOY_RUNTIME_DIR),
         # envoy-config-srv writes a drain file here when it is signalled to be drained
         # in order to preserve the drain signal across restarts
         pod_mount(name, ENVOY_CONFIG_SRV_RUNTIME_DIR),
+        pod_mount(name, PROXYLESS_ADMIN_SERVER_DIR),
         pod_mount(name, _veneur_sock_dir),
         # envoy-config-srv obtains service credentials from creds-proxy in order
         # to mTLS connect to envoy-control-srv
@@ -179,17 +180,6 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
     command = [
         "/bin/envoy-config-srv",
         "--use-raw-config-json=" + json.marshal(_envoy_config_srv_config(ctx, local_consul_services, config_target, user_overrides)),
-        # FIXME(xyu): We don't actually have easy access to this info on the
-        # host. Computing it requires deep host violations:
-        # 1. compute puppet root - this doesn't seem possible
-        #   - production = /etc/puppet/
-        #   - non-prod =   /etc/puppet/environments/<branch>
-        # 2. read the domain info to access the correct yaml config
-        #    cat /etc/puppet/config/$(cat /pay/conf/domain)/domain.yaml
-        # 3. extract the 'account' attribute
-        #
-        # For now, just hardcode or decide to use the defaults
-        "--machine-org=030465607062",
         # NB(xyu): Clear --env-path to remove its default value so that the
         # combination of --cluster and --env are used instead.
         # This means we are determining cluster and env using *deploy-time*
@@ -232,13 +222,10 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
         "--remove-query-params-from-access-logs",
     ]
 
-    command.append("--envoy-monitor-use-raw-config-json=" + json.marshal(envoy_monitor_config()))
     command.append("--envoy-monitor-proxy-upstream-addr=unixgram://%s" % upstream_stats_sock)
     command.append("--envoy-monitor-proxy-listen-addr=udp://localhost:%s" % ENVOY_MONITOR_PORT)
     command.append("--envoy-monitor-log-gauge")
     command.append("--envoy-monitor-gauge-log-destination=%s/envoy-config-srv/envoy-gauge-metrics.log" % POD_NETWORKING_BASEDIR)
-    if monitor_args["envoy_scrape_histogram_metrics"]:
-        command.append("--envoy-monitor-scrape-histogram-metrics")
 
     if not host_network:
         command.append("--consul-sidecar-services-json=" + json.marshal(consul_agent_services))
@@ -290,20 +277,6 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
     ))
 
     cli_args = generate_cli_args(config_target, user_overrides)
-    cfg_json = envoy_sidecar_config(
-        config_target,
-        user_overrides,
-        envoy_id = "//$(STRIPE_NODE_NAME)/$(STRIPE_POD_NAMESPACE)/$(STRIPE_POD_NAME)",
-        cluster = namespace,
-        # NB(xyu): We don't have access to AZ placement info at deploy-time:
-        # - henson-agent evaluates the skyconfig to k8s protos and then submits
-        #   them to the Kube API
-        # - It is then up to the Kube API to schedule onto some node in some AZ
-        # This means that the only way to get AZ info is at pod runtime.
-        # This is a placeholder value that we expect to be overwritten when
-        # envoy-sidecar actually runs and reads AZ info out of /pay/conf
-        zone = "fixme-shared-msp-fake-az",
-    )
     plugins.extend([
         container_env_vars(
             from_fields = {"KUBERNETES_POD_IP": "status.podIP"},
@@ -315,9 +288,21 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
         ),
         allow_ulimit_management(container_name = self),
     ])
+    if is_isolated_deploy(ctx):
+        # The isolated deploy metadata is used to tag isolated deployment pods
+        # Design doc: https://docs.google.com/document/d/1ax4rZoVYKCJqD08xBzJye40EJ_M3s4OQ9Ka_U2lIKVE/edit#bookmark=id.1r1nhpm7g8tj
+        plugins.append(container_env_vars(vars={
+            "ISOLATED_DEPLOY_L7_DIRECT_ONLY": "true",
+            "ISOLATED_DEPLOY_SERVICE_VARIANT": get_service_variant(ctx),
+            "ISOLATED_DEPLOY_RESOURCE_WORKSPACE": get_workspace_id(ctx),
+        }))
     command.extend([
         "--envoy-sidecar-external-ip=$(KUBERNETES_POD_IP)",
-        "--envoy-sidecar-config-json=" + json.marshal(cfg_json),
+        # XXX(kryzthov) We specify a value distinct from "{}" here to activate envoy-sidecar.
+        # The default value for --envoy-sidecar-config-json is "{}".
+        # envoy-config-srv merely compares the flag value against the string "{}" to decide whether
+        # envoy-sidecar should be started.
+        "--envoy-sidecar-config-json=enable",
         "--envoy-sidecar-rlimit-no-file=%d" % _OPEN_FILES_LIMIT,
     ])
     if cli_args["envoy_concurrency"] != None:
@@ -484,16 +469,6 @@ def _envoy_config_srv_config(ctx, local_consul_services, config_target, user_ove
     henson_acls = henson_listener_config(henson_acls_proto)
 
     cfg = generate_sidecar_config(config_target, user_overrides)
-    if (cfg["enable_local_reachability"] == False):
-        print(
-            "".join([
-                "WARNING: You are using a breakglass to infer rather than explicitly declare ",
-                "outbound networking ACLs for your service. ",
-                "This is unsupported and could break traffic to/from your service. ",
-                "Please revert use of this breakglass as soon as you can. ",
-                "Reach out to #service-networking for help.",
-            ]),
-        )
 
     # Merge the user overrides for cross domain service destinations with the default service destinations
     default_cross_domain_services = DEFAULT_CROSS_DOMAIN_SERVICES_BY_ENV[get_env(ctx)]
@@ -519,438 +494,6 @@ def _envoy_config_srv_config(ctx, local_consul_services, config_target, user_ove
 
     return {"sidecar": cfg}
 
-def _envoy_monitor_sustained_metrics(fmt, source_metrics):
-    return [fmt % (metric, metric) for metric in source_metrics]
-
-def _envoy_monitor_globalized_metrics(source_metrics):
-    return {prefix: "global" for prefix in source_metrics}
-
-def envoy_monitor_config():
-    return {
-        # NB(xyu): daemontools.service.starts sustained metrics are no longer a
-        # thing in MSP
-        "sustained_metrics": _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:10m|inc:%s.10x1m",
-            [
-                "envoy.http.rds.update_rejected",
-                "envoy.http.rds.update_failure",
-                "envoy.listener_manager.lds.update_failure",
-                "envoy.listener_manager.lds.update_rejected",
-                "envoy.cluster_manager.cds.update_rejected",
-                "envoy.cluster_manager.cds.update_failure",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:5m|inc:%s.5x1m",
-            [
-                "envoy.http.rds.update_rejected",
-                "envoy.listener_manager.lds.update_rejected",
-                "envoy.cluster_manager.cds.update_rejected",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:5m|inc:%s.over10gb.5x1m|>=10000000000",
-            [
-                "envoy.server.memory_heap_size",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:5m|inc:%s.over5gb.5x1m|>=5000000000",
-            [
-                "envoy.server.memory_heap_size",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:15s,over:1m|inc:%s.4x15s|!=0",
-            [
-                # Convert healthy/unhealthy gauges into steady-state counters
-                # metrics are emitted on a 10s interval
-                "envoy_config_srv.envoy.state.healthy",
-                "envoy_config_srv.envoy.state.unhealthy",
-                "envoy_config_srv.envoy.state.magic_healthcheck.healthy",
-                "envoy_config_srv.envoy.state.magic_healthcheck.unhealthy",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:15m|inc:%s.ge25.15x1m|>=25",
-            [
-                "envoy_config_srv.snapshot_update.local.last_oldest.max",
-                "envoy_config_srv.snapshot_update.last_oldest.max",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:15m|inc:%s.ge60.15x1m|>=60",
-            [
-                "envoy_config_srv.snapshot_update.last_oldest.max",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:1m,over:15m|inc:%s.ge120.15x1m|>=120",
-            [
-                "envoy_config_srv.snapshot_update.last_oldest.max",
-            ],
-        ) + _envoy_monitor_sustained_metrics(
-            "%s=each:15s,over:1m|inc:%s.ge75.4x15s|>=75",
-            [
-                "envoy_monitor.process.fd_usage",
-            ],
-        ) + [
-           # Derive metrics for detecting problems between envoy-config-srv and envoy-control-srv.
-           # Fires if the last update in envoy-config-srv from envoy-control-srv is more than 30s old for over a minute.
-           # NOTE: these are used by Henson during blue/green deploys to detect
-           # mesh control plane outages. Please check with Deploy team before changing.
-           "envoy_config_srv.remote-service-loader.created-at-age-s=each:20s,over:1m|inc:envoy_config_srv.control_plane_updates.delayed|>=30",
-        ],
-
-        # NB(xyu): globalizing metrics in the MSP pod context is a NOP.
-        # We will only globalize *gauge metrics* since we forward those
-        # to splunk.
-        # - pod veneur attaches [namespace, service-name] to metrics it receives
-        # - pod veneur does not attach the _host_ tag
-        # - pod veneur metrics are not tagged with host_type or host_set
-        "globalized_metrics": _envoy_monitor_globalized_metrics(
-            [
-                # -- globalized gauge metrics --
-                "envoy.cluster.health_check.degraded",
-                "envoy.cluster.lb_subsets_active",
-                "envoy.cluster.membership_degraded",
-                "envoy.cluster.membership_excluded",
-                "envoy.cluster.membership_healthy",
-                "envoy.cluster.membership_total",
-            ],
-        ),
-
-        "emit_port_exhaustion_metrics": True,
-        "port_exhaustion_threshold": [0.6, 0.75],
-    }
-
-def envoy_sidecar_config(
-        config_target,
-        user_overrides,
-        envoy_id,
-        cluster,
-        zone,
-        admin_port = 9901,
-        fallback_port = 10084,
-        ratelimit_port = 20081,
-        cds_port = CDS_PORT,
-        lds_port = LDS_PORT,
-        debug_port = DEBUG_PORT):
-    bootstrap_cfg = generate_envoy_bootstrap_opts(config_target, user_overrides)
-    node = {
-        # NB(xyu): These attributes are logged by envoy-config-srv to identify
-        # the client sending an xDS Discovery Request, but are otherwise unused
-        # because the properties injected into the pod-local envoy-config-srv
-        # determine decisions such as AZ-aware routing. However, we still want
-        # to generate a bootstrap config for envoy with matching properties.
-        "id": envoy_id,
-        "cluster": cluster,
-        "locality": {
-            "region": config_target.region,
-            "zone": zone,
-        },
-    }
-    admin = {
-        "access_log": [
-            {
-                "name": "envoy.access_loggers.file",
-                "typed_config" : {
-                    "@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
-                    "path": "%s/envoy_admin_access.log" % ENVOY_LOGS_DIR,
-                }
-            }
-        ],
-        "address": {
-            "socket_address": {
-                "address": "127.0.0.1",
-                "port_value": admin_port,
-            },
-        },
-    }
-
-    envoycontrol_v2 = {
-        "name": "envoycontrol-v2",
-        "type": "STATIC",
-        "connect_timeout": "1s",
-        "typed_extension_protocol_options": {
-            "envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
-                "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
-                "explicit_http_config": {"http2_protocol_options": {}}
-            }
-        },
-        "load_assignment": {
-            "cluster_name": "envoycontrol-v2",
-            "endpoints": [
-                {
-                    "lb_endpoints": [
-                        {
-                            "endpoint": {
-                                "address": {
-                                    "socket_address": {
-                                        "address": "127.0.0.1",
-                                        "port_value": cds_port,
-                                    },
-                                },
-                            },
-                        },
-                    ],
-                },
-            ],
-        },
-        "circuit_breakers": {
-            "thresholds": [
-                {
-                    "priority": "DEFAULT",
-                    "max_connections": ENVOYCONTROL_V2_CIRCUIT_BREAKER_LIMITS,
-                    "max_pending_requests": ENVOYCONTROL_V2_CIRCUIT_BREAKER_LIMITS,
-                    "max_requests": ENVOYCONTROL_V2_CIRCUIT_BREAKER_LIMITS,
-                }
-            ]
-        },
-    }
-    internal_envoy_fallback = {
-        "name": "internal-envoy-fallback-route",
-        "type": "STATIC",
-        "connect_timeout": "1s",
-        "lb_policy": "ROUND_ROBIN",
-        "typed_extension_protocol_options": {
-            "envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
-                "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
-                "explicit_http_config": {"http2_protocol_options": {}}
-            }
-        },
-        "load_assignment": {
-            "cluster_name": "internal-envoy-fallback-route",
-            "endpoints": [
-                {
-                    "lb_endpoints": [
-                        {
-                            "endpoint": {
-                                "address": {
-                                    "socket_address": {
-                                        "address": "127.0.0.1",
-                                        "port_value": fallback_port,
-                                    },
-                                },
-                            },
-                        },
-                    ],
-                },
-            ],
-        },
-    }
-
-    outbound_cluster = {
-        "name": "forward-to-outbound-listener",
-        "type": "STATIC",
-        "connect_timeout": "1s",
-        "lb_policy": "ROUND_ROBIN",
-        "typed_extension_protocol_options": {
-            "envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
-                "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
-                "explicit_http_config": {"http2_protocol_options": {}}
-            }
-        },
-        "load_assignment": {
-            "cluster_name": "forward-to-outbound-listener",
-            "endpoints": [
-                {
-                    "lb_endpoints": [
-                        {
-                            "endpoint": {
-                                "address": {
-                                    "socket_address": {
-                                        "address": "127.0.0.1",
-                                        "port_value": 10080,
-                                    },
-                                },
-                            },
-                        },
-                    ],
-                },
-            ],
-        },
-    }
-
-    clusters = [
-        envoycontrol_v2,
-        internal_envoy_fallback,
-        outbound_cluster,
-    ]
-
-
-    # By default, exclude downstream_rq_time and upstream_rq_time stats
-    stats_matcher = {
-        "exclusion_list": {
-            "patterns": [
-                {
-                    "suffix": ".downstream_rq_time",
-                },
-                {
-                    "safe_regex": {
-                        "google_re2": {},
-                        "regex": "cluster[.].*[.]internal[.]upstream_rq_time",
-                    },
-                },
-                {
-                    "safe_regex": {
-                        "google_re2": {},
-                        "regex": "cluster[.].*[.]external[.]upstream_rq_time",
-                    },
-                },
-                {
-                    "safe_regex": {
-                        "google_re2": {},
-                        "regex": "cluster[.].*[.]zone[.]upstream_rq_time",
-                    },
-                },
-            ],
-        },
-    }
-
-    if bootstrap_cfg["include_upstream_downstream_stats"] == True:
-        # Enable all stats
-        stats_matcher = {
-            "reject_all": False,
-        }
-
-    # In case enable_global_ratelimit is True, we will add a cluster for the Rate-Limit sidecar.
-    # Owned and maintained by Reliability-patterns-and-practices.
-    if bootstrap_cfg["add_global_ratelimit_cluster"] == True:
-        global_ratelimit_cluster = {
-            "name": "ratelimit--local",
-            "type": "STATIC",
-            "typed_extension_protocol_options": {
-                "envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
-                    "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
-                    "explicit_http_config": {"http2_protocol_options": {}}
-                }
-            },
-            "connect_timeout": "1s",
-            "load_assignment": {
-                "cluster_name": "ratelimit--local",
-                "endpoints": [
-                    {
-                        "lb_endpoints": [
-                            {
-                                "endpoint": {
-                                    "address": {
-                                        "socket_address": {
-                                            "address": "127.0.0.1",
-                                            "port_value": ratelimit_port,
-                                        },
-                                    },
-                                },
-                            },
-                        ],
-                    },
-                ],
-            },
-        }
-        clusters.append(global_ratelimit_cluster)
-
-    envoy_bootstrap_config = {
-            "node": node,
-            "admin": admin,
-            "flags_path": ENVOY_SYSTEM_FLAGS_PATH,
-            "static_resources": {
-                "clusters": clusters,
-            },
-            "dynamic_resources": {
-                "lds_config": {
-                    "api_config_source": {
-                        "api_type": "GRPC",
-                        "grpc_services": [{
-                            "envoy_grpc": {
-                                "cluster_name": "envoycontrol-v2",
-                            },
-                        }],
-                        "transport_api_version": "V3",
-                    },
-                    "resource_api_version": "V3",
-                    # 0 means never timeout
-                    "initial_fetch_timeout": "0s",
-                },
-                "cds_config": {
-                    "api_config_source": {
-                        "api_type": "GRPC",
-                        "grpc_services": [{
-                            "envoy_grpc": {
-                                "cluster_name": "envoycontrol-v2",
-                            },
-                        }],
-                        "transport_api_version": "V3",
-                    },
-                    "resource_api_version": "V3",
-                    # 0 means never timeout
-                    "initial_fetch_timeout": "0s",
-                },
-            },
-            "stats_sinks": [
-                {
-                    "name": "envoy.stat_sinks.dog_statsd",
-                    "typed_config": {
-                        "@type": "type.googleapis.com/envoy.config.metrics.v3.DogStatsdSink",
-                        "address": {
-                            "socket_address": {
-                                "address": "127.0.0.1",
-                                "port_value": ENVOY_MONITOR_PORT,
-                            },
-                        },
-                    },
-                },
-            ],
-            "stats_config": {
-                "stats_tags": [
-                    {
-                        "tag_name": "envoy_dst_zone",
-                        "regex": "cluster\\.(?:[^.]+\\.)?zone\\.[-a-z0-9]+\\.(([-a-z0-9]+)?\\.)",
-                    },
-                    {
-                        "tag_name": "envoy_src_zone",
-                        "regex": "cluster\\.(?:[^.]+\\.)?zone\\.(([-a-z0-9]+)?\\.)",
-                    },
-                    {
-                        "tag_name": "envoy_instance_name",
-                        "fixed_value": "mesh",
-                    },
-                    {
-                        "tag_name": "dest",
-                        "regex": "stripe\\.no_route\\.no_route(\\.([-a-z0-9_\\.]+)(?:\\:\\d+)?)",
-                    },
-                    {
-                        "tag_name": "grpc_method",
-                        "regex": "^cluster[.][^.]+[.]grpc([.].+[.]([^.]+[.][^.]+))[.][^.]+$",
-                    },
-                    {
-                        "tag_name": "grpc_status",
-                        "regex": "^cluster[.][^.]+[.]grpc[.].+([.](\\d+))$",
-                    },
-                ],
-                "stats_matcher": stats_matcher,
-            },
-            "layered_runtime": {
-                "layers": [
-                    {
-                        "name": "static_layer",
-                        "static_layer": {
-                            "re2.max_program_size.error_level": 1000000,
-                            "overload.global_downstream_max_connections": bootstrap_cfg["global_downstream_max_connections"],
-                        },
-                    },
-                    {
-                        "name": "admin_layer",
-                        "admin_layer": {},
-                    },
-                ],
-            },
-        }
-
-    if bootstrap_cfg["stats_flush_on_admin"] == True:
-        envoy_bootstrap_config["stats_flush_on_admin"] = True
-    else:
-        envoy_bootstrap_config["stats_flush_interval"] = "%ss" % bootstrap_cfg["stats_flush_interval"]
-
-    return {
-        "envoy_api_version": "v3",  # XXX(xyu): envoy-sidecar doesn't actually consume this field
-        "envoy_bootstrap_version": "v3",
-        # NB(xyu): This config should be kept in sync with the one generated by
-        # go/puppet-config/blob/master/modules/envoy/templates/host_proxy.yaml.erb
-        "envoy_bootstrap_config": envoy_bootstrap_config,
-    }
 
 def use_debug_sidecar_container(user_overrides):
     container_cfg = generate_sidecar_container_config(user_overrides)

@@ -1,0 +1,250 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("henson/kube/_ruby-common.sky", "ruby_canary_suffix")
+
+load("config/kubernetes/helpers/context.sky",
+    "get_availability_tier",
+    "get_identity",
+    "get_name",
+    "is_faas_managed",
+    "get_container_images"
+)
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
+load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "get_instance_type_by_name")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/sidecars/sidecars.sky", "sidecars")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/meta/metadata.sky", "labels")
+
+load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
+load("config/kubernetes/sidecars/confidant_migration.sky", migration_raw_secret="raw_secret", migration_yaml_secret="yaml_secret")
+load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
+load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
+
+compute_pb = proto.package("com.stripe.gocode.service_config")
+
+def get_manage_workers(compute_config):
+    manage_workers = True
+    if (
+        compute_config["ruby_process"] and
+        compute_config["ruby_process"]["puma_cluster"] and
+        "manage_workers" in compute_config["ruby_process"]["puma_cluster"] and
+        compute_config["ruby_process"]["puma_cluster"]["manage_workers"] != None
+    ):
+        manage_workers = compute_config["ruby_process"]["puma_cluster"]["manage_workers"]
+
+    return manage_workers
+
+def _platform_options(compute_config):
+    if compute_config["platform_options"]:
+        return compute_config["platform_options"]
+    else:
+        return None
+
+def get_max_surge(deploy_config, platform_options):
+    max_surge = 1
+
+    if deploy_config.max_surge and deploy_config.max_surge.value != None:
+        max_surge = deploy_config.max_surge.value
+    elif platform_options and "max_surge" in platform_options and platform_options["max_surge"] != None:
+        max_surge = platform_options["max_surge"]
+
+    max_surge_percentage = None
+    if deploy_config.max_surge_percentage and deploy_config.max_surge_percentage.value != None:
+        max_surge_percentage = deploy_config.max_surge_percentage.value
+    elif platform_options and "max_surge_percentage" in platform_options and platform_options["max_surge_percentage"] != None:
+        max_surge_percentage = str(platform_options["max_surge_percentage"])
+    if max_surge_percentage != None:
+        max_surge = "{}%".format(max_surge_percentage)
+
+    return max_surge
+
+def get_max_unavailable(deploy_config, platform_options):
+    max_unavailable = 1
+
+    if deploy_config.max_unavailable and deploy_config.max_unavailable.value != None:
+        max_unavailable = deploy_config.max_unavailable.value
+    elif platform_options and "max_unavailable" in platform_options and platform_options["max_unavailable"] != None:
+        max_unavailable = platform_options["max_unavailable"]
+
+    max_unavailable_percentage = None
+    if deploy_config.max_unavailable_percentage and deploy_config.max_unavailable_percentage.value != None:
+        max_unavailable_percentage = deploy_config.max_unavailable_percentage.value
+    elif platform_options and "max_unavailable_percentage" in platform_options and platform_options["max_unavailable_percentage"] != None:
+        max_unavailable_percentage = str(platform_options["max_unavailable_percentage"])
+    if max_unavailable_percentage != None:
+        max_unavailable = "{}%".format(max_unavailable_percentage)
+
+    return max_unavailable
+
+def deployment_strategy_func(ctx):
+    deploy_config = ctx.vars.get("service.config.deploy")
+    compute_config = get_merged_compute_v2_config(ctx)
+
+    platform_options = _platform_options(compute_config)
+
+    args = {
+        "max_unavailable": get_max_unavailable(deploy_config, platform_options),
+        "max_surge": get_max_surge(deploy_config, platform_options),
+    }
+
+    return rolling_update_strategy(
+        ctx,
+        **args,
+    )
+
+def _networking_config(ctx, compute_config):
+    plugins = []
+    platform_options = _platform_options(compute_config)
+    if platform_options and platform_options["enable_envoy_global_ratelimit"]:
+        plugins.append(networking_config(global_ratelimit = global_ratelimit(enable=True)))
+
+    return plugins
+
+def _hack_kick_interval(compute_config):
+    if (
+        compute_config["ruby_process"] and
+        compute_config["ruby_process"]["deprecated_config"] and
+        compute_config["ruby_process"]["deprecated_config"]["hack_kick_interval"]
+    ):
+        return str(compute_config["ruby_process"]["deprecated_config"]["hack_kick_interval"])
+    else:
+        return None
+
+def _build_args(ctx, compute_config):
+    args = {}
+    plugins = _networking_config(ctx, compute_config)
+
+    platform_options = _platform_options(compute_config)
+
+    if platform_options:
+        if len(platform_options["add_security_groups"]) > 0:
+            plugins.append(add_security_groups(*platform_options["add_security_groups"]))
+
+        # env vars
+        if platform_options["env_vars"]:
+            plugins.append(container_env_vars(vars = platform_options["env_vars"]))
+
+        # Kubernetes labels
+        if platform_options["kube_labels"]:
+            plugins.append(labels(dict = platform_options["kube_labels"]))
+
+        # secrets
+        readable_secrets = []
+        for secret in platform_options["secrets"]:
+            if "yaml_secret" in secret:
+                ys_args = {"prefix": secret["yaml_secret"]["prefix"], "allow_missing": secret["yaml_secret"]["allow_missing"] or False}
+                if "type" in secret["yaml_secret"]:
+                    ys_args["key_type"] = secret["yaml_secret"]["type"]
+                if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
+                    readable_secrets.append(pandora_yaml_secret(**ys_args))
+                elif "secrets_source" in platform_options and platform_options["secrets_source"] == "MIGRATION":
+                    readable_secrets.append(migration_yaml_secret(**ys_args))
+                else:
+                    readable_secrets.append(yaml_secret(**ys_args))
+            if "raw_secret" in secret:
+                if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
+                    readable_secrets.append(pandora_raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
+                elif "secrets_source" in platform_options and platform_options["secrets_source"] == "MIGRATION":
+                    readable_secrets.append(migration_raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
+                else:
+                    readable_secrets.append(raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
+        if readable_secrets:
+            plugins += readable_secrets
+
+    # Setup sidecars
+    if "sidecars" in compute_config and len(compute_config["sidecars"].items()) > 0:
+        plugins = sidecars(ctx, compute_config["sidecars"]) + plugins
+
+    if len(plugins) > 0:
+        args["plugins"] = plugins
+
+    return args
+
+def plugins(ctx):
+    compute_config = get_merged_compute_v2_config(ctx)
+
+    result = _build_args(ctx, compute_config)
+
+    if "plugins" in result:
+        return result["plugins"]
+    else:
+        return []
+
+def replicas(ctx):
+    return get_merged_compute_v2_config(ctx)["resources"]["num_replicas"]
+
+def deployments(ctx):
+    compute_config = get_merged_compute_v2_config(ctx)
+    name = get_name(ctx)
+    namespace = get_identity(ctx)
+    instance_type = get_instance_type_by_name(compute_config["resources"]["instance_type"])
+    availability_tier = get_pod_availability_tier_by_name(get_availability_tier(ctx))
+    command = list(compute_config["ruby_process"]["command"])
+    manage_workers = get_manage_workers(compute_config)
+    separate_canary_by_name = get_separate_canary_by_name(compute_config)
+    hack_kick_interval = _hack_kick_interval(compute_config)
+
+    # Get the pod resource sizing
+    pod_resources = attempt_to_get_pod_sizing_from_compute_config(ctx, compute_config)
+
+    pay_server_artifact_name = "pay-server-image" # Always default to pay-server-image to be safe
+
+    container_images = get_container_images(ctx)
+    for artifact_name in sorted(container_images):
+        if artifact_name.startswith("pay-server-image") or artifact_name.endswith("-service-image-linux-amd64") or artifact_name.endswith("-service-image-linux-arm64"):
+           pay_server_artifact_name = artifact_name
+           break
+
+    return ruby_workflow_worker_shared_msp(
+        name = name,
+        namespace = namespace,
+        instance_type = instance_type,
+        availability_tier = availability_tier,
+        command = command,
+        replicas_func = replicas,
+        startup_timeout = 600,
+        plugins_func = plugins,
+        workers_per_replica = compute_config["ruby_process"]["puma_cluster"]["num_workers"] or 4,
+        deployment_strategy_func = deployment_strategy_func,
+        manage_workers = manage_workers,
+        separate_canary_by_name = separate_canary_by_name,
+        hack_kick_interval = hack_kick_interval,
+        resource_requirements_spec = pod_resources,
+        serverless = is_faas_managed(ctx),
+        strict_packaging = _strict_packaging(compute_config),
+        image = image_defaults(
+          name = None,
+          artifact = pay_server_artifact_name,
+        ),
+    )
+
+def _strict_packaging(compute_config):
+    if "ruby_process" in compute_config:
+        if "strict_packaging" in compute_config["ruby_process"]:
+            if compute_config["ruby_process"]["strict_packaging"] != None:
+                return compute_config["ruby_process"]["strict_packaging"]
+    return True
+
+def get_separate_canary_by_name(compute_config):
+    # Originally, there was going to be a ComputeV2 flag to contro
+    # this, but it was never implemented and it literally looks like
+    # there is only 1 place where a service wants a different
+    # canary suffix, so instead of providing a boolean flag w/ a
+    # default value, set this as True if a value is specified: the
+    # one or two services that want this can hardcode what is currently
+    # the default value.
+    if compute_config == None:
+        return False
+
+    if "ruby_process" in compute_config:
+        if "canary_config" in compute_config["ruby_process"] and compute_config["ruby_process"]["canary_config"] != None:
+            if "suffix" in compute_config["ruby_process"]["canary_config"] and compute_config["ruby_process"]["canary_config"]["suffix"] != None:
+                return True
+
+    return False
+

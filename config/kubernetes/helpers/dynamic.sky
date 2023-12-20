@@ -4,6 +4,7 @@ Functions to enable dynamic replica scaling for a deployment
 """
 
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/helpers/context.sky", "is_isolated_deploy")
 load("config/kubernetes/helpers/warning.sky", "warn")
 
 
@@ -41,6 +42,14 @@ def dynamic_replicas(desired_count=1, max_count=1, min_count=1):
 
 
 def _add_dynamic_replicas(ctx, arguments, deployment_def):
+    # Skip setting dynamic replicas for isolated deployements as they're always single replicas.
+    # We perform this check here in order to not have to force users of the plugin from
+    # dynamically adding/removing this plugin for isolated deployments. Instead we warn the user
+    # and no-op on the plugin.
+    if is_isolated_deploy(ctx):
+        warn(ctx, "skipping applying dynamic_replicas plugin due to isolated deployments")
+        return
+
     deployment_def['metadata']['annotations'].update({
         "stripe.io/dynamic-replicas-enabled": "yes",
         "stripe.io/dynamic-replicas-count-min": arguments.min_count,

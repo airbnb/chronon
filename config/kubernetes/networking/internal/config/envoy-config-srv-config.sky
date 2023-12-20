@@ -13,9 +13,7 @@ Service owners may override default values by calling the `networking_config`.
 load("config/kubernetes/networking/internal/common.sky", "POD_NETWORKING_BASEDIR")
 load(
     "config/kubernetes/networking/internal/config/override.sky",
-    "NOT_PROVIDED",
     "match",
-    "merge_configs",
     "populate_config",
     "when",
 )
@@ -33,6 +31,7 @@ ENVOY_SYSTEM_FLAGS_PATH = "%s/envoy_file_system_flags" % ENVOY_RUNTIME_DIR
 ENVOY_CONFIG_SRV_RUNTIME_DIR = "/run/stripe/envoy-config-srv"
 ENVOY_CONFIG_SRV_PERSISTENT_DRAIN_FILE = "%s/draining" % ENVOY_CONFIG_SRV_RUNTIME_DIR
 ENVOY_CONFIG_SRV_SERVICE_REGISTRATIONS_DIR = "/etc/serviceregistry/services"
+PROXYLESS_ADMIN_SERVER_DIR = "/etc/stripe/networking/proxyless/admin"
 DEFAULT_CROSS_DOMAIN_SERVICES_BY_ENV = {
     "qa": ["pandoradecrypt"],
     "preprod": ["pandoradecrypt"],
@@ -87,11 +86,14 @@ def _default_sidecar_cli_args(target):
         "allowed_machine_orgs": [
             "030465607062", # mainland
             "108124432883", # mainland2
+            "213343938293", # msp-shared-all-pink
         ],
     }
 
 def _default_sidecar_config(target):
     """
+    This configuration is DEPRECATED.
+
     Note to Service Networking:
     Please use envoy-config-srv.yaml in gocode instead, found at:
     https://git.corp.stripe.com/stripe-internal/gocode/blob/master/kube-tools/envoy-config-srv/config/envoy-config-srv.yaml
@@ -109,146 +111,35 @@ def _default_sidecar_config(target):
         Where possible, these defaults are skycfg equivalents to those in
         go/kube-tools/blob/master/envoy-config-srv/config/envoy-config-srv.yaml
     """
-    return merge_configs(
-        {
-            "http2_options": http2_options(
-                max_concurrent_streams = 128,
-                max_stream_window_size = 1048576,
-                max_connection_window_size = 134217728,
-            ),
-            "cluster_healthcheck_opts": {
-                "initial_jitter": "3s",
-                "interval_jitter": "0.5s",
-                "enable_http2_hc": False,
-                "enable_client_side_health_events": True,
-                "enable_server_side_health_events": True
-            },
-            # TODO(xyu): This should be set by the user in `networking_config`
-            # TODO(xyu): Enabling tracing touches both envoy-config-srv and the
-            # envoy bootstrap config. Implement this when we modify the
-            # envoy-sidecar skycfg to adopt MSP SN configurability
-            # For reference, tracing for host-based services is defined in
-            # https://git.corp.stripe.com/stripe-internal/kube-tools/blob/37d558309e1eb5cd02a3ebbf0f195e1166c15cd7/envoy-config-srv/config/envoy-config-srv.yaml#L51
-            "enable_tracing": False,
-            # TODO(mattkipps): clusterfe-srv should set this value in `networking_config` when it is migrated to Shared MSP
-            "enable_clusterfe_listener": False,
-            "use_exact_load_balancer": True,
-            "use_envoy_admin_healthcheck": True,
-            # XXX(xyu): `file_system_flags` is consumed by the envoy-config-srv
-            # `use_envoy_admin_healthcheck: True` feature to make the transition
-            # to/from fail-all-incoming-healthchecks sticky across restarts of
-            # envoy
-            # - when a host check fails, poke envoy admin-interface to fail
-            #   incoming-healthchecks.
-            # - it is safe for this FS state to be pod-local
-            "envoy_file_system_flags": ENVOY_SYSTEM_FLAGS_PATH,
-            "enable_mproxy_listener_modify_only_drain_type": True,
-            "enable_listener_modify_only_drain_type": True,
-            "enable_inbound_listener_modify_only_drain_type": True,
-            "nlb_health_check": match(
-                target,
-                None,
-                when(role = "kproxy", env = "qa", value = {"address": "0.0.0.0", "port": 10090}),
-                when(role = "papertrail", env = "qa", value = {"address": "0.0.0.0", "port": 10090}),
-            ),
-            "enable_global_ratelimiter": False,
-            "local_rate_limit": None,
-            "rollout_watcher": {
-                "enable_rollout_watcher": True,
-                "config_srv_addr": match(
-                    target,
-                    "configsrvbox.northwest.prod.stripe.io:10101",
-                    when(env = "preprod", value = "configsrvbox.cmh.preprod.stripe.io:10101"),
-                    when(env = "qa", value = "configsrvbox.northwest.qa.stripe.io:10101"),
-                ),
-                "config_srv_key": "config/stripe-internal/gocode/kube-tools/envoy-config-srv-rollout/rollout_config",
-            },
-            "envoy_setup": "NETWORK_ISOLATED_ENVOY",
-            "enable_local_reachability": True,
-            "enable_http1_trailers": True,
-            "enable_service_filtering": True,
-            "persistent_drain_file": ENVOY_CONFIG_SRV_PERSISTENT_DRAIN_FILE,
-            # NOTE: this feature should be disabled when envoy is running in a "frontend" context.
-            # If Stripe supports Shared MSP frontends in the future, exclude them here.
-            "enhanced_envoy_error_responses": match(
-                target,
-                False,
-                when(env = "qa", value = True),
-            ),
-            "remove_consul_health_source": True,
-            "enable_tls_v1_3": True,
-            "additional_http_access_log_fields": match(
-                target,
-                [],
-                when(role = "envoy-shape", env = "qa", value = ["%REQUEST_TX_DURATION%", "%RESPONSE_DURATION%", "%RESPONSE_TX_DURATION%"]),
-            ),
-            "access_log_filter": match(
-                target,
-                access_log_sampling_native_filter(True),
-                when(role = "envoy-shape", env = "qa", value = access_log_sampling_native_filter(False)),
-            ),
-            "enable_grpc_stats": True,
-            "mproxy_local_rate_limit": None,
-            "control_locality_aware_routing": control_locality_aware_routing(False, True),
-            "enable_streamed_initial_snapshot": True,
-            "enable_dual_registration": True,
-            "enable_cross_domain_services": [],
-            "enable_envoy_http_tap_filter": match(
-                target,
-                False,
-                when(env = "qa", value = True),
-            ),
-            "enable_routing_override_to_devbox": match(
-                target,
-                False,
-                when(env = "qa", value = True),
-            ),
-            "enable_latency_checkpoints": match(
-                target,
-                False,
-                when(env="qa", role="envoy-shape", value = True)
-            ),
-            "health_agent_address": "127.0.0.1:12073", # note: setting this field to empty string will disable collection from health-agent (potentially useful in breakglass scenario)
-            "control_envoy_xds_resource_versions": control_envoy_xds_resource_versions("v1"),
-            "mesh_service_config_watcher": {
-                "config_srv_addr": match(
-                    target,
-                    "configsrvbox.northwest.prod.stripe.io:10101",
-                    when(env = "preprod", value = "configsrvbox.cmh.preprod.stripe.io:10101"),
-                    when(env = "qa", value = "configsrvbox.northwest.qa.stripe.io:10101"),
-                ),
-                "polling_interval": "10s"
-            },
-            "max_headers_count": 100,
-            "use_regional_vhost": True,
-            "egress_proxy": match(
-                target,
-                egress_proxy(tier="", enable_unix_socket=True),
-                when(role="monobapibox", availability_tier="A100", value=egress_proxy(tier="p0", enable_unix_socket=True)),
-                when(role="monobapibox", availability_tier="A110", value=egress_proxy(tier="p0", enable_unix_socket=True)),
-                when(role="workflow-work-banking-platform", value=egress_proxy(tier="p0", enable_unix_socket=True)),
-                when(role="issuingauth", value=egress_proxy(tier="p0", enable_unix_socket=True)),
-                # TODO(jakewang): configure egress-proxy-prober-ruby.sky p0 workloads to use p0 egress-proxy.
-            ),
-            # NOTE(mattkipps): please add new configuration options to gocode in envoy-config-srv.yaml
-        },
-        # Use the match block below to conditionally set configuration options in QA/Prod:
-        match(
+    return {
+        "enable_global_ratelimiter": False,
+        "local_rate_limit": None,
+        "persistent_drain_file": ENVOY_CONFIG_SRV_PERSISTENT_DRAIN_FILE,
+        "remove_consul_health_source": True,
+        "mproxy_local_rate_limit": None,
+        "enable_cross_domain_services": [],
+        "enable_envoy_http_tap_filter": match(
             target,
-            {},
-            when(env = "qa", value = {
-                # Config parameters that must only be set in QA:
-                "extra_outbound_services": [
-                    {
-                    "service_name": "chaos-coordinator-grpc-srv",
-                    "mtls_authorities": [
-                        "chaos-coordinator"
-                    ]
-                    }
-                ]
-            }),
+            False,
+            when(env = "qa", value = True),
         ),
-    )
+        "enable_latency_checkpoints": match(
+            target,
+            False,
+            when(env="qa", role="envoy-shape", value = True)
+        ),
+        "max_headers_count": 100,
+        "egress_proxy": match(
+            target,
+            egress_proxy(tier="", enable_unix_socket=True),
+            when(role="monobapibox", availability_tier="A100", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+            when(role="monobapibox", availability_tier="A110", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+            when(role="workflow-work-banking-platform", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+            when(role="issuingauth", value=egress_proxy(tier="p0", enable_unix_socket=True)),
+            # TODO(jakewang): configure egress-proxy-prober-ruby.sky p0 workloads to use p0 egress-proxy.
+        ),
+        # NOTE(mattkipps): please add new configuration options to gocode in envoy-config-srv.yaml
+    }
 
 def egress_proxy(*, tier, enable_unix_socket):
     if tier == "p0":
@@ -261,34 +152,6 @@ def egress_proxy(*, tier, enable_unix_socket):
             "tier": "DEFAULT",
             "enable_unix_socket": enable_unix_socket,
         }
-
-def control_envoy_xds_resource_versions(target):
-    return {
-        "target_version": target,
-    }
-
-def access_log_sampling_native_filter(enable):
-    return {
-        "enabled": enable,
-        "success_sample_percent": 10,
-        "error_sample_percent": 100,
-    }
-
-def control_locality_aware_routing(disable_locality, enable_capacity):
-    return {
-        "disable_locality_aware_routing": disable_locality,
-        "enable_capacity_aware_routing": enable_capacity,
-    }
-
-def http2_options(
-        max_concurrent_streams,
-        max_stream_window_size,
-        max_connection_window_size):
-    return {
-        "max_concurrent_streams": max_concurrent_streams,
-        "max_stream_window_size": max_stream_window_size,
-        "max_connection_window_size": max_connection_window_size,
-    }
 
 # Used by config/kubernetes/networking/public/config.sky
 def local_rate_limit(

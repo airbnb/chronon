@@ -15,8 +15,9 @@ load("config/kubernetes/plugins/types.sky", "job_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Job", "JobSpec")
+load("config/kubernetes/helpers/shared_msp.sky", "shared_msp_experimental_job_support")
 
-def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **kwargs):
+def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, enable_shared_msp_experimental_job_support=False, **kwargs):
     """
     Define a batch job that will run once.
 
@@ -33,6 +34,9 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **k
         shared_msp_networking_plugin: boolean which is True iff the job should have networking plugin (default is False). Note: this feature is
           in alpha, and largely untested by Service Networking. Please test thoroughly, and consult in #service-networking if you have any questions
           or issues.
+        experimental_shared_msp_job_sidecar_support: boolean enabling the support for experimental jobs in Shared MSP. This functionalty is
+          highly experimental and not guaranteed to work for the general use case. Your application (and all sidecars) need to have `sh`
+          available for this to work properly.
         **kwargs: Options for the [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch).
             A shortcut for the `job_options` plugin.
 
@@ -40,7 +44,6 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **k
         A [Job](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#job-v1-batch)
         Kubernetes protobuf message describing the configuration of the batch job.
     """
-
     if is_isolated_deploy(ctx) and get_env(ctx) != "qa":
         fail("Isolated deployment jobs are not allowed to be created outside of the QA environment")
 
@@ -89,6 +92,9 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, **k
             _apply_plugin(ctx, networking_plugin, job)
             # NOTE: Include metrics-sidecar for networking plugin as envoy-config-srv needs it.
             _apply_plugin(ctx, metrics(ctx, config=job["metrics_config"]), job)
+
+        if enable_shared_msp_experimental_job_support:
+            _apply_plugin(ctx, compose_plugins(shared_msp_experimental_job_support()), job)
 
     return job["render"](ctx, job)
 

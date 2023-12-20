@@ -1,0 +1,44 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_service_variant")
+
+def isolated_deploy_aware_resource_name(ctx, base_name):
+    """
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations
+        base_name: top-level name of the resource e.g. `tips-srv`
+    Returns:
+        For an isolated deploy returns a name for the resource that is derived
+        from `base_name`. Otherwise: return `base_name` unchanged
+    """
+    if is_isolated_deploy(ctx):
+        prefix = _iso_prefix(ctx)
+        return "{}{}".format(prefix, base_name)
+    return base_name
+
+def _iso_prefix(ctx):
+    # Kubernetes objects must be unique in a given namespace. Multiple
+    # resources with the same name will end up overwriting each other with
+    # the last write winning. As such isolated deployments resources must
+    # have a unique name in order to avoid colliding with the main service
+    # and each other. In order to generate a unique name we'll take the
+    # first valid 5 charcters from the service variant variable part which
+    # includes 20 base32 characters. This still gives us ~60M unique
+    # prefixes which in practice is low enough and shouldn't cause
+    # collisions. If we see otherwise in practice we can move to Henson
+    # providing a unqiue known-not-to-collide identifier in the future.
+    iso_prefix = get_service_variant(ctx).removeprefix("isolated-deploy_")[0:5]
+    return "iso-{}-".format(iso_prefix)
+
+def base_resource_name(ctx, resource_name):
+    """
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations
+        resource_name: isolated-deploy-aware name (if applicable)
+    Returns:
+        The base_name for `resource_name`
+    """
+    if is_isolated_deploy(ctx):
+        p = _iso_prefix(ctx)
+        if resource_name.startswith(p):
+            return resource_name.removeprefix(p)
+    return resource_name

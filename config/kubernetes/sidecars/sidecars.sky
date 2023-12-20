@@ -3,6 +3,7 @@ load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
 load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
 load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+load("config/kubernetes/sidecars/memcontainer.sky", "memento_sidecar")
 
 def sidecars(ctx, sidecars_map):
     """
@@ -24,8 +25,17 @@ def sidecars(ctx, sidecars_map):
         elif sidecar_name == "geoip_databases":
             args = [ use_geoip_databases() ] + args
         elif sidecar_name == "ratelimit":
+            sidecar_spec = sidecars_map[sidecar_name].args
+            for key in sidecar_spec.keys():
+                if key == "label":
+                    label = sidecar_spec[key]
+                elif key == "host_type":
+                    host_type = sidecar_spec[key]
+
             # Ugh, need to handle positional args and key/value args
-            args = [ ratelimit_sidecar(ctx) ] + args
+            args = [ ratelimit_sidecar(ctx, label, host_type) ] + args
+        elif sidecar_name == "memcontainer":
+            args = [ memento_sidecar(ctx) ] + args
         else:
             fail("Unknown sidecar name: " + sidecar_name)
 

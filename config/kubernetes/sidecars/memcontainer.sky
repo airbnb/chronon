@@ -1,0 +1,23 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "sidecar_container")
+load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes")
+load("config/kubernetes/helpers/security.sky", "mount_host_credentials_proxy", "mount_host_stripe_ca_certs")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+
+sidecar_name = "memento-sidecar"
+
+def memento_sidecar(ctx):
+    return compose_plugins(
+        mount_host_stripe_ca_certs(container_name = sidecar_name),
+        mount_host_credentials_proxy(container_name = sidecar_name),
+        mount_ldap_host_volumes(container_name = sidecar_name),
+        mount_host_volume("/pay/cache", container_name = sidecar_name, volume_args = {"type": "Directory"}),
+        sidecar_container(
+            name = sidecar_name,
+            sidecar_service = "memcontainer",
+            command = ["/pay/deploy/gocode/current/memcontainer/memcontainer"],
+            container_image = "stripe/gocode/memcontainer",
+            plugins = [],
+        ),
+    )

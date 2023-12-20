@@ -1,0 +1,32 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "pod_plugin")
+
+"""
+Plugins for managing pod priority
+"""
+
+def pod_priority_node_critical():
+    """
+    Set the pod priority class to system-node-critical. This will cause the pod to be scheduled on a node with the
+    node critical priority class. This is useful for pods that need to be scheduled on a node with a high
+    priority class, such as the daemonsets.
+    """
+    return pod_priority("system-node-critical")
+
+def pod_priority_cluster_critical():
+    """
+    Set the pod priority class to system-cluster-critical. This will cause the pod to be scheduled on a node with the
+    cluster critical priority class. This is useful for pods that need to be scheduled on a node with a high
+    priority class, such as the cluster management controllers.
+    """
+    return pod_priority("system-cluster-critical")
+
+def pod_priority(priority_class_name):
+    """
+    Set the pod priority class to the provided prirority class. 2 Priority classes are defined by default - system-node-critical
+    and system-cluster-critical.
+    """
+    return pod_plugin(_update_pod, priority_class_name = priority_class_name)
+
+def _update_pod(ctx, plugin, pod_def):
+    pod_def["priority_class_name"] = plugin.priority_class_name

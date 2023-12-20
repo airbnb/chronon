@@ -1,28 +1,59 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/core/container.sky", "resource_requirements")
 load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/helpers/context.sky", "get_service_deploy_config", "get_env")
+load("config/kubernetes/helpers/quantities.sky", "mebibytes", "millicores")
 
-def ResourceRequirements(ctx, all = None, qa = None, prod = None):
-    if all == None and qa == None and prod == None:
-        fail("At least one of all, qa, or prod must be specified for ResourceRequirements")
+def ResourceRequirements(ctx, all = None, qa = None, prod = None, preprod = None):
+    if all == None and qa == None and prod == None and preprod == None:
+        fail("At least one of all, qa, preprod, or prod must be specified for ResourceRequirements")
 
     # If they specify an all, generate versions of the same resources for all envs and add it to the struct
     if all != None:
         return _buildMatchingResourceLimit(ctx, all)
 
-    # If they only specify production, use that for all environments also
-    # this is a sanity check, but ideally users use the all parameter instead
-    if prod != None and qa == None:
-        warn(ctx, "You have specified production resource request/limits, without specifying QA. Please use all instead.")
-        return _buildMatchingResourceLimit(ctx, prod)
-
-    # Else, just provide the resources for each environment
+    # Validate that if any of these values are passed, they are valid
     _validResourceLimit(qa)
     _validResourceLimit(prod)
+    _validResourceLimit(preprod)
+
+    # Special case - if the user specifies prod, but not preprod, then we use prod for preprod
+    # this follows the convention that PreProd should be as similar to Prod as possible.
+    preprod_val = _buildResourceRequirementFromSpec(ctx, prod)
+    if preprod != None:
+        preprod_val = _buildResourceRequirementFromSpec(ctx, preprod)
+
     return struct(
         qa = _buildResourceRequirementFromSpec(ctx, qa),
-        preprod = _buildResourceRequirementFromSpec(ctx, prod),
+        preprod = preprod_val,
         prod = _buildResourceRequirementFromSpec(ctx, prod),
+    )
+
+def _qa_resource_requirements(ctx, val = None):
+    if val == None:
+        fail("Must pass a value to set to for the QA resource requirements")
+
+    return ResourceRequirements(
+        ctx,
+        qa = val,
+    )
+
+def _preprod_resource_requirements(ctx, val = None):
+    if val == None:
+        fail("Must pass a value to set to for the PreProd resource requirements")
+
+    return ResourceRequirements(
+        ctx,
+        preprod = val,
+    )
+
+def _prod_resource_requirements(ctx, val = None):
+    if val == None:
+        fail("Must pass a value to set to for the Prod resource requirements")
+
+    return ResourceRequirements(
+        ctx,
+        prod = val,
     )
 
 def ResourceRequirementSpec(cpu, memory, storage = None):
@@ -69,3 +100,29 @@ def _validResourceLimit(resourceLimit):
         fail("cpu must be specified for ResourceLimit")
     if resourceLimit.get("memory", None) == None:
         fail("memory must be specified for ResourceLimit")
+
+def attempt_to_get_pod_sizing_from_compute_config(ctx, compute_config):
+    if not compute_config:
+        return None
+    if not hasattr(compute_config, "resources"):
+        return None
+    if not hasattr(compute_config.resources, "pod_requirements"):
+        return None
+    if compute_config.resources.pod_requirements == None:
+        return None
+
+    spec_val = ResourceRequirementSpec(
+        cpu = millicores(ctx, compute_config.resources.pod_requirements.cpu_millicores),
+        memory = mebibytes(ctx, compute_config.resources.pod_requirements.memory_mebibytes),
+    )
+
+    current_env = get_env(ctx)
+    if current_env == "qa":
+        return _qa_resource_requirements(ctx, val = spec_val)
+    if current_env == "preprod":
+        return _preprod_resource_requirements(ctx, val = spec_val)
+    if current_env == "prod":
+        return _prod_resource_requirements(ctx, val = spec_val)
+
+    # this should never happen, fail if it does.
+    fail("no mapping for environment={} in attempt_to_get_workload_sizing_from_ctx".format(current_env))

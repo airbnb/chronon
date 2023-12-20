@@ -1,10 +1,13 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/context.sky", "get_henson_git_commit", "get_henson_repo", "get_name")
+load("config/kubernetes/helpers/context.sky", "get_henson_git_commit", "get_henson_repo", "get_name", "get_service_variant", "get_workspace_id", "is_isolated_deploy")
+load("config/kubernetes/helpers/isolated_deploys.sky", "base_resource_name")
 load("config/kubernetes/helpers/version.sky", "SKYCFG_VERSION", "SKYCFG_DIGEST")
 
 SERVICE_OWNER_LABEL = "stripe.io/service-owner"
 DEPRECATED_OWNER_LABEL = "stripe.io/owner"
 
+HENSON_SERVICE_VARIANT_LABEL = "henson.stripe.io/isolated-deploy-service-variant"
+DEVENV_ISOLATED_DEPLOY_RESOURCE_WORKSPACE_LABEL = "devenv.stripe.io/isolated-dev-resource-workspace-id"
 
 def service_selectors(name, *, function_name = None, blue_green_color = None):
     """Returns a dict of default selectors."""
@@ -55,7 +58,15 @@ def default_labels(ctx, name, owner, *, function_name = None, blue_green_color =
     # We don't really care about it being unique, so the first 16 chars seems enough.
     selectors["stripe.io/skycfg-digest"] = SKYCFG_DIGEST[:16]
 
+    selectors["metrics.stripe.io/metrics-service-name"] = base_resource_name(ctx, name)
+
     return selectors
+
+def default_isolated_deployment_labels(ctx):
+    return {
+        HENSON_SERVICE_VARIANT_LABEL: get_service_variant(ctx),
+        DEVENV_ISOLATED_DEPLOY_RESOURCE_WORKSPACE_LABEL: get_workspace_id(ctx),
+    }
 
 def default_annotations(ctx, name, owner):
     return {

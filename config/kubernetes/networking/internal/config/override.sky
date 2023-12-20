@@ -180,20 +180,3 @@ def populate_config(cfg, user_overrides, update_fn_name):
                     "reach out to #service-networking.",
                 ]))
     return cfg
-
-
-def merge_configs(*configs):
-    """
-    Merges an ordered list of configuration dictionaries.
-
-    Returns:
-        The resulting merged configuration dictionary.
-
-    Args:
-        configs: an ordered list of configuration dictionaries to merge.
-            When configuration keys intersect, the entries from the latter dictionaries win.
-    """
-    config = dict()
-    for c in configs:
-        config.update(c)
-    return config

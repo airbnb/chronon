@@ -8,8 +8,9 @@ load("config/kubernetes/sidecars/variables.sky", "KUBE_CREDS_CONTAINER_DIGEST", 
 load("config/kubernetes/core/env_var.sky", "default_env_vars")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
-load("config/kubernetes/helpers/quantities.sky", "megabytes")
+load("config/kubernetes/helpers/quantities.sky", "mebibytes")
 load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled")
 
 _kubeconfig_path = "/kubeconfig"
 _certs_path = "/certs"
@@ -20,11 +21,11 @@ def use_kube_creds(ctx, shard):
         mount_host_stripe_ca_certs(),
         mount_pod_volume(
             path = _kubeconfig_path,
-            volume_args = { "medium": "Memory", "sizeLimit": megabytes(ctx, 50)},
+            volume_args = { "medium": "Memory", "sizeLimit": mebibytes(ctx, 50)},
         ),
         mount_pod_volume(
             path = _certs_path,
-            volume_args = { "medium": "Memory", "sizeLimit": megabytes(ctx, 50)},
+            volume_args = { "medium": "Memory", "sizeLimit": mebibytes(ctx, 50)},
         ),
         pod_plugin(
             _update_pod,
@@ -65,6 +66,9 @@ def _kube_creds_container(ctx, container_def, pod):
         "%s/kubeconfig" % _kubeconfig_path,
     ]
 
+    if is_bin_packing_enabled(ctx) == True:
+        command.append("--vsocket-connection=true")
+
     return Container(
         ctx,
         name = container.name,
@@ -80,7 +84,7 @@ def _kube_creds_container(ctx, container_def, pod):
         command = command,
         env = default_env_vars(ctx),
         volumeMounts = [
-            render_volume_mount(ctx, mount_credentials_proxy()),
+            render_volume_mount(ctx, mount_credentials_proxy(read_only = is_bin_packing_enabled(ctx) == False)),
             render_volume_mount(ctx, volume_mount("/etc/ssl/certs/stripe-cas")),
             render_volume_mount(ctx, volume_mount(_kubeconfig_path, read_only = False)),
             render_volume_mount(ctx, volume_mount(_certs_path, read_only = False)),

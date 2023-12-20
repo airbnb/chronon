@@ -48,9 +48,6 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
         Kubernetes protobuf message describing the configuration of the service.
     """
 
-    if is_isolated_deploy(ctx) and get_env(ctx) != "qa":
-        fail("Isolated deployment statefulsets are not allowed to be created outside of the QA environment")
-
     statefulset = {
         "render": _render_statefulset,
         "type": "statefulset",
@@ -61,6 +58,9 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
         "kwargs": {},
         "metrics_config": None,
     }
+
+    if is_isolated_deploy(ctx):
+        fail("statefulset(): Isolated deployment is not compatible with StatefulSet. Please talk to us about your use case in #proj-isolated-deployments")
 
     all_plugins = []
     all_plugins.extend(plugins)

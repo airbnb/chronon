@@ -115,9 +115,7 @@ def megabytes(ctx, val):
     if type(val) != "int":
         fail("Called megabytes with a non-integer")
     """
-    This function is incorrectly named. Prefer using `mebibytes` for new use-cases.
-
-    Create a quantity for a whole number of mebibytes (IEC, base 2).
+    Create a quantity for a whole number of megabytes (SI, base 10).
 
     Args:
         val: An integer for the number of mebibytes that should be represented.
@@ -126,7 +124,7 @@ def megabytes(ctx, val):
         A quantity that can be passed to the `memory` parameter of a `container`.
     """
 
-    return Quantity(ctx, string = "%dMi" % val)
+    return Quantity(ctx, string = "%dM" % val)
 
 def gibibytes(ctx, val):
     """
@@ -145,9 +143,7 @@ def gibibytes(ctx, val):
 
 def gigabytes(ctx, val):
     """
-    This function is incorrectly named. Prefer using `gibibytes` for new use-cases.
-
-    Create a quantity for a whole number of gibibytes (IEC, base 2).
+    Create a quantity for a whole number of gigabytes (SI, base 10).
 
     Args:
         val: An integer for the number of gibibytes that should be represented.
@@ -158,4 +154,4 @@ def gigabytes(ctx, val):
     if type(val) != "int":
         fail("Called gigabytes with a non-integer")
 
-    return Quantity(ctx, string = "%dGi" % val)
+    return Quantity(ctx, string = "%dG" % val)

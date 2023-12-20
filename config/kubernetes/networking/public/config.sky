@@ -9,9 +9,11 @@ for the `networking` plugin.
 """
 
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
-load("config/kubernetes/plugins/types.sky", "deployment_plugin", "statefulset_plugin")
-load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "local_rate_limit")
-load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "mproxy_local_rate_limit")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin", "statefulset_plugin", "job_plugin")
+load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky",
+    "local_rate_limit",
+    "mproxy_local_rate_limit",
+)
 load(
     "config/kubernetes/networking/internal/config/override.sky",
     "NOT_PROVIDED",
@@ -34,8 +36,7 @@ def _override_matching_keys(args):
         def sn_breakglass(_sn_some_internal_field, _sn_experts_knob):
             return networking_config_updater(
                 _update_envoy_config_srv_config = _override_matching_keys
-                enable_local_reachability = _sn_some_internal_field,
-                http2_options = _sn_experts_knob,
+                nlb_health_check = _sn_experts_knob,
             )
 
     Args:
@@ -57,30 +58,14 @@ def _override_matching_keys(args):
         overrides[field] = value
     return overrides
 
-def breakglass_settings(
-        enable_local_reachability = NOT_PROVIDED,
-        enable_clusterfe_listener = NOT_PROVIDED,
-        http2_options = NOT_PROVIDED,
-        cluster_healthcheck_opts = NOT_PROVIDED,
-        use_envoy_admin_healthcheck = NOT_PROVIDED,
-        enable_mproxy_listener_modify_only_drain_type = NOT_PROVIDED,
-        nlb_health_check = NOT_PROVIDED,
-        envoy_setup = NOT_PROVIDED,
-        rollout_watcher = NOT_PROVIDED,
-        enable_http1_trailers = NOT_PROVIDED,
-        enable_service_filtering = NOT_PROVIDED,
-        envoy_config_srv_version = NOT_PROVIDED):
+def breakglass_settings(*,
+        envoy_config_srv_version = NOT_PROVIDED,
+    ):
     """
     [SN-only] Breakglass networking customizations for use by the Service Networking Team.
     While service owners are generally not expected to need to set these
     arguments, we expose them via the `breakglass_settings` API to make
     self-service experimentation and emergency configuration possible.
-
-    Args:
-        These fields correspond to non-MSP configuration that may be scattered
-        throughout `puppet-config` and across multiple repos
-        e.g. go/kube-tools/blob/master/envoy-config-srv/proto/config/config.proto
-        e.g. go/puppet-config/blob/master/modules/envoy/manifests/mesh.pp
 
     Returns:
         A dict of `network_config_updater` values to be merged into the config
@@ -91,19 +76,6 @@ def breakglass_settings(
     # introduce internal groupings of related args, so we can avoid one giant
     # overly-general `network_config_updater` object where necessary.
     return {
-        "_sn_breakglass_envoy_config_srv_config": network_config_updater(
-            _update_envoy_config_srv_config = _override_matching_keys,
-            enable_local_reachability = enable_local_reachability,
-            enable_clusterfe_listener = enable_clusterfe_listener,
-            http2_options = http2_options,
-            cluster_healthcheck_opts = cluster_healthcheck_opts,
-            use_envoy_admin_healthcheck = use_envoy_admin_healthcheck,
-            enable_mproxy_listener_modify_only_drain_type = enable_mproxy_listener_modify_only_drain_type,
-            nlb_health_check = nlb_health_check,
-            envoy_setup = envoy_setup,
-            enable_service_filtering = enable_service_filtering,
-            enable_http1_trailers = enable_http1_trailers,
-        ),
         "_sn_breakglass_envoy_config_srv_version": network_config_updater(
             _update_envoy_config_srv_version = _override_matching_keys,
             version = envoy_config_srv_version,
@@ -127,13 +99,10 @@ def networking_config(
         stats_flush_on_admin = NOT_PROVIDED,
         enable_grpc_web = NOT_PROVIDED,
         envoy_concurrency = NOT_PROVIDED,
-        envoy_scrape_histogram_metrics = NOT_PROVIDED,
         allowed_machine_orgs = NOT_PROVIDED,
         enable_cross_domain_services = NOT_PROVIDED,
         enable_envoy_config_srv_debug_sidecar = NOT_PROVIDED,
         max_headers_count = NOT_PROVIDED,
-        # enable_tracing = NOT_PROVIDED, # TODO(xyu): go/jira/SN-1059
-        # Non-public SN knobs to tweak on a per-workload basis
         _sn_breakglass = breakglass_settings()):
     """
     Deployment plugin that injects custom networking features for your pod.
@@ -166,8 +135,6 @@ def networking_config(
             inbound filter chain.
         envoy_concurrency: Integer; sets the concurrency (number of workers) of the envoy sidecar container.
             By default, if not set, envoy will set concurrency to nproc of underlying host.
-        envoy_scrape_histogram_metrics: Boolean value indicating whether to scrape histogram metrics and
-            render them to the statsd sink using the histogram scraper.
         allowed_machine_orgs: Allowed Amazon account IDs for ingress into this pod. Client certificates
             must present a matching org (`O` field) for inbound requests to be authorized. This field
             should be specified as a list of strings. This sets the --allowed-machine-orgs command line
@@ -210,13 +177,6 @@ def networking_config(
             _update_envoy_bootstrap_config = _envoy_bootstrap_config_toggle_stats_flush_on_admin,
             enable = stats_flush_on_admin,
         ),
-        # TODO(xyu): do for envoy bootstrap config
-        # enable_tracing = network_config_updater(
-        #     enable = enable_tracing,
-        #     sampling_probability = 0.0001,
-        #     _update_envoy_bootstrap_config = ...
-        #     _update_envoy_config_srv_config = _toggle_tracing
-        # ),
         # NB(xyu): This preserves user's ability to toggle options by
         # setting primitive values (e.g. `mproxy_tier = "p0"`) while still
         # allowing us to assert the schema of the underlying configs in a
@@ -235,7 +195,6 @@ def networking_config(
         ),
         envoy_monitor_cli = network_config_updater(
             _update_envoy_monitor_cli_args = _override_matching_keys,
-            envoy_scrape_histogram_metrics = envoy_scrape_histogram_metrics,
         ),
         envoy_config_srv_container_config = network_config_updater(
             _update_envoy_config_srv_container_config = _override_matching_keys,
@@ -270,6 +229,10 @@ def networking_config(
             _update_statefulset_networking_config,
             config = user_provided,
         ),
+        job_plugin(
+            _update_job_networking_config,
+            config = user_provided,
+        ),
     )
 
 def _update_deployment_networking_config(ctx, plugin, deployment_def):
@@ -279,10 +242,10 @@ def _update_deployment_networking_config(ctx, plugin, deployment_def):
     deployment_def["networking_config"] = plugin.config
 
 def _update_statefulset_networking_config(ctx, plugin, statefulset_def):
-    # NOTE: `build_networking_config` depends on how this plugin interacts with the `statefulset_def`.
-    # If you make changes to how we interact with the statefulset IR, update `build_networking_config`
-    # accordingly.
     statefulset_def["networking_config"] = plugin.config
+
+def _update_job_networking_config(ctx, plugin, job_def):
+    job_def["networking_config"] = plugin.config
 
 def build_networking_config(**kwargs):
     """

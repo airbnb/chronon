@@ -5,10 +5,9 @@ load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/helpers/security.sky", "mount_credentials_proxy", "use_credentials_proxy")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
-load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/helpers/images.sky", "image", "image_defaults")
 load("config/kubernetes/core/env_var.sky", "container_env_vars", "default_env_vars")
-load("config/kubernetes/helpers/context.sky", "get_env")
-load("config/kubernetes/pay-server.sky", "default_pay_server_image")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_container_images")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
 
@@ -86,10 +85,21 @@ def _offload_profiles_container(ctx, container_def, pod):
             render_volume_mount(ctx, volume_mount("/pay/cache")),
         ]
 
+    pay_server_artifact_name = "pay-server-image" # Always default to pay-server-image to be safe
+
+    container_images = get_container_images(ctx)
+    for artifact_name in sorted(container_images):
+        if artifact_name.startswith("pay-server-image") or artifact_name.endswith("-service-image-linux-amd64") or artifact_name.endswith("-service-image-linux-arm64"):
+           pay_server_artifact_name = artifact_name
+           break
+
     return Container(
         ctx,
         name = container.name,
-        image = image(ctx, default_pay_server_image),
+        image = image(ctx, image_defaults(
+              name = None,
+              artifact = pay_server_artifact_name,
+        )),
         command = [
           "/deploy/pay-server/current/deploy-scripts/stripe-bundle-msp",
           "pay-server",

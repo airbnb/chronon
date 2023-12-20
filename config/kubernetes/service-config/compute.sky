@@ -7,9 +7,30 @@ deploying a Henson service with Skycfg. It contains a dictionary of data that ca
 useful when defining a workload. These functions provide a consistent interface for
 accessing that data.
 """
-pb = proto.package("com.stripe.gocode.service_config")
+
+def get_priority_tier_config(ctx):
+    get_priority_tier = ctx.vars.get("service.config.get_priority_tiers_fn")
+    return json.decode(get_priority_tier())
+
+def get_priority_tier_config_for_role(ctx, role):
+    get_priority_tier_for_role = ctx.vars.get("service.config.get_priority_tiers_for_role_fn")
+    return json.decode(get_priority_tier_for_role(role))
+
+def get_merged_compute_v2_role_config(ctx, role, priority_tier = None):
+    get_merged_compute_config = ctx.vars.get("service.config.get_merged_compute_v2_merge_fn")
+    return json.decode(
+        get_merged_compute_config(
+            ctx.vars.get("stripe.environment"), ctx.vars.get("stripe.cluster"), role=role, priority_tier=priority_tier))
 
 def get_merged_compute_v2_config(ctx, priority_tier = None):
+    get_merged_compute_config = ctx.vars.get("service.config.get_merged_compute_v2_merge_fn")
+    return json.decode(
+        get_merged_compute_config(
+            ctx.vars.get("stripe.environment"), ctx.vars.get("stripe.cluster"), priority_tier=priority_tier))
+
+# legacy functions with a dependency on service config
+pb = proto.package("com.stripe.gocode.service_config")
+def get_merged_compute_v2_config_legacy(ctx, priority_tier = None):
     compute_config = ctx.vars.get("service.config.compute_v2")
     result = pb.ComputeV2()
     proto.merge(result, _flatten_compute_v2(ctx, compute_config))

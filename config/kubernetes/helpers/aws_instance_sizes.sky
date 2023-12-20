@@ -25,7 +25,7 @@ SUPPORTED_MSP_INSTANCE_TYPES = [
     'm5.12xlarge', 'm5.16xlarge', 'm5.24xlarge', 'm5.2xlarge', 'm5.4xlarge', 'm5.8xlarge', 'm5.large', 'm5.xlarge',
     'm5d.12xlarge', 'm5d.16xlarge', 'm5d.24xlarge', 'm5d.2xlarge', 'm5d.4xlarge', 'm5d.8xlarge', 'm5d.large', 'm5d.xlarge',
     'm6a.12xlarge', 'm6a.16xlarge', 'm6a.24xlarge', 'm6a.xlarge',
-    'm6i.12xlarge', 'm6i.4xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
+    'm6i.12xlarge', 'm6i.4xlarge', 'm7i.12xlarge', 'm7a.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
     'r5.12xlarge', 'r5.16xlarge', 'r5.24xlarge', 'r5.2xlarge', 'r5.4xlarge', 'r5.8xlarge', 'r5.large', 'r5.xlarge',
     'r5d.12xlarge', 'r5d.16xlarge', 'r5d.24xlarge', 'r5d.2xlarge', 'r5d.4xlarge', 'r5d.8xlarge', 'r5d.large', 'r5d.xlarge',
     'c6g.12xlarge', 'c6g.16xlarge', 'c6g.2xlarge', 'c6g.4xlarge', 'c6g.8xlarge', 'c6g.xlarge', # Graviton 2
@@ -108,6 +108,8 @@ def aws_instance_size(instance_type):
         "m5": 700,
         "m6i": 700, # Assuming same values as m5
         "m6g": 700, # Assuming same values as m5
+        "m7i": 700, # Assuming same values as m5
+        "m7a": 700, # Assuming same values as m5
         "m7g": 700, # Assuming same values as m5
         "r5": 525,
         "r6g": 525, # Assume same value as r5
@@ -2011,6 +2013,16 @@ _AWS_INSTANCE_SIZES = {
     "memory_mib": 16384,
     "instance_storage_gib": 0
   },
+  "m7i.12xlarge": {
+    "vcpu": 48,
+    "memory_mib": 196608,
+    "instance_storage_gib": 0
+  },
+  "m7a.12xlarge": {
+    "vcpu": 48,
+    "memory_mib": 196608,
+    "instance_storage_gib": 0
+  },
   "m7g.12xlarge": {
     "vcpu": 48,
     "memory_mib": 196608,
@@ -3628,6 +3640,16 @@ m6i_12xlarge = struct(
     slack_cpu_millicores=1000,
 )
 
+m7i_12xlarge = struct(
+    name="m7i.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7a_12xlarge = struct(
+    name="m7a.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
 m7g_large = struct(
     name="m7g.large",
     slack_cpu_millicores=1000,
@@ -3889,6 +3911,8 @@ _INSTANCE_TYPES_BY_NAME = {
     m6g_16xlarge.name: m6g_16xlarge,
     m6i_4xlarge.name: m6i_4xlarge,
     m6i_12xlarge.name: m6i_12xlarge,
+    m7i_12xlarge.name: m7i_12xlarge,
+    m7a_12xlarge.name: m7a_12xlarge,
     m7g_large.name: m7g_large,
     m7g_xlarge.name: m7g_xlarge,
     m7g_2xlarge.name: m7g_2xlarge,
@@ -4164,6 +4188,14 @@ _X86_TO_GRAVITON_INSTANCE_TYPE_MAPPINGS = {
         "default":"c7g.xlarge",
         "bom":"c6g.xlarge"
     },
+    "m7i.12xlarge": {
+        "default":"m7i.12xlarge",
+        "bom":"m6i.12xlarge"
+    },
+    "m7a.12xlarge": {
+        "default":"m7a.12xlarge",
+        "bom":"m6a.12xlarge"
+    },
     "m7g.12xlarge": {
         "default":"m7g.12xlarge",
         "bom":"m6g.12xlarge"
@@ -4229,33 +4261,6 @@ def get_instance_type_by_name(name):
         return instance_type_from_name
 
     fail("Invalid instance type: {}".format(name))
-
-def get_bin_packing_instance_type(ctx, requested_instance_type):
-    """
-    Returns the corresponding bin_packing instance type for a requested instance type.
-
-    Args:
-        ctx: context
-        requested_instance_type: The instance type that actually fits the pods resource limits
-    """
-    # TODO: Remove this list once new node selector support is merged into prod.
-    instance_family=base_instance_family(requested_instance_type)
-    INSTANCE_FAMILY_TO_BIN_PACKING_INSTANCE_TYPE = {
-        "m5": "m5.metal",
-        "m6g": "m7g.metal",
-        "m7g": "m7g.metal",
-        "c5": "m5.metal",
-        "c6g": "m7g.metal",
-        "c7g": "m7g.metal",
-        "r5": "m5.metal",
-        "r6g": "m7g.metal",
-        "r7g": "m7g.metal",
-        #Add additional instance types here as we support them
-    }
-    bin_packing_instance_type = INSTANCE_FAMILY_TO_BIN_PACKING_INSTANCE_TYPE.get(instance_family)
-    if bin_packing_instance_type != None:
-        return bin_packing_instance_type
-    fail("Corresponding bin packing instance type was not found for requested instance type: {}".format(requested_instance_type))
 
 def smart_env_instance(ctx, default_instance, prod = None, preprod = None, qa = None):
     """

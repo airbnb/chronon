@@ -7,7 +7,7 @@ load("config/kubernetes/core/env_var.sky", "render_env_vars")
 load("config/kubernetes/core/lifecycle.sky", "render_lifecycle")
 load("config/kubernetes/core/volume.sky", "render_volume_mount")
 load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
-load("config/kubernetes/helpers/quantities.sky", "cores", "megabytes")
+load("config/kubernetes/helpers/quantities.sky", "cores", "mebibytes")
 load("config/kubernetes/helpers/security.sky", "render_security_context")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "pod_plugin")
@@ -270,7 +270,7 @@ def resource_requirements(
 
     # If cpu isn't specified, set requests to 0 and leave limits undefined
     if "memory" not in requests:
-        requests["memory"] = megabytes(ctx, 0)
+        requests["memory"] = mebibytes(ctx, 0)
 
     return ResourceRequirements(
         ctx,
@@ -428,7 +428,17 @@ def _render_container(ctx, container_def, pod):
     )
 
     if container.command != None:
-        rendered["command"] = container.command
+        if pod.enable_shared_msp_experimental_job_support:
+            if container.is_main_container:
+                rendered["command"] = ["sh", "-c"]
+                rendered["args"] = prepare_experimental_job_main_shim(container.command)
+            elif not container.is_init_container:
+                rendered["command"] = ["sh", "-c"]
+                rendered["args"] = prepare_experimental_job_sidecar_shim(container.command)
+            else:
+                rendered["command"] = container.command
+        else:
+            rendered["command"] = container.command
 
     if container.args != None:
         rendered["args"] = container.args
@@ -486,3 +496,51 @@ def _set_sidecar_image(ctx, arguments, container_def):
         label = arguments.fallback_label,
         env = arguments.fallback_env,
     ))
+
+def prepare_experimental_job_main_shim(command):
+    shim = "trap \"touch /shared_msp_signal/main-terminated\" EXIT"
+
+    if type(command) == "list":
+        command = " ".join(command)
+
+    return ["\n".join([shim, command])]
+
+def prepare_experimental_job_sidecar_shim(command):
+    shim = [
+        "CHILD_PID=$!",
+        "(while true; do if [[ -f \"/shared_msp_signal/main-terminated\" ]]; then kill $CHILD_PID; fi; sleep 1; done) &",
+        "wait $CHILD_PID",
+        "if [[ -f \"/shared_msp_signal/main-terminated\" ]]; then exit 0; fi",
+    ]
+
+    if type(command) == "list":
+        sanitized_command = ""
+        for section in command:
+            # This is a hacky singal if the string is JSON which we'll need to wrap in single quotes.
+            # Unfortunately starlark doesn't support testing if a string is JSON or not and the entire
+            # execution fails if you try to encode/decode a non-JSON string
+            if section[0] == '{' and section[-1] == '}':
+                sanitized_command += ("'%s'" % section)
+                sanitized_command += " "
+                continue
+
+            # Through trial-testing the --patch-config as well as flags that provide JSON as their value
+            # (e.g. --some-flag={"foo": "bar"}) also need to escape their values for them to be properly
+            # parsed by their programs.
+            split = section.split("=", 1)
+            if len(split) == 2 and (split[0] == "--patch-config" or (len(split[1]) >= 2 and split[1][0] == '{' and split[1][-1] == '}')):
+                sanitized_command += ("%s='%s'" % tuple(split))
+                sanitized_command += " "
+                continue
+
+            sanitized_command += section
+            sanitized_command += " "
+    else:
+        sanitized_command = command
+        sanitized_command += " "
+
+    sanitized_command += "&"
+
+    result = [sanitized_command]
+    result.extend(shim)
+    return ["\n".join(result)]

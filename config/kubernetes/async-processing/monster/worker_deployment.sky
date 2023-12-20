@@ -17,7 +17,6 @@ load("config/kubernetes/helpers/security.sky", "add_security_groups")
 load("config/kubernetes/meta/metadata.sky", "labels")
 load("config/kubernetes/networking/public/config.sky", "networking_config")
 load("config/kubernetes/pay-server.sky", "default_pay_server_image", "pay_server_pod", "einhorn_service")
-load("config/kubernetes/sidecars/confidant.sky", "auto_secrets")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
 load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
@@ -59,20 +58,6 @@ def make_deployment_options_plugins(config):
     # See: https://jira.corp.stripe.com/browse/RUN_ORCH-11446, http://go/ir/gray-fuse, http://go/ir/whim-tangent
     # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
     return [deployment_options(replicas = config.replicas, revisionHistoryLimit = 3)]
-
-def monster_ruby_3_1_policy(ctx, availability_tier = None, **kwargs):
-    """Define a ruby_3_1_policy for monster
-
-    See: https://git.corp.stripe.com/stripe-internal/third-party-containers/blob/e53c8d53/config/kubernetes/pay-server.sky#L73
-    for a description of how the policy applies to a pod.
-
-    # If we again need to set this by environment in the future
-    # for testing, use an expression like "get_env(ctx) == preprod"
-    """
-    if availability_tier == None:
-        fail("Monster deployment missing availability_tier {}".format(kwargs))
-
-    return True
 
 def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
     formatted_isolation_group = config.monster_isolation_group.replace("_", "-")
@@ -199,7 +184,6 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
             command = ["/deploy/pay-server/current/{}".format(config.script)],
             instance_type = config.aws_instance_size,
             availability_tier = get_msp_availability_tier(config.monster_availability_tier),
-            ruby_3_1_policy = monster_ruby_3_1_policy,
         ),
 
         einhorn_service(
@@ -256,7 +240,6 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
         mount_ldap_host_volumes(),
 
         monster_secrets(),
-        auto_secrets(autoload_dir="/pay/secrets"),
 
         add_security_groups(
           "monsterworkersbox",

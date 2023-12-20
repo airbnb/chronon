@@ -35,29 +35,6 @@ def secret_options(use_credentials_proxy = None):
             use_credentials_proxy = use_credentials_proxy,
         )
 
-def auto_secrets(autoload_dir='/pay/keys', container_names = [None]):
-    """
-    Automatically renders all secrets that are available to the pod.
-
-    Secrets are rendered to `autoload_dir` (default `/pay/keys`), with each credential becoming a YAML file named after the
-    credential. So a credential named `plus-plus-srv` will be rendered to `/pay/keys/plus-plus-srv.yaml`.
-    The YAML file will use symbols for its keys.
-
-    Args:
-        autoload_dir: The directory to autoload secrets to. Defaults to /pay/keys.
-        container_names: Optional list of names of containers that need to access secrets. Defaults
-            to just the main container.
-
-    Returns:
-        A plugin that renders all secrets available to the pod.
-    """
-    keys_mounts = [volume_mount(autoload_dir, container_name = name) for name in container_names]
-
-    return compose_plugins(
-        pod_plugin(_update_pod_autoload, autoload_dir=autoload_dir),
-        *keys_mounts
-    )
-
 def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False):
     """
     Add a secret to a pod in YAML format.

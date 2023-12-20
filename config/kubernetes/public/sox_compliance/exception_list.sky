@@ -729,6 +729,18 @@ _CRONS = [
         "namespace": "kubeacronnoegress"
     },
     {
+        # home-search-reindex-trailhead-slack-thread indexes Slack threads saved
+        # for use in Trailhead Q&A and does not handle financial data
+        "name": "home-search-reindex-trailhead-docs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # trailhead-notifier sends Slack notifications and makes Jira tickets
+        # for Trailhead purposes; it does not handle financial data
+        "name": "trailhead-notifier",
+        "namespace": "kubeacronnoegress"
+    },
+    {
         # send-light-notifications is a cron job to send emails to Express users about account requirements
         "name": "connect-account-experience--send-light-notifications",
         "namespace": "kubeacronnoegress"
@@ -758,6 +770,23 @@ _CRONS = [
         "name": "v1-platform--modularization-metrics",
         "namespace": "kubeacronnoegress"
     },
+    {
+        # cron job that syncs changes to team names from Home to team name labels associated with SignalFX detectors/dashboards
+        "name": "observability--misc--sfx-update-teams",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # cron job that automatically detaches a payment instrument from a payment intent when it is stuck in processing
+        # It does not touch financial or customer data.
+        "name": "card-payment-intents-stuck-in-processing",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # cron job that initiates revshare transfers to partners
+        # It does not touch financial or customer data.
+        "name": "onramp-calculate-and-initiate-revshare--monthly",
+        "namespace": "kubeacronnoegress"
+    }
 ]
 
 def cron_in_exceptions(namespace, name):

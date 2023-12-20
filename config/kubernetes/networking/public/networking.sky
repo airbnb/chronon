@@ -5,7 +5,7 @@ load("config/kubernetes/core/probe.sky", "command_probe", "probes")
 load(
     "config/kubernetes/core/volume.sky",
     "host_volume",
-    "volume_mount",
+    "volume_mount_all_containers",
 )
 load(
     "config/kubernetes/helpers/context.sky",
@@ -23,7 +23,6 @@ load(
 load(
     "config/kubernetes/networking/internal/common.sky",
     "POD_NETWORKING_HOST_VOLUME_PATH",
-    "POD_NETWORKING_BASEDIR",
 )
 
 load(
@@ -45,8 +44,6 @@ load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
 # (rather than automatic configuration based on values in Service Config).
 DEPRECTED_INBOUND_RATE_LIMITED_SERVICE_ALLOWLIST = [
     # gocode
-    "consensus-control-srv",
-    "consensus-control-srv-dev",
     "consensus-health-srv",
     "consensus-health-srv-dev",
     "consensus-worker-srv",
@@ -165,6 +162,23 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
         # ones specified in a henson service config
         envoy_config_srv_prestop_call = generate_infra_sidecar_prestop_command_args(ctx, ENVOY_CONFIG_SRV_SIDECAR_NAME, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds) # TODO de-hardcode
 
+        # The POD_NETWORKING_HOST_VOLUME_PATH variable is utilized by the Envoy, Envoy-config-srv, and Proxyless services.
+        # Exercise caution when altering the following two plugins.
+        # The pod containers run as user `kubernetes-pod`, and since subpaths
+        # auto-created for a host volume of type `DirectoryOrCreate` will have the same
+        # ownership as kubelet (e.g. root:root and mode=0755), we cannot safely rely on
+        # `volume_mount(subPathExpr=POD_NETWORKING_BASEDIR)` to simplify and narrow the
+        # volume mount each container requires. Instead, our contract is broad for now:
+        # 1) containers mount POD_NETWORKING_HOST_VOLUME_PATH to send extra logs to splunk
+        # 2) containers create POD_NETWORKING_BASEDIR (and container-specific subdirs) within the host volume and write logs to per-pod subpaths (which are expected to exist)
+        #
+        # Implication: every container and pod can list and access all access logs that
+        # still live in POD_NETWORKING_HOST_VOLUME_PATH
+        #   e.g. in single-tenant MSP: past pods that had been scheduled onto the worker
+        #   e.g. in multi-tenant MSP: any pods past or currently scheduled to the worker
+        #
+        # The long-term fix for this is to log-ship to an external service so we are
+        # less reliant on punching holes through the filesystem.
         sn_stack_plugins.append(
             host_volume(
                 POD_NETWORKING_HOST_VOLUME_PATH,
@@ -172,6 +186,13 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
                 reason = "Each per-pod SN stack has a subpath in this basedir scoped to the pod",
             )
         )
+        sn_stack_plugins.append(
+            volume_mount_all_containers(
+                POD_NETWORKING_HOST_VOLUME_PATH,
+                read_only = False,
+            )
+        )
+
         # This is safe to do as the networking_config implementation made sure
         # this field exists
         if config.enable_global_ratelimit.kwargs.enable == True:

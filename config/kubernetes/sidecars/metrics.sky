@@ -1,6 +1,6 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
-load("config/kubernetes/helpers/context.sky", "get_owner", "get_env", "get_cluster", "get_blue_green_color", "get_availability_tier")
+load("config/kubernetes/helpers/context.sky", "get_owner", "get_env", "get_cluster", "get_blue_green_color", "get_availability_tier", "get_workspace_id", "is_isolated_deploy")
 
 load("config/kubernetes/core/container.sky", "container")
 load("config/kubernetes/core/volume.sky", "pod_volume", "volume_mount", "host_volume")
@@ -34,7 +34,7 @@ NAMESPACE = struct(
 SERVICE_NAME = struct(
     env_var = "STRIPE_SERVICE_NAME",
     tag_key = "service_name",
-    field = "metadata.labels['stripe.io/service-name']",
+    field = "metadata.labels['metrics.stripe.io/metrics-service-name']",
 )
 
 # Defines how to extract the pod ip and pass it to veneur-init
@@ -192,6 +192,9 @@ def metrics(
         # used to tag "pod_id" on all Prometheus Shared MSP metrics to satisfy Single Writer principle
         "-pod-id", "$(STRIPE_POD_NAME)",
     ]
+
+    if is_isolated_deploy(ctx):
+        command = command + ["-isolated-deploy"]
 
     if extra_tags:
         command = command + ["-extra-tags", extra_tags]
@@ -442,6 +445,16 @@ def _tag_namespace(ctx):
 def _tag_service_name(ctx):
     return struct(key=SERVICE_NAME.tag_key, value="$(%s)" % SERVICE_NAME.env_var)
 
+def _tag_isolated_deploy_workspace_id(ctx):
+    value = get_workspace_id(ctx) if is_isolated_deploy(ctx) else None
+    return struct(key="isolated_deploy_workspace_id", value=value)
+
+def _tag_send_only_to_tsdb(ctx):
+    # For isolated deployments we only want to send the metrics to Prometheus,
+    # not SFX
+    value = "prometheus" if is_isolated_deploy(ctx) else None
+    return struct(key="send_only_to_tsdb", value=value)
+
 def _default_tags():
     return [getattr(tags, tagfn) for tagfn in dir(tags)]
 
@@ -467,6 +480,8 @@ tags = struct(
     blue_green = _tag_blue_green,
     namespace = _tag_namespace,
     service_name = _tag_service_name,
+    isolated_deploy_workspace_id = _tag_isolated_deploy_workspace_id,
+    send_only_to_tsdb = _tag_send_only_to_tsdb,
 )
 
 def _render_tags(ctx, tags=[]):

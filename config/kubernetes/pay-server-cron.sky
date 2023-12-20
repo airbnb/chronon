@@ -19,7 +19,6 @@ load("config/kubernetes/helpers/msp_shard.sky", "msp_shard")
 load("config/kubernetes/helpers/tags.sky", "SERVICE_OWNER_LABEL", "DEPRECATED_OWNER_LABEL")
 load("config/kubernetes/meta/cron_metadata.sky", "cron_metadata")
 load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT", "DEFAULT_FAILED_JOB_HISTORY_LIMIT")
-load("config/kubernetes/helpers/ruby_3.sky", "ruby_3_1_plugin")
 
 MAX_CRON_NAME_LEN = 52
 DEFAULT_TTL_SECS_AFTER_FINISH = 1209600
@@ -44,6 +43,7 @@ DEFAULT_SHARD = "kubemaster"
 LABEL_USER_DISABLED = "stripe.io/disabled-by-user"
 LABEL_BACKUP = "stripe.io/backup"
 PANDORA_CONTAINER_NAME = "pandora-init-image"
+PANDORA_MIGRATION_INPROGRESS = "inprogress"
 
 def pay_server_cronjob_wrapper(*cronjobs):
     """
@@ -62,11 +62,6 @@ def pay_server_cronjob_wrapper(*cronjobs):
         if c:
             crons.extend(c)
     return crons
-
-def _default_cron_ruby_3_1_policy(ctx, cron_tier=None, **kwargs):
-    # See http://go/ruby-3 for plan. Questions in #ruby-infra
-    # If an issue arises caused by Ruby 3, this can safely be rolled back by returning `False`
-    return True
 
 def pay_server_cronjob(
     ctx,
@@ -97,9 +92,8 @@ def pay_server_cronjob(
     cron_tier=None,
     description=None,
     runbook_url=None,
-    ruby_3_1_policy=_default_cron_ruby_3_1_policy,
     override_owner=None,
-    pandora_migration=False,
+    pandora_migration=None,
 ):
     """
     Define a cron job (a batch job that will run on a schedule) in pay-server.
@@ -202,7 +196,7 @@ def pay_server_cronjob(
         cron_tier: The tier specification for the cron which shows its business criticality. For more details, see http://go/cron-tiers
         description: A human-readable description of the purpose of the cron
         runbook_url: A URL to a runbook for the cron, maintained by the owning team
-        pandora_migration: If a service is under Pandora migration, this value is set to true. The default is false.
+        pandora_migration: If a service is under Pandora opportunistic migration, this value is set to inprogress. If the service exclusively uses Pandora, then this value is set to complete. The default is None.
 
     Returns:
         A pay-server [CronJob](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjob-v1beta1-batch)
@@ -269,7 +263,6 @@ def pay_server_cronjob(
                 cron_tier=cron_tier,
                 description=description,
                 runbook_url=runbook_url,
-                ruby_3_1_policy=ruby_3_1_policy,
                 override_owner=override_owner,
                 pandora_migration=pandora_migration,
             )
@@ -307,9 +300,8 @@ def _pay_server_cronjob(
     cron_tier=None,
     description=None,
     runbook_url=None,
-    ruby_3_1_policy=_default_cron_ruby_3_1_policy,
     override_owner=None,
-    pandora_migration=False,
+    pandora_migration=None,
 ):
     """
     Internal function to generate the list of CronJobs in different shards based on user input.
@@ -466,6 +458,7 @@ def _pay_server_cronjob(
         "DISABLE_PRELOAD": str(disable_ruby_preload).upper(),
         "AWS_CONFIG_FILE": "/deploy/opsonic/current/cron/aws_credentials.ini",
         "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
+        "STRIPE_CRON_TIER": cron_tier,
     }
 
     environment_variables_dict = {}
@@ -544,7 +537,6 @@ def _pay_server_cronjob(
         # verified
         mount_host_stripe_ca_certs(container_name = name),
         msp_shard(shard),
-        ruby_3_1_plugin(ruby_3_1_policy(ctx, cron_tier = cron_tier)),
     ]
     if cron_mount_pod_volumes:
         for pv in cron_mount_pod_volumes:
@@ -1012,7 +1004,7 @@ def _volume_plugins(ctx):
     return compose_plugins(*plugins)
 
 
-def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets = None, pandora_migration=False):
+def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets = None, pandora_migration=None):
     """
     Return a plugin to setup init containers in pay-server cronjobs.
     """
@@ -1033,7 +1025,7 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
 
     computed_secrets = _calculate_confidant_secrets(ctx, namespace, secrets)
     DEFAULT_CONFIDANT_INIT_CONTAINER_NAME = "secret-templater"
-    CONFIDANT_CONTAINER_GIT_SHA = "sha256:6a1017b5e140ad23da35fb8846cb77687948df1246551dabbb0f0359f8ffa57d"
+    CONFIDANT_CONTAINER_GIT_SHA = "sha256:70259bf6ad24f967c50dcdb40bf61db34f838c9a22ca1009e568575bd845fcbe"
 
     confidant_container_plugins = [
         volume_mount(
@@ -1048,13 +1040,17 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
         ),
         _customize_image_pull_policy_plugin(DEFAULT_CONFIDANT_INIT_CONTAINER_NAME, "IfNotPresent"),
     ]
+
+    # The default secrets system for pay-server-cron jobs is Pandora
     confidant_container_command = [
         "/bin/confidant-sidecar",
         "--confidant-config-json={}".format(json.encode(confidant_config)),
         "--confidant-service-name={}".format(aws_role_name),
         "--secret-templates-json={}".format(json.encode(computed_secrets)),
+        "--pandora-path=/pandora-encrypted-secret-bundles",
+        "--secret-bag-type=pandora",
     ]
-    if pandora_migration:
+    if pandora_migration == PANDORA_MIGRATION_INPROGRESS:
         confidant_container_command = [
             "/bin/confidant-sidecar",
             "--confidant-config-json={}".format(json.encode(confidant_config)),
@@ -1076,27 +1072,13 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
         )
         confidant_container_command.append("--kube-iam-server-socket=/run/kube-iam/kube-iam.sock")
 
-
-
+    # Pandora-init container is the default container for pay-server-cron jobs
     confidant_container = init_container(
-        name = DEFAULT_CONFIDANT_INIT_CONTAINER_NAME,
-        image = image(
-            ctx,
-            "stripe/compute/confidant-sidecar-image",
-            env="prod",
-            label=CONFIDANT_CONTAINER_GIT_SHA,
-        ),
+        name = PANDORA_CONTAINER_NAME,
+        image = _pandora_image(ctx),
         command = confidant_container_command,
         plugins = confidant_container_plugins,
     )
-
-    if pandora_migration:
-        confidant_container = init_container(
-            name = PANDORA_CONTAINER_NAME,
-            image = _pandora_image(ctx),
-            command = confidant_container_command,
-            plugins = confidant_container_plugins,
-        )
 
     # there's only one init container for now.
     return confidant_container

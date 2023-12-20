@@ -11,25 +11,25 @@ load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/core/pod.sky", "pod", "pod_host_network", "pod_scheduler_name")
 load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "host_volume")
 load("config/kubernetes/helpers/availability_tiers.sky", "A400")
-load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "exec_action")
-load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size", "get_bin_packing_instance_type")
-load("config/kubernetes/helpers/msp_shard.sky", "prefer_msp_shard")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
+load("config/kubernetes/helpers/images.sky", "image_architecture_annotation")
 load("config/kubernetes/helpers/msp_shard.sky", "autoset_shard_shared_msp")
 load("config/kubernetes/helpers/node_selectors.sky", "node_selectors", host_type_plugin="host_type", "SHARED_MSP_HOST_TYPE")
 load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
 load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
-load("config/kubernetes/helpers/pod_sizing.sky", "auto_size")
 load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/confidant.sky", "secret_options")
 load("config/kubernetes/sidecars/feature_flags.sky", "use_feature_flags")
-load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "is_bin_packing_scheduler_enabled", "get_name", "get_henson_config")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "is_bin_packing_scheduler_enabled", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
-load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
 load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
 load("config/kubernetes/networking/internal/envoy-config-srv.sky", "henson_listener_config")
+load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "PROXYLESS_ADMIN_SERVER_DIR")
 load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance")
 load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/helpers/isolated_deploys.sky", "isolated_deploy_aware_resource_name")
+
 
 TUPLE_TYPE = "tuple"
 
@@ -95,9 +95,9 @@ def stripe_pod(
             should be set to either `True` or `False` only upon explicit request to your team and following the corresponding
             instructions.
         command_required: If set to false, command param in the input is ignore i.e. passed as is to downstream. Every
-        stripe_pod call should pass command which should be non none. However there are certain pods that require command
-        to be empty. Only those callers should set command_required = false. At the time of adding this only karpenter
-        pods require this param. All other pods should use the default behavior.
+            stripe_pod call should pass command which should be non none. However there are certain pods that require command
+            to be empty. Only those callers should set command_required = false. At the time of adding this only karpenter
+            pods require this param. All other pods should use the default behavior.
         proxyless: Whether the main container uses sn-proxyless library which bypasses client-side or server-side Envoy
             and talkes to the other side directly via mTLS.
             This flag instructs HENSON_CONFIG_JSON environment to be set for the proxyless library to consume Envoy ACLs.
@@ -107,6 +107,8 @@ def stripe_pod(
     Returns:
         A plugin that can be used with an entrypoint like `deployment` or `cronjob`.
     """
+
+    name = isolated_deploy_aware_resource_name(ctx, name)
 
     # Check if command argument has been supplied only if allow_non_command set to false
     if command_required and (command == None or len(command) == 0):
@@ -118,7 +120,7 @@ def stripe_pod(
     # For most of the history of this function, the cpu and memory was of the Quantity type.
     # However this doesn't allow users to specify both requests & limits, which allows further
     # optimized scheduling. We are migrating to this new paradigm, but still supporting this old approach.
-    container_resource_spec, using_vpa_rec = _build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec)
+    container_resource_spec, using_vpa_rec = build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec)
 
     all_args = dict(
         name=name,
@@ -200,9 +202,35 @@ def stripe_pod(
         plugins.append(shared_msp_service_account_plugin())
     if using_vpa_rec:
         plugins.append(labels({'stripe.io/right-sized': 'true'}))
+    if proxyless:
+        plugins.append(_proxyless_mount_host_volume())
+        plugins.append(_proxyless_mount_pod_volume())
 
     return compose_plugins(*plugins)
 
+def _proxyless_mount_host_volume():
+    return mount_host_volume(
+        "/pay/log/pod-networking",
+        volume_args = {
+            "type": "Directory",
+            "reason": "Provides write access for proxyless access logs",
+        },
+        mount_args = {
+            "read_only": False,
+        },
+    )
+
+def _proxyless_mount_pod_volume():
+    return mount_pod_volume(
+        PROXYLESS_ADMIN_SERVER_DIR,
+        volume_args = {
+            "type": "Directory",
+            "reason": "Provides write access for proxyless admin server",
+        },
+        mount_args = {
+            "read_only": False,
+        },
+    )
 
 def _proxyless_container_env_vars(ctx, proxyless=False):
     if proxyless:
@@ -235,14 +263,11 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         annotations_map["stripe.io/bin-packing"] = "enabled"
         bin_packing_label["stripe.io/bin-packing"] = "enabled"
 
-        if get_env(ctx) == "qa":
-            node_selectors_map["stripe.io/bin-packing"]= "enabled"
-            if is_graviton_instance(instance_type):
-                node_selectors_map["kubernetes.io/arch"]= "arm64"
-            else:
-                node_selectors_map["kubernetes.io/arch"]= "amd64"
+        node_selectors_map["stripe.io/bin-packing"]= "enabled"
+        if is_graviton_instance(instance_type):
+            node_selectors_map["kubernetes.io/arch"]= "arm64"
         else:
-            node_selectors_map["stripe.io/aws-instance-type"]= get_bin_packing_instance_type(ctx=ctx, requested_instance_type=instance_type.name)
+            node_selectors_map["kubernetes.io/arch"]= "amd64"
 
         if container_resource_spec != None:
             annotations_map["stripe.io/original-instance-type"] = instance_type.name
@@ -313,7 +338,9 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         host_volume(path="/usr/stripe/bin/kube-prestop", type="File"),
 
         # Allow pods to be scheduled on nodes that have been tainted to that particular service
-        add_toleration(key = "stripe.io/henson-service", operator = "Equal", effect = "NoSchedule", value = get_name(ctx))
+        add_toleration(key = "stripe.io/henson-service", operator = "Equal", effect = "NoSchedule", value = get_name(ctx)),
+
+        image_architecture_annotation(ctx, instance_type),
     )
 
 # TODO we may no longer need this as shared_msp is already set
@@ -440,7 +467,7 @@ def _determine_consul_enablement_label_value(requires_consul = None):
 
     return consul_agent_label_value
 
-def _build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec):
+def build_pod_resources(ctx, cpu, memory, storage, resource_requirements_spec):
     if cpu == None and memory == None and storage == None and resource_requirements_spec == None:
         return None, False
 

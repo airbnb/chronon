@@ -704,15 +704,53 @@ def is_isolated_deploy(ctx):
     Returns:
         Boolean whether given skycfg evaluation belongs to an MSP isolated deployment
     """
-    return ctx.vars.get("devenv.resource_workspace_id", "") != ""
+    return get_workspace_id(ctx) != ""
+
+def get_workspace_id(ctx):
+    """
+    Gets the workspace ID of the deployment for which Henson is rendering skycfg.
+
+    Isolated deployments for a service are expected to be created in the
+    context of a "workspace" which holds references to other resources
+    e.g. test data and isolated deployments of other (caller/callee) services.
+
+    When creating an isolated deployment, Henson expects the caller to
+    provide an identifier for the workspace.
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        The workspace ID of the deployment
+    """
+    return ctx.vars.get("devenv.resource_workspace_id", "")
 
 def get_service_variant(ctx):
     """
     Gets the service variant of the deployment for which Henson is rendering skycfg
-
     Args:
         ctx: The context containing Henson and Centralized Service Configurations.
     Returns:
         The service variant of the deployment
     """
     return ctx.vars.get("henson.service_variant", "")
+
+"""
+Used for determining if a service is managed by faas or not. This is useful
+for workflow workers which need to pass flags conditionally based on whether it is a normal
+long-running service or a faas managed service.
+Args:
+    ctx: The context containing Henson and Centralized Service Configurations.
+Returns:
+    True if faas managed
+"""
+def is_faas_managed(ctx):
+  return ctx.vars.get("service.config.deploy_tenant") == "TENANT_FAAS"
+
+def get_service_deploy_config(ctx):
+    """
+    Gets the service deploy config, which is deploy.yaml file inside the ServiceConfigs.
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        The service deploy config
+    """
+    return ctx.vars.get("service.config.deploy")

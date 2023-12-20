@@ -14,9 +14,7 @@ load(
 )
 
 def _default_cli_args():
-    return {
-        "envoy_scrape_histogram_metrics": False,
-    }
+    return {}
 
 def generate_monitor_cli_args(user_overrides):
     cfg = _default_cli_args()
