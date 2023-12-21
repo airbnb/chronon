@@ -65,7 +65,45 @@ in this particular example we will aggregate events between `1:20` - `2:27`.
 
 ![Windows Illustrated](../images/windows.png)
 
-TODO: Windowing Code Example
+Example GroupBy with windowed aggregations. Taken from [purchases.py](../../api/py/test/sample/group_bys/quickstart/purchases.py).
+
+```python
+source = Source(
+    events=EventSource(
+        table="data.purchases", # This points to the log table with historical purchase events
+        query=Query(
+            selects=select("user_id","purchase_price"), # Select the fields we care about
+            time_column="ts") # The event time
+    ))
+
+window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
+
+v1 = GroupBy(
+    sources=[source],
+    keys=["user_id"], # We are aggregating by user
+    online=True,
+    aggregations=[Aggregation(
+            input_column="purchase_price",
+            operation=Operation.SUM,
+            windows=window_sizes
+        ), # The sum of purchases prices in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.COUNT,
+            windows=window_sizes
+        ), # The count of purchases in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.AVERAGE,
+            windows=window_sizes
+        ), # The average purchases by user in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.LAST_K(10),
+        ),
+    ],
+)
+```
 
 ## Bucketing
 
@@ -77,7 +115,51 @@ Chronon can accept multiple `bucket` columns at once and Bucketing is specified 
 Bucketing always produces a map, and for online use-cases we require the bucket column to be a string. This requirement
 comes from Chronon's usage of avro in the serving environment. We plan to mitigate requirement at a later time.
 
-TODO: Bucketing Code Example
+Here's what the above example looks like modified to include buckets. Note that there are two primary changes:
+1. Include the selection of the `credit_card_type` field on the source (so that we have access to the field by which we want to bucket).
+2. Specify the field as a bucket key in each aggregation that we want to apply it to.
+
+```python
+source = Source(
+    events=EventSource(
+        table="data.purchases",
+        query=Query(
+            selects=select("user_id","purchase_price","credit_card_type"), # Now we also select the `credit card type` column
+            time_column="ts")
+    ))
+
+window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]]
+
+v1 = GroupBy(
+    sources=[source],
+    keys=["user_id"],
+    online=True,
+    aggregations=[Aggregation(
+            input_column="purchase_price",
+            operation=Operation.SUM,
+            windows=window_sizes,
+            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+        ),
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.COUNT,
+            windows=window_sizes,
+            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+        ),
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.AVERAGE,
+            windows=window_sizes,
+            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+        ),
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.LAST_K(10),
+            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+        ),
+    ],
+)
+```
 
 # Flattening
 
