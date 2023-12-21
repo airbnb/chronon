@@ -110,16 +110,15 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     }
   }
 
-  def updateIrTiled(ir: Array[Any], headStreamingTiledIrs: Seq[TiledIr], queryTs: Long, batchEndTs: Long) = {
+  def updateIrTiled(ir: Array[Any], headStreamingTiledIrs: Iterator[TiledIr], queryTs: Long, batchEndTs: Long) = {
     // fill 2D array where each entry corresponds to the windowedAggregator column aggregators, and contains an array of
     // the streaming tiles we need to aggregate
     // ex) mergeBuffers = [ [1,2,3], [2,4] ]
     //     windowedAggregators.columnAggregators = [ Sum, Average ]
     //     resultIr = [ 6, 3 ]
     val mergeBuffers = Array.fill(windowedAggregator.length)(mutable.ArrayBuffer.empty[Any])
-    var idx: Int = 0
-    while (idx < headStreamingTiledIrs.length) {
-      val streamingTiledIr = headStreamingTiledIrs(idx)
+    while (headStreamingTiledIrs.hasNext) {
+      val streamingTiledIr = headStreamingTiledIrs.next()
       val streamingTiledIrTs = streamingTiledIr.ts // unbox long only once
       if (queryTs > streamingTiledIrTs && streamingTiledIrTs >= batchEndTs) {
         var i: Int = 0
@@ -133,9 +132,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           i += 1
         }
       }
-      idx += 1
     }
-    idx = 0
+    var idx: Int = 0
     while (idx < mergeBuffers.length) {
       // include collapsed batchIr in bulkMerge computation
       mergeBuffers(idx) += ir(idx)
