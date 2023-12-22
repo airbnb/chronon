@@ -30,12 +30,14 @@ def from_folder(root_path: str,
             logging.exception(e)
     return result
 
+def cleanse_absolute_import_module_name(module_name: str) -> str:
+    return module_name.replace("src.python.shepherd.chronon_poc.", "")
 
 def import_module_set_name(module, cls):
     """evaluate imported modules to assign object name"""
     # AirBnB imports their group-bys in joins via relative imports
     # Thus we need to slightly alter the module name if we used an absolute import.
-    module_name = module.__name__.replace("python.shepherd.chronon_poc.group_bys.", "")
+    module_name = cleanse_absolute_import_module_name(module.__name__)
     for name, obj in list(module.__dict__.items()):
         if isinstance(obj, cls):
             # the name would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
