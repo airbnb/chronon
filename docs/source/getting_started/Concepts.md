@@ -40,7 +40,7 @@ This a core chronon guarantee that the data you train your model on is consisten
 
 ### Airflow Orchestration
 
-Compiled Chronon objects will often have an associated job or DAG 
+Compiled Chronon objects will often have an associated job or DAG to run their computation on some schedule. This can be either to keep values up to date in the KV store, create new training data on a regular basis, or run data quality checks.
 
 
 
@@ -315,69 +315,5 @@ your_gb = GroupBy(
 
 #### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys)
 
-## Join
-
-A join can pull data from GroupBy's that are keyed on different entities. As you saw in the [example section](#example) 
-above, `view_features` are keyed by `item` & `user` and `ratings_features` are keyed only by `item`.
-Key feature of a join is that it can operate both online and offline with consistency. Meaning the offline back-filled 
-values are the same as online served values, and there is a single definition governing both.
-
-Chronon runs daily pipelines that measure inconsistency between an offline join, and an online joins.
-
-[Join](../../api/py/ai/chronon/join.py) has essentially two things - a `left` source and `right_parts`. 
- - `left` source is the source against which aggregates are being computed for. The left source only matter for offline 
-   backfilling and not used in serving.
-   - One of the main things to determine about your left source, is whether it is an event or an entity. 
-   - Only events can be used to trigger realtime / point-in-time-correct backfills. Entities always trigger a daily accurate backfill.
-   - Only events can be used to trigger realtime / point-in-time-correct backfills. Entities always trigger a daily accurate backfill.
-   - If you are predicting online - in a service in realtime, you usually want an EventSource as your `left`. In this case
-     providing a `timeColumn` - as milliseconds in UTC since epoch - is essential.
-   - If you are predicting offline - once every day, you want an Entity source on your `left`.
- - `right_parts` is a list of [JoinPart](../../api/py/ai/chronon/join.py)s containing group_by's to join with. This has an optional `prefix` and key re-mapping facility. 
-    - `prefix` - just adds the specified string to the names of the columns from group_by
-    - `keyMapping` - is a map of string to string. This is used to re-map keys from left side into right side. You could have 
-   a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
-   can use the remapping facility to specify this relation for each group_by.
-
-> NOTE: The online flag in a Join states that this join is going to be fetched online. Metadata about the join is 
-> uploaded and there are checks to make sure each GroupBy used by the Join is set to online as well.
-
-> NOTE: The production flag in a Join states that the join is not in development anymore and critical alerting and 
-> monitoring are expected. If a Join is marked as production it cannot reference any non-production GroupBys.
-### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins)
 
 
-## Staging Query
-A StagingQuery can be used to express free form ETL (including joins/group by) within Chronon. They are typically used
-to express more complex logic that won't fit into the simple `query` facility provided by the source.
-
-```python
-v1 = StagingQuery(
-    query="select * from namespace.table a JOIN namespace.table_2 b on a.key=b.key ",
-    startPartition="2020-04-01",
-    setups=[
-        "ADD JAR s3://path/to/your/jar",
-        "CREATE TEMPORARY FUNCTION YOUR_FUNCTION AS 'com.you_company.udf.your_team.YourUdfClass'",
-    ],
-    metaData=MetaData(
-        dependencies=["namespace.table", "namespace.table_2"],
-    )
-)
-```
-
-The StagingQuery can then be used in both GroupBy and Join. For ex:
-```python
-from staging_queries.team_name_folder import file_name
-from ai.chronon.utils import get_staging_query_output_table_name
-v1 = Join(
-    left=EventSource(
-        table=get_staging_query_output_table_name(file_name.staging_query_var_name)
-        ...
-    )
-)
-```
-
-Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
-metadata is extracted from [teams.json](../../api/py/test/sample/teams.json) in (or default team if one is not set).
-
-### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)
