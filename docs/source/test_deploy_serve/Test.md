@@ -126,4 +126,58 @@ You can fetch your uploaded conf by its name and with a json of keys. Json types
 python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"u_106386039"}' -n team/join.v1 -t join
 ```
 
-TODO
+Note that this is simply the test workflow for fetching. For production serving, see the [Serving documentation](TODO).
+
+## Testing streaming
+
+You can test if your conf is a valid streaming conf by specifying a `--mode=local-streaming`.
+
+```sh
+run.py --mode=local-streaming --conf=production/group_bys/team/your_group_by.v1 -k kafka_broker_address:port_number
+```
+
+The `-k` argument specifies a kafka broker to be able to connect to kafka. You need to know which kafka cluster your `topic` lives in.
+
+## Online offline consistency metrics computation
+
+After enabling online serving, you may be interested in the online offline consistency metrics for the job. Computation of these can be turned on by setting the `sample_percent` and `check_consistency` in the join config like so:
+
+```python
+my_join = Join(
+    ...
+    sample_percent=0.1, # Samples 10%
+    check_consistency=True
+)
+```
+
+The `sample_percent` param will enable logging during fetching phase, and the `check_consistency` param will enable the online offline consistency check DAG to trigger a spark job to compare the logged events with offline join job after data landing in the warehouse. The DAG will be named: `online_offline_comparison_<team_name>_<join_name>`.
+
+The spark job will write the result to a flat Hive table in the pattern of `<output_namespace>.<team_name>_<join_name>_consistency`.
+
+See more details of what it computes [here](https://sourcegraph.d.musta.ch/github.com/airbnb/chronon/-/blob/docs/source/Online_Offline_Consistency.md).
+
+
+## Useful tips to work with Chronon
+
+### Getting the argument list
+
+Most of the above commands run a scala process under the python shim, which could take a lot of arguments. You can see the help of the scala process by using `--sub-help`.
+
+```bash
+[gateway_machine] python3 ~/.local/bin/run.py --mode=fetch --sub-help
+```
+
+This example will print out the args that the fetch mode will take. You can do the same for other modes as well.
+
+```bash
+Running command: java -cp /tmp/spark_uber.jar ai.chronon.spark.Driver fetch --help
+  -k, --key-json  <arg>        json of the keys to fetch
+  -n, --name  <arg>            name of the join/group-by to fetch
+      --online-class  <arg>    Fully qualified Online.Api based class. We expect
+                               the jar to be on the class path
+  -o, --online-jar  <arg>      Path to the jar contain the implementation of
+                               Online.Api class
+  -t, --type  <arg>            the type of conf to fetch Choices: join, group-by
+  -Zkey=value [key=value]...
+  -h, --help                   Show help message
+```
