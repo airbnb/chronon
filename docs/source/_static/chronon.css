@@ -14,7 +14,7 @@
 /* *    limitations under the License.*/
 /* *!*/
 
-/*@import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');*/
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inconsolata&display=swap');
 
 /*!*.navbar-brand img {*!*/
 /*!*   height: 60px;*!*/
@@ -23,30 +23,43 @@
 /*!*   height: 60px;*!*/
 /*!*}*!*/
 
-/*body {*/
-/*  font-family: Verdana, Geneva, sans-serif;*/
-/*}*/
+body {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*pre, code {*/
-/*  font-size: 100%;*/
-/*  line-height: 155%;*/
-/*}*/
+pre, code {
+    font-family: 'Inconsolata', monospace;
+    font-size: 100%;
+    line-height: 130%;
+}
 
-/*h1 {*/
-/*  font-family: Verdana, Geneva, sans-serif;*/
-/*  color: #013243; !* warm black *!*/
-/*}*/
+h1 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*h2 {*/
-/*  color: #4d77cf; !* han blue *!*/
-/*  letter-spacing: -.03em;*/
-/*}*/
+h2 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*h3 {*/
-/*  color: #013243; !* warm black *!*/
-/*  letter-spacing: -.03em;*/
-/*}*/
+h3 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
+.bd-main .bd-content .bd-article-container {
+    max-width: 100%;  /* default is 60em */
+}
+
+.bd-page-width {
+    max-width: 100%;  /* default is 88rem */
+}
+
+.svg-inline--fa {
+    margin-right: 10px;
+}
+/*.bd-header-article {*/
+/*    !*visibility: collapse;*!*/
+/*    height: 20px;*/
+/*}*/
 /*!* Style the active version button.*/
 
 /*- dev: orange*/

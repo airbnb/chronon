@@ -25,7 +25,7 @@ features at scale very easy.
 With Chronon you can generate training data, serve features, monitor feature quality 
 and manage features with a unified feature definition.
 
-.. image:: ../images/chronon_high_level.png
+.. image:: ../images/intro.png
 
 * **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
 * **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.
