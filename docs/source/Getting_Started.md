@@ -69,8 +69,8 @@ You can run the configs in their modes using run command
 run.py --mode=<MODE> --conf=<PATH>/<TO>/<YOUR>/<DEFINITION>
 ```
 
-You can directly tune the parameters setup as env-vars set in [spark_submit.sh](../../api/py/test/sample/scripts/spark_submit.sh)
-or [spark_submit_streaming.sh](../../api/py/test/sample/scripts/spark_submit_streaming.sh) via `run.py` script.
+You can directly tune the parameters setup as env-vars set in [spark_submit.sh](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/scripts/spark_submit.sh)
+or [spark_submit_streaming.sh](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/scripts/spark_streaming.sh) via `run.py` script.
 
 ```shell
 EXECUTOR_MEMORY=16G PARALLELISM=2000 run.py --mode=backfill --conf=production/joins/<your_team>/<your_join>
