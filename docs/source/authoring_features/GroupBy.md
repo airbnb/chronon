@@ -263,18 +263,18 @@ v1 = GroupBy(
             input_column="purchase_price",
             operation=Operation.COUNT,
             windows=window_sizes,
-            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+            buckets=["credit_card_type"]
         ),
         Aggregation(
             input_column="purchase_price",
             operation=Operation.AVERAGE,
             windows=window_sizes,
-            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+            buckets=["credit_card_type"]
         ),
         Aggregation(
             input_column="purchase_price",
             operation=Operation.LAST_K(10),
-            buckets=["credit_card_type"] # Here we use the`credit_card_type` column as the bucket column
+            buckets=["credit_card_type"]
         ),
     ],
 )
