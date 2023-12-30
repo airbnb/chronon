@@ -79,7 +79,7 @@ In the above example, the left source is an `EventSource`, however, in some case
 
 Using an `EntitySource` will result in meaningfully different results for feature computation, primarily because `EntitySource`s do not have a `time` column. Rather, `EntitySources` have daily snapshots, so feature values are computed as of midnight boundaries on those days.
 
-See the [Computation examples](#computation-examples) for illustrations of how these source types interact with feature computation.
+See the [Computation examples](#computation-examples) for an explanation of how these source types interact with feature computation.
  
 ## KeyMapping and Prefix
 
@@ -89,39 +89,30 @@ See the [Computation examples](#computation-examples) for illustrations of how t
 a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
 can use the remapping facility to specify this relation for each group_by.
 
-TODO: examples
-
-## Online and Production flags
-
-TODO
-
-## Label Join
-
-TODO
-
-## Derivations
-
-TODO
-
-## External Features
-
-TODO
-
-
 # Computation examples
+
+The following explain the backfill accuracy for each possible combination of left-side source type and right-side/GroupBy source type.
 
 ## Left side events, right side streaming events
 
-TODO
+In this case you will get point-in-time correct feature backfills in your join table, meaning that every feature for this GroupBy will be accurate as of the millisecond that is provided on the left side `time_column`. For example, if a row on the left side has a timestamp of `2023-12-20 12:01:01.923` and an aggregation in the `GroupBy` has a `10 day` window, then only raw events between `2023-12-10 12:01:01.923` and `2023-12-20 12:01:01.922` will be included in the aggregation value.
+
+This is because these are the values that would have been observed online for that feature at that particular left side timestamp (values are updated in realtime).
 
 ## Left side events, right side batch events
 
-TODO
+In this case you will get midnight accurate feature backfills in your join table by default, meaning that every feature for this GroupBy will be accurate as of the midnight boundary prior to the time provided on the left side `time_column`.
+
+For example, if a row on the left side has a timestamp of `2023-12-20 12:01:01.923` and an aggregation in the `GroupBy` has a `10 day` window, then only raw events between `2023-12-10 00:00:00.000` and `2023-12-19 23:59:59.999` will be included in the aggregation value.
+
+This is because these are the values that would have been observed online for that feature at that particular left side timestamp (values only updated in batch at midnight, with windows as of those end-of-day times).
+
+However, you can also configure the backfills to be point-in-time correct for this `GroupBy` by setting `accuracy=TEMPORAL`.
 
 ## Left side entities, right side realtime entities
 
-TODO
+In this case you will get midnight accurate feature backfills in your join table by default, same as the `Left side events, right side batch events` case. This is because an `EntitySource` on the left means that the use case that we're modeling is inherently batch, so we don't have any intra-day accurate timeline for backfills.
 
 ## Left side entities, right side batch entities
 
-TODO
+In this case you will get midnight accurate feature backfills in your join table by default, same as the `Left side events, right side batch events` and `Left side entities, right side realtime entities` cases, for a combination of both reasons.
