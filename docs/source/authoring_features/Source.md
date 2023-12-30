@@ -58,7 +58,7 @@ source = Source(
 
 Key points:
 * Omitting the topic turns a streaming event source into a batch event source, as the streaming input is not specified
-* Features built on this source will be computed daily batch as new data lands in the source table
+* Features built on this source will be computed daily (as batch jobs) as new data lands in the source table
 * Time column can also be omitted, since Chronon already knows the timeline along with feature change (batch updates everytime data lands daily)
 * A time column could be included if you wanted offline computation to be intra-day accurate, however this should be done carefully, as online features will only be getting daily batch updates
 
