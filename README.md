@@ -40,14 +40,13 @@ These aggregations can all be configured to be computed over arbitrary window si
 
 # Quickstart
 
-**Note: The following is only intended to work on recent versions of MacOS.**
-
 This section walks you through the steps to create a training dataset with Chronon, using a fabricated underlying raw dataset.
 
 Includes:
 - Example implementation of the main API components for defining features - `GroupBy` and `Join`.
 - The workflow for authoring these entities.
 - The workflow for backfilling training data.
+- 
 
 Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
