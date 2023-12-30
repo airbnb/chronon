@@ -1,7 +1,7 @@
 # Staging Query
 
 A StagingQuery can be used to express free form ETL (including joins/group by) within Chronon. They are typically used
-to express more complex logic that won't fit into the simple `query` facility provided by the source.
+to express more complex logic that won't fit into the simple `query` facility provided by the source. However this logic can't be used to produce features that are updated in realtime. They can only be refreshed in batch mode.
 
 ```python
 v1 = StagingQuery(
