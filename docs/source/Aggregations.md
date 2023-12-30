@@ -135,7 +135,8 @@ v1 = GroupBy(
     sources=[source],
     keys=["user_id"],
     online=True,
-    aggregations=[Aggregation(
+    aggregations=[
+        Aggregation(
             input_column="purchase_price",
             operation=Operation.SUM,
             windows=window_sizes,
