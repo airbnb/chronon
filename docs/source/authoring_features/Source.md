@@ -13,7 +13,7 @@ All features are created with one of these sources as input, except for `Chained
 
 All sources are basically composed of the following pieces*:
 
-1. Table/topic information
+1. Table that represents an offline warehouse such as hive or a topic that represents and event stream in a messaging system such as kafka
 2. A `Query` component, which tells chronon which fields to extract for the computation pipeline
 
 *External sources are the exception to the above, those are explained more below.
