@@ -31,7 +31,7 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 source = Source(
     events=EventSource(
         table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
-        topic=None, # See the returns GroupBy for an example that has a streaming source configured. In this case, this would be the streaming source topic that can be listened to for realtime events
+        topic=None, # See the 'returns' GroupBy for an example that has a streaming source configured. In this case, this would be the streaming source topic that can be listened to for realtime events
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
