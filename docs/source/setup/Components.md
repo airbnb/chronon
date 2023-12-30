@@ -1,9 +1,6 @@
-# Concepts
+# Components
 
-Chronon allows users to define 
-
-## Core Chronon Concepts and Components
-
+This is a high level overview of the various components of Chronon and how they fit together.
 
 ### Chronon directory
 
