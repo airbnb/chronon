@@ -13,7 +13,7 @@ This is a code directory where users come to create features and author various 
 
 Compiled Chronon definitions can be used to run batch compute jobs using the Chronon engine. There are a number of purposes that these jobs can serve:
 
-1. Createtraining data, written out to materialized tables
+1. Create training data, written out to materialized tables
 2. Compute feature values to upload to the online KV store (see section below)
 3. Compute data quality and online/offline consistency metrics
 4. Analyze a feature definition to gather high level metadata about schemas and hotkeys in source data
