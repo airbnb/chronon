@@ -6,14 +6,33 @@
 .. toctree::
    :maxdepth: 2
    :hidden:
+   :caption: Introduction
 
    Getting_Started
    Concepts
    Aggregations
-   Bootstrap
-   Python_API
    Kaggle_Outbrain
+   Python_API
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Creating Training data
+
+   Bootstrap
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Serving Features
+
    Online_Offline_Consistency
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Contributing to Chronon
+
    Code_Guidelines
 
 What is Chronon?
