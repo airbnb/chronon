@@ -126,7 +126,7 @@ You can fetch your uploaded conf by its name and with a json of keys. Json types
 python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"u_106386039"}' -n team/join.v1 -t join
 ```
 
-Note that this is simply the test workflow for fetching. For production serving, see the [Serving documentation](TODO).
+Note that this is simply the test workflow for fetching. For production serving, see the [Serving documentation](./Serve.md).
 
 ## Testing streaming
 

@@ -15,10 +15,10 @@ These aggregate and non-aggregated features can be used in various ways:
 
 - **standalone backfilled** - daily snapshots of aggregate values. The result is a date partitioned Hive Table where each partition contains aggregates as of that day, for each user that has row in the largest window ending that day.
 
-- **backfilled against another source** - see [Join](TODO) documentation. Most commonly used to enrich labelled data with aggregates coming from many different sources & GroupBy's at once.
+- **backfilled against another source** - see [Join](./Join.md) documentation. Most commonly used to enrich labelled data with aggregates coming from many different sources & GroupBy's at once.
 
 **selecting the right Source for your `GroupBy`** is a crucial first step to correctly defining a `GroupBy`. 
-See the [Sources](TODO) documentation for more info on the options and when to use each.
+See the [Sources](./Source.md) documentation for more info on the options and when to use each.
 
 Often, you might want to chain together aggregations (i.e., first run `LAST` then run `SUM` on the output). 
 This can be achieved by using the output of one `GroupBy` as the input to the next.
@@ -353,7 +353,3 @@ v1 = GroupBy(
     online=True,
 ) 
 ```
-
-### Chained Feature example
-
-TODO

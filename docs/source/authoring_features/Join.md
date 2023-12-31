@@ -2,7 +2,7 @@
 
 As the name suggests `Join`, it is primarily responsible for joining together many `GroupBy`s, possibly with different keys. However, it is also responsible for another very important function: defining the timeline along which features will be computed in the backfill.
 
-Let's use an example to explain this further. In the [Quickstart](TODO) guide, we define some features as aggregations of user's purchases and returns, as well as some other user dimensions like whether their accounts are verified. We intend to use these features in an online fraud model that runs at **checkout time**.
+Let's use an example to explain this further. In the [Quickstart](../getting_started/Tutorial.md) tutorial, we define some features as aggregations of user's purchases and returns, as well as some other user dimensions like whether their accounts are verified. We intend to use these features in an online fraud model that runs at **checkout time**.
 
 This is important because it means that when we serve the model online, inference will be made at checkout time, and therefore when we backfill features for training data, we want every row to correspond to a historical checkout event, and features should be computed as of the timestamps that those events occurred. I.e. every row of training data for the model has identical feature values to what the model would have seen had that row been on a production inference request.
 
@@ -69,7 +69,7 @@ Once the join is merged, Chronon runs the following jobs:
 * Daily front-fill of new feature values as upstream data lands in the source tables.
 * If online serving is enabled, then Chronon runs pipelines that measure consistency between an offline join, and an online joins. These output metrics can be used to 
 
-These jobs are managed by airflow pipelines (see [Orchestration](TODO) documentation).
+These jobs are managed by airflow pipelines (see [Orchestration](../setup/Orchestration.md) documentation).
 
 ## Source in Join
 

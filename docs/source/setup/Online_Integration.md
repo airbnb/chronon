@@ -51,7 +51,7 @@ There are three functions to implement as part of this integration:
 3. `multiPut`: which takes a `Seq` of [`PutRequest`](../../../online/src/main/scala/ai/chronon/online/Api.scala#L38) and converts them into `Future[Seq[Boolean]]` (success/fail) by attempting to insert them into the underlying KVStore.
 4. `bulkPut`: to upload a hive table into your kv store. It takes the table name and partitions as `String`s as well as the dataset as a `String`. If you have another mechanism (like an airflow upload operator) to upload data from hive into your kv stores you don't need to implement this method.
 
-See the [MongoDB example here](../../../quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/MongoKvStore.scala).
+See the [MongoDB example here](https://github.com/airbnb/chronon/blob/master/quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/MongoKvStore.scala).
 
 **StreamDecoder**: This is responsible for "decoding" or converting the raw values that Chronon streaming jobs will read into events that it knows how to process.
 
@@ -98,12 +98,12 @@ Chronon has a type system that can map to Spark's or Avro's type system. Schema 
 | StructType     | Array[Any]            |
 
 
-See the [Quickstart example here](../../../quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/QuickstartMutationDecoder.scala).
+See the [Quickstart example here](https://github.com/airbnb/chronon/blob/master/quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/QuickstartMutationDecoder.scala).
 
 
-**API:** The main API that requires implementation is [API](../../../online/src/main/scala/ai/chronon/online/Api.scala#L151). This combines the above implementations with other client and logging configuration.
+**API:** The main API that requires implementation is [API](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Api.scala#L151). This combines the above implementations with other client and logging configuration.
 
-[ChrononMongoOnlineImpl](../../../quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/ChrononMongoOnlineImpl.scala) Is an example implemenation of the API.
+[ChrononMongoOnlineImpl](https://github.com/airbnb/chronon/blob/master/quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online/ChrononMongoOnlineImpl.scala) Is an example implemenation of the API.
 
 
 Once you have the api object you can build a fetcher class using the api object like so

@@ -100,8 +100,3 @@ source = Source(
 ```
 
 This is similar to the above, however, it only contains the `snapshotTable`, and not the batch and streaming mutations sources.
-
-
-## External Source
-
-TODO

@@ -1,6 +1,6 @@
 # Deploying Chronon Entities
 
-Once you have authored and tested a Chronon entity, such as a `GroupBy`, `Join` or `StagingQuery`, then all you need to do to productionize it is merge it into your repository. From there, the requisite DAGs and tasks will automatically get created to compute feature values and keep them up to date. See the [Orchestration](TODO) documentation for how to set this up.
+Once you have authored and tested a Chronon entity, such as a `GroupBy`, `Join` or `StagingQuery`, then all you need to do to productionize it is merge it into your repository. From there, the requisite DAGs and tasks will automatically get created to compute feature values and keep them up to date. See the [Orchestration](../setup/Orchestration.md) documentation for how to set this up.
 
 ## GroupBy
 

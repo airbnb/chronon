@@ -100,11 +100,11 @@ v1 = GroupBy(
 )
 ```
 
-See the whole code file here: [purchases GroupBy](api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your `chronon` directory downloaded by `init.sh`. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
+See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your `chronon` directory downloaded by `init.sh`. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
 
 **Feature set 2: Returns data features**
 
-We perform a similar set of aggregations on returns data in the [returns GroupBy](api/py/test/sample/group_bys/returns.py). The code is not included here because it looks similar to the above example.
+We perform a similar set of aggregations on returns data in the [returns GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/returns.py). The code is not included here because it looks similar to the above example.
 
 **Feature set 3: User data features**
 
@@ -126,7 +126,7 @@ v1 = GroupBy(
 ) 
 ```
 
-Taken from the [users GroupBy](api/py/test/sample/group_bys/quickstart/users.py).
+Taken from the [users GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/users.py).
 
 
 ### Step 2 - Join the features together
@@ -159,7 +159,7 @@ v1 = Join(
 )
 ```
 
-Taken from the [training_set Join](api/py/test/sample/joins/quickstart/training_set.py). 
+Taken from the [training_set Join](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins/quickstart/training_set.py). 
 
 The `left` side of the join is what defines the timestamps and primary keys for the backfill (notice that it is built on top of the `checkout` event, as dictated by our use case).
 
