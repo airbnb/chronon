@@ -6,9 +6,6 @@ There are five base source types in Chronon that can be used as inputs to featur
 
 All features are created with one of these sources as input, except for `ChainedFeatures` which use existing features as inputs.
 
-![image](../../images/DataSources2.png)
-
-
 ## Overview
 
 All sources are basically composed of the following pieces*:
