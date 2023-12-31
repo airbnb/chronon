@@ -29,4 +29,4 @@ JavaFetcher ChrononJavaFetcher = InternalAPIImpl.buildJavaFetcher();
 ChrononJavaFetcher.fetchJoin(requests);
 ```
 
-For details on how to write your internal implementation of the online API, see the [Online Integration](TODO) documentation. This should only be implemented once for your organization, then online serving use cases can use the above API.
+For details on how to write your internal implementation of the online API, see the [Online Integration](../setup/Online_Integration.md) documentation. This should only be implemented once for your organization, then online serving use cases can use the above API.

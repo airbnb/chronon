@@ -412,4 +412,4 @@ We welcome contributions to the Chronon project! Please read our (CONTRIBUTING.m
 # Support
 
 Use the GitHub issue tracker for reporting bugs or feature requests.
-Join our community [Slack Channel](https://chrononworkspace.slack.com/archives/C04K2SLPZU7) for discussions, tips, and support.
+Join our [community Discord channel](https://discord.gg/GbmGATNqqP) for discussions, tips, and support.
