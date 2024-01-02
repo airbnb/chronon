@@ -131,7 +131,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     while (i < windowedAggregator.length) {
       val window = windowMappings(i).aggregationPart.window
       val hopIndex = tailHopIndices(i)
-      val irInWindow = (otherIr.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && otherIr.ts < queryTs)
+      val irInWindow =
+        (otherIr.ts >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && otherIr.ts < queryTs)
       if (window == null || irInWindow) {
         ir(i) = windowedAggregator(i).merge(ir(i), otherIr.ir(i))
       }

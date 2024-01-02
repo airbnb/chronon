@@ -123,8 +123,8 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
-                        streamingTiledIrs: Iterator[TiledIr],
-                        queryTs: Long): Array[Any] = {
+                             streamingTiledIrs: Iterator[TiledIr],
+                             queryTs: Long): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingTiledIrs == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
@@ -157,8 +157,8 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
-                               streamingTiledIrs: Iterator[TiledIr],
-                               ts: Long): Array[Any] = {
+                                    streamingTiledIrs: Iterator[TiledIr],
+                                    ts: Long): Array[Any] = {
     // TODO: Add support for mutations / hasReversal to the tiled implementation
     windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
   }

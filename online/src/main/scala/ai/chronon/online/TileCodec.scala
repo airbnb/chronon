@@ -47,7 +47,7 @@ object TileCodec {
   def isTilingEnabled(groupBy: GroupBy): Boolean =
     groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
       case s: Boolean => s
-      case _ => false
+      case _          => false
     }
 }
 
