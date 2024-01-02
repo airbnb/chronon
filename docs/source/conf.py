@@ -75,7 +75,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "Discord",
-            "url": "https://discord.com/channels/1065460919146135563/1065460919146135566",
+            "url": "https://discord.gg/GbmGATNqqP",
             "icon": "fa-brands fa-discord",
             "type": "fontawesome",
         },

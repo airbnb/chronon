@@ -10,7 +10,6 @@
 
    getting_started/Introduction
    getting_started/Tutorial
-   getting_started/Concepts
 
 .. toctree::
    :maxdepth: 2
@@ -28,6 +27,7 @@
    :hidden:
    :caption: Setup
 
+   setup/Components
    setup/Data_Integration
    setup/Developer_Setup
    setup/Online_Integration

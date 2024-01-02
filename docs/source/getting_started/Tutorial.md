@@ -5,8 +5,7 @@ This section walks you through the steps to create a training dataset with Chron
 Includes:
 - Example implementation of the main API components for defining features - `GroupBy` and `Join`.
 - The workflow for authoring these entities.
-- The workflow for backfilling training data.
-- 
+- The workflow for back-filling training data.
 
 Does not include:
 - A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
@@ -21,7 +20,7 @@ Does not include:
 To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
 
 ```bash
-curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-compose.yml
+curl -o docker-compose.yml https://chronon.ai/docker-compose.yml
 docker-compose up
 ```
 
