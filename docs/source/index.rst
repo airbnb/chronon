@@ -8,32 +8,50 @@
    :hidden:
    :caption: Introduction
 
-   Getting_Started
-   Concepts
-   Aggregations
-   Kaggle_Outbrain
-   Python_API
+   getting_started/Introduction
+   getting_started/Tutorial
+   getting_started/Concepts
 
 .. toctree::
    :maxdepth: 2
    :hidden:
    :caption: Creating Training data
 
-   Bootstrap
+   authoring_features/GroupBy
+   authoring_features/Join
+   authoring_features/Source
+   authoring_features/StagingQuery
+   authoring_features/Bootstrap
 
 .. toctree::
    :maxdepth: 2
    :hidden:
-   :caption: Serving Features
+   :caption: Setup
 
-   Online_Offline_Consistency
+   setup/Data_Integration
+   setup/Developer_Setup
+   setup/Online_Integration
+   setup/Orchestration
 
 .. toctree::
    :maxdepth: 2
    :hidden:
-   :caption: Contributing to Chronon
+   :caption: Test, Serve & Monitor
 
+   test_deploy_serve/Test
+   test_deploy_serve/Deploy
+   test_deploy_serve/Serve
+   test_deploy_serve/Online_Offline_Consistency
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: More References
+
+   Python_API
    Code_Guidelines
+   Kaggle_Outbrain
+
 
 What is Chronon?
 =====================
