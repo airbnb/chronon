@@ -409,42 +409,41 @@ class FetcherTest extends TestCase {
       Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10")
     )
     val ratingEventData = Seq(
-        // 1L listing id event data
-        Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
-        Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
-        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-        Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-        Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-
-        // 2L listing id event data
-        Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
-        Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
-        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
-        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
-        Row(2L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
-        Row(2L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
-        Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-        Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-        Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-        Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-        Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
+      // 1L listing id event data
+      Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+      Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      // 2L listing id event data
+      Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+      Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+      Row(2L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+      Row(2L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
     )
     // Schemas
     // {..., event (generic event column), ...}
     val listingsSchema = StructType("listing_events_fetcher",
-      Array(
-        StructField("listing_id", LongType),
-        StructField("ts", LongType),
-        StructField("ds", StringType)
-      ))
+                                    Array(
+                                      StructField("listing_id", LongType),
+                                      StructField("ts", LongType),
+                                      StructField("ds", StringType)
+                                    ))
 
     val ratingsSchema = StructType(
       "listing_ratings_fetcher",
       Array(StructField("listing_id", LongType),
-        StructField("ts", LongType),
-        StructField("rating", IntType),
-        StructField("ds", StringType))
+            StructField("ts", LongType),
+            StructField("rating", IntType),
+            StructField("ds", StringType))
     )
 
     val sourceData: Map[StructType, Seq[Row]] = Map(
@@ -502,7 +501,10 @@ class FetcherTest extends TestCase {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_gb", namespace = namespace, team = "chronon", customJson = groupByCustomJson.orNull)
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_gb",
+                                   namespace = namespace,
+                                   team = "chronon",
+                                   customJson = groupByCustomJson.orNull)
     )
 
     val joinConf = Builders.Join(
@@ -537,11 +539,12 @@ class FetcherTest extends TestCase {
             val javaResponse = javaFetcher.fetchJoin(convertedJavaRequests)
             FutureConverters
               .toScala(javaResponse)
-              .map(_.toScala.map(jres =>
-                Response(
-                  Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
-                  jres.values.toScala.map(_.toScala)
-                )))
+              .map(
+                _.toScala.map(jres =>
+                  Response(
+                    Request(jres.request.name, jres.request.keys.toScala.toMap, Option(jres.request.atMillis)),
+                    jres.values.toScala.map(_.toScala)
+                  )))
           } else {
             fetcher.fetchJoin(r)
           }
@@ -751,7 +754,7 @@ class FetcherTest extends TestCase {
   def testTemporalTiledFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_tiled_fetch"
     val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
 
   // test soft-fail on missing keys
