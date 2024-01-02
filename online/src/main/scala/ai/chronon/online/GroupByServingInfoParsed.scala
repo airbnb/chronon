@@ -70,11 +70,8 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   def irCodec: AvroCodec = AvroCodec.of(irAvroSchema)
   def outputCodec: AvroCodec = AvroCodec.of(outputAvroSchema)
 
-
   // Start tiling specific variables
-
-  lazy val tiledRowAggregator: RowAggregator = TileCodec.buildRowAggregator(groupBy, valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
-  lazy val tiledCodec: TileCodec = new TileCodec(tiledRowAggregator, groupBy)
+  lazy val tiledCodec: TileCodec = new TileCodec(groupBy, valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
   lazy val isTilingEnabled: Boolean = TileCodec.isTilingEnabled(groupBy)
 
   // End tiling specific variables

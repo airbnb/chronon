@@ -30,6 +30,7 @@ import com.google.gson.Gson
 
 import java.util
 import scala.collection.JavaConverters._
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
@@ -205,8 +206,10 @@ class FetcherBase(kvStore: KVStore,
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
-            batchKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-            streamingKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            batchKeyBytes =
+              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+            streamingKeyBytes =
+              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
           } catch {
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
@@ -215,8 +218,11 @@ class FetcherBase(kvStore: KVStore,
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
               }.toMap
               try {
-                batchKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-                streamingKeyBytes = kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+                batchKeyBytes =
+                  kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+                streamingKeyBytes = kvStore.createKeyBytes(request.keys,
+                                                           groupByServingInfo,
+                                                           groupByServingInfo.groupByOps.streamingDataset)
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
