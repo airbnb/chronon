@@ -79,31 +79,20 @@ html_theme_options = {
             "icon": "fa-brands fa-discord",
             "type": "fontawesome",
         },
-        # <i class="fa-brands fa-python"></i>
-        {
-            "name": "Pip Package",
-            "url": "https://pypi.org/project/chronon-ai/",
-            "icon": "fa-brands fa-python",
-            "type": "fontawesome",
-        }
         # {
-        #     "name": "Twitter",
-        #     "url": "https://twitter.com/<your-handle>",
-        #     "icon": "fa-brands fa-square-twitter",
-        #     # The default for `type` is `fontawesome`, so it is not required in the above examples
-        # },
-        # {
-        #     "name": "Mastodon",
-        #     "url": "https://<your-host>@<your-handle>",
-        #     "icon": "fa-brands fa-mastodon",
-        # },
+        #     "name": "Pip Package",
+        #     "url": "https://pypi.org/project/chronon-ai/",
+        #     "icon": "fa-brands fa-python",
+        #     "type": "fontawesome",
+        # }
     ],
+    'article_header_end': ["navbar-icon-links.html", "theme-switcher.html"],
     # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
-# html_sidebars = {
-#     "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
-# }
+html_sidebars = {
+    "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
+}
 html_title = "Chronon"
 html_static_path = ['_static']
 html_css_files = ["chronon.css"]
