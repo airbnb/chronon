@@ -96,7 +96,9 @@ object Extensions {
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
 
-    def bootstrapTable = s"${outputTable}_bootstrap"
+    def bootstrapTable = getOutputTableMap(metaData)
+      .map(_.get("output_bootstrap"))
+      .getOrElse(s"${outputTable}_bootstrap")
 
     private def comparisonPrefix = "comparison"
 
