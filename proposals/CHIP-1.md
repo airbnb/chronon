@@ -1,5 +1,5 @@
 # CHIP-1 – Online IR and GetRequest Caching
-_By Caio Camatta (Stripe) | Dec 11, 2023_
+_By Caio Camatta (Stripe) | Last modified Jan 3, 2024_
 
 This CHIP introduces IR caching in Chronon's online/Fetcher side. We're currently trying out caching at Stripe and will update this doc with benchmarks and findings.
 
@@ -57,7 +57,7 @@ Most of the code changes are in [FetcherBase.scala](https://github.com/airbnb/ch
 This cache will consist of:
 
 - Key: a combination of (`batchDataset`, `keyBytes`, `batchEndTsMillis`, "latest batch data landing time").
-- Value: `FinalBatchIr`
+- Value: either `FinalBatchIr` (for the [temporal accuracy code path](https://github.com/airbnb/chronon/blob/f786ab9ce9314bc09495499765cfaddd0f4ef5a7/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L83C4-L83C4)) or `Map[String, AnyRef]` (for the [no-agg and snapshot accuracy code path](https://github.com/airbnb/chronon/blob/f786ab9ce9314bc09495499765cfaddd0f4ef5a7/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L79)).
 
 #### Populating and using the cache
 
@@ -144,7 +144,7 @@ The size of the cache should ideally be set in terms of maximum memory usage (e.
 
 ### Step 1: BatchIr Caching
 
-We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102)).
+We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102)) and `Map[String, AnyRef]`.
 
 To make testing easier, we'll disable this feature by default and enable it via Java Args.
 
@@ -188,7 +188,7 @@ The final step is to
 ### Rejected Alternative #1: Defer `GetRequest` caching to specific KV Stores
 
 In the Proposed Changes, I am suggesting that we add the logic for caching `GetRequest`s within Chronon. This alternative would be to
-- Cache Avro conversions from batch bytes to `FinalBatchIr` streaming bytes to `TiledIr`s in Chronon.
+- Cache Avro conversions from batch bytes to `FinalBatchIr`/`Map[String, AnyRef]` streaming bytes to `TiledIr`s in Chronon.
 - Do not cache anything related to `GetRequest`s in Chronon.
 
 The advantage of this alternative is that it keeps the changes to FetcherBase very simple.
