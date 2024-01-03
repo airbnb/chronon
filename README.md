@@ -65,7 +65,7 @@ curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-
 docker-compose up
 ```
 
-You're now ready to proceed with the tutorial.
+Once you see some data printed with a `only showing top 20 rows` notice, You're now ready to proceed with the tutorial.
 
 ## Introduction
 
@@ -234,16 +234,16 @@ spark-sql
 And then: 
 
 ```sql
-spark-sql> SELECT * FROM default.quickstart_training_set_v1 LIMIT 100;
+spark-sql> SELECT user_id, quickstart_returns_v1_refund_amt_sum_30d, quickstart_purchases_v1_purchase_price_sum_14d, quickstart_users_v1_email_verified from default.quickstart_training_set_v1 limit 100;
 ```
 
-You can run:
+Note that this only selects a few columns. You can also run a `select * from default.quickstart_training_set_v1 limit 100` to see all columns, however, note that the table is quite wide and the results might not be very readable on your screen.
+
+To exit the sql shell you can run:
 
 ```shell
 spark-sql> quit;
 ```
-
-To exit the sql shell.
 
 ## Online Flows
 
@@ -313,7 +313,7 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 
 ## Log fetches and measure online/offline consistency
 
-As discussed in the introductory sections of this README, one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
+As discussed in the introductory sections of this [README](#platform-features), one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
 
 A key element of this is temporal accuracy. This can be phrased as: **when backfilling features, the value that is produced for any given `timestamp` provided by the left side of the join should be the same as what would have been returned online if that feature was fetched at that particular `timestamp`**.
 
@@ -338,18 +338,24 @@ run.py --mode backfill --conf production/group_bys/quickstart/schema.v1
 run.py --mode log-flattener --conf production/joins/quickstart/training_set.v2 --log-table default.chronon_log_table --schema-table default.quickstart_schema_v1
 ```
 
+This creates a `default.quickstart_training_set_v2_logged` table that contains the results of each of the fetch requests that you previously made, along with the timestamp at which you made them and the `user` that you requested.
+
+**Note:** Once you run the above command, it will create and "close" the log partitions, meaning that if you make additional fetches on the same day (UTC time) it will not append. If you want to go back and generate more requests for online/offline consistency, you can drop the table (run `DROP TABLE default.quickstart_training_set_v2_logged` in a `spark-sql` shell) before rerunning the above command. 
+
 Now you can compute consistency metrics with this command:
 
 ```bash
 run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2
 ```
 
-This job produces two output tables:
+This job takes will take the primary key(s) and timestamps from the log table (`default.quickstart_training_set_v2_logged` in this case), and uses those to create and run a join backfill. It then compares the backfilled results to the actual logged values that were fetched online
+
+It produces two output tables:
 
 1. `default.quickstart_training_set_v2_consistency`: A human readable table that you can query to see the results of the consistency checks.
-   1. You can enter a sql shell by running `spark-sql` from your docker bash sesion, then query the table, but note that it has many columns (multiple metrics per feature).
-2. `quickstart_training_set_v2_consistency_upload`: A list of KV bytes that is uploaded to the online KV store, that can be used to power online data quality monitoring flows.
-
+   1. You can enter a sql shell by running `spark-sql` from your docker bash sesion, then query the table.
+   2.  Note that it has many columns (multiple metrics per feature), so you might want to run a `DESC default.quickstart_training_set_v2_consistency` first, then select a few columns that you care about to query.
+2. `default.quickstart_training_set_v2_consistency_upload`: A list of KV bytes that is uploaded to the online KV store, that can be used to power online data quality monitoring flows. Not meant to be human readable.
 
 ## Conclusion
 
