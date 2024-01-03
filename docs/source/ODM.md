@@ -174,10 +174,10 @@ backfill and the other for label join job.
 
                   Column                   |  Type   | Extra | Comment
 -------------------------------------------+---------+-------+---------
- reservation                               | bigint  |       |key
- ds                                        | varchar |       |ds
- guest                                     | bigint  |       |key
- listing                                   | bigint  |       |key
+ key_1                                     | bigint  |       |key
+ date_timestamp                            | varchar |       |ds
+ key_2                                     | bigint  |       |key
+ key_3                                     | bigint  |       |key
  feature_col_1                             | varchar |       |feature
  feature_col_2                             | varchar |       |feature
  feature_col_3                             | varchar |       |feature
