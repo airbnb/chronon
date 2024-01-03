@@ -88,8 +88,6 @@ class FlinkJobIntegrationTest {
     // capture the datastream of the 'created' timestamps of all the written out events
     val writeEventCreatedDS = CollectSink.values.asScala
 
-    println(writeEventCreatedDS.size)
-    println(elements.size)
     assert(writeEventCreatedDS.size == elements.size)
     // check that the timestamps of the written out events match the input events
     // we use a Set as we can have elements out of order given we have multiple tasks

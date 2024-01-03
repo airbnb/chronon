@@ -13,27 +13,33 @@ import org.apache.flink.util.Collector
 
 import scala.jdk.CollectionConverters._
 
-// This utility contains common code for AvroCodecFn and TiledAvroCodecFn
-sealed trait AvroCodecFnUtility {
-  // Should be overriden
-  val groupByServingInfoParsed: GroupByServingInfoParsed
+/**
+  * Base class for the Avro conversion Flink operator.
+  *
+  * Subclasses should override the RichFlatMapFunction (the flatMap method) and groupByServingInfoParsed.
+  *
+  * @tparam IN The input data type which contains the data to be avro-converted to bytes.
+  * @tparam OUT The output data type (generally a PutRequest).
+  */
+sealed abstract class BaseAvroCodecFn[IN, OUT] extends RichFlatMapFunction[IN, OUT] {
+  def groupByServingInfoParsed: GroupByServingInfoParsed
 
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   @transient protected var avroConversionErrorCounter: Counter = _
   @transient protected var eventProcessingErrorCounter: Counter =
     _ // Shared metric for errors across the entire Flink app.
 
-  protected val query: Query = groupByServingInfoParsed.groupBy.streamingSource.get.getEvents.query
-  protected val streamingDataset: String = groupByServingInfoParsed.groupBy.streamingDataset
+  protected lazy val query: Query = groupByServingInfoParsed.groupBy.streamingSource.get.getEvents.query
+  protected lazy val streamingDataset: String = groupByServingInfoParsed.groupBy.streamingDataset
 
   // TODO: update to use constant names that are company specific
-  protected val timeColumnAlias: String = Constants.TimeColumn
-  protected val timeColumn: String = Option(query.timeColumn).getOrElse(timeColumnAlias)
+  protected lazy val timeColumnAlias: String = Constants.TimeColumn
+  protected lazy val timeColumn: String = Option(query.timeColumn).getOrElse(timeColumnAlias)
 
-  protected val (keyToBytes, valueToBytes): (Any => Array[Byte], Any => Array[Byte]) =
+  protected lazy val (keyToBytes, valueToBytes): (Any => Array[Byte], Any => Array[Byte]) =
     getKVSerializers(groupByServingInfoParsed)
-  protected val (keyColumns, valueColumns): (Array[String], Array[String]) = getKVColumns
-  protected val extraneousRecord: Any => Array[Any] = {
+  protected lazy val (keyColumns, valueColumns): (Array[String], Array[String]) = getKVColumns
+  protected lazy val extraneousRecord: Any => Array[Any] = {
     case x: Map[_, _] if x.keys.forall(_.isInstanceOf[String]) =>
       x.flatMap { case (key, value) => Array(key, value) }.toArray
   }
@@ -78,8 +84,7 @@ sealed trait AvroCodecFnUtility {
   * @tparam T The input data type
   */
 case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
-    extends RichFlatMapFunction[Map[String, Any], PutRequest]
-    with AvroCodecFnUtility {
+    extends BaseAvroCodecFn[Map[String, Any], PutRequest] {
 
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
@@ -118,8 +123,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
   * @tparam T The input data type
   */
 case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed, debug: Boolean = false)
-    extends RichFlatMapFunction[TimestampedTile, PutRequest]
-    with AvroCodecFnUtility {
+    extends BaseAvroCodecFn[TimestampedTile, PutRequest] {
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
     val metricsGroup = getRuntimeContext.getMetricGroup
