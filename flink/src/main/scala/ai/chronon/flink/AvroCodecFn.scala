@@ -16,7 +16,7 @@ import scala.jdk.CollectionConverters._
 /**
   * Base class for the Avro conversion Flink operator.
   *
-  * Subclasses should override the RichFlatMapFunction (the flatMap method) and groupByServingInfoParsed.
+  * Subclasses should override the RichFlatMapFunction methods (flatMap) and groupByServingInfoParsed.
   *
   * @tparam IN The input data type which contains the data to be avro-converted to bytes.
   * @tparam OUT The output data type (generally a PutRequest).
