@@ -2,7 +2,7 @@
 
 *We suggest familiarizing yourself with the concepts in this document, however if you'd like you can also jump ahead to the [Examples](#examples).*
 
-`**GroupBy**` is the primary API through which features are defined in Chronon. It consists of a group of `Aggregation`s (documented below) computed from a `Source` or similar `Source`s of data. 
+`GroupBy` is the primary API through which features are defined in Chronon. It consists of a group of `Aggregation`s (documented below) computed from a `Source` or similar `Source`s of data. 
 
 In some cases there could also be no aggregations. This occurs when the primary key of the source dataset matches the primary key of the `GroupBy`, and means that the selected fields are to be used directly as features, with the option of row-to-row transformations (see the [Batch Entity GroupBy](#batch-entity-groupby-examples) example below).
 
