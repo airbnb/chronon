@@ -9,7 +9,7 @@ It's currently used to power all major ML applications within Airbnb, as well as
 ## Key Features
 
 * **Consume data from a variety of Sources** - event streams, batch warehouse tables, production databases, change data streams, service endpoints, as well as data available in the request context can all be used as Chronon inputs.
-* * **Easily define transformations and aggregations** - Raw data ingested from sources can be transformed into useful features using a flexible library.
+* **Easily define transformations and aggregations** - Raw data ingested from sources can be transformed into useful features using a flexible library.
 * **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables to power model training and evaluation flows.
 * **Real-time and batch support with online/offline consistency** - Chronon not only supports realtime and batch updates to the online KV store used to power production inference, but it also provides temporally accurate backfills in the offline context. This means that training data is always consistent with production inference data.
 * **Powerful python API** - Define your features in a simple and intuitive python interface, and let Chronon abstract away the complexity of computation and serving.
@@ -32,9 +32,14 @@ source = Source(
         table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
         topic= "events/purchases", # The streaming source topic that can be listened to for realtime events
         query=Query(
-            selects=select("user_id","purchase_price"), # Select the fields we care about
-            time_column="ts") # The event time
-    ))
+            selects=select(
+                user = "user_id",
+                price = "purchase_price * (1 - merchant_fee_percent/100)"
+            ), # Select the fields we care about
+            time_column="ts"  # The event time
+        ) 
+    )
+)
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
@@ -43,22 +48,22 @@ v1 = GroupBy(
     keys=["user_id"], # We are aggregating by user
     online=True,
     aggregations=[Aggregation(
-            input_column="purchase_price",
+            input_column="price",
             operation=Operation.SUM,
             windows=window_sizes
         ), # The sum of purchases prices in various windows
         Aggregation(
-            input_column="purchase_price",
+            input_column="price",
             operation=Operation.COUNT,
             windows=window_sizes
         ), # The count of purchases in various windows
         Aggregation(
-            input_column="purchase_price",
+            input_column="price",
             operation=Operation.AVERAGE,
             windows=window_sizes
         ), # The average purchases by user in various windows
         Aggregation(
-            input_column="purchase_price",
+            input_column="price",
             operation=Operation.LAST_K(10),
         ),
     ],

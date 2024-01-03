@@ -23,7 +23,7 @@
 
 project = 'Chronon'
 copyright = 'The Chronon Authors'
-author = 'Nikhil Simha'
+# author = 'Nikhil Simha'
 release = '0.0.60'
 
 # -- General configuration ---------------------------------------------------
@@ -35,7 +35,6 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
-    'sphinx_design'
 ]
 
 source_parsers = {
@@ -53,29 +52,49 @@ myst_heading_anchors = 3
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'pydata_sphinx_theme'
+html_theme = "sphinx_book_theme"
+
 html_theme_options = {
-    "collapse_navigation": True,
+    # "collapse_navigation": True,
+    # "home_page_in_toc": True,
+    "navbar_align": "right",
     "github_url": "https://github.com/airbnb/chronon",
     "logo": {
-      "image_light": "logo.png",
-      "image_dark": "logo.png",  # TODO: add different dark version
+      "image_light": "logo_curly.png",
+      "image_dark": "logo_curly.png",
     },
     "favicons": [
         {
             "rel": "icon",
-            "sizes": "32x32",
-            "href": "favicon_32_light_bg.png",
+            "sizes": "64x64",
+            "href": "favicon_curly.png",
         }
     ],
-    # "navbar_align": "right"
+    "show_toc_level": 2,
+    "use_download_button": True,
+    "icon_links": [
+        {
+            "name": "Discord",
+            "url": "https://discord.gg/GbmGATNqqP",
+            "icon": "fa-brands fa-discord",
+            "type": "fontawesome",
+        },
+        # {
+        #     "name": "Pip Package",
+        #     "url": "https://pypi.org/project/chronon-ai/",
+        #     "icon": "fa-brands fa-python",
+        #     "type": "fontawesome",
+        # }
+    ],
+    'article_header_end': ["navbar-icon-links.html", "theme-switcher.html"],
+    # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
+html_sidebars = {
+    "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
+}
 html_title = "Chronon"
 html_static_path = ['_static']
-# html_css_files = ["chronon.css"]
+html_css_files = ["chronon.css"]
 html_context = {"default_mode": "light"}
-html_use_modindex = True
-html_copy_source = True
-html_domain_indices = False
 html_file_suffix = '.html'

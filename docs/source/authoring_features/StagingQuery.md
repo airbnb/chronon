@@ -32,4 +32,4 @@ v1 = Join(
 Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
 metadata is extracted from [teams.json](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/teams.json) in (or default team if one is not set).
 
-### [Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)
+**[Click here for more configuration examples](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)**

@@ -14,146 +14,91 @@
 /* *    limitations under the License.*/
 /* *!*/
 
-/*@import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');*/
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inconsolata&display=swap');
 
-/*!*.navbar-brand img {*!*/
-/*!*   height: 60px;*!*/
-/*!*}*!*/
-/*!*.navbar-brand {*!*/
-/*!*   height: 60px;*!*/
-/*!*}*!*/
 
-/*body {*/
-/*  font-family: Verdana, Geneva, sans-serif;*/
-/*}*/
 
-/*pre, code {*/
-/*  font-size: 100%;*/
-/*  line-height: 155%;*/
-/*}*/
+/* FIX-FOR: doc readability with default font is sub-par */
+body {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*h1 {*/
-/*  font-family: Verdana, Geneva, sans-serif;*/
-/*  color: #013243; !* warm black *!*/
-/*}*/
+/* FIX-FOR: code readability with default font is sub-par */
+pre, code {
+    font-family: 'Inconsolata', monospace;
+    font-size: 100%;
+    line-height: 130%;
+}
 
-/*h2 {*/
-/*  color: #4d77cf; !* han blue *!*/
-/*  letter-spacing: -.03em;*/
-/*}*/
+/* FIX-FOR: doc readability with default font is sub-par */
+h1 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*h3 {*/
-/*  color: #013243; !* warm black *!*/
-/*  letter-spacing: -.03em;*/
-/*}*/
+h2 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*!* Style the active version button.*/
+h3 {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
 
-/*- dev: orange*/
-/*- stable: green*/
-/*- old, PR: red*/
+.bd-main .bd-content .bd-article-container {
+    max-width: 100%;  /* default is 60em */
+}
 
-/*Colors from:*/
+.bd-page-width {
+    max-width: 100%;  /* default is 88rem */
+}
 
-/*Wong, B. Points of view: Color blindness.*/
-/*Nat Methods 8, 441 (2011). https://doi.org/10.1038/nmeth.1618*/
-/**!*/
 
-/*!* If the active version has the name "dev", style it orange *!*/
-/*#version_switcher_button[data-active-version-name*="dev"] {*/
-/*  background-color: #E69F00;*/
-/*  border-color: #E69F00;*/
-/*  color:#000000;*/
-/*}*/
+/* FIX-FOR: the inner and outer boxes of the search bar have inconsistent radii*/
+.bd-search {
+    border-radius: 0.2rem;
+}
 
-/*!* green for `stable` *!*/
-/*#version_switcher_button[data-active-version-name*="stable"] {*/
-/*  background-color: #009E73;*/
-/*  border-color: #009E73;*/
-/*}*/
+/* use colors from the chronon theme for highlighting logo's / search bars  */
+html[data-theme=light] {
+    --pst-color-accent: rgb(230, 145, 56);
+    /*--pst-color-primary: rgb(196, 118, 12);*/
+    /*--pst-color-secondary: rgb(196, 118, 12);*/
+    /*--pst-color-attention: rgb(196, 118, 12);*/
+}
 
-/*!* red for `old` *!*/
-/*#version_switcher_button:not([data-active-version-name*="stable"], [data-active-version-name*="dev"], [data-active-version-name=""]) {*/
-/*  background-color: #980F0F;*/
-/*  border-color: #980F0F;*/
-/*}*/
+html[data-theme=dark] {
+    --pst-color-accent: rgb(230, 145, 56);
+    /*--pst-color-primary: rgb(230, 145, 56);*/
+}
 
-/*!* Main page overview cards *!*/
+/* FIX-FOR: the inner and outer boxes of the search bar have inconsistent radii*/
+.form-control {
+    border-radius: 0.2rem;
+}
 
-/*.sd-card {*/
-/*  background: #fff;*/
-/*  border-radius: 0;*/
-/*  padding: 30px 10px 20px 10px;*/
-/*  margin: 10px 0px;*/
-/*}*/
+/* FIX-FOR: The key shortcut doesn't float left */
+.search-button-field {
+    display: flex;
+    width: 100%;
+    height: 36px;
+    justify-content: space-between;
+}
 
-/*.sd-card .sd-card-header {*/
-/*  text-align: center;*/
-/*}*/
+/* FIX-FOR: The key shortcut doesn't float left */
+.search-button-field div:last-child {
+    margin-left: auto;
+}
 
-/*.sd-card .sd-card-header .sd-card-text {*/
-/*  margin: 0px;*/
-/*}*/
+/* FIX-FOR: The dark mode - light mode switcher appears much bigger than other icons */
+.fa-sun {
+    width: 20px;
+    height: 20px;
+}
 
-/*.sd-card .sd-card-img-top {*/
-/*  height: 52px;*/
-/*  width: 52px;*/
-/*  margin-left: auto;*/
-/*  margin-right: auto;*/
-/*}*/
+.fa-discord {
+    color: #5c6fb0;
+}
 
-/*.bd-content {*/
-/*  flex-grow: 1;*/
-/*  max-width: 100%;*/
-/*}*/
-
-/*.sd-card .sd-card-header {*/
-/*  border: none;*/
-/*  background-color: white;*/
-/*  color: #150458 !important;*/
-/*  font-size: var(--pst-font-size-h5);*/
-/*  font-weight: bold;*/
-/*  padding: 2.5rem 0rem 0.5rem 0rem;*/
-/*}*/
-
-/*.sd-card .sd-card-footer {*/
-/*  border: none;*/
-/*  background-color: white;*/
-/*}*/
-
-/*.sd-card .sd-card-footer .sd-card-text {*/
-/*  max-width: 220px;*/
-/*  margin-left: auto;*/
-/*  margin-right: auto;*/
-/*}*/
-
-/*!* Dark theme tweaking *!*/
-/*html[data-theme=dark] .sd-card img[src*='.svg'] {*/
-/*    filter: invert(0.82) brightness(0.8) contrast(1.2);*/
-/*}*/
-
-/*!* Main index page overview cards *!*/
-/*html[data-theme=dark] .sd-card {*/
-/*  background-color:var(--pst-color-background);*/
-/*}*/
-
-/*html[data-theme=dark] .sd-shadow-sm {*/
-/*    box-shadow: 0 .1rem 1rem rgba(250, 250, 250, .6) !important*/
-/*}*/
-
-/*html[data-theme=dark] .sd-card .sd-card-header {*/
-/*  background-color:var(--pst-color-background);*/
-/*  color: #150458 !important;*/
-/*}*/
-
-/*html[data-theme=dark] .sd-card .sd-card-footer {*/
-/*  background-color:var(--pst-color-background);*/
-/*}*/
-
-/*html[data-theme=dark] h1 {*/
-/*  color: var(--pst-color-primary);*/
-/*}*/
-
-/*html[data-theme=dark] h3 {*/
-/*  color: #0a6774;*/
-/*}*/
+/* FIX-FOR: The right hand sidebar */
+.fa-list {
+    margin-right: 10px;
+}
